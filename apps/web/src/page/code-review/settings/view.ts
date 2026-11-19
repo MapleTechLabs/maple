@@ -17,7 +17,9 @@ import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
 import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
-import { canManage, Message, type Model } from "./model"
+import { canAutoApprove, canManage, Message, type Model } from "./model"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { manageAccessLink, repositoryList } from "./repositories"
 import {
 	activeRepositories,
@@ -71,25 +73,28 @@ const modelSetting = (h: H, model: Model): Html =>
 				className: "w-56",
 				isDisabled: !canManage(model) || model.isSavingModel,
 				toView: (parts) =>
-					h.div(
-						[
-							h.Class("contents"),
-							...(canManage(model)
-								? []
-								: [h.Title("Only admins and engineers can change the review model")]),
-						],
-						parts,
-					),
+					canManage(model)
+						? h.div([h.Class("contents")], parts)
+						: lockedControl(
+								h,
+								denialReason("code_review:configure"),
+								h.div([h.Class("contents")], parts),
+							),
 			},
 		}),
 	)
 
-const formView = (h: H, form: RulesForm.Model, canEdit: boolean, wrap: (m: RulesForm.Message) => Message) =>
+const formView = (
+	h: H,
+	form: RulesForm.Model,
+	model: Pick<Model, "grants">,
+	wrap: (m: RulesForm.Message) => Message,
+) =>
 	h.submodel({
 		slotId: `${form.id}-form`,
 		model: form,
 		view: RulesFormView.view,
-		viewInputs: { canEdit },
+		viewInputs: { canEdit: canManage(model), canAutoApprove: canAutoApprove(model) },
 		toParentMessage: wrap,
 	})
 
@@ -158,9 +163,7 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onData: () =>
 			model.repoForm === null
 				? h.empty
-				: formView(h, model.repoForm, canManage(model), (message) =>
-						Message.GotRepoFormMessage({ message }),
-					),
+				: formView(h, model.repoForm, model, (message) => Message.GotRepoFormMessage({ message })),
 	})
 
 const repoDialog = (h: H, model: Model): Html => {
@@ -270,9 +273,7 @@ const content = (h: H, model: Model): Html =>
 				defaults: Option.match(Option.fromNullishOr(model.defaultsForm), {
 					onNone: () => [],
 					onSome: (form) => [
-						formView(h, form, canManage(model), (message) =>
-							Message.GotDefaultsFormMessage({ message }),
-						),
+						formView(h, form, model, (message) => Message.GotDefaultsFormMessage({ message })),
 					],
 				}),
 				repositories: [repositoriesSection(h, model)],

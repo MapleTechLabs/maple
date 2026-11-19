@@ -56,6 +56,12 @@ export interface WarehouseSqlClient {
 		statement: ClickHouseStatement,
 		options?: {
 			readonly responseLimits?: WarehouseResponseLimits
+			/**
+			 * Run in the server's read-only mode, with these settings sent beside the
+			 * statement (which then carries no `SETTINGS` of its own, because read-only
+			 * mode refuses one). Set only for a dialect with `readOnlyRawSql`.
+			 */
+			readonly readOnly?: { readonly settings: Readonly<Record<string, number>> }
 		},
 	) => Effect.Effect<
 		{ data: ReadonlyArray<Record<string, unknown>> },

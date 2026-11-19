@@ -11,9 +11,9 @@
  * SurfacePanel opens with, continued down the page. Each row's `op` is the
  * literal thing you'd type, click or read in the product: a route, an
  * attribute key, a function call, a keystroke. That is the column's whole
- * job, and it's why there are two columns and not three: a third "result"
- * column tempts the writer to park the number outside the sentence, where it
- * stops being evidence.
+ * job. The title and its sentence share the row from `lg` up, which halves the
+ * section's height without dropping a word; there is still no "result" column,
+ * which would tempt the writer to park the number outside the sentence.
  *
  * Hover lifts one tonal step, per the Tonal-Depth Rule. No shadow, ever.
  */
@@ -35,31 +35,28 @@ const surface = tone === "deep" ? "bg-bg-deep" : "bg-bg";
 ---
 
 <section class={`${surface} ${className}`}>
-	<div class="shell py-16 md:py-32">
+	<div class="shell py-14 md:py-20">
 		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
 		<h2
-			class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+			class="mt-4 max-w-[24ch] font-display text-3xl font-medium leading-[1.08] tracking-[-0.02em] text-fg lg:text-[34px]"
 		>
 			{title}
 		</h2>
 
-		<!-- The 20rem gutter matches SurfacePanel's left track, so the op column
-		     and the panel's fact keys sit on one continuous rail down the page. -->
-		<dl class="mt-10 md:mt-14">
+		<!-- The key gutter starts on the shell edge, like SurfacePanel's fact keys above it. -->
+		<dl class="mt-8 md:mt-10">
 			{
 				items.map((item) => (
-					<div class="grid gap-x-8 gap-y-2 border-t border-border py-5 transition-colors hover:bg-bg-elevated lg:grid-cols-[20rem_1fr] lg:py-6">
+					<div class="grid gap-x-8 gap-y-1.5 border-t border-border py-4 transition-colors hover:bg-bg-elevated lg:grid-cols-[12rem_17rem_1fr] lg:items-baseline">
 						{/* min-w-0 so a long attribute key wraps inside the gutter
 						    instead of widening the track. */}
 						<span class="op-key min-w-0 break-words pt-1 leading-relaxed lg:normal-case lg:tracking-[0.08em]">
 							{item.op}
 						</span>
-						<div class="min-w-0">
-							<dt class="font-display text-base leading-snug tracking-[-0.01em] text-fg md:text-lg">
-								{item.title}
-							</dt>
-							<dd class="mt-2 max-w-[64ch] text-[13px] leading-relaxed text-fg-muted">{item.body}</dd>
-						</div>
+						<dt class="min-w-0 font-display text-base leading-snug tracking-[-0.01em] text-fg">
+							{item.title}
+						</dt>
+						<dd class="min-w-0 max-w-[72ch] text-[13px] leading-relaxed text-fg-muted">{item.body}</dd>
 					</div>
 				))
 			}

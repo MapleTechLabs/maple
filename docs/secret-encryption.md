@@ -24,12 +24,40 @@ slot, and bound to the slot, the org and the row.
 - **Exceptions**: `cli_device_authorizations.token` has no org until it is approved, so it
   binds to the row's primary key alone. `cloudflare_logpush_connectors.secret_*` is not sealed
   through `SecretBox`: nothing reads or writes those three columns.
+- **Destination (v3)**: a slot whose value Maple sends somewhere names a `destination` in
+  `secret-slots.ts`, and its values use `v3.<keyId>.<base64>`: the AAD is the slot, the row,
+  the fixed part `destination`, then the destination. Write access to the database is then not enough to point a stored
+  credential at another host: the edited row stops opening. The slots and what they bind:
+
+    | Slot                                  | Destination                                                                                                                           |
+    | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+    | `org_clickhouse_settings.ch_password` | `ch_url` exactly as stored (the gateway opens it)                                                                                     |
+    | `scrape_targets.auth_credentials`     | scheme, host and port of `url`                                                                                                        |
+    | `external_data_sources.secret`        | `secretDestination(config)`                                                                                                           |
+    | `uptime_monitors.headers`             | HTTP: scheme, host and port. Multi-step: every step's URL and extractions, since a later host can be a variable an earlier step fills |
+
+    A destination is derived from stored columns only, and never differently: a change to how it
+    is derived stops every stored value of that slot opening. Code that changes the destination
+    seals again for the new one.
+
 - **Key id**: `HKDF-SHA256(master, info = "maple/secret-box/v2/key-id")`, first 6 bytes,
   base64url. It names the master key that sealed the value and reveals nothing about it.
 
 The ingest gateway (Rust, `apps/ingest/src/main.rs`) opens one slot itself:
 `org_clickhouse_settings.ch_password`. Both implementations are pinned to the same test
 fixture (`secret-slots.test.ts` and the gateway's `secret_keyring_*` tests).
+
+### Rolling out v3
+
+Readers and writers deploy separately (the ingest gateway apart from the Workers), so v3 goes
+out in three steps:
+
+1. Every reader opens v2 and v3. Writers still seal v2, and the reseal pass counts a v3 value
+   as current, so it does not turn step 2's values back into v2 while both run.
+2. Once step 1 runs everywhere, the gateway included: writers seal v3 for destination slots,
+   and the hourly reseal pass rewrites their v2 values as v3.
+3. Once `secretsResealRemaining` is 0 on two passes: destination slots stop opening v2. Until
+   this step a v2 value still opens wherever its row points, so the protection starts here.
 
 ## Keys
 
@@ -38,8 +66,22 @@ fixture (`secret-slots.test.ts` and the gateway's `secret_keyring_*` tests).
 | `MAPLE_INGEST_KEY_ENCRYPTION_KEY`  | The primary master key. Seals every new value. Base64, 32 bytes.  |
 | `MAPLE_INGEST_KEY_DECRYPTION_KEYS` | Optional, comma-separated. Master keys accepted for opening only. |
 
-Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers,
-the schema-apply workflow and the ingest gateway.
+Every deployable that opens secrets reads both: the API, AI, alerting and chat-bot Workers and
+the schema-apply workflow.
+
+The ingest gateway does not receive the master keys. Its deploy derives the subkeys of the one
+slot it opens (`packages/infra/src/secret-slot-keys.ts`, read through `resolveDerived` in
+`@maple/infra/secret-guard`) and hands it only those:
+
+| Variable                             | Purpose                                                                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `MAPLE_INGEST_CH_PASSWORD_SLOT_KEYS` | `<keyId>:<base64 subkey>` per master key, comma-separated, primary first. Opens `org_clickhouse_settings.ch_password` only. |
+
+The gateway prefers it and falls back to the two master-key variables when it is unset, which a
+self-hosted or local deploy still sets. It refuses to start with neither. A key rotation needs no
+gateway step of its own: each deploy derives the slot keys from the masters it loads.
+`secret-slot-keys-parity.test.ts` holds the infra derivation equal to SecretBox's, and the
+fixture master's slot keys are pinned there and in the gateway's tests.
 
 ## Adding a secret column
 
@@ -56,8 +98,9 @@ the schema-apply workflow and the ingest gateway.
 ## Resealing
 
 `SecretResealService.resealDue` runs hourly in the alerting Worker (lane `secret_reseal`). It
-rewrites every stored value whose ciphertext does not start with the primary key's prefix
-(`v2.<primary key id>.`), which is every value sealed by a key that is no longer primary. A
+rewrites every stored value whose ciphertext does not start with the primary key's prefix in
+its slot's envelope (`v2.<primary key id>.`, or `v3.` for a slot with a destination): every
+value sealed by a key that is no longer primary, and every v2 value of a destination slot. A
 value left over from before the v2 envelope is not opened: it counts as failed and as
 remaining on every pass, which is how one gets noticed. Each write is conditional on the row still holding the value that was read, so
 it never overwrites a concurrent change. A value that will not open is left as it is, logged as
@@ -89,3 +132,8 @@ The pre-v2 envelope was read, and rewritten by the hourly pass, only by the rele
 the one that introduced v2 and the one that stopped reading it. A deployment that skips those
 releases keeps values nothing can open any more, the ingest keys among them. Run one of them
 until `secretsResealRemaining` is 0 before upgrading further.
+
+The same holds for the v3 envelope: a release that seals v3 but still opens v2 has to run
+until `secretsResealRemaining` is 0 before one that refuses v2 for destination slots. Skipping
+it leaves BYO ClickHouse passwords, scrape credentials, data source secrets and uptime headers
+that no longer open, and they have to be entered again.

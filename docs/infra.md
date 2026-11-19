@@ -131,6 +131,30 @@ because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-pl
   `apps/ai/src/platform/Llm.ts`, #1052). Workers AI has no region pin, so
   `MAPLE_LLM_PROVIDER` stays unset there.
 
+## Production access from a laptop
+
+A developer machine holds no path to production that the deploy workflow does not.
+
+- **Production deploys run in CI.** `bun run alchemy:deploy:prd` runs
+  `scripts/prd-deploy-guard.ts` first, which refuses unless `CI=true` and
+  `GITHUB_ACTIONS=true`. Break glass, in an incident only, with
+  `MAPLE_PRD_DEPLOY_BREAK_GLASS="<reason>"`: the deploy prints a loud warning with the reason,
+  and the person running it tells the team.
+- **Sign-in helpers are development only.** `scripts/dev-signin.ts` and
+  `apps/ios/scripts/measure-latency.sh` mint tickets with a `sk_test_` key and refuse a live
+  one, so neither can sign in as a production user.
+- **Tokens stay out of `ps` and the terminal.** The Tinybird scripts hand `tb` its token as
+  `TB_TOKEN`, and a local `tinybird-pr-branch.ts up` writes the branch env to an owner-only
+  file instead of printing it.
+- **Impersonation is audited.** A Clerk session that carries an `act` claim (someone signed
+  in as a member) resolves with `tenant.impersonation` set. The session paths of
+  `SessionAuthorizationLive`, `ApiAuthorizationLive` and `ApiAuthorizationV2Live` write one
+  `auth.impersonation` audit entry per session per isolate, naming the impersonator and the
+  session. Impersonated sessions may write with the member's own role; their other entries name
+  the member, and this entry ties the session to the impersonator. MCP and chat sessions in
+  `apps/ai` write no `auth.impersonation` entry yet, and an entry whose delivery fails is not
+  retried for that session in the same isolate.
+
 ## Local dev: one `alchemy dev` stack
 
 `bun dev` (`scripts/dev.ts`) runs the whole local stack as a single `alchemy dev`:
@@ -228,7 +252,12 @@ stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
-- **Crons** (`alerting`, `api`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
+- **org-eraser** serves no requests. Every ten minutes on production it drains `org_erasures`
+  (a deleted org's conversations, replay objects and warehouse rows). It alone binds the replay
+  bucket read-write and the warehouse delete token (`TINYBIRD_DELETE_TOKEN`), so no request
+  Worker can delete either.
+
+- **Crons** (`alerting`, `api`, `org-eraser`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
   under `CronEventSourceLive`, attaches the schedule at plan time and the listener at
   runtime. The source reports every fire as successful, so the platform's retry never
   engages. Nothing is lost: the ticks already log and swallow their own failures, the
@@ -513,6 +542,12 @@ services. The Prometheus and uptime scraper (`apps/scraper`, one per prd instanc
 same VPC with no inbound traffic; its image is the single-file bundle `alchemy:build-deps`
 writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stops answering.
 
+- **The gateway writes to the warehouse with an append-only token.** `maple_ingest_append` is
+  declared on the datasources the gateway and its collector post to (`INGEST_WRITTEN_DATASOURCES`,
+  `@maple/domain/tinybird/ingest-token`), added to the datafiles by `scripts/write-tinybird-datafiles.ts`.
+  The ingest deploy reads the token's value with the admin `TINYBIRD_TOKEN` through `resolveDerived`;
+  the task and the collector only ever receive the append token. A new datasource the gateway
+  writes goes in that set, and the warehouse project deploys before ingest.
 - `AWS.providers()` is registered unconditionally: the `Alchemy.Stack` options are evaluated
   before `Alchemy.Stage` is readable, so it cannot be stage-derived.
 - `profile.deploys.ingest` alone decides which stages get a fleet: prd **and PR previews**. Dev
@@ -552,7 +587,18 @@ Runtime roles (ingest gateway, the EU Hyperdrive roles) inherit `DB_ACCESS_ROLES
 (`@maple/db/roles`: `pg_read_all_data` + `pg_write_all_data`): DML on every table, current and
 future, and no DDL, TRUNCATE or ownership. Only migrations, which alchemy runs on a temporary
 `postgres` role, change the schema. Electric stays on `postgres` because PlanetScale grants
-REPLICATION only with it. The US prd Hyperdrive configs are dashboard-managed, so their
+REPLICATION only with it.
+
+The ingest gateway can instead run on a login scoped to its own tables. The
+`ingest_gateway_role` migration creates `maple_ingest` (NOLOGIN) with exactly
+`INGEST_GATEWAY_GRANTS` (`@maple/db/roles`). With `MAPLE_INGEST_DB_SCOPED_ROLE=1` (a GitHub
+environment variable per region, read by the prd deploy) the deploy creates a login that inherits
+no built-in role, grants it `maple_ingest` as a short-lived admin login
+(`IngestRoleMembership`, `@maple/infra/ingest-role-membership`), and only then rolls the
+gateway onto it; the all-tables login is deleted at the end of that deploy. Unset or `0` restores
+the all-tables login on the next deploy. A table the gateway starts using needs a grant
+migration, an `INGEST_GATEWAY_GRANTS` entry and a new statement in `roles.test.ts`'s gateway
+fixtures; the test checks the grants and runs those fixed statements, not the gateway's own queries. The US prd Hyperdrive configs are dashboard-managed, so their
 credentials are outside the deploy.
 
 ## Hyperdrive: why api and alerting have separate configs
@@ -585,6 +631,35 @@ its own Worker route to its stage's status Worker, created at runtime by the api
 Workers with `MAPLE_STATUS_DOMAINS_API_TOKEN`. Never a `*/*` route on the zone: it would catch
 proxied hostnames without a Worker, such as ingest. Setup steps and the lifecycle are in
 [`status-page-custom-domains.md`](status-page-custom-domains.md).
+
+## Audit log: the write-once copy
+
+Audit entries flow `api` / `maple-ai` -> `audit-intake` queue -> the `audit-archive` Worker
+(`apps/audit-archive`) -> `audit-events` queue -> api's consumer -> warehouse. The archive Worker
+is the only consumer of `audit-intake`: it writes each batch, per org, to the `audit-archive` R2
+bucket before forwarding it, so nothing reaches the warehouse without a kept copy. api holds a
+producer binding to `audit-intake` and nothing else on that path: no binding to the bucket, none
+to consume `audit-intake`, none to send to `audit-events`. A compromised api can neither delete the
+copy nor drain entries before they are archived. Both queues dead-letter to `audit-events-dlq`.
+Resources: `packages/infra/src/cloudflare/audit-events.ts`.
+
+- **Lock.** On prd the bucket carries an R2 bucket lock rule (`audit-write-once`, prefix `audit/`):
+  objects cannot be deleted or overwritten for `MAPLE_AUDIT_ARCHIVE_RETENTION_DAYS` days (default
+  365), whoever signs the request. Preview and dev buckets are unlocked so their stages can be torn
+  down. The bucket follows the instance's storage jurisdiction (EU data stays in the EU bucket) and
+  is retained on removal.
+- **Layout.** `audit/<orgId>/<yyyy>/<mm>/<dd>/<batch-id>.ndjson`, dated by archive time (UTC). Each
+  line is `{"messageId": "...", "body": <the audit event as produced>}`; the body's `id` is the entry
+  id. A redelivered batch writes a second object, so dedupe on `body.id`. A body without a usable org
+  goes under `audit/_unattributed/`.
+- **Reading it.** List and download with any S3 client using a read-only R2 token scoped to the
+  bucket, e.g. `aws s3 ls s3://<bucket>/audit/<orgId>/2026/11/ --endpoint-url
+  https://<account>.r2.cloudflarestorage.com` (the EU bucket uses `<account>.eu.r2...`). Bucket
+  name: `resolveWorkerName("audit-archive", stage, region)`. Mint the token in the dashboard for the
+  investigation and revoke it after; no Worker holds one.
+- **Dropped sends.** A producer's queue send runs after the response, times out at 2 s and is retried
+  once. If both attempts fail the entry is lost: `maple.audit.dropped` (counter and span attribute)
+  plus an Error log `Audit entry dropped: queue send failed twice`. Alert on any non-zero value.
 
 ## Cost decisions
 

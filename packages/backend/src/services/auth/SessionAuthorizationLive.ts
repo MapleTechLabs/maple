@@ -5,6 +5,7 @@ import { Effect, Layer, String as Str } from "effect"
 import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
+import { recordImpersonation } from "@maple/backend/services/auth/impersonation-audit"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
@@ -48,6 +49,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* regions.ensureServedHere(tenant.orgId)
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* checkAnalystAccess(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
@@ -87,6 +89,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					}
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* checkAnalystAccess(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(

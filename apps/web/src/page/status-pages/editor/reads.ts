@@ -1,4 +1,5 @@
-import { Option, Array as Arr } from "effect"
+import type { V2StatusPageComponent } from "@maple/domain/http/v2"
+import { Option, Order, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -108,6 +109,19 @@ export const readMonitors =
 
 export const pageOf = (model: Model) => AsyncData.getData(model.page.data)
 export const componentsOf = (model: Model) => AsyncData.getOrElse(model.components.data, () => [])
+/**
+ * The components as Monitors lists them: in the order waiting on Save, else as saved. One added
+ * since that order was set goes last, where the server puts it.
+ */
+export const listedComponentsOf = (model: Model) => {
+	const order = model.pendingOrder
+	if (order === null) return componentsOf(model)
+	const rank = (component: V2StatusPageComponent): number => {
+		const index = order.indexOf(component.id)
+		return index === -1 ? order.length : index
+	}
+	return Arr.sort(componentsOf(model), Order.mapInput(Order.Number, rank))
+}
 export const incidentsOf = (model: Model) => AsyncData.getOrElse(model.incidents.data, () => [])
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
@@ -116,6 +130,12 @@ export const statusReadsReady = (model: Model): boolean =>
 	AsyncData.hasData(model.components.data) &&
 	AsyncData.hasData(model.monitors.data) &&
 	AsyncData.hasData(model.incidents.data)
+
+/** A statuses' read failed: a component's status cannot be told. */
+export const statusReadsFailed = (model: Model): boolean =>
+	AsyncData.hasError(model.components.data) ||
+	AsyncData.hasError(model.monitors.data) ||
+	AsyncData.hasError(model.incidents.data)
 
 export const toast = (type: "success" | "error", title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type, title, description })

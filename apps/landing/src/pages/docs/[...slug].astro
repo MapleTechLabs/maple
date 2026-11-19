@@ -42,7 +42,7 @@ const editHref = doc.filePath
         <p class="docs-lede mt-3 max-w-[62ch] text-[16px] leading-[1.6] text-pretty text-fg-muted" set:html={ledeHtml} />
         {author && (
             <div class="docs-byline mt-4 flex items-center gap-2 text-[13px] text-fg-muted">
-                <img src={author.avatar} alt="" width="20" height="20" loading="lazy" />
+                <img src={author.avatar} alt={author.name} width="20" height="20" loading="lazy" />
                 {author.name}
             </div>
         )}

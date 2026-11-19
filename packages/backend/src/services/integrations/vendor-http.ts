@@ -3,7 +3,19 @@
  * transient retries, `retry-after` on a 429, no redirects, paging, and a Client span that records
  * only the URL path. Each client maps {@link VendorHttpError} to its own errors through `toError`.
  */
-import { Clock, Duration, Effect, Option, Redacted, Schedule, Schema, Stream, String as Str } from "effect"
+import {
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Redacted,
+	Result,
+	Schedule,
+	Schema,
+	Stream,
+	type Tracer,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { parseDeltaSeconds, parseRetryAfterSeconds, VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
 
@@ -135,7 +147,10 @@ export interface VendorHttpClient<E> {
 const IDEMPOTENT = new Set(["GET", "PUT", "DELETE"])
 const DEFAULT_MAX_RETRY_AFTER = Duration.seconds(10)
 
-const defaultKind = (status: number): VendorFailureKind =>
+/** Whether a request is retried on a transient failure when it does not say: GET, PUT and DELETE. */
+export const isIdempotent = (method: VendorRequest["method"]): boolean => IDEMPOTENT.has(method ?? "GET")
+
+export const defaultKind = (status: number): VendorFailureKind =>
 	status === 401
 		? "unauthorized"
 		: status === 403
@@ -149,6 +164,81 @@ const defaultKind = (status: number): VendorFailureKind =>
 const isTransient = (error: VendorHttpError) =>
 	error.kind === "timeout" ||
 	(error.kind === "upstream" && (error.status === undefined || error.status >= 500))
+
+export interface VendorRetryPolicy {
+	/** Transient failures (5xx, transport, timeout); `false` turns retries off. */
+	readonly schedule: Schedule.Schedule<unknown> | false
+	/** The longest `retry-after` waited out before failing as `rate_limited`. */
+	readonly maxRetryAfterSeconds: number
+	readonly replayRateLimit?: boolean
+	readonly retryInvalidResponse?: boolean
+}
+
+/**
+ * Transient retries when `retryable`, then one wait for a short `retry-after`. A 429 means the
+ * request was not processed, so even a POST may be sent again.
+ */
+export const retryVendorCall = <A, R>(
+	policy: VendorRetryPolicy,
+	retryable: boolean,
+	effect: Effect.Effect<A, VendorHttpError, R>,
+): Effect.Effect<A, VendorHttpError, R> => {
+	const { schedule } = policy
+	const retried =
+		schedule === false || !retryable
+			? effect
+			: Effect.retry(effect, {
+					schedule,
+					while: (error) =>
+						isTransient(error) ||
+						(policy.retryInvalidResponse === true && error.kind === "invalid_response"),
+				})
+	return Effect.catchIf(
+		retried,
+		(error) =>
+			error.kind === "rate_limited" &&
+			error.retryAfterSeconds !== undefined &&
+			error.retryAfterSeconds <= policy.maxRetryAfterSeconds &&
+			policy.replayRateLimit !== false,
+		(error) => Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
+	)
+}
+
+/** Only an answer we could not decode may be our own bug; anything else is the vendor's or the customer's state. */
+const failsAttemptSpan = (error: VendorHttpError) => error.kind === "invalid_response"
+
+/**
+ * A vendor client call's own span, for `Effect.fnUntraced(body, vendorCallSpan(name, expectedKind))`.
+ * A failure `expectedKind` names (a refusal or outage the caller handles) lands on the span as
+ * `error.type` instead of failing it; anything else fails the span as usual.
+ */
+export const vendorCallSpan =
+	<E>(name: string, expectedKind: (error: E) => string | undefined, options?: Tracer.SpanOptions) =>
+	<A, E2 extends E, R>(self: Effect.Effect<A, E2, R>): Effect.Effect<A, E2, R> =>
+		self.pipe(
+			Effect.result,
+			Effect.flatMap((result): Effect.Effect<Result.Result<A, E2>, E2> => {
+				if (Result.isSuccess(result)) return Effect.succeed(result)
+				const kind = expectedKind(result.failure)
+				return kind === undefined
+					? Effect.fail(result.failure)
+					: Effect.as(Effect.annotateCurrentSpan("error.type", kind), result)
+			}),
+			Effect.withSpan(name, options),
+			Effect.flatMap(Effect.fromResult),
+		)
+
+/**
+ * One request to a vendor through a `@distilled.cloud/*` SDK, as a Client span naming the vendor.
+ * The SDK's own span is off: it fails on every refusal with the vendor's message as the cause.
+ * As with {@link vendorCallSpan}, a failure `expectedKind` names does not fail the span.
+ */
+export const vendorSdkRequestSpan =
+	<E>(name: string, peerService: string, expectedKind: (error: E) => string | undefined) =>
+	<A, E2 extends E, R>(self: Effect.Effect<A, E2, R>): Effect.Effect<A, E2, R> =>
+		vendorCallSpan(name, expectedKind, { kind: "client", attributes: { "peer.service": peerService } })(
+			Effect.withTracerEnabled(self, false),
+		)
 
 const decodeJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -260,6 +350,14 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 						orElse: () => Effect.fail(fail("timeout", "timed out", request)),
 					}),
 					Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
+					// A refusal or a vendor outage is the caller's to judge (most record it as the
+					// connection's health), so only an undecodable answer fails the attempt span.
+					Effect.map((value): Result.Result<A, VendorHttpError> => Result.succeed(value)),
+					Effect.catchIf(
+						(error) => !failsAttemptSpan(error),
+						(error): Effect.Effect<Result.Result<A, VendorHttpError>> =>
+							Effect.succeed(Result.fail(error)),
+					),
 					Effect.withSpan("VendorHttp.request", {
 						kind: "client",
 						attributes: {
@@ -273,35 +371,24 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 								: { "maple.vendor.operation": request.operation }),
 						},
 					}),
+					Effect.flatMap(Effect.fromResult),
 				),
 			),
 		)
 	}
 
-	/** Transient retries for idempotent requests, then one wait for a short `retry-after`. */
-	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) => {
-		const retryable = request.retry ?? IDEMPOTENT.has(request.method ?? "GET")
-		const retried =
-			schedule === false || !retryable
-				? effect
-				: Effect.retry(effect, {
-						schedule,
-						while: (error) =>
-							isTransient(error) ||
-							(options.retryInvalidResponse === true && error.kind === "invalid_response"),
-					})
-		// A 429 means the request was not processed, so even a POST may be sent again.
-		return Effect.catchIf(
-			retried,
-			(error) =>
-				error.kind === "rate_limited" &&
-				error.retryAfterSeconds !== undefined &&
-				error.retryAfterSeconds <= maxRetryAfterSeconds &&
-				options.replayRateLimit !== false,
-			(error) =>
-				Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
-		)
+	const retryPolicy: VendorRetryPolicy = {
+		schedule,
+		maxRetryAfterSeconds,
+		...(options.replayRateLimit === undefined ? undefined : { replayRateLimit: options.replayRateLimit }),
+		...(options.retryInvalidResponse === undefined
+			? undefined
+			: { retryInvalidResponse: options.retryInvalidResponse }),
 	}
+
+	/** Transient retries for idempotent requests, then one wait for a short `retry-after`. */
+	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) =>
+		retryVendorCall(retryPolicy, request.retry ?? isIdempotent(request.method), effect)
 
 	const send = <A, R>(
 		request: VendorRequest,

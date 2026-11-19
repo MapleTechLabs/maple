@@ -2,7 +2,9 @@ import { OrgId } from "@maple/domain"
 import { StatusPagePublicId } from "@maple/domain/http/v2"
 import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
 import { describe, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { ORG } from "../../kit/alert-test-rows"
@@ -23,13 +25,17 @@ const view = withViewInputs(pageView, { context })()
 const MEMBER = Policy.grantsOf(["org:member"])
 const ANALYST = Policy.grantsOf(["org:analyst"])
 
-/** The editor's Page tab over `incidents`, read by a session holding `grants`. */
+/** The editor's Incidents tab over `incidents`, read by a session holding `grants`. */
 const loaded = (
 	grants: ReadonlyArray<Policy.Permission>,
 	incidents: ReadonlyArray<ReturnType<typeof incident>>,
 ): Model => {
 	const entered = init(
-		{ _tag: "StatusPage", pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id), search: {} },
+		{
+			_tag: "StatusPage",
+			pageId: Schema.encodeSync(StatusPagePublicId)(statusPage().id),
+			search: { view: "incidents" },
+		},
 		context,
 	).model
 	return Arr.reduce(
@@ -58,36 +64,41 @@ const loaded = (
 const DRAFT = incident(1, { published: false })
 const MAINTENANCE = incident(2, { kind: "maintenance", title: "Database upgrade" })
 
+const POST_DENIAL = Policy.denialFor("status_page_incidents:post").message
+
+const mounted = Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog())
+
 const opened = (grants: ReadonlyArray<Policy.Permission>, row: ReturnType<typeof incident>, n: number) =>
 	pageUpdate(loaded(grants, [row]), Message.ClickedIncident({ incidentId: incidentId(n) })).model
 
 describe("status page editor, analyst", () => {
-	test("Post incident is offered to a member and not to an analyst", () => {
+	test("Declare incident is offered to a member and locked for an analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(ANALYST, [])),
-			expectView(text("Nothing posted.")).toExist(),
-			expectView(role("button", { name: "Post incident" })).toBeAbsent(),
+			expectView(text("No incidents yet")).toExist(),
+			expectView(role("button", { name: "Declare incident" })).toBeDisabled(),
+			expectView(role("group", { name: POST_DENIAL })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(MEMBER, [])),
-			expectView(text("Nothing posted. Post incident when something breaks.")).toExist(),
-			expectView(role("button", { name: "Post incident" })).toExist(),
+			expectView(role("button", { name: "Declare incident" })).not.toBeDisabled(),
 		)
 	})
 
-	test("an analyst reads an open incident's updates and gets none of its actions", () => {
+	test("an analyst reads an open incident's updates and sees its actions locked", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, DRAFT, 1)),
+			mounted,
 			expectView(text("Draft, not public")).toExist(),
 			expectView(role("region", { name: "Updates" })).toExist(),
-			expectView(role("button", { name: "Publish" })).toBeAbsent(),
-			expectView(role("button", { name: "Post update" })).toBeAbsent(),
-			expectView(role("button", { name: "Resolve" })).toBeAbsent(),
-			expectView(role("button", { name: "Edit details" })).toBeAbsent(),
-			expectView(role("button", { name: "Delete incident" })).toBeAbsent(),
+			expectView(role("button", { name: "Publish" })).toBeDisabled(),
+			expectView(role("button", { name: "Post update" })).toBeDisabled(),
+			expectView(role("button", { name: "Resolve" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit details" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete incident" })).toBeDisabled(),
 		)
 	})
 
@@ -95,6 +106,7 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(MEMBER, DRAFT, 1)),
+			mounted,
 			expectView(role("button", { name: "Publish" })).toExist(),
 			expectView(role("button", { name: "Post update" })).toExist(),
 			expectView(role("button", { name: "Resolve" })).toExist(),
@@ -107,12 +119,14 @@ describe("status page editor, analyst", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ANALYST, MAINTENANCE, 2)),
-			expectView(role("button", { name: "Complete" })).toBeAbsent(),
-			expectView(role("button", { name: "Delete maintenance" })).toBeAbsent(),
+			mounted,
+			expectView(role("button", { name: "Complete" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete maintenance" })).toBeDisabled(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(MEMBER, MAINTENANCE, 2)),
+			mounted,
 			expectView(role("button", { name: "Complete" })).toExist(),
 			expectView(role("button", { name: "Delete maintenance" })).toExist(),
 		)

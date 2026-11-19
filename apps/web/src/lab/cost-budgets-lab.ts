@@ -231,7 +231,7 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 export const breadcrumbs = (model: Model) => [
-	{ label: "Cost", href: "/cost" },
+	{ label: "Cloud cost", href: "/cost" },
 	...(model.form === null
 		? [{ label: "Budgets", isPageHeading: true }]
 		: [

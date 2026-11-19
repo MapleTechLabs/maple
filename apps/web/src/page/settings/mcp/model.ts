@@ -10,7 +10,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import * as CreateKey from "../keys/create-dialog"
 
 // The MCP tab: connect a client, the connected OAuth clients and the tool catalog. Shared by
-// `/settings?tab=mcp` and `/mcp`.
+// `/settings/mcp` and `/mcp`.
 
 export const ConnectionsData = AsyncData.Schema(Schema.Array(V2McpConnection), LoadFailure)
 export const ToolsData = AsyncData.Schema(Schema.Array(McpToolCatalogEntry), LoadFailure)

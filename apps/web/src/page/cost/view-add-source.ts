@@ -1,28 +1,36 @@
 import type { CostSourceSummary, GithubCostInstallation } from "@maple/domain/http"
 import { CostProvider } from "@maple/domain/cost"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Struct } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
 import * as Field from "@maple/views/ui/field"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "@maple/views/ui/field"
 import { formDialogForm } from "@maple/views/ui/form-dialog"
-import { icon } from "@maple/views/ui/icon"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { grid } from "@maple/views/ui/grid"
+import { searchInput } from "@maple/views/ui/search-input"
+import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listRow } from "@maple/views/ui/list-row"
 import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../route"
 import { connectionStep } from "../kit/connection-step"
+import { pickerCard, type PickerCardOptions } from "../kit/picker-card"
+import { platformTile } from "../sources/kit/platforms"
 import { addTrail } from "./view-add-trail"
 import { CREDENTIAL_SOURCES, type CredentialSource } from "./credential-sources"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { COST_PROVIDERS, type CostProviderEntry, CredentialProvider } from "./providers"
+import { COST_PROVIDERS, type CredentialProvider } from "./providers"
 import { PLANETSCALE_REMOVE, planetScaleStep } from "./view-add-planetscale"
 import { providerMark, vercelStep } from "./view-add-vercel"
+import { GCP_REMOVE, gcpStep } from "./view-add-gcp"
+import { requestStep } from "./view-add-request"
 
 type H = HtmlBuilder<Message>
 
@@ -40,97 +48,182 @@ const hasSourceOf = (
 	provider: CostSourceSummary["provider"],
 ): boolean => Arr.some(sources, (source) => source.provider === provider)
 
+const PICK_GROUPS = ["cloud", "ai"] as const
+type PickGroup = (typeof PICK_GROUPS)[number]
+
+const PICK_GROUP_TITLE = {
+	cloud: "Cloud and platforms",
+	ai: "AI",
+} as const satisfies Record<PickGroup, string>
+
+/** Where each provider sits, in the order its group lists it. A new provider does not compile until placed. */
+const PICK_GROUP = {
+	aws: "cloud",
+	gcp: "cloud",
+	cloudflare: "cloud",
+	vercel: "cloud",
+	planetscale: "cloud",
+	github: "cloud",
+	openrouter: "ai",
+	anthropic: "ai",
+	openai: "ai",
+} as const satisfies Record<CostProvider, PickGroup>
+
+const PICKS: ReadonlyArray<CostProvider> = Struct.keys(PICK_GROUP)
+
 /**
- * A provider the org has one source of at most: a row to click while it has none, and one that
- * says where the source is changed once it does.
+ * What a provider's card says and does. AWS goes to its connect flow, a pasted credential's to its
+ * form, GitHub to its organizations, Vercel to its team, PlanetScale to its organization, Google
+ * Cloud to its connections and export table. A provider the org has one source of at most is
+ * offered no more once added; the others stay open.
  */
-const addableRow = (
-	h: H,
-	provider: CostProviderEntry,
-	options: Readonly<{
-		isAdded: boolean
-		/** What the source brings in. */
-		meta: string
-		/** Where an added source is changed. */
-		addedMeta: string
-		onClick: Message
-		divided?: boolean
-	}>,
-): Html =>
-	options.isAdded
-		? listRow(h, {
-				divided: options.divided ?? false,
-				leading: providerMark(h, provider),
-				title: provider.name,
-				meta: options.addedMeta,
-				trailing: badge(h, { variant: "muted", size: "sm" }, ["Already added"]),
-			})
-		: listRow(h, {
-				divided: options.divided ?? false,
-				onClick: options.onClick,
-				leading: providerMark(h, provider),
-				title: provider.name,
-				meta: options.meta,
-				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-			})
+const pickOf = (
+	provider: CostProvider,
+	sources: ReadonlyArray<CostSourceSummary>,
+): Readonly<{ description: string; isAdded: boolean; action: PickerCardOptions<Message>["action"] }> => {
+	const once = (
+		description: string,
+		onClick: Message,
+		addedDescription = "Remove it in the Sources panel",
+	) => {
+		const isAdded = hasSourceOf(sources, provider)
+		return {
+			description: isAdded ? addedDescription : description,
+			isAdded,
+			action: { onClick, isDisabled: isAdded },
+		}
+	}
+	const open = (description: string, onClick: Message) => ({
+		description,
+		isAdded: false,
+		action: { onClick },
+	})
+	switch (provider) {
+		case "aws":
+			return {
+				description: "Daily cost by service, region and usage type",
+				isAdded: false,
+				action: { href: CONNECT_AWS_HREF },
+			}
+		case "gcp":
+			return open("Daily cost from the BigQuery billing export", Message.ClickedAddGcp())
+		case "github":
+			return open("Daily billed usage by product and repository", Message.ClickedAddGithub())
+		case "vercel":
+			return once("Daily charges by product, project and region", Message.ClickedAddVercel())
+		case "planetscale":
+			return once("Monthly invoices, spread over each branch's days", Message.ClickedAddPlanetScale())
+		case "openrouter":
+		case "cloudflare":
+		case "anthropic":
+		case "openai":
+			return once(
+				CREDENTIAL_SOURCES[provider].pick.meta,
+				Message.PickedProvider({ provider }),
+				CREDENTIAL_SOURCES[provider].pick.addedMeta,
+			)
+	}
+}
+
+const pickCard = (h: H, provider: CostProvider, sources: ReadonlyArray<CostSourceSummary>): Html => {
+	const entry = COST_PROVIDERS[provider]
+	const pick = pickOf(provider, sources)
+	return pickerCard(h, {
+		key: provider,
+		leading: platformTile(h, { label: entry.name, description: pick.description, icon: entry.icon }),
+		title: entry.name,
+		description: pick.description,
+		descriptionLines: 2,
+		trailing: pick.isAdded ? badge(h, { variant: "muted", size: "sm" }, ["Added"]) : null,
+		action: pick.action,
+	})
+}
 
 const nameList = new Intl.ListFormat("en-GB", { type: "conjunction" })
 
 /** The providers whose requests cost their customer nothing, as one list: "A, B and C". */
 const FREE_REQUESTS = nameList.format(
 	Arr.map(
-		Arr.filter(CostProvider.literals, (provider) => COST_PROVIDERS[provider].requestUsd === null),
+		// Google Cloud has no request price, but BigQuery bills each sync's query: the step says so.
+		Arr.filter(
+			CostProvider.literals,
+			(provider) => COST_PROVIDERS[provider].requestUsd === null && provider !== "gcp",
+		),
 		(provider) => COST_PROVIDERS[provider].name,
 	),
 )
 
-/**
- * The providers to add: AWS goes to its connect flow, a pasted credential's to its form, GitHub to
- * its organizations, Vercel to its team, PlanetScale to its organization.
- */
-const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
-	vstack(h, { gap: "3" }, [
-		vstack(h, { gap: "0" }, [
-			listRow(h, {
-				divided: true,
-				href: CONNECT_AWS_HREF,
-				leading: providerMark(h, COST_PROVIDERS.aws),
-				title: COST_PROVIDERS.aws.name,
-				meta: "Daily cost by service, region and usage type",
-				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-			}),
-			...Arr.map(CredentialProvider.literals, (provider) =>
-				addableRow(h, COST_PROVIDERS[provider], {
-					isAdded: hasSourceOf(sources, provider),
-					...CREDENTIAL_SOURCES[provider].pick,
-					onClick: Message.PickedProvider({ provider }),
-					divided: true,
-				}),
-			),
-			// An org can add several organizations, so the row stays open with sources on the page.
-			listRow(h, {
-				divided: true,
-				onClick: Message.ClickedAddGithub(),
-				leading: providerMark(h, COST_PROVIDERS.github),
-				title: COST_PROVIDERS.github.name,
-				meta: "Daily billed usage by product and repository",
-				trailing: icon(h, "ChevronRightIcon", { size: 14 }),
-			}),
-			addableRow(h, COST_PROVIDERS.vercel, {
-				isAdded: hasSourceOf(sources, "vercel"),
-				meta: "Daily charges by product, project and region",
-				addedMeta: "Remove it in the Sources panel",
-				onClick: Message.ClickedAddVercel(),
-				divided: true,
-			}),
-			addableRow(h, COST_PROVIDERS.planetscale, {
-				isAdded: hasSourceOf(sources, "planetscale"),
-				// Short enough to stand whole in the list: the step says the rest.
-				meta: "Monthly invoices, spread over each branch's days",
-				addedMeta: "Remove it in the Sources panel",
-				onClick: Message.ClickedAddPlanetScale(),
-			}),
-		]),
+/** The search matches a provider's name and what it brings in, so "invoice" finds PlanetScale. */
+const matchesSearch = (provider: CostProvider, query: string, sources: ReadonlyArray<CostSourceSummary>) =>
+	Str.includes(query)(
+		Str.toLowerCase(`${COST_PROVIDERS[provider].name} ${pickOf(provider, sources).description}`),
+	)
+
+/** The providers to add, searchable and grouped by what they are, two cards a row. */
+const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>): Html => {
+	const query = Str.toLowerCase(Str.trim(model.providerSearch))
+	const shown =
+		query === "" ? PICKS : Arr.filter(PICKS, (provider) => matchesSearch(provider, query, sources))
+	const clear = Message.ChangedProviderSearch({ value: "" })
+	return vstack(h, { gap: "5" }, [
+		searchInput(h, {
+			id: "cost-provider-search",
+			value: model.providerSearch,
+			placeholder: `Search ${PICKS.length} providers…`,
+			ariaLabel: "Search providers",
+			size: "default",
+			onInput: (value) => Message.ChangedProviderSearch({ value }),
+			onClear: clear,
+		}),
+		...(shown.length === 0
+			? [
+					filteredEmpty(h, {
+						noun: "providers",
+						title: "No providers match",
+						description: "Ask for it, and requests decide which source Maple reads next.",
+						onClear: clear,
+						clearLabel: "Clear search",
+						// What the search found nothing for is what they can ask for.
+						actions: [
+							button(
+								h,
+								{ size: "sm", attributes: [h.OnClick(Message.ClickedRequestProvider())] },
+								[icon(h, "PlusIcon"), `Request ${Str.trim(model.providerSearch)}`],
+							),
+						],
+						className: "py-8",
+					}),
+				]
+			: Arr.flatMap(PICK_GROUPS, (group) => {
+					const picks = Arr.filter(shown, (provider) => PICK_GROUP[provider] === group)
+					return picks.length === 0
+						? []
+						: [
+								vstack(h, { gap: "2", as: "section", attributes: [h.Key(group)] }, [
+									eyebrow(h, { as: "h3" }, [PICK_GROUP_TITLE[group]]),
+									grid(
+										h,
+										{ sm: 2, gap: "2" },
+										Arr.map(picks, (provider) => pickCard(h, provider, sources)),
+									),
+								]),
+							]
+				})),
+		// After the cards, where someone who did not find theirs is still looking.
+		...(shown.length === 0
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "dashed",
+							size: "lg",
+							className: "w-full",
+							attributes: [h.OnClick(Message.ClickedRequestProvider())],
+						},
+						[icon(h, "PlusIcon"), "Don't see your provider? Request it"],
+					),
+				]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
@@ -139,6 +232,7 @@ const providers = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html =>
 			".",
 		]),
 	])
+}
 
 const CREDENTIAL_IDS: FieldIds = {
 	control: "cost-source-credential",
@@ -384,34 +478,49 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 		viewInputs: {
 			hasTrigger: false,
 			hasDescription: true,
+			// The providers take two cards a row; every later step is a narrow form.
+			className: step === "pick" ? "sm:max-w-2xl" : "",
 			toView: ({ portal }) => portal ?? h.empty,
 			toContent: (close) =>
-				step === "vercel"
-					? vercelStep(h, model, id)
-					: step === "planetscale"
-						? planetScaleStep(h, model, id)
-						: step === "github"
-							? githubStep(h, model, id)
-							: step === "pick"
-								? [
-										DialogView.dialogHeader(h, "dialog", [
-											DialogView.dialogTitle(h, "dialog", id, "Add a cost source"),
-											addTrail(h, null),
-											DialogView.dialogDescription(
-												h,
-												"dialog",
-												id,
-												"Maple reads what the source bills each day and keeps it next to your telemetry.",
-											),
-										]),
-										DialogView.dialogPanel(h, "dialog", id, [providers(h, sources)]),
-										DialogView.dialogFooter(h, "dialog", [
-											button(h, { variant: "outline", attributes: [...close] }, [
-												"Close",
-											]),
-										]),
-									]
-								: [credentialForm(h, model, step, sources, close)],
+				step === "request"
+					? requestStep(h, model, id)
+					: step === "gcp"
+						? gcpStep(h, model, id)
+						: step === "vercel"
+							? vercelStep(h, model, id)
+							: step === "planetscale"
+								? planetScaleStep(h, model, id)
+								: step === "github"
+									? githubStep(h, model, id)
+									: step === "pick"
+										? [
+												DialogView.dialogHeader(h, "dialog", [
+													DialogView.dialogTitle(
+														h,
+														"dialog",
+														id,
+														"Add a cost source",
+													),
+													addTrail(h, null),
+													DialogView.dialogDescription(
+														h,
+														"dialog",
+														id,
+														"Maple reads what the source bills each day and keeps it next to your telemetry.",
+													),
+												]),
+												DialogView.dialogPanel(h, "dialog", id, [
+													providers(h, model, sources),
+												]),
+												DialogView.dialogFooter(h, "dialog", [
+													button(
+														h,
+														{ variant: "outline", attributes: [...close] },
+														["Close"],
+													),
+												]),
+											]
+										: [credentialForm(h, model, step, sources, close)],
 		},
 	})
 }
@@ -432,6 +541,8 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 			}
 		case "planetscale":
 			return PLANETSCALE_REMOVE
+		case "gcp":
+			return GCP_REMOVE
 		case "openrouter":
 		case "cloudflare":
 		case "anthropic":

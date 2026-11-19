@@ -1,6 +1,7 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
-import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
-import { Option, Result, Array as Arr } from "effect"
+import { STATUS_PAGE_PRESET_DEFAULTS, statusPageOrgKey } from "@maple/domain/status-page"
+import { PREVIEW_FIELDS } from "@maple/status-page"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { AppRoute } from "../../../route"
@@ -8,15 +9,28 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
+import type { StatusPageSearch } from "../../../route/search"
+import {
+	pageIdFromUrl,
+	SETTINGS_SECTIONS,
+	type SettingsSection,
+	publicPageLink,
+	STATUS_PAGE_BASE_URL,
+	statusPageHref,
+	statusPageViewHref,
+} from "../shared/commands"
+import { OPEN_PREVIEW_VALUE, OPEN_PUBLIC_VALUE } from "../shared/open-page"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
+import { initGroupPicker } from "../shared/group-picker"
 import { emptyPicker } from "../shared/picker"
-import { historyFrom } from "../shared/preview"
+import { historyFrom, type PreviewSelection } from "../shared/preview"
 import {
 	FetchEditorPreview,
 	FetchEditorSession,
-	FocusEditorElement,
+	OpenPublicPage,
+	PREVIEW_FIELD_TARGETS,
 	ReadEditorClock,
+	RevealEditorField,
 	WaitEditorPreview,
 } from "./command"
 import { Message } from "./message"
@@ -24,6 +38,7 @@ import type { Model } from "./model"
 import {
 	chain,
 	componentsOf,
+	incidentsOf,
 	pageOf,
 	readComponents,
 	readConfig,
@@ -38,16 +53,24 @@ import {
 	addPickerStep,
 	askDeleteComponent,
 	changeComponent,
-	commitComponent,
 	confirmDeleteComponent,
+	confirmDiscardComponent,
 	deleteComponentDialog,
 	deletedComponent,
+	discardComponentDialog,
+	discardMonitors,
+	groupPickerStep,
+	leaveComponent,
 	moveComponent,
-	openAdd,
+	moveGroup,
+	nudgeGroup,
+	nudgeComponent,
 	reordered,
+	saveMonitors,
 	savedComponent,
-	selectComponent,
 	submitAdd,
+	toggleComponentUptime,
+	unsavedComponent,
 } from "./update-components"
 import {
 	askDeleteIncident,
@@ -95,18 +118,17 @@ import {
 	savedSettings,
 	saveSettings,
 	togglePoweredBy,
+	pickBrandingImage,
+	editBrandingImage,
+	brandingDialog,
+	submitBrandingLink,
+	takeBrandingImage,
+	readBrandingImage,
+	removeBrandingImage,
 	changeTheme,
 	updateTokenCopy,
 } from "./update-settings"
-import {
-	cancelPassword,
-	changedAccess,
-	changePassword,
-	openPassword,
-	pickVisibility,
-	removePassword,
-	submitPassword,
-} from "./update-access"
+import { changedAccess, changePassword, discardAccess, pickVisibility, saveAccess } from "./update-access"
 import {
 	appliedJson,
 	applyJson,
@@ -121,6 +143,7 @@ import {
 	checkCustomDomain,
 	checkedCustomDomain,
 	confirmRemoveCustomDomain,
+	pageUrlOf,
 	readCustomDomain,
 	removeCustomDomainDialog,
 	removedCustomDomain,
@@ -132,9 +155,54 @@ import { acceptGrants } from "../../kit/session-grants"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
 
-/** The view the search names; anything else is the page itself, so an old or mistyped link lands. */
-export const resolveView = (view: string | undefined): EditorView | "page" =>
-	view === "appearance" || view === "settings" || view === "json" || view === "live" ? view : "page"
+/** The editor's tabs: the live page, incidents, maintenance, settings, and the just-published screen. */
+export type EditorTab = "page" | "incidents" | "maintenance" | "settings" | "live"
+
+export type EditorLocation = Readonly<{ tab: EditorTab; section: SettingsSection }>
+
+const isSection = (value: string | undefined): value is SettingsSection =>
+	Arr.some(SETTINGS_SECTIONS, (section) => section === value)
+
+/**
+ * Where the search points; anything unknown is the live page, so an old or mistyped link lands.
+ * The old Appearance and JSON tabs are Settings sections now.
+ */
+export const resolveView = (search: typeof StatusPageSearch.Type): EditorLocation => {
+	const section = isSection(search.section) ? search.section : "basic"
+	switch (search.view) {
+		case "incidents":
+		case "maintenance":
+		case "settings":
+		case "live":
+			return { tab: search.view, section }
+		case "appearance":
+			return { tab: "settings", section: "appearance" }
+		case "json":
+			return { tab: "settings", section: "advanced" }
+		default:
+			return { tab: "page", section }
+	}
+}
+
+/** The Settings sections whose fields change how the page looks, so the page's preview sits beside them. */
+// Not Basic settings: nothing there changes how the page looks, so a preview beside it only misleads.
+export const PREVIEWED_SECTIONS: ReadonlyArray<SettingsSection> = ["monitors", "appearance"]
+
+/** Whether the location draws the page in a frame whose components and incidents click. */
+export const hasClickablePreview = (location: EditorLocation): boolean =>
+	location.tab === "page" || (location.tab === "settings" && PREVIEWED_SECTIONS.includes(location.section))
+
+/** Whether the tab shows what is open: a component under Monitors, an incident under its tab. */
+const showsPanel = (panel: Model["panel"], location: EditorLocation): boolean => {
+	if (panel === null) return false
+	switch (panel._tag) {
+		case "Component":
+		case "Add":
+			return location.tab === "settings" && location.section === "monitors"
+		case "Incident":
+			return location.tab === "incidents" || location.tab === "maintenance"
+	}
+}
 
 export const PAGE_MENU_ID = "status-page-menu"
 
@@ -144,6 +212,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		rawPageId: route.pageId,
 		pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
 		nowMs: null,
+		revealComponentId: null,
+		revealFieldId: null,
 		page: Keyed.idle(),
 		components: Keyed.idle(),
 		incidents: Keyed.idle(),
@@ -153,6 +223,9 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
+		panelSheet: Dialog.init("status-page-panel", "sheet"),
+		sheetPanel: null,
+		sheetIncident: null,
 		previewScheme: "light",
 		previewWidth: "desktop",
 		previewState: "live",
@@ -160,12 +233,16 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewShown: 0,
 		previewHistory: [],
 		componentForm: emptyComponentForm,
-		componentSave: "idle",
-		componentFailure: null,
+		componentSave: null,
+		groupPicker: initGroupPicker("status-page-component-group"),
+		pendingLeave: null,
+		discardComponentDialog: Dialog.init("status-page-discard-component", "alert-dialog"),
 		confirmDeleteComponentId: null,
 		deleteComponentDialog: Dialog.init("status-page-delete-component", "alert-dialog"),
 		isDeletingComponent: false,
-		isReordering: false,
+		pendingOrder: null,
+		isSavingOrder: false,
+		orderFailure: null,
 		addPicker: emptyPicker,
 		isAddingComponents: false,
 		addSession: 0,
@@ -185,10 +262,18 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
 		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
+		orgKey: statusPageOrgKey(context.orgId),
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
+		brandingDrag: null,
+		brandingDialog: Dialog.init("status-page-branding-image", "dialog"),
+		brandingDialogField: "logoUrl",
+		brandingLink: "",
+		brandingRead: 0,
 		isSavingSettings: false,
+		savesAccessNext: false,
 		settingsFailure: null,
+		takenSlug: null,
 		isPublishing: false,
 		breakGlassDialog: Dialog.init("status-page-break-glass", "alert-dialog"),
 		breakGlassAction: null,
@@ -198,7 +283,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
 		accessAction: null,
-		passwordDraft: null,
+		visibilityDraft: null,
+		passwordDraft: "",
 		accessFailure: null,
 		customDomain: Keyed.idle(),
 		customDomainDraft: null,
@@ -231,30 +317,63 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 	}
 }
 
-/** The config read, only while the JSON view is open: the document must be current when edited. */
+/** The config read, only while Advanced (the JSON editor) is open: the document must be current when edited. */
 const whenJson =
 	(context: PageContext, mode: Keyed.ReadMode) =>
-	(model: Model): Return =>
-		resolveView(model.search.view) === "json" ? readConfig(context, mode)(model) : { model }
+	(model: Model): Return => {
+		const location = resolveView(model.search)
+		return location.tab === "settings" && location.section === "advanced"
+			? readConfig(context, mode)(model)
+			: { model }
+	}
 
 /** The custom domain moves on the server's schedule: opening Settings shows where it is now. */
 const whenSettings =
 	(context: PageContext, mode: Keyed.ReadMode) =>
 	(model: Model): Return =>
-		resolveView(model.search.view) === "settings" ? readCustomDomain(context, mode)(model) : { model }
+		resolveView(model.search).tab === "settings" ? readCustomDomain(context, mode)(model) : { model }
 
-/** A view switch is a search change; opening JSON re-reads the config, since other views write too. */
+/**
+ * What is open stays open only where `location` shows it. A navigation cannot wait on a confirm, so
+ * a component's unsaved edits stay in the form, neither saved nor dropped, and Monitors opens on them.
+ */
+const settlePanel = (model: Model, location: EditorLocation): Model =>
+	showsPanel(model.panel, location)
+		? model
+		: Option.match(unsavedComponent(model), {
+				onNone: () => ({ ...model, panel: null, componentForm: emptyComponentForm }),
+				onSome: (component) => ({
+					...model,
+					panel:
+						location.tab === "settings" && location.section === "monitors"
+							? { _tag: "Component", componentId: component.id }
+							: null,
+				}),
+			})
+
+/**
+ * A tab switch is a search change. Opening Advanced re-reads the config, since other sections
+ * write too.
+ */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
-	chain(
-		{ ...model, search: route.search, panel: null },
-		whenJson(context, "Refresh"),
-		whenSettings(context, "Refresh"),
+	withSheet(
+		chain(
+			settlePanel({ ...model, search: route.search, revealFieldId: null }, resolveView(route.search)),
+			whenJson(context, "Refresh"),
+			whenSettings(context, "Refresh"),
+			(next) =>
+				model.revealFieldId === null
+					? { model: next }
+					: { model: next, commands: [RevealEditorField({ id: model.revealFieldId })] },
+		),
 	)
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
 
 // PREVIEW
+
+const isPreviewField = Schema.is(Schema.Literals(PREVIEW_FIELDS))
 
 /** The saved page as the preview endpoint takes it: only the monitors' history comes back used. */
 export const previewDraftOf = (model: Model): Option.Option<StatusPagePreviewParams> =>
@@ -280,21 +399,111 @@ const schedulePreview = (model: Model): Return => {
 
 // PANEL
 
-/** Closing hands focus back to the row that opened the panel, or the list. */
+/** A component closes once its unsaved edits are dealt with; the sheet hands focus back on its own. */
 const closePanel = (model: Model): Return => {
+	if (model.panel === null) return { model }
+	return model.panel._tag === "Component"
+		? leaveComponent(model, { _tag: "Close" })
+		: { model: { ...model, panel: null } }
+}
+
+const sheetCommands = (step: ReturnType<typeof Dialog.update>) =>
+	FoldkitCommand.mapMessages(step.commands ?? [], (message) => Message.GotPanelSheetMessage({ message }))
+
+/** The open incident as listed, else the one the sheet last showed. */
+const shownIncident = (model: Model): Model["sheetIncident"] => {
 	const panel = model.panel
-	const target =
-		panel?._tag === "Component"
-			? `status-page-item-${panel.componentId}`
-			: panel?._tag === "Incident"
-				? `status-page-item-${panel.incidentId}`
-				: "status-page-on-this-page"
-	return panel === null
-		? { model }
-		: {
-				model: { ...model, panel: null },
-				commands: [FocusEditorElement({ id: target })],
-			}
+	if (panel?._tag !== "Incident") return model.sheetIncident
+	return Option.getOrElse(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+		() => model.sheetIncident,
+	)
+}
+
+/**
+ * Opens the sheet while an incident or Add is open and closes it otherwise, whatever opened them.
+ * The sheet keeps showing the last of them, the incident as last listed, while it animates out.
+ */
+const withSheet = (result: Return): Return => {
+	const isWanted = result.model.panel !== null && result.model.panel._tag !== "Component"
+	const model = {
+		...result.model,
+		sheetPanel: isWanted ? result.model.panel : result.model.sheetPanel,
+		sheetIncident: shownIncident(result.model),
+	}
+	if (isWanted === model.panelSheet.isOpen) return { ...result, model }
+	const step = isWanted ? Dialog.open(model.panelSheet) : Dialog.close(model.panelSheet)
+	return {
+		...result,
+		model: { ...model, panelSheet: step.model },
+		commands: [...(result.commands ?? []), ...sheetCommands(step)],
+	}
+}
+
+/** The sheet closed itself (Escape, backdrop, close button): what it showed closes with it. */
+const updatePanelSheet = (model: Model, message: Dialog.Message): Return => {
+	const step = Dialog.update(model.panelSheet, message)
+	return {
+		model: {
+			...model,
+			panelSheet: step.model,
+			panel: step.outMessage?._tag === "Closed" ? null : model.panel,
+		},
+		commands: sheetCommands(step),
+	}
+}
+
+/**
+ * A click in the live page or a Settings preview opens what it landed on where it is edited; a
+ * click under Monitors opens the component in place, and one on the header or footer reveals its
+ * field.
+ */
+const selectFromPreview = (model: Model, kind: PreviewSelection["kind"], id: string): Return => {
+	const navigate = (url: string) => PageOutMessage.RequestedNavigation({ url, isReplace: false })
+	if (model.pageId === null) return { model }
+	const here = resolveView(model.search)
+	const isOnMonitors = here.tab === "settings" && here.section === "monitors"
+	const pageId = model.pageId
+	if (kind === "field") {
+		if (!isPreviewField(id)) return { model }
+		// The header and footer are page settings: open their section, at the field.
+		const target = PREVIEW_FIELD_TARGETS[id]
+		if (here.tab === "settings" && here.section === target.section)
+			return { model, commands: [RevealEditorField({ id: target.id })] }
+		return {
+			model: { ...model, revealFieldId: target.id },
+			outMessage: navigate(statusPageHref(pageId, "settings", target.section)),
+		}
+	}
+	// A group's name is edited on its components: a click on it opens its first one.
+	if (kind === "component" || kind === "group")
+		return Option.match(
+			Arr.findFirst(componentsOf(model), (row) => row.id === id),
+			{
+				onNone: () => ({ model }),
+				onSome: (component) => {
+					const opened = leaveComponent(model, {
+						_tag: "Open",
+						componentId: component.id,
+						isRevealed: true,
+					})
+					if (isOnMonitors) return opened
+					return { ...opened, outMessage: navigate(statusPageHref(pageId, "settings", "monitors")) }
+				},
+			},
+		)
+	return Option.match(
+		Arr.findFirst(incidentsOf(model), (row) => row.id === id),
+		{
+			onNone: () => ({ model }),
+			onSome: (incident) => ({
+				...selectIncident(model, incident.id),
+				outMessage: navigate(
+					statusPageHref(pageId, incident.kind === "incident" ? "incidents" : "maintenance"),
+				),
+			}),
+		},
+	)
 }
 
 /** The "..." menu: links navigate, the rest are this page's own actions. */
@@ -311,8 +520,22 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 		outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
 	})
 	switch (result.outMessage.value) {
+		case OPEN_PUBLIC_VALUE:
+			return Option.match(pageOf(next), {
+				onNone: () => ({ model: next, commands }),
+				onSome: (page): Return => {
+					const link = publicPageLink(page, pageUrlOf(next, page))
+					return link._tag === "Open"
+						? { model: next, commands: [...commands, OpenPublicPage({ url: link.url })] }
+						: { model: next, commands }
+				},
+			})
+		case OPEN_PREVIEW_VALUE:
+			return navigate(statusPageViewHref(model.pageId))
 		case "break-glass":
-			return navigate(`${statusPageHref(model.pageId, "settings")}#status-page-settings-break-glass`)
+			return navigate(
+				`${statusPageHref(model.pageId, "settings", "advanced")}#status-page-settings-break-glass`,
+			)
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
 		default:
@@ -321,6 +544,9 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withSheet(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
@@ -372,7 +598,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
-		CompletedFocus: () => ({ model }),
+		CompletedOpenPublicPage: () => ({ model }),
+		// A reveal happens once: a later remount of the same row (back from another section) stays put.
+		CompletedFocus: () => ({ model: { ...model, revealComponentId: null } }),
 		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
@@ -395,44 +623,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							},
 						}),
 					}),
-		ReceivedPreviewSelection: ({ kind, id }) => {
-			return kind === "component"
-				? Option.match(
-						Arr.findFirst(componentsOf(model), (row) => row.id === id),
-						{
-							onNone: () => ({ model }),
-							onSome: (component) => selectComponent(model, component.id),
-						},
-					)
-				: Option.match(
-						Arr.findFirst(
-							AsyncData.getOrElse(model.incidents.data, () => []),
-							(row) => row.id === id,
-						),
-						{
-							onNone: () => ({ model }),
-							onSome: (incident) => selectIncident(model, incident.id),
-						},
-					)
-		},
-		ClickedComponent: ({ componentId }) => selectComponent(model, componentId),
+		ReceivedPreviewSelection: ({ kind, id }) => selectFromPreview(model, kind, id),
+		// A second click on the open component closes it.
+		ClickedComponent: ({ componentId }) =>
+			leaveComponent(
+				model,
+				model.panel?._tag === "Component" && model.panel.componentId === componentId
+					? { _tag: "Close" }
+					: { _tag: "Open", componentId, isRevealed: false },
+			),
 		ClickedIncident: ({ incidentId }) => selectIncident(model, incidentId),
-		ClickedClosePanel: () => closePanel(model),
-		// Escape skips the field's blur, so a component panel saves its typed edits before it closes.
-		PressedEscape: () =>
-			model.panel?._tag === "Component" ? chain(model, commitComponent, closePanel) : closePanel(model),
+		GotPanelSheetMessage: ({ message: child }) => updatePanelSheet(model, child),
+		PressedEscape: () => closePanel(model),
 		// Components
 		ChangedComponentField: ({ field, value }) => changeComponent(model, field, value),
-		CommittedComponent: () => commitComponent(model),
-		PickedComponentField: ({ field, value }) =>
-			commitComponent(changeComponent(model, field, value).model),
-		ToggledComponentUptime: () =>
-			commitComponent({
-				...model,
-				componentForm: { ...model.componentForm, showUptime: !model.componentForm.showUptime },
-			}),
+		ToggledComponentUptime: () => toggleComponentUptime(model),
+		GotGroupPickerMessage: ({ message: child }) => groupPickerStep(model, child),
+		ClickedSaveMonitors: () => saveMonitors(model),
+		ClickedDiscardMonitors: () => discardMonitors(model),
 		CompletedSaveComponent: ({ result }) => savedComponent(model, result, context),
-		ClickedMoveComponent: ({ componentId, offset }) => moveComponent(model, componentId, offset),
+		ClickedConfirmDiscardComponent: () => confirmDiscardComponent(model),
+		GotDiscardComponentDialogMessage: ({ message: child }) =>
+			discardComponentDialog(model, Dialog.update(model.discardComponentDialog, child)),
+		DroppedComponent: ({ componentId, index }) => moveComponent(model, componentId, index),
+		PressedMoveComponent: ({ componentId, offset }) => nudgeComponent(model, componentId, offset),
+		DroppedGroup: ({ group, index }) => moveGroup(model, group, index),
+		PressedMoveGroup: ({ group, offset }) => nudgeGroup(model, group, offset),
 		CompletedReorder: ({ result }) => reordered(model, result, context),
 		ClickedDeleteComponent: ({ componentId }) => askDeleteComponent(model, componentId),
 		ClickedConfirmDeleteComponent: () => confirmDeleteComponent(model),
@@ -441,7 +657,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			whenIdle(model.isDeletingComponent, model, () =>
 				deleteComponentDialog(model, Dialog.update(model.deleteComponentDialog, child)),
 			),
-		ClickedAddComponent: () => openAdd(model),
+		ClickedAddComponent: () => leaveComponent(model, { _tag: "Add" }),
 		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
 		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
 		CompletedTrackMonitorCreated: () => ({ model }),
@@ -456,6 +672,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
+		ChangedIncidentAutoComplete: ({ autoComplete }) => ({
+			model: { ...model, incidentForm: { ...model.incidentForm, autoComplete } },
+		}),
 		SubmittedIncidentWrite: () => reviewIncident(model, context),
 		ClickedIncidentBack: () => backToIncidentWrite(model),
 		SubmittedIncident: ({ isPublished }) => submitIncident(model, context, isPublished),
@@ -480,6 +699,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
 		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
+		ChangedIncidentEditAutoComplete: ({ autoComplete }) =>
+			model.incidentEdit === null || model.isSavingIncident
+				? { model }
+				: { model: { ...model, incidentEdit: { ...model.incidentEdit, autoComplete } } },
 		SubmittedIncidentEdit: () => submitIncidentEdit(model, context),
 		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
 		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),
@@ -502,18 +725,45 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// Settings
 		ChangedSetting: ({ field, value }) => changeSetting(model, field, value),
 		ToggledPoweredBy: () => togglePoweredBy(model),
+		ClickedPickBrandingImage: ({ field }) => pickBrandingImage(model, field),
+		CompletedPickBrandingImage: () => ({ model }),
+		DraggedOverBrandingImage: ({ field }) => ({ model: { ...model, brandingDrag: field } }),
+		LeftBrandingImage: () => ({ model: { ...model, brandingDrag: null } }),
+		ClickedEditBrandingImage: ({ field }) => editBrandingImage(model, field),
+		GotBrandingDialogMessage: ({ message: child }) =>
+			brandingDialog(model, Dialog.update(model.brandingDialog, child)),
+		ChangedBrandingLink: ({ value }) => ({ model: { ...model, brandingLink: value } }),
+		SubmittedBrandingLink: () => submitBrandingLink(model),
+		PickedBrandingImage: ({ field, files }) => takeBrandingImage(model, field, files),
+		CompletedReadBrandingImage: ({ field, read, dataUrl }) =>
+			readBrandingImage(model, field, read, dataUrl),
+		ClickedRemoveBrandingImage: ({ field }) => removeBrandingImage(model, field),
 		PickedThemePreset: ({ preset }) =>
 			changeTheme(model, { preset, ...STATUS_PAGE_PRESET_DEFAULTS[preset] }),
 		PickedThemeAppearance: ({ appearance }) => changeTheme(model, { appearance }),
 		ChangedThemeColor: ({ field, value }) => changeTheme(model, { [field]: value }),
+		CompletedMountColorPicker: () => ({ model }),
 		PickedThemeRadius: ({ radius }) => changeTheme(model, { radius }),
 		PickedThemeFont: ({ font }) => changeTheme(model, { font }),
 		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
 		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
 		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
-		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
+		ClickedDiscardSettings: () => ({
+			model: {
+				...model,
+				settingsEdits: null,
+				settingsFailure: null,
+				brandingRead: model.brandingRead + 1,
+			},
+		}),
 		ClickedSaveSettings: () => saveSettings(model),
-		CompletedSaveSettings: ({ result }) => savedSettings(model, result),
+		// Basic settings' Save goes on to Who can view once the fields saved; a failure stops there.
+		CompletedSaveSettings: ({ result }) => {
+			const saved = savedSettings({ ...model, savesAccessNext: false }, result)
+			if (!model.savesAccessNext || Result.isFailure(result)) return saved
+			const access = saveAccess(saved.model)
+			return { ...access, outMessage: access.outMessage ?? saved.outMessage }
+		},
 		ClickedPublish: () => publish(model),
 		CompletedPublish: ({ result }) => published(model, result, context),
 		ClickedRotateToken: () => askBreakGlass(model, "rotate"),
@@ -529,16 +779,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
 		// Access
 		PickedVisibility: ({ visibility }) => pickVisibility(model, visibility),
-		ClickedChangePassword: () => openPassword(model),
 		ChangedPassword: ({ value }) => changePassword(model, value),
-		ClickedCancelPassword: () => cancelPassword(model),
-		SubmittedPassword: () => submitPassword(model),
-		ClickedRemovePassword: () => removePassword(model),
+		ClickedDiscardAccess: () => discardAccess(model),
+		ClickedSaveAccess: () => saveAccess(model),
+		ClickedDiscardBasic: () => discardAccess({ ...model, settingsEdits: null, settingsFailure: null }),
+		ClickedSaveBasic: () => {
+			const settings = saveSettings(model)
+			return settings.model.isSavingSettings
+				? { ...settings, model: { ...settings.model, savesAccessNext: true } }
+				: settings
+		},
 		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
 		// Custom domain
 		CompletedFetchCustomDomain: ({ key, result }) => ({
 			model: { ...model, customDomain: Keyed.accept(model.customDomain, key, result) },
 		}),
+		ClickedRetryCustomDomain: () => readCustomDomain(context, "Refresh")(model),
 		ChangedCustomDomain: ({ value }) => changeCustomDomain(model, value),
 		SubmittedCustomDomain: () => submitCustomDomain(model),
 		CompletedSetCustomDomain: ({ result }) => savedCustomDomain(model, result),

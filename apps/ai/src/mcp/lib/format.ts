@@ -1,4 +1,5 @@
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { stringifyJson } from "./json"
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`
@@ -49,6 +50,55 @@ export function formatTable(headers: string[], rows: string[][]): string {
 export function truncate(str: string, maxLen = 80): string {
 	if (str.length <= maxLen) return str
 	return Str.slice(0, maxLen - 3)(str) + "..."
+}
+
+/**
+ * Text someone outside Maple wrote (a description, a telemetry value) as one JSON-quoted line: it
+ * cannot end its quote, start a new section or read as the tool's own text.
+ */
+export function untrustedText(text: string, max = 300): string {
+	const line = truncate(Str.replace(/\s+/g, " ")(text), max)
+	return stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(line)}"`
+}
+
+/** A log's cause-bearing attributes, one indented `key: value` line each, for under its log line. */
+export function logAttributeLines(
+	attributes: Readonly<Record<string, string>> | undefined,
+	indent: string,
+): string {
+	return Arr.join(
+		Arr.map(
+			Rec.toEntries(attributes ?? {}),
+			([key, value]) => `\n${indent}${untrustedText(key, 120)}: ${untrustedText(value, 300)}`,
+		),
+		"",
+	)
+}
+
+const unicodeEscape = (char: string) =>
+	`\\u${Str.padStart(4, "0")(Option.getOrElse(Str.codePointAt(0)(char), () => 0).toString(16))}`
+
+/**
+ * A telemetry value that identifies something (a group, a series) as one JSON-quoted line. Unlike
+ * {@link untrustedText} its whitespace is escaped, not collapsed, so two names stay two names, in
+ * a table cell too.
+ */
+export function untrustedName(text: string, max = 200): string {
+	const line = truncate(text, max)
+	const quoted = stringifyJson(line) ?? `"${Str.replace(/"/g, "'")(Str.replace(/\s/g, " ")(line))}"`
+	// Every whitespace but a lone space becomes a JSON escape, which table cells do not collapse.
+	return Arr.join(
+		Arr.map(Str.split("")(quoted), (char, i) =>
+			char === " "
+				? quoted[i - 1] === " "
+					? "\\u0020"
+					: char
+				: /\s/.test(char)
+					? unicodeEscape(char)
+					: char,
+		),
+		"",
+	)
 }
 
 /**

@@ -137,6 +137,23 @@ describe("incident lines", () => {
 		expect(incidentValues(uptime())).toEqual({ now: "Down", threshold: "–" })
 	})
 
+	it("names a certificate incident as a certificate warning, never the monitor down", () => {
+		const certificate = (overrides: Record<string, unknown> = {}) =>
+			uptime({
+				groupKey: "__tls_certificate__",
+				lastObservedValue: 0.5,
+				severity: "warning",
+				...overrides,
+			})
+		expect([incidentTitle(certificate()), incidentValues(certificate()).now]).toEqual([
+			"checkout-api: certificate expires soon",
+			"Expiring",
+		])
+		expect(incidentTitle(certificate({ status: "resolved", resolvedAt: iso(HOUR) }))).toBe(
+			"checkout-api: certificate renewed",
+		)
+	})
+
 	it("shows an uptime incident's group only when it is a service", () => {
 		expect(incidentScope(uptime())).toBeNull()
 		expect(incidentScope(uptime({ groupKey: "checkout" }))).toBe("checkout")

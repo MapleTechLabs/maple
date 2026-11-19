@@ -36,7 +36,7 @@ export type PaletteEntry = Readonly<{
 	shortcut?: string
 	/** A provider only advertised while browsing when it is new (`catalogEntry(id).isNew`). */
 	isAdvertised?: boolean
-	/** The flagged nav row it sits under (Releases, Cost and its Budgets): listed only while the org's flag shows that row. */
+	/** The flagged nav row it opens (such as Status pages): listed only while the org's flag shows that row. */
 	flaggedBy?: string
 }>
 
@@ -54,9 +54,7 @@ export type SearchEntry = typeof SearchEntry.Type
 
 /** Nav rows an org rollout flag can hide; the shell passes the ones it shows. */
 export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
-	"/cost",
 	"/product-analytics",
-	"/releases",
 	"/security",
 	"/status-pages",
 	"/users",
@@ -66,9 +64,8 @@ const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
 const EVERY_FLAG = {
-	cloudCost: true,
+	cloudSecurity: true,
 	productAnalytics: true,
-	releases: true,
 	securityAudit: true,
 	statusPages: true,
 }
@@ -82,7 +79,6 @@ const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
 				title: item.title,
 				href: item.href,
 				icon: item.icon,
-				section: item.href,
 			},
 			...Arr.flatMap(item.subItems ?? [], (sub) => [
 				{
@@ -90,14 +86,12 @@ const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
 					title: sub.paletteTitle ?? sub.title,
 					href: sub.href,
 					icon: sub.icon ?? item.icon,
-					section: item.href,
 				},
 				...Arr.map(sub.views ?? [], (view) => ({
 					id: `nav:${item.title}:${sub.title}:${view.title}`,
 					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
 					href: view.href,
 					icon: view.paletteIcon ?? sub.icon ?? item.icon,
-					section: item.href,
 				})),
 			]),
 		]),
@@ -148,8 +142,8 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 			glyph: icon(row.icon),
 			target: href(row.href),
 		}
-		// A child of a flagged section is behind the same flag as the section's own row.
-		return FLAGGED_HREFS.has(row.section) ? { ...entry, flaggedBy: row.section } : entry
+		// A flagged page is behind its own flag.
+		return FLAGGED_HREFS.has(row.href) ? { ...entry, flaggedBy: row.href } : entry
 	})
 }
 

@@ -1106,6 +1106,9 @@ type PollOutcome =
 	/** A sibling's error nulled the document's data; this part did not fail and is re-queried alone. */
 	| { readonly kind: "voided" }
 
+/** Failures the tenant (permissions, plan) or Cloudflare (5xx, timeouts) owns; only `other` may be ours. */
+const isTenantOrVendorFailure = (kind: DatasetPollFailure["kind"]) => kind !== "other"
+
 /** Typed constructor so each failure site returns `PollOutcome` (widens the failure off `as const`). */
 const failedOutcome = (failure: DatasetPollFailure): PollOutcome => ({ kind: "failed", failure })
 
@@ -1221,22 +1224,29 @@ interface IngestRefused {
 }
 
 /**
- * The single seam that turns a poll failure into signal: record health to Postgres (as before) AND
- * record an OTel exception event + ERROR log so the failure is visible in Maple's own tooling. This
+ * The single seam that turns a poll failure into signal: health is on the rows and the summary;
+ * only an `other` failure (possibly ours) adds an OTel exception event + ERROR log, the tenant's or
+ * Cloudflare's own failures log a warning on an Ok span. This
  * is the ONLY place that reacts to a `DatasetPollFailure`; every failure path just classifies and
  * returns one, so a new failure path is observable by construction rather than by remembering to
  * instrument it. Expected degradations (`quantiles-downgraded`, `disabled`) never reach here.
  */
 const observeDatasetFailure = (orgId: OrgId, failure: DatasetPollFailure) =>
 	Effect.gen(function* () {
-		yield* Effect.logError("cloudflare-analytics dataset poll failed", {
+		const fields = {
 			orgId,
 			dataset: failure.datasetId,
 			scope: failure.scope,
 			kind: failure.kind,
 			affectedRows: failure.rowIds.length,
 			error: failure.message,
-		})
+		}
+		// The tenant's grant or Cloudflare's outage, already on the rows and the source's health:
+		// a warning, not an exception event every tick (one org's token raised ~1.2k a day).
+		if (isTenantOrVendorFailure(failure.kind)) {
+			return yield* Effect.logWarning("cloudflare-analytics dataset poll refused", fields)
+		}
+		yield* Effect.logError("cloudflare-analytics dataset poll failed", fields)
 		// Failing inside the span below is what records the exception event that error_events /
 		// find_errors unwrap. Caught immediately after the span boundary so a single bad dataset
 		// never fails the org poll.

@@ -13,6 +13,7 @@ import {
 import type { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Effect, Array as Arr, Record as Rec } from "effect"
 import { UPTIME_REDACTED_HEADER_VALUE } from "@maple/domain/uptime"
+import { redactUrlCredentials } from "@maple/domain/url-redaction"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import * as Policy from "@maple/domain/policy"
@@ -51,6 +52,17 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 						duration_ms: monitor.state.lastCheck.durationMs,
 						error: monitor.state.lastCheck.error,
 						trace_id: monitor.state.lastCheck.traceId,
+						...(monitor.state.lastCheck.certificate === undefined
+							? undefined
+							: {
+									certificate: {
+										expires_at: isoTimestamp(
+											monitor.state.lastCheck.certificate.expiresAt,
+										),
+										subject: monitor.state.lastCheck.certificate.subject,
+										issuer: monitor.state.lastCheck.certificate.issuer,
+									},
+								}),
 					},
 		recent: Arr.map(monitor.state.recent, (check) => ({
 			at: isoTimestamp(check.at),
@@ -68,15 +80,37 @@ const canWriteMonitors = (tenant: CurrentTenant.TenantContext) =>
 	Policy.can(tenant.roles, "uptime_monitors:manage") &&
 	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
 
-/** Header values and the heartbeat URL are credentials: callers who cannot write see neither. */
+interface ReadableRequest {
+	readonly url: string
+	readonly headers?: Readonly<Record<string, string>>
+	readonly body?: string
+}
+
+/** A request with what may hold a credential hidden: header values, the body, the URL's userinfo and query values. */
+const redactRequest = <A extends ReadableRequest>(request: A) => ({
+	...request,
+	url: redactUrlCredentials(request.url, UPTIME_REDACTED_HEADER_VALUE),
+	...(request.headers === undefined
+		? undefined
+		: {
+				headers: Rec.fromEntries(
+					Arr.map(Rec.keys(request.headers), (name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
+				),
+			}),
+	...(request.body === undefined ? undefined : { body: UPTIME_REDACTED_HEADER_VALUE }),
+})
+
+/** A check's request secrets and the heartbeat URL are credentials: callers who cannot write see neither. */
 const forReader = (monitor: V2UptimeMonitor, canWrite: boolean): V2UptimeMonitor => {
 	if (canWrite) return monitor
 	const readable = { ...monitor, heartbeat_url: null }
-	if (readable.config.type !== "http" || readable.config.headers === undefined) return readable
-	const headers = Rec.fromEntries(
-		Arr.map(Rec.keys(readable.config.headers), (name) => [name, UPTIME_REDACTED_HEADER_VALUE]),
-	)
-	return { ...readable, config: { ...readable.config, headers } }
+	if (readable.config.type === "multistep")
+		return {
+			...readable,
+			config: { ...readable.config, steps: Arr.map(readable.config.steps, redactRequest) },
+		}
+	if (readable.config.type !== "http") return readable
+	return { ...readable, config: redactRequest(readable.config) }
 }
 
 const monitorAuditDiff = auditDiff({

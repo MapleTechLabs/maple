@@ -15,6 +15,7 @@ import * as m from "../paraglide/messages.js";
 import HeroCta from "./HeroCta.astro";
 import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
+import ProductFrame from "./marketing/ProductFrame.astro";
 import { getOffer, isUsageCredit, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
 
 const offer = await getOffer();
@@ -49,7 +50,10 @@ const RETENTION_DAYS = 30;
 	<div class="pricing-hero__inner shell">
 		{/* Inside the shell so the artwork tracks the content column on wide screens
 		    instead of drifting to the viewport edge. */}
-		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="" decoding="async" />
+		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="Engraving of a merchant road winding past fields toward a Roman aqueduct" decoding="async" />
+		{/* Copy beside the product from lg. Under lg the rates follow the buttons: the price comes first here. */}
+		<div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-14">
+		<div class="min-w-0">
 		<div class="mb-4">
 			<span
 				class="pricing-hero__label"
@@ -95,10 +99,13 @@ const RETENTION_DAYS = 30;
 			}
 			{/* Residency is the fourth thing EU buyers scan for; /eu is English-only, so a bare href. */}
 			<li>
-				<a href="/eu" class="inline-flex items-center gap-2 underline decoration-border underline-offset-4 transition-colors hover:decoration-primary">
+				<a href="/eu" class="group inline-flex items-center gap-2">
 					<PixelIcon name="earth" class="h-3.5 w-3.5 shrink-0 text-primary" />
-					{m.pricing_region_claim()}
-					<span class="inline-flex gap-1 no-underline">
+					{/* Underline the text only: a decoration on the link would run under the chips too. */}
+					<span class="underline decoration-border underline-offset-4 transition-colors group-hover:decoration-primary">
+						{m.pricing_region_claim()}
+					</span>
+					<span class="inline-flex gap-1">
 						<RegionChip region="us" />
 						<RegionChip region="eu" />
 					</span>
@@ -111,6 +118,10 @@ const RETENTION_DAYS = 30;
 			<a href="#calculator" class={buttonVariants({ variant: "outline", size: "lg" })}>
 				{m.pricing_hero_estimate()}
 			</a>
+		</div>
+		</div>
+		{/* The overview's totals row: the three volumes the rate card meters. */}
+		<ProductFrame surface="usage" label={m.pricing_hero_shot()} loading="eager" class="pricing-hero__product hidden lg:block" />
 		</div>
 
 		{/* The rate card. One cell per metered signal: label, rate, then what's
@@ -169,3 +180,10 @@ const RETENTION_DAYS = 30;
 		</div>
 	</div>
 </section>
+
+<style>
+	/* The pricing page's panels are sharp; the capture's frame follows them. */
+	:global(.pricing-hero__product .live-frame) {
+		border-radius: 0;
+	}
+</style>

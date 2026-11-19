@@ -12,7 +12,8 @@ import { Effect, Array as Arr } from "effect"
 import { bumpPage } from "./outbox"
 
 // Scheduled maintenance follows its window on its own: at the start it moves to in progress, at
-// the end to completed, each with an automatic update visitors and feed readers see.
+// the end to completed (unless auto-complete is off), each with an automatic update visitors and
+// feed readers see.
 
 /** Maintenance one sweep advances at most; the rest wait for the next minute. */
 export const MAINTENANCE_SWEEP_BATCH = 100
@@ -57,7 +58,7 @@ export const advanceMaintenance = Effect.fnUntraced(function* (db: MapleDb, at: 
 				$.resolvedAt.isNull(),
 				PG.or(
 					PG.and($.status.eq("scheduled"), $.scheduledStart.lte(at)),
-					PG.and($.status.eq("in_progress"), $.scheduledEnd.lte(at)),
+					PG.and($.status.eq("in_progress"), $.autoComplete.eq(true), $.scheduledEnd.lte(at)),
 				),
 			])
 			.orderBy(["scheduledStart", "asc"], ["id", "asc"])
@@ -88,6 +89,7 @@ export const advanceMaintenance = Effect.fnUntraced(function* (db: MapleDb, at: 
 							$.orgId.eq(row.orgId),
 							$.id.eq(row.id),
 							$.status.eq("in_progress"),
+							$.autoComplete.eq(true),
 							$.scheduledEnd.lte(at),
 						])
 						.returning(($) => ({ id: $.id, pageId: $.pageId })),

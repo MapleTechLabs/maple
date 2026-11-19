@@ -362,6 +362,7 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 		title: "Run SQL",
 		description: runSqlDescription,
 		parameters: runSqlSchema,
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Running a query", "Running SQL", "Querying the warehouse"],
 		handler: Effect.fn("McpTool.runSql")(function* (params) {

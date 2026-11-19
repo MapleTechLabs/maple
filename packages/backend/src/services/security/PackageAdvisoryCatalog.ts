@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { EdgeCacheService } from "@maple/cache"
 import { type PackageAdvisory, type PackageRef, packageKey } from "@maple/domain/package-advisories"
 import { Array as Arr, Context, Effect, Layer, Schedule, Schema, String as Str } from "effect"
@@ -38,24 +39,54 @@ interface VulnRef {
 	readonly modified: string
 }
 
+/** OSV's answer for a set of packages: the vulnerability ids and modification times per `packageKey`. */
+export interface AdvisoryQuery {
+	readonly packages: ReadonlyArray<PackageRef>
+	readonly found: ReadonlyMap<string, ReadonlyArray<VulnRef>>
+}
+
+export interface ResolvedAdvisories {
+	readonly byPackage: ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>
+	readonly unread: number
+}
+
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
+/**
+ * A SHA-256 over every queried package and its sorted `id@modified` list, plus `version`. A record
+ * never changes for one `id@modified`, so the same fingerprint means the same matches.
+ */
+export const fingerprintOf = (query: AdvisoryQuery, version: number): string => {
+	const entries = Arr.map(query.packages, (ref) => {
+		const key = packageKey(ref)
+		const vulns = Arr.map(query.found.get(key) ?? [], (vuln) => `${vuln.id}@${vuln.modified}`)
+		return [key, [...new Set(vulns)].sort()] as const
+	}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+	return createHash("sha256")
+		.update(encodeJson({ version, packages: entries }))
+		.digest("hex")
+}
+
 export class PackageAdvisoryCatalogError extends Schema.TaggedError<PackageAdvisoryCatalogError>()(
 	"@maple/security/PackageAdvisoryCatalogError",
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
 
 export interface PackageAdvisoryCatalogApi {
+	/** Asks OSV which vulnerabilities affect each distinct package; reads no records. */
+	readonly query: (
+		packages: ReadonlyArray<PackageRef>,
+	) => Effect.Effect<AdvisoryQuery, PackageAdvisoryCatalogError>
+	/** Reads the records of a query's vulnerabilities, up to `MAX_VULNERABILITIES`. */
+	readonly resolve: (query: AdvisoryQuery) => Effect.Effect<ResolvedAdvisories, PackageAdvisoryCatalogError>
 	/**
 	 * Advisories per `packageKey`; packages without any are absent. Fails as a whole when any read
 	 * fails, so a scan never mistakes an outage for a clean dependency. `unread` counts the
 	 * vulnerabilities past `MAX_VULNERABILITIES`, whose advisories are left out.
 	 */
-	readonly advisories: (packages: ReadonlyArray<PackageRef>) => Effect.Effect<
-		{
-			readonly byPackage: ReadonlyMap<string, ReadonlyArray<PackageAdvisory>>
-			readonly unread: number
-		},
-		PackageAdvisoryCatalogError
-	>
+	readonly advisories: (
+		packages: ReadonlyArray<PackageRef>,
+	) => Effect.Effect<ResolvedAdvisories, PackageAdvisoryCatalogError>
 }
 
 interface Pending {
@@ -177,7 +208,7 @@ export class PackageAdvisoryCatalog extends Context.Service<
 				)
 				.pipe(Effect.map((result) => result.value))
 
-		const advisories = Effect.fn("PackageAdvisoryCatalog.advisories")(function* (
+		const query = Effect.fn("PackageAdvisoryCatalog.query")(function* (
 			packages: ReadonlyArray<PackageRef>,
 		) {
 			const distinct = [...new Map(Arr.map(packages, (ref) => [packageKey(ref), ref])).values()]
@@ -185,13 +216,18 @@ export class PackageAdvisoryCatalog extends Context.Service<
 				Arr.map(distinct, (ref) => ({ ref })),
 				new Map(),
 			)
+			yield* Effect.annotateCurrentSpan("maple.depscan.package_count", distinct.length)
+			return { packages: distinct, found } satisfies AdvisoryQuery
+		})
+
+		const resolve = Effect.fn("PackageAdvisoryCatalog.resolve")(function* ({
+			packages,
+			found,
+		}: AdvisoryQuery) {
 			const vulns = [
 				...new Map(Arr.map([...found.values()].flat(), (vuln) => [vuln.id, vuln])).values(),
 			]
-			yield* Effect.annotateCurrentSpan({
-				"maple.depscan.package_count": distinct.length,
-				"maple.depscan.vulnerability_count": vulns.length,
-			})
+			yield* Effect.annotateCurrentSpan("maple.depscan.vulnerability_count", vulns.length)
 			// Sorted, so the same vulnerabilities are read each time the cap bites.
 			const read = [...vulns]
 				.sort((a, b) => Str.localeCompare(b.id)(a.id))
@@ -199,7 +235,7 @@ export class PackageAdvisoryCatalog extends Context.Service<
 			const fetched = yield* Effect.forEach(read, fetchRecord, { concurrency: CONCURRENCY })
 			const records = new Map(Arr.map(fetched, (record) => [record.id, record]))
 			const byPackage = new Map(
-				Arr.flatMap(distinct, (ref) => {
+				Arr.flatMap(packages, (ref) => {
 					const matched = Arr.flatMap(found.get(packageKey(ref)) ?? [], (vuln) => {
 						const record = records.get(vuln.id)
 						return record === undefined ? [] : [record]
@@ -208,10 +244,16 @@ export class PackageAdvisoryCatalog extends Context.Service<
 					return list.length === 0 ? [] : [[packageKey(ref), list] as const]
 				}),
 			)
-			return { byPackage, unread: vulns.length - read.length }
+			return { byPackage, unread: vulns.length - read.length } satisfies ResolvedAdvisories
 		})
 
-		return { advisories } satisfies PackageAdvisoryCatalogApi
+		const advisories = (packages: ReadonlyArray<PackageRef>) =>
+			query(packages).pipe(
+				Effect.flatMap(resolve),
+				Effect.withSpan("PackageAdvisoryCatalog.advisories"),
+			)
+
+		return { query, resolve, advisories } satisfies PackageAdvisoryCatalogApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))

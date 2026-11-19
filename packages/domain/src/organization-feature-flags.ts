@@ -20,8 +20,8 @@ const DisabledByDefaultFeatureFlag = Schema.Unknown.pipe(
  */
 export const OrganizationFeatureFlags = Schema.Struct({
 	aiAutoTriage: DisabledByDefaultFeatureFlag,
-	/** Gates cloud cost: the cost reads and the AWS connection's `cost` module. */
-	cloudCost: DisabledByDefaultFeatureFlag,
+	/** Gates cloud security findings: the AWS connection's `security` module and the Cloud findings tab. */
+	cloudSecurity: DisabledByDefaultFeatureFlag,
 	/**
 	 * Gates external data sources: the Settings tab, the v2 API, and the agent tools and prompt
 	 * section that read them.
@@ -33,10 +33,10 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 */
 	productAnalytics: DisabledByDefaultFeatureFlag,
 	/**
-	 * Gates the Releases row under Monitor. The `/releases` routes stay
-	 * reachable by URL for anyone; the flag only decides who is shown the door.
+	 * Gates continuous profiling in the dashboard: the service page's Profiles tab and the span
+	 * panel's Profile tab. Off until profile ingest is live for customers.
 	 */
-	releases: DisabledByDefaultFeatureFlag,
+	profiling: DisabledByDefaultFeatureFlag,
 	/** Gates the scheduled security audit API; internal-only while it is built out. */
 	securityAudit: DisabledByDefaultFeatureFlag,
 	/** Gates customer status pages: the nav row, the `/status-pages` routes, the API and MCP tools. */
@@ -44,10 +44,10 @@ export const OrganizationFeatureFlags = Schema.Struct({
 }).pipe(
 	Schema.encodeKeys({
 		aiAutoTriage: "aiautotriage",
-		cloudCost: "cloudcost",
+		cloudSecurity: "cloudsecurity",
 		dataSources: "datasources",
 		productAnalytics: "productanalytics",
-		releases: "releases",
+		profiling: "profiling",
 		securityAudit: "securityaudit",
 		statusPages: "statuspages",
 	}),
@@ -60,10 +60,10 @@ const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFe
 /** Every rollout off: the value for malformed metadata, and for the pre-load window. */
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
-	cloudCost: false,
+	cloudSecurity: false,
 	dataSources: false,
 	productAnalytics: false,
-	releases: false,
+	profiling: false,
 	securityAudit: false,
 	statusPages: false,
 }
@@ -75,10 +75,10 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
  */
 export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
-	cloudCost: true,
+	cloudSecurity: true,
 	dataSources: true,
 	productAnalytics: true,
-	releases: true,
+	profiling: true,
 	securityAudit: true,
 	statusPages: true,
 }

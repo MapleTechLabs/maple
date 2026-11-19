@@ -161,7 +161,7 @@ export type AwsAccountId = Schema.Schema.Type<typeof AwsAccountId>
  * What an AWS connection lets Maple read. Each module is its own managed policy on the role, so
  * turning one on is a stack update, not a reconnect.
  */
-export const AWS_MODULES = ["observability", "inventory", "security", "cost"] as const
+export const AWS_MODULES = ["observability", "inventory", "security", "cost", "audit"] as const
 export const AwsModule = Schema.Literals(AWS_MODULES)
 export type AwsModule = Schema.Schema.Type<typeof AwsModule>
 
@@ -342,7 +342,7 @@ export type ScrapeTargetType = Schema.Schema.Type<typeof ScrapeTargetType>
 export const UptimeMonitorId = MapleUuidId("@maple/UptimeMonitorId", "Uptime Monitor ID")
 export type UptimeMonitorId = Schema.Schema.Type<typeof UptimeMonitorId>
 
-export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "heartbeat"]).annotate({
+export const UptimeMonitorKind = Schema.Literals(["http", "tcp", "dns", "multistep", "heartbeat"]).annotate({
 	identifier: "@maple/UptimeMonitorKind",
 	title: "Uptime Monitor Kind",
 })
@@ -584,7 +584,14 @@ export const SourceKind = Schema.Literals(["default", "token", "integration"]).a
 export type SourceKind = Schema.Schema.Type<typeof SourceKind>
 
 /** Signal families a source can be limited to; `sessions` covers replays and session events. */
-export const SourceSignal = Schema.Literals(["traces", "logs", "metrics", "sessions", "events"]).annotate({
+export const SourceSignal = Schema.Literals([
+	"traces",
+	"logs",
+	"metrics",
+	"sessions",
+	"events",
+	"profiles",
+]).annotate({
 	identifier: "@maple/SourceSignal",
 	title: "Source Signal",
 })
@@ -698,3 +705,9 @@ export const ChatConversationKey = Schema.String.check(
 	Schema.annotate({ identifier: "@maple/ChatConversationKey", title: "Chat Conversation Key" }),
 )
 export type ChatConversationKey = Schema.Schema.Type<typeof ChatConversationKey>
+
+/** The longest PromQL query a widget, the share path or the PromQL routes take. */
+export const MAX_PROMQL_QUERY_LENGTH = 10_000
+
+/** The longest `legendFormat` a PromQL widget takes. */
+export const MAX_PROMQL_LEGEND_LENGTH = 500

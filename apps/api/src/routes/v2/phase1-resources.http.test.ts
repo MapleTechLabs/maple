@@ -54,7 +54,8 @@ import {
 	OrgClickHouseSettingsPersistenceError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
-import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
+import { INVESTIGATION_READ_FAMILIES, MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
+import type { ManualStarter } from "@maple/backend/services/errors/InvestigationService"
 import { WarehouseResponseLimitError, compiledQueryOf } from "@maple/query-engine/execution"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -252,6 +253,7 @@ const settingsFixture = new AnomalyDetectorSettingsDocument({
 	enabled: true,
 	sensitivity: "normal",
 	mutedSignals: [],
+	includedEnvironments: [],
 	updatedAt: decodeIso("2026-07-15T09:12:00.000Z"),
 	updatedBy: null,
 })
@@ -440,6 +442,8 @@ const makeHarness = (
 	// One issue whose workflow actions mutate it, so a test can read the change back.
 	const storedIssue = Ref.makeUnsafe(errorIssueFixture)
 	const issueActions: Array<Record<string, unknown>> = []
+	/** Who each manual start and restart was stamped with, in order. */
+	const manualStarters: Array<ManualStarter> = []
 	const ensuredUsers: Array<string> = []
 	const requireStoredIssue = (
 		issueId: ErrorIssueId,
@@ -461,6 +465,14 @@ const makeHarness = (
 				return Effect.succeed(investigationFixture)
 		}
 	}
+	const restartInvestigation = () =>
+		investigationStartMode === "restart_not_found"
+			? Effect.fail(
+					new InvestigationNotFoundError({
+						message: "No such investigation",
+					}),
+				)
+			: startInvestigation()
 	const functionalStubs = Layer.mergeAll(
 		Layer.succeed(InvestigationService, {
 			listInvestigations: (_org, options) => {
@@ -482,15 +494,12 @@ const makeHarness = (
 								}),
 							),
 			createInvestigation: () => Effect.succeed(investigationFixture),
-			createAndStartInvestigation: startInvestigation,
-			restartInvestigation: () =>
-				investigationStartMode === "restart_not_found"
-					? Effect.fail(
-							new InvestigationNotFoundError({
-								message: "No such investigation",
-							}),
-						)
-					: startInvestigation(),
+			createAndStartInvestigation: (_org, by) => {
+				manualStarters.push(by)
+				return startInvestigation()
+			},
+			restartInvestigation: (_org, _id, by) =>
+				Effect.sync(() => manualStarters.push(by)).pipe(Effect.andThen(restartInvestigation())),
 			updateStatus: () => Effect.succeed(investigationFixture),
 			submitDiagnosis: die,
 		}),
@@ -648,7 +657,6 @@ const makeHarness = (
 					slug: "acme",
 					createdAtMs: Date.parse("2026-01-15T12:00:00.000Z"),
 				}),
-			delete: die,
 		}),
 		Layer.succeed(WarehouseQueryService, warehouseService),
 	)
@@ -760,6 +768,7 @@ const makeHarness = (
 		lastIssueListCall: () => lastIssueListCall,
 		lastIssueDetailCall: () => lastIssueDetailCall,
 		issueActions: () => issueActions,
+		manualStarters: () => manualStarters,
 		ensuredUsers: () => ensuredUsers,
 		dispose: async () => {
 			await disposeHandler()
@@ -1084,6 +1093,51 @@ describe("v2 investigations over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("stamps a start and a restart with whether the credential could read data sources", async () => {
+		const harness = makeHarness()
+		const freeform = {
+			subject: {
+				type: "freeform",
+				title: "payments",
+				prompt: "list the payments table",
+				context_refs: [],
+			},
+		}
+		// What a run always reads, and nothing beyond it: data sources are not among them.
+		const runScopes = [
+			...Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`),
+			"investigations:write",
+		]
+		const withoutDataSources = await harness.bootstrapKey(runScopes)
+		const withDataSources = await harness.bootstrapKey([...runScopes, "data_sources:read"])
+		const session = await harness.bootstrapSession()
+		// One after the other, so the starters are recorded in the order they are asserted.
+		const created = await harness.request("POST", "/v2/investigations", {
+			token: withoutDataSources.secret,
+			body: freeform,
+		})
+		const restarted = await harness.request("POST", `/v2/investigations/${INV_ID}/restart`, {
+			token: withoutDataSources.secret,
+		})
+		const scoped = await harness.request("POST", "/v2/investigations", {
+			token: withDataSources.secret,
+			body: freeform,
+		})
+		const signedIn = await harness.request("POST", "/v2/investigations", {
+			token: session,
+			body: freeform,
+		})
+		expect([created.status, restarted.status, scoped.status, signedIn.status]).toEqual([
+			200, 200, 200, 200,
+		])
+		expect(Arr.map(harness.manualStarters(), (starter) => starter.mayReadDataSources)).toEqual([
+			false,
+			false,
+			true,
+			true,
+		])
+	})
+
 	it("creates from incident and freeform subjects and updates status", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey()
@@ -1243,6 +1297,7 @@ describe("v2 anomalies over HTTP", () => {
 		expect(settings.body.object).toBe("anomaly_settings")
 		expect(settings.body.enabled).toBe(true)
 		expect(settings.body.muted_signals).toEqual([])
+		expect(settings.body.included_environments).toEqual([])
 		await harness.dispose()
 	})
 

@@ -6,6 +6,7 @@ import {
 	UptimeMonitorMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { UptimeMonitorLimitReachedError } from "@maple/domain/http"
+import { UptimeMonitorConfig } from "@maple/domain/uptime"
 import { RoleName } from "@maple/primitives"
 import { executeSql } from "@maple/backend/testing/test-pglite"
 import type { McpToolResult } from "../types"
@@ -235,6 +236,27 @@ describe("list_uptime_monitors", () => {
 			await runToolDirect(admin, "list_uptime_monitors", {}),
 		).monitors.find((row) => row.id === created.monitor.id)
 		expect(adminRow?.heartbeatUrl).toBe(pingUrl)
+
+		// An admin's credential that cannot write monitors does not get the ping URL either.
+		const readOnlyKey: EvalRuntime = { ...admin, tenant: { ...admin.tenant, readOnly: true } }
+		const withoutWriteScope: EvalRuntime = {
+			...admin,
+			tenant: { ...admin.tenant, scopes: ["uptime_monitors:read", "alerts:write"] },
+		}
+		const withWriteScope: EvalRuntime = {
+			...admin,
+			tenant: { ...admin.tenant, scopes: ["uptime_monitors:write"] },
+		}
+		const urlSeenBy = async (runtime: EvalRuntime) => {
+			const result = await runToolDirect(runtime, "list_uptime_monitors", {})
+			const row = decode(ListUptimeMonitorsOutput, result).monitors.find(
+				(each) => each.id === created.monitor.id,
+			)
+			return { url: row?.heartbeatUrl, anywhere: JSON.stringify(result).includes("/hb/") }
+		}
+		expect(await urlSeenBy(readOnlyKey)).toEqual({ url: null, anywhere: false })
+		expect(await urlSeenBy(withoutWriteScope)).toEqual({ url: null, anywhere: false })
+		expect(await urlSeenBy(withWriteScope)).toEqual({ url: pingUrl, anywhere: true })
 	})
 
 	it("filters by service", async () => {
@@ -447,6 +469,40 @@ describe("uptime monitor config and errors", () => {
 			buildUptimeConfig("heartbeat", { heartbeat_interval_seconds: 3600, cron: "0 * * * *" }),
 		)
 		expect(exit._tag).toBe("Failure")
+	})
+
+	it("points multi-step steps at the REST API before checking which fields fit the kind", async () => {
+		const multistep = Schema.decodeSync(UptimeMonitorConfig)({
+			_tag: "multistep",
+			timeoutMs: 30_000,
+			steps: [
+				{
+					name: "Health",
+					method: "GET",
+					url: "https://api.acme.dev/health",
+					headers: {},
+					assertions: [],
+					extract: [],
+				},
+			],
+		})
+		const messages = await Promise.all(
+			Arr.map(
+				[
+					buildUptimeConfig("multistep", { url: "https://api.acme.dev/health" }),
+					updateUptimeConfig(multistep, { url: "https://api.acme.dev/other" }),
+				],
+				(attempt) =>
+					Effect.runPromise(
+						Effect.match(attempt, {
+							onFailure: (error) => error.message,
+							onSuccess: () => "applied",
+						}),
+					),
+			),
+		)
+		expect(Arr.every(messages, (message) => message.includes("/v2/uptime_monitors"))).toBe(true)
+		expect(await Effect.runPromise(updateUptimeConfig(multistep, {}))).toBeUndefined()
 	})
 })
 

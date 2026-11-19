@@ -1,6 +1,6 @@
 ---
 title: "Terraform resources"
-description: "Every resource and data source in the Maple Terraform provider: arguments, read-only attributes, import IDs and update behavior."
+description: "Every resource and data source in the Maple Terraform provider, status pages included: arguments, read-only attributes, import IDs and update behavior."
 group: "Infrastructure as Code"
 order: 4
 icon: "terraform"
@@ -15,6 +15,7 @@ The resources the `mapletechlabs/maple` provider manages. New here? Start with t
 | [`maple_alert_destination`](#maple_alert_destination) | Create, update in place, delete. Changing `type` replaces it        | `dest_…`  |
 | [`maple_alert_rule`](#maple_alert_rule)               | Create, update in place, delete                                     | `alrt_…`  |
 | [`maple_uptime_monitor`](#maple_uptime_monitor)       | Create, update in place, delete. Changing `config.type` replaces it | `upm_…`   |
+| [`maple_status_page`](#maple_status_page)             | Create, update in place, delete                                     | `stp_…`   |
 | [`maple_scrape_target`](#maple_scrape_target)         | Create, update in place, delete. Changing `target_type` replaces it | `scrp_…`  |
 | [`maple_api_key`](#maple_api_key)                     | Create, roll, revoke. Any other change replaces the key             | `key_…`   |
 | [`maple_ingest_keys`](#maple_ingest_keys)             | Data source                                                         |           |
@@ -143,6 +144,46 @@ resource "maple_uptime_monitor" "nightly_backup" {
 | `heartbeat`   | `schedule` (`{ type = "interval", seconds }` or `{ type = "cron", expression, timezone }`), `grace_seconds` |
 
 Read-only: `kind`, `heartbeat_url` (the URL a heartbeat job pings), `alert_rule_id`. See [Uptime monitoring](/docs/alerting/uptime-monitoring) and [Heartbeat monitors](/docs/alerting/heartbeat-monitors).
+
+## maple_status_page
+
+Needs provider version 0.2 or later.
+
+```hcl
+resource "maple_status_page" "acme" {
+  name          = "Acme Status"
+  slug          = "acme-status"
+  support_url   = "https://acme.example/support"
+  logo_url      = "data:image/png;base64,${filebase64("logo.png")}"
+  theme         = { preset = "midnight", accent = "#a5b4fc" }
+  custom_domain = "status.acme.example"
+
+  components = [
+    # Any monitor you declare, e.g. an http maple_uptime_monitor named "api".
+    { name = "API", monitor_id = maple_uptime_monitor.api.id },
+    { name = "Docs", group = "Websites", show_uptime = false },
+  ]
+}
+```
+
+| Argument                                                                | Type         | Notes                                                                                                                           |
+| ----------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `name`, `slug`                                                          | string       | Required. The page is served at `/s/<org key>/<slug>`                                                                           |
+| `description`, `website_url`, `support_url`, `privacy_url`, `terms_url` | string       | Page text and links                                                                                                             |
+| `logo_url`, `logo_dark_url`, `favicon_url`                              | string       | An https URL, or a base64 `data:image/...` URL of at most 128 KB                                                                |
+| `show_powered_by`                                                       | bool         | **default** `true`                                                                                                              |
+| `auto_incidents`                                                        | string       | **default** `off`. Also `draft`, `publish`                                                                                      |
+| `visibility`                                                            | string       | **default** `public`. Also `password`, `internal`                                                                               |
+| `theme`                                                                 | object       | `preset`, `appearance`, `accent`, `background`, `text`, `card`, `border`, `radius`, `font`. Unset fields take the default theme |
+| `components`                                                            | list(object) | In display order: `name`, `description`, `group`, `monitor_id`, `manual_status`, `show_uptime` (**default** `true`)             |
+| `password`                                                              | string       | Sensitive, write-only. Needed for `visibility = "password"`                                                                     |
+| `custom_domain`                                                         | string       | Also serve the page on this hostname. Not allowed on an `internal` page                                                         |
+
+- Components are matched to the page's existing ones by name, so their IDs, incidents and uptime history survive reordering and edits. Renaming a component recreates it; leaving one out deletes it.
+- Leave `manual_status` unset and an override a responder sets during an incident stays; an apply does not undo it. Set it to manage the override from Terraform.
+- A new page is published once it is fully configured, so a half-made page is never served.
+
+Read-only: `components[*].id` (`stc_…`, for incidents posted through the API), `custom_domain_cname_target`, and `custom_domain_dns_records`: a list of `{ type, name, value, purpose }` to create at your DNS provider. Their values exist once the page does, so on the first run apply the page with `-target` before the records that use them. Incidents are operational and are not managed by Terraform. See [Status pages](/docs/alerting/status-pages).
 
 ## maple_scrape_target
 

@@ -22,7 +22,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 		name: "inspect_trace",
 		title: "Inspect Trace",
 		description:
-			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. With `timestamp` the read covers ±1h around it; without one (or when it misses) the trace is located in the trace index up to 30 days back first, which costs an extra lookup.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Logs show their cause attributes (log.error, error.*, exception.*). Large traces are bounded to an overview (errors and longest spans first) plus a per span name rollup (count, total/max duration, errors) of every span; raise `max_spans` for more detail. `inspect_span` gives one span's full attributes. With `timestamp` the read covers ±1h around it; without one (or when it misses) the trace is located in the trace index up to 30 days back first, which costs an extra lookup.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
 			timestamp: P.optionalTimestamp(
@@ -37,6 +37,7 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				description: "Max spans to render in the tree; errors and roots are always kept",
 			}),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a trace", "Opening a trace"],
 		handler: Effect.fn("McpTool.inspectTrace")(function* ({

@@ -36,6 +36,7 @@ import { V2SlosApiGroup } from "./slos"
 import { V2UsersApiGroup } from "./users"
 import { V2StatusPageIncidentsApiGroup, V2StatusPagesApiGroup } from "./status-pages"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
+import { V2PrometheusApiGroup } from "./prometheus"
 import { V2SupportChannelApiGroup } from "./support-channel"
 import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
@@ -146,6 +147,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)
 	.add(V2MetricsApiGroup)
+	.add(V2PrometheusApiGroup)
 	.add(V2ServicesApiGroup)
 	.add(V2ServiceMapApiGroup)
 	.add(V2EnvironmentsApiGroup)

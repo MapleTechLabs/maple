@@ -31,6 +31,8 @@
 //!
 //! `signal` is `TelemetrySignal::path()` — `"logs" | "traces" | "metrics"` —
 //! which are also the Autumn feature ids, so one dimension serves both.
+//! `"profiles"` is recorded here too, by its own handler, and is not billed:
+//! it has no Autumn feature yet.
 //!
 //! ## Cardinality
 //!
@@ -62,12 +64,13 @@ pub const BYTES_INSTRUMENT: &str = "maple_ingest_org_bytes_total";
 /// signal.
 pub const ITEMS_INSTRUMENT: &str = "maple_ingest_org_items_total";
 
-/// Per-interval series ceiling for the usage instruments, ~4x the SDK's default
-/// 2000. With two attributes that is roughly 2,700 concurrently-active orgs
-/// across three signals inside one export window. Raise this before the org
-/// count gets there, because past the limit per-org attribution degrades into an
-/// `otel.metric.overflow=true` bucket rather than failing loudly.
-pub const USAGE_CARDINALITY_LIMIT: usize = 8192;
+/// Per-interval series ceiling for the usage instruments, ~6x the SDK's default
+/// 2000. With two attributes that is roughly 3,000 concurrently-active orgs
+/// across four signals (profiles being the fourth) inside one export window.
+/// Raise this before the org count gets there, because past the limit per-org
+/// attribution degrades into an `otel.metric.overflow=true` bucket rather than
+/// failing loudly.
+pub const USAGE_CARDINALITY_LIMIT: usize = 12_288;
 
 /// Bytes per billed gigabyte. Decimal, not binary — Autumn prices in GB and this
 /// is the divisor its invoices are computed from.
@@ -394,6 +397,33 @@ mod tests {
             ORGS,
             "every org should keep its own series"
         );
+    }
+
+    /// A fourth signal multiplies the series each org can hold: the orgs the limit
+    /// was sized for must still fit when every one of them sends profiles as well.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn every_signal_of_the_orgs_the_limit_is_sized_for_keeps_its_series() {
+        const ORGS: usize = 2_700;
+        const SIGNALS: [&str; 4] = ["traces", "logs", "metrics", "profiles"];
+
+        let (usage, exporter) = harness();
+        for i in 0..ORGS {
+            for signal in SIGNALS {
+                usage.record(&format!("org_{i}"), signal, 1, 1);
+            }
+        }
+        usage.force_flush();
+
+        let points = exporter.drain();
+        assert!(
+            !points.iter().any(|p| p.overflow),
+            "{ORGS} orgs on four signals must not overflow"
+        );
+        let profiles = points
+            .iter()
+            .filter(|p| p.metric == ITEMS_INSTRUMENT && p.signal.as_deref() == Some("profiles"))
+            .count();
+        assert_eq!(profiles, ORGS, "every org keeps its own profiles series");
     }
 
     /// The counter and Autumn must never diverge on what a byte is worth. The

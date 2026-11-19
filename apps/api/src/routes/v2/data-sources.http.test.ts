@@ -243,7 +243,7 @@ describe("v2 data sources over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("lets members read and only admins connect, and never returns the secret", async () => {
+	it("lets members read and only engineers and admins connect, and never returns the secret", async () => {
 		const harness = makeHarness(createdDbs, makeSource())
 		const [admin, member] = [await harness.adminKey(), await harness.memberKey()]
 
@@ -263,6 +263,7 @@ describe("v2 data sources over HTTP", () => {
 			environment: "production",
 			agent_access: true,
 			agent_pii: false,
+			supports_pii_redaction: false,
 			connection: {
 				type: "clickhouse",
 				url: "https://ch.example.com:8443",

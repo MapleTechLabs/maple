@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import { Array as Arr, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { InternalScrapeTarget } from "@maple/domain/http"
@@ -269,19 +269,26 @@ describe("TargetFetcher", () => {
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 
-	it.effect("classifies a transport failure as a target error", () =>
+	it.effect("classifies a transport failure as a target error and leaves the client span Ok", () =>
 		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
 			const fetcher = yield* TargetFetcher
 			const error = yield* fetcher.fetch(mkTarget()).pipe(
 				Effect.provideService(
 					FetchHttpClient.Fetch,
 					stubFetch([], () => Promise.reject(new TypeError("connection refused"))),
 				),
+				Effect.provide(tracer.layer),
 				Effect.flip,
 			)
 
 			assert.strictEqual(error.reason, "target_error")
 			assert.strictEqual(error.message, "request failed: connection refused")
+			// The customer's target is down, not Maple: no error issue, the reason stays on the span.
+			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
+			assert.isDefined(span)
+			assert.isTrue(Exit.isSuccess(span.exit))
+			assert.strictEqual(span.attributes.get("error.type"), "target_error")
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 
@@ -373,6 +380,35 @@ describe("TargetFetcher", () => {
 			for (const value of span.attributes.values()) {
 				assert.notInclude(String(value), "SECRET")
 			}
+		}).pipe(Effect.provide(FetcherLive)),
+	)
+
+	it.effect("keeps only the host of a user-entered target on the client span", () =>
+		Effect.gen(function* () {
+			const tracer = makeCapturingTracer()
+			const fetcher = yield* TargetFetcher
+			yield* fetcher
+				.fetch(
+					mkTarget({
+						targetType: "prometheus",
+						scrapeUrl: "https://node.example.com/t/PATHTOKEN/metrics?key=QUERYTOKEN",
+					}),
+				)
+				.pipe(
+					Effect.provideService(
+						FetchHttpClient.Fetch,
+						stubFetch([], () => new Response("up 1\n", { status: 200 })),
+					),
+					Effect.provide(tracer.layer),
+				)
+
+			const [span] = endedSpansNamed(tracer.ended, "TargetFetcher.fetchTarget")
+			assert.isDefined(span)
+			if (span == null) return
+			assert.strictEqual(span.attributes.get("server.address"), "node.example.com")
+			assert.isUndefined(span.attributes.get("url.path"))
+			const values = Arr.map(Arr.fromIterable(span.attributes.values()), String)
+			assert.isFalse(Arr.some(values, (value) => /PATHTOKEN|QUERYTOKEN/u.test(value)))
 		}).pipe(Effect.provide(FetcherLive)),
 	)
 })

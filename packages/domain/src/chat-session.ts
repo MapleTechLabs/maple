@@ -461,6 +461,30 @@ export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
 
 /**
+ * Who caused an unattended pass. Unattended says nobody reads it, not that nobody chose it: a
+ * person can start one and write its prompt, so what it may reach is theirs to answer for.
+ */
+export const AutonomousTurnStarter = Schema.Union([
+	/** One of Maple's own producers raised it from an event. Nobody wrote its prompt. */
+	Schema.Struct({
+		kind: Schema.Literal("producer"),
+		producer: Schema.Literals(["incident_triage", "fix_verification"]),
+	}),
+	/**
+	 * A person started or restarted it, or wrote what it reads. `userId` is absent when nobody can
+	 * name them (a pull request's author). `roles` are what their credential held at that moment.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("person"),
+		userId: Schema.optionalKey(UserId),
+		roles: Schema.Array(RoleName),
+		/** Whether their credential could read data sources (a scoped key may not). Absent reads as no. */
+		mayReadDataSources: Schema.optionalKey(Schema.Boolean),
+	}),
+])
+export type AutonomousTurnStarter = (typeof AutonomousTurnStarter)["Encoded"]
+
+/**
  * Who drives this turn, stated rather than inferred.
  *
  * The second axis of a turn, beside {@link ChatMode}: the mode says what the conversation is, the
@@ -477,16 +501,27 @@ export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
 export const ChatTurnOrigin = Schema.Union([
 	/** A signed-in person in the Maple app. */
 	Schema.Struct({ kind: Schema.Literal("app") }),
-	/** An investigation's own unattended pass, which has no reader at all. */
-	Schema.Struct({ kind: Schema.Literal("autonomous") }),
+	/**
+	 * An investigation's own unattended pass, which has no reader at all. `startedBy` absent (a turn
+	 * recorded before the field, a caller that did not say) reads as a person nobody can name.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("autonomous"),
+		startedBy: Schema.optionalKey(AutonomousTurnStarter),
+		/**
+		 * Where a pull request pass posts: a public repository's comments are world-readable, so its
+		 * pass reads no telemetry. Absent reads as public; set it with {@link pullRequestTurnOrigin}.
+		 */
+		repository: Schema.optionalKey(Schema.Literals(["public", "private"])),
+	}),
 	/**
 	 * Someone addressing Maple from a chat platform. `externalUserId` and `displayName` are the
 	 * platform's; the rest of the audit model attributes a turn by them.
 	 *
 	 * `actingUserId` is the Maple user that chat account is linked to, resolved by the host from its
 	 * own database. Present means the turn runs as that user, under the roles they hold in the org
-	 * when it starts. Absent means the connector cannot prove who is asking, and the turn runs as the
-	 * connector (see `ChatConnector.identity`).
+	 * when it starts. Absent means the connector cannot prove who is asking: the turn runs as the
+	 * connector, reads a reduced set and proposes nothing (see `ChatConnector.identity`).
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("connector"),
@@ -515,10 +550,9 @@ export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connecto
 /**
  * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
  *
- * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
- * roles — the authorization check inside a mutating tool — is reached by the apply path, under
- * whoever approved the proposal, not by the turn that wrote it. A turn whose origin names an
- * `actingUserId` is widened to that user's tenant on the other side of the hop.
+ * No roles, and there is no connector identity that carries any: a change is only ever applied as
+ * a Maple user. A turn whose origin names an `actingUserId` is widened to that user's tenant on
+ * the other side of the hop; one that names nobody stays here and is offered no mutating tool.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({
@@ -528,23 +562,20 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 		authMode: "self_hosted",
 	})
 
-const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
+/** Where an unattended pull request pass posts, which decides what it may read. */
+export type PullRequestTurnRepository = "public" | "private"
 
 /**
- * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
- * See `ChatConnector.identity` for the three-case approval policy this is half of.
- *
- * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
- * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
- * the two are one rule read together.
+ * A pull request review's or reply's unattended turn. The pull request's author or commenter wrote
+ * what it reads, and no Maple user stands behind them.
  */
-export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
-	encodeChatTurnTenant({
-		orgId,
-		userId: CONNECTOR_TENANT_USER_ID,
-		roles: [ORG_ADMIN_ROLE],
-		authMode: "self_hosted",
-	})
+export const pullRequestTurnOrigin = (repository: {
+	readonly isPrivate: boolean
+}): Extract<ChatTurnOrigin, { readonly kind: "autonomous" }> => ({
+	kind: "autonomous",
+	startedBy: { kind: "person", roles: [] },
+	repository: repository.isPrivate ? "private" : "public",
+})
 
 /** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
 export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
@@ -576,11 +607,10 @@ export type ChatProposalApproval =
 			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
 			 * database — never from anything the click carried.
 			 *
-			 * Present means the change runs as that user, under the roles they hold in the org at that
-			 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
-			 * identity acts instead ({@link connectorApprovalTenant}).
+			 * The change runs as that user, under the roles they hold in the org at that moment.
+			 * Required: a click nobody can attribute to a Maple user applies nothing.
 			 */
-			readonly actingUserId?: UserId
+			readonly actingUserId: UserId
 	  }
 
 /** How a recorded decision names who made it. */

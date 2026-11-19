@@ -285,6 +285,34 @@ const securityTelemetryFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 ]
 
+// Security hub's Cloud tab: services carrying a finding's resource id (apps/api cloud-security.http.ts).
+const cloudResourceFixtures: ReadonlyArray<BuilderFixture> = [
+	{
+		module: "cloud-resources",
+		name: "cloudResourceServicesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.cloudResourceServicesQuery({
+					candidates: [
+						{ key: "host.id", value: "i-0abc123", scope: null },
+						{
+							key: "faas.name",
+							value: "checkout-fn",
+							scope: { accountId: "111111111111", region: "us-east-1" },
+						},
+						{
+							key: "cloud.resource_id",
+							value: "arn:aws:lambda:us-east-1:123456789012:function:checkout-fn",
+							scope: null,
+						},
+					],
+				}),
+				window,
+			),
+	},
+]
+
 // `/users` reads (user-activity.ts): the rollup scoped to a user and namespaces, and the raw
 // trace/log reads narrowed to the services its slices name.
 const USER_SCOPE = { userId: "user_catalog", namespaces: ["storefront"] }
@@ -716,20 +744,25 @@ const alertingFixtures: ReadonlyArray<BuilderFixture> = [
 			}),
 	},
 
-	// backend AnomalyDetectionService, detector baselines on matched hours.
+	// backend AnomalyDetectionService, detector baselines on the hours its windows straddle.
 	{
 		module: "anomaly",
 		name: "anomalyTraceSignalsQuery",
-		label: "matchedHours",
-		compile: () =>
-			CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+		label: "baselineHours",
+		compile: () => CH.compileUnsafe(CH.anomalyTraceSignalsQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
+	},
+	// AnomalyDetectionService, the rolling 60-minute current window.
+	{
+		module: "anomaly",
+		name: "anomalyTraceSignalsWindowQuery",
+		label: "lastHour",
+		compile: () => CH.compileUnsafe(CH.anomalyTraceSignalsWindowQuery(), window),
 	},
 	{
 		module: "anomaly",
 		name: "anomalyLogVolumeQuery",
-		label: "matchedHours",
-		compile: () =>
-			CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: CH.matchedHoursOfDay(10) }), window),
+		label: "baselineHours",
+		compile: () => CH.compileUnsafe(CH.anomalyLogVolumeQuery({ hoursOfDay: [8, 9, 10, 11] }), window),
 	},
 	// AnomalyDetectionService, error-spike current and baseline windows.
 	{
@@ -1524,6 +1557,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				},
 			),
 	},
+	// Audit log sources (AuditTrailService.ts `providerStats`): events per platform in the window.
+	{
+		module: "audit-trail",
+		name: "auditTrailSourcesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.auditTrailSourcesQuery(), { orgId: ORG_ID, since: START_TIME }),
+	},
 	// Cancellation evidence (CancellationTelemetryEvidence.read).
 	{
 		module: "cancellation-evidence",
@@ -1783,6 +1823,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...webAnalyticsFixtures,
 	...webAnalyticsAiFixtures,
 	...securityTelemetryFixtures,
+	...cloudResourceFixtures,
 	...userActivityFixtures,
 
 	// Traces sidebar (query-engine runtime); the pipe fixtures cover the raw-only route.
@@ -2182,9 +2223,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
-	// Releases page — routes/internal/query-engine.http.ts `releasesList` and
-	// `releaseDetail`. Same splice as the services list, grouped one level
-	// finer (per commit), plus the error-events bridge keyed on the version.
+	// routes/internal/query-engine.http.ts `releasesList`. Same splice as the
+	// services list, grouped one level finer (per commit).
 	{
 		module: "releases",
 		name: "releasesListQuery",
@@ -2205,52 +2245,30 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// The services one commit reached: bounds a commit's deploy verification read.
+	{
+		module: "releases",
+		name: "commitServicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.commitServicesQuery("abc123"), window),
+	},
+	// Deploy verification: each deploy's first half hour against the half hour before it.
+	{
+		module: "releases",
+		name: "releaseVerificationQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.releaseVerificationQuery({ serviceName: "api" }), {
+				...window,
+				deploysFrom: START_TIME,
+			}),
+	},
 	// Dependency scanner: which commit each service runs, ranked by traffic.
 	{
 		module: "releases",
 		name: "runningCommitsQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.runningCommitsQuery(), window),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "minutely",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ environments: ["production"], bucketSeconds: 300 }), {
-				...window,
-				bucketSeconds: 300,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "hourly",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ serviceName: "api", bucketSeconds: 3600 }), {
-				...window,
-				bucketSeconds: 3600,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "raw",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ serviceName: "api", bucketSeconds: 30 }), {
-				...window,
-				bucketSeconds: 30,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releaseErrorFingerprintsQuery",
-		label: "default",
-		compile: () =>
-			CH.compileUnsafe(
-				CH.releaseErrorFingerprintsQuery({ serviceName: "api", environments: ["production"] }),
-				{ ...window, serviceVersion: "0af7651916cd43dd8448eb211c80319c0af76519" },
-			),
 	},
 
 	// MCP `service_deployments`, `route_usage` and `ingest_freshness`.

@@ -3,14 +3,14 @@ import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
-import { MeasureChartContainer } from "./chart-mounts"
-import { type SeriesMark, timeseriesLegend } from "./timeseries-legend"
+import { type ChartHostName, MeasureChartContainer } from "./chart-mounts"
+import { hiddenChartKeys, type SeriesMark, timeseriesLegend } from "./timeseries-legend"
 import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
 import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
+import { type RateBasis, SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 
 // The query-builder bar chart: the long tail folded into "Other", and its
 // legend; the definition is `definitions/bar.ts`.
@@ -30,6 +30,8 @@ export interface BarChartInputs {
 	readonly data: ReadonlyArray<Readonly<Record<string, string | number | boolean>>>
 	readonly theme: ThemeColors
 	readonly unit?: string | undefined
+	/** `per_second` for PromQL, whose rates are already per second; absent is the query builder's per bucket. */
+	readonly rateBasis?: RateBasis | undefined
 	readonly timeZone?: string | undefined
 	/** The clock the in-flight tail is judged against. */
 	readonly nowMs: number
@@ -41,6 +43,8 @@ export interface BarChartInputs {
 	readonly seriesStats?: boolean
 	/** A mark beside each series' name in the compact legend, by the series' label. */
 	readonly seriesMarks?: Readonly<Record<string, SeriesMark>> | undefined
+	/** A named chart host that draws only this chart (`"bar"`); the full host when absent. */
+	readonly host?: ChartHostName | undefined
 }
 
 type Row = Readonly<Record<string, string | number | boolean>>
@@ -87,6 +91,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
 		mark: inputs.seriesMarks?.[definition.rawKey],
 	}))
+	const hidden = hiddenChartKeys(model.hiddenKeys, definitions)
 	const tooltipBody = (portal: Attribute<Message>): Option.Option<Html> =>
 		Option.flatMap(model.tooltip, (tooltip) =>
 			ChartTooltip.match(tooltip, {
@@ -104,14 +109,17 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 				chartId: inputs.chartId,
 				className: "h-full w-full",
 				ariaLabel: "Time series",
+				...(inputs.host === undefined ? undefined : { host: inputs.host }),
 				spec: barSpec(data, {
 					colors,
 					fallbackColor: SERIES_FALLBACK_COLOR,
 					unit: inputs.unit ?? null,
+					...(inputs.rateBasis === undefined ? undefined : { rateBasis: inputs.rateBasis }),
 					timeZone: inputs.timeZone ?? null,
 					nowMs: inputs.nowMs,
 					stacked: inputs.stacked ?? false,
 					showTooltip: inputs.showTooltip ?? true,
+					...(hidden.length === 0 ? undefined : { hidden }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
 				}),
 				legend: timeseriesLegend(h, model, {
@@ -119,6 +127,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 					data,
 					definitions,
 					unit: inputs.unit,
+					rateBasis: inputs.rateBasis ?? "per_bucket",
 					nowMs: inputs.nowMs,
 					legend: inputs.legend,
 					seriesStats: inputs.seriesStats === true,

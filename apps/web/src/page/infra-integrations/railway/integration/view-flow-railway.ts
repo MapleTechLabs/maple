@@ -3,12 +3,12 @@ import { countLabel } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import {
+	connectionTabItem,
 	type CheckRow,
 	flowColumns,
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 } from "../../../kit/connect-flow"
@@ -69,7 +69,7 @@ const showsUpRail = (h: H): Html =>
 				title: "Next to your traces",
 				detail: "Matched on the Railway service name",
 			},
-			{ icon: "GearIcon", title: "Source page", detail: "Sync now, Update credential, Disconnect" },
+			connectionTabItem("Sync now, Update credential, Disconnect"),
 		],
 		timeNote: "First live sample within 5 minutes",
 		docs: DOCS_HREF === undefined ? null : { label: "Docs", href: DOCS_HREF },
@@ -235,12 +235,8 @@ const liveStep = (h: H, model: Model, timeZone: string): Html => {
 	return flowColumns(
 		h,
 		[
-			savedBanner(
-				h,
-				"Saved as a source. Safe to leave; syncing keeps running.",
-				"Nothing to apply in Railway",
-			),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; syncing keeps running.",
 				rows:
 					status === null || !status.connected
 						? [{ state: "waiting", title: "Waiting for Railway's status" }]

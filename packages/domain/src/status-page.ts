@@ -1,3 +1,5 @@
+import { sha256 } from "@noble/hashes/sha2"
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils"
 import { Effect, Option, Schema, SchemaTransformation, Struct, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
@@ -26,14 +28,90 @@ export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 /** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
 export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+/**
+ * Largest uploaded logo or favicon, in bytes. An upload is stored as a base64 `data:` URL in the
+ * page's URL column, so the edge serves it from the snapshot with no extra storage.
+ */
+export const STATUS_PAGE_MAX_IMAGE_BYTES = 128 * 1024
+/** The image types an upload may be; the editor's file picker accepts the same. */
+export const STATUS_PAGE_IMAGE_TYPES = [
+	"image/png",
+	"image/jpeg",
+	"image/webp",
+	"image/gif",
+	"image/svg+xml",
+	"image/x-icon",
+	"image/vnd.microsoft.icon",
+] as const
+const IMAGE_DATA_URL_PATTERN =
+	/^data:image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,((?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)$/u
+/** Base64 of the largest upload, plus room for the longest `data:<type>;base64,` prefix: a cheap first cut. */
+const MAX_IMAGE_DATA_URL_LENGTH = Math.ceil(STATUS_PAGE_MAX_IMAGE_BYTES / 3) * 4 + 64
+
+/** Bytes a base64 payload decodes to: three per four characters, less one per `=`. */
+const decodedBytes = (base64: string): number =>
+	(base64.length / 4) * 3 - (Str.endsWith("==")(base64) ? 2 : Str.endsWith("=")(base64) ? 1 : 0)
+
+/** An uploaded image: a base64 `data:` URL of an allowed image type, at most the size cap decoded. */
+export const isStatusPageImageDataUrl = (value: string): boolean => {
+	if (value.length > MAX_IMAGE_DATA_URL_LENGTH) return false
+	const payload = IMAGE_DATA_URL_PATTERN.exec(value)?.[1]
+	return payload !== undefined && payload.length > 0 && decodedBytes(payload) <= STATUS_PAGE_MAX_IMAGE_BYTES
+}
+
+/** A logo or favicon value the page may render: an https URL or an uploaded image. */
+export const isStatusPageImageSource = (value: string): boolean =>
+	isStatusPageImageDataUrl(value) ||
+	(value.length <= STATUS_PAGE_MAX_URL_LENGTH &&
+		URL.canParse(value) &&
+		new URL(value).protocol === "https:")
+
 /** Longest incident update message, in characters; the API, the service and the editor all check it. */
 export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 
-/** Lowercase letters, digits and inner hyphens: the `<slug>` in `<slug>.<status domain>`. */
+/** Lowercase letters, digits and inner hyphens: the `<slug>` in `/s/<org key>/<slug>`, unique per org. */
 export const StatusPageSlug = Schema.String.check(
 	Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/u),
 ).annotate({ identifier: "@maple/StatusPageSlug", title: "Status Page Slug" })
 export type StatusPageSlug = Schema.Schema.Type<typeof StatusPageSlug>
+
+/**
+ * The org's part of a hosted address: the first 12 hex digits of SHA-256 over the org id. It
+ * keeps slugs per org without putting the org id in the URL; web and the publisher both derive it.
+ */
+export const statusPageOrgKey = (orgId: string): string =>
+	Str.slice(0, 12)(bytesToHex(sha256(utf8ToBytes(orgId))))
+
+/** A page's hosted address on Maple's status domain, without the `/s/` prefix: `<org key>/<slug>`. */
+export const statusPageAddress = (orgId: string, slug: string): string => `${statusPageOrgKey(orgId)}/${slug}`
+
+const STATUS_PAGE_SLUG_MAX = 48
+
+/**
+ * A slug suggested from a page name: `Acme Status!` as `acme-status`. Lowercase letters and
+ * digits, accents dropped, single inner hyphens. Not always a valid slug: a name with under three
+ * letters or digits gives a short one.
+ */
+export const slugFromName = (name: string): string =>
+	Str.replace(
+		/-+$/u,
+		"",
+	)(
+		Str.slice(
+			0,
+			STATUS_PAGE_SLUG_MAX,
+		)(
+			Str.replace(
+				/^-+|-+$/gu,
+				"",
+			)(
+				Str.replace(
+					/[^a-z0-9]+/gu,
+					"-",
+				)(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(Str.toLowerCase(name)))),
+			),
+		),
+	)
 
 /** Longest custom domain hostname Maple stores (DNS caps a name at 253 characters). */
 export const STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH = 253
@@ -142,6 +220,14 @@ export const StatusPageCustomDomainDnsRecord = Schema.Struct({
 	purpose: StatusPageCustomDomainRecordPurpose,
 })
 export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
+
+/** The DNS label, under the hostname, of the TXT record that proves a claim on a custom domain. */
+export const CUSTOM_DOMAIN_CHALLENGE_LABEL = "_maple-challenge"
+
+/** True for the record that proves a claim: Maple sets a new domain up only once it is published. */
+export const isCustomDomainChallengeRecord = (
+	record: Pick<StatusPageCustomDomainDnsRecord, "type" | "name">,
+): boolean => record.type === "TXT" && Str.startsWith(`${CUSTOM_DOMAIN_CHALLENGE_LABEL}.`)(record.name)
 
 /** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
 export const StatusPageCustomDomainHostname = Schema.String.pipe(
@@ -693,6 +779,8 @@ export const themeContrastIssue = (theme: StatusPageTheme): string | null => {
 export const StatusPageSnapshotPage = Schema.Struct({
 	name: Schema.String,
 	slug: StatusPageSlug,
+	/** {@link statusPageOrgKey} of the page's org; empty in snapshots published before slugs were per org. */
+	orgKey: Schema.String.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(""))),
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
@@ -1066,8 +1154,12 @@ export const sha256Base64Url = async (value: string): Promise<string> => {
 /** Edge storage keys, shared by the publisher and the status Worker. */
 export const StatusPageKeys = {
 	host: (hostname: string) => `host:${Str.toLowerCase(hostname)}`,
-	/** Path addressing (`/s/<slug>`), for hosts without a page of their own such as workers.dev. */
-	slug: (slug: string) => `slug:${slug}`,
+	/**
+	 * Path addressing (`/s/<address>`), for hosts without a page of their own such as workers.dev.
+	 * The address is {@link statusPageAddress}; a bare slug is the key of a page published before
+	 * slugs were per org, which the status Worker redirects to its current address.
+	 */
+	slug: (address: string) => `slug:${address}`,
 	snapshot: (pageId: string) => `page:${pageId}:snapshot`,
 	/**
 	 * One key per break-glass entry, written once by the status Worker and deleted by the
@@ -1080,8 +1172,16 @@ export const StatusPageKeys = {
 	/** R2 copy of the snapshot, read when KV fails. */
 	snapshotObject: (pageId: string) => `pages/${pageId}/snapshot.json`,
 	hostObject: (hostname: string) => `hosts/${Str.toLowerCase(hostname)}`,
-	slugObject: (slug: string) => `slugs/${slug}`,
+	slugObject: (address: string) => `slugs/${address}`,
 } as const
+
+/**
+ * What the publisher leaves in R2 where it took a snapshot or a slug route off the edge. The
+ * status Worker reads it as "not here" for certain, where a missing object could be an outage.
+ */
+export const STATUS_PAGE_TOMBSTONE = '{"gone":true}'
+
+export const isStatusPageTombstone = (raw: string): boolean => Str.trim(raw) === STATUS_PAGE_TOMBSTONE
 
 export const decodeStatusPageSnapshotJson = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StatusPageSnapshot),

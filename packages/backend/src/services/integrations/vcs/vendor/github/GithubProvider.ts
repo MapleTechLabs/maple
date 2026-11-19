@@ -5,6 +5,7 @@ import {
 	type PullRequestContext,
 	type PullRequestFile,
 	type PullRequestHead,
+	type PullRequestReviewPublication,
 	type PullRequestReviewThread,
 	mentionsReviewer,
 	mergeStepTickChanges,
@@ -48,6 +49,7 @@ import type {
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
+import { githubAuditEvent } from "./github-audit-events"
 import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
@@ -125,6 +127,8 @@ const RefEventPayload = Schema.Struct({
 const PullRequestPayload = Schema.Struct({
 	action: Schema.String,
 	number: Schema.Number,
+	// On `edited`: what the edit changed. Only whether the base branch is among it is read.
+	changes: Schema.optionalKey(Schema.Struct({ base: Schema.optionalKey(Schema.Unknown) })),
 	pull_request: Schema.Struct({
 		html_url: Schema.String,
 		title: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -278,6 +282,11 @@ const WorkflowJobPayload = Schema.Struct({
 // A job's steps ride in one queue message, so their count and names are bounded to stay under
 // QUEUE_MESSAGE_LIMIT_BYTES whatever the workflow looks like.
 const MAX_WORKFLOW_STEPS = 300
+/**
+ * Reviews a pull request may already have for Maple to approve it. The review list reads 1,000,
+ * so an approval is given only well short of that: it and the reviews after it stay findable.
+ */
+const MAX_REVIEWS_BEFORE_APPROVAL = 900
 const MAX_WORKFLOW_NAME_LENGTH = 200
 const boundName = (name: string) =>
 	name.length > MAX_WORKFLOW_NAME_LENGTH ? `${Str.slice(0, MAX_WORKFLOW_NAME_LENGTH)(name)}...` : name
@@ -302,6 +311,9 @@ const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodePullRequest = Schema.decodeUnknownEffect(PullRequestPayload)
 const decodeInstallationEvent = Schema.decodeUnknownEffect(InstallationPayload)
 const decodeRefEvent = Schema.decodeUnknownEffect(RefEventPayload)
+const decodeAuditInstallation = Schema.decodeUnknownOption(
+	Schema.Struct({ installation: Schema.Struct({ id: Schema.Number }) }),
+)
 
 const parseError = (message: string) => new VcsWebhookParseError({ message })
 
@@ -662,7 +674,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const mapInstallationEvent =
 				(event: string, reasonFor: (action: string) => VcsInstallationSyncReason | null) =>
-				(raw: unknown) =>
+				(raw: unknown, audited: boolean) =>
 					Effect.gen(function* () {
 						const payload = yield* parsePayload(event, decodeInstallationEvent(raw))
 						const externalInstallationId = String(payload.installation.id)
@@ -672,10 +684,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						})
 						const reason = reasonFor(payload.action)
 						if (!reason) {
-							yield* Effect.annotateCurrentSpan({
-								"vcs.webhook.outcome": "skipped",
-								"vcs.webhook.skip_reason": "unhandled_action",
-							})
+							// No sync for this action, but the audit log may still keep it.
+							yield* Effect.annotateCurrentSpan(
+								audited
+									? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+									: {
+											"vcs.webhook.outcome": "skipped",
+											"vcs.webhook.skip_reason": "unhandled_action",
+										},
+							)
 							return []
 						}
 						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
@@ -695,6 +712,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					: action === "removed"
 						? "repositories_removed"
 						: null,
+			)
+			// A repository made public or private re-lists the installation's repositories, so the stored
+			// visibility (which decides what a pull request review may read) follows it at once.
+			const mapRepositoryVisibility = mapInstallationEvent("repository", (action) =>
+				action === "publicized" || action === "privatized" ? "repositories_added" : null,
 			)
 
 			// `create`/`delete` (ref_type=branch) → one branch-event job; tags are ignored.
@@ -804,6 +826,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						...(pr.head?.ref === undefined ? undefined : { headRef: pr.head.ref }),
 						...(pr.base?.ref === undefined ? undefined : { baseRef: pr.base.ref }),
 						...(pr.draft === undefined || pr.draft === null ? undefined : { draft: pr.draft }),
+						...(payload.action === "edited"
+							? { baseChanged: payload.changes?.base !== undefined }
+							: undefined),
 						...(pr.head === undefined
 							? undefined
 							: { headRepoFullName: pr.head.repo?.full_name ?? null }),
@@ -1089,25 +1114,65 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
-			const mapEvent = (event: string | undefined, parsed: unknown, now: number) =>
+			const mapEvent = (event: string | undefined, parsed: unknown, now: number, audited: boolean) =>
 				Match.value(event).pipe(
 					Match.when("push", () => mapPush(parsed, now)),
 					Match.when("pull_request", () => mapPullRequest(parsed)),
 					Match.when("issue_comment", () => mapIssueComment(parsed)),
 					Match.when("pull_request_review_comment", () => mapReviewComment(parsed)),
-					Match.when("installation", () => mapInstallation(parsed)),
-					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
+					Match.when("installation", () => mapInstallation(parsed, audited)),
+					Match.when("installation_repositories", () =>
+						mapInstallationRepositories(parsed, audited),
+					),
+					Match.when("repository", () => mapRepositoryVisibility(parsed, audited)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
 					Match.when("delete", () => mapRefEvent("deleted")(parsed)),
 					Match.when("workflow_run", () => mapWorkflowRun(parsed)),
 					Match.when("workflow_job", () => mapWorkflowJob(parsed)),
 					Match.orElse(() =>
-						// ping and unhandled events are accepted no-ops.
-						Effect.annotateCurrentSpan({
-							"vcs.webhook.outcome": "skipped",
-							"vcs.webhook.skip_reason": "unhandled_event",
-						}).pipe(Effect.as([])),
+						// ping and unhandled events are accepted no-ops, unless the audit log keeps them.
+						Effect.annotateCurrentSpan(
+							audited
+								? { "vcs.webhook.outcome": "handled", "vcs.webhook.audit_only": true }
+								: {
+										"vcs.webhook.outcome": "skipped",
+										"vcs.webhook.skip_reason": "unhandled_event",
+									},
+						).pipe(Effect.as([])),
 					),
+				)
+
+			// The same delivery as an audit trail event, beside whatever jobs it made above. A payload
+			// without its installation has no org to land in.
+			const auditJob = (
+				event: string | undefined,
+				deliveryId: string | undefined,
+				parsed: unknown,
+				now: number,
+			): ReadonlyArray<VcsSyncJob> =>
+				Option.match(
+					Option.all({
+						installationId: decodeAuditInstallation(parsed).pipe(
+							Option.map((payload) => String(payload.installation.id)),
+						),
+						auditEvent: githubAuditEvent({
+							event,
+							deliveryId,
+							payload: parsed,
+							receivedAtMs: now,
+						}),
+					}),
+					{
+						onNone: () => [],
+						onSome: ({ installationId, auditEvent }) => [
+							{
+								kind: "audit-event",
+								provider: PROVIDER,
+								externalInstallationId: installationId,
+								event: auditEvent,
+							},
+						],
+					},
 				)
 
 			const webhookToJobs = (input: VcsWebhookRequest) =>
@@ -1123,13 +1188,15 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						),
 					)
 					const now = yield* Clock.currentTimeMillis
-					const jobs = yield* mapEvent(input.headers["x-github-event"], parsed, now)
+					const event = input.headers["x-github-event"]
+					const deliveryId = input.headers["x-github-delivery"]
+					const audit = auditJob(event, deliveryId, parsed, now)
+					const jobs = [...(yield* mapEvent(event, parsed, now, audit.length > 0)), ...audit]
 					// Stamp the GitHub delivery id onto every job this webhook produced, so
 					// the queue consumer's processMessage span can be correlated back to this
 					// webhook's receive span (both carry `vcs.webhook.delivery_id`). Every
 					// webhook-origin job kind (installation-sync / push / branch-event) carries
 					// the optional field; Schema strips it from any kind that doesn't.
-					const deliveryId = input.headers["x-github-delivery"]
 					return deliveryId ? Arr.map(jobs, (job) => ({ ...job, deliveryId })) : jobs
 				}).pipe(
 					Effect.withSpan("GithubProvider.webhookToJobs", {
@@ -1409,8 +1476,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
 					.pipe(
 						Effect.mapBoth({
-							onSuccess: (files) =>
-								Arr.map(files, (file): PullRequestFile => ({
+							onSuccess: ({ files, truncated }) => ({
+								files: Arr.map(files, (file): PullRequestFile => ({
 									path: file.filename,
 									previousPath: file.previous_filename ?? null,
 									status: normalizeFileStatus(file.status),
@@ -1418,6 +1485,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									deletions: file.deletions,
 									patch: file.patch ?? null,
 								})),
+								truncated,
+							}),
 							onFailure: toVcsError,
 						}),
 					)
@@ -1435,6 +1504,12 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								Arr.map(threads, (thread): PullRequestReviewThread => ({
 									id: thread.id,
 									isResolved: thread.isResolved,
+									...(thread.resolvedBy == null
+										? undefined
+										: { resolvedBy: thread.resolvedBy.login }),
+									...((thread.comments.totalCount ?? 0) > thread.comments.nodes.length
+										? { commentsTruncated: true }
+										: undefined),
 									comments: Arr.map(thread.comments.nodes, (comment) => {
 										const count = (content: string) =>
 											Arr.findFirst(
@@ -1670,6 +1745,138 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}),
 					)
 
+			/** Repository permissions that let a person push, as GitHub's collaborator permission names them. */
+			const pushPermissions: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
+
+			/** Dismiss every approval this App gave the pull request that still stands. */
+			const withdrawApprovals = Effect.fn("GithubProvider.withdrawApprovals")(function* (
+				externalInstallationId: string,
+				repo: VcsRepositoryRef,
+				number: number,
+				reason: string,
+				keepHead?: string,
+			) {
+				// Without the App's login its own reviews cannot be told apart, so none is dismissed.
+				if (appBotLogin === undefined) return "unsupported" as const
+				const { items: reviews, truncated } = yield* client.listPullRequestReviews(
+					externalInstallationId,
+					repo.owner,
+					repo.name,
+					number,
+				)
+				// The newest reviews are the ones missing: saying "withdrawn" could leave an approval up.
+				if (truncated) {
+					return yield* new GithubAppError({
+						message: "Too many reviews on the pull request to find every approval",
+					})
+				}
+				const standing = Arr.filter(
+					reviews,
+					(review) =>
+						review.state === "APPROVED" &&
+						review.user?.login === appBotLogin &&
+						(keepHead === undefined || review.commit_id !== keepHead),
+				)
+				yield* Effect.forEach(
+					standing,
+					(review) =>
+						client.dismissPullRequestReview(
+							externalInstallationId,
+							repo.owner,
+							repo.name,
+							number,
+							review.id,
+							`Maple no longer approves this pull request: ${reason}.`,
+						),
+					{ discard: true },
+				)
+				yield* Effect.annotateCurrentSpan("vcs.pull_request.approvals_dismissed", standing.length)
+				return "withdrawn" as const
+			})
+
+			/**
+			 * Approve the reviewed head, or withdraw an earlier approval. The report said the change is
+			 * safe; the pull request itself is read again here, because only it knows whether the head is
+			 * still the one reviewed and whether its author could push the change themselves. An
+			 * approval for an outside author would let a stranger's diff talk its way to a merge.
+			 * Only a pull request into the default branch is approved: the review read the rules and
+			 * the diff against that branch, and another base merges something else.
+			 */
+			const applyApproval = Effect.fn("GithubProvider.applyApproval")(function* (
+				installation: VcsInstallation,
+				repo: VcsRepositoryRef,
+				publication: PullRequestReviewPublication,
+			) {
+				const approval = publication.approval
+				if (approval === undefined) return undefined
+				const id = installation.externalInstallationId
+				if (approval.action === "withdraw") {
+					return yield* withdrawApprovals(id, repo, publication.number, approval.reason)
+				}
+				// An approval Maple could not later find and withdraw is one it must not give.
+				if (appBotLogin === undefined) return "unsupported" as const
+				const pull = yield* client.getPullRequestHead(id, repo.owner, repo.name, publication.number)
+				if (pull.state !== "open") return "not_open" as const
+				if (pull.draft === true) return "draft" as const
+				if (pull.head.sha !== publication.headSha) return "head_moved" as const
+				// The review read the diff against one base: retargeted since, the pull request merges
+				// something else. A review that recorded no base vouches for none.
+				if (approval.baseSha === undefined || pull.base.sha !== approval.baseSha) {
+					return "base_moved" as const
+				}
+				// An unknown default branch reads as a different one.
+				const defaultBranch = pull.base.repo?.default_branch
+				if (defaultBranch === undefined || pull.base.ref !== defaultBranch) {
+					return "base_not_default" as const
+				}
+				const author = pull.user?.login
+				if (author === undefined || author === appBotLogin) return "untrusted_author" as const
+				const permission = yield* client.getCollaboratorPermission(id, repo.owner, repo.name, author)
+				if (!pushPermissions.has(permission)) return "untrusted_author" as const
+				// Past the page cap a later withdrawal could not find this approval among the reviews.
+				const reviews = yield* client.listPullRequestReviews(
+					id,
+					repo.owner,
+					repo.name,
+					publication.number,
+				)
+				if (reviews.truncated || reviews.items.length >= MAX_REVIEWS_BEFORE_APPROVAL) {
+					return "too_many_reviews" as const
+				}
+				yield* client.createPullRequestReview(id, repo.owner, repo.name, publication.number, {
+					commitId: publication.headSha,
+					body: approval.body,
+					comments: [],
+					event: "APPROVE",
+				})
+				return "approved" as const
+			})
+
+			const withdrawPullRequestApprovals: VcsProviderClient["withdrawPullRequestApprovals"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				Effect.gen(function* () {
+					const id = installation.externalInstallationId
+					// An event about a head the pull request has moved past arrived late: whatever Maple
+					// approved since describes a newer head, so it stands.
+					if (input.keepHead !== undefined && appBotLogin !== undefined) {
+						const pull = yield* client.getPullRequestHead(id, repo.owner, repo.name, input.number)
+						if (pull.head.sha !== input.keepHead) return "stale" as const
+					}
+					return yield* withdrawApprovals(id, repo, input.number, input.reason, input.keepHead)
+				}).pipe(
+					Effect.mapError(toVcsError),
+					Effect.withSpan("GithubProvider.withdrawPullRequestApprovals", {
+						attributes: {
+							"vcs.owner.name": repo.owner,
+							"vcs.repository.name": repo.name,
+							"vcs.pull_request.number": input.number,
+						},
+					}),
+				)
+
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
 			// line. Then the summary comment, always, replacing the review's "reviewing" notice. Then the
 			// inline notes, which are dropped if GitHub refuses them: the comment already carries
@@ -1746,7 +1953,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						)
 						.pipe(
 							Effect.map(
-								(files): ReadonlyMap<string, string | undefined> =>
+								({ files }): ReadonlyMap<string, string | undefined> =>
 									new Map(Arr.map(files, (file) => [file.filename, file.patch])),
 							),
 							Effect.option,
@@ -1812,6 +2019,35 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					})
 					return { ...published, inlineComments, reviewUrl: review.value.html_url ?? null }
 				}).pipe(
+					// Last, and never the publish's failure: the review is already posted, and a refused
+					// approval leaves the pull request where it was, waiting for a person.
+					Effect.flatMap((published) =>
+						applyApproval(installation, repo, publication).pipe(
+							Effect.tap((outcome) =>
+								outcome === undefined
+									? Effect.void
+									: Effect.annotateCurrentSpan("vcs.pull_request.approval", outcome),
+							),
+							Effect.catchTag("@maple/backend/vcs/GithubAppError", (error) =>
+								Effect.annotateCurrentSpan("vcs.pull_request.approval", "error").pipe(
+									Effect.andThen(
+										Effect.logWarning(
+											"[GitHub] could not apply the review's approval",
+										).pipe(
+											Effect.annotateLogs({
+												status: error.status ?? "none",
+												error: error.message,
+											}),
+										),
+									),
+									Effect.as(undefined),
+								),
+							),
+							Effect.map((approval) =>
+								approval === undefined ? published : { ...published, approval },
+							),
+						),
+					),
 					Effect.mapError(toVcsError),
 					// One span over the three posts, so each step's outcome lands on the publish itself.
 					Effect.withSpan("GithubProvider.publishPullRequestReview", {
@@ -1974,6 +2210,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommenterPermission,
 				commitFiles,
 				publishPullRequestReview,
+				withdrawPullRequestApprovals,
 				writePullRequestSummaryComment,
 				writePullRequestCheck,
 				searchCode,

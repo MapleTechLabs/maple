@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { createHmac } from "node:crypto"
+import { createHmac, hkdfSync } from "node:crypto"
 import { Effect, Exit, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
@@ -12,6 +12,7 @@ import {
 	makeResolveMcpTenant,
 	makeResolveTenant,
 	ORG_SELECTION_HEADER,
+	rootPasswordProblem,
 	SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS,
 	SELF_HOSTED_SESSION_TTL_SECONDS,
 } from "./index"
@@ -22,7 +23,8 @@ const asRoleName = Schema.decodeUnknownSync(RoleName)
 
 const baseEnv = {
 	MAPLE_AUTH_MODE: "self_hosted",
-	MAPLE_ROOT_PASSWORD: Option.some(Redacted.make("root-password")),
+	MAPLE_ROOT_PASSWORD: Option.some(Redacted.make("test-root-password-0123")),
+	MAPLE_SESSION_SIGNING_SECRET: Option.some(Redacted.make("test-session-signing-secret")),
 	MAPLE_DEFAULT_ORG_ID: "default",
 	MAPLE_ORG_ID_OVERRIDE: Option.none(),
 	CLERK_SECRET_KEY: Option.none(),
@@ -34,9 +36,12 @@ const getFailure = <A, E>(exit: Exit.Exit<A, E>): E | undefined =>
 	Option.getOrUndefined(Exit.findErrorOption(exit))
 
 // A signing oracle for the self-hosted HS256 scheme: these tokens carry a VALID
-// signature made with the real root password, so they get past signature
+// signature made with the real session key, so they get past signature
 // verification. Everything they exercise is claim validation.
-const rootPassword = "root-password"
+const rootPassword = "test-root-password-0123"
+const sessionKey = Buffer.from(
+	hkdfSync("sha256", "test-session-signing-secret", rootPassword, "maple/self-hosted-session-mac/v1", 32),
+)
 const base64UrlJson = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
 
 // Takes the payload as raw JSON text so a test can express shapes `JSON.stringify`
@@ -44,7 +49,7 @@ const base64UrlJson = (value: unknown) => Buffer.from(JSON.stringify(value)).toS
 // turns into `Infinity` while `JSON.stringify(Infinity)` would emit `null`.
 const signClaimsJson = (claimsJson: string, header: unknown = { alg: "HS256", typ: "JWT" }): string => {
 	const data = `${base64UrlJson(header)}.${Buffer.from(claimsJson).toString("base64url")}`
-	return `${data}.${createHmac("sha256", rootPassword).update(data).digest("base64url")}`
+	return `${data}.${createHmac("sha256", sessionKey).update(data).digest("base64url")}`
 }
 
 const signClaims = (claims: unknown, header?: unknown): string =>
@@ -254,11 +259,50 @@ describe("makeResolveTenant", () => {
 		}),
 	)
 
+	it.effect("rejects a token signed with the raw root password", () =>
+		Effect.gen(function* () {
+			const token = signClaims(validClaims)
+			const data = Str.slice(0, Option.getOrThrow(Str.lastIndexOf(".")(token)))(token)
+			const legacy = `${data}.${createHmac("sha256", rootPassword).update(data).digest("base64url")}`
+
+			const exit = yield* resolveSignedToken(legacy)
+			assert.strictEqual(getFailure(exit)?._tag, "@maple/http/errors/UnauthorizedError")
+		}),
+	)
+
+	it.effect("rejects a token once the session signing secret changes", () =>
+		Effect.gen(function* () {
+			const login = yield* makeLoginSelfHosted(baseEnv)(rootPassword)
+			const rotated = {
+				...baseEnv,
+				MAPLE_SESSION_SIGNING_SECRET: Option.some(Redacted.make("another-signing-secret")),
+			}
+			const exit = yield* Effect.exit(
+				makeResolveTenant(rotated)({ authorization: `Bearer ${login.token}` }),
+			)
+			assert.strictEqual(getFailure(exit)?._tag, "@maple/http/errors/UnauthorizedError")
+		}),
+	)
+
+	it.effect("signs from the root password when no signing secret is set", () =>
+		Effect.gen(function* () {
+			const env = { ...baseEnv, MAPLE_SESSION_SIGNING_SECRET: Option.none() }
+			const login = yield* makeLoginSelfHosted(env)(rootPassword)
+			const tenant = yield* makeResolveTenant(env)({ authorization: `Bearer ${login.token}` })
+			assert.strictEqual(tenant.userId, asUserId("root"))
+
+			const exit = yield* Effect.exit(
+				makeResolveTenant(baseEnv)({ authorization: `Bearer ${login.token}` }),
+			)
+			assert.strictEqual(getFailure(exit)?._tag, "@maple/http/errors/UnauthorizedError")
+		}),
+	)
+
 	it.effect("accepts valid self-hosted bearer tokens", () =>
 		Effect.gen(function* () {
 			const loginSelfHosted = makeLoginSelfHosted(baseEnv)
 			const resolveTenant = makeResolveTenant(baseEnv)
-			const login = yield* loginSelfHosted("root-password")
+			const login = yield* loginSelfHosted("test-root-password-0123")
 
 			const tenant = yield* resolveTenant({
 				authorization: `Bearer ${login.token}`,
@@ -270,6 +314,51 @@ describe("makeResolveTenant", () => {
 				roles: [asRoleName("root")],
 				authMode: "self_hosted",
 			})
+		}),
+	)
+})
+
+describe("impersonated Clerk sessions", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+	const resolveWith = (auth: Record<string, unknown>) =>
+		makeResolveTenant(clerkEnv, async () => ({
+			isAuthenticated: true,
+			message: null,
+			toAuth: () => ({
+				isAuthenticated: true,
+				tokenType: "session_token",
+				userId: "user_123",
+				orgId: "org_123",
+				orgRole: "org:admin",
+				...auth,
+			}),
+		}))({ authorization: "Bearer test-token" })
+
+	it.effect("carries the impersonator and session from the act claim", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_1", actor: { sub: "user_support" } })
+			assert.deepStrictEqual(tenant.impersonation, { actorId: "user_support", sessionId: "sess_1" })
+			// Writes stay allowed: the session keeps the member's own role.
+			assert.deepStrictEqual(tenant.roles, [asRoleName("org:admin")])
+		}),
+	)
+
+	it.effect("still flags an act claim with no usable subject", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_2", actor: {} })
+			assert.deepStrictEqual(tenant.impersonation, { actorId: "unknown", sessionId: "sess_2" })
+		}),
+	)
+
+	it.effect("leaves an ordinary session unflagged", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_3", actor: null })
+			assert.strictEqual(tenant.impersonation, undefined)
 		}),
 	)
 })
@@ -479,7 +568,7 @@ describe("makeResolveMcpTenant", () => {
 		Effect.gen(function* () {
 			const loginSelfHosted = makeLoginSelfHosted(baseEnv)
 			const resolveMcpTenant = makeResolveMcpTenant(baseEnv)
-			const login = yield* loginSelfHosted("root-password")
+			const login = yield* loginSelfHosted("test-root-password-0123")
 
 			const tenant = yield* resolveMcpTenant({
 				authorization: `Bearer ${login.token}`,
@@ -556,7 +645,7 @@ describe("makeGetCustomerData", () => {
 describe("extractVerifiedPrimaryEmail", () => {
 	const address = (id: string, emailAddress: string, status: "verified" | "unverified") => ({
 		id,
-		emailAddress,
+		email_address: emailAddress,
 		verification: { status },
 	})
 
@@ -564,7 +653,10 @@ describe("extractVerifiedPrimaryEmail", () => {
 		const verified = address("e_1", "ada@acme.test", "verified")
 		const unverified = address("e_2", "someone@else.test", "unverified")
 		const pick = (primaryEmailAddressId: string | null, emailAddresses: ReadonlyArray<typeof verified>) =>
-			extractVerifiedPrimaryEmail({ primaryEmailAddressId, emailAddresses })
+			extractVerifiedPrimaryEmail({
+				primary_email_address_id: primaryEmailAddressId,
+				email_addresses: emailAddresses,
+			})
 
 		assert.strictEqual(pick("e_1", [unverified, verified]), "ada@acme.test")
 		assert.strictEqual(pick("e_2", [verified, unverified]), null)
@@ -928,7 +1020,7 @@ describe("self-hosted session lifetime", () => {
 	it.effect("mints a token bounded by both the token TTL and the absolute session deadline", () =>
 		Effect.gen(function* () {
 			yield* advanceBy(clockSeconds)
-			const login = yield* makeLoginSelfHosted(baseEnv)("root-password")
+			const login = yield* makeLoginSelfHosted(baseEnv)("test-root-password-0123")
 			const claims = decodeTokenClaims(login.token)
 
 			assert.strictEqual(claims.iat, clockSeconds)
@@ -947,7 +1039,7 @@ describe("self-hosted session lifetime", () => {
 	it.effect("stops accepting a minted token once its TTL elapses", () =>
 		Effect.gen(function* () {
 			yield* advanceBy(clockSeconds)
-			const login = yield* makeLoginSelfHosted(baseEnv)("root-password")
+			const login = yield* makeLoginSelfHosted(baseEnv)("test-root-password-0123")
 
 			yield* advanceBy(SELF_HOSTED_SESSION_TTL_SECONDS - 1)
 			assert.isTrue(Exit.isSuccess(yield* resolveToken(login.token)))
@@ -960,7 +1052,7 @@ describe("self-hosted session lifetime", () => {
 	it.effect("renews into a token that outlives the one it replaced", () =>
 		Effect.gen(function* () {
 			yield* advanceBy(clockSeconds)
-			const login = yield* makeLoginSelfHosted(baseEnv)("root-password")
+			const login = yield* makeLoginSelfHosted(baseEnv)("test-root-password-0123")
 
 			yield* advanceBy(SELF_HOSTED_SESSION_TTL_SECONDS - 60)
 			const renewed = yield* makeRefreshSelfHostedSession(baseEnv)(login.token)
@@ -980,7 +1072,7 @@ describe("self-hosted session lifetime", () => {
 	it.effect("carries the absolute session deadline forward rather than extending it", () =>
 		Effect.gen(function* () {
 			yield* advanceBy(clockSeconds)
-			const login = yield* makeLoginSelfHosted(baseEnv)("root-password")
+			const login = yield* makeLoginSelfHosted(baseEnv)("test-root-password-0123")
 
 			yield* advanceBy(SELF_HOSTED_SESSION_TTL_SECONDS - 60)
 			const renewed = yield* makeRefreshSelfHostedSession(baseEnv)(login.token)
@@ -1468,4 +1560,17 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			assertDenied(exit)
 		}),
 	)
+})
+
+describe("rootPasswordProblem", () => {
+	it("accepts a generated password", () => {
+		assert.isUndefined(rootPasswordProblem("q3V9n0bS1xYp4LmK8rT2wZcA"))
+	})
+
+	it("rejects placeholders, short and empty passwords", () => {
+		assert.match(rootPasswordProblem("change-me") ?? "", /placeholder/)
+		assert.match(rootPasswordProblem("  CHANGE-ME ") ?? "", /placeholder/)
+		assert.match(rootPasswordProblem("short-password") ?? "", /at least 16 characters/)
+		assert.match(rootPasswordProblem("   ") ?? "", /cannot be empty/)
+	})
 })

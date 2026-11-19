@@ -88,6 +88,7 @@ describe("cost budgets", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(only("All cloud spend")),
+			expectView(text("Free during the beta")).toExist(),
 			expectView(within(table, text("Monthly · All spend"))).toExist(),
 			expectView(within(table, text("$4,180.42 of $12,000.00"))).toExist(),
 			expectView(within(table, text("34%"))).toExist(),
@@ -172,19 +173,25 @@ describe("cost budgets", () => {
 	})
 
 	// A member reads every budget and is offered no write the API would refuse.
-	test("a member sees the budgets and nothing to change them with", () => {
+	test("a member sees the budgets with every change locked, and who can make one", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(LIST_OF_FIVE, MEMBER)),
 			expectView(within(table, text("AWS production"))).toExist(),
 			expectView(role("link", { name: "New budget" })).toBeAbsent(),
+			expectView(role("button", { name: "New budget" })).toBeDisabled(),
 			expectView(role("link", { name: "AWS production" })).toBeAbsent(),
-			expectView(role("switch", { name: "Turn off AWS production" })).toBeAbsent(),
-			expectView(role("button", { name: "Delete AWS production" })).toBeAbsent(),
+			expectView(role("switch", { name: "Turn off AWS production" })).toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+			expectView(role("button", { name: "Edit AWS production" })).toBeDisabled(),
+			expectView(role("button", { name: "Delete AWS production" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 	})
 
-	test("with no budget yet, a manager is offered the first one and a member is told who can make it", () => {
+	test("with no budget yet, a manager is offered the first one and a member sees it locked with who can", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(noBudgets)),
@@ -197,7 +204,8 @@ describe("cost budgets", () => {
 			given(loaded(noBudgets, MEMBER)),
 			expectView(text("No budgets yet")).toExist(),
 			expectView(role("link", { name: "New budget" })).toBeAbsent(),
-			expectView(text("Org admins and engineers can create budgets")).toExist(),
+			expectView(role("button", { name: "New budget" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 	})
 

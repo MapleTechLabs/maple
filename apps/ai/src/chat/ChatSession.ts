@@ -64,6 +64,8 @@ interface ChatSessionState {
 	readonly storage: {
 		readonly sql: SqlStorage
 		setAlarm(scheduledTime: number): Promise<void>
+		deleteAlarm(): Promise<void>
+		deleteAll(): Promise<void>
 	}
 	waitUntil(promise: Promise<unknown>): void
 }
@@ -99,6 +101,9 @@ const LATE_SESSION_COLUMNS = {
 	running_resumes: "INTEGER",
 } as const
 
+interface CheckpointRow extends Record<string, SqlStorageValue> {
+	readonly payload: string
+}
 interface ColumnRow extends Record<string, SqlStorageValue> {
 	readonly name: string
 }
@@ -176,6 +181,8 @@ export const MAX_TURN_RESUMES = 2
 
 /** What the dead attempt's assistant message is closed with when the turn is started again. */
 const TURN_RESTARTED = "Maple was restarted mid-review and is starting this review again."
+/** The same, when the attempts are spent and the turn only files what they found. */
+const TURN_SETTLING = "Maple was restarted mid-review too often and is posting what it found."
 
 /** How a conversation turn ended: its one `turn-end`, without the message it lands on. */
 export type TurnEnding = Omit<
@@ -203,7 +210,14 @@ type SlotChange =
 	| { readonly _tag: "End"; readonly messageId: string; readonly ending: TurnEnding }
 	| { readonly _tag: "Abort"; readonly reason: ChatAbortReason }
 	| { readonly _tag: "Expire" }
-	| { readonly _tag: "Resume"; readonly from: string; readonly to: string; readonly resumes: number }
+	| {
+			readonly _tag: "Resume"
+			readonly from: string
+			readonly to: string
+			readonly resumes: number
+			/** What the dead attempt's message is closed with. */
+			readonly notice: string
+	  }
 
 /**
  * What an evicted turn needs to run again: everything `beginTurn` was given. Plain JSON in the
@@ -215,9 +229,13 @@ const TurnInput = Schema.Struct({
 	text: Schema.String,
 	tenant: Schema.toEncoded(ChatTurnTenant),
 	origin: Schema.toEncoded(ChatTurnOriginSchema),
+	/** When the kickoff was recorded; absent on a claim from before it was kept. */
+	startedAt: Schema.optionalKey(Schema.Number),
 })
 type TurnInput = typeof TurnInput.Type
 const decodeTurnInput = Schema.decodeUnknownOption(Schema.fromJsonString(TurnInput))
+const decodeTurnOrigin = Schema.decodeUnknownOption(ChatTurnOriginSchema)
+const encodeTurnOrigin = Schema.encodeSync(ChatTurnOriginSchema)
 const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
 
 /**
@@ -319,6 +337,9 @@ export class ChatSession {
 	 */
 	private readonly settling = new Set<string>()
 
+	/** Set by {@link erase}: the tables are gone, so a turn still draining must not write. */
+	private erased = false
+
 	constructor(
 		private readonly ctx: ChatSessionState,
 		private readonly env: Record<string, unknown>,
@@ -366,6 +387,7 @@ export class ChatSession {
 	 * `turn-end`: leaving the slot and appending it are one synchronous step, so a turn gets one.
 	 */
 	private transition(change: SlotChange): boolean {
+		if (this.erased) return false
 		const slot = this.slot()
 		switch (change._tag) {
 			case "Begin": {
@@ -399,7 +421,7 @@ export class ChatSession {
 					type: "turn-end",
 					messageId: change.from,
 					reason: "error",
-					error: TURN_RESTARTED,
+					error: change.notice,
 				})
 				this.sql.exec(
 					"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
@@ -432,6 +454,7 @@ export class ChatSession {
 	 * the second statement was pure overhead in an isolate that is also serving every subscriber.
 	 */
 	append(event: ChatEventInput): number {
+		if (this.erased) return 0
 		const row = this.sql
 			.exec<CursorRow>(
 				"INSERT INTO events (created_at, payload) VALUES (?, ?) RETURNING seq",
@@ -557,6 +580,10 @@ export class ChatSession {
 		readonly origin: ChatTurnOrigin
 	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
 		if (!tenantOwnsSession(input)) return undefined
+		// The origin decides what the turn may reach, so it is held to its schema here, whoever
+		// called: one that does not decode starts nothing, and unknown keys do not travel on.
+		const origin = Option.map(decodeTurnOrigin(input.origin), encodeTurnOrigin)
+		if (Option.isNone(origin)) return undefined
 		this.transition({ _tag: "Expire" })
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
@@ -569,7 +596,8 @@ export class ChatSession {
 			userMessageId: input.messageId,
 			text: input.text,
 			tenant: input.tenant,
-			origin: input.origin,
+			origin: origin.value,
+			startedAt: Date.now(),
 		}
 		if (!this.transition({ _tag: "Begin", messageId: turnId, input: turn })) return undefined
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
@@ -587,8 +615,8 @@ export class ChatSession {
 	 * land here.
 	 *
 	 * The caller is also who authorized the click and decided whose authority the change runs
-	 * under — the signed-in user's own tenant from the web route, or, from a connector, the linked
-	 * `actingUserId` or the org-level connector identity. Reaching this object at all requires the
+	 * under: the signed-in user's own tenant from the web route, or, from a connector, the linked
+	 * `actingUserId`. There is no third identity. Reaching this object at all requires the
 	 * Durable Object binding, which only Maple's own Workers hold, and that is the same trust
 	 * `beginTurn` already runs on.
 	 */
@@ -703,6 +731,17 @@ export class ChatSession {
 		this.transition({ _tag: "Abort", reason: isChatAbortReason(reason) ? reason : "user" })
 	}
 
+	/**
+	 * Erase the conversation for a deleted organization: abort its turn, then drop the heartbeat
+	 * and every row. Idempotent: a later activation finds an empty object and erases it again.
+	 */
+	async erase(): Promise<void> {
+		if (!this.erased) this.transition({ _tag: "Abort", reason: "erased" })
+		this.erased = true
+		await this.ctx.storage.deleteAlarm()
+		await this.ctx.storage.deleteAll()
+	}
+
 	/** Interrupt `messageId`'s fiber if this activation runs it; a straggler's id matches nothing. */
 	private interruptTurn(messageId: string, reason: ChatAbortReason): void {
 		if (this.liveTurn?.messageId === messageId) this.liveTurn.controller.abort(reason)
@@ -721,6 +760,7 @@ export class ChatSession {
 	 * gone, so the slot is released with a terminal event now rather than when it goes stale.
 	 */
 	alarm(): void {
+		if (this.erased) return
 		const slot = this.slot()
 		switch (slot._tag) {
 			case "Idle":
@@ -746,16 +786,40 @@ export class ChatSession {
 		const row = this.sessionRow()
 		const turn = row.running_input === null ? Option.none() : decodeTurnInput(row.running_input)
 		const resumes = row.running_resumes ?? 0
-		if (Option.isSome(turn) && resumable(turn.value) && resumes < MAX_TURN_RESUMES) {
+		if (Option.isSome(turn) && resumable(turn.value) && resumes <= MAX_TURN_RESUMES) {
+			// Attempts left: start the review again. Spent: one more run, with the slot and heartbeat
+			// held, files only what they found; if that run is reset too, the review is just failed.
+			const settling = resumes === MAX_TURN_RESUMES
 			const turnId = SecureRandom.uuidV4Unsafe()
-			if (this.transition({ _tag: "Resume", from: messageId, to: turnId, resumes: resumes + 1 })) {
-				this.startTurn(turnId, turn.value, { resume: resumes + 1 })
-			}
+			const resumed = this.transition({
+				_tag: "Resume",
+				from: messageId,
+				to: turnId,
+				resumes: resumes + 1,
+				notice: settling ? TURN_SETTLING : TURN_RESTARTED,
+			})
+			if (!resumed) return
+			this.startTurn(
+				turnId,
+				turn.value,
+				settling
+					? { abandoned: { attempts: resumes + 1, fileFindings: true } }
+					: {
+							resume: {
+								userMessageId: turn.value.userMessageId,
+								text: turn.value.text,
+								attempt: resumes + 1,
+							},
+						},
+			)
 			return
 		}
 		if (!this.endTurn(messageId, TURN_FAILED)) return
 		if (Option.isSome(turn) && settlesWhenAbandoned(turn.value)) {
-			const input = { ...this.turnRunInput(messageId, turn.value), abandoned: true as const }
+			const input = {
+				...this.turnRunInput(messageId, turn.value),
+				abandoned: { attempts: Math.min(resumes, MAX_TURN_RESUMES) + 1, fileFindings: false },
+			}
 			this.ctx.waitUntil(
 				Effect.runPromise(
 					attempt("Failed to record an abandoned turn", () => this.runner(input)).pipe(
@@ -776,6 +840,10 @@ export class ChatSession {
 			messageId,
 			tenant: turn.tenant,
 			origin: turn.origin,
+			kickoff: {
+				userMessageId: turn.userMessageId,
+				...(turn.startedAt === undefined ? undefined : { startedAt: turn.startedAt }),
+			},
 		}
 	}
 
@@ -784,24 +852,16 @@ export class ChatSession {
 	 * object's work and outlives whatever request asked for it. `waitUntil` keeps the object in
 	 * memory for up to 15 minutes; the heartbeat alarm covers longer turns.
 	 */
-	private startTurn(turnId: string, turn: TurnInput, restart?: { readonly resume: number }): void {
+	private startTurn(
+		turnId: string,
+		turn: TurnInput,
+		restart?: Pick<RunChatSessionTurnInput, "resume" | "abandoned">,
+	): void {
 		const controller = new AbortController()
 		this.liveTurn = { messageId: turnId, controller }
 		this.armHeartbeat()
 		this.ctx.waitUntil(
-			this.runTurn({
-				...this.turnRunInput(turnId, turn),
-				signal: controller.signal,
-				...(restart === undefined
-					? undefined
-					: {
-							resume: {
-								userMessageId: turn.userMessageId,
-								text: turn.text,
-								attempt: restart.resume,
-							},
-						}),
-			}),
+			this.runTurn({ ...this.turnRunInput(turnId, turn), signal: controller.signal, ...restart }),
 		)
 	}
 
@@ -839,6 +899,26 @@ export class ChatSession {
 				),
 			),
 		)
+	}
+
+	/** A review turn's saved progress (`review/checkpoint.ts`), by its kickoff message. */
+	reviewCheckpoint(kickoffId: string): string | undefined {
+		return this.sql
+			.exec<CheckpointRow>("SELECT payload FROM review_checkpoints WHERE kickoff_id = ?", kickoffId)
+			.toArray()[0]?.payload
+	}
+
+	saveReviewCheckpoint(kickoffId: string, payload: string): void {
+		this.sql.exec(
+			"INSERT INTO review_checkpoints (kickoff_id, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT (kickoff_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
+			kickoffId,
+			payload,
+			Date.now(),
+		)
+	}
+
+	clearReviewCheckpoint(kickoffId: string): void {
+		this.sql.exec("DELETE FROM review_checkpoints WHERE kickoff_id = ?", kickoffId)
 	}
 
 	/**
@@ -899,6 +979,13 @@ export const chatSessionRpc = (session: ChatSession) =>
 		// A caller releasing a turn without saying how it ended is ending one that failed.
 		endTurn: (messageId) => Effect.sync(() => void session.endTurn(messageId, TURN_FAILED)),
 		abort: (reason) => Effect.sync(() => session.abort(reason)),
+		// Over RPC like `beginTurn`: the object cannot read its own name, so the caller's id is checked.
+		erase: (input) =>
+			orgIdFromChatSessionId(input.sessionId) === input.orgId
+				? Effect.promise(() => session.erase()).pipe(Effect.as(true))
+				: Effect.logError("[chat.erase] Refused an erase for another org's session").pipe(
+						Effect.as(false),
+					),
 		alarm: () => Effect.sync(() => session.alarm()),
 	}) satisfies ChatSessionRpc
 

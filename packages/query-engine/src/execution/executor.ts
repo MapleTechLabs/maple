@@ -31,6 +31,7 @@ import { parseStatement, withFormat, withSettings } from "@maple-dev/effect-orm/
 import type { WarehouseDriverError } from "./driver-error"
 import type { WarehouseExecutorApi } from "../observability"
 import {
+	clickHouseSettings,
 	mergeSettingsClauses,
 	settingsClause,
 	type QueryProfileName,
@@ -44,7 +45,14 @@ import {
 	type WarehouseReadExecutionError,
 } from "./errors"
 import { WarehouseResponseLimitError, type WarehouseResponseLimits } from "./response-limits"
-import { SQL_LOG_MAX, SQL_TRACE_MAX, fingerprintSql, summarizeSql, truncateSql } from "./fingerprint"
+import {
+	SQL_LOG_MAX,
+	SQL_TRACE_MAX,
+	fingerprintSql,
+	redactSqlLiterals,
+	summarizeSql,
+	truncateSql,
+} from "./fingerprint"
 import { BackendDialect, warehouseTargetAttributes } from "./backend"
 import { managedWarehouseCapabilities } from "./managed-capabilities"
 import { resolveCompiledQuery } from "./compiled-input"
@@ -561,14 +569,29 @@ WHERE name = 'enable_full_text_index'`,
 		// Parsed once here and passed to the driver as a statement, so no driver
 		// re-derives from SQL text which terminal clauses it already carries.
 		const parsed = parseStatement(sql)
+		// Read-only mode refuses a `SETTINGS` clause, so there the limits travel with the request.
+		const readOnly =
+			execution === "raw" && dialect.readOnlyRawSql
+				? { settings: clickHouseSettings(settings) }
+				: undefined
+		yield* Effect.annotateCurrentSpan("maple.warehouse.read_only", readOnly !== undefined)
 		const statement = withFormat(
-			withSettings(parsed, mergeSettingsClauses(parsed.settings, settingsClause(settings))),
+			withSettings(
+				parsed,
+				readOnly === undefined
+					? mergeSettingsClauses(parsed.settings, settingsClause(settings))
+					: parsed.settings,
+			),
 			dialect.wireFormat === "in-statement" ? (parsed.format ?? dialect.statementFormat) : undefined,
 		)
 		const finalSql = statement.text
 		const sqlLength = finalSql.length
 		const sqlTruncated = sqlLength > SQL_TRACE_MAX
-		yield* Effect.annotateCurrentSpan("db.query.text", truncateSql(finalSql, SQL_TRACE_MAX))
+		// Literals are customer data; the length and fingerprint below still describe the real statement.
+		yield* Effect.annotateCurrentSpan(
+			"db.query.text",
+			truncateSql(redactSqlLiterals(finalSql), SQL_TRACE_MAX),
+		)
 		yield* Effect.annotateCurrentSpan("db.query.length", sqlLength)
 		yield* Effect.annotateCurrentSpan("db.query.truncated", sqlTruncated)
 		// Fingerprint the body, not the rendered statement: SETTINGS and FORMAT
@@ -608,12 +631,12 @@ WHERE name = 'enable_full_text_index'`,
 		// slot count reflects the connection, not the retry schedule's sleeps.
 		const queryAttempt = trackOutboundSlot(
 			client
-				.sql(
-					statement,
-					effectiveResponseLimits === undefined
+				.sql(statement, {
+					...(effectiveResponseLimits === undefined
 						? undefined
-						: { responseLimits: effectiveResponseLimits },
-				)
+						: { responseLimits: effectiveResponseLimits }),
+					...(readOnly === undefined ? undefined : { readOnly }),
+				})
 				.pipe(
 					Effect.mapError((error) =>
 						Schema.is(WarehouseResponseLimitError)(error)
@@ -687,8 +710,9 @@ WHERE name = 'enable_full_text_index'`,
 						durationMs: elapsedMs,
 						retryAttempts: attempts,
 						errorTag: error._tag,
-						message: error.message,
-						sql: truncateSql(finalSql, SQL_LOG_MAX),
+						// Driver messages quote the offending value; the caller still gets the original.
+						message: redactSqlLiterals(error.message),
+						sql: truncateSql(redactSqlLiterals(finalSql), SQL_LOG_MAX),
 						sqlLength,
 						sqlFingerprint: fingerprintSql(finalSql),
 						profile: options?.profile,

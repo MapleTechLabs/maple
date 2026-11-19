@@ -132,6 +132,77 @@ describe("share", () => {
 		expect(moved.window?.endTime).toBe("2026-10-01 12:05:00")
 	})
 
+	test("an auto-refresh tick inside the same grid step fetches nothing; the next step refetches", () => {
+		const settled = update(measured(2), Message.CompletedFlushFrame()).model
+		const tickAt = (model: Model, nowMs: number) =>
+			update(
+				update(model, Message.TickedAutoRefresh()).model,
+				Message.CompletedResolveReloadClock({ nowMs }),
+			)
+		const sameStep = tickAt(settled, NOW + 30_000)
+		expect(names(sameStep.commands)).not.toContain(FetchBatch.name)
+		expect(sameStep.model.window?.endTime).toBe(settled.window?.endTime)
+		expect(names(tickAt(sameStep.model, NOW + 60_000).commands)).toContain(FetchBatch.name)
+	})
+
+	test("a tile pinned to its own range refetches on its grid step while the board window holds", () => {
+		const pinnedShare = share(1)
+		const pinned = {
+			...pinnedShare,
+			dashboard: {
+				...pinnedShare.dashboard,
+				widgets: [{ ...widget("w0"), timeRange: { type: "relative" as const, value: "10m" } }],
+			},
+		}
+		const settled = Arr.reduce(
+			[
+				Message.CompletedResolveClock({ nowMs: NOW }),
+				Message.CompletedResolveShare({ token: "tok", resolve: { _tag: "Ready", share: pinned } }),
+				Message.MeasuredWidget({ widgetId: "w0", maxDataPoints: 300 }),
+				Message.CompletedFlushFrame(),
+			],
+			init({ token: "tok", search: {} }).model,
+			(model, message) => update(model, message).model,
+		)
+		const ticked = update(
+			update(settled, Message.TickedAutoRefresh()).model,
+			Message.CompletedResolveReloadClock({ nowMs: NOW + 30_000 }),
+		)
+		expect(ticked.model.window?.endTime).toBe(settled.window?.endTime)
+		expect(names(ticked.commands)).toContain(FetchBatch.name)
+	})
+
+	test("a tick retries a failed tile once, not again while the retry is in flight", () => {
+		const flushed = update(measured(1), Message.CompletedFlushFrame()).model
+		const failed = update(
+			flushed,
+			Message.CompletedFetchBatch({
+				batchId: flushed.sentBatchId,
+				keys: { w0: flushed.requested.w0 ?? "" },
+				states: {},
+			}),
+		).model
+		expect(failed.states.w0?._tag).toBe("Error")
+		const ticked = update(
+			update(failed, Message.TickedAutoRefresh()).model,
+			Message.CompletedResolveReloadClock({ nowMs: NOW + 30_000 }),
+		)
+		expect(names(ticked.commands)).toContain(FetchBatch.name)
+		const again = update(
+			update(ticked.model, Message.TickedAutoRefresh()).model,
+			Message.CompletedResolveReloadClock({ nowMs: NOW + 40_000 }),
+		)
+		expect(names(again.commands)).not.toContain(FetchBatch.name)
+	})
+
+	test("a reload inside the same grid step still refetches at the true time", () => {
+		const settled = update(measured(2), Message.CompletedFlushFrame()).model
+		const clicked = update(settled, Message.ClickedReload()).model
+		const reloaded = update(clicked, Message.CompletedResolveReloadClock({ nowMs: NOW + 30_000 }))
+		expect(names(reloaded.commands)).toContain(FetchBatch.name)
+		expect(reloaded.model.window?.endTime).toBe("2026-10-01 12:00:30")
+	})
+
 	test("an unknown link renders the unavailable card", () => {
 		scene(
 			{ update: (model, message) => update(model, message), view },

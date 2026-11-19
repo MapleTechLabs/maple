@@ -10,9 +10,10 @@ import type {
 	QueryResultContract,
 	QuerySet,
 } from "@maple/query-model"
-import type { RawSqlDataSource } from "./access"
+import type { PromqlDataSource, RawSqlDataSource } from "./access"
 import type { WidgetDataSourceTransformV2 } from "./shared/transform"
 import type {
+	PromqlWidgetDataSource,
 	QueryWidgetDataSource,
 	RawSqlWidgetDataSource,
 	RouteWidgetDataSource,
@@ -98,6 +99,20 @@ export const makeRawSqlDataSource = (input: RawSqlDataSourceInput): typeof RawSq
 	...(!(input.granularitySeconds === undefined)
 		? { granularitySeconds: input.granularitySeconds }
 		: undefined),
+	...(!(input.transform === undefined) ? { transform: input.transform } : undefined),
+})
+
+export interface PromqlDataSourceInput extends PromqlDataSource {
+	readonly transform?: WidgetDataSourceTransform
+}
+
+/** A widget backed by a PromQL query over the metric tables. */
+export const makePromqlDataSource = (input: PromqlDataSourceInput): typeof PromqlWidgetDataSource.Type => ({
+	kind: "promql",
+	query: input.query,
+	...(!(input.legendFormat === undefined) ? { legendFormat: input.legendFormat } : undefined),
+	...(!(input.minStepSeconds === undefined) ? { minStepSeconds: input.minStepSeconds } : undefined),
+	...(!(input.displayType === undefined) ? { displayType: input.displayType } : undefined),
 	...(!(input.transform === undefined) ? { transform: input.transform } : undefined),
 })
 

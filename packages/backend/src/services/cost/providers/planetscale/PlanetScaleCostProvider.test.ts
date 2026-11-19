@@ -102,9 +102,9 @@ describe("PlanetScaleCostProvider", () => {
 					const pulled = yield* pull(ORG, connectionRef)
 					// One list, then the two months the window touches. September is not read.
 					assert.deepStrictEqual(world.urls, [
-						`${INVOICES_PATH}?per_page=50&page=1`,
-						`${INVOICES_PATH}/inv_2026-11/line-items?per_page=100&page=1`,
-						`${INVOICES_PATH}/inv_2026-10/line-items?per_page=100&page=1`,
+						`${INVOICES_PATH}?page=1&per_page=50`,
+						`${INVOICES_PATH}/inv_2026-11/line-items?page=1&per_page=100`,
+						`${INVOICES_PATH}/inv_2026-10/line-items?page=1&per_page=100`,
 					])
 					// The stored access token, as a bearer: nothing is exchanged for a live token.
 					assert.deepStrictEqual(world.authorizations, Arr.replicate("Bearer ps-access-token", 3))
@@ -357,7 +357,7 @@ describe("PlanetScaleCostProvider", () => {
 				const error = yield* Effect.flip(pull(ORG, connectionRef))
 				assert.strictEqual(error.reason, "not_ready")
 				assert.deepStrictEqual(world.urls, [
-					"/v1/organizations/other-team/invoices?per_page=50&page=1",
+					"/v1/organizations/other-team/invoices?page=1&per_page=50",
 				])
 			}),
 		)

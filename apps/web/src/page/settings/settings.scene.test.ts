@@ -117,6 +117,7 @@ describe("settings page", () => {
 			tags: [],
 			agent_access: true,
 			agent_pii: false,
+			supports_pii_redaction: false,
 			connection: {
 				type: "clickhouse",
 				url: "https://ch.example.com",
@@ -173,15 +174,6 @@ describe("settings page", () => {
 		)
 	})
 
-	test("a retired tab id replaces the URL with its new home", () => {
-		expect(entered({ tab: "api-keys" }).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/settings?tab=keys", isReplace: true }),
-		)
-		expect(entered({ tab: "connectors" }).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/integrations", isReplace: true }),
-		)
-	})
-
 	test("a tab this org cannot open replaces the URL with the default tab", () => {
 		// Self-hosted has no General tab, so a deep link to it lands on Ingestion with a clean URL.
 		const step = entered({ tab: "general", outcome: "denied" })
@@ -219,7 +211,7 @@ describe("settings page", () => {
 		const model = entered({ outcome: "denied" }).model
 		expect(model.tab?._tag).toBe("Ingestion")
 		expect(pageUpdate(model, Message.ClickedTab({ tab: "mcp" })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/settings?tab=mcp&outcome=denied", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/settings/mcp?outcome=denied", isReplace: false }),
 		)
 	})
 
@@ -261,7 +253,7 @@ describe("settings page", () => {
 			expectView(text("No tools match these filters")).toExist(),
 			click(role("button", { name: "Audit log" })),
 			expectOutMessage(
-				PageOutMessage.RequestedNavigation({ url: "/settings?tab=audit-log", isReplace: false }),
+				PageOutMessage.RequestedNavigation({ url: "/settings/audit-log", isReplace: false }),
 			),
 		)
 	})

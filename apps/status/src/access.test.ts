@@ -5,7 +5,7 @@ import {
 } from "@maple/domain/status-page-access"
 import type { StatusPageSnapshot } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID, makeSnapshot } from "@maple/status-page/fixtures"
-import { Effect, Option, String as Str } from "effect"
+import { Array as Arr, Effect, Option, String as Str } from "effect"
 import { beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { type FakeStorage, makeFakeStorage, postForm, publish, send } from "./test-support"
 
@@ -101,10 +101,12 @@ describe("a password-protected page", () => {
 	it("scopes the cookie to the page's path on Maple's shared host", async () => {
 		const login = await send(
 			fake,
-			postForm("https://status.maple.workers.dev/s/acme/_access", [["password", PASSWORD]]),
+			postForm("https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/_access", [
+				["password", PASSWORD],
+			]),
 		)
-		expect(login.headers.get("location")).toBe("/s/acme/")
-		expect(login.headers.get("set-cookie")).toContain("Path=/s/acme;")
+		expect(login.headers.get("location")).toBe("/s/a1b2c3d4e5f6/acme/")
+		expect(login.headers.get("set-cookie")).toContain("Path=/s/a1b2c3d4e5f6/acme;")
 	})
 
 	it("asks again once the cookie expires", async () => {
@@ -150,6 +152,47 @@ describe("a password-protected page", () => {
 		expect(response.status).toBe(429)
 		expect(response.headers.get("set-cookie")).toBeNull()
 		expect(fake.limits.keys).toEqual([`access:203.0.113.7:${FIXTURE_PAGE_ID}`])
+		// A refused client does not draw on the budget the page's other visitors share.
+		expect(fake.pageLimits.keys).toEqual([])
+	})
+
+	it("stops checking passwords once the page as a whole is rate-limited, from any address", async () => {
+		fake.pageLimits.allow = false
+		const statuses = await Promise.all(
+			Arr.map(["203.0.113.7", "198.51.100.20", "2001:db8:12:3400::1"], async (ip) => {
+				const response = await send(fake, postForm(`${PAGE}_access`, [["password", PASSWORD]], ip))
+				expect(response.headers.get("set-cookie"), ip).toBeNull()
+				return response.status
+			}),
+		)
+		expect(statuses).toEqual([429, 429, 429])
+		expect(new Set(fake.pageLimits.keys)).toEqual(new Set([`access:${FIXTURE_PAGE_ID}`]))
+	})
+
+	it("counts every address of one IPv6 /64 as the same client", async () => {
+		await send(fake, postForm(`${PAGE}_access`, [["password", "wrong"]], "2001:db8:12:3400::1"))
+		await send(fake, postForm(`${PAGE}_access`, [["password", "wrong"]], "2001:db8:12:3400:9:8:7:6"))
+		await send(fake, postForm(`${PAGE}_access`, [["password", "wrong"]], "2001:db8:12:3401::1"))
+		expect(fake.limits.keys).toEqual([
+			`access:2001:db8:12:3400::/64:${FIXTURE_PAGE_ID}`,
+			`access:2001:db8:12:3400::/64:${FIXTURE_PAGE_ID}`,
+			`access:2001:db8:12:3401::/64:${FIXTURE_PAGE_ID}`,
+		])
+	})
+
+	it("refuses the right password while either limiter cannot answer", async () => {
+		const limiters: ReadonlyArray<"client" | "page"> = ["client", "page"]
+		const statuses = await Promise.all(
+			Arr.map(limiters, async (down) => {
+				const broken = makeFakeStorage()
+				publish(broken, withAccess("password", hash))
+				broken.limiterDown.add(down)
+				const response = await send(broken, postForm(`${PAGE}_access`, [["password", PASSWORD]]))
+				expect(response.headers.get("set-cookie"), down).toBeNull()
+				return response.status
+			}),
+		)
+		expect(statuses).toEqual([429, 429])
 	})
 })
 
@@ -167,8 +210,8 @@ describe("an internal page", () => {
 			`${PAGE}api/v1/status.json`,
 			`${PAGE}badge.svg`,
 			`${PAGE}_manage`,
-			"https://status.maple.workers.dev/s/acme/",
-			"https://status.maple.workers.dev/s/acme/feed.atom",
+			"https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/",
+			"https://status.maple.workers.dev/s/a1b2c3d4e5f6/acme/feed.atom",
 		]) {
 			const response = await send(fake, url)
 			expect(response.status, url).toBe(404)

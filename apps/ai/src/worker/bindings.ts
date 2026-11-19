@@ -9,7 +9,7 @@
  * than reaching resources directly. What is here is what the MCP transport and
  * the tool registry touch on their own.
  */
-import { AuditEventsQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
+import { AuditIntakeQueue, MapleDb, prdOnlyBinding } from "@maple/infra/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Context, Effect, Layer, Option } from "effect"
@@ -19,6 +19,7 @@ import {
 	AuditEventsQueueProducer,
 	DataSourceDevelopmentCallLimit,
 	DataSourceProductionCallLimit,
+	DataSourceSqlQueryLimit,
 	McpToolsRateLimit,
 	RateLimitBindingError,
 	type RateLimiter,
@@ -33,7 +34,10 @@ import {
 	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
 	MCP_TOOLS_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/McpToolRateLimiter"
-import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
+import {
+	DATA_SOURCE_CALL_LIMITS,
+	DATA_SOURCE_SQL_QUERY_LIMIT,
+} from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 
 const bindClients = Effect.gen(function* () {
 	// `MAPLE_DB` in the stage's flavor. The agents read and write the same
@@ -61,8 +65,13 @@ const bindClients = Effect.gen(function* () {
 			namespaceId: 2026110802,
 			simple: DATA_SOURCE_CALL_LIMITS.development,
 		}),
+		// Queries Maple sends one connected ClickHouse, keyed by data source id. Shared the same way.
+		dataSourceSqlQueryLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_SQL_QUERY_LIMITER", {
+			namespaceId: 2026111801,
+			simple: DATA_SOURCE_SQL_QUERY_LIMIT,
+		}),
 		// Audited tool calls send here after the response, as api's requests do; api consumes it.
-		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditIntakeQueue),
 	}
 })
 
@@ -145,6 +154,7 @@ export const aiSessionPorts = (clients: AiBindingClients) =>
 	Layer.mergeAll(
 		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
+		Layer.succeed(DataSourceSqlQueryLimit, limiter(clients.dataSourceSqlQueryLimit)),
 		Layer.succeed(AuditEventsQueueProducer, queueProducer(clients.auditEvents)),
 	)
 

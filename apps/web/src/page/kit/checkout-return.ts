@@ -70,8 +70,12 @@ export const update = (model: Model, message: Message): Step =>
 		CompletedTrackReturned: () => unchanged(model),
 	})
 
+/** A return whose plan had already synced by the first read, so no wait was needed. */
+export const arrivedConfirmed = (): Step => ({
+	model: "Idle",
+	commands: [TrackReturned({ confirmed: true })],
+	outcome: "Confirmed",
+})
+
 /** The customer now carries a plan: the wait is over. `null` while not waiting. */
-export const confirmed = (model: Model): Step | null =>
-	model === "Confirming"
-		? { model: "Idle", commands: [TrackReturned({ confirmed: true })], outcome: "Confirmed" }
-		: null
+export const confirmed = (model: Model): Step | null => (model === "Confirming" ? arrivedConfirmed() : null)

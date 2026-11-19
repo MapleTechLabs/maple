@@ -82,6 +82,7 @@ interface GithubConnectStatus {
 	readonly accountType: VcsAccountType | null
 	readonly repositorySelection: VcsRepoSelection | null
 	readonly ciTracesEnabled: boolean
+	readonly auditLogEnabled: boolean
 	readonly repositoryDiscovery: VcsRepositoryDiscovery | null
 	readonly repositories: ReadonlyArray<GithubRepoStatus>
 }
@@ -165,6 +166,14 @@ export interface GithubConnectServiceApi {
 		{ readonly trackedBranch: string; readonly backfillQueued: boolean },
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
+	/** Send the org's GitHub events to the Security audit log, or stop. */
+	readonly setAuditLogEnabled: (
+		orgId: OrgId,
+		enabled: boolean,
+	) => Effect.Effect<
+		{ readonly enabled: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
 	/** Turn CI traces from GitHub Actions on or off for the org's active installation. */
 	readonly setCiTracesEnabled: (
 		orgId: OrgId,
@@ -198,6 +207,10 @@ export interface GithubConnectServiceApi {
 	readonly getPrReviewSettings: (
 		orgId: OrgId,
 	) => Effect.Effect<PrReviewOrgSettings, IntegrationsPersistenceError>
+	/** Whether any repository with review on turns automatic approval on in its own settings. */
+	readonly anyReviewedRepositoryAutoApproves: (
+		orgId: OrgId,
+	) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	readonly setPrReviewSettings: (
 		orgId: OrgId,
 		settings: PrReviewOrgSettings,
@@ -276,6 +289,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 			? undefined
 			: { blockOnContractBreaks: config.blockOnContractBreaks }),
 		...(config.postMergeCheck === undefined ? undefined : { postMergeCheck: config.postMergeCheck }),
+		...(config.autoApprove === undefined ? undefined : { autoApprove: config.autoApprove }),
 	})
 })
 
@@ -813,6 +827,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountType: active.accountType,
 						repositorySelection: active.repositorySelection,
 						ciTracesEnabled: active.ciTracesEnabled,
+						auditLogEnabled: active.auditLogEnabled,
 						repositoryDiscovery: active.repositoryDiscovery,
 						repositories,
 					} satisfies GithubConnectStatus
@@ -839,6 +854,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						accountType: null,
 						repositorySelection: null,
 						ciTracesEnabled: true,
+						auditLogEnabled: true,
 						repositoryDiscovery: null,
 						repositories: [],
 					} satisfies GithubConnectStatus
@@ -862,6 +878,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					accountType: deactivated.accountType,
 					repositorySelection: deactivated.repositorySelection,
 					ciTracesEnabled: deactivated.ciTracesEnabled,
+					auditLogEnabled: deactivated.auditLogEnabled,
 					repositoryDiscovery: deactivated.repositoryDiscovery,
 					repositories,
 				} satisfies GithubConnectStatus
@@ -1064,6 +1081,34 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { enabled }
 			})
 
+			const setAuditLogEnabled = Effect.fn("GithubConnectService.setAuditLogEnabled")(function* (
+				orgId: OrgId,
+				enabled: boolean,
+			) {
+				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const active = Option.getOrUndefined(
+					Arr.findFirst(
+						installations,
+						(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+					),
+				)
+				if (active === undefined) {
+					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_audit_log.outcome": "not_connected" })
+					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
+				}
+				const changed = yield* asPersistence(repo.setAuditLogEnabled(orgId, active.id, enabled))
+				if (!changed) {
+					yield* Effect.annotateCurrentSpan({ orgId, "vcs.set_audit_log.outcome": "not_connected" })
+					return yield* new IntegrationsValidationError({ message: "GitHub is not connected." })
+				}
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.set_audit_log.outcome": "changed",
+					"vcs.audit_log.enabled": enabled,
+				})
+				return { enabled }
+			})
+
 			const setPrReviewEnabled = Effect.fn("GithubConnectService.setPrReviewEnabled")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
@@ -1143,6 +1188,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return yield* asPersistence(repo.getPrReviewSettings(orgId))
 			})
 
+			const anyReviewedRepositoryAutoApproves = Effect.fn(
+				"GithubConnectService.anyReviewedRepositoryAutoApproves",
+			)(function* (orgId: OrgId) {
+				return yield* asPersistence(repo.anyReviewedRepositoryAutoApproves(orgId))
+			})
+
 			const setPrReviewSettings = Effect.fn("GithubConnectService.setPrReviewSettings")(function* (
 				orgId: OrgId,
 				settings: PrReviewOrgSettings,
@@ -1178,9 +1229,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				deleteRepository,
 				setTrackedBranch,
 				setCiTracesEnabled,
+				setAuditLogEnabled,
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,
+				anyReviewedRepositoryAutoApproves,
 				setPrReviewSettings,
 				setPrReviewConfig,
 			} satisfies GithubConnectServiceApi

@@ -15,7 +15,7 @@ import {
 	reviewerMention,
 	scorePrReview,
 } from "./pr-review-rules"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -62,6 +62,29 @@ describe("normalizePrReviewSubmission", () => {
 		assert.isUndefined(bare.checked)
 	})
 
+	it("reports the verdict the model sent, apart from the one the report settles on", () => {
+		// Nothing sent, or a word that is no verdict: the report reads clean, the submission does not.
+		const silent = normalizePrReviewSubmission({ summary: "x" })
+		assert.equal(silent.report.verdict, "clean")
+		assert.isUndefined(silent.submittedVerdict)
+		assert.isUndefined(normalizePrReviewSubmission({ verdict: "lgtm" }).submittedVerdict)
+		// `issues` with no finding kept is tidied to clean, and still reported as sent.
+		const unanchored = normalizePrReviewSubmission({
+			verdict: "issues",
+			findings: [{ title: "Breaks the retry", severity: "warn" }],
+		})
+		assert.equal(unanchored.report.verdict, "clean")
+		assert.equal(unanchored.submittedVerdict, "issues")
+		assert.equal(unanchored.droppedFindings, 1)
+		assert.equal(normalizePrReviewSubmission({ verdict: "clean" }).submittedVerdict, "clean")
+	})
+
+	it("counts a findings list it could not read as a dropped finding", () => {
+		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).droppedFindings, 1)
+		assert.equal(normalizePrReviewSubmission({ findings: "[]" }).droppedFindings, 0)
+		assert.equal(normalizePrReviewSubmission({}).droppedFindings, 0)
+	})
+
 	it("reads a list the model sent as its JSON text", () => {
 		// glm-5.3-flash sent `findings` as a string in prod; a strict decode ended the review early.
 		const { report } = normalizePrReviewSubmission({
@@ -78,6 +101,59 @@ describe("normalizePrReviewSubmission", () => {
 			"F2",
 		])
 		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).report.findings.length, 0)
+	})
+
+	it("takes the earlier findings the reviewer dismissed, each with its reason", () => {
+		const { dismissed } = normalizePrReviewSubmission({
+			dismissed: [
+				{ handle: "f1", reason: "It is a boolean, the reply was right." },
+				{ handle: "F1", reason: "again" },
+				{ handle: "F2" },
+				{ handle: "nonsense", reason: "x" },
+			],
+		})
+		assert.deepEqual(dismissed, [{ handle: "F1", reason: "It is a boolean, the reply was right." }])
+		assert.deepEqual(
+			normalizePrReviewSubmission({ dismissed: '[{"handle":"F3","reason":"an enum"}]' }).dismissed,
+			[{ handle: "F3", reason: "an enum" }],
+		)
+	})
+
+	it("keeps where a credential finding says its value comes from", () => {
+		const { report } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/auth.ts",
+					line: 50,
+					category: "security",
+					checkId: "PII-01",
+					severity: "critical",
+					title: "Bearer token logged",
+					body: "b",
+					source: " src/auth.ts:42 `const token = req.headers.authorization` ",
+				},
+			],
+		})
+		assert.equal(report.findings[0]?.source, "src/auth.ts:42 `const token = req.headers.authorization`")
+	})
+
+	it("keeps a long source whole, so a citation past 200 characters survives", () => {
+		const source = `${Str.repeat(30)("Context. ")}src/auth.ts:42 \`const token = req.headers.authorization\``
+		const { report } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/auth.ts",
+					line: 50,
+					category: "security",
+					checkId: "PII-01",
+					severity: "critical",
+					title: "Bearer token logged",
+					body: "b",
+					source,
+				},
+			],
+		})
+		assert.equal(report.findings[0]?.source, source)
 	})
 
 	it("drops a finding it cannot anchor to a line rather than inventing one", () => {

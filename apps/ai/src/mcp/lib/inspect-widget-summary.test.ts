@@ -6,6 +6,7 @@ import {
 	makeQueryDraft,
 } from "@maple/backend/dashboard-templates/helpers"
 import { summarizeOutcome, SLOW_RAW_SQL_MS, type InspectionOutcome } from "./inspect-widget"
+import { NO_WIDGET_VARIABLES } from "./widget-variables"
 
 const widget: DashboardDocument["widgets"][number] = {
 	id: "w-1",
@@ -33,6 +34,7 @@ const rawSql = (durationMs: number): InspectionOutcome => ({
 		timeRange,
 		durationMs,
 	},
+	variables: NO_WIDGET_VARIABLES,
 })
 
 describe("summarizeOutcome", () => {
@@ -41,6 +43,27 @@ describe("summarizeOutcome", () => {
 		const slow = summarizeOutcome(widget, rawSql(SLOW_RAW_SQL_MS + 500))
 		expect(slow.verdict).toBe("suspicious")
 		expect(slow.note).toContain("may time out")
+	})
+
+	it("points an empty raw-SQL tile at the variable that had no value", () => {
+		const outcome: InspectionOutcome = {
+			kind: "raw_sql",
+			data: {
+				endpoint: "raw_sql_chart",
+				sql: "SELECT 1",
+				status: "ok",
+				rowCount: 0,
+				columns: ["value"],
+				rows: [],
+				truncated: false,
+				timeRange,
+				durationMs: 100,
+			},
+			variables: { ...NO_WIDGET_VARIABLES, unresolved: ["region"] },
+		}
+		const entry = summarizeOutcome(widget, outcome)
+		expect(entry.verdict).toBe("suspicious")
+		expect(entry.note).toContain("No value for $region")
 	})
 
 	describe("seriesCount", () => {
@@ -68,6 +91,7 @@ describe("summarizeOutcome", () => {
 				flags: [],
 				notes: [],
 			},
+			variables: NO_WIDGET_VARIABLES,
 		})
 
 		it("takes the largest chart query, so a formula over its operands is not counted twice", () => {

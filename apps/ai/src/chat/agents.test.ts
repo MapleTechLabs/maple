@@ -3,6 +3,7 @@
  * a turn, which is cheap to assert here and expensive to debug live.
  */
 import {
+	type ChatConnectorOrigin,
 	type ChatTurnOrigin,
 	ChatConnectorId,
 	ChatConversationKey,
@@ -11,16 +12,17 @@ import {
 	makeChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
-import { ExternalUserId, OrgId, UserId } from "@maple/primitives"
-import { Effect, Schema, Array as Arr } from "effect"
+import { ExternalUserId, OrgId, RoleName, UserId } from "@maple/primitives"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
-import { mapleToolCatalog } from "../mcp/tools/registry"
+import { mapleToolCatalog, mapleToolCatalogFor } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
-import { profileForRoles, profileForTurn } from "./profiles"
+import { profileForRoles, profileForTenant, profileForTurn, toolSurfaceForApproval } from "./profiles"
 import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./maple-toolkit"
@@ -29,13 +31,38 @@ import { buildChatToolkit } from "./maple-toolkit"
 const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
 const CONVERSATION = Schema.decodeSync(ChatConversationKey)("c1")
 
-const CONNECTOR_ORIGIN: ChatTurnOrigin = {
+/** Someone the host could not resolve to a Maple user: a connector with no account linking. */
+const ANONYMOUS_ORIGIN: ChatConnectorOrigin = {
 	kind: "connector",
 	connectorId: CONNECTOR,
 	workspaceId: "w1",
 	externalUserId: Schema.decodeSync(ExternalUserId)("u-1"),
 	displayName: "Ada",
 }
+
+/** The same asker on a connector that links accounts, resolved to their Maple user. */
+const CONNECTOR_ORIGIN: ChatTurnOrigin = {
+	...ANONYMOUS_ORIGIN,
+	actingUserId: Schema.decodeSync(UserId)("user_ada"),
+}
+
+/** Reads a turn nobody is named on is not offered: connected systems, source, SQL, end users. */
+const WITHHELD_FROM_ANONYMOUS = [
+	"query_data_source",
+	"describe_data_source",
+	"list_data_sources",
+	"search_data_sources",
+	"run_sql",
+	"list_users",
+	"inspect_user",
+	"search_sessions",
+	"get_session_transcript",
+	"get_agent_session_transcript",
+	"list_integrations",
+	"list_source_repositories",
+	"search_source_code",
+	"read_source_file",
+]
 
 describe("AGENTS", () => {
 	it("names an agent for every wire mode", () => {
@@ -124,7 +151,8 @@ describe("profileForTurn", () => {
 		const profile = profileForTurn(agentForSession(sessionId), origin)
 		return {
 			profile,
-			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit.tools,
+			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.toolSurface, "record").toolkit
+				.tools,
 		}
 	}
 
@@ -142,7 +170,13 @@ describe("profileForTurn", () => {
 		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
 			"org:analyst",
 		])
-		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit
+		const { tools } = buildChatToolkit(
+			executor,
+			tenant,
+			profile.ruleset,
+			profile.toolSurface,
+			"record",
+		).toolkit
 		assert.property(tools, "search_traces")
 		for (const name of MUTATING_TOOL_NAMES) {
 			if (DASHBOARD_AUTHORING_TOOLS.has(name)) {
@@ -159,6 +193,51 @@ describe("profileForTurn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
 		}
+	})
+
+	it("offers query_data_source only to a turn whose query the service would run", () => {
+		const offered = (caller: Pick<TenantContext, "roles" | "turnOrigin" | "turnStarter">) => {
+			const origin = caller.turnOrigin ?? { kind: "app" }
+			const session = origin.kind === "connector" ? connectorSession : appSession
+			const profile = profileForTenant(profileForTurn(agentForSession(session), origin), caller)
+			return evaluatePermission(profile.ruleset, "query_data_source") !== "deny"
+		}
+		const roles = (name: string) => [Schema.decodeSync(RoleName)(name)]
+		const autonomous = { kind: "autonomous" } as const
+		assert.deepStrictEqual(
+			{
+				analyst: offered({ roles: roles("org:analyst") }),
+				member: offered({ roles: roles("org:member") }),
+				engineer: offered({ roles: roles("org:engineer") }),
+				unlinkedConnector: offered({ roles: [], turnOrigin: CONNECTOR_ORIGIN }),
+				producerPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "producer" },
+				}),
+				memberStartedPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "person", roles: roles("org:member") },
+				}),
+				engineerStartedPass: offered({
+					roles: [],
+					turnOrigin: autonomous,
+					turnStarter: { kind: "person", roles: roles("org:engineer") },
+				}),
+				passNobodyStarted: offered({ roles: [], turnOrigin: autonomous }),
+			},
+			{
+				analyst: false,
+				member: false,
+				engineer: true,
+				unlinkedConnector: false,
+				producerPass: true,
+				memberStartedPass: false,
+				engineerStartedPass: true,
+				passNobodyStarted: false,
+			},
+		)
 	})
 
 	it("offers a connector the repository sandbox but no internal-audience tool", () => {
@@ -194,6 +273,52 @@ describe("profileForTurn", () => {
 			profileForTurn(agentForSession(connectorSession), CONNECTOR_ORIGIN).prompt,
 			CONNECTOR_SYSTEM_PROMPT,
 		)
+	})
+
+	it("offers a connector turn nobody is named on no tool that changes data", () => {
+		const { profile, tools } = toolsFor(connectorSession, ANONYMOUS_ORIGIN)
+		assert.isNotEmpty([...MUTATING_TOOL_NAMES])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.notProperty(tools, name, `${name} was offered to a turn nobody is named on`)
+			// Never `ask`: a proposal here would post an approval card nobody can honour.
+			assert.equal(evaluatePermission(profile.ruleset, name), "deny", name)
+		}
+	})
+
+	it("offers that turn no data source, SQL, end-user or source tool, and no sandbox", () => {
+		const { tools } = toolsFor(connectorSession, ANONYMOUS_ORIGIN)
+		const sandbox = Arr.filter(mapleToolCatalog, (tool) => Str.startsWith("sandbox_")(tool.name))
+		for (const name of [...WITHHELD_FROM_ANONYMOUS, ...Arr.map(sandbox, (tool) => tool.name)]) {
+			assert.notProperty(tools, name, `${name} was offered to a turn nobody is named on`)
+		}
+		// The linked asker on the same conversation is still offered every one of them.
+		const linked = toolsFor(connectorSession, CONNECTOR_ORIGIN).tools
+		for (const name of WITHHELD_FROM_ANONYMOUS) assert.property(linked, name)
+	})
+
+	it("still answers that turn from telemetry, ungated", () => {
+		const { profile, tools } = toolsFor(connectorSession, ANONYMOUS_ORIGIN)
+		for (const name of ["find_errors", "search_traces", "list_services", "query_data"]) {
+			assert.property(tools, name)
+			assert.equal(evaluatePermission(profile.ruleset, name), "allow", name)
+		}
+	})
+
+	it("applies an approved change on a surface that admits it only for a named approver", () => {
+		const agent = agentForSession(connectorSession)
+		const admitsChanges = (surface: McpToolSurface) =>
+			Arr.some(mapleToolCatalogFor(surface), (tool) => MUTATING_TOOL_NAMES.has(tool.name))
+		const approver = ANONYMOUS_ORIGIN
+
+		assert.isTrue(
+			admitsChanges(toolSurfaceForApproval(agent, { approver, actingUserId: "user_ada" })),
+			"a linked approver's change was not admitted",
+		)
+		assert.isTrue(
+			admitsChanges(toolSurfaceForApproval(agentForSession(appSession), { approver: { kind: "app" } })),
+		)
+		// Whatever let it through this far, the registry holds nothing for it to run.
+		assert.isFalse(admitsChanges(toolSurfaceForApproval(agent, { approver })))
 	})
 
 	it("denies the autonomous pass its mutations while leaving it the internal tools", () => {

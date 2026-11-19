@@ -31,6 +31,10 @@ describe("isOpenToAnalysts", () => {
 		).toBe(true)
 	})
 
+	it("keeps an analyst out of the cloud findings list, a Security Center read", () => {
+		expect(open(internal.cloudSecurity, "listFindings")).toBe(false)
+	})
+
 	it("refuses the work of running the product: issue triage, SLOs and alert rules", () => {
 		expect(open(internal.errors, "transitionIssue")).toBe(false)
 		expect(open(internal.errors, "commentOnIssue")).toBe(false)
@@ -41,6 +45,7 @@ describe("isOpenToAnalysts", () => {
 	it("lets an analyst change dashboards in every way a member can", () => {
 		const writes = [
 			"create",
+			"importGrafana",
 			"importPerses",
 			"instantiateTemplate",
 			"update",

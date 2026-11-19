@@ -1,6 +1,17 @@
 import * as ClickHouseHttp from "@maple-dev/effect-clickhouse-http"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientError } from "effect/http"
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream, Array as Arr, String as Str } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Ref,
+	Schema,
+	Stream,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
 import {
 	BackendDialect,
@@ -24,7 +35,7 @@ import {
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import { Env, managedReadsAreTinybird } from "@maple/backend/platform/Env"
+import { Env, orgScopedReadsApply } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 
@@ -105,6 +116,29 @@ const clickHouseSessionSettings = (kind: ClickHouseProtocolBackendConfig["kind"]
 	}
 }
 
+/** An account whose profile is already `readonly=2` refuses any change to `readonly`, a repeat included. */
+const refusesReadOnlyChange = (error: ClickHouseHttp.ClickHouseError): boolean =>
+	error._tag === "@effect-clickhouse-http/ServerError" &&
+	error.code === "164" &&
+	/Cannot modify 'readonly'/.test(error.message)
+
+/**
+ * Whether the account's own profile is `readonly=2`, asked with no setting of Maple's. A
+ * statement that sets `readonly` itself draws the same refusal, so the refusal alone must
+ * never be what drops Maple's `readonly=1`.
+ */
+const profileForbidsWrites = (client: ClickHouseHttp.Client) =>
+	client
+		.query({
+			sql: "SELECT toString(getSetting('readonly')) AS readonly",
+			limits: { maxRows: 1, maxBytes: 4_096 },
+		})
+		.pipe(
+			Effect.map(({ data }) => Arr.some(data, (row) => row["readonly"] === "2")),
+			// An unanswered question is not a yes: the caller then reports the original refusal.
+			Effect.orElseSucceed(() => false),
+		)
+
 const createClickHouseSqlClient = (
 	config: ClickHouseProtocolBackendConfig,
 ): Effect.Effect<WarehouseSqlClient, WarehouseDriverError, HttpClient.HttpClient> =>
@@ -117,28 +151,51 @@ const createClickHouseSqlClient = (
 		// is untouched. See `BackendDialect` for why each one is there.
 		settings: clickHouseSessionSettings(config.kind),
 	}).pipe(
-		Effect.mapBoth({
-			onFailure: (error) =>
-				new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
-			onSuccess: (client): WarehouseSqlClient => ({
+		Effect.mapError(
+			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
+		),
+		Effect.flatMap((client) =>
+			Effect.map(Ref.make(false), (profileIsReadOnly): WarehouseSqlClient => ({
 				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
 				// executor has already stripped any FORMAT clause and the client appends
 				// its own.
 				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
 				// default still applies: it bounds the buffer a single unfinished row can
 				// take and is far above anything a Maple query returns.
-				sql: (statement, options) =>
-					client
-						.query({
+				sql: (statement, options) => {
+					const run = (settings?: Readonly<Record<string, number>>) =>
+						client.query({
 							sql: statement.text,
 							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+							...(settings === undefined ? undefined : { settings }),
 						})
-						.pipe(
-							Effect.mapBoth({
-								onSuccess: ({ data }) => ({ data }),
-								onFailure: clickHouseDriverError,
-							}),
-						),
+					const limits = options?.readOnly?.settings
+					const query =
+						limits === undefined
+							? run()
+							: Effect.flatMap(Ref.get(profileIsReadOnly), (known) =>
+									known
+										? run(limits)
+										: run({ ...limits, readonly: 1 }).pipe(
+												Effect.catchIf(refusesReadOnlyChange, (error) =>
+													Effect.flatMap(profileForbidsWrites(client), (forbids) =>
+														forbids
+															? Effect.andThen(
+																	Ref.set(profileIsReadOnly, true),
+																	run(limits),
+																)
+															: Effect.fail(error),
+													),
+												),
+											),
+								)
+					return query.pipe(
+						Effect.mapBoth({
+							onSuccess: ({ data }) => ({ data }),
+							onFailure: clickHouseDriverError,
+						}),
+					)
+				},
 				insert: () =>
 					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
 					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
@@ -151,8 +208,8 @@ const createClickHouseSqlClient = (
 							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
 						}),
 					),
-			}),
-		}),
+			})),
+		),
 	)
 
 // Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer
@@ -431,11 +488,11 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			/**
 			 * The single routing decision: purpose → backend + credentials.
 			 *
-			 *   ingest → org-scoped reads on + a tenant's read?
+			 *   ingest → a tenant's read on managed Tinybird?
 			 *              managed Tinybird, org-scoped JWT             (source: org-jwt)
 			 *            else managed Tinybird Events API               (source: managed)
 			 *   read   → org BYO row? that org's ClickHouse             (source: org-byo)
-			 *            org-scoped reads on + managed tinybird/gateway?
+			 *            a tenant's read on managed tinybird/gateway?
 			 *              org-scoped JWT                               (source: org-jwt)
 			 *            else env: tinybird-gateway|clickhouse|tinybird (source: managed)
 			 *   raw    → org BYO row? that org's ClickHouse             (source: org-byo)
@@ -461,10 +518,10 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			 * gateway); a shared vanilla ClickHouse credential has no DB-enforced OrgId
 			 * scope, so raw SQL there is allowed only in single-org self-hosted mode.
 			 *
-			 * Org-scoped reads (`MAPLE_WAREHOUSE_ORG_SCOPED_READS`) put Maple's own compiled
-			 * reads behind the same JWT, on the read route and on tenant reads of the ingest
-			 * route alike: a query compiled for another org than its tenant then returns
-			 * nothing instead of that org's rows. The executor says which reads are one
+			 * Maple's own compiled tenant reads run behind the same JWT, on the read route and on
+			 * tenant reads of the ingest route alike: a query compiled for another org than its
+			 * tenant then returns nothing instead of that org's rows. Multi-org deployments must
+			 * configure the signing key (checked at boot). The executor says which reads are one
 			 * tenant's (`scope`); writes and cross-org reads never are and keep the shared token.
 			 */
 			const resolveRouteEffect = Effect.fn("WarehouseQueryService.resolveRoute")(function* (
@@ -475,16 +532,11 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 				yield* Effect.annotateCurrentSpan("warehouse.route", purpose)
-				// A read the executor verified is one tenant's, on a Worker that asks for the
-				// org-scoped token. Writes and cross-org reads carry no scope and keep the shared one.
-				// Where managed reads are vanilla ClickHouse there is no such token, and the flag
-				// changes nothing on either route: the same rule `Env` checks the signing key by.
-				const orgScopedRead =
-					scope?.kind === "tenant" &&
-					env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
-					managedReadsAreTinybird(env)
-						? scope
-						: undefined
+				// A read the executor verified is one tenant's always runs on the org-scoped token where
+				// managed reads are Tinybird, so Tinybird keeps it to its org even if Maple compiled it for
+				// another. Writes and cross-org reads carry no scope and keep the shared token; vanilla
+				// ClickHouse has no such token.
+				const orgScopedRead = scope?.kind === "tenant" && orgScopedReadsApply(env) ? scope : undefined
 
 				if (purpose === "ingest" && orgScopedRead !== undefined) {
 					const jwt = yield* orgReadToken(tenant, label, orgScopedRead.sql)

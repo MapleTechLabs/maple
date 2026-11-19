@@ -1589,6 +1589,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "snap",
  "tikv-jemallocator",
  "tokio",
  "tokio-postgres",
@@ -2704,6 +2705,12 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "snap"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "199905e6153d6405f9728fe44daace35f8f837bbf830bb6e85fbd5828709a886"
 
 [[package]]
 name = "socket2"

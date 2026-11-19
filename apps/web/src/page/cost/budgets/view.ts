@@ -5,7 +5,6 @@ import * as Keyed from "@maple/views/data/keyed"
 import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
@@ -25,7 +24,8 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { BELOW_LAPTOP, LAPTOP_COLUMN } from "../../kit/laptop-column"
 import { notifiesNoOne } from "../../kit/notifies-no-one"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { gatedLinkButton, gatedSwitch } from "../../kit/gated-controls"
 import {
 	alertText,
 	budgetFormHref,
@@ -39,6 +39,7 @@ import {
 import { budgetById, budgetsOf, notifiesSomeone } from "./derive"
 import { Message, type Model } from "./model"
 import { DELETE_DIALOG_ID } from "./update"
+import { betaNotice } from "../kit/beta-notice"
 
 type H = HtmlBuilder<Message>
 
@@ -106,41 +107,54 @@ const alerts = (h: H, budget: CostBudgetStatus): Html =>
 		...(notifiesSomeone(budget) ? [] : [notifiesNoOne(h)]),
 	])
 
+/** Budget actions show once the grants are read: enabled for who manages alerts, else locked. */
+const showsActions = (model: Model): boolean => model.isGrantsRead || canManageAlerts(model)
+
 const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
 	const isBusy = Arr.contains(model.togglingIds, budget.id) || model.deletingId === budget.id
+	const isLocked = !canManageAlerts(model)
 	return hstack(h, { gap: "1", align: "center", justify: "end" }, [
-		...switchControl(h, {
-			id: `budget-switch-${budget.id}`,
-			inputId: `budget-switch-input-${budget.id}`,
-			isChecked: budget.enabled,
-			isDisabled: isBusy,
-			ariaLabel: `${budget.enabled ? "Turn off" : "Turn on"} ${budget.name}`,
-			className: "mr-2",
-			onToggle: Message.ToggledBudget({ id: budget.id }),
-		}),
-		iconButton(
+		...gatedSwitch(
 			h,
-			{
-				label: `Edit ${budget.name}`,
-				// Leaving the page would drop the answer of a write still out.
-				isDisabled: isBusy,
-				attributes: [h.OnClick(Message.ClickedEdit({ id: budget.id }))],
-			},
-			[icon(h, "PencilIcon")],
+			model,
+			"alerts:manage",
+			switchControl(h, {
+				id: `budget-switch-${budget.id}`,
+				inputId: `budget-switch-input-${budget.id}`,
+				isChecked: budget.enabled,
+				isDisabled: isLocked || isBusy,
+				ariaLabel: `${budget.enabled ? "Turn off" : "Turn on"} ${budget.name}`,
+				className: "mr-2",
+				onToggle: Message.ToggledBudget({ id: budget.id }),
+			}),
 		),
-		iconButton(
-			h,
-			{
-				label: `Delete ${budget.name}`,
-				isDisabled: isBusy,
-				attributes: [h.OnClick(Message.ClickedDelete({ id: budget.id }))],
-			},
-			[icon(h, "TrashIcon")],
+		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+			iconButton(
+				h,
+				{
+					label: `Edit ${budget.name}`,
+					// Leaving the page would drop the answer of a write still out.
+					isDisabled: isDisabled || isBusy,
+					attributes: [h.OnClick(Message.ClickedEdit({ id: budget.id }))],
+				},
+				[icon(h, "PencilIcon")],
+			),
+		),
+		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+			iconButton(
+				h,
+				{
+					label: `Delete ${budget.name}`,
+					isDisabled: isDisabled || isBusy,
+					attributes: [h.OnClick(Message.ClickedDelete({ id: budget.id }))],
+				},
+				[icon(h, "TrashIcon")],
+			),
 		),
 	])
 }
 
-const budgetRow = (h: H, model: Model, budget: CostBudgetStatus, canManage: boolean): Html =>
+const budgetRow = (h: H, model: Model, budget: CostBudgetStatus): Html =>
 	tableRow(
 		h,
 		[
@@ -149,7 +163,7 @@ const budgetRow = (h: H, model: Model, budget: CostBudgetStatus, canManage: bool
 				[
 					vstack(h, { gap: "0.5", shrink: true }, [
 						// The editor is the manager's; anyone else reads the name.
-						canManage
+						canManageAlerts(model)
 							? textLink(
 									h,
 									{
@@ -186,18 +200,13 @@ const budgetRow = (h: H, model: Model, budget: CostBudgetStatus, canManage: bool
 			tableCell(h, [forecast(h, budget)], WIDE_COLUMN),
 			tableCell(h, [alerts(h, budget)], WIDE_COLUMN),
 			tableCell(h, [stateBadge(h, budget)], ROOMY_COLUMN),
-			...(canManage ? [tableCell(h, [rowActions(h, model, budget)])] : []),
+			...(showsActions(model) ? [tableCell(h, [rowActions(h, model, budget)])] : []),
 		],
 		undefined,
 		[h.Key(budget.id)],
 	)
 
-const budgetsTable = (
-	h: H,
-	model: Model,
-	budgets: ReadonlyArray<CostBudgetStatus>,
-	canManage: boolean,
-): Html =>
+const budgetsTable = (h: H, model: Model, budgets: ReadonlyArray<CostBudgetStatus>): Html =>
 	table(h, { ariaLabel: "Budgets" }, [
 		tableHeader(h, [
 			tableRow(h, [
@@ -206,7 +215,7 @@ const budgetsTable = (
 				tableHead(h, ["Forecast"], `w-44 ${WIDE_COLUMN}`),
 				tableHead(h, ["Alerts"], `w-52 ${WIDE_COLUMN}`),
 				tableHead(h, ["State"], `w-28 ${ROOMY_COLUMN}`),
-				...(canManage
+				...(showsActions(model)
 					? [
 							tableHead(
 								h,
@@ -219,7 +228,7 @@ const budgetsTable = (
 		]),
 		tableBody(
 			h,
-			Arr.map(budgets, (budget) => budgetRow(h, model, budget, canManage)),
+			Arr.map(budgets, (budget) => budgetRow(h, model, budget)),
 		),
 	])
 
@@ -235,22 +244,7 @@ const onRamp = (h: H, model: Model): Html =>
 					"Set an amount for all spend or for one provider, service or account. Maple tells you when the spend, or its forecast for the period, gets there.",
 				]),
 			]),
-			...(canManageAlerts(model)
-				? [
-						emptyActions(h, [
-							linkButton(h, { size: "sm", href: budgetFormHref() }, [
-								icon(h, "PlusIcon"),
-								"New budget",
-							]),
-						]),
-					]
-				: model.isGrantsRead
-					? [
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Org admins and engineers can create budgets",
-							]),
-						]
-					: []),
+			...(showsActions(model) ? [emptyActions(h, [newBudgetButton(h, model)])] : []),
 		],
 		"py-12",
 	)
@@ -272,7 +266,7 @@ const listBody = (h: H, model: Model): ReadonlyArray<Html> =>
 						className: `overflow-hidden ${refreshingClass(isRefetching)}`,
 						attributes: [h.AriaBusy(isRefetching)],
 					},
-					[budgetsTable(h, model, budgets, canManageAlerts(model))],
+					[budgetsTable(h, model, budgets)],
 				),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [
 					"Spend follows the cost sync, about once a day, and periods are calendar periods in UTC. A budget's incidents are in Alerts.",
@@ -299,8 +293,11 @@ const deleteDialog = (h: H, model: Model): Html => {
 	})
 }
 
-const newBudgetButton = (h: H): Html =>
-	linkButton(h, { size: "sm", href: budgetFormHref() }, [icon(h, "PlusIcon"), "New budget"])
+const newBudgetButton = (h: H, model: Model): Html =>
+	gatedLinkButton(h, model, "alerts:manage", { size: "sm", href: budgetFormHref() }, [
+		icon(h, "PlusIcon"),
+		"New budget",
+	])
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	dashboardPage(
@@ -310,10 +307,16 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			description: DESCRIPTION,
 			// With none yet, the on-ramp in the body offers the first one.
 			actions:
-				canManageAlerts(model) && (budgetsOf(model) ?? []).length > 0
-					? newBudgetButton(h)
+				showsActions(model) && (budgetsOf(model) ?? []).length > 0
+					? newBudgetButton(h, model)
 					: undefined,
 		},
-		[vstack(h, { gap: "3", className: "shrink-0" }, listBody(h, model)), deleteDialog(h, model)],
+		[
+			vstack(h, { gap: "6", className: "shrink-0" }, [
+				betaNotice(h),
+				vstack(h, { gap: "3" }, listBody(h, model)),
+			]),
+			deleteDialog(h, model),
+		],
 	),
 )

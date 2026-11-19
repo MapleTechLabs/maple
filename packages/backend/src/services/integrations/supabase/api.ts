@@ -1,10 +1,22 @@
-// Supabase Management API calls made with an OAuth access token. Field names follow the OpenAPI specs
-// (https://api.supabase.com/api/v1-json, v2-json for log drains); extra fields are ignored so
-// additions never break decode.
+// Supabase Management API calls made with an OAuth access token: through `@distilled.cloud/supabase`
+// where its spec has the endpoint, over plain HTTP for the OAuth revoke and the v2 log drains it
+// lacks. Each call decodes only the fields Maple reads, so additions never break decode.
+import * as Supabase from "@distilled.cloud/supabase"
 import { SupabaseProjectRef } from "@maple/primitives"
-import { Duration, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
+import * as VendorSdk from "../vendor-sdk"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 
@@ -12,12 +24,21 @@ export class SupabaseApiError extends Schema.TaggedError<SupabaseApiError>()(
 	"@maple/supabase/SupabaseApiError",
 	{
 		message: Schema.String,
-		/** `unauthorized` (401) drives refresh-and-retry; `rate_limited` (429) is retryable later. */
-		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "upstream"]),
+		/**
+		 * `unauthorized` (401) drives refresh-and-retry; `rate_limited` (429) is retryable later;
+		 * `invalid_response` is an answer we could not decode, so possibly our bug.
+		 */
+		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "upstream", "invalid_response"]),
 		status: Schema.optionalKey(Schema.Finite),
 		retryAfterSeconds: Schema.optionalKey(Schema.Finite),
 	},
 ) {}
+
+/** A Supabase call's span: a refusal or outage the poller records as health stays off the error list. */
+export const supabaseCallSpan = (name: string) =>
+	VendorHttp.vendorCallSpan(name, (error: { readonly _tag: string }) =>
+		Schema.is(SupabaseApiError)(error) && error.kind !== "invalid_response" ? error.kind : undefined,
+	)
 
 export const DRAINS_PLAN_MESSAGE = "Log drains need a Supabase Pro plan or higher."
 
@@ -46,7 +67,6 @@ const ProjectSchema = Schema.Struct({
 })
 export type SupabaseProject = typeof ProjectSchema.Type
 
-const decodeJsonArray = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 const decodeOrganization = Schema.decodeUnknownOption(OrganizationSchema)
 const decodeProject = Schema.decodeUnknownOption(ProjectSchema)
 
@@ -98,9 +118,14 @@ const toSupabaseError = (error: VendorHttp.VendorHttpError): SupabaseApiError =>
 			})
 		case "timeout":
 			return new SupabaseApiError({ message: `Supabase timed out while ${what}`, kind: "upstream" })
+		case "invalid_response":
+			return new SupabaseApiError({
+				message: `Supabase returned an unexpected body while ${what}`,
+				kind: "invalid_response",
+				...status,
+			})
 		case "not_found":
 		case "upstream":
-		case "invalid_response":
 			return new SupabaseApiError({
 				message:
 					error.status === undefined
@@ -130,28 +155,26 @@ export const supabaseClient = (
 		rateLimitResetHeader: "x-ratelimit-reset",
 	})
 
-const getArray = (
-	httpClient: HttpClient.HttpClient,
-	baseUrl: string,
-	path: string,
-	accessToken: string,
-	what: string,
-) =>
-	supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
-		.text({ path, operation: what })
-		.pipe(
-			Effect.flatMap((text) =>
-				decodeJsonArray(text).pipe(
-					Effect.mapError(
-						() =>
-							new SupabaseApiError({
-								message: `Supabase returned an unexpected body while ${what}`,
-								kind: "upstream",
-							}),
-					),
-				),
-			),
-		)
+const STATUS_BY_TAG = Rec.fromEntries(
+	Arr.map(Rec.toEntries(Supabase.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
+
+/** A Management API client over the SDK, with the access token as its bearer. */
+export const supabaseSdk = (httpClient: HttpClient.HttpClient, baseUrl: string, accessToken: string) =>
+	VendorSdk.make({
+		httpClient,
+		peerService: "supabase",
+		sdk: Layer.mergeAll(
+			Supabase.credentials({ accessToken: Redacted.make(accessToken), apiBaseUrl: baseUrl }),
+			Layer.succeed(Supabase.Retry.Retry, { while: () => false }),
+		),
+		statusByTag: STATUS_BY_TAG,
+		toError: toSupabaseError,
+		timeout: REQUEST_TIMEOUT,
+		rateLimitResetHeader: "x-ratelimit-reset",
+	})
+
+const UnknownArray = Schema.Array(Schema.Unknown)
 
 /** Organizations the token reaches. A Management API OAuth grant covers exactly one. */
 export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(function* (
@@ -159,12 +182,10 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 	baseUrl: string,
 	accessToken: string,
 ) {
-	const items = yield* getArray(
-		httpClient,
-		baseUrl,
-		"/v1/organizations",
-		accessToken,
-		"listing organizations",
+	const items = yield* supabaseSdk(httpClient, baseUrl, accessToken).call(
+		UnknownArray,
+		Supabase.v1ListAllOrganizations({}),
+		{ operation: "listing organizations" },
 	)
 	const organizations = Arr.flatMap(items, (item) => Option.toArray(decodeOrganization(item)))
 	// A dropped org would make a partial listing look complete, so any undecodable item fails.
@@ -186,7 +207,11 @@ export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 	baseUrl: string,
 	accessToken: string,
 ) {
-	const items = yield* getArray(httpClient, baseUrl, "/v1/projects", accessToken, "listing projects")
+	const items = yield* supabaseSdk(httpClient, baseUrl, accessToken).call(
+		UnknownArray,
+		Supabase.v1ListAllProjects({}),
+		{ operation: "listing projects" },
+	)
 	const projects = Arr.flatMap(items, (item) => Option.toArray(decodeProject(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.projects_listed": items.length,
@@ -310,7 +335,10 @@ export const otlpLogDrainBody = (spec: OtlpLogDrainSpec) => ({
 const drainsPath = (ref: string) => `/v2/projects/${encodeURIComponent(ref)}/analytics/log-drains`
 
 const unexpectedBody = (what: string) =>
-	new SupabaseApiError({ message: `Supabase returned an unexpected body while ${what}`, kind: "upstream" })
+	new SupabaseApiError({
+		message: `Supabase returned an unexpected body while ${what}`,
+		kind: "invalid_response",
+	})
 
 /** `POST /v2/projects/{ref}/analytics/log-drains`. A 402 is the plan gate (Pro or higher). */
 export const createLogDrain = Effect.fn("SupabaseApi.createLogDrain")(function* (
@@ -339,7 +367,7 @@ export const createLogDrain = Effect.fn("SupabaseApi.createLogDrain")(function* 
  * `GET /v2/projects/{ref}/analytics/log-drains`; a drain with an undecodable shape is skipped.
  * None when the plan has no drains: Free answers 403 "does not have access to this API" (live, 2026-10-22).
  */
-export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
+export const listLogDrains = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
 	baseUrl: string,
 	accessToken: string,
@@ -367,7 +395,7 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 		"maple.supabase.log_drains_skipped": list.data.length - drains.length,
 	})
 	return Option.some<ReadonlyArray<SupabaseLogDrain>>(drains)
-})
+}, supabaseCallSpan("SupabaseApi.listLogDrains"))
 
 /** `DELETE /v2/projects/{ref}/analytics/log-drains/{id}`. A 404 means it is already gone. */
 export const deleteLogDrain = Effect.fn("SupabaseApi.deleteLogDrain")(function* (

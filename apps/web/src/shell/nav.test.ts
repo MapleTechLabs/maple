@@ -3,9 +3,8 @@ import { isNavItemActive, type NavFlags, navGroups, navPreview, partitionSubItem
 import { Array as Arr, Option } from "effect"
 
 const OFF: NavFlags = {
-	cloudCost: false,
+	cloudSecurity: false,
 	productAnalytics: false,
-	releases: false,
 	securityAudit: false,
 	statusPages: false,
 }
@@ -52,23 +51,20 @@ describe("isNavItemActive", () => {
 	test("pages without a row of their own highlight their parent row", () => {
 		expect(activeTitles("/anomalies", OFF)).toEqual(["Alerts"])
 		expect(activeTitles("/security/code/findings", OFF)).toEqual(["Review & CI"])
-		expect(activeTitles("/releases", OFF)).toEqual(["Services"])
 		expect(activeTitles("/status-pages/stp_abc", OFF)).toEqual(["Services"])
 	})
 
 	test("a flagged page with its own row highlights only that row", () => {
 		const on = {
-			cloudCost: true,
+			cloudSecurity: false,
 			productAnalytics: true,
-			releases: true,
 			securityAudit: true,
 			statusPages: true,
 		}
 		expect(activeTitles("/security", on)).toEqual(["Security"])
 		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
-		expect(activeTitles("/releases", on)).toEqual(["Releases"])
 		expect(activeTitles("/status-pages/stp_abc", on)).toEqual(["Status pages"])
-		expect(activeTitles("/cost", on)).toEqual(["Cost"])
+		expect(activeTitles("/cost", on)).toEqual(["Cloud cost"])
 	})
 })
 
@@ -95,13 +91,13 @@ describe("navGroups for an analyst", () => {
 			"/users",
 			"/replays",
 			"/dashboards",
+			"/cost",
+			"/cost/budgets",
 		])
 	})
 
-	test("adds Status pages, Releases and Cost only for an org in each rollout", () => {
+	test("adds Status pages only for an org in its rollout", () => {
 		expect(hrefs({ ...OFF, statusPages: true })).toContain("/status-pages")
-		expect(hrefs({ ...OFF, releases: true })).toContain("/releases")
-		expect(hrefs({ ...OFF, cloudCost: true })).toContain("/cost")
 		// Security is an engineer's page, whatever the flag says.
 		expect(hrefs({ ...OFF, securityAudit: true })).not.toContain("/security")
 	})
@@ -117,24 +113,37 @@ describe("navGroups", () => {
 	const titles = (flags: NavFlags) =>
 		Arr.flatMap(navGroups(flags), (group) => Arr.map(group.items, (item) => item.title))
 
+	test("the Security row shows for an org in the cloudSecurity rollout, even without code audits", () => {
+		expect(titles(OFF)).not.toContain("Security")
+		expect(titles({ ...OFF, cloudSecurity: true })).toContain("Security")
+		expect(titles({ ...OFF, securityAudit: true })).toContain("Security")
+	})
+
 	test("the Status pages row shows only for an org in the statusPages rollout", () => {
 		expect(titles(OFF)).not.toContain("Status pages")
 		expect(titles({ ...OFF, statusPages: true })).toContain("Status pages")
 	})
 
-	test("the Product analytics row shows only for an org in the productAnalytics rollout", () => {
-		expect(titles(OFF)).not.toContain("Product analytics")
-		expect(titles({ ...OFF, productAnalytics: true })).toContain("Product analytics")
+	test("Product analytics sits under Explore only for an org in the productAnalytics rollout", () => {
+		const exploreSubs = (flags: NavFlags) =>
+			Arr.map(
+				Option.getOrUndefined(
+					Arr.findFirst(
+						Arr.flatMap(navGroups(flags), (group) => group.items),
+						(item) => item.title === "Explore",
+					),
+				)?.subItems ?? [],
+				(sub) => sub.title,
+			)
+		expect(exploreSubs(OFF)).not.toContain("Product analytics")
+		expect(exploreSubs({ ...OFF, productAnalytics: true })).toContain("Product analytics")
+		expect(titles({ ...OFF, productAnalytics: true })).not.toContain("Product analytics")
 	})
 
-	test("the Cost row shows only for an org in the cloudCost rollout, marked Beta under Monitor", () => {
-		expect(titles(OFF)).not.toContain("Cost")
-		const monitor = Arr.findFirst(
-			navGroups({ ...OFF, cloudCost: true }),
-			(group) => group.id === "monitor",
-		)
+	test("the Cloud cost row shows for every org, marked Beta under Monitor", () => {
+		const monitor = Arr.findFirst(navGroups(OFF), (group) => group.id === "monitor")
 		const cost = Option.flatMap(monitor, (group) =>
-			Arr.findFirst(group.items, (item) => item.title === "Cost"),
+			Arr.findFirst(group.items, (item) => item.title === "Cloud cost"),
 		)
 		expect(Option.getOrUndefined(cost)).toMatchObject({ href: "/cost", badge: "Beta" })
 	})

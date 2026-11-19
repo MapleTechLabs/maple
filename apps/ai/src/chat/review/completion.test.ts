@@ -36,10 +36,16 @@ const runFor = (partial = false): CompletionRun => ({
 	modelName: "@cf/test/model",
 	partial,
 	sessionAttributes: SESSION_ATTRIBUTES,
+	content: "record",
 })
 
 /** Nothing unread and no whole-diff read: a pass whose coverage nobody is checking. */
-const UNWATCHED: ReviewCoverage = { observe: () => {}, unread: () => [], wholeDiff: () => false }
+const UNWATCHED: ReviewCoverage = {
+	observe: () => {},
+	unread: () => [],
+	wholeDiff: () => false,
+	progress: () => ({ due: [], read: [] }),
+}
 
 /** The review completion an unattended pass is handed, with the turn's state defaulted. */
 const reviewFor = (
@@ -91,6 +97,7 @@ describe("reviewCompletion", () => {
 			observe: () => {},
 			unread: () => unread,
 			wholeDiff: () => wholeDiff,
+			progress: () => ({ due: [], read: [] }),
 		})
 		const recording = () => {
 			const filed: Array<unknown> = []
@@ -127,6 +134,43 @@ describe("reviewCompletion", () => {
 			assert.isTrue(Result.isSuccess(second))
 			assert.lengthOf(filed, 1)
 			assert.isTrue(completion.submitted())
+		})
+
+		it("hands the service the earlier findings the reviewer dismissed, with their reasons", async () => {
+			const filed: Array<SubmitPrReviewRequest> = []
+			const submit: SubmitReview = (request) => Effect.sync(() => filed.push(request))
+			const result = await submitWith(submit, []).call({
+				...CLEAN,
+				dismissed: [{ handle: "f1", reason: "A boolean flag, as the author replied." }],
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.deepEqual(filed[0]?.dismissed, [
+				{ handle: "F1", reason: "A boolean flag, as the author replied." },
+			])
+		})
+
+		// The service decides an approval on what the model sent, not on the report it was tidied into.
+		it("hands the service the verdict as the model sent it and how many findings were dropped", async () => {
+			const filedFor = async (submission: PrReviewSubmission) => {
+				const filed: Array<SubmitPrReviewRequest> = []
+				const submit: SubmitReview = (request) => Effect.sync(() => filed.push(request))
+				assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(submission)))
+				return filed[0]
+			}
+			assert.deepEqual((await filedFor(CLEAN))?.submitted, { verdict: "clean", droppedFindings: 0 })
+			// No verdict at all reads clean in the report, and is still reported as not sent.
+			const { verdict: _verdict, ...silent } = CLEAN
+			const unsaid = await filedFor(silent)
+			assert.equal(unsaid?.report.verdict, "clean")
+			assert.deepEqual(unsaid?.submitted, { droppedFindings: 0 })
+			// A warning with no line cannot be posted: the report is clean, the submission was not.
+			const unanchored = await filedFor({
+				...CLEAN,
+				verdict: "issues",
+				findings: [{ path: "src/a.ts", title: "Drops the retry", severity: "warn" }],
+			})
+			assert.equal(unanchored?.report.verdict, "clean")
+			assert.deepEqual(unanchored?.submitted, { verdict: "issues", droppedFindings: 1 })
 		})
 
 		it("records straight away when every reviewed file was read", async () => {
@@ -344,7 +388,12 @@ describe("record_finding", () => {
 		const ledger = makeReviewLedger()
 		const completion = reviewFor((request) => Effect.sync(() => filed.push(request)), {
 			partial,
-			coverage: { observe: () => {}, unread: () => unread, wholeDiff: () => true },
+			coverage: {
+				observe: () => {},
+				unread: () => unread,
+				wholeDiff: () => true,
+				progress: () => ({ due: [], read: [] }),
+			},
 			ledger,
 		})
 		assert.isDefined(completion)

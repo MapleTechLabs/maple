@@ -15,8 +15,9 @@ export interface ReviewLedger {
 	readonly findings: () => ReadonlyArray<PrReviewFinding>
 }
 
-export const makeReviewLedger = (): ReviewLedger => {
-	const saved: Array<PrReviewFinding> = []
+/** `initial` is what an earlier attempt of the same review saved before its object was reset. */
+export const makeReviewLedger = (initial: ReadonlyArray<PrReviewFinding> = []): ReviewLedger => {
+	const saved: Array<PrReviewFinding> = [...initial]
 	return {
 		record: (finding) => {
 			if (saved.length >= PR_REVIEW_MAX_FINDINGS) return "full"

@@ -38,4 +38,9 @@ export const RULES_COPY = {
 		description:
 			"An hour after a reviewed pull request deploys, compares the operations it touched before and after, and comments on the pull request.",
 	},
+	autoApprove: {
+		label: "Approve low-risk pull requests",
+		description:
+			"Approves on GitHub when a review of a small diff rates the risk low and finds nothing to fix. The approval counts toward the reviews a branch requires, on the author's own pull request too, but never as a code owner's. Only admins can turn it on.",
+	},
 } as const

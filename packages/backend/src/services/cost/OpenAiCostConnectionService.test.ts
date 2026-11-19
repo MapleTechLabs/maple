@@ -95,44 +95,37 @@ describe("OpenAiCostConnectionService", () => {
 		)
 	})
 
-	it.effect(
-		"never sends text that is not an Admin API key, nor any key of an org outside the rollout",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeOpenAi({ costs: SPEND })
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					const refusals = yield* Effect.forEach(
-						[
-							"",
-							"   ",
-							// A project key reads no organization costs.
-							"sk-proj-0123456789abcdef",
-							"sk-admin-",
-							"sk-admin-two words",
-							`sk-admin-${Str.repeat(600)("a")}`,
-							"sk-admin-line\nbreak",
-						],
-						(text) => Effect.map(Effect.flip(set(text)), (error) => [error._tag, error.message]),
-					)
-					assert.deepStrictEqual(
-						refusals,
-						Arr.replicate(
-							[VALIDATION, "That is not an OpenAI Admin API key. They start with sk-admin-."],
-							7,
-						),
-					)
-
-					world.cloudCost = false
-					const outside = yield* Effect.flip(set(KEY))
-					assert.strictEqual(outside._tag, "@maple/http/errors/CloudCostDisabledError")
-					assert.deepStrictEqual(world.urls, [])
-				}),
-			)
-		},
-	)
+	it.effect("never sends text that is not an Admin API key", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeOpenAi({ costs: SPEND })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const refusals = yield* Effect.forEach(
+					[
+						"",
+						"   ",
+						// A project key reads no organization costs.
+						"sk-proj-0123456789abcdef",
+						"sk-admin-",
+						"sk-admin-two words",
+						`sk-admin-${Str.repeat(600)("a")}`,
+						"sk-admin-line\nbreak",
+					],
+					(text) => Effect.map(Effect.flip(set(text)), (error) => [error._tag, error.message]),
+				)
+				assert.deepStrictEqual(
+					refusals,
+					Arr.replicate(
+						[VALIDATION, "That is not an OpenAI Admin API key. They start with sk-admin-."],
+						7,
+					),
+				)
+				assert.deepStrictEqual(world.urls, [])
+			}),
+		)
+	})
 
 	it.effect("refuses a key OpenAI rejects or that cannot read costs, and stores nothing", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -283,7 +276,7 @@ describe("OpenAiCostConnectionService", () => {
 		},
 	)
 
-	it.effect("removes the key and its source together, without needing the rollout", () => {
+	it.effect("removes the key and its source together", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeOpenAi({ costs: SPEND })
 		return run(
@@ -291,7 +284,6 @@ describe("OpenAiCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* set(KEY)
-				world.cloudCost = false
 				yield* remove
 				assert.isUndefined(yield* storedKey(testDb))
 				assert.isUndefined(yield* source(testDb))

@@ -1,9 +1,12 @@
 import type { V2StatusPage, V2StatusPageCustomDomain } from "@maple/domain/http/v2"
-import type { StatusPageCustomDomainRecordPurpose } from "@maple/domain/status-page"
+import {
+	isCustomDomainChallengeRecord,
+	type StatusPageCustomDomainRecordPurpose,
+} from "@maple/domain/status-page"
 import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -11,13 +14,22 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableHead,
+	tableHeader,
+	tableRow,
+	wrappingTableCell,
+} from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
 import { failureMessage } from "@maple/views/data/load-failure"
 import { settingsSection } from "../../kit/settings-section"
 import { textField } from "../shared/fields"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { customDomainDraftIssue, customDomainInput, customDomainOf } from "./update-domain"
 
 // The Settings tab's Custom domain section: the hostname, where it stands, the DNS records to add.
@@ -40,11 +52,25 @@ const STATUS_NOTE = {
 	failed: "The domain stopped. Fix what is described below, then check again.",
 } as const satisfies Record<DomainStatus, string>
 
+/** While the ownership record is still to be found: both records are needed, and for how long. */
+const OWNERSHIP_NOTE =
+	"Add both records below at your DNS provider: the CNAME points the domain at Maple and the TXT record proves you own it. You can remove the TXT record once the domain is active. Maple checks every minute for the first hour, then every ten minutes."
+
+const statusNote = (domain: V2StatusPageCustomDomain, status: DomainStatus): string =>
+	status === "pending_dns" && Arr.some(domain.dns_records, isCustomDomainChallengeRecord)
+		? OWNERSHIP_NOTE
+		: STATUS_NOTE[status]
+
 const PURPOSE_LABEL = {
 	routing: "Points the domain at Maple",
 	ownership: "Proves you own it (optional with the CNAME in place)",
 	certificate: "Lets the certificate be issued",
 } as const satisfies Record<StatusPageCustomDomainRecordPurpose, string>
+
+const purposeLabel = (record: V2StatusPageCustomDomain["dns_records"][number]): string =>
+	isCustomDomainChallengeRecord(record)
+		? "Proves you own the domain (needed until it is active)"
+		: PURPOSE_LABEL[record.purpose]
 
 const copyCell = (h: H, model: Model, key: string, value: string, label: string): Html =>
 	hstack(h, { gap: "1", align: "center" }, [
@@ -71,10 +97,11 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 					tableCell(h, [
 						vstack(h, { gap: "1" }, [
 							typography(h, { size: "xs", mono: true, weight: "medium" }, [record.type]),
-							typography(h, { size: "xs", tone: "muted" }, [PURPOSE_LABEL[record.purpose]]),
+							typography(h, { size: "xs", tone: "muted" }, [purposeLabel(record)]),
 						]),
 					]),
-					tableCell(h, [
+					// An ownership record's name and value are long: wrapped, their copy buttons stay in view.
+					wrappingTableCell(h, [
 						copyCell(
 							h,
 							model,
@@ -83,7 +110,7 @@ const recordsTable = (h: H, model: Model, domain: V2StatusPageCustomDomain): Htm
 							`${record.purpose} ${record.type} name`,
 						),
 					]),
-					tableCell(h, [
+					wrappingTableCell(h, [
 						copyCell(
 							h,
 							model,
@@ -108,35 +135,35 @@ const domainState = (h: H, model: Model, domain: V2StatusPageCustomDomain): Read
 					inlineCode(h, {}, [domain.hostname]),
 					badge(h, { variant: look.variant }, [look.label]),
 				]),
-				...(canManage(model)
-					? [
-							hstack(h, { gap: "2" }, [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "destructive-outline",
-										isDisabled: model.customDomainAction !== null,
-										attributes: [h.OnClick(Message.ClickedRemoveCustomDomain())],
-									},
-									["Remove"],
-								),
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isLoading: model.customDomainAction === "check",
-										isDisabled: model.customDomainAction !== null,
-										attributes: [h.OnClick(Message.ClickedCheckCustomDomain())],
-									},
-									[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
-								),
-							]),
-						]
-					: []),
+				hstack(h, { gap: "2" }, [
+					gatedControl(h, model, "status_pages:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "destructive-outline",
+								isDisabled: isLocked || model.customDomainAction !== null,
+								attributes: [h.OnClick(Message.ClickedRemoveCustomDomain())],
+							},
+							["Remove"],
+						),
+					),
+					gatedControl(h, model, "status_pages:edit", (isLocked) =>
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "outline",
+								isLoading: model.customDomainAction === "check",
+								isDisabled: isLocked || model.customDomainAction !== null,
+								attributes: [h.OnClick(Message.ClickedCheckCustomDomain())],
+							},
+							[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+						),
+					),
+				]),
 			]),
-			typography(h, { size: "sm", tone: "muted", as: "p" }, [STATUS_NOTE[status]]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [statusNote(domain, status)]),
 			...(domain.last_error === null || status === "active"
 				? []
 				: [
@@ -177,22 +204,23 @@ const hostnameForm = (h: H, model: Model, page: V2StatusPage, domain: V2StatusPa
 						? undefined
 						: `A subdomain you control, CNAMEd to ${domain.cname_target}.`,
 				onInput: (value) => Message.ChangedCustomDomain({ value }),
-				trailing: !canManage(model)
-					? undefined
-					: button(
-							h,
-							{
-								size: "default",
-								type: "submit",
-								isLoading: model.customDomainAction === "set",
-								isDisabled:
-									isInternal ||
-									isUnchanged ||
-									issue !== null ||
-									model.customDomainAction !== null,
-							},
-							[domain.hostname === null ? "Add domain" : "Change domain"],
-						),
+				trailing: gatedControl(h, model, "status_pages:edit", (isLocked) =>
+					button(
+						h,
+						{
+							size: "default",
+							type: "submit",
+							isLoading: model.customDomainAction === "set",
+							isDisabled:
+								isLocked ||
+								isInternal ||
+								isUnchanged ||
+								issue !== null ||
+								model.customDomainAction !== null,
+						},
+						[domain.hostname === null ? "Add domain" : "Change domain"],
+					),
+				),
 			}),
 		],
 	)
@@ -203,6 +231,7 @@ export const customDomainSection = (h: H, model: Model, page: V2StatusPage): Htm
 		h,
 		{
 			id: "status-page-settings-custom-domain",
+			framed: false,
 			anchorId: "custom-domain",
 			title: "Custom domain",
 			description: [
@@ -228,6 +257,18 @@ export const customDomainSection = (h: H, model: Model, page: V2StatusPage): Htm
 								icon(h, "CircleXmarkIcon"),
 								alertTitle(h, ["Couldn't load the custom domain"]),
 								alertDescription(h, [failureMessage(failure)]),
+								alertAction(h, [
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading: model.customDomain.retrying === true,
+											attributes: [h.OnClick(Message.ClickedRetryCustomDomain())],
+										},
+										["Try again"],
+									),
+								]),
 							]),
 					}),
 			}),

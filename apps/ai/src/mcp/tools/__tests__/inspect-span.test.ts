@@ -84,14 +84,14 @@ describe("inspect_span", () => {
 		expect(output).not.toHaveProperty("rawSpanName")
 		expect(text).toContain(`Span ${SPAN_ID} (trace ${TRACE_ID})`)
 		expect(text).toContain("Name: probe.upstream")
-		expect(text).toContain("Status: Error: Probe failed")
+		expect(text).toContain('Status: Error: "Probe failed"')
 		expect(text).toContain("Cloudflare Worker")
 		expect(text).toContain("CPU time: 0ms")
 		expect(text).toContain("Wall time: 0ms")
 		expect(text).toContain("a 0ms span may still have done CPU work")
 		// The raw maps are still there in full.
-		expect(text).toContain("`cloudflare.ray_id`: 8d2f1a3b4c5d6e7f")
-		expect(text).toContain("`cloud.platform`: cloudflare.workers")
+		expect(text).toContain('"cloudflare.ray_id": "8d2f1a3b4c5d6e7f"')
+		expect(text).toContain('"cloud.platform": "cloudflare.workers"')
 	})
 
 	it("adds nothing for a span whose projected cloudflare.* keys are empty", () => {
@@ -118,7 +118,7 @@ describe("inspect_span", () => {
 		["Unset", "", "Status: Unset"],
 		["Ok", "", "Status: Ok"],
 		["Error", "", "Status: Error"],
-		["Error", "upstream 503", "Status: Error: upstream 503"],
+		["Error", "upstream 503", 'Status: Error: "upstream 503"'],
 	])("renders status %s with message %j as %j", (statusCode, statusMessage, line) => {
 		const base = found({})
 		const span = base.span === undefined ? expect.unreachable("fixture has a span") : base.span

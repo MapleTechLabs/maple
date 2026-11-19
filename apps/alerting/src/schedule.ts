@@ -44,7 +44,8 @@ export const ALERTING_SCHEDULE = {
 	// `cost_sync` pulls cloud cost: a source's head once a day, its history a few months per tick
 	// until done. Every five minutes so a new source has cost within minutes; a tick with nothing
 	// due costs a few queries.
-	"2-59/5 * * * *": { lanes: ["vercel", "cost_sync"], deadline: "270 seconds" },
+	// `aws_security` pulls AWS security findings changed since each region's cursor.
+	"2-59/5 * * * *": { lanes: ["vercel", "cost_sync", "aws_security"], deadline: "270 seconds" },
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours

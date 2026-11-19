@@ -7,7 +7,9 @@ import { BillingApiGroup } from "./billing"
 import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
 import { AuditTrailApiGroup } from "./audit-trail"
+import { CloudSecurityApiGroup } from "./cloud-security"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
+import { FeatureRequestApiGroup } from "./feature-requests"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { OpenAiCostApiGroup } from "./openai-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
@@ -18,6 +20,7 @@ import { IntegrationsApiGroup } from "./integrations"
 import { OpenRouterCostApiGroup } from "./openrouter-cost"
 import { CostBudgetsApiGroup } from "./cost-budgets"
 import { OpenRouterKeyApiGroup } from "./openrouter-key"
+import { EnterpriseSsoApiGroup } from "./enterprise-sso"
 import { PlanetScaleCostApiGroup } from "./planetscale-cost"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
 import {
@@ -31,6 +34,7 @@ import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
 import { VercelCostApiGroup } from "./vercel-cost"
+import { GcpCostApiGroup } from "./gcp-cost"
 import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 
 /**
@@ -62,6 +66,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AiTriageApiGroup)
 	.add(AuditTrailApiGroup)
 	.add(BillingApiGroup)
+	.add(CloudSecurityApiGroup)
 	.add(CodeReviewApiGroup)
 	.add(DemoApiGroup)
 	.add(DependencyScanApiGroup)
@@ -70,13 +75,16 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(IntegrationsApiGroup)
 	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)
+	.add(EnterpriseSsoApiGroup)
 	.add(OpenRouterCostApiGroup)
 	.add(CloudflareCostApiGroup)
 	.add(AnthropicCostApiGroup)
+	.add(FeatureRequestApiGroup)
 	.add(OpenAiCostApiGroup)
 	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)
 	.add(VercelCostApiGroup)
+	.add(GcpCostApiGroup)
 	.add(CostBudgetsApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)

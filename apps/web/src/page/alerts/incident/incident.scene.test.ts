@@ -832,7 +832,7 @@ describe("alert incident, silences", () => {
 		)
 	})
 
-	test("offers Silence to managers once the rule is known, and never to members", () => {
+	test("offers Silence to managers once the rule is known, and locks it for members", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(["org:engineer"])),
@@ -849,7 +849,8 @@ describe("alert incident, silences", () => {
 			{ update: pageUpdate, view },
 			given(loaded(["org:member"])),
 			themeResolved(),
-			expectView(role("button", { name: "Silence" })).not.toExist(),
+			expectView(role("button", { name: "Silence" })).toBeDisabled(),
+			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
 		)
 		// Before rules load a click does nothing, so the group can't be silenced as the whole rule.
 		expect(step(loaded(["org:engineer"], false), Message.ClickedSilence()).commands ?? []).toEqual([])

@@ -339,6 +339,7 @@ describe("telemetry and data sources", () => {
 			tags: [],
 			agent_access: true,
 			agent_pii: false,
+			supports_pii_redaction: false,
 			connection: {
 				type: "clickhouse",
 				url: "https://ch.example.com:8443",
@@ -489,7 +490,7 @@ describe("telemetry and data sources", () => {
 			pageUpdate(hub(), Message.ClickedDataSource({ source: SOURCE_UUID, connect: null })).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: `/settings?tab=data-sources&source=${SOURCE_UUID}`,
+				url: `/settings/data-sources?source=${SOURCE_UUID}`,
 				isReplace: false,
 			}),
 		)
@@ -497,7 +498,7 @@ describe("telemetry and data sources", () => {
 			pageUpdate(hub(), Message.ClickedDataSource({ source: null, connect: "clerk" })).outMessage,
 		).toEqual(
 			PageOutMessage.RequestedNavigation({
-				url: "/settings?tab=data-sources&connect=clerk",
+				url: "/settings/data-sources?connect=clerk",
 				isReplace: false,
 			}),
 		)

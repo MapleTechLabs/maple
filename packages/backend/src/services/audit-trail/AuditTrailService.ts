@@ -6,7 +6,9 @@ import * as CH from "@maple/query-engine/ch"
 import { Clock, Context, DateTime, Effect, Layer, Option, Array as Arr } from "effect"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditEventSink } from "@maple/backend/services/integrations/vcs/AuditEventSink"
 import { auditTrailEventToRow, storedRowToEntry } from "./audit-trail-row"
+import type { AuditTrailProviderStats } from "./audit-trail-sources"
 
 const AUDIT_TRAIL_DATASOURCE = "audit_trail_events"
 
@@ -54,6 +56,11 @@ export interface AuditTrailServiceApi {
 		filters: AuditDetectionFilters,
 		window: { readonly startMs: number; readonly endMs: number },
 	) => Effect.Effect<number, AuditTrailPersistenceError>
+	/** Per platform: distinct events that happened since `sinceMs` and the newest one's time. */
+	readonly providerStats: (
+		orgId: OrgId,
+		sinceMs: number,
+	) => Effect.Effect<ReadonlyArray<AuditTrailProviderStats>, AuditTrailPersistenceError>
 }
 
 const persistenceError = (message: string) => (error: { readonly _tag: string }) =>
@@ -179,9 +186,39 @@ export class AuditTrailService extends Context.Service<AuditTrailService, AuditT
 				},
 			)
 
-			return { write, list, count }
+			const providerStats: AuditTrailServiceApi["providerStats"] = Effect.fn(
+				"AuditTrailService.providerStats",
+			)(function* (orgId, sinceMs) {
+				const rows = yield* warehouse
+					.compiledQuery(
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+						CH.compile(
+							CH.auditTrailSourcesQuery(),
+							{ orgId, since: DateTime.makeUnsafe(sinceMs) },
+							{ rowSchema: CH.auditTrailSourcesRowSchema },
+						),
+						{ profile: "aggregation", context: "auditTrailSources" },
+					)
+					.pipe(Effect.mapError(persistenceError("The audit trail could not be summarized")))
+				return Arr.map(rows, (row) => ({
+					provider: row.provider,
+					events: row.events,
+					lastEventAt: row.events > 0 ? row.lastOccurredAt * 1000 : null,
+				}))
+			})
+
+			return { write, list, count, providerStats }
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
 }
+
+/** The VCS layer's `AuditEventSink`, writing provider audit events (GitHub) to the trail. */
+export const AuditTrailEventSinkLive = Layer.effect(
+	AuditEventSink,
+	Effect.gen(function* () {
+		const trail = yield* AuditTrailService
+		return { onAuditEvent: (orgId: OrgId, event: AuditTrailEvent) => trail.write(orgId, [event]) }
+	}),
+)

@@ -6,7 +6,7 @@
 import { SKILL_REFERENCE_FILES } from "@maple/security-audit"
 import { Context, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { Tool, Toolkit } from "effect/ai"
-import { toolHandlersWithContent } from "../platform/genai-spans"
+import { type GenAiContent, toolHandlersWithContent } from "../platform/genai-spans"
 
 /** What the model sees from one read: the text, cut at the bound, and whether it was cut. */
 export interface SourceOutput {
@@ -250,5 +250,8 @@ export const sourceHandlers = (source: SourceReaderApi, onCall: Effect.Effect<vo
 	})
 
 /** The read-only toolkit's handlers, as every role without execution gets them. */
-export const auditToolHandlers = (source: SourceReaderApi, onCall: Effect.Effect<void> = Effect.void) =>
-	toolHandlersWithContent(AUDIT_TOOLKIT, sourceHandlers(source, onCall))
+export const auditToolHandlers = (
+	source: SourceReaderApi,
+	content: GenAiContent,
+	onCall: Effect.Effect<void> = Effect.void,
+) => toolHandlersWithContent(AUDIT_TOOLKIT, sourceHandlers(source, onCall), content)

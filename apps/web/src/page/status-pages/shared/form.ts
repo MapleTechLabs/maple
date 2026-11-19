@@ -28,6 +28,9 @@ import {
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
+	STATUS_PAGE_IMAGE_TYPES,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
+	isStatusPageImageDataUrl,
 } from "@maple/domain/status-page"
 import { DateTime, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { closingStatus, STATUSES_OF_KIND } from "./derive"
@@ -80,7 +83,8 @@ export const componentFormOf = (component: V2StatusPageComponent): ComponentForm
 	showUptime: component.show_uptime,
 })
 
-const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
+/** A typed value trimmed, or `null` when nothing is left. */
+export const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 const decodeMonitorId = Schema.decodeUnknownOption(UptimeMonitorId)
 const decodeComponentStatus = Schema.decodeUnknownOption(StatusPageComponentStatus)
 
@@ -119,6 +123,8 @@ export const IncidentForm = Schema.Struct({
 	/** Maintenance only: the window as `datetime-local` values, in the viewer's time zone. */
 	scheduledStart: Schema.String,
 	scheduledEnd: Schema.String,
+	/** Maintenance only: completes on its own when the window ends. */
+	autoComplete: Schema.Boolean,
 	/** Incident only: when it began, as a `datetime-local` value; blank is when it is posted. */
 	startedAt: Schema.String,
 })
@@ -134,6 +140,7 @@ export const emptyIncidentForm = (kind: StatusPageIncidentKind): IncidentForm =>
 	isPublished: true,
 	scheduledStart: "",
 	scheduledEnd: "",
+	autoComplete: true,
 	startedAt: "",
 })
 
@@ -172,6 +179,22 @@ export const updateBodyLengthIssue = (body: string): string | null => {
 /** A typed instant after `nowMs`, which the API refuses for when something started or ended. */
 const isFuture = (iso: string, nowMs: number): boolean => iso > new Date(nowMs).toISOString()
 
+/**
+ * Maintenance takes its status from its window: scheduled until it starts, in progress once its
+ * start has come, so what visitors see never contradicts the times.
+ */
+export const withMaintenanceStatus = (form: IncidentForm, timeZone: string, nowMs: number): IncidentForm =>
+	form.kind !== "maintenance"
+		? form
+		: {
+				...form,
+				status: Option.exists(localToIso(form.scheduledStart, timeZone), (start) =>
+					isFuture(start, nowMs),
+				)
+					? "scheduled"
+					: "in_progress",
+			}
+
 /** What stops the incident from being sent, by field; `null` where nothing does. */
 export type IncidentIssues = Readonly<{
 	title: string | null
@@ -193,7 +216,9 @@ export const incidentIssues = (form: IncidentForm, timeZone: string, nowMs: numb
 					? "Set when the maintenance starts and ends."
 					: start.value >= end.value
 						? "The maintenance must end after it starts."
-						: null,
+						: isFuture(end.value, nowMs)
+							? null
+							: "The maintenance must end in the future.",
 		started:
 			form.kind === "incident" &&
 			Option.exists(localToIso(form.startedAt, timeZone), (started) => isFuture(started, nowMs))
@@ -229,7 +254,12 @@ export const incidentPayload = (
 		Option.all([localToIso(form.scheduledStart, timeZone), localToIso(form.scheduledEnd, timeZone)]),
 		{
 			onNone: () => base,
-			onSome: ([start, end]) => ({ ...base, scheduled_start: start, scheduled_end: end }),
+			onSome: ([start, end]) => ({
+				...base,
+				scheduled_start: start,
+				scheduled_end: end,
+				auto_complete: form.autoComplete,
+			}),
 		},
 	)
 }
@@ -253,6 +283,8 @@ export const IncidentEditForm = Schema.Struct({
 	 */
 	start: Schema.String,
 	end: Schema.String,
+	/** Maintenance only. */
+	autoComplete: Schema.Boolean,
 })
 export type IncidentEditForm = typeof IncidentEditForm.Type
 
@@ -273,6 +305,7 @@ export const incidentEditFormOf = (incident: V2StatusPageIncident, timeZone: str
 		componentIds: incident.component_ids,
 		start: isoToLocal(times.start, timeZone),
 		end: isoToLocal(times.end, timeZone),
+		autoComplete: incident.auto_complete,
 	}
 }
 
@@ -330,6 +363,9 @@ export const incidentEditPayload = (
 				...base,
 				...(start === undefined ? undefined : { scheduled_start: start }),
 				...(end === undefined ? undefined : { scheduled_end: end }),
+				...(form.autoComplete === incident.auto_complete
+					? undefined
+					: { auto_complete: form.autoComplete }),
 			}
 		: {
 				...base,
@@ -425,8 +461,20 @@ export type SettingsTextField = typeof SettingsTextField.Type
 
 /** The page fields the Appearance tab edits; the rest are on the Settings tab. */
 export const BRANDING_FIELDS = ["logoUrl", "logoDarkUrl", "faviconUrl"] as const
-const isBrandingField = (field: SettingsTextField): boolean =>
-	Arr.some(BRANDING_FIELDS, (branding) => branding === field)
+/** A logo or favicon field: an https URL or an uploaded image. */
+export const BrandingField = Schema.Literals(BRANDING_FIELDS)
+export type BrandingField = typeof BrandingField.Type
+
+/** The page fields Appearance edits (what visitors see besides the name); the rest are Basic settings. */
+const APPEARANCE_FIELDS: ReadonlyArray<SettingsTextField> = [
+	...BRANDING_FIELDS,
+	"websiteUrl",
+	"privacyUrl",
+	"termsUrl",
+	"supportUrl",
+]
+const isAppearanceField = (field: SettingsTextField): boolean =>
+	Arr.some(APPEARANCE_FIELDS, (appearance) => appearance === field)
 
 /** The theme's colour inputs, as typed; blank means the preset's colour. */
 export const ThemeColorField = Schema.Literals(["accent", "background", "text", "card", "border"])
@@ -547,7 +595,7 @@ const sameTheme = (a: ThemeForm, b: ThemeForm): boolean =>
 	a.radius === b.radius &&
 	a.font === b.font
 /** The service's rule: a URL `URL` can parse, over https. Checked here so Save never sends what it refuses. */
-const httpsIssue = (value: string): string | null => {
+export const httpsIssue = (value: string): string | null => {
 	const url = Str.trim(value)
 	if (url === "") return null
 	if (url.length > STATUS_PAGE_MAX_URL_LENGTH)
@@ -555,6 +603,18 @@ const httpsIssue = (value: string): string | null => {
 	if (!URL.canParse(url)) return "Use a valid URL, like https://acme.example."
 	return new URL(url).protocol === "https:" ? null : "Use an https URL."
 }
+
+/** An upload is checked on read (`imageUploadIssue`); a typed value must be an https URL. */
+const imageIssue = (value: string): string | null =>
+	isStatusPageImageDataUrl(Str.trim(value)) ? null : httpsIssue(value)
+
+/** Why a picked file cannot be a logo or favicon, or `null`: the API's type and size rule. */
+export const imageUploadIssue = (file: { readonly type: string; readonly size: number }): string | null =>
+	!Arr.some(STATUS_PAGE_IMAGE_TYPES, (type) => type === file.type)
+		? "Use a PNG, JPEG, WebP, GIF, SVG or ICO image."
+		: file.size > STATUS_PAGE_MAX_IMAGE_BYTES
+			? `Keep the image under ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB.`
+			: null
 
 /** Each field's problem, or `null`: the API refuses the same values. */
 export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsTextField, string | null>> => ({
@@ -565,9 +625,9 @@ export const settingsIssues = (form: SettingsForm): Readonly<Record<SettingsText
 	privacyUrl: httpsIssue(form.privacyUrl),
 	termsUrl: httpsIssue(form.termsUrl),
 	supportUrl: httpsIssue(form.supportUrl),
-	logoUrl: httpsIssue(form.logoUrl),
-	logoDarkUrl: httpsIssue(form.logoDarkUrl),
-	faviconUrl: httpsIssue(form.faviconUrl),
+	logoUrl: imageIssue(form.logoUrl),
+	logoDarkUrl: imageIssue(form.logoDarkUrl),
+	faviconUrl: imageIssue(form.faviconUrl),
 	autoIncidents: null,
 })
 
@@ -594,7 +654,7 @@ export const themeContrastOf = (theme: ThemeForm): string | null =>
 const hasFieldIssues = (form: SettingsForm, onAppearanceTab: boolean): boolean =>
 	Arr.some(
 		Rec.toEntries(settingsIssues(form)),
-		([field, issue]) => issue !== null && isBrandingField(field) === onAppearanceTab,
+		([field, issue]) => issue !== null && isAppearanceField(field) === onAppearanceTab,
 	)
 
 /** A problem in the page fields, which the Settings tab shows. */

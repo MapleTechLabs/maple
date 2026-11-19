@@ -9,7 +9,7 @@
 import { afterEach, assert, describe, it, vi } from "vitest"
 import { Effect, Array as Arr, Option, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
+import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS, chatSessionRpc } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
@@ -253,6 +253,33 @@ describe("ChatSession turn mutex", () => {
 		assert.isUndefined(refused)
 		assert.isFalse(session.running())
 		assert.lengthOf(session.history(), 0)
+	})
+
+	it("refuses a turn whose origin is not one the schema knows, and leaves no trace of it", () => {
+		const { session } = makeSession()
+		const begin = (origin: unknown) =>
+			session.beginTurn({
+				sessionId: "org_test:tab",
+				messageId: "m1",
+				text: "what failed in checkout?",
+				tenant: TENANT,
+				// BOUNDARY: the RPC is typed, and what crosses it is still whatever the caller sent.
+				origin: origin as ChatTurnOrigin,
+			})
+		const refused = [
+			begin({ kind: "autonomous", startedBy: { kind: "producer", producer: "anything_i_like" } }),
+			begin({ kind: "autonomous", startedBy: { kind: "producer" } }),
+			begin({ kind: "autonomous", startedBy: "producer" }),
+			begin({ kind: "operator" }),
+			begin(undefined),
+		]
+		assert.deepStrictEqual(refused, [undefined, undefined, undefined, undefined, undefined])
+		assert.isFalse(session.running())
+		assert.lengthOf(session.history(), 0)
+		// A producer's origin as a producer builds it is admitted.
+		assert.isDefined(
+			begin({ kind: "autonomous", startedBy: { kind: "producer", producer: "incident_triage" } }),
+		)
 	})
 
 	it("admits one turn and refuses a second", () => {
@@ -591,31 +618,55 @@ describe("ChatSession eviction recovery", () => {
 		assert.lengthOf(revived.runs, 1)
 	})
 
-	it("gives the review up, and says so, once it has been evicted too often", () => {
+	it("spends its attempts, files what they found with the slot held, then gives the review up", () => {
 		const first = recording()
 		beginReview(first.session)
+		const startedAt = first.runs[0]?.kickoff.startedAt
+		assert.isNumber(startedAt)
 		let state = first.state
-		let last: string | undefined
 		for (let attempt = 1; attempt <= MAX_TURN_RESUMES; attempt++) {
 			const revived = recording(state)
 			revived.session.alarm()
 			assert.strictEqual(revived.runs[0]?.resume?.attempt, attempt)
-			last = revived.runs[0]?.messageId
+			// Every restart answers the same kickoff, so it reads the same checkpoint and clock.
+			assert.deepEqual(revived.runs[0]?.kickoff, { userMessageId: "kickoff", startedAt })
 			state = revived.state
 		}
 
-		const final = recording(state)
-		final.session.alarm()
+		// Attempts spent: one more run only files what they found, still holding the slot and alarm.
+		const settling = recording(state)
+		settling.session.alarm()
+		assert.isTrue(settling.session.running())
+		assert.deepEqual(settling.runs[0]?.abandoned, { attempts: MAX_TURN_RESUMES + 1, fileFindings: true })
+		assert.isUndefined(settling.runs[0]?.resume)
+		const settleRun = settling.runs[0]!.messageId
+		assert.isTrue(settling.session.holdsTurn(settleRun))
 
+		// Reset during that filing too: the review is failed without filing again.
+		const final = recording(settling.state)
+		final.session.alarm()
 		assert.isFalse(final.session.running())
 		assert.lengthOf(final.runs, 1)
-		assert.strictEqual(final.runs[0]?.abandoned, true)
-		assert.strictEqual(final.runs[0]?.messageId, last)
+		assert.deepEqual(final.runs[0]?.abandoned, { attempts: MAX_TURN_RESUMES + 1, fileFindings: false })
+		assert.strictEqual(final.runs[0]?.messageId, settleRun)
 		// A later turn on the same session starts from a clean count.
 		beginReview(final.session)
-		const again = recording(state)
+		const again = recording(final.state)
 		again.session.alarm()
 		assert.strictEqual(again.runs[0]?.resume?.attempt, 1)
+	})
+
+	it("keeps a review's checkpoint by kickoff through a reset, until it is cleared", () => {
+		const { session, state } = recording()
+		beginReview(session)
+		session.saveReviewCheckpoint("kickoff", "first")
+		session.saveReviewCheckpoint("kickoff", "second")
+
+		const revived = recording(state)
+		assert.strictEqual(revived.session.reviewCheckpoint("kickoff"), "second")
+		assert.isUndefined(revived.session.reviewCheckpoint("another-kickoff"))
+		revived.session.clearReviewCheckpoint("kickoff")
+		assert.isUndefined(revived.session.reviewCheckpoint("kickoff"))
 	})
 
 	/** Nothing else moves a reply's row off `running` or tells the pull request it went unanswered. */
@@ -634,7 +685,7 @@ describe("ChatSession eviction recovery", () => {
 
 		assert.isFalse(revived.session.running())
 		assert.lengthOf(revived.runs, 1)
-		assert.strictEqual(revived.runs[0]?.abandoned, true)
+		assert.deepEqual(revived.runs[0]?.abandoned, { attempts: 1, fileFindings: false })
 		assert.isUndefined(revived.runs[0]?.resume)
 		assert.strictEqual(revived.runs[0]?.messageId, orphaned)
 		assert.strictEqual(revived.runs[0]?.sessionId, "org_test:prr-reply_1")
@@ -986,5 +1037,62 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		assert.isDefined(message)
 		assert.equal(message.text, "parent text")
 		assert.equal(message.toolCalls[0]?.task?.messages[0]?.text, "the answer")
+	})
+})
+
+describe("ChatSession.erase", () => {
+	const running = () => {
+		const state = makeFakeDurableObjectState()
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
+		return { session, state, runs }
+	}
+
+	const tables = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
+		state.storage.sql
+			.exec<{ name: string }>(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+			)
+			.toArray()
+
+	it("stops the running turn and wipes the transcript and the heartbeat", async () => {
+		const { session, state, runs } = running()
+		assert.isAbove(session.history().length, 0)
+		assert.isAbove(state.alarms.length, 0)
+
+		await session.erase()
+
+		assert.strictEqual(runs[0]?.signal?.reason, "erased")
+		assert.deepStrictEqual(state.alarms, [])
+		assert.deepStrictEqual(tables(state), [])
+	})
+
+	it("lets a turn still draining write nothing, and erases again without failing", async () => {
+		const { session, state } = running()
+		await session.erase()
+
+		assert.strictEqual(session.append({ type: "text-delta", messageId: "a1", text: "late" }), 0)
+		session.alarm()
+		await session.erase()
+		assert.deepStrictEqual(tables(state), [])
+	})
+
+	it("refuses an erase that names another org over RPC", async () => {
+		const { session } = running()
+		const rpc = chatSessionRpc(session)
+
+		assert.isFalse(await Effect.runPromise(rpc.erase({ sessionId: "org_test:tab", orgId: "org_other" })))
+		assert.isAbove(session.history().length, 0)
+		assert.isTrue(await Effect.runPromise(rpc.erase({ sessionId: "org_test:tab", orgId: "org_test" })))
 	})
 })

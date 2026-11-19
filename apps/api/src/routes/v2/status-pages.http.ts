@@ -34,6 +34,7 @@ import type {
 import {
 	DEFAULT_STATUS_PAGE_THEME,
 	isActiveIncident,
+	statusPageAddress,
 	toPublicStatusPageSnapshot,
 } from "@maple/domain/status-page"
 import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
@@ -57,10 +58,10 @@ import {
 } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 
-// Page settings and components need an engineer: they change what the public sees about the
-// whole org. The break-glass token is a credential, so it stays admin-only, as do the page
-// password and visibility: they decide who can read the page. Incidents stay open to any writer,
-// so responders can post.
+// Page settings and components need `status_pages:edit`: they change what the public sees about
+// the whole org. The page password and visibility decide who can read the page, so they need
+// `status_pages:access` as well; engineers hold both. The break-glass token is a credential and
+// stays admin-only. Incidents stay open to any writer, so responders can post.
 
 /** The caller's tenant, once its org is in the `statusPages` rollout. */
 const tenantInRollout = (featureFlags: OrganizationFeatureFlagsServiceApi) =>
@@ -129,6 +130,7 @@ export const toV2StatusPageIncident = (incident: StatusPageIncidentRecord): V2St
 	published: incident.published,
 	scheduled_start: isoTimestampOrNull(incident.scheduledStart),
 	scheduled_end: isoTimestampOrNull(incident.scheduledEnd),
+	auto_complete: incident.autoComplete,
 	started_at: isoTimestamp(incident.startedAt),
 	resolved_at: isoTimestampOrNull(incident.resolvedAt),
 	component_ids: incident.componentIds,
@@ -187,6 +189,7 @@ const incidentAuditDiff = auditDiff({
 		"published",
 		"scheduled_start",
 		"scheduled_end",
+		"auto_complete",
 		"started_at",
 		"resolved_at",
 		"component_ids",
@@ -209,7 +212,7 @@ const parseTimestamp = (value: string | null | undefined) =>
 const publishFailed = (error: { readonly message: string }) =>
 	new StatusPagePersistenceError({ message: error.message, cause: error })
 
-/** Changing who can read a page is an admin's call, whichever endpoint carries it. */
+/** Changing who can read a page needs `status_pages:access`, whichever endpoint carries it. */
 const checkVisibilityChange = (
 	roles: ReadonlyArray<string>,
 	current: StatusPageVisibility,
@@ -441,13 +444,20 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					if (Option.isSome(store)) {
 						// Routes only while they still name this page: slugs and hostnames free up at once.
 						const hostname = domain.domain?.hostname ?? null
+						// The page's address, and the bare-slug key a page published before slugs were per org kept.
+						const dropRoute = (address: string) =>
+							store.value
+								.readSlugRoute(address)
+								.pipe(
+									Effect.flatMap((owner) =>
+										owner === deleted
+											? store.value.deleteRoutes({ address, hostnames: [] })
+											: Effect.void,
+									),
+								)
 						yield* store.value.deletePage(deleted).pipe(
-							Effect.andThen(store.value.readSlugRoute(current.slug)),
-							Effect.flatMap((owner) =>
-								owner === deleted
-									? store.value.deleteRoutes({ slug: current.slug, hostnames: [] })
-									: Effect.void,
-							),
+							Effect.andThen(dropRoute(statusPageAddress(tenant.orgId, current.slug))),
+							Effect.andThen(dropRoute(current.slug)),
 							Effect.andThen(
 								hostname === null
 									? Effect.succeed(null)
@@ -819,6 +829,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 							...(payload.scheduled_end === undefined
 								? undefined
 								: { scheduledEnd: timestampMs(payload.scheduled_end) }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),
@@ -851,6 +864,9 @@ export const HttpV2StatusPageIncidentsLive = HttpApiBuilder.group(
 								: { published: payload.published }),
 							...(scheduledStart === undefined ? undefined : { scheduledStart }),
 							...(scheduledEnd === undefined ? undefined : { scheduledEnd }),
+							...(payload.auto_complete === undefined
+								? undefined
+								: { autoComplete: payload.auto_complete }),
 							...(payload.started_at === undefined
 								? undefined
 								: { startedAt: timestampMs(payload.started_at) }),

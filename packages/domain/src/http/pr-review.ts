@@ -180,6 +180,11 @@ export class PrReviewFinding extends Schema.Class<PrReviewFinding>("PrReviewFind
 	body: Schema.String,
 	suggestion: Schema.optionalKey(Schema.String),
 	replacement: Schema.optionalKey(Schema.String),
+	/**
+	 * For a credential in telemetry: the code that assigns the value (`path:line` and the expression),
+	 * showing it is secret material. A reviewer's PII-01 critical without one is filed as a warning.
+	 */
+	source: Schema.optionalKey(Schema.String),
 	/** The pull request-wide handle (`F3`) it is tracked by across pushes; set when stored. */
 	handle: Schema.optionalKey(Schema.String),
 }) {}
@@ -226,6 +231,7 @@ export const PR_REVIEW_MODELS = [
 	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
 	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
 	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", eu: true },
+	{ id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol", eu: true },
 	{ id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", eu: true },
 	{ id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", eu: true },
 ] as const
@@ -277,6 +283,12 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	blockOnContractBreaks: Schema.optionalKey(Schema.Boolean),
 	/** Look at production after the merged pull request ships and say how it went. On by default. */
 	postMergeCheck: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Approve the pull request on GitHub when the review finds its blast radius low enough that no
+	 * person needs to read it ({@link prReviewAutoApproval}), and withdraw that approval when a
+	 * later review does not. Off by default. An approval never satisfies a CODEOWNERS rule.
+	 */
+	autoApprove: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** Organization-wide review settings; absent fields use the deployment's defaults. */
@@ -371,6 +383,7 @@ export const PrReviewFindingSubmission = Schema.Struct({
 	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	suggestion: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	replacement: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	source: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type PrReviewFindingSubmission = Schema.Schema.Type<typeof PrReviewFindingSubmission>
 
@@ -395,6 +408,12 @@ export const PrReviewChildDismissalSubmission = Schema.Struct({
 	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** An earlier open finding the reviewer agrees does not hold, by its handle, and why. */
+export const PrReviewFindingDismissalSubmission = Schema.Struct({
+	handle: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	reason: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
 /**
  * What `submit_review` accepts off the wire. Every field is optional: the engine decodes a tool call
  * before the handler runs, and a decode failure would throw away a nearly finished review.
@@ -402,6 +421,8 @@ export const PrReviewChildDismissalSubmission = Schema.Struct({
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	/** Earlier open findings that do not hold, usually after a person's reply showed why. */
+	dismissed: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingDismissalSubmission))),
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
@@ -430,8 +451,23 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	partial: Schema.optionalKey(Schema.Boolean),
 	/** Why the pass that preceded a partial stopped; the pull request is told this, not `ended_early`. */
 	partialReason: Schema.optionalKey(PrReviewFailureReason),
+	/**
+	 * What the model itself sent, before it was normalized: its own verdict (absent when it sent none
+	 * that is a verdict) and how many findings were dropped as unreadable. Auto-approval reads this,
+	 * not the tidied report; absent, as on a close-out, it never approves.
+	 */
+	submitted: Schema.optionalKey(
+		Schema.Struct({
+			verdict: Schema.optionalKey(PrReviewVerdict),
+			droppedFindings: Schema.Number,
+		}),
+	),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** Earlier findings the reviewer dismissed, by handle, with its reason. */
+	dismissed: Schema.optionalKey(
+		Schema.Array(Schema.Struct({ handle: Schema.String, reason: Schema.String })),
+	),
 	/** Where the reviewer says each removed telemetry name is still emitted; verified before use. */
 	telemetryDismissals: Schema.optionalKey(
 		Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, line: Schema.Number })),

@@ -5,6 +5,8 @@ group: "Local Mode"
 order: 1
 ---
 
+import TelemetryFlow from "../../components/docs/TelemetryFlow.astro"
+
 Maple Local is Maple running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors and a service map. It is not a client for the hosted service and needs no account. Your telemetry is stored and queried on your machine. The CLI does make a few network calls of its own by default, listed in [What connects to the internet](#what-connects-to-the-internet).
 
 Two commands get you running:
@@ -187,3 +189,5 @@ See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hos
 ## Under the hood
 
 One compiled binary is both the CLI and the server. It talks to ClickHouse in-process through `libchdb`, so there is no subprocess and no second runtime to install. Short-lived CLI commands and the dashboard read the store over the same `POST /local/query` contract. The architecture, the UI origin model and the release bundle are described in the [local mode design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-mode.md).
+
+<TelemetryFlow local />

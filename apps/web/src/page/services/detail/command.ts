@@ -10,12 +10,14 @@ import {
 	getServiceEndpoints,
 	getServiceEndpointsTimeseries,
 } from "@maple/web-data/warehouse/service-endpoints"
+import { getServiceDeploys } from "@maple/web-data/warehouse/service-deploys"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
+import { getProfile } from "@maple/web-data/warehouse/profiles"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
-import { Clock, Effect, Predicate, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Predicate, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
@@ -92,6 +94,17 @@ export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 				environments: response.environments,
 			})),
 			settleTo((result) => Message.CompletedFetchOverview({ key, result })),
+		),
+})
+
+/** The window's deploys, each judged on its first minutes against the minutes before it. */
+export const FetchDeploys = Command.define("FetchServiceDeploys", {
+	args: { key: Schema.String, input: DetailInput },
+	messages: [Message.CompletedFetchDeploys],
+	execute: ({ key, input }) =>
+		getServiceDeploys({ data: { ...input, environments: input.environments } }).pipe(
+			Effect.map((response) => ({ ...response, readUntil: input.endTime })),
+			settleTo((result) => Message.CompletedFetchDeploys({ key, result })),
 		),
 })
 
@@ -185,6 +198,26 @@ export const FetchDependencies = Command.define("FetchServiceDependenciesBundle"
 		),
 })
 
+/** The Profiles tab reads one environment at most; `deploymentEnv` is left out for every environment. */
+export const ProfileInput = Schema.Struct({
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	deploymentEnv: Schema.optionalKey(Schema.String),
+})
+export type ProfileInput = typeof ProfileInput.Type
+
+/** `getProfile`: the service's sample types, then the heaviest stacks of one; null without profiles. */
+export const FetchProfile = Command.define("FetchServiceProfile", {
+	args: { key: Schema.String, input: ProfileInput },
+	messages: [Message.CompletedFetchProfile],
+	execute: ({ key, input }) =>
+		getProfile({ data: input }).pipe(
+			Effect.map(Option.getOrNull),
+			settleTo((result) => Message.CompletedFetchProfile({ key, result })),
+		),
+})
+
 /** The service's open issues. */
 export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 	args: { key: Schema.String, query: V2ErrorIssueListQuery },
@@ -199,6 +232,7 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 					issue.error_label || issue.exception_type || issue.exception_message || "Unknown error",
 				severity: issue.severity,
 				occurrenceCount: issue.occurrence_count,
+				firstSeenAt: issue.first_seen_at,
 				lastSeenAt: issue.last_seen_at,
 			}))
 		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),

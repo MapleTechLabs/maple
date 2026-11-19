@@ -151,6 +151,34 @@ export const rereadPrompt = (prompt: string): string =>
 export const repairPrompt = (prompt: string, issuePaths: ReadonlyArray<string>): string =>
 	`${prompt}\n\n## Your result must match its contract\n\nA previous answer to this assignment was discarded: ${discardSummary(issuePaths)}. Return exactly one JSON object that matches the contract above, with no surrounding prose.`
 
+/**
+ * A second look at a decoded result. `objection` is the repair note, or undefined when the result
+ * stands; `affordable` gates the extra invocation; the repair is kept only when it scores no lower.
+ */
+export interface RepairReview<A> {
+	readonly objection: (value: A) => string | undefined
+	readonly affordable: Effect.Effect<boolean>
+	readonly score: (value: A) => number
+}
+
+const repairTurn = <A, E, R>(
+	agentId: string,
+	reason: "contract" | "review",
+	turn: Effect.Effect<A | undefined, E, R>,
+) =>
+	Effect.gen(function* () {
+		const answer = yield* turn
+		yield* Effect.annotateCurrentSpan("maple.security_audit.repair_used", answer !== undefined)
+		return answer
+	}).pipe(
+		Effect.withSpan("SecurityAudit.repairTurn", {
+			attributes: {
+				"maple.security_audit.agent_id": agentId,
+				"maple.security_audit.repair_reason": reason,
+			},
+		}),
+	)
+
 export const makeEngine = (input: AuditRunInput) =>
 	Effect.gen(function* () {
 		const agents = yield* AuditAgents
@@ -304,20 +332,37 @@ export const makeEngine = (input: AuditRunInput) =>
 			)
 
 		/**
-		 * `invoke` with one repair turn: a result that breaks its contract goes to a fresh `-r1` agent
-		 * told where it broke (the decoder's paths only, never its message, which can quote output).
+		 * `invoke` with one repair turn, given to a fresh `-r1` agent. A result that breaks its contract
+		 * is told where it broke (the decoder's paths only, never its message, which can quote output).
 		 */
 		const invokeRepairing = <S extends Schema.Top>(
 			role: AuditRole,
 			agentId: string,
 			prompt: string,
 			schema: S,
+			review?: RepairReview<S["Type"]>,
 		) =>
 			Effect.gen(function* () {
 				const first = yield* attempt(role, agentId, prompt, schema)
-				if (first._tag === "Decoded") return first.value
 				if (first._tag === "None") return undefined
-				return yield* invoke(role, `${agentId}-r1`, repairPrompt(prompt, first.issuePaths), schema)
+				if (first._tag === "Discarded")
+					return yield* repairTurn(
+						agentId,
+						"contract",
+						invoke(role, `${agentId}-r1`, repairPrompt(prompt, first.issuePaths), schema),
+					)
+				const objection = review?.objection(first.value)
+				if (review === undefined || objection === undefined || !(yield* review.affordable))
+					return first.value
+				const repaired = yield* repairTurn(
+					agentId,
+					"review",
+					invoke(role, `${agentId}-r1`, `${prompt}\n\n${objection}`, schema),
+				)
+				// A repair that keeps less than the first answer did is worse, not a fix.
+				return repaired !== undefined && review.score(repaired) >= review.score(first.value)
+					? repaired
+					: first.value
 			})
 
 		/**

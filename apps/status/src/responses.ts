@@ -78,6 +78,21 @@ export const redirect = (location: string, extra: Record<string, string> = {}): 
 		headers: { ...COMMON_HEADERS, location, "cache-control": "no-store", ...extra },
 	})
 
+/**
+ * A page's old address: `/s/<slug>` from before slugs were per org now lives at `/s/<org key>/<slug>`.
+ * 308 keeps the method (break-glass posts to `_manage`); CORS lets embedded JSON fetches follow it.
+ */
+export const movedPermanently = (location: string): Response =>
+	new Response(null, {
+		status: 308,
+		headers: {
+			...COMMON_HEADERS,
+			location,
+			"cache-control": PUBLIC_CACHE_CONTROL,
+			"access-control-allow-origin": "*",
+		},
+	})
+
 const NOT_FOUND_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Status page not found</title></head><body><h1>Status page not found</h1><p>There is no status page at this address.</p></body></html>`
 
 export const notFound = (): Response =>

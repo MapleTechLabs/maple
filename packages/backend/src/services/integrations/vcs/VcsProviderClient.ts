@@ -221,13 +221,16 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
-	/** Every file of one pull request's diff, with the provider's unified patch where it gives one. */
+	/**
+	 * Every file of one pull request's diff, with the provider's unified patch where it gives one.
+	 * `truncated` says the provider stopped listing before the end, so `files` is not the whole diff.
+	 */
 	readonly fetchPullRequestFiles: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		number: number,
 	) => Effect.Effect<
-		ReadonlyArray<PullRequestFile>,
+		{ readonly files: ReadonlyArray<PullRequestFile>; readonly truncated: boolean },
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError
@@ -417,6 +420,28 @@ export interface VcsProviderClient {
 		publication: PullRequestReviewPublication,
 	) => Effect.Effect<
 		PullRequestReviewPublished,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Dismiss every approval this App gave the pull request that still stands, saying why. For a
+	 * repository with `autoApprove` on: a new head leaves an earlier approval about other code.
+	 * Answers `unsupported` when the provider cannot tell its own reviews apart.
+	 */
+	readonly withdrawPullRequestApprovals: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		/**
+		 * `keepHead`: the head the event is about. An approval of it is spared, and nothing is
+		 * withdrawn (`stale`) when the pull request has moved past it.
+		 */
+		input: { readonly number: number; readonly reason: string; readonly keepHead?: string },
+	) => Effect.Effect<
+		"withdrawn" | "unsupported" | "stale",
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

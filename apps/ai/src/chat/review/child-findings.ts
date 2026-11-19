@@ -18,11 +18,14 @@ export interface ChildFindings {
 	readonly all: () => ReadonlyArray<PrReviewFindingSubmission>
 }
 
-export const makeChildFindings = (): ChildFindings => {
-	const found: Array<PrReviewFindingSubmission> = []
+export const makeChildFindings = (initial: ReadonlyArray<PrReviewFindingSubmission> = []): ChildFindings => {
+	const found: Array<PrReviewFindingSubmission> = [...initial]
 	return {
+		// A restarted review's children report again what the dead attempt's did: kept once.
 		observe: (answer) => {
-			found.push(...parseChildFindings(answer))
+			Arr.forEach(parseChildFindings(answer), (child) => {
+				if (!Arr.some(found, (seen) => sameChildFinding(seen, child))) found.push(child)
+			})
 		},
 		all: () => found,
 	}
@@ -69,6 +72,8 @@ export const parseChildFindings = (answer: string): ReadonlyArray<PrReviewFindin
 				body: why,
 				...(fix ? { suggestion: fix } : undefined),
 				...(check && check !== "-" ? { checkId: check } : undefined),
+				// The child cites a credential's assigning code in `why`; the service checks it.
+				...(check !== undefined && Str.toUpperCase(check) === "PII-01" ? { source: why } : undefined),
 			},
 		]
 	})
@@ -81,6 +86,11 @@ const near = (a: { path: string; line: number }, b: { path?: string | null; line
 	canonicalPath(a.path) === canonicalPath(b.path) &&
 	typeof b.line === "number" &&
 	Math.abs(a.line - b.line) <= LINE_SLACK
+
+const sameChildFinding = (a: PrReviewFindingSubmission, b: PrReviewFindingSubmission) =>
+	typeof a.line === "number" &&
+	near({ path: a.path ?? "", line: a.line }, b) &&
+	Str.toLowerCase(a.title ?? "") === Str.toLowerCase(b.title ?? "")
 
 /** The children's warnings and criticals the review neither files nor dismisses. */
 export const unaccountedChildFindings = (

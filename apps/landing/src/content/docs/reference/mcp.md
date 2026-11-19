@@ -57,6 +57,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `list_services`              | read   | Active services with throughput, error rate and P95 latency                                           |
 | `diagnose_service`           | read   | One service's health, top errors, recent traces and logs, and the platform resources behind it        |
 | `get_service_top_operations` | read   | A service's top operations (endpoints or spans), ranked by a chosen metric                            |
+| `profile_hotspots`           | read   | Where a service spent CPU or allocated memory: its heaviest functions from continuous profiling       |
 | `service_map`                | read   | Service-to-service dependencies with call counts, error rates and latency per edge                    |
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged  |
 | `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs   |
@@ -159,7 +160,10 @@ The write tools here need the org admin or engineer role.
 | -------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
 | `get_status_page`          | read   | Every status page, or one page as visitors see it, with component status and open incidents     |
 | `post_status_page_update`  | write  | Open a public incident or maintenance notice, or post its next update; new ones start as drafts |
+| `create_status_page`       | write  | Create a page as a draft. Org admins and engineers only                                         |
 | `apply_status_page_config` | write  | Replace a page's settings, theme and components in one write. Org admins and engineers only     |
+| `set_status_page_domain`   | write  | Set, check or remove a page's custom domain, with the DNS records to add. Admins and engineers  |
+| `publish_status_page`      | write  | Make a draft page public. Org admins and engineers only                                         |
 
 ### Dashboards
 
@@ -271,7 +275,7 @@ These are admin-only. Connecting a provider, and adding a scrape credential, sta
 | Tool                  | Access | What it does                                                                                            |
 | --------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
 | `send_maple_feedback` | write  | Tell the Maple team about a bug, a missing capability or a misleading doc: its kind, the agent, and why |
-| `list_maple_feedback` | read   | Maple team only: read the feedback agents sent. Refused for any other organization                      |
+| `list_maple_feedback` | read   | Maple team admins only: read the feedback agents sent. Refused for any other organization               |
 
 The same feedback can be sent over the REST API with `POST /v2/agent_feedback`.
 

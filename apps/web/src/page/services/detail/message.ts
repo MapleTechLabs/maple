@@ -7,11 +7,14 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
 import { ENDPOINT_FILTERS } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/message"
 import * as EndpointPeek from "./endpoint-peek/message"
 import {
 	ApiBucket,
@@ -22,7 +25,8 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Issue, OverviewData, RefinementPoint, ServiceProfile, Usage, Workload } from "./model"
+import { ServiceDeploys } from "./model-deploys"
 import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 /** The reads that can be retried from their error state. */
@@ -33,6 +37,7 @@ export const RetryTarget = Schema.Literals([
 	"Endpoints",
 	"ApiOverview",
 	"StatusBreakdown",
+	"Profile",
 ])
 export type RetryTarget = typeof RetryTarget.Type
 
@@ -51,6 +56,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchEndpointSeries: result(Schema.Array(ApiBucket)),
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
+	CompletedFetchDeploys: result(ServiceDeploys),
 	CompletedFetchUsage: result(Usage),
 	/** The session's grants come with the list: only `uptime_monitors:manage` is offered a new monitor. */
 	CompletedFetchUptimeMonitors: {
@@ -60,6 +66,9 @@ export const Message = defineMessageUnion({
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),
+	CompletedFetchProfile: result(ServiceProfile),
+	GotFlamegraphMessage: { message: ProfileFlamegraph.Message },
+	GotProfileSnippetCopyMessage: { message: CopyButton.Message },
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	CompletedMountLinkedCursor: {},
 	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
@@ -82,6 +91,9 @@ export const Message = defineMessageUnion({
 	ClickedEndpointFilter: { filter: Schema.Literals(ENDPOINT_FILTERS) },
 	ChangedEndpointQuery: { value: Schema.String },
 	GotEndpointPeekMessage: { message: EndpointPeek.Message },
+	/** A deploy row or the callout: its drawer (`?deploy=`). */
+	ClickedDeploy: { sha: Schema.String, environment: Schema.String },
+	GotDeployPeekMessage: { message: DeployPeek.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },

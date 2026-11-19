@@ -60,6 +60,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 	}
 	const model: ResolvedModel = {
 		provider: "openrouter",
+		content: "record",
 		name: "scripted",
 		limits: { context: 100_000, output: 4_000 },
 		layer: AiModel.make(
@@ -250,6 +251,7 @@ describe("run_code", () => {
 							observe: (tool) => observed.push(tool),
 							unread: () => [],
 							wholeDiff: () => true,
+							progress: () => ({ due: [], read: [] }),
 						},
 						ledger: makeReviewLedger(),
 						childFindings: makeChildFindings(),
@@ -435,7 +437,12 @@ describe("run_code", () => {
 					completion: reviewCompletion(
 						{ kind: "autonomous" },
 						{
-							coverage: { observe: () => {}, unread: () => [], wholeDiff: () => true },
+							coverage: {
+								observe: () => {},
+								unread: () => [],
+								wholeDiff: () => true,
+								progress: () => ({ due: [], read: [] }),
+							},
 							ledger: makeReviewLedger(),
 							childFindings: makeChildFindings(),
 						},

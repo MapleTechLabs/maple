@@ -3,7 +3,13 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Tracer, DateTime, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "./AuthService"
 import { matchesMcpOAuthRedirectUri, McpOAuthService, validateMcpOAuthRedirectUri } from "./McpOAuthService"
@@ -74,6 +80,9 @@ const issueGrant = Effect.fnUntraced(function* (oauth: McpOAuthService, clientNa
 	)
 	return { clientId: client.client_id, tokens }
 })
+
+/** The unkeyed digest an attacker with only database write access can compute. */
+const plainSha256 = (value: string) => createHash("sha256").update(value).digest("hex")
 
 describe("McpOAuthService", () => {
 	it("accepts HTTPS and loopback redirects while rejecting unsafe redirects", () => {
@@ -294,6 +303,103 @@ describe("McpOAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("refuses a refresh token planted in the database without the lookup key", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const oauth = yield* McpOAuthService
+			const { clientId, tokens } = yield* issueGrant(oauth, "Planted Refresh")
+			const rotated = yield* oauth.refresh(
+				{ refreshToken: tokens.refresh_token, clientId, resource },
+				"127.0.0.1",
+			)
+			expect(rotated.token_type).toBe("Bearer")
+
+			const planted = "attacker-chosen-refresh-token"
+			yield* Effect.promise(() =>
+				executeSql(
+					db,
+					"UPDATE mcp_oauth_refresh_tokens SET token_hash = $1 WHERE revoked_at IS NULL AND replaced_by_id IS NULL",
+					[plainSha256(planted)],
+				),
+			)
+			const refused = yield* oauth
+				.refresh({ refreshToken: planted, clientId, resource }, "127.0.0.1")
+				.pipe(Effect.flip)
+			expect(refused._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+			if (refused._tag === "@maple/backend/errors/McpOAuthProtocolError") {
+				expect(refused.error).toBe("invalid_grant")
+			}
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect(
+		"refuses an authorization code or request id planted in the database without the lookup key",
+		() => {
+			const db = createTestDb(createdDbs)
+			return Effect.gen(function* () {
+				const oauth = yield* McpOAuthService
+				const client = yield* oauth.register(
+					{ clientName: "Planted Code", redirectUris: [redirectUri] },
+					"127.0.0.1",
+				)
+				const authorize = oauth.startAuthorization(
+					{
+						clientId: client.client_id,
+						redirectUri,
+						responseType: "code",
+						codeChallenge: challenge,
+						codeChallengeMethod: "S256",
+						resource,
+						expectedResource: resource,
+					},
+					"127.0.0.1",
+				)
+				const approvedRequest = new URL((yield* authorize).consentUrl).searchParams.get("request_id")!
+				yield* oauth.approve(approvedRequest, { orgId, userId, roles: [memberRole], userEmail: null })
+
+				const plantedCode = "attacker-chosen-authorization-code"
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						"UPDATE mcp_oauth_authorizations SET authorization_code_hash = $1 WHERE authorization_code_hash IS NOT NULL",
+						[plainSha256(plantedCode)],
+					),
+				)
+				const refused = yield* oauth
+					.exchangeAuthorizationCode(
+						{
+							code: plantedCode,
+							clientId: client.client_id,
+							redirectUri,
+							codeVerifier: verifier,
+							resource,
+						},
+						"127.0.0.1",
+					)
+					.pipe(Effect.flip)
+				expect(refused._tag).toBe("@maple/backend/errors/McpOAuthProtocolError")
+				if (refused._tag === "@maple/backend/errors/McpOAuthProtocolError") {
+					expect(refused.error).toBe("invalid_grant")
+				}
+
+				const pendingRequest = new URL((yield* authorize).consentUrl).searchParams.get("request_id")!
+				expect((yield* oauth.inspect(pendingRequest)).status).toBe("pending")
+				// A well-formed id, so the lookup runs: only the stored hash differs from the keyed one.
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						"UPDATE mcp_oauth_authorizations SET request_id_hash = $1 WHERE approved_at IS NULL",
+						[plainSha256(pendingRequest)],
+					),
+				)
+				const approval = yield* oauth
+					.approve(pendingRequest, { orgId, userId, roles: [memberRole], userEmail: null })
+					.pipe(Effect.flip)
+				expect(approval._tag).toBe("@maple/http/errors/McpOAuthAuthorizationNotFoundError")
+			}).pipe(Effect.provide(makeLayer(db)))
+		},
+	)
+
 	it.effect("stops refreshing once the visible MCP key is revoked in the API-keys UI", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
@@ -388,6 +494,24 @@ describe("McpOAuthService", () => {
 			if (failure._tag === "@maple/backend/errors/McpOAuthProtocolError") {
 				expect(failure.error).toBe("invalid_grant")
 			}
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("keeps the approved client name on the access key a refresh mints", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const oauth = yield* McpOAuthService
+			const apiKeys = yield* ApiKeysService
+			const grant = yield* issueGrant(oauth, "Named Editor")
+			const rotated = yield* oauth.refresh(
+				{ refreshToken: grant.tokens.refresh_token, clientId: grant.clientId, resource },
+				"127.0.0.1",
+			)
+			const live = yield* Effect.promise(() =>
+				db.pglite.query<{ name: string }>("select name from api_keys where revoked = false"),
+			)
+			expect(Arr.map(live.rows, (row) => row.name)).toEqual(["Named Editor"])
+			expect(Option.isSome(yield* apiKeys.resolveByKey(rotated.access_token))).toBe(true)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

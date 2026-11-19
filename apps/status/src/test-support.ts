@@ -1,5 +1,6 @@
 import {
 	decodeStatusPageOverlayEntryJson,
+	STATUS_PAGE_TOMBSTONE,
 	StatusPageKeys,
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
@@ -23,6 +24,16 @@ export const makeFakeStorage = () => {
 	const cache = new Map<string, CachedValue>()
 	const failing = new Set<"kv" | "kv-put" | "r2" | "cache">()
 	const limits = { allow: true, keys: new Array<string>() }
+	const pageLimits = { allow: true, keys: new Array<string>() }
+	// Makes either limiter throw, as a binding that is down does.
+	const limiterDown = new Set<"client" | "page">()
+	const limit = (which: "client" | "page", state: typeof limits, key: string) =>
+		limiterDown.has(which)
+			? Effect.fail(new StatusStorageError({ message: "unavailable", store: "rate-limit", key }))
+			: Effect.sync(() => {
+					state.keys.push(key)
+					return state.allow
+				})
 
 	const guard = <A>(store: "kv" | "kv-put" | "r2" | "cache", key: string, value: () => A) =>
 		failing.has(store)
@@ -64,18 +75,32 @@ export const makeFakeStorage = () => {
 		r2Get: (key) => guard("r2", key, () => r2.get(key) ?? null),
 		cacheGet: (key) => guard("cache", key, () => cache.get(key) ?? null),
 		cachePut: (key, entry) => guard("cache", key, () => void cache.set(key, entry)),
-		rateLimit: (key) =>
-			Effect.sync(() => {
-				limits.keys.push(key)
-				return limits.allow
-			}),
+		rateLimit: (key) => limit("client", limits, key),
+		pageRateLimit: (key) => limit("page", pageLimits, key),
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
-	return { storage, kv, kvReads, r2, cache, failing, limits, unlisted, duringList, ids }
+	return {
+		storage,
+		kv,
+		kvReads,
+		r2,
+		cache,
+		failing,
+		limits,
+		pageLimits,
+		limiterDown,
+		unlisted,
+		duringList,
+		ids,
+	}
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
+
+/** The `/s/` address the publisher routes a snapshot's page at. */
+export const addressOf = (snapshot: StatusPageSnapshot): string =>
+	`${snapshot.page.orgKey}/${snapshot.page.slug}`
 
 /** Publishes a snapshot the way the publisher does: host and slug keys, KV and R2 copies, heartbeat. */
 export const publish = (
@@ -86,11 +111,11 @@ export const publish = (
 	const json = encodeJson(snapshot)
 	const host = options.host ?? "status.acme.example"
 	fake.kv.set(StatusPageKeys.host(host), snapshot.pageId)
-	fake.kv.set(StatusPageKeys.slug(snapshot.page.slug), snapshot.pageId)
+	fake.kv.set(StatusPageKeys.slug(addressOf(snapshot)), snapshot.pageId)
 	fake.kv.set(StatusPageKeys.snapshot(snapshot.pageId), json)
 	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), json)
 	fake.r2.set(StatusPageKeys.hostObject(host), snapshot.pageId)
-	fake.r2.set(StatusPageKeys.slugObject(snapshot.page.slug), snapshot.pageId)
+	fake.r2.set(StatusPageKeys.slugObject(addressOf(snapshot)), snapshot.pageId)
 	const heartbeatAt = options.heartbeatAt === undefined ? FIXTURE_NOW : options.heartbeatAt
 	if (heartbeatAt !== null) {
 		const heartbeat: StatusPagePublisherHeartbeat = {
@@ -99,6 +124,14 @@ export const publish = (
 		}
 		fake.kv.set(StatusPageKeys.heartbeat, encodeJson(heartbeat))
 	}
+}
+
+/** Takes a page off the edge the way the publisher does: KV keys gone, a tombstone in R2 for each. */
+export const takeOffEdge = (fake: FakeStorage, snapshot: StatusPageSnapshot) => {
+	fake.r2.set(StatusPageKeys.slugObject(addressOf(snapshot)), STATUS_PAGE_TOMBSTONE)
+	fake.kv.delete(StatusPageKeys.slug(addressOf(snapshot)))
+	fake.r2.set(StatusPageKeys.snapshotObject(snapshot.pageId), STATUS_PAGE_TOMBSTONE)
+	fake.kv.delete(StatusPageKeys.snapshot(snapshot.pageId))
 }
 
 /** Writes one break-glass entry under its own key, as the Worker does. */

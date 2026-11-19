@@ -86,6 +86,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/domains",
+		title: "Verified domains",
+		description:
+			"The settings domains tab as an admin: verified and unverified domains, none yet, and the add and verify dialogs (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/sso",
+		title: "SSO & SCIM",
+		description:
+			"The settings SSO & SCIM tab: no add-on, empty, a pending domain, connected over SAML or OIDC, SSO without the SCIM add-on, fully configured, the one-time token, the enforce confirm and a read-only member (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/members",
 		title: "Members",
 		description:
@@ -183,7 +199,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost",
-		title: "Cost",
+		title: "Cloud cost",
 		description:
 			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
 		kind: "lab",
@@ -191,7 +207,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/cost-budgets",
-		title: "Cost budgets",
+		title: "Cloud cost budgets",
 		description:
 			"The Budgets list and the budget editor over fixture budgets: on track, over, off, empty, failing, a viewer's read-only list, the delete dialog and each state of the form (`?state=`).",
 		kind: "lab",
@@ -214,6 +230,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/dashboard-share",
+		title: "Dashboard share",
+		description:
+			"The dashboard's Share dialog, open: not shared, shared with no expiry, a link that expires and one that already has (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/analytics-search",
 		title: "Web analytics: Search",
 		description:
@@ -226,6 +250,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Google Search Console",
 		description:
 			"The Google Search Console card from connect to revoked, the connecting states included, over fixtures, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/planetscale",
+		title: "PlanetScale",
+		description:
+			"The PlanetScale databases table over fixtures: Postgres and MySQL engines, hot metrics and a sleeping database.",
 		kind: "lab",
 		session: "none",
 	},
@@ -436,6 +468,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/code-review-rules",
+		title: "Code review rules",
+		description:
+			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/code-review-team",
 		title: "Code review team",
 		description:
@@ -455,7 +495,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-runtimes",
 		title: "Service runtimes",
 		description:
-			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour; ?tab=operations or ?tab=dependencies opens that tab.",
+			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour, with a deploy that raised errors; ?tab=operations or ?tab=dependencies opens that tab, ?deploy=9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28 its deploy drawer.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/service-profiles",
+		title: "Service profiles",
+		description:
+			"The service page's Profiles tab over one hour of checkout-api: the flame chart and the top functions from 31 hand-written stacks; ?state=empty is a service that sent no profiles, ?state=failed a failed read.",
 		kind: "lab",
 		session: "none",
 	},
@@ -463,7 +511,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
-			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab.",
+			"The service map over a small fleet topology with fleet-api (Cloud Run) selected; ?tab=infrastructure opens the panel's Infrastructure tab, ?topology=namespaces shows two namespaces with their own and a shared database.",
 		kind: "lab",
 		session: "none",
 	},
@@ -543,7 +591,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`).",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`). The live and internal pages have uploaded favicons.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/status-page-settings",
+		title: "Status page settings",
+		description:
+			"The status page editor's Basic settings with Who can view under the custom domain, and its Appearance tab with logo and favicon uploads and colour pickers (`?state=public|password|set-password|internal|member|appearance|appearance-dark|appearance-empty`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -632,6 +688,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Shell states",
 		description:
 			"The real sidebar with foldable groups and the on-call pill's three states, and a right sheet held in ?sheet= with a demo form.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/promql-widget",
+		title: "PromQL widget",
+		description:
+			"The widget editor over a PromQL line chart with fixture series; ?state=error shows the parser's message.",
 		kind: "lab",
 		session: "none",
 	},

@@ -22,6 +22,7 @@ import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
 	buildUptimeConfig,
+	canWriteUptimeMonitors,
 	DEFAULT_GRACE_SECONDS,
 	pingCommand,
 	toMcpUptimeError,
@@ -265,7 +266,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			const monitors = yield* service
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpUptimeError("list_uptime_monitors")))
-			const canWrite = Policy.can(tenant.roles, "uptime_monitors:manage")
+			const canWrite = canWriteUptimeMonitors(tenant)
 			const rows = Arr.map(monitors, (monitor) => toMonitorRow(monitor, canWrite))
 			const count = (status: keyof typeof STATUS_ORDER) =>
 				Arr.filter(rows, (row) => row.status === status).length
@@ -417,6 +418,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
+		// A field this tool lacks (`steps`, say) is refused, never dropped while the rest applies.
+		rejectUnknownKeys: true,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
 		scopeFamily: "uptime_monitors",
 		phrases: ["Updating an uptime monitor"],

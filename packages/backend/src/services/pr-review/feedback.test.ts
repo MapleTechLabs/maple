@@ -1,11 +1,14 @@
+import { Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	applyFeedback,
 	cosineSimilarity,
 	type FeedbackExample,
 	feedbackLabel,
-	feedbackVerdict,
 	findingText,
+	NO_FEEDBACK_VOTES,
+	suppressedByVotes,
+	tallyFeedback,
 } from "./feedback"
 
 const NOISE = [1, 0, 0]
@@ -43,28 +46,48 @@ describe("cosineSimilarity", () => {
 	})
 })
 
-describe("feedbackVerdict", () => {
+const votesOf = (embedding: ReadonlyArray<number>, all: ReadonlyArray<FeedbackExample>) =>
+	tallyFeedback(NO_FEEDBACK_VOTES, embedding, all)
+
+describe("tallyFeedback", () => {
 	it("suppresses a finding similar to three negatives", () => {
-		const verdict = feedbackVerdict(NEAR_NOISE, examples("negative", NOISE, 3))
-		assert.deepEqual(verdict, { similarNegative: 3, similarPositive: 0, suppress: true })
+		const votes = votesOf(NEAR_NOISE, examples("negative", NOISE, 3))
+		assert.deepEqual(votes, { similarNegative: 3, similarPositive: 0 })
+		assert.isTrue(suppressedByVotes(votes))
 	})
 
 	it("keeps it below three similar negatives", () => {
-		assert.isFalse(feedbackVerdict(NEAR_NOISE, examples("negative", NOISE, 2)).suppress)
+		assert.isFalse(suppressedByVotes(votesOf(NEAR_NOISE, examples("negative", NOISE, 2))))
 	})
 
 	it("keeps it when as many similar positives disagree", () => {
 		const mixed = [...examples("negative", NOISE, 4), ...examples("positive", NOISE, 3)]
-		assert.isFalse(feedbackVerdict(NEAR_NOISE, mixed).suppress)
+		assert.isFalse(suppressedByVotes(votesOf(NEAR_NOISE, mixed)))
 	})
 
 	it("ignores negatives about something else", () => {
-		assert.isFalse(feedbackVerdict(BUG, examples("negative", NOISE, 10)).suppress)
+		assert.isFalse(suppressedByVotes(votesOf(BUG, examples("negative", NOISE, 10))))
+	})
+
+	it("counts examples read a page at a time the same as all at once", () => {
+		const all = [
+			...examples("negative", NOISE, 2),
+			...examples("positive", NOISE, 1),
+			...examples("negative", BUG, 2),
+			...examples("negative", NOISE, 2),
+		]
+		const paged = Arr.reduce(
+			[all.slice(0, 2), all.slice(2, 5), all.slice(5)],
+			NO_FEEDBACK_VOTES,
+			(votes, page) => tallyFeedback(votes, NEAR_NOISE, page),
+		)
+		assert.deepEqual(paged, votesOf(NEAR_NOISE, all))
+		assert.deepEqual(paged, { similarNegative: 4, similarPositive: 1 })
 	})
 })
 
 describe("applyFeedback", () => {
-	const noisy = examples("negative", NOISE, 3)
+	const noisy = votesOf(NOISE, examples("negative", NOISE, 3))
 
 	it("never suppresses security or critical findings", () => {
 		const findings = [
@@ -72,15 +95,19 @@ describe("applyFeedback", () => {
 			{ category: "convention" as const, severity: "critical" as const },
 			{ category: "convention" as const, severity: "info" as const },
 		]
-		const { kept, keptVectors, suppressed } = applyFeedback(findings, [NOISE, NOISE, NOISE], noisy)
+		const { kept, keptVectors, suppressed } = applyFeedback(
+			findings,
+			[NOISE, NOISE, NOISE],
+			[noisy, noisy, noisy],
+		)
 		assert.deepEqual(kept, findings.slice(0, 2))
 		assert.deepEqual(keptVectors, [NOISE, NOISE])
 		assert.deepEqual(suppressed, findings.slice(2))
 	})
 
-	it("keeps a finding without a vector", () => {
+	it("keeps a finding without a vector or votes", () => {
 		const findings = [{ category: "convention" as const, severity: "info" as const }]
-		assert.equal(applyFeedback(findings, [], noisy).kept.length, 1)
+		assert.equal(applyFeedback(findings, [], []).kept.length, 1)
 	})
 })
 

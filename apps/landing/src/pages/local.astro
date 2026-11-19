@@ -24,8 +24,7 @@ import LocalCommandGrid from "../components/local/LocalCommandGrid.astro";
 import LocalEyebrow from "../components/local/LocalEyebrow.astro";
 import LocalCTA from "../components/local/LocalCTA.astro";
 import LiveTrace from "../components/live/LiveTrace.astro";
-import LiveLogStream from "../components/live/LiveLogStream.astro";
-import { LiveLogsVolumeChart } from "../components/live/LiveLogsVolumeChart";
+import LiveLogs from "../components/live/LiveLogs.astro";
 import LiveServiceMap from "../components/live/LiveServiceMap.astro";
 import FAQ from "../components/FAQ.astro";
 import Footer from "../components/Footer.astro";
@@ -100,8 +99,8 @@ const faqs = [
 ];
 ---
 
-<Layout title={pageTitle} description={pageDescription}>
-    <SeoHead title={pageTitle} description={pageDescription} type="SoftwareApplication" />
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="SoftwareApplication" freeApplication="Maple Local" />
 
     <Nav />
     <LocalProductHero />
@@ -191,8 +190,7 @@ const faqs = [
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="grid gap-4">
-                <LiveLogsVolumeChart client:load />
-                <LiveLogStream />
+                <LiveLogs />
             </div>
             <div class="mt-12 max-w-2xl">
                 <LocalEyebrow label="Logs" />

@@ -45,7 +45,7 @@ export const activeCustomDomain = (model: Model): string | null =>
 
 /** Where visitors read the page: its active custom domain, else its Maple address; null with neither. */
 export const pageUrlOf = (model: Model, page: Pick<V2StatusPage, "slug">): string | null =>
-	canonicalUrl(model.publicBaseUrl, page.slug, activeCustomDomain(model))
+	canonicalUrl(model.publicBaseUrl, model.orgKey, page.slug, activeCustomDomain(model))
 
 /** The hostname field: the draft, else the saved domain. */
 export const customDomainInput = (model: Model): string =>

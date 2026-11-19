@@ -11,6 +11,7 @@ import { alertQueryLimits } from "../datetime"
 import { escapeClickHouseString, splitTerminalClauses } from "@maple-dev/effect-orm/sql"
 import type { OrgId } from "@maple/domain"
 import { replaceWith } from "@maple/strings"
+import { inlineNestedCteReads } from "./raw-sql-ctes"
 
 // User-authored ClickHouse SQL: validation, macro expansion, and execution.
 //
@@ -169,7 +170,7 @@ export const prepareRawSql = Effect.fn("RawSql.prepare")(function* (input: Prepa
 	// modifiers attached to the inner result (`WITH TOTALS`, `LIMIT BY`,
 	// `WITH FILL`) are discarded by the outer SELECT.
 	return {
-		sql: `SELECT * FROM (\n${Str.trim(splitTerminalClauses(sql).body)}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
+		sql: `SELECT * FROM (\n${Str.trim(inlineNestedCteReads(splitTerminalClauses(sql).body))}\n) AS maple_raw_sql_limited\nLIMIT ${input.truncateAtCap === true ? MAX_RAW_SQL_RESULT_ROWS : RAW_SQL_FETCH_ROW_LIMIT}`,
 		granularitySeconds: granularity,
 	} satisfies PreparedRawSql
 })

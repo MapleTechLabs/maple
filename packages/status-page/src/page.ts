@@ -29,6 +29,7 @@ import {
 	IMPACT_LABEL,
 	INCIDENT_STATUS_LABEL,
 	MONTHS,
+	pageTitle,
 } from "./format"
 import {
 	barComponents,
@@ -113,6 +114,14 @@ const renderHero = (
 	return `<section class="hero s-${overall}" aria-labelledby="h-hero"><div class="hero-head">${statusIcon(overall)}<h1 id="h-hero">${HERO_SENTENCE[overall]}</h1></div><div class="hero-body">${body}</div></section>`
 }
 
+/** The hero as the page's components and active incidents call it. */
+const renderPageHero = (snapshot: StatusPagePublicSnapshot): string =>
+	renderHero(
+		overallStatus(snapshot),
+		activeIncidents(snapshot),
+		Arr.filter(snapshot.components, (component) => component.status !== "operational"),
+	)
+
 /** Older and newer arrows around a live label; hidden until the script can page. */
 const pager = (name: "window" | "month", label: string, unit: string): string =>
 	`<div class="pager"><button type="button" data-nav="${name}" data-dir="older" aria-label="Previous ${unit}" hidden>${chevron("left")}</button><span id="${name}-label" aria-live="polite">${label}</span><button type="button" data-nav="${name}" data-dir="newer" aria-label="Next ${unit}" disabled hidden>${chevron("right")}</button></div>`
@@ -159,21 +168,35 @@ const renderComponent = (component: StatusPageSnapshotComponent, options: Render
 	return `<div class="component" data-component="${escapeHtml(component.id)}"${previewIdAttr(options, "component", component.id)}><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days) : ""}</div>`
 }
 
-const renderSystemStatus = (snapshot: StatusPagePublicSnapshot, options: RenderOptions): string => {
+/** The System status panel; with `onlyId`, just that component under its group's head. */
+const renderSystemStatus = (
+	snapshot: StatusPagePublicSnapshot,
+	options: RenderOptions,
+	onlyId?: string,
+): string => {
 	if (snapshot.components.length === 0) return ""
 	const shown = barComponents(snapshot.components)[0]
 	const label = shown === undefined ? "" : rangeLabel(windowDays(shown.days, 0))
 	const head = `<div class="panel-head"><h2 id="h-components">System status</h2>${shown === undefined ? "" : pager("window", label, "90 days")}</div>`
 	const groups = Arr.join(
-		Arr.map(groupComponents(snapshot.components), (group) => {
+		Arr.flatMap(groupComponents(snapshot.components), (group) => {
+			const shown =
+				onlyId === undefined
+					? group.components
+					: Arr.filter(group.components, (component) => component.id === onlyId)
+			// The editor edits a group's name on its components; a click on it opens the first one.
+			const first = shown[0]
+			if (first === undefined) return []
 			const groupHead =
 				group.name === null
 					? ""
-					: `<div class="group-head">${statusName(group.name, group.status)}</div>`
-			return `<div class="group">${groupHead}${Arr.join(
-				Arr.map(group.components, (component) => renderComponent(component, options)),
-				"",
-			)}</div>`
+					: `<div class="group-head"${previewIdAttr(options, "group", first.id)}>${statusName(group.name, group.status)}</div>`
+			return [
+				`<div class="group">${groupHead}${Arr.join(
+					Arr.map(shown, (component) => renderComponent(component, options)),
+					"",
+				)}</div>`,
+			]
 		}),
 		"",
 	)
@@ -304,13 +327,17 @@ const renderFooter = (
 			snapshot.page.visibility === "public"
 				? `<a href="${pageHref(options, "/feed.atom")}">Atom feed</a>`
 				: "",
-			privacy === null ? "" : `<a href="${escapeHtml(privacy)}" rel="noopener">Privacy policy</a>`,
-			terms === null ? "" : `<a href="${escapeHtml(terms)}" rel="noopener">Terms of service</a>`,
+			privacy === null
+				? ""
+				: `<a href="${escapeHtml(privacy)}" rel="noopener"${previewIdAttr(options, "field", "privacyUrl")}>Privacy policy</a>`,
+			terms === null
+				? ""
+				: `<a href="${escapeHtml(terms)}" rel="noopener"${previewIdAttr(options, "field", "termsUrl")}>Terms of service</a>`,
 		],
 		(link) => link !== "",
 	)
 	const powered = snapshot.page.showPoweredBy
-		? `<p class="powered">Powered by <a href="https://maple.dev" rel="noopener">${MAPLE_MARK}Maple</a></p>`
+		? `<p class="powered"${previewIdAttr(options, "field", "showPoweredBy")}>Powered by <a href="https://maple.dev" rel="noopener">${MAPLE_MARK}Maple</a></p>`
 		: ""
 	return `<footer>${powered}<p class="links">${Arr.join(links, " · ")}</p><p id="updated">Updated ${formatAge(nowMs - freshness.updatedAt)}</p></footer>`
 }
@@ -384,11 +411,7 @@ export const renderPage = (
 			options.inDashboard === true
 				? ""
 				: `<div class="notice" id="delayed" role="status"${delayed ? "" : " hidden"}>Live checks are delayed. Showing the last known state from ${timeTag(freshness.updatedAt)}.</div>`,
-			renderHero(
-				overall,
-				active,
-				Arr.filter(snapshot.components, (component) => component.status !== "operational"),
-			),
+			renderPageHero(snapshot),
 			active.length === 0
 				? ""
 				: renderSection(
@@ -427,7 +450,7 @@ export const renderPage = (
 		"",
 	)
 
-	const title = `${snapshot.page.name} status`
+	const title = pageTitle(snapshot.page.name)
 	const summary = statusSummary(overall, active)
 	return renderDocument({
 		snapshot,

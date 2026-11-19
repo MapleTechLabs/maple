@@ -13,6 +13,7 @@ import {
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
+import { isSignedInPerson } from "./require-person"
 
 const toWire = (row: DeviceCredentialRow) => ({
 	object: "device_credential" as const,
@@ -34,7 +35,7 @@ const toWire = (row: DeviceCredentialRow) => ({
 const requireSession = Effect.gen(function* () {
 	const actor = yield* CurrentAuditActor
 	const tenant = yield* CurrentTenant.Context
-	if (actor?.type !== "user" || actor.source !== "dashboard") {
+	if (!isSignedInPerson(actor)) {
 		return yield* new DeviceCredentialSessionRequiredError({
 			message: "Device credentials require a signed-in session.",
 		})

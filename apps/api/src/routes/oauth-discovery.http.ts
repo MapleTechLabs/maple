@@ -34,14 +34,6 @@ const oauthJson = (body: unknown, status = 200) =>
 const oauthError = (error: string, description: string, status = 400) =>
 	oauthJson({ error, error_description: description }, status)
 
-const appendOAuthError = (error: McpOAuthProtocolError) => {
-	const url = new URL(error.redirectUri!)
-	url.searchParams.set("error", error.error)
-	url.searchParams.set("error_description", error.message)
-	if (error.state) url.searchParams.set("state", error.state)
-	return url.toString()
-}
-
 const metadata = (issuer: string) => ({
 	issuer,
 	authorization_endpoint: `${issuer}/oauth/authorize`,
@@ -110,13 +102,6 @@ const requireFormValue = (form: URLSearchParams, name: string) => {
 }
 
 const protocolResponse = (error: McpOAuthProtocolError) =>
-	Effect.succeed(
-		error.redirectUri
-			? HttpServerResponse.redirect(appendOAuthError(error), { status: 302 })
-			: oauthError(error.error, error.message),
-	)
-
-const tokenProtocolResponse = (error: McpOAuthProtocolError) =>
 	Effect.succeed(oauthError(error.error, error.message))
 
 const rateLimitResponse = (error: McpOAuthRateLimitError) =>
@@ -191,7 +176,7 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				return oauthJson(result, 201)
 			}).pipe(
 				Effect.catchTags({
-					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": protocolResponse,
 					"@maple/backend/errors/McpOAuthRateLimitError": rateLimitResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": (error) =>
 						Effect.succeed(oauthError("temporarily_unavailable", error.message, 503)),
@@ -275,7 +260,7 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				})
 			}).pipe(
 				Effect.catchTags({
-					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": protocolResponse,
 					"@maple/backend/errors/McpOAuthRateLimitError": rateLimitResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": (error) =>
 						Effect.succeed(oauthError("temporarily_unavailable", error.message, 503)),
@@ -291,7 +276,7 @@ export const OAuthDiscoveryRouter = HttpRouter.use((router) =>
 				return HttpServerResponse.empty({ status: 200, headers: noStoreHeaders })
 			}).pipe(
 				Effect.catchTags({
-					"@maple/backend/errors/McpOAuthProtocolError": tokenProtocolResponse,
+					"@maple/backend/errors/McpOAuthProtocolError": protocolResponse,
 					"@maple/http/errors/McpOAuthPersistenceError": () =>
 						Effect.succeed(HttpServerResponse.empty({ status: 200, headers: noStoreHeaders })),
 				}),

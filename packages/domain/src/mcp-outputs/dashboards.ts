@@ -108,9 +108,15 @@ export const GetDashboardOutput = Schema.Struct({
 export const CreateDashboardOutput = Schema.Struct({
 	dashboard: DashboardRow,
 	validation: Schema.optionalKey(WidgetInspectionSummary),
-	/** Which of the three creation paths built it. */
-	source: Schema.Literals(["template", "widgets", "dashboard_json"]),
+	/** Which creation path built it. */
+	source: Schema.Literals(["template", "widgets", "dashboard_json", "grafana_import", "perses_import"]),
 	template: Schema.optionalKey(Schema.String),
+	/** What a Grafana or Perses import changed or could not carry over. */
+	importWarnings: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** A Grafana import: panels read, converted to widgets, and kept as notes. */
+	importStats: Schema.optionalKey(
+		Schema.Struct({ panels: Schema.Number, converted: Schema.Number, placeholders: Schema.Number }),
+	),
 	/** Advisory: saved anyway. */
 	renderWarnings: Schema.Array(Schema.String),
 })
@@ -226,6 +232,8 @@ export const InspectChartDataOutput = Schema.Struct({
 		hasUnsupportedTransform: Schema.Boolean,
 	}),
 	timeRange: InspectionTimeRange,
+	/** The dashboard variables the widget references and the value each ran with (`$__all` for All). */
+	variables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	queries: Schema.Array(InspectChartQueryResult),
 	verdict: InspectChartVerdict,
 	flags: Schema.Array(InspectChartFlag),

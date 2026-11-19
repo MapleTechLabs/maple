@@ -14,6 +14,18 @@ export const isKeyLogAttribute = (key: string): boolean =>
 	Str.startsWith("error.")(key) ||
 	Str.startsWith("exception.")(key)
 
+/** A log row's cause-bearing attributes (see `isKeyLogAttribute`); `{}` when it has none. */
+export const keyLogAttributes = (row: Pick<ListLogsRow, "logAttributes">): Record<string, string> =>
+	Rec.filter(parseProjectedAttributes(row.logAttributes), (_, key) => isKeyLogAttribute(key))
+
+/** `{ keyAttributes }` when the row has any, else nothing: spread into a log entry. */
+export const withKeyLogAttributes = (
+	row: Pick<ListLogsRow, "logAttributes">,
+): { readonly keyAttributes?: Record<string, string> } => {
+	const keyAttributes = keyLogAttributes(row)
+	return Rec.isEmptyRecord(keyAttributes) ? {} : { keyAttributes }
+}
+
 export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input: SearchLogsInput) {
 	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 30
@@ -68,14 +80,11 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 		)
 	const [logsResult, countResult] = yield* Effect.all([logsQuery, countQuery], { concurrency: "unbounded" })
 
-	const logs = Arr.map(logsResult.data, (row) => {
-		const attributes = parseProjectedAttributes(row.logAttributes)
-		return {
-			...toLogEntry(row),
-			keyAttributes: Rec.filter(attributes, (_, key) => isKeyLogAttribute(key)),
-			...(input.includeAttributes === true && { attributes }),
-		}
-	})
+	const logs = Arr.map(logsResult.data, (row) => ({
+		...toLogEntry(row),
+		keyAttributes: keyLogAttributes(row),
+		...(input.includeAttributes === true && { attributes: parseProjectedAttributes(row.logAttributes) }),
+	}))
 	// Without the count, what this page proves exists.
 	const total = countResult ?? (logs.length === 0 ? 0 : offset + logs.length)
 

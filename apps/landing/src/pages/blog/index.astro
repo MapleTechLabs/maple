@@ -16,10 +16,10 @@ const latest = posts[0]?.data.date;
 
 const pageTitle = "Blog — Maple";
 const pageDescription =
-    "Engineering notes, guides, and product updates from the Maple team — OpenTelemetry, infrastructure observability, and transparent, open-source monitoring.";
+    "Engineering notes, guides and product updates from the Maple team: OpenTelemetry, infrastructure observability and open-source monitoring.";
 ---
 
-<Layout title={pageTitle} description={pageDescription}>
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]}>
     <SeoHead title={pageTitle} description={pageDescription} />
     <Nav />
 
@@ -32,16 +32,15 @@ const pageDescription =
         >
         </div>
 
-        <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-10 md:pt-28 md:pb-14">
+        <div class="shell relative pt-24 pb-10 md:pt-28 md:pb-14">
             <div class="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.02em]">
                 <span class="text-fg-muted">~/maple/blog</span>
                 <span class="text-primary">$</span>
                 <span class="text-fg-muted">ls posts/</span>
-                <span class="inline-block h-[11px] w-[7px] bg-primary motion-safe:animate-pulse" aria-hidden="true"></span>
             </div>
 
             <div class="mt-5 flex flex-wrap items-end justify-between gap-6">
-                <h1 class="m-0 font-display text-[clamp(34px,8vw,72px)] font-semibold leading-[0.95] tracking-[-0.035em] text-foreground">
+                <h1 class="m-0 font-display text-[clamp(40px,6.3vw,72px)] font-semibold leading-[0.98] tracking-[-0.04em] text-foreground">
                     Blog
                 </h1>
 
@@ -61,17 +60,17 @@ const pageDescription =
                 </ul>
             </div>
 
-            <p class="mt-[22px] max-w-[62ch] text-sm leading-[1.7] text-fg-muted">
-                Engineering notes, field guides, and product updates from the team building Maple —
-                OpenTelemetry, infrastructure observability, and what transparent, open-source
-                monitoring looks like in practice.
+            <p class="mt-6 max-w-[58ch] font-display text-base leading-[1.6] text-pretty text-fg-muted md:text-[17px]">
+                Engineering notes, field guides and product updates from the team building Maple:
+                OpenTelemetry, infrastructure observability and what open-source monitoring looks
+                like in practice.
             </p>
         </div>
     </section>
 
     {/* ── Posts ──────────────────────────────────────────────── */}
     <section class="relative pb-20 md:pb-28">
-        <div class="mx-auto max-w-6xl px-6">
+        <div class="shell">
             {posts.length === 0 ? (
                 <div class="rounded-lg border border-border bg-card px-7 py-10 text-center">
                     <div class="inline-flex justify-center gap-2 font-mono text-xs">
@@ -88,16 +87,15 @@ const pageDescription =
                 </div>
             ) : (
                 <>
-                    {featured && (
-                        <div class="mb-8 md:mb-12">
-                            <PostCard post={featured} variant="featured" />
-                        </div>
-                    )}
+                    {featured && <PostCard post={featured} variant="featured" />}
                     {rest.length > 0 && (
-                        <div class="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))]">
-                            {rest.map((post) => (
-                                <PostCard post={post} />
-                            ))}
+                        <div class="mt-14 md:mt-20">
+                            <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">All posts</h2>
+                            <div class="border-b border-border">
+                                {rest.map((post, i) => (
+                                    <PostCard post={post} variant="row" first={i === 0} />
+                                ))}
+                            </div>
                         </div>
                     )}
                 </>

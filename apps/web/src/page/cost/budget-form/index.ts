@@ -31,7 +31,7 @@ export const page = definePage(
 		view,
 		subscriptions,
 		breadcrumbs: (model) => [
-			{ label: "Cost", href: "/cost" },
+			{ label: "Cloud cost", href: "/cost" },
 			{ label: "Budgets", href: "/cost/budgets" },
 			{
 				label: model.search.budgetId === undefined ? "New budget" : "Edit budget",

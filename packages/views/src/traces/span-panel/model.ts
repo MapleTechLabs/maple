@@ -3,7 +3,8 @@ import { AsyncData } from "foldkit"
 import { LoadFailure } from "../../data/load-failure"
 import * as Tabs from "../../ui/tabs"
 import { SpanNodeData } from "../trace-data"
-import { LogEntry, SpanDetail } from "../trace-source"
+import * as ProfileFlamegraph from "../../profiles/profile-flamegraph"
+import { LogEntry, SpanDetail, SpanProfile } from "../trace-source"
 
 // The span detail panel, as a Submodel. Its reads go through `TraceSource`.
 
@@ -34,6 +35,9 @@ export const Model = Schema.Struct({
 	totalDurationMs: Schema.Number,
 	detail: ReadSchema(SpanDetail),
 	logs: ReadSchema(Schema.Array(LogEntry)),
+	/** Null: no profile sample ran under this span, so the panel has no Profile tab. */
+	profile: ReadSchema(Schema.NullOr(SpanProfile)),
+	flamegraph: ProfileFlamegraph.Model,
 	tabs: Tabs.Model,
 	/** Copy status by target id (`span-name`, `attr:span:db.system`, ...). */
 	copies: Schema.Record(Schema.String, CopyState),

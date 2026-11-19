@@ -10,6 +10,8 @@ import type {
 	ServiceDependenciesRequest,
 	ServiceWorkloadsRequest,
 	ServiceRuntimesRequest,
+	ProfileSampleTypesRequest,
+	ProfileStacksRequest,
 	ServiceUsageRequest,
 	ErrorDetailTracesRequest,
 	ErrorRateByServiceRequest,
@@ -39,9 +41,9 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	ServiceDeploysRequest,
 	UptimeChecksRequest,
 	UptimePhaseTimingsRequest,
-	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
 	WebAnalyticsLiveRequest,
@@ -385,9 +387,7 @@ export const workloadDetailSummary = defineQuery({
 		CH.compile(CH.workloadDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
-// Releases page. The list and the timeline share one payload so the bundle
-// handler forwards it to both; the detail reuses the list query scoped to one
-// service, which is the comparison table.
+// Releases across the org, one row per (service, environment, commit).
 export const releasesList = defineQuery({
 	id: "releasesList",
 	profile: "list",
@@ -437,62 +437,50 @@ export const uptimeChecks = defineQuery({
 		),
 })
 
-export const releasesTimeline = defineQuery({
-	id: "releasesTimeline",
+/**
+ * How far before the window the deploy read starts. A version first seen in it was already running;
+ * a deploy just inside the window still has its minutes before. A service quiet for this whole lead
+ * (a cron, say) has its next version taken for a deploy all the same.
+ */
+const SERVICE_DEPLOYS_LEAD_SECONDS = 2 * CH.DEPLOY_VERIFY_WINDOW_SECONDS
+
+export const commitServices = defineQuery({
+	id: "commitServices",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleasesListRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.releasesTimelineQuery({
-				environments: payload.environments,
-				namespaces: payload.namespaces,
-				serviceNames: payload.services,
-				excludedEnvironments: payload.excludedEnvironments,
-				bucketSeconds: payload.bucketSeconds,
-			}),
-			{
-				...windowParams(payload, orgId),
-				bucketSeconds: payload.bucketSeconds,
-			},
-		),
+	compile: (payload: ServiceDeploysRequest & { readonly commitSha: string }, orgId: OrgId) =>
+		CH.compile(CH.commitServicesQuery(payload.commitSha), windowParams(payload, orgId), {
+			rowSchema: CH.commitServicesRowSchema,
+		}),
 })
 
-export const releaseVersions = defineQuery({
-	id: "releaseVersions",
+export const serviceDeploys = defineQuery({
+	id: "serviceDeploys",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
+	/** `serviceNames` bounds a commit's read to the services it reached (`commitServices`). */
+	compile: (payload: ServiceDeploysRequest & { readonly serviceNames?: readonly string[] }, orgId: OrgId) =>
 		CH.compile(
-			CH.releasesListQuery({
+			CH.releaseVerificationQuery({
 				serviceName: payload.serviceName,
 				environments: payload.environments,
-				limit: 100,
+				commitSha: payload.commitSha,
+				serviceNames: payload.serviceNames,
 			}),
-			windowParams(payload, orgId),
-			{ rowSchema: CH.releasesListRowSchema },
+			{
+				...windowParams(
+					{
+						startTime: formatWarehouseDateTime(
+							parseWarehouseDateTime(payload.startTime) - SERVICE_DEPLOYS_LEAD_SECONDS * 1000,
+						),
+						endTime: payload.endTime,
+					},
+					orgId,
+				),
+				deploysFrom: payload.startTime,
+			},
+			{ rowSchema: CH.releaseVerificationRowSchema },
 		),
-})
-
-export const releaseTimeline = defineQuery({
-	id: "releaseTimeline",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(CH.releasesTimelineQuery(payload), {
-			...windowParams(payload, orgId),
-			bucketSeconds: payload.bucketSeconds,
-		}),
-})
-
-export const releaseErrorFingerprints = defineQuery({
-	id: "releaseErrorFingerprints",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(CH.releaseErrorFingerprintsQuery(payload), {
-			...windowParams(payload, orgId),
-			serviceVersion: payload.commitSha,
-		}),
 })
 
 // Bundle subqueries keep distinct ids and minimal payloads to preserve standalone cache keys.
@@ -607,6 +595,53 @@ export const serviceRuntimes = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
 		CH.serviceRuntimesSQL({ services: payload.services }, windowParams(payload, orgId)),
+})
+
+/** A profile read's scope as the queries bind it: a service's window or the spans of one trace. */
+const profileScope = (payload: ProfileSampleTypesRequest): CH.ProfileScopeOpts => ({
+	service: payload.serviceName !== undefined,
+	environment: payload.deploymentEnv !== undefined,
+	trace: payload.traceId !== undefined,
+	...(payload.spanIds !== undefined && { spanIds: payload.spanIds }),
+})
+
+const profileParams = (payload: ProfileSampleTypesRequest, orgId: OrgId) => ({
+	...windowParams(payload, orgId),
+	...(payload.serviceName !== undefined && { serviceName: payload.serviceName }),
+	...(payload.deploymentEnv !== undefined && { environment: payload.deploymentEnv }),
+	...(payload.traceId !== undefined && { traceId: payload.traceId }),
+})
+
+/** The sample types a service or a trace's spans sent, a row per unit, heaviest first. */
+export const profileSampleTypes = defineQuery({
+	id: "profileSampleTypes",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProfileSampleTypesRequest, orgId: OrgId) =>
+		CH.compile(CH.profileSampleTypesQuery(profileScope(payload)), profileParams(payload, orgId)),
+})
+
+/**
+ * The heaviest stacks of one sample type in one unit, at most `limit` (`CH.PROFILE_STACKS_CAP` by
+ * default). Producers can report a type in different units, and those values do not add up.
+ */
+export const profileStacks = defineQuery({
+	id: "profileStacks",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProfileStacksRequest & { readonly limit?: number }, orgId: OrgId) =>
+		CH.compile(
+			CH.profileStacksQuery({
+				...profileScope(payload),
+				unit: true,
+				...(payload.limit !== undefined && { limit: payload.limit }),
+			}),
+			{
+				...profileParams(payload, orgId),
+				sampleType: payload.sampleType,
+				sampleUnit: payload.sampleUnit,
+			},
+		),
 })
 
 export const servicePlatforms = defineQuery({
@@ -892,7 +927,8 @@ const securityWindow = (payload: SecurityExposureRequest | SecurityRuntimesReque
 export const scannerSignatures = defineQuery({
 	id: "scannerSignatures",
 	profile: "aggregation",
-	cache: timeRangeCache,
+	// v2: rows carry `inPath`.
+	cache: makeTimeRangeCachePolicy({ version: 2 }),
 	compile: (payload: SecurityExposureRequest, orgId: OrgId) =>
 		CH.compile(CH.scannerSignaturesQuery(), securityWindow(payload, orgId)),
 })

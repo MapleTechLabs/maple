@@ -8,6 +8,8 @@ import { Message as AiMessage } from "./ai/model"
 import { Message as BillingMessage } from "./billing/model"
 import { Message as MembersMessage } from "./members/model"
 import { Message as GeneralMessage } from "./general/model"
+import { Message as DomainsMessage } from "./domains/model"
+import { Message as SsoMessage } from "./sso/model"
 import { Message as DataPlatformMessage } from "./data-platform/model"
 import { Message as DataSourcesMessage } from "./data-sources/model"
 import { Message as AuditLogMessage } from "./audit-log/model"
@@ -31,6 +33,8 @@ export const Message = defineMessageUnion({
 	GotBillingMessage: { message: BillingMessage },
 	GotMembersMessage: { message: MembersMessage },
 	GotGeneralMessage: { message: GeneralMessage },
+	GotDomainsMessage: { message: DomainsMessage },
+	GotSsoMessage: { message: SsoMessage },
 	GotDataPlatformMessage: { message: DataPlatformMessage },
 	GotDataSourcesMessage: { message: DataSourcesMessage },
 	GotAuditLogMessage: { message: AuditLogMessage },

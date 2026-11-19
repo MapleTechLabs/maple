@@ -187,12 +187,11 @@ const coastOf = (cells: ReadonlyArray<Cell>): THREE.BufferGeometry => {
 			if (down.has(cellKey(beyond))) return []
 			const foot = (point: Point): Point => [x + (point[0] - x) * 0.97, z + (point[1] - z) * 0.97]
 			const [a, b] = [foot(from), foot(to)]
-			return [
-				...[from[0], 0, from[1], to[0], 0, to[1]],
-				...[a[0], -TILE_DEPTH, a[1], b[0], -TILE_DEPTH, b[1]],
-				...[from[0], 0, from[1], a[0], -TILE_DEPTH, a[1]],
-				...[to[0], 0, to[1], b[0], -TILE_DEPTH, b[1]],
-			]
+			const top = [from[0], 0, from[1], to[0], 0, to[1]]
+			const bottom = [a[0], -TILE_DEPTH, a[1], b[0], -TILE_DEPTH, b[1]]
+			const fromDrop = [from[0], 0, from[1], a[0], -TILE_DEPTH, a[1]]
+			const toDrop = [to[0], 0, to[1], b[0], -TILE_DEPTH, b[1]]
+			return [...top, ...bottom, ...fromDrop, ...toDrop]
 		})
 	})
 	const geometry = new THREE.BufferGeometry()

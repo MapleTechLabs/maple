@@ -25,4 +25,6 @@ disallowed-types = [
     { path = "flate2::write::GzDecoder", reason = "use maple_ingest::decompress (bounded)" },
     { path = "flate2::write::DeflateDecoder", reason = "use maple_ingest::decompress (bounded)" },
     { path = "flate2::write::ZlibDecoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "snap::raw::Decoder", reason = "use maple_ingest::decompress (bounded)" },
+    { path = "snap::read::FrameDecoder", reason = "use maple_ingest::decompress (bounded)" },
 ]

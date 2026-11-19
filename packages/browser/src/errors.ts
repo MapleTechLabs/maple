@@ -22,7 +22,7 @@ import { context, INVALID_SPAN_CONTEXT, type Span, SpanKind, SpanStatusCode } fr
 import { exceptionOf } from "./error-causes"
 import { shouldCapture } from "./error-filters"
 import { keepContext } from "./sampling"
-import { liveMapleTracer } from "./tracing"
+import { isExcusedNetworkFailure, liveMapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 export { onErrorRecorded } from "@maple/sdk-core"
@@ -222,24 +222,75 @@ export function setupErrorCapture(record = true): () => void {
 		)
 	}
 
-	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-		if (alreadyReported(event.reason)) return
+	const reportRejection = (reason: unknown, at?: number): void => {
+		if (alreadyReported(reason)) return
 		handle(
-			event.reason,
+			reason,
 			{
 				name: "browser.unhandled_rejection",
 				attributes: { "maple.exception.source": "unhandledrejection" },
 			},
-			{ source: "unhandledrejection" },
+			{ source: "unhandledrejection", startTime: at },
 		)
+	}
+
+	// A reload cancels the page's requests a moment before `pagehide`. Their rejections wait
+	// that long, and are dropped if the page goes; every other error is reported at once.
+	const held = new Map<ReturnType<typeof setTimeout>, { readonly reason: unknown; readonly at: number }>()
+	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+		const reason: unknown = event.reason
+		// Its request span does not count the failure (the page went away, or the app ignores the URL).
+		if (isExcusedNetworkFailure(reason)) return
+		if (!mayBeCancelledRequest(reason)) {
+			reportRejection(reason)
+			return
+		}
+		const at = Date.now()
+		const timer = setTimeout(() => {
+			held.delete(timer)
+			reportRejection(reason, at)
+		}, UNLOAD_GRACE_MS)
+		held.set(timer, { reason, at })
+	}
+	const onPageHide = (): void => {
+		for (const timer of held.keys()) clearTimeout(timer)
+		held.clear()
 	}
 
 	window.addEventListener("error", onError)
 	window.addEventListener("unhandledrejection", onUnhandledRejection)
+	window.addEventListener("pagehide", onPageHide)
 	return () => {
 		window.removeEventListener("error", onError)
 		window.removeEventListener("unhandledrejection", onUnhandledRejection)
+		window.removeEventListener("pagehide", onPageHide)
+		const pending = [...held]
+		held.clear()
+		for (const [timer, { reason, at }] of pending) {
+			clearTimeout(timer)
+			reportRejection(reason, at)
+		}
 	}
+}
+
+/**
+ * How long a failed request's rejection waits for `pagehide`: the window the fetch
+ * instrumentation leaves a settled span open, in which tracing excuses it too.
+ */
+const UNLOAD_GRACE_MS = 300
+
+/** What `fetch()` rejects with when no response came: Chromium, Firefox, Safari and older Safari. */
+const FETCH_FAILURE_MESSAGES = new Set([
+	"Failed to fetch",
+	"NetworkError when attempting to fetch resource.",
+	"Load failed",
+	"cancelled",
+])
+
+/** A rejection a navigation may have caused: a failed `fetch()`, or an abort (how some browsers cancel). */
+function mayBeCancelledRequest(reason: unknown): boolean {
+	if (reason instanceof DOMException) return reason.name === "AbortError"
+	return reason instanceof TypeError && FETCH_FAILURE_MESSAGES.has(reason.message)
 }
 
 /** An error the app wants no span for still keeps a buffered replay, if the filters keep it. */

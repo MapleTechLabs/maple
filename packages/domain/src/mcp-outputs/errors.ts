@@ -52,6 +52,7 @@ export const ErrorDetailTrace = Schema.Struct({
 			timestamp: Schema.String,
 			severityText: Schema.String,
 			body: Schema.String,
+			keyAttributes: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 		}),
 	),
 })

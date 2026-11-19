@@ -94,7 +94,7 @@ const dash0: AlternativesPage = {
 		{
 			team: "Must self-host and keep PromQL",
 			pick: "SigNoz or Grafana",
-			why: "Both take PromQL and have mature self-hosted installs (Docker and Helm).",
+			why: "Both take PromQL and have mature self-hosted installs (Docker and Helm). Maple runs PromQL on Maple Cloud only; its self-hosted version has no dashboards or PromQL yet.",
 		},
 		{
 			team: "Need phone and SMS paging",
@@ -113,7 +113,7 @@ const dash0: AlternativesPage = {
 		},
 	],
 	stayIf: [
-		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools above, only SigNoz, Grafana and Better Stack take PromQL.",
+		"Your alerts are PromQL rules, or your dashboards live as Perses dashboards-as-code. Leaving means rewriting the alerts: of the tools above, SigNoz, Grafana and Better Stack take PromQL alerts, while Maple runs PromQL queries and dashboards but keeps its own alert rules. Perses dashboards import into Maple with their PromQL panels as placeholders to rebuild.",
 		"You want 13 months of metric retention included in the storage rate. By default Maple keeps metrics 90 days, Honeycomb 60 and SigNoz one month.",
 		"You use Dash0's Kubernetes operator and OpenTelemetry distribution, or its synthetic API checks at $0.20 per thousand runs.",
 		"Per-data-point pricing suits your data. Dash0 charges per span, log record and metric data point, not per byte, so wide spans and verbose log lines cost the same as small ones.",
@@ -127,8 +127,8 @@ const dash0: AlternativesPage = {
 			pickIf: "You want Dash0's model, source-available and self-hostable, with uptime, on-call, replay and error tracking in one app.",
 			pricing: "$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB",
 			openSource:
-				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting yet",
-			promql: "No",
+				"Source-available (FSL-1.1, Apache 2.0 after two years); self-hosts for one team, without alerting, dashboards or PromQL yet",
+			promql: "Yes",
 			summary:
 				"Maple starts from the same place as Dash0: OpenTelemetry in, usage-based pricing, no per-seat fee, an MCP server for agents. The source is on GitHub and it self-hosts as one container. Around traces, logs and metrics it puts the rest of the on-call loop in the same app: uptime checks and cron heartbeats, on-call schedules with escalation, SLOs with burn-rate alerts, errors grouped into issues, and browser session replay linked to the trace behind each click.",
 			pros: [
@@ -138,9 +138,8 @@ const dash0: AlternativesPage = {
 				"Session replay linked to traces, plus a hosted MCP server and alert investigations",
 			],
 			cons: [
-				"No PromQL: a visual query builder and SQL instead",
 				"30 days for traces and logs, 90 for metrics, against Dash0's 13 months for metrics",
-				"The self-hosted version has no alerting or team accounts yet",
+				"The self-hosted version has no alerting, dashboards, PromQL or team accounts yet",
 				"No phone or SMS paging or scripted browser checks yet",
 				"Younger, with a smaller ecosystem, and no free plan on Maple Cloud",
 			],
@@ -312,7 +311,7 @@ const dash0: AlternativesPage = {
 		},
 		{
 			question: "Which Dash0 alternatives support PromQL?",
-			answer: "SigNoz, Grafana and Better Stack. Maple, Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages. If your alerting and dashboards are written in PromQL, start with those three.",
+			answer: "SigNoz, Grafana and Better Stack take PromQL for queries and alerts. Maple runs PromQL queries. Grafana dashboards import with their PromQL panels; Perses dashboards import too, but their PromQL panels come in as placeholders to rebuild. Alert rules have to be set up again in Maple. Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages.",
 		},
 		{
 			question: "How hard is it to move off Dash0?",

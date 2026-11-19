@@ -23,7 +23,16 @@
  */
 import type { PGlite } from "@electric-sql/pglite"
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, ManagedRuntime, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	String as Str,
+} from "effect"
 import { OrgId, PortableDashboardDocument, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -388,6 +397,92 @@ describe("SharedDashboardService isolation", () => {
 				[created.id],
 			)
 			expect(stored).toEqual({ mode: "public", revoked: true })
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
+	it("stops resolving a link past its expiry and resolves it again once the expiry is cleared", async () => {
+		const { runtime } = makeRuntime("maple-test-share-secret")
+		try {
+			const dashboardId = await createDashboard(runtime, ORG_A, USER_A)
+			const scope = { dashboardId, widgetId: null }
+			const later = Date.now() + 60 * 60 * 1000
+			const created = await runtime.runPromise(
+				shares((s) => s.upsert(ORG_A, USER_A, scope, "public", later)),
+			)
+			expect(created.expiresAt).toBe(new Date(later).toISOString())
+			const live = await runtime.runPromise(shares((s) => s.resolveByToken(created.token)))
+			expect(live.share.id).toBe(created.id)
+
+			// Same link, now in the past: answers exactly like a revoked one.
+			const expired = await runtime.runPromise(
+				shares((s) => s.upsert(ORG_A, USER_A, scope, "public", Date.now() - 1000)),
+			)
+			expect(expired.token).toBe(created.token)
+			const byToken = await runtime.runPromise(
+				Effect.flip(shares((s) => s.resolveByToken(created.token))),
+			)
+			expect(byToken._tag).toBe("@maple/http/errors/ShareNotFoundError")
+			const byId = await runtime.runPromise(Effect.flip(shares((s) => s.resolvePublicById(created.id))))
+			expect(byId._tag).toBe("@maple/http/errors/ShareNotFoundError")
+
+			// The owner still sees it, with its expiry, and omitting expiry on a mode change keeps it.
+			const listed = await runtime.runPromise(shares((s) => s.listForDashboard(ORG_A, dashboardId)))
+			expect(Arr.map(listed, (share) => share.id)).toEqual([created.id])
+			const flipped = await runtime.runPromise(shares((s) => s.upsert(ORG_A, USER_A, scope, "org")))
+			expect(flipped.expiresAt).toBe(expired.expiresAt)
+
+			const cleared = await runtime.runPromise(
+				shares((s) => s.upsert(ORG_A, USER_A, scope, "public", null)),
+			)
+			expect(cleared.expiresAt).toBeUndefined()
+			const again = await runtime.runPromise(shares((s) => s.resolveByToken(created.token)))
+			expect(again.share.id).toBe(created.id)
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
+	it("replaces an expired link with one that resolves, and keeps a future expiry on replace", async () => {
+		const { runtime } = makeRuntime("maple-test-share-secret")
+		try {
+			const dashboardId = await createDashboard(runtime, ORG_A, USER_A)
+			const scope = { dashboardId, widgetId: null }
+			await runtime.runPromise(shares((s) => s.upsert(ORG_A, USER_A, scope, "public", Date.now() - 1000)))
+			const replaced = await runtime.runPromise(shares((s) => s.rotate(ORG_A, USER_A, scope)))
+			expect(replaced.expiresAt).toBeUndefined()
+			const live = await runtime.runPromise(shares((s) => s.resolveByToken(replaced.token)))
+			expect(live.share.id).toBe(replaced.id)
+
+			const later = Date.now() + 60 * 60 * 1000
+			await runtime.runPromise(shares((s) => s.upsert(ORG_A, USER_A, scope, "public", later)))
+			const kept = await runtime.runPromise(shares((s) => s.rotate(ORG_A, USER_A, scope)))
+			expect(kept.expiresAt).toBe(new Date(later).toISOString())
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
+	it("ends a chart link when its board link expires", async () => {
+		const { runtime, testDb } = makeRuntime("maple-test-share-secret")
+		try {
+			const dashboardId = await createDashboard(runtime, ORG_A, USER_A)
+			await runtime.runPromise(
+				shares((s) => s.upsert(ORG_A, USER_A, { dashboardId, widgetId: null }, "public")),
+			)
+			const chart = await runtime.runPromise(
+				shares((s) => s.upsert(ORG_A, USER_A, { dashboardId, widgetId: "w1" }, "public")),
+			)
+			await executeSql(
+				testDb,
+				"UPDATE dashboard_shares SET expires_at = now() - interval '1 minute' WHERE widget_id IS NULL",
+			)
+
+			const outcome = await runtime.runPromise(
+				Effect.flip(shares((s) => s.resolveByToken(chart.token))),
+			)
+			expect(outcome._tag).toBe("@maple/http/errors/ShareNotFoundError")
 		} finally {
 			await runtime.dispose()
 		}

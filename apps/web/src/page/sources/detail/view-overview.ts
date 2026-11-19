@@ -7,6 +7,9 @@ import type * as Chart from "@maple/views/charts/chart"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { textLink } from "@maple/views/ui/text-link"
+import { button } from "@maple/views/ui/button"
+import { lockedControl } from "@maple/views/ui/locked-control"
+import { denialReason } from "../../kit/session-grants"
 import { emptyValue } from "@maple/views/ui/values"
 import type { PullSourcePlatform } from "@maple/primitives"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -183,16 +186,30 @@ const volumeRail = (h: H, model: Model): Html => {
 }
 
 /** A summary panel's header: its title and a quiet link to the tab that edits what it shows. */
-const summaryHeader = (h: H, title: string, link: Readonly<{ label: string; href: string }> | null): Html =>
+/** `lockedReason` draws the link as plain text with the reason as its tooltip. */
+const summaryHeader = (
+	h: H,
+	title: string,
+	link: Readonly<{ label: string; href: string; lockedReason: string | null }> | null,
+): Html =>
 	panelHeader(
 		h,
 		link === null
 			? { title }
 			: {
 					title,
-					action: typography(h, { size: "xs" }, [
-						textLink(h, { href: link.href, tone: "muted" }, [link.label]),
-					]),
+					action:
+						link.lockedReason === null
+							? typography(h, { size: "xs" }, [
+									textLink(h, { href: link.href, tone: "muted" }, [link.label]),
+								])
+							: lockedControl(
+									h,
+									link.lockedReason,
+									button(h, { variant: "link", size: "xs", isDisabled: true }, [
+										link.label,
+									]),
+								),
 				},
 	)
 
@@ -237,7 +254,13 @@ const rulesSummary = (h: H, model: Model, source: V2Source, timeZone: string, no
 		summaryHeader(
 			h,
 			"Rules",
-			canManage(model) ? { label: "Edit rules", href: sourceHref(source, "settings") } : null,
+			model.grants === null
+				? null
+				: {
+						label: "Edit rules",
+						href: sourceHref(source, "settings"),
+						lockedReason: canManage(model) ? null : denialReason("sources:manage"),
+					},
 		),
 		...(rows.length === 0
 			? [
@@ -292,6 +315,7 @@ const collectionSummary = (
 		summaryHeader(h, "What Maple collects", {
 			label: "Manage connection",
 			href: sourceHref(source, "connection"),
+			lockedReason: null,
 		}),
 		configRow(h, "Connected", [
 			`${viaLabel(platform)} · `,

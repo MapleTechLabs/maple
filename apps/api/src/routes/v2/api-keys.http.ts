@@ -10,10 +10,11 @@ import {
 	scopeAllows,
 } from "@maple/domain/http/v2"
 import type { V2ApiKey, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Option, Array as Arr, String as Str } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import * as Policy from "@maple/domain/policy"
 
 const beyondCallerScopes = () =>
@@ -90,6 +91,27 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 		const apiKeysService = yield* ApiKeysService
 		const auth = yield* AuthService
 
+		/**
+		 * Null for a signed-in session. For an API key caller, whatever its role: that key's
+		 * expiry (null when it never expires), which no key it mints or rolls may pass. Revoking the
+		 * parent does not reach its children; demoting or removing their creator does (they are pinned).
+		 */
+		const callerKey = Effect.fnUntraced(function* (tenant: CurrentTenant.TenantContext) {
+			const actor = yield* CurrentAuditActor
+			if (actor?.type !== "api_key" || actor.apiKeyId === undefined) return null
+			// Gone since it authenticated this request: it was revoked, so it mints nothing.
+			const caller = yield* apiKeysService
+				.get(tenant.orgId, actor.apiKeyId)
+				.pipe(
+					Effect.catchTag("@maple/http/errors/ApiKeyNotFoundError", () =>
+						Effect.fail(
+							V2InsufficientPermissions.make("The calling API key is no longer valid."),
+						),
+					),
+				)
+			return { expiresAt: caller.expiresAt }
+		})
+
 		return handlers
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
@@ -110,14 +132,21 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					// MCP keys are per-developer credentials any member may mint for
-					// themselves; the creator's roles are pinned onto the key so it
-					// carries no more authority than they have (an unpinned key
-					// resolves as `root`). Standard API keys stay admin-only.
+					// themselves. Admins create standard keys with any access; engineers
+					// create restricted ones, limited to the scopes they could use. Both
+					// non-admin kinds pin the creator's roles onto the key so it carries no
+					// more authority than they have (an unpinned key resolves as `root`).
 					const isMcpKey = payload.kind === "mcp"
-					if (!isMcpKey) {
-						yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
+					const canManageKeys = Policy.can(tenant.roles, "api_keys:manage")
+					if (!isMcpKey && !canManageKeys) {
+						yield* Policy.check(tenant.roles, "api_keys:create_restricted", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
+						if (!Policy.canGrantScopes((p) => Policy.can(tenant.roles, p), payload.scopes)) {
+							return yield* V2InsufficientPermissions.make(
+								"Only org admins can create an API key with full access or with these scopes. Pick the resource families you can use yourself.",
+							)
+						}
 					}
 					// MCP keys carry no scopes, so a scoped caller can never mint one.
 					if (
@@ -126,16 +155,37 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 					) {
 						return yield* beyondCallerScopes()
 					}
+					const caller = yield* callerKey(tenant)
+					const ceiling = caller?.expiresAt ?? null
+					if (ceiling !== null) {
+						const now = yield* Clock.currentTimeMillis
+						if (
+							payload.expires_in_seconds === undefined ||
+							now + payload.expires_in_seconds * 1000 > ceiling
+						) {
+							return yield* V2InsufficientPermissions.make(
+								"A key created with an expiring API key cannot outlive it. Set expires_in_seconds within the calling key's remaining lifetime, or create the key from a signed-in session.",
+							)
+						}
+					}
+					// Only a signed-in admin mints an unpinned key; one minted by an API key carries
+					// that key's roles, so demoting its creator reaches it too.
+					const pinnedSource = isMcpKey
+						? "maple_mcp"
+						: canManageKeys && caller === null
+							? null
+							: "maple_api_key"
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const created = yield* apiKeysService.create(tenant.orgId, tenant.userId, {
 						name: payload.name,
 						description: payload.description,
 						expiresInSeconds: payload.expires_in_seconds,
+						...(ceiling !== null ? { expiresAtCeiling: ceiling } : undefined),
 						kind: payload.kind,
 						scopes: payload.scopes,
 						createdByEmail,
-						...(isMcpKey
-							? { metadataJson: { source: "maple_mcp", roles: [...tenant.roles] } }
+						...(pinnedSource !== null
+							? { metadataJson: { source: pinnedSource, roles: [...tenant.roles] } }
 							: undefined),
 					})
 					yield* recordHttpAudit("api_key.created", {
@@ -148,12 +198,59 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 			.handle("roll", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
-						V2InsufficientPermissions.make(denial.message),
-					)
 					const existing = yield* apiKeysService.get(tenant.orgId, params.id)
+					// An engineer may roll a standard key they created, when it carries no more
+					// than their role now holds: a key made while they were admin stays an admin's.
+					if (!Policy.can(tenant.roles, "api_keys:manage")) {
+						const isOwnStandardKey =
+							existing.kind === "standard" && existing.createdBy === tenant.userId
+						if (!isOwnStandardKey) {
+							yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
+							)
+						}
+						yield* Policy.check(tenant.roles, "api_keys:create_restricted", (denial) =>
+							V2InsufficientPermissions.make(denial.message),
+						)
+						const pinned = yield* apiKeysService.pinnedRoles(tenant.orgId, params.id)
+						const withinRole = Option.match(pinned, {
+							onNone: () => false,
+							onSome: (roles) =>
+								!Policy.outranks(Policy.highestRole(roles), Policy.highestRole(tenant.roles)),
+						})
+						if (
+							!withinRole ||
+							!Policy.canGrantScopes((p) => Policy.can(tenant.roles, p), existing.scopes)
+						) {
+							return yield* V2InsufficientPermissions.make(
+								"Only org admins can roll a key with more access than your role has.",
+							)
+						}
+					}
 					if (!withinCallerScopes(tenant.scopes, existing.scopes)) {
 						return yield* beyondCallerScopes()
+					}
+					// The successor keeps the rolled key's expiry, and its secret goes to the caller.
+					const caller = yield* callerKey(tenant)
+					const ceiling = caller?.expiresAt ?? null
+					if (ceiling !== null && (existing.expiresAt === null || existing.expiresAt > ceiling)) {
+						return yield* V2InsufficientPermissions.make(
+							"An expiring API key cannot roll a key that outlives it. Roll it from a signed-in session.",
+						)
+					}
+					// An API key may only take over a key carrying no more than its own roles (an
+					// unpinned key resolves as `root`), or the successor would escape its demotion.
+					if (caller !== null) {
+						const pinned = yield* apiKeysService.pinnedRoles(tenant.orgId, params.id)
+						const existingRole = Option.match(pinned, {
+							onNone: (): Policy.Role => "root",
+							onSome: Policy.highestRole,
+						})
+						if (Policy.outranks(existingRole, Policy.highestRole(tenant.roles))) {
+							return yield* V2InsufficientPermissions.make(
+								"An API key cannot roll a key with more access than its own roles. Roll it from a signed-in session.",
+							)
+						}
 					}
 					const createdByEmail = yield* auth.getUserEmail(tenant.userId)
 					const rolled = yield* apiKeysService.roll(tenant.orgId, tenant.userId, params.id, {
@@ -169,13 +266,18 @@ export const HttpV2ApiKeysLive = HttpApiBuilder.group(MapleApiV2, "apiKeys", (ha
 			.handle("revoke", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					// Whoever can mint a key must be able to kill it: a member may
-					// revoke an MCP key they created, or a device key one of their
-					// phones minted. Everything else stays admin-only.
+					// Whoever can mint a key must be able to kill it: a member may revoke
+					// an MCP key they created or a device key one of their phones minted,
+					// an engineer the standard keys they created. Everything else stays
+					// admin-only.
 					const existing = yield* apiKeysService.get(tenant.orgId, params.id)
+					const isOwn = existing.createdBy === tenant.userId
 					const isOwnSelfServiceKey =
-						(existing.kind === "mcp" || existing.kind === "device") &&
-						existing.createdBy === tenant.userId
+						isOwn &&
+						(existing.kind === "mcp" ||
+							existing.kind === "device" ||
+							(existing.kind === "standard" &&
+								Policy.can(tenant.roles, "api_keys:create_restricted")))
 					if (!isOwnSelfServiceKey) {
 						yield* Policy.check(tenant.roles, "api_keys:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),

@@ -60,7 +60,10 @@ const SSE = Arr.join(
 	"\n",
 )
 
-const ENV = { OPENROUTER_API_KEY: Redacted.make("test-key") }
+const INTERNAL_ORG = "org_maple"
+const ENV = { OPENROUTER_API_KEY: Redacted.make("test-key"), MAPLE_INTERNAL_ORG_ID: INTERNAL_ORG }
+/** A run for Maple's own org, the one whose spans carry the conversation. */
+const INTERNAL_TAGS = { surface: "chat" as const, orgId: INTERNAL_ORG }
 
 const sseFetch: typeof globalThis.fetch = () =>
 	Promise.resolve(new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } }))
@@ -134,7 +137,7 @@ const runModelCall = <A extends { readonly type: string }, E, R>(
 			Stream.tap((part) => Effect.sync(() => void delivered.push(part.type))),
 			Stream.runDrain,
 			Effect.exit,
-			Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env, INTERNAL_TAGS).layer, layerLlm(env))),
 			Effect.provideService(FetchHttpClient.Fetch, () =>
 				Promise.resolve(
 					new Response(body, { status, headers: { "content-type": "text/event-stream" } }),
@@ -217,7 +220,11 @@ const runFakeProviderCall = (parts: Stream.Stream<AiResponse.StreamPartEncoded>)
 		})
 		const model = Layer.effect(
 			LanguageModel.LanguageModel,
-			instrumentLanguageModel(provider, { providerName: "fake", sessionAttributes: {} }),
+			instrumentLanguageModel(provider, {
+				providerName: "fake",
+				sessionAttributes: {},
+				content: "record",
+			}),
 		)
 
 		const exit = yield* LanguageModel.streamText({
@@ -334,7 +341,10 @@ describe("the model-call span", () => {
 				Effect.ignore,
 				// The security audit reasons at high effort, so the span records a reasoning level.
 				Effect.provide(
-					Layer.provideMerge(resolveSecurityAuditModel(ENV, "discovery").layer, layerLlm(ENV)),
+					Layer.provideMerge(
+						resolveSecurityAuditModel(ENV, "discovery", INTERNAL_TAGS).layer,
+						layerLlm(ENV),
+					),
 				),
 				Effect.provideService(FetchHttpClient.Fetch, () =>
 					Promise.resolve(
@@ -393,6 +403,67 @@ describe("the model-call span", () => {
 	 * which cancelled the response body before the terminal chunk was read: the span ended with no
 	 * `gen_ai.usage.*` and no cost for a call the model had run to completion.
 	 */
+	it.live("leaves the conversation off a customer org's call and keeps its sizes and usage", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const sse = Arr.join(
+				[
+					'data: {"id":"gen-3","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Looking"},"finish_reason":null}]}',
+					"",
+					'data: {"id":"gen-3","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042}}',
+					"",
+					"data: [DONE]",
+					"",
+				],
+				"\n",
+			)
+
+			yield* LanguageModel.streamText({
+				prompt: [
+					{ role: "system", content: "Be brief." },
+					{ role: "user", content: [{ type: "text", text: "logs for alice@example.com" }] },
+				],
+			}).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(
+					Layer.provideMerge(
+						resolveSecurityAuditModel(ENV, "discovery", {
+							surface: "chat",
+							orgId: "org_customer",
+						}).layer,
+						layerLlm(ENV),
+					),
+				),
+				Effect.provideService(FetchHttpClient.Fetch, () =>
+					Promise.resolve(
+						new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+					),
+				),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const attributes = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
+			)?.endedWith
+			assert.isDefined(attributes, "no model-call span was opened")
+			assert.isFalse(attributes?.has("gen_ai.input.messages"))
+			assert.isFalse(attributes?.has("gen_ai.system_instructions"))
+			assert.isFalse(attributes?.has("gen_ai.output.messages"))
+			assert.strictEqual(attributes?.get("maple.genai.content_redacted"), true)
+			assert.strictEqual(attributes?.get("maple.genai.input_messages.count"), 1)
+			assert.strictEqual(attributes?.get("maple.genai.system_instructions.chars"), 9)
+			assert.strictEqual(attributes?.get("maple.genai.output_parts.count"), 1)
+			assert.strictEqual(attributes?.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes?.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cost"), 0.0042)
+			assert.deepStrictEqual(attributes?.get("gen_ai.response.finish_reasons"), ["stop"])
+		}),
+	)
+
 	it.effect("keeps the usage of a call the run rejects after the model finished", () =>
 		Effect.gen(function* () {
 			const { exit, delivered, attributes } = yield* runModelCall(
@@ -654,7 +725,9 @@ describe("the model-call span", () => {
 			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
 				Stream.runDrain,
 				Effect.ignore,
-				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provide(
+					Layer.provideMerge(resolveTriageModel(ENV, INTERNAL_TAGS).layer, layerLlm(ENV)),
+				),
 				Effect.provideService(FetchHttpClient.Fetch, sseFetch),
 				Effect.withTracer(recorder.tracer),
 			)
@@ -688,7 +761,7 @@ describe("delta joining", () => {
 				LanguageModel.LanguageModel,
 				instrumentLanguageModel(
 					provider,
-					{ providerName: "fake", sessionAttributes: {} },
+					{ providerName: "fake", sessionAttributes: {}, content: "record" },
 					{ coalesceDeltas },
 				),
 			)
@@ -727,7 +800,7 @@ describe("runaway model calls", () => {
 		LanguageModel.LanguageModel,
 		instrumentLanguageModel(
 			LanguageModel.make({ generateText: () => Effect.succeed([]), streamText: () => trickle }),
-			{ providerName: "fake", sessionAttributes: {} },
+			{ providerName: "fake", sessionAttributes: {}, content: "record" },
 		),
 	)
 
@@ -761,7 +834,9 @@ describe("runaway model calls", () => {
 			}
 			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
 				Stream.runDrain,
-				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provide(
+					Layer.provideMerge(resolveTriageModel(ENV, INTERNAL_TAGS).layer, layerLlm(ENV)),
+				),
 				Effect.provideService(FetchHttpClient.Fetch, capture),
 			)
 			assert.deepInclude(bodies[0], { max_tokens: MODEL_CALL_OUTPUT_TOKENS })
@@ -801,7 +876,7 @@ describe("model calls cut at their attempt cap", () => {
 					generateText: () => Effect.succeed([]),
 					streamText: () => Stream.suspend(() => responses[calls++] ?? quickAnswer),
 				}),
-				{ providerName: "fake", sessionAttributes: {} },
+				{ providerName: "fake", sessionAttributes: {}, content: "record" },
 				{
 					attempts: {
 						cap: Duration.seconds(90),
@@ -833,6 +908,74 @@ describe("model calls cut at their attempt cap", () => {
 			assert.deepStrictEqual(
 				Arr.map(parts, (part) => part.type),
 				["text-start", "text-delta", "text-end", "finish"],
+			)
+		}),
+	)
+
+	it.effect("waits for the retry when the first attempt answers with a failure past the cap", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			const failedAnswer = slowReasoning.pipe(
+				Stream.take(11),
+				Stream.concat(
+					Stream.fromIterable<AiResponse.StreamPartEncoded>([
+						{
+							type: "finish",
+							reason: "error",
+							usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } },
+						},
+					]),
+				),
+			)
+			const lateAnswer = Stream.fromEffect(Effect.sleep("30 seconds")).pipe(
+				Stream.drain,
+				Stream.concat(quickAnswer),
+			)
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([failedAnswer, lateAnswer], retried)),
+				Effect.forkChild,
+			)
+			const seconds = (n: number) =>
+				Effect.forEach(Arr.range(1, n), () => TestClock.adjust("1 second"), { discard: true })
+			yield* seconds(105)
+			assert.isUndefined(fiber.pollUnsafe(), "the failed first answer does not end the call")
+			yield* seconds(20)
+			const parts = yield* Fiber.join(fiber)
+			assert.isTrue(
+				Arr.some(parts, (part) => part.type === "text-delta"),
+				"the retry's answer",
+			)
+			assert.isFalse(Arr.some(parts, (part) => part.type === "reasoning-delta"))
+		}),
+	)
+
+	it.effect("keeps the first attempt past the cap and delivers it when it beats the retry", () =>
+		Effect.gen(function* () {
+			const retried: Array<number> = []
+			// Reasons for 100s, then answers.
+			const slowAnswer = slowReasoning.pipe(Stream.take(11), Stream.concat(quickAnswer))
+			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(scripted([slowAnswer, slowReasoning], retried)),
+				Effect.forkChild,
+			)
+			// A second at a time, so each of the first attempt's chained sleeps gets to run.
+			const seconds = (n: number) =>
+				Effect.forEach(Arr.range(1, n), () => TestClock.adjust("1 second"), { discard: true })
+			yield* seconds(91)
+			assert.lengthOf(retried, 1, "the retry starts at the cap")
+			assert.isUndefined(fiber.pollUnsafe())
+			// The retry never answers, so only the first attempt can.
+			yield* seconds(15)
+			const parts = yield* Fiber.join(fiber)
+			assert.deepStrictEqual(
+				Arr.map(Arr.takeRight(parts, 4), (part) => part.type),
+				["text-start", "text-delta", "text-end", "finish"],
+			)
+			assert.isTrue(
+				Arr.some(parts, (part) => part.type === "reasoning-delta"),
+				"the first attempt's own parts",
 			)
 		}),
 	)
@@ -892,7 +1035,10 @@ describe("model calls cut at their attempt cap", () => {
 		LanguageModel.streamText({ prompt: "hi" }).pipe(
 			Stream.runCollect,
 			Effect.provide(
-				Layer.provideMerge(resolveSecurityAuditModel(ENV, "discovery").layer, layerLlm(ENV)),
+				Layer.provideMerge(
+					resolveSecurityAuditModel(ENV, "discovery", INTERNAL_TAGS).layer,
+					layerLlm(ENV),
+				),
 			),
 			Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
 			Effect.forkChild,
@@ -917,7 +1063,9 @@ describe("model calls cut at their attempt cap", () => {
 			const bodies: Array<Record<string, unknown>> = []
 			const fiber = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
 				Stream.runDrain,
-				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provide(
+					Layer.provideMerge(resolveTriageModel(ENV, INTERNAL_TAGS).layer, layerLlm(ENV)),
+				),
 				Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
 				Effect.forkChild,
 			)

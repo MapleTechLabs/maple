@@ -8,6 +8,8 @@ export const PROVIDER_LABEL = {
 	maple: "Maple",
 	vercel: "Vercel",
 	gcp: "Google Cloud",
+	aws: "AWS",
+	github: "GitHub",
 } satisfies Record<AuditTrailProvider, string>
 
 export const CATEGORY_LABEL = {

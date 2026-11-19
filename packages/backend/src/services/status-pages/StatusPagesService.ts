@@ -63,7 +63,9 @@ import {
 	sha256Base64Url,
 	themeContrastIssue,
 	STATUS_PAGE_MAX_URL_LENGTH,
+	STATUS_PAGE_MAX_IMAGE_BYTES,
 	STATUS_PAGE_UPDATE_MAX_LENGTH,
+	isStatusPageImageDataUrl,
 } from "@maple/domain/status-page"
 import {
 	hashStatusPagePassword,
@@ -151,6 +153,8 @@ export interface CreateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Maintenance only: complete it when its window ends; defaults to true. */
+	readonly autoComplete?: boolean
 	/** Incident only: when it began, if before now; defaults to now. */
 	readonly startedAt?: number
 	readonly source: StatusPageUpdateSource
@@ -176,6 +180,8 @@ export interface UpdateStatusPageIncidentInput {
 	readonly published?: boolean
 	readonly scheduledStart?: number | null
 	readonly scheduledEnd?: number | null
+	/** Maintenance only. */
+	readonly autoComplete?: boolean
 	/** Incident only. */
 	readonly startedAt?: number
 	/** A closed incident or maintenance only. */
@@ -332,7 +338,10 @@ const componentNotFound = (componentId: StatusPageComponentId) =>
 const incidentNotFound = (incidentId: StatusPageIncidentId) =>
 	new StatusPageIncidentNotFoundError({ incidentId, message: "Status page incident not found" })
 const slugTaken = (slug: string) =>
-	new StatusPageSlugTakenError({ slug, message: `The address '${slug}' is already taken` })
+	new StatusPageSlugTakenError({
+		slug,
+		message: `This organization already has a status page at '${slug}'`,
+	})
 
 const isValidSlug = Schema.is(StatusPageSlug)
 
@@ -366,6 +375,20 @@ const validateHttpsUrl = (raw: string | null, what: string) => {
 		return Effect.fail(invalid(`${what} must be a valid URL`))
 	if (new URL(value).protocol !== "https:") return Effect.fail(invalid(`${what} must use https`))
 	return Effect.succeed(value)
+}
+
+/** An https URL, or an uploaded image (a base64 `data:` image URL within the size cap). */
+const validateImage = (raw: string | null, what: string) => {
+	const value = raw === null ? "" : Str.trim(raw)
+	if (Str.startsWith("data:")(value))
+		return isStatusPageImageDataUrl(value)
+			? Effect.succeed(value)
+			: Effect.fail(
+					invalid(
+						`${what} must be a PNG, JPEG, WebP, GIF, SVG or ICO image of at most ${STATUS_PAGE_MAX_IMAGE_BYTES / 1024} KB`,
+					),
+				)
+	return validateHttpsUrl(raw, what)
 }
 
 /** Blank is no colour; anything else must be `#rrggbb`, stored lower-cased. */
@@ -419,6 +442,29 @@ const validateWindow = (
 		? Effect.void
 		: Effect.fail(invalid("Maintenance must end after it starts"))
 }
+
+/**
+ * Open maintenance takes its status from its window as it is created, whatever the caller sent:
+ * scheduled before its start, in progress once it has come. One that already ended is refused, so
+ * the sweep never announces a start and an end at once; completed maintenance is a record of the
+ * past and keeps its status.
+ */
+const openMaintenanceStatus = (
+	kind: StatusPageIncidentKind,
+	status: StatusPageIncidentStatus,
+	scheduledStart: number | null,
+	scheduledEnd: number | null,
+	now: number,
+) => {
+	if (kind !== "maintenance" || status === "completed" || scheduledStart === null || scheduledEnd === null)
+		return Effect.succeed(status)
+	if (scheduledEnd <= now)
+		return Effect.fail(invalid("Maintenance must end in the future; record finished work as completed"))
+	return Effect.succeed<StatusPageIncidentStatus>(scheduledStart > now ? "scheduled" : "in_progress")
+}
+
+const validateAutoComplete = (kind: StatusPageIncidentKind) =>
+	kind === "maintenance" ? Effect.void : Effect.fail(invalid("Only maintenance completes on its own"))
 
 /**
  * A window edit on maintenance: completed keeps its window, an open one must end in the future, a
@@ -546,6 +592,7 @@ const loadIncidents = Effect.fnUntraced(function* (
 		published: row.published,
 		scheduledStart: row.scheduledStart,
 		scheduledEnd: row.scheduledEnd,
+		autoComplete: row.autoComplete,
 		startedAt: row.startedAt,
 		resolvedAt: row.resolvedAt,
 		componentIds: Arr.map(
@@ -657,16 +704,25 @@ const findIncident = (db: MapleDb, orgId: OrgId, incidentId: StatusPageIncidentI
 			),
 		)
 
-/** The slug check is deliberately global: one hosted address per slug across all orgs. */
+/**
+ * Slugs are unique per org: the hosted address `/s/<org key>/<slug>` carries the org. A slug a
+ * page still holds at the bare `/s/<slug>` (`legacy_slug_route`) is taken in every org, so no
+ * other org's page can ever be routed at that old link.
+ */
 const ensureSlugFree = Effect.fnUntraced(function* (
 	db: MapleDb,
+	orgId: OrgId,
 	slug: string,
 	exceptPageId: StatusPageId | null,
 ) {
 	const rows = yield* db.run(
 		PG.from(StatusPages)
 			.select("id")
-			.where(($) => [$.slug.eq(slug), exceptPageId === null ? undefined : $.id.neq(exceptPageId)])
+			.where(($) => [
+				PG.or($.orgId.eq(orgId), $.legacySlugRoute.eq(true)),
+				$.slug.eq(slug),
+				exceptPageId === null ? undefined : $.id.neq(exceptPageId),
+			])
 			.limit(1)
 			.crossTenant(),
 	)
@@ -843,9 +899,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const slug = yield* validateSlug(input.slug)
 				const description = yield* validateText(input.description ?? null, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.websiteUrl ?? null, "Website URL")
-				const logoUrl = yield* validateHttpsUrl(input.logoUrl ?? null, "Logo URL")
-				const logoDarkUrl = yield* validateHttpsUrl(input.logoDarkUrl ?? null, "Dark mode logo URL")
-				const faviconUrl = yield* validateHttpsUrl(input.faviconUrl ?? null, "Favicon URL")
+				const logoUrl = yield* validateImage(input.logoUrl ?? null, "Logo URL")
+				const logoDarkUrl = yield* validateImage(input.logoDarkUrl ?? null, "Dark mode logo URL")
+				const faviconUrl = yield* validateImage(input.faviconUrl ?? null, "Favicon URL")
 				const supportUrl = yield* validateHttpsUrl(input.supportUrl ?? null, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacyUrl ?? null, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.termsUrl ?? null, "Terms of service URL")
@@ -861,7 +917,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				yield* dbExecuteSlug(slug)((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							yield* ensureSlugFree(db, slug, null)
+							yield* ensureSlugFree(db, orgId, slug, null)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
 							// A new page starts at revision 1 > published 0, so the publisher picks it up.
 							yield* db.run(
@@ -936,17 +992,15 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 						? undefined
 						: yield* validateHttpsUrl(patch.websiteUrl, "Website URL")
 				const logoUrl =
-					patch.logoUrl === undefined
-						? undefined
-						: yield* validateHttpsUrl(patch.logoUrl, "Logo URL")
+					patch.logoUrl === undefined ? undefined : yield* validateImage(patch.logoUrl, "Logo URL")
 				const logoDarkUrl =
 					patch.logoDarkUrl === undefined
 						? undefined
-						: yield* validateHttpsUrl(patch.logoDarkUrl, "Dark mode logo URL")
+						: yield* validateImage(patch.logoDarkUrl, "Dark mode logo URL")
 				const faviconUrl =
 					patch.faviconUrl === undefined
 						? undefined
-						: yield* validateHttpsUrl(patch.faviconUrl, "Favicon URL")
+						: yield* validateImage(patch.faviconUrl, "Favicon URL")
 				const supportUrl =
 					patch.supportUrl === undefined
 						? undefined
@@ -972,7 +1026,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								patch.theme === undefined
 									? undefined
 									: yield* validateTheme({ ...current.theme, ...patch.theme })
-							if (slug !== undefined) yield* ensureSlugFree(db, slug, pageId)
+							if (slug !== undefined) yield* ensureSlugFree(db, orgId, slug, pageId)
 							// The old slug route stays at the edge until the publisher drains this.
 							if (slug !== undefined && slug !== current.slug)
 								yield* queueSlugRemoval(db, orgId, pageId, current.slug)
@@ -981,6 +1035,10 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										...(name === undefined ? undefined : { name }),
 										...(slug === undefined ? undefined : { slug }),
+										// The rename queues the bare-slug route's removal, so the old slug frees up.
+										...(slug !== undefined && slug !== current.slug
+											? { legacySlugRoute: false }
+											: undefined),
 										...(description === undefined ? undefined : { description }),
 										...(websiteUrl === undefined ? undefined : { websiteUrl }),
 										...(logoUrl === undefined ? undefined : { logoUrl }),
@@ -996,7 +1054,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										...(patch.autoIncidents === undefined
 											? undefined
 											: { autoIncidents: patch.autoIncidents }),
-										...(patch.visibility === undefined ? undefined : { visibility: patch.visibility }),
+										...(patch.visibility === undefined
+											? undefined
+											: { visibility: patch.visibility }),
 										updatedAt: now,
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(pageId)]),
@@ -1436,9 +1496,18 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const scheduledEnd = input.scheduledEnd ?? null
 				yield* validateStatusForKind(input.kind, input.status)
 				yield* validateWindow(input.kind, scheduledStart, scheduledEnd)
+				// `true` is every incident's default, so only turning it off is maintenance-only.
+				if (input.autoComplete === false) yield* validateAutoComplete(input.kind)
 				const componentIds = [...new Set(input.componentIds)]
 				const now = yield* Clock.currentTimeMillis
 				if (input.startedAt !== undefined) yield* validateStartedAt(input.kind, input.startedAt, now)
+				const status = yield* openMaintenanceStatus(
+					input.kind,
+					input.status,
+					scheduledStart,
+					scheduledEnd,
+					now,
+				)
 				const id = StatusPageIncidentId.make(randomUUID())
 				const createdBy = input.createdBy ?? null
 				yield* dbExecute((db) =>
@@ -1454,13 +1523,14 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									kind: input.kind,
 									title,
 									impact: input.impact,
-									status: input.status,
+									status,
 									published: input.published ?? true,
 									alertIncidentId: null,
 									scheduledStart,
 									scheduledEnd,
+									autoComplete: input.autoComplete ?? true,
 									startedAt: input.startedAt ?? scheduledStart ?? now,
-									resolvedAt: isClosedStatus(input.status) ? now : null,
+									resolvedAt: isClosedStatus(status) ? now : null,
 									createdBy,
 									createdAt: now,
 									updatedAt: now,
@@ -1471,7 +1541,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									id: StatusPageIncidentUpdateId.make(randomUUID()),
 									orgId,
 									incidentId: id,
-									status: input.status,
+									status,
 									body,
 									source: input.source,
 									createdBy,
@@ -1581,6 +1651,12 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 								if (scheduledStart !== null && scheduledEnd !== null)
 									yield* validateWindowEdit(current, scheduledStart, scheduledEnd, now)
 							}
+							// An unchanged value (an incident read and written back) is no change.
+							if (
+								patch.autoComplete !== undefined &&
+								patch.autoComplete !== current.autoComplete
+							)
+								yield* validateAutoComplete(current.kind)
 							const startedAt = patch.startedAt ?? current.startedAt
 							if (patch.startedAt !== undefined)
 								yield* validateStartedAt(current.kind, patch.startedAt, now)
@@ -1610,6 +1686,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 										scheduledStart !== null
 											? { startedAt: scheduledStart }
 											: undefined),
+										...(patch.autoComplete === undefined
+											? undefined
+											: { autoComplete: patch.autoComplete }),
 										...(patch.startedAt === undefined ? undefined : { startedAt }),
 										...(patch.resolvedAt === undefined ? undefined : { resolvedAt }),
 										updatedAt: now,
@@ -1680,9 +1759,9 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 				const slug = yield* validateSlug(input.slug)
 				const description = yield* validateText(input.description, "Description")
 				const websiteUrl = yield* validateHttpsUrl(input.website_url, "Website URL")
-				const logoUrl = yield* validateHttpsUrl(input.logo_url, "Logo URL")
-				const logoDarkUrl = yield* validateHttpsUrl(input.logo_dark_url, "Dark mode logo URL")
-				const faviconUrl = yield* validateHttpsUrl(input.favicon_url, "Favicon URL")
+				const logoUrl = yield* validateImage(input.logo_url, "Logo URL")
+				const logoDarkUrl = yield* validateImage(input.logo_dark_url, "Dark mode logo URL")
+				const faviconUrl = yield* validateImage(input.favicon_url, "Favicon URL")
 				const supportUrl = yield* validateHttpsUrl(input.support_url, "Support URL")
 				const privacyUrl = yield* validateHttpsUrl(input.privacy_url, "Privacy policy URL")
 				const termsUrl = yield* validateHttpsUrl(input.terms_url, "Terms of service URL")
@@ -1757,7 +1836,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									`Component ${encodeComponentId(foreign)} is not on this page`,
 								)
 							yield* ensureMonitorsInOrg(db, orgId, monitorIds)
-							yield* ensureSlugFree(db, slug, pageId)
+							yield* ensureSlugFree(db, orgId, slug, pageId)
 							const { fields, created, updated, deleted, reordered } = diffStatusPageConfig(
 								previous,
 								written,
@@ -1770,6 +1849,7 @@ export class StatusPagesService extends Context.Service<StatusPagesService, Stat
 									.set({
 										name,
 										slug,
+										...(slug !== current.slug ? { legacySlugRoute: false } : undefined),
 										description,
 										websiteUrl,
 										logoUrl,

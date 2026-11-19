@@ -1,7 +1,7 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Schema, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
-import type { ChatTurnOrigin } from "../chat-session"
+import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
 import { analystMessage } from "../policy"
 import { HttpTaggedError } from "./error-policy"
@@ -117,6 +117,8 @@ export interface TenantContext {
 	readonly authMode: AuthMode
 	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
 	readonly scopes?: ReadonlyArray<string> | undefined
+	/** Set when someone else signed in as this user (a Clerk `act` claim). Writes are allowed and audited. */
+	readonly impersonation?: SessionImpersonation | undefined
 	/** Set for a scoped API key that grants read access only: MCP tools that change data refuse it. */
 	readonly readOnly?: true
 	/** Pre-resolved actor for an API-key-backed agent, preferred over `ensureUserActor(userId)`. */
@@ -125,6 +127,21 @@ export interface TenantContext {
 	readonly mcpClientName?: string
 	/** Who drove the chat-engine turn this invocation belongs to; audit attribution keys on it. */
 	readonly turnOrigin?: ChatTurnOrigin
+	/**
+	 * For an unattended turn, who answers for it, settled when it starts: one of Maple's own
+	 * producers, or a person with the roles they hold now. Absent reads as a person with none.
+	 */
+	readonly turnStarter?:
+		| { readonly kind: "producer" }
+		| { readonly kind: "person"; readonly roles: ReadonlyArray<RoleName> }
+	/** Which Maple agent ran the chat-engine turn (investigation, code review, ...), so the audit log can name it. */
+	readonly chatMode?: ChatMode
+}
+
+/** Who is acting behind an impersonated session, and the session it happened in. */
+export interface SessionImpersonation {
+	readonly actorId: string
+	readonly sessionId: string
 }
 
 export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
@@ -135,6 +152,7 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	// Present only for API-key auth with restricted scopes (v2). Undefined for
 	// session tokens and legacy full-access keys — those bypass scope checks.
 	scopes: Schema.optional(Schema.Array(Schema.String)),
+	impersonation: Schema.optional(Schema.Struct({ actorId: Schema.String, sessionId: Schema.String })),
 }) {}
 
 export class Context extends EffectContext.Service<Context, TenantSchema>()(

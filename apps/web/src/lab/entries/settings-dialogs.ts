@@ -6,7 +6,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../../page/contract"
-import { deleteDialog } from "../../page/dashboards/list/view-dialogs"
+import { deleteDialog, importReportDialog } from "../../page/dashboards/list/view-dialogs"
 import * as DashboardList from "../../page/dashboards/list/update"
 import * as DashboardListModel from "../../page/dashboards/list/model"
 import type { Message as DashboardListMessage } from "../../page/dashboards/list/message"
@@ -40,6 +40,7 @@ const ITEMS = [
 	"disconnect-pending",
 	"dashboard-delete",
 	"dashboard-delete-pending",
+	"dashboard-import-report",
 	"key-create",
 	"key-created",
 	"destination",
@@ -110,6 +111,29 @@ const dashboards = (isDeleting: boolean): DashboardListModel.Model => {
 		pendingDelete: Schema.decodeUnknownSync(DashboardListModel.ListDashboard)(pendingDelete),
 		deleteDialog: opened(model.deleteDialog),
 		isDeleting,
+	}
+}
+
+/** A Grafana import with a placeholder, a dropped query and a renamed variable. */
+const dashboardImportReport = (): DashboardListModel.Model => {
+	const model = DashboardList.init({ search: {} }, context).model
+	return {
+		...model,
+		importReport: {
+			id: "dash_lab",
+			name: "Node overview",
+			panels: 9,
+			converted: 7,
+			warnings: [
+				'Panel "CPU basic" has 2 queries; Maple imported A only. Not imported: B: count(node_cpu_seconds_total)',
+				'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+				'Logs panel "Recent logs" was imported as a placeholder.',
+				'Variable "host-name" was renamed to "host_name"; queries that use it were rewritten.',
+				'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
+				'Panel "Traffic" uses the Grafana unit "bps", which Maple has no match for; it shows plain numbers.',
+			],
+		},
+		importReportDialog: opened(model.importReportDialog),
 	}
 }
 
@@ -227,6 +251,9 @@ const disconnectView = Submodel.defineView<IntegrationsModel.Model, Integrations
 const dashboardView = Submodel.defineView<DashboardListModel.Model, DashboardListMessage>((model, h) =>
 	deleteDialog(h, model),
 )
+const importReportView = Submodel.defineView<DashboardListModel.Model, DashboardListMessage>((model, h) =>
+	importReportDialog(h, model),
+)
 const sourceView = Submodel.defineView<SourceDetailModel.Model, SourceMessage>((model, h) =>
 	settingsTab(h, model, source, "UTC"),
 )
@@ -247,6 +274,13 @@ const render = (h: HtmlBuilder<Message>, item: string): Html => {
 				slotId: "lab-dashboard-delete",
 				model: dashboards(item === "dashboard-delete-pending"),
 				view: dashboardView,
+				toParentMessage: ignore,
+			})
+		case "dashboard-import-report":
+			return h.submodel({
+				slotId: "lab-dashboard-import-report",
+				model: dashboardImportReport(),
+				view: importReportView,
 				toParentMessage: ignore,
 			})
 		case "key-create":

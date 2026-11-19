@@ -31,8 +31,12 @@ const verifiedPayload = (label: string, id: string, hmacKey: string): string | u
 	if (Option.isNone(found) || found.value === 0) return undefined
 	const separator = found.value
 
-	const payload = Buffer.from(Str.slice(0, separator)(id), "base64url").toString("utf8")
+	const head = Str.slice(0, separator)(id)
+	const payload = Buffer.from(head, "base64url").toString("utf8")
 	if (payload.length === 0) return undefined
+	// The decoder skips characters outside the alphabet, so only the exact encoding this
+	// repo mints is accepted: an alias would verify but land in a different rate-limit bucket.
+	if (Buffer.from(payload, "utf8").toString("base64url") !== head) return undefined
 
 	const presented = Buffer.from(Str.slice(separator + 1)(id), "utf8")
 	const expected = Buffer.from(signPayload(label, payload, hmacKey), "utf8")

@@ -30,8 +30,10 @@ export interface FakeDurableObjectState {
 	readonly storage: {
 		readonly sql: SqlStorage
 		readonly setAlarm: (scheduledTime: number) => Promise<void>
+		readonly deleteAlarm: () => Promise<void>
+		readonly deleteAll: () => Promise<void>
 	}
-	/** Every alarm time the object asked for, in order. */
+	/** Every alarm time the object asked for, in order; emptied by `deleteAlarm`. */
 	readonly alarms: Array<number>
 	/** Collected rather than awaited, so a test can drive the turn itself. */
 	readonly waitUntil: (promise: Promise<unknown>) => void
@@ -129,7 +131,8 @@ class FakeSqlStorage implements SqlStorage {
 export const makeFakeDurableObjectState = ({ migrated = true } = {}): FakeDurableObjectState => {
 	const pending: Array<Promise<unknown>> = []
 	const alarms: Array<number> = []
-	const sql = new FakeSqlStorage(new DatabaseSync(":memory:"))
+	const db = new DatabaseSync(":memory:")
+	const sql = new FakeSqlStorage(db)
 
 	if (migrated) applyChatSessionMigrations(sql)
 
@@ -138,6 +141,18 @@ export const makeFakeDurableObjectState = ({ migrated = true } = {}): FakeDurabl
 			sql,
 			setAlarm: async (scheduledTime) => {
 				alarms.push(scheduledTime)
+			},
+			deleteAlarm: async () => {
+				alarms.length = 0
+			},
+			// Like a SQLite-backed object's `deleteAll`: every table goes, schema included.
+			deleteAll: async () => {
+				const tables = db
+					.prepare(
+						"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+					)
+					.all()
+				for (const table of tables) db.exec(`DROP TABLE "${String(table.name)}"`)
 			},
 		},
 		alarms,

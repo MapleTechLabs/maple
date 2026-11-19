@@ -9,13 +9,14 @@ import * as Field from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { input } from "@maple/views/ui/input"
 import {
+	connectionTabItem,
+	CHANGE_LATER_NOTE,
 	type CheckRow,
 	choiceTiles,
 	flowColumns,
 	flowRail,
 	foundChips,
 	liveChecklist,
-	savedBanner,
 	statusRow,
 	stepCard,
 	whereToFind,
@@ -425,8 +426,10 @@ const chooseStep = (h: H, model: Model): Html => {
 					[isBound ? "Save" : "Start collecting"],
 				),
 			]),
-			stepCard(h, { icon: "ChartBarIcon", title: "What to collect", note: "Change any time" }, [
-				...(status !== null && status.connected
+			stepCard(
+				h,
+				{ icon: "ChartBarIcon", title: "Choose what to collect", note: CHANGE_LATER_NOTE },
+				status !== null && status.connected
 					? [
 							planetscaleFeatureChoice(h, model, status),
 							...(card.features.error === null
@@ -442,8 +445,8 @@ const chooseStep = (h: H, model: Model): Html => {
 							typography(h, { size: "sm", tone: "muted", as: "p" }, [
 								"Branch metrics and events are both on. Switch either off here once the organization is saved.",
 							]),
-						]),
-			]),
+						],
+			),
 			chooseStatus(h, model, status),
 		],
 		chooseRail(h, model, status),
@@ -464,7 +467,7 @@ const showsUpRail = (h: H): Html =>
 				title: "Service map",
 				detail: "Databases linked to the services that query them",
 			},
-			{ icon: "GearIcon", title: "Source page", detail: "Edit data, Reconnect, Disconnect" },
+			connectionTabItem("Edit data, Reconnect, Disconnect"),
 		],
 		timeNote: "First metrics within 10 minutes",
 		docs: DOCS,
@@ -487,12 +490,8 @@ const liveStep = (h: H, model: Model): Html => {
 	return flowColumns(
 		h,
 		[
-			savedBanner(
-				h,
-				"Saved as a source. Safe to leave; collection keeps running.",
-				"Nothing to install in PlanetScale",
-			),
 			liveChecklist(h, {
+				saved: "Saved as a source. Safe to leave; collection keeps running.",
 				title: setup?.live === "healthy" ? "PlanetScale is live" : "Checking the connection",
 				rows,
 			}),

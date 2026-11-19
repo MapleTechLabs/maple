@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
-import { Command, Submodel } from "foldkit"
+import { AsyncData, Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import {
@@ -15,11 +15,15 @@ import { agentSessionsTabs } from "../../page/agent-sessions/kit/tabs"
 import { CompleteReloadSpin, DetectModels, VirtualizeSessions } from "../../page/agent-sessions/list/command"
 import { type DisplayRow, sortOf, sortPatch } from "../../page/agent-sessions/list/derive"
 import { Message as ListMessage } from "../../page/agent-sessions/list/message"
-import { Model as ListModel } from "../../page/agent-sessions/list/model"
+import { type Facets, Model as ListModel } from "../../page/agent-sessions/list/model"
 import { init as listInit } from "../../page/agent-sessions/list/update"
 import { sessionsTable } from "../../page/agent-sessions/list/view-table"
 import { toolbar } from "../../page/agent-sessions/list/view-toolbar"
+import { filtersRail } from "../../page/agent-sessions/list/view-filters"
+import { filterRail } from "../../page/kit/dashboard-page"
+import { hstack } from "@maple/views/ui/stack"
 import type { Resources } from "../../platform/resources"
+import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as Toast from "@maple/views/ui/toast"
 import { ViewerFlags, viewerFlags } from "../viewer-flags"
 import { buildToolAnalyticsFixture, buildToolCells } from "../agent-tools-fixture"
@@ -113,8 +117,40 @@ const stepList = (model: Model, message: ListMessage): Return => {
 			return set({ ...list, detections: { ...list.detections, [message.key]: message.models } })
 		case "ChangedListWindow":
 			return set({ ...list, listWindow: message.window })
+		case "GotFilterSectionsMessage": {
+			const next = FilterSections.update(list.filterSections, message.message)
+			return {
+				model: { ...model, list: { ...list, filterSections: next.model } },
+				commands: Command.mapMessages(next.commands ?? [], (inner) =>
+					toLab(ListMessage.GotFilterSectionsMessage({ message: inner })),
+				),
+			}
+		}
 		default:
 			return { model }
+	}
+}
+
+/** Each name's session count across the fixture rows. */
+const countNames = (names: ReadonlyArray<string>) =>
+	Arr.map(Arr.dedupe(names), (name) => ({ name, count: Arr.filter(names, (n) => n === name).length }))
+
+/** The filter rail's facets, counted from the fixture rows. */
+const facetsOf = (nowMs: number): Facets => {
+	const rows = buildRows(nowMs)
+	return {
+		vendors: countNames(Arr.map(rows, (row) => row.vendorId)),
+		services: countNames(Arr.flatMap(rows, (row) => row.serviceNames)),
+		environments: [
+			{ name: "production", count: 5 },
+			{ name: "staging", count: 1 },
+		],
+		models: countNames(Arr.flatMap(rows, (row) => row.models)),
+		agents: countNames(Arr.flatMap(rows, (row) => row.agentNames)),
+		tools: [
+			{ name: "search_traces", count: 4 },
+			{ name: "web_fetch", count: 2 },
+		],
 	}
 }
 
@@ -127,7 +163,11 @@ const init = (flags: Flags): Return => {
 	const list = listInit({ search: {} }, contextOf(flags.timeZone)).model
 	const all = buildToolAnalyticsFixture({}, flags.nowMs, buildToolCells(flags.nowMs))
 	return detect({
-		list: { ...list, nowMs: flags.nowMs },
+		list: {
+			...list,
+			nowMs: flags.nowMs,
+			facets: { key: null, data: AsyncData.Success({ data: facetsOf(flags.nowMs) }) },
+		},
 		width: null,
 		timeZone: flags.timeZone,
 		tabCounts: { sessions: all.allSessions, tools: all.tools.length },
@@ -148,8 +188,15 @@ type ListInputs = Readonly<{
 	rows: ReadonlyArray<DisplayRow>
 }>
 
-/** The route's own layout: the tabs and toolbar pinned, the table in the scroll area. */
+/** The route's own layout: the filter rail, then the tabs and toolbar pinned over the table. */
 const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, inputs, h) =>
+	hstack(h, { align: "stretch", className: "min-h-0 flex-1" }, [
+		filterRail(h, filtersRail(h, list)),
+		listColumn(h, list, inputs),
+	]),
+)
+
+const listColumn = (h: HtmlBuilder<ListMessage>, list: ListModel, inputs: ListInputs): Html =>
 	h.div(
 		[h.Class("flex min-h-0 flex-1 flex-col"), h.DataAttribute("slot", "page-layout")],
 		[
@@ -203,8 +250,7 @@ const listPage = Submodel.defineView<ListModel, ListMessage, ListInputs>((list, 
 				],
 			),
 		],
-	),
-)
+	)
 
 const labButton = (h: HtmlBuilder<Message>, label: string, isActive: boolean, onClick: Message): Html =>
 	h.button(

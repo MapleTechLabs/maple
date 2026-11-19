@@ -61,6 +61,16 @@ import {
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { collectVariableRefs, interpolateWidgetParams } from "@maple/query-engine"
+import { stringifyJson } from "./json"
+import type { DashboardVariable } from "@maple/widgets/dashboard"
+import {
+	makeVariableOptionsLister,
+	NO_WIDGET_VARIABLES,
+	resolveWidgetVariables,
+	type VariableOptionsLister,
+	type WidgetVariables,
+} from "./widget-variables"
 import { doc, type DocBlock, type NextCall } from "./tool-doc"
 import type { WidgetInspectionSummary as WidgetInspectionSummaryOutput } from "@maple/domain/mcp-outputs"
 
@@ -345,8 +355,8 @@ export const SLOW_RAW_SQL_MS = 3_000
 export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboardId" | "dashboardName">
 
 export type InspectionOutcome =
-	| { kind: "supported"; data: WidgetInspection }
-	| { kind: "raw_sql"; data: RawSqlInspectionData }
+	| { kind: "supported"; data: WidgetInspection; variables: WidgetVariables }
+	| { kind: "raw_sql"; data: RawSqlInspectionData; variables: WidgetVariables }
 	| {
 			kind: "unsupported"
 			endpoint: string
@@ -398,6 +408,14 @@ export interface InspectWidgetInput {
 	dashboardName: string
 	widget: DashboardWidget
 	timeRange: InspectWidgetTimeRange
+	/** The board's variables; the widget's `$name` references resolve against them. */
+	variables?: ReadonlyArray<DashboardVariable> | undefined
+	/** Values that stand in for the picker selection, by variable name. */
+	variableOverrides?: Readonly<Record<string, string>> | undefined
+	/** Shared across the widgets of one board so a variable's options are listed once. */
+	listVariableOptions?: VariableOptionsLister | undefined
+	/** The board's window: variable options are listed over it, as on the board, even for a pinned tile. */
+	variablesTimeRange?: { readonly startTime: string; readonly endTime: string } | undefined
 }
 
 /**
@@ -410,6 +428,7 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 	tenant: TenantContext,
 	widget: DashboardWidget,
 	timeRange: InspectWidgetTimeRange,
+	variables: WidgetVariables,
 ) {
 	const rawSql = dataSourceRawSql(widget.dataSource)
 	const sql = rawSql !== null && rawSql.sql.length > 0 ? rawSql.sql : undefined
@@ -422,10 +441,12 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 		} satisfies InspectionOutcome
 	}
 
+	// The board interpolates `$name` (escaped as SQL literals) before the macros expand.
+	const interpolated = interpolateWidgetParams({ sql }, variables.values)["sql"]
 	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
-		sql,
+		sql: typeof interpolated === "string" ? interpolated : sql,
 		startTime: timeRange.startTime,
 		endTime: timeRange.endTime,
 		granularitySeconds: rawSql.granularitySeconds,
@@ -451,6 +472,7 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 				truncated: false,
 				timeRange,
 			},
+			variables,
 		} satisfies InspectionOutcome
 	}
 
@@ -470,6 +492,7 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 			timeRange,
 			durationMs,
 		},
+		variables,
 	} satisfies InspectionOutcome
 })
 
@@ -482,8 +505,22 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 	function* (input: InspectWidgetInput) {
 		const { tenant, widget, timeRange } = input
 
+		// Resolved only for the widgets that run, so a curated route never lists options.
+		const resolveVariables = Effect.gen(function* () {
+			if (input.variables === undefined || input.variables.length === 0) return NO_WIDGET_VARIABLES
+			const listOptions = input.listVariableOptions ?? (yield* makeVariableOptionsLister(tenant))
+			return yield* resolveWidgetVariables({
+				variables: input.variables,
+				widget,
+				overrides: input.variableOverrides ?? {},
+				timeRange: input.variablesTimeRange ?? timeRange,
+				listOptions,
+			})
+		})
+
 		if (dataSourceRawSql(widget.dataSource) !== null) {
-			return yield* inspectRawSqlWidget(tenant, widget, timeRange)
+			const variables = yield* resolveVariables
+			return yield* inspectRawSqlWidget(tenant, widget, timeRange, variables)
 		}
 
 		const querySet = dataSourceQuerySet(widget.dataSource)
@@ -503,8 +540,14 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 			} satisfies InspectionOutcome
 		}
 
+		const variables = yield* resolveVariables
 		const decodedParamsResult = yield* Effect.result(
-			decodeQueryBuilderParams({ queries: querySet.queries, formulas: querySet.formulas }),
+			decodeQueryBuilderParams(
+				interpolateWidgetParams(
+					{ queries: querySet.queries, formulas: querySet.formulas },
+					variables.values,
+				),
+			),
 		)
 		if (Result.isFailure(decodedParamsResult)) {
 			return {
@@ -785,9 +828,36 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		}
 
 		const allFlags = Arr.flatMap(queryResults, (r) => r.flags)
-		const verdict = verdictFromFlags(allFlags)
+		const flagVerdict = verdictFromFlags(allFlags)
+		// A filter on a variable with no value is the inspection's gap, not the widget's:
+		// the notes ask for a `variables` value instead of calling the chart broken.
+		// Only the empty results of queries that reference such a variable (and formulas over them),
+		// and only when nothing failed: a failed query or formula also carries EMPTY.
+		const unresolvedQueryIds = Arr.filterMap(querySet.queries, (query) => {
+			const refs = collectVariableRefs(stringifyJson(query) ?? "")
+			return Arr.some(variables.unresolved, (name) => refs.includes(name)) &&
+				typeof query.id === "string"
+				? Result.succeed(query.id)
+				: Result.failVoid
+		})
+		const formulaIds = Arr.map(formulas, (formula) => formula.id)
+		const emptyFromVariable = (query: InspectChartQueryResult): boolean =>
+			unresolvedQueryIds.includes(query.queryId) ||
+			(unresolvedQueryIds.length > 0 && formulaIds.includes(query.queryId))
+		const flagsExplained = Arr.flatMap(queryResults, (query) =>
+			emptyFromVariable(query)
+				? Arr.filter(query.flags, (flag) => flag !== "EMPTY" && flag !== "ALL_NULLS")
+				: query.flags,
+		)
+		const verdict =
+			flagVerdict === "broken" &&
+			unresolvedQueryIds.length > 0 &&
+			Arr.every(queryResults, (query) => query.status !== "error") &&
+			verdictFromFlags(flagsExplained) !== "broken"
+				? "suspicious"
+				: flagVerdict
 
-		const notes: string[] = []
+		const notes: string[] = [...variables.notes]
 		// Percent-scale advice names the token to switch to. The flag alone
 		// ("PERCENT_SCALE_MISMATCH") does not say which direction the error runs,
 		// and getting the direction wrong is the whole problem — so the advice
@@ -836,7 +906,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 			notes,
 		}
 
-		return { kind: "supported", data } satisfies InspectionOutcome
+		return { kind: "supported", data, variables } satisfies InspectionOutcome
 	},
 	Effect.catchCause((cause) =>
 		Effect.succeed<InspectionOutcome>({
@@ -846,13 +916,28 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 	),
 )
 
+/** The ask for a value when a referenced variable came out empty, for the one-line summary. */
+const unresolvedVariablesNote = (variables: WidgetVariables): string | undefined =>
+	variables.unresolved.length === 0
+		? undefined
+		: `No value for ${Arr.join(
+				Arr.map(variables.unresolved, (name) => `$${name}`),
+				", ",
+			)}; run inspect_chart_data with \`variables\` to check it with a real value.`
+
 export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
 	if (outcome.kind === "supported") {
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = Arr.findFirst(outcome.data.notes, (note) =>
-			Str.startsWith('unit "percent')(note),
+		const actionableNote = Arr.join(
+			[
+				...Option.toArray(
+					Arr.findFirst(outcome.data.notes, (note) => Str.startsWith('unit "percent')(note)),
+				),
+				...Option.toArray(Option.fromUndefinedOr(unresolvedVariablesNote(outcome.variables))),
+			],
+			" ",
 		)
 		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
 		// operands and the formula built from them are not counted twice.
@@ -868,7 +953,7 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			visualization: widget.visualization,
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
-			...Option.match(actionableNote, { onNone: () => undefined, onSome: (note) => ({ note }) }),
+			...(actionableNote === "" ? undefined : { note: actionableNote }),
 			seriesCount,
 		}
 	}
@@ -910,7 +995,8 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			outcome.data.status === "error"
 				? `Raw SQL failed: ${outcome.data.error ?? "unknown error"}`
 				: outcome.data.rowCount === 0
-					? "Raw SQL returned no rows for this window."
+					? (unresolvedVariablesNote(outcome.variables) ??
+						"Raw SQL returned no rows for this window.")
 					: slow
 						? `Raw SQL took ${(durationMs / 1000).toFixed(1)}s on its own; with every tile loading at once it may time out. Aggregate less raw data (a rollup table, fewer columns) or narrow the window.`
 						: `Raw SQL returned ${outcome.data.rowCount} row(s).`
@@ -1017,6 +1103,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 				: timeRange
 		}
 
+		const listVariableOptions = yield* makeVariableOptionsLister(tenant)
 		const outcomes = yield* Effect.forEach(
 			toInspect,
 			(widget) =>
@@ -1025,6 +1112,9 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 					dashboardName: dashboard.name,
 					widget,
 					timeRange: timeRangeFor(widget),
+					variables: dashboard.variables,
+					listVariableOptions,
+					variablesTimeRange: timeRange,
 				}),
 			{ concurrency: maxConcurrent },
 		)

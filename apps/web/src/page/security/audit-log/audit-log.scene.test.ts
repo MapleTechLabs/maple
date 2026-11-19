@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { AuditTrailForbiddenError, AuditTrailPersistenceError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
-import { expect as expectView, given, role, scene, text, within, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { auditEventsOf, noAuditEvents } from "../../../lab/security-audit-log-fixture"
@@ -10,7 +10,8 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
 import { auditEntryHref } from "../../kit/audit-entry-link"
 import { eventsOf, nextCursorOf } from "./derive"
-import { type EventsPage, Message, type Model, type Search } from "./model"
+import { MountSelect, Message as SelectMessage } from "@maple/views/ui/select"
+import { ALL_PROVIDERS, type EventsPage, Message, type Model, type Search, type Sources } from "./model"
 import { enter, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -26,6 +27,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const FIRST_PAGE = "SecurityApiAuditLogFirstPage"
 const NEXT_PAGE = "SecurityApiAuditLogNextPage"
+const SOURCES = "SecurityApiAuditLogSources"
 
 const routeOf = (search: Search = {}) => AppRoute.SecurityAuditLog({ search })
 /** The hosted product: the session, not the build, says what the viewer may read. */
@@ -104,14 +106,14 @@ describe("security audit log", () => {
 	test("an admin's session answer asks for the first page", () => {
 		const answered = pageUpdate(init(routeOf(), context).model, grantsRead(ADMIN)())
 
-		expect(names(answered.commands)).toEqual([FIRST_PAGE])
+		expect(names(answered.commands)).toEqual([FIRST_PAGE, SOURCES])
 	})
 
 	// A failed session read answers with no grants at all. That is "unknown", not "member": an
 	// admin must not be locked out of the log by it.
 	test("a session that could not be read asks the API, and the API's refusal is what locks the page", () => {
 		const asked = pageUpdate(init(routeOf(), context).model, grantsRead([])())
-		expect(names(asked.commands)).toEqual([FIRST_PAGE])
+		expect(names(asked.commands)).toEqual([FIRST_PAGE, SOURCES])
 
 		scene(
 			{ update: pageUpdate, view },
@@ -380,7 +382,7 @@ describe("security audit log", () => {
 		// A value the detection schema has no name for cannot be counted either.
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(PAGE, { provider: "github" })),
+			given(loaded(PAGE, { provider: "okta" })),
 			expectView(anyAlertLink).toBeAbsent(),
 		)
 	})
@@ -422,5 +424,144 @@ describe("security audit log", () => {
 			expectView(text("No audit events yet")).toBeAbsent(),
 			expectView(role("button", { name: "Clear filters" })).toExist(),
 		)
+	})
+
+	describe("sources", () => {
+		const SOURCES_ANSWER: Sources = {
+			windowDays: 30,
+			sources: [
+				{
+					provider: "maple",
+					state: "built_in",
+					account: null,
+					problem: null,
+					events: 41,
+					lastEventAt: NOW - 60_000,
+				},
+				{
+					provider: "vercel",
+					state: "receiving",
+					account: "Acme (3 projects)",
+					problem: null,
+					events: 7,
+					lastEventAt: NOW - 3_600_000,
+				},
+				{
+					provider: "gcp",
+					state: "not_connected",
+					account: null,
+					problem: null,
+					events: 0,
+					lastEventAt: null,
+				},
+			],
+		}
+		const withSources = (model: Model, answer: Sources = SOURCES_ANSWER) =>
+			fold(model, [
+				(current) =>
+					Message.CompletedFetchSources({
+						key: current.sources.key ?? "",
+						result: Result.succeed(answer),
+					}),
+			])
+
+		test("says which platforms send events and how to connect the ones that do not", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(withSources(loaded())),
+				expectView(role("list", { name: "Audit log sources" })).toExist(),
+				expectView(text("2 of 3 sending · last 30 days")).toExist(),
+				expectView(text("Built in")).toExist(),
+				expectView(text("Not connected")).toExist(),
+				expectView(role("link", { name: "Connect Google Cloud" })).toHaveAttr(
+					"href",
+					hrefOf(AppRoute.SourcesNew({ search: { integration: "gcp" } })),
+				),
+			)
+		})
+
+		test("a connected platform with its audit feed off links to where it is turned on", () => {
+			const off: Sources = {
+				...SOURCES_ANSWER,
+				sources: Arr.map(SOURCES_ANSWER.sources, (source) =>
+					source.provider === "vercel"
+						? { ...source, state: "off" as const, events: 0, lastEventAt: null }
+						: source,
+				),
+			}
+			scene(
+				{ update: pageUpdate, view },
+				given(withSources(loaded(), off)),
+				expectView(text("Audit feed off")).toExist(),
+				expectView(role("link", { name: "Turn on" })).toHaveAttr(
+					"href",
+					hrefOf(AppRoute.SourcesNew({ search: { integration: "vercel" } })),
+				),
+			)
+		})
+
+		const openPlatforms = (model: Model): Model =>
+			pageUpdate(
+				model,
+				Message.GotProviderSelectMessage({
+					message: SelectMessage.ClickedTrigger({ selectedIndex: 0 }),
+				}),
+			).model
+
+		const popupMounted = Mount.resolve(MountSelect, SelectMessage.CompletedMountSelect())
+
+		test("the platform filter offers only platforms that are connected or sent events", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(withSources(loaded()))),
+				popupMounted,
+				expectView(role("option", { name: "Vercel" })).toExist(),
+				expectView(role("option", { name: "Google Cloud" })).toBeAbsent(),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(withSources(loaded(PAGE, { provider: "gcp" })))),
+				popupMounted,
+				expectView(role("option", { name: "Google Cloud" })).toExist(),
+			)
+		})
+
+		test("until the sources answer, the platform filter offers every platform", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(openPlatforms(loaded())),
+				popupMounted,
+				expectView(role("option", { name: "Google Cloud" })).toExist(),
+				expectView(role("option", { name: "AWS" })).toExist(),
+			)
+		})
+
+		test("picking a platform filters the list, and All platforms drops it", () => {
+			const pick = (model: Model, value: string) =>
+				pageUpdate(
+					model,
+					Message.GotProviderSelectMessage({
+						message: SelectMessage.SelectedItem({ index: 1, value }),
+					}),
+				)
+			expect(pick(openPlatforms(withSources(loaded())), "vercel").outMessage).toMatchObject({
+				url: hrefOf(routeOf({ provider: "vercel" })),
+			})
+			expect(
+				pick(openPlatforms(withSources(loaded(PAGE, { provider: "vercel" }))), ALL_PROVIDERS)
+					.outMessage,
+			).toMatchObject({ url: hrefOf(routeOf({})) })
+		})
+
+		test("View events narrows the list to that platform", () => {
+			const model = withSources(loaded())
+			const clicked = pageUpdate(model, Message.ChangedFilter({ filter: "provider", value: "vercel" }))
+			expect(clicked.outMessage).toMatchObject({ url: hrefOf(routeOf({ provider: "vercel" })) })
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("button", { name: "Show only Vercel events" })).toExist(),
+			)
+		})
 	})
 })

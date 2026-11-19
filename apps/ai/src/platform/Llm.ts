@@ -34,7 +34,13 @@ import type * as DecisionModel from "effect/ai/DecisionModel"
 import * as LanguageModel from "effect/ai/LanguageModel"
 import * as AiModel from "effect/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/http"
-import { type ModelCallAttempts, type ModelCallTelemetry, instrumentLanguageModel } from "./genai-spans"
+import {
+	type GenAiContent,
+	type ModelCallAttempts,
+	type ModelCallTelemetry,
+	genAiContentFor,
+	instrumentLanguageModel,
+} from "./genai-spans"
 import * as WorkersAiDecisionModel from "./WorkersAiDecisionModel"
 import { layerWorkersAi, type WorkersAiBinding } from "./WorkersAiHttpClient"
 
@@ -182,6 +188,8 @@ export const llmSettingsConfig = Config.all({
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	/** Comma-separated OpenRouter provider slugs every call tries first, e.g. `morph` for a BYOK key. */
+	MAPLE_OPENROUTER_PROVIDER_ORDER: optionalTrimmed("MAPLE_OPENROUTER_PROVIDER_ORDER"),
 	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
 	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
 	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
@@ -189,6 +197,8 @@ export const llmSettingsConfig = Config.all({
 	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
+	/** Maple's own org: the only one whose model and tool spans carry the conversation. */
+	MAPLE_INTERNAL_ORG_ID: optionalTrimmed("MAPLE_INTERNAL_ORG_ID"),
 })
 
 /** The deployment's LLM configuration; any key may be absent, and then its default applies. */
@@ -233,6 +243,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"openai/gpt-6-luna": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_050_000, max_completion_tokens 128_000.
 	"openai/gpt-6.1-sol": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue (US and EU): context_length 1_050_000, max_completion_tokens 128_000.
+	"openai/gpt-6.2-sol": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
 	"anthropic/claude-sonnet-5.5": { context: 950_000, output: 128_000 },
 	// OpenRouter's catalogue (US and EU): context_length 1_000_000, max_completion_tokens 128_000.
@@ -294,6 +306,8 @@ export interface ResolvedModel {
 	readonly limits: { readonly context: number; readonly output: number }
 	/** The tags the model was resolved with, so a caller can stamp its own span to match. */
 	readonly tags?: LlmCallTags
+	/** Whether this run's model and tool spans carry the conversation; see `GenAiContent`. */
+	readonly content: GenAiContent
 }
 
 const limitsFor = (name: string): { readonly context: number; readonly output: number } =>
@@ -412,11 +426,41 @@ const OPENROUTER_ATTEMPTS: ModelCallAttempts = {
 	retryReasoningLevel: "low",
 }
 
+/**
+ * The providers OpenRouter tries first, from `MAPLE_OPENROUTER_PROVIDER_ORDER`. A BYOK key is used
+ * only when routing lands on its provider, and `:nitro` picks the fastest of every provider. Naming
+ * the provider here sends calls to it first. Fallbacks stay on, so a model the provider does not
+ * serve, or an outage, still reaches another provider.
+ */
+const openRouterProviderOrder = (settings: LlmSettings): ReadonlyArray<string> | undefined => {
+	const order = Arr.filter(
+		Arr.map(Str.split(readLowerString(settings, "MAPLE_OPENROUTER_PROVIDER_ORDER") ?? "", ","), Str.trim),
+		Str.isNonEmpty,
+	)
+	return Arr.isArrayNonEmpty(order) ? order : undefined
+}
+
+/**
+ * OpenRouter's per-request provider preferences: every request skips endpoints that may train on or
+ * keep prompts for training (`data_collection: "deny"`); an `order` still keeps fallbacks on.
+ */
+export const openRouterDataPolicy = (order: ReadonlyArray<string> | undefined) => ({
+	data_collection: "deny" as const,
+	...(order === undefined ? undefined : { order, allow_fallbacks: true }),
+})
+
+/** Whether a run for these tags records its conversation on its spans: only Maple's own org does. */
+const genAiContentOf = (settings: LlmSettings, tags: LlmCallTags | undefined): GenAiContent =>
+	genAiContentFor(tags?.orgId, readString(settings, "MAPLE_INTERNAL_ORG_ID"))
+
 interface OpenRouterModelOptions {
+	/** Providers to try first; without any, OpenRouter routes on the model id alone. */
+	readonly providerOrder?: ReadonlyArray<string> | undefined
 	/** How hard the model reasons; without one the request carries no `reasoning` field. */
 	readonly effort?: ReasoningEffort
 	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
 	readonly unattended: boolean
+	readonly content: GenAiContent
 }
 
 const openRouterModel = (
@@ -424,7 +468,7 @@ const openRouterModel = (
 	tags: LlmCallTags | undefined,
 	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const { effort, unattended } = options
+	const { effort, unattended, providerOrder, content } = options
 	const limits = limitsFor(name)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
@@ -434,29 +478,41 @@ const openRouterModel = (
 			name,
 			OpenRouterLanguageModel.make({
 				model: name,
-				config: { ...openRouterConfig(effort, tags), max_tokens: maxTokens },
+				config: {
+					...openRouterConfig(effort, tags),
+					max_tokens: maxTokens,
+					provider: openRouterDataPolicy(providerOrder),
+				},
 			}),
 			{
 				providerName: genAiProviderName("openrouter"),
 				...(effort === undefined ? undefined : { reasoningLevel: effort }),
 				sessionAttributes: agentSessionSpanAttributes(tags),
+				content,
 			},
 			unattended ? { coalesceDeltas: true, attempts: OPENROUTER_ATTEMPTS } : { coalesceDeltas: false },
 		),
 		limits,
 		tags,
+		content,
 	}
 }
 
-const workersAiModel = (name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
+const workersAiModel = (
+	name: string,
+	tags: LlmCallTags | undefined,
+	content: GenAiContent,
+): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
 	layer: instrumentedModel(name, OpenAiLanguageModel.make({ model: name }), {
 		providerName: genAiProviderName("workers-ai"),
 		sessionAttributes: agentSessionSpanAttributes(tags),
+		content,
 	}),
 	limits: limitsFor(name),
 	tags,
+	content,
 })
 
 /**
@@ -477,6 +533,7 @@ export const resolveTriageModel = (
 		? workersAiModel(
 				readString(settings, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
 				tags,
+				genAiContentOf(settings, tags),
 			)
 		: openRouterModel(
 				readString(settings, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
@@ -486,7 +543,11 @@ export const resolveTriageModel = (
 				tags,
 				// No effort. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
-				{ unattended },
+				{
+					unattended,
+					providerOrder: openRouterProviderOrder(settings),
+					content: genAiContentOf(settings, tags),
+				},
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -522,7 +583,11 @@ export const resolveReviewModel = (
 							: DEFAULT_REVIEW_MODEL),
 				),
 				tags,
-				{ unattended: true },
+				{
+					unattended: true,
+					providerOrder: openRouterProviderOrder(settings),
+					content: genAiContentOf(settings, tags),
+				},
 			)
 
 /**
@@ -610,7 +675,12 @@ export const resolveSecurityAuditDiscoveryFallback = (
 	}).discovery
 	return fallback === hunting
 		? undefined
-		: openRouterModel(fallback, tags, { effort: "high", unattended: true })
+		: openRouterModel(fallback, tags, {
+				effort: "high",
+				unattended: true,
+				providerOrder: openRouterProviderOrder(settings),
+				content: genAiContentOf(settings, tags),
+			})
 }
 
 /**
@@ -628,6 +698,8 @@ export const resolveSecurityAuditModel = (
 		: openRouterModel(securityAuditModelId(settings, stage, chosen), tags, {
 				effort: "high",
 				unattended: true,
+				providerOrder: openRouterProviderOrder(settings),
+				content: genAiContentOf(settings, tags),
 			})
 
 /**
@@ -831,11 +903,12 @@ export const resolveDecisionModel = (settings: LlmSettings): string | undefined 
  * The embedder the PR review's feedback filter compares findings with, on OpenRouter whichever
  * provider the agents run on: Workers AI's binding shim only answers chat. Its `OpenAiClient` is
  * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
- * OpenRouter key there is no embedder, and the filter is off.
+ * OpenRouter key there is no embedder, and the filter is off. Nor in the EU: OpenRouter's EU
+ * endpoint serves no provider for the embedding model ("No endpoints found supporting your data region").
  */
 export const layerFindingEmbedder = (settings: LlmSettings): Layer.Layer<FindingEmbedder> => {
 	const apiKey = readSecret(settings, "OPENROUTER_API_KEY")
-	if (apiKey === undefined) return FindingEmbedder.none
+	if (apiKey === undefined || openRouterRegion(settings) === "eu") return FindingEmbedder.none
 	const model = DEFAULT_EMBEDDING_MODEL
 	return Layer.effect(FindingEmbedder)(
 		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) =>

@@ -1,3 +1,4 @@
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
 import { QUERY_RESULT_KINDS, QuerySetSchema } from "@maple/query-model"
 import { Schema } from "effect"
 import { UnknownRecord, WidgetDataSourceTransformV2 } from "../shared/transform"
@@ -84,6 +85,24 @@ export const RawSqlWidgetDataSource = Schema.Struct({
 })
 
 /**
+ * A user-authored PromQL query over the metric tables.
+ *
+ * `displayType` is the panel family the rows are shaped for, as on `raw_sql`;
+ * `legendFormat` names series with `{{label}}`; `minStepSeconds` floors the step.
+ */
+export const PromqlWidgetDataSource = Schema.Struct({
+	kind: Schema.Literal("promql"),
+	query: Schema.String.check(Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
+	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
+	minStepSeconds: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	displayType: Schema.optionalKey(Schema.String),
+	...transformField,
+}).annotate({
+	identifier: "@maple/PromqlWidgetDataSource",
+	title: "PromQL widget data source",
+})
+
+/**
  * One of the curated fixed routes (`service_overview`, `list_traces`, ...).
  *
  * The only arm that keeps an opaque params bag. Closing it is per-route across
@@ -133,12 +152,13 @@ export const StaticWidgetDataSource = Schema.Struct({
  * what the v2 HTTP API does with it. That is the structural successor to the
  * assignability assertions the union replaced.
  */
-export const WIDGET_DATA_SOURCE_KINDS = ["query", "raw_sql", "route", "static"] as const
+export const WIDGET_DATA_SOURCE_KINDS = ["query", "raw_sql", "promql", "route", "static"] as const
 export type WidgetDataSourceKind = (typeof WIDGET_DATA_SOURCE_KINDS)[number]
 
 export const WidgetDataSourceV3 = Schema.Union([
 	QueryWidgetDataSource,
 	RawSqlWidgetDataSource,
+	PromqlWidgetDataSource,
 	RouteWidgetDataSource,
 	StaticWidgetDataSource,
 ]).annotate({

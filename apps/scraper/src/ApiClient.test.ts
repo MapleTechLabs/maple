@@ -1,5 +1,16 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Fiber, Layer, Redacted, Array as Arr } from "effect"
+import {
+	Duration,
+	Effect,
+	Exit,
+	Fiber,
+	Layer,
+	Logger,
+	Redacted,
+	References,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { ApiClient } from "./ApiClient"
@@ -15,6 +26,7 @@ const testEnv: ScraperEnvConfig = {
 	SCRAPER_OTLP_MAX_DATA_POINTS: 10_000,
 	SCRAPER_OTLP_MAX_BODY_BYTES: 4 * 1024 * 1024,
 	UPTIME_CONCURRENCY: 20,
+	UPTIME_ORG_CONCURRENCY: 4,
 	PORT: 0,
 }
 
@@ -129,6 +141,87 @@ describe("ApiClient", () => {
 			assert.include(result.message, "payload mismatch")
 		}).pipe(Effect.provide(TestLayer)),
 	)
+
+	it.effect("skips an uptime monitor this build cannot run and keeps the rest", () =>
+		Effect.gen(function* () {
+			const client = yield* ApiClient
+			const known = {
+				id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+				orgId: "org_1",
+				name: "API",
+				serviceName: null,
+				intervalSeconds: 60,
+				config: {
+					_tag: "http",
+					url: "https://api.example.com/health",
+					method: "GET",
+					headers: {},
+					assertions: [],
+					timeoutMs: 10_000,
+				},
+				ingestKey: "maple_pk_org_1_key",
+			}
+			// A kind a newer API added before this scraper deployed.
+			const newer = {
+				...known,
+				id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+				config: { _tag: "browser" },
+			}
+			const targets = yield* client.listUptimeTargets.pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => Response.json([newer, known])),
+				),
+			)
+			assert.deepStrictEqual(
+				Arr.map(targets, (target) => target.id),
+				[known.id],
+			)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("logs a skipped uptime monitor by id, without the row's contents", () => {
+		const logged: Array<string> = []
+		const capture = Logger.layer([
+			Logger.make(({ fiber, message }) => {
+				logged.push(
+					JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }),
+				)
+			}),
+		])
+		return Effect.gen(function* () {
+			const client = yield* ApiClient
+			const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+			const unrunnable = {
+				id,
+				orgId: "org_1",
+				name: "API",
+				serviceName: null,
+				intervalSeconds: 60,
+				// A method this scraper does not send, beside a header that must stay out of the log.
+				config: {
+					_tag: "http",
+					url: "https://api.example.com/health",
+					method: "s3cr3t-in-a-bad-field",
+					headers: { authorization: "Bearer s3cr3t-token" },
+					assertions: [],
+					timeoutMs: 10_000,
+				},
+				ingestKey: "maple_pk_org_1_key",
+			}
+			const targets = yield* client.listUptimeTargets.pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => Response.json([unrunnable])),
+				),
+			)
+			assert.lengthOf(targets, 0)
+			const lines = Arr.filter(logged, Str.includes("Skipping an uptime monitor"))
+			assert.lengthOf(lines, 1)
+			assert.isTrue(Arr.every(lines, Str.includes(id)))
+			assert.isFalse(Arr.some(logged, Str.includes("s3cr3t")))
+		}).pipe(Effect.provide(Layer.merge(TestLayer, capture)))
+	})
 
 	it.effect("posts scrape results as JSON and skips empty batches", () =>
 		Effect.gen(function* () {

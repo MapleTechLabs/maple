@@ -35,21 +35,34 @@ export const permissions = {
 	"error_policy:manage": { min: "engineer", action: "manage error notifications and escalation" },
 	"ai_triage:configure": { min: "engineer", action: "manage AI triage settings" },
 	"security:manage": { min: "engineer", action: "open the Security Center and triage its findings" },
+	"ingest_keys:roll": { min: "engineer", action: "roll ingest keys" },
+	"status_pages:access": { min: "engineer", action: "change who can view status pages" },
+	"data_sources:manage": { min: "engineer", action: "connect and manage data sources" },
+	// A query runs on the org's own database, so it takes the role that may connect one.
+	"data_sources:query": { min: "engineer", action: "query connected data sources" },
+	// Pinned to the creator's role, and only for the scopes they could use themselves.
+	"api_keys:create_restricted": { min: "engineer", action: "create restricted API keys" },
 
 	// The organization, money and credentials: admins only.
 	"organization:manage": { min: "admin", action: "change the organization's settings" },
 	"members:manage": { min: "admin", action: "manage members" },
 	"billing:manage": { min: "admin", action: "manage billing" },
 	"api_keys:manage": { min: "admin", action: "manage API keys" },
-	"ingest_keys:roll": { min: "admin", action: "roll ingest keys" },
 	"status_pages:break_glass": { min: "admin", action: "manage status page break-glass tokens" },
-	"status_pages:access": { min: "admin", action: "change who can view status pages" },
 	"warehouse:manage": { min: "admin", action: "manage the data warehouse" },
-	"data_sources:manage": { min: "admin", action: "connect and manage data sources" },
 	"security_audit:run": { min: "admin", action: "configure and run code security audits" },
 	"audit_log:read": { min: "admin", action: "read the audit log" },
 	"llm_keys:manage": { min: "admin", action: "manage the organization's model provider keys" },
+	"sso:manage": { min: "admin", action: "manage single sign-on and SCIM provisioning" },
 	"mcp_connections:view_all": { min: "admin", action: "see every member's MCP connections" },
+	// Only in Maple's own org: feedback from every organization, free text included.
+	"agent_feedback:triage": { min: "admin", action: "read agent feedback from every organization" },
+	// An approval counts toward a branch's required reviews, so who may give Maple that say is
+	// an admin's call, and so are the rules a review runs under while it has it.
+	"code_review:auto_approve": {
+		min: "admin",
+		action: "turn on automatic pull request approval or change the review rules while it is on",
+	},
 } as const satisfies Record<string, { readonly min: Role; readonly action: string }>
 
 export type Permission = keyof typeof permissions

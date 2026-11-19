@@ -4,6 +4,7 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GcpCostStatus,
 	GithubCostInstallations,
 	PlanetScaleCostStatus,
 	VercelCostStatus,
@@ -11,26 +12,32 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
+import { GcpConnectorId } from "@maple/primitives"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import { CostFacets } from "./message"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+/**
+ * The add-source dialog's faces: the providers, then the chosen one's credential form, list or
+ * step. `request`: asking Maple for a provider it does not read yet.
+ */
 export const AddStep = Schema.Union([
-	Schema.Literals(["pick", "github", "vercel", "planetscale"]),
+	Schema.Literals(["pick", "github", "vercel", "planetscale", "gcp", "request"]),
 	CredentialProvider,
 ])
 export type AddStep = typeof AddStep.Type
@@ -93,6 +100,8 @@ export const Model = Schema.Struct({
 	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
 	addDialog: Dialog.Model,
 	addStep: AddStep,
+	/** What the provider step's search narrows the providers to; cleared whichever way the dialog opens. */
+	providerSearch: Schema.String,
 	/** The credential being typed (a key or a token); cleared whichever way the dialog closes. */
 	credentialDraft: Field.Model,
 	/** Why the last save was refused, shown under the field until the credential changes. */
@@ -122,6 +131,17 @@ export const Model = Schema.Struct({
 	planetscale: KeyedSchema(PlanetScaleCostStatus, LoadFailure),
 	/** Why the last add of the organization was refused, shown in the step until it is left. */
 	planetscaleError: Schema.NullOr(PlanetScaleAddError),
+	/** The org's GCP connections and billing exports, read when the dialog turns to Google Cloud. */
+	gcp: KeyedSchema(GcpCostStatus, LoadFailure),
+	/** The connection the export is read through; the first that can be, until one is picked. */
+	gcpConnectorId: Schema.NullOr(GcpConnectorId),
+	/** The export table id being typed. */
+	gcpTableDraft: Field.Model,
+	/** Why the last add was refused, shown under the field until the id changes. */
+	gcpError: Schema.NullOr(Schema.String),
+	gcpCommandCopy: CopyButton.Model,
+	/** The request step's form: a provider Maple does not read yet. */
+	request: FeatureRequest.Model,
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */
 	removeTarget: Schema.NullOr(CostSourceSummary),

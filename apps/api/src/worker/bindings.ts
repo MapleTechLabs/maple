@@ -8,17 +8,19 @@
  */
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
-import { AuditEventsQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
+import { AuditIntakeQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
+	AwsEventsRateLimit,
 	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
 	DataSourceDevelopmentCallLimit,
 	DataSourceProductionCallLimit,
+	DataSourceSqlQueryLimit,
 	EmailSender,
 	McpOAuthRateLimit,
 	type ObjectStore,
@@ -28,6 +30,7 @@ import {
 	type RateLimiter,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	SelfHostedLoginRateLimit,
 	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
@@ -39,15 +42,26 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { queueProducer } from "@maple/backend/platform/queue-producer"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
-import { DATA_SOURCE_CALL_LIMITS } from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
+import {
+	DATA_SOURCE_CALL_LIMITS,
+	DATA_SOURCE_SQL_QUERY_LIMIT,
+} from "@maple/backend/services/data-sources/DataSourceCallBudgetLive"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import {
+	AWS_EVENTS_RATE_LIMIT_PERIOD_SECONDS,
+	AWS_EVENTS_RATE_LIMIT_REQUESTS,
+} from "@maple/backend/services/cloud-security/AwsEventsRateLimiter"
+import {
 	SHARE_LINK_RATE_LIMIT_PERIOD_SECONDS,
 	SHARE_LINK_RATE_LIMIT_REQUESTS,
 } from "@maple/backend/services/auth/ShareRateLimiter"
+import {
+	SELF_HOSTED_LOGIN_RATE_LIMIT_ATTEMPTS,
+	SELF_HOSTED_LOGIN_RATE_LIMIT_PERIOD_SECONDS,
+} from "@maple/backend/services/auth/SelfHostedLoginRateLimiter"
 import {
 	CancellationReviewsQueue,
 	PlanetScaleWebhookQueue,
@@ -66,7 +80,7 @@ export const bindApiClients = Effect.gen(function* () {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		vcsBackfill: yield* Cloudflare.Queues.WriteQueue(VcsBackfillQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
-		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue),
+		auditEvents: yield* Cloudflare.Queues.WriteQueue(AuditIntakeQueue),
 		cancellationReviews: yield* Cloudflare.Queues.WriteQueue(CancellationReviewsQueue),
 		// Read side of the replay payload store.
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
@@ -85,9 +99,21 @@ export const bindApiClients = Effect.gen(function* () {
 			namespaceId: 2026072101,
 			simple: { limit: 30, period: 60 },
 		}),
+		selfHostedLoginRateLimit: yield* Cloudflare.RateLimit("SELF_HOSTED_LOGIN_RATE_LIMITER", {
+			namespaceId: 2026111811,
+			simple: {
+				limit: SELF_HOSTED_LOGIN_RATE_LIMIT_ATTEMPTS,
+				period: SELF_HOSTED_LOGIN_RATE_LIMIT_PERIOD_SECONDS,
+			},
+		}),
 		mcpOAuthRateLimit: yield* Cloudflare.RateLimit("MCP_OAUTH_RATE_LIMITER", {
 			namespaceId: 2026072102,
 			simple: { limit: 60, period: 60 },
+		}),
+		// One AWS connection's finding events, keyed by connection id.
+		awsEventsRateLimit: yield* Cloudflare.RateLimit("AWS_EVENTS_RATE_LIMITER", {
+			namespaceId: 2026111701,
+			simple: { limit: AWS_EVENTS_RATE_LIMIT_REQUESTS, period: AWS_EVENTS_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 		// Maple's share of each connected Clerk instance's API limit, keyed by data source id.
 		// Shared by every worker that queries sources, so the namespace ids must match across them.
@@ -98,6 +124,11 @@ export const bindApiClients = Effect.gen(function* () {
 		dataSourceDevelopmentCallLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_DEVELOPMENT_CALL_LIMITER", {
 			namespaceId: 2026110802,
 			simple: DATA_SOURCE_CALL_LIMITS.development,
+		}),
+		// Queries Maple sends one connected ClickHouse, keyed by data source id. Shared the same way.
+		dataSourceSqlQueryLimit: yield* Cloudflare.RateLimit("DATA_SOURCE_SQL_QUERY_LIMITER", {
+			namespaceId: 2026111801,
+			simple: DATA_SOURCE_SQL_QUERY_LIMIT,
 		}),
 		// `send_email`, prd only.
 		email: yield* bindEmailSender,
@@ -182,9 +213,12 @@ export const apiPorts = (
 		Layer.succeed(ApiV2RateLimit, limiter(clients.apiV2RateLimit)),
 		Layer.succeed(ShareLinkRateLimit, limiter(clients.shareLinkRateLimit)),
 		Layer.succeed(CliAuthRateLimit, limiter(clients.cliAuthRateLimit)),
+		Layer.succeed(SelfHostedLoginRateLimit, limiter(clients.selfHostedLoginRateLimit)),
 		Layer.succeed(McpOAuthRateLimit, limiter(clients.mcpOAuthRateLimit)),
+		Layer.succeed(AwsEventsRateLimit, limiter(clients.awsEventsRateLimit)),
 		Layer.succeed(DataSourceProductionCallLimit, limiter(clients.dataSourceProductionCallLimit)),
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
+		Layer.succeed(DataSourceSqlQueryLimit, limiter(clients.dataSourceSqlQueryLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.unwrap(
 			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(

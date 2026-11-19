@@ -1,3 +1,4 @@
+import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type {
 	AlertCheckDocument,
 	AlertIncidentDocument,
@@ -61,12 +62,8 @@ import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
 import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
-import {
-	canManageAlerts,
-	canReadAuditLog,
-	canRespondToIncidents,
-	canRunInvestigations,
-} from "../../kit/session-grants"
+import { canReadAuditLog, canRespondToIncidents, denialReason, gatedControl } from "../../kit/session-grants"
+import { lockedControl } from "@maple/views/ui/locked-control"
 
 type H = HtmlBuilder<Message>
 
@@ -205,6 +202,7 @@ export const acknowledgeAction = <M>(
 	options: Readonly<{
 		incident: AlertIncidentDocument
 		isLoading: boolean
+		isDisabled?: boolean
 		onAcknowledge: (acknowledged: boolean) => M
 	}>,
 ): ReadonlyArray<Html> => {
@@ -217,6 +215,7 @@ export const acknowledgeAction = <M>(
 				variant: acknowledged ? "outline" : "default",
 				size: "sm",
 				isLoading: options.isLoading,
+				isDisabled: options.isDisabled,
 				attributes: [h.OnClick(options.onAcknowledge(!acknowledged))],
 			},
 			acknowledged ? ["Unacknowledge"] : [icon(h, "CheckIcon"), "Acknowledge"],
@@ -242,20 +241,22 @@ const investigateAction = (
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
 			),
 		]
-	if (!canRunInvestigations(model)) return []
 	return [
-		button(
-			h,
-			{
-				variant: "outline",
-				size: "sm",
-				isDisabled:
-					model.isStartingInvestigation ||
-					AsyncData.isLoading(model.investigation.data) ||
-					AsyncData.isIdle(model.investigation.data),
-				attributes: [h.OnClick(Message.ClickedInvestigate())],
-			},
-			[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
+		gatedControl(h, model, "investigations:run", (isLocked) =>
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isDisabled:
+						isLocked ||
+						model.isStartingInvestigation ||
+						AsyncData.isLoading(model.investigation.data) ||
+						AsyncData.isIdle(model.investigation.data),
+					attributes: [h.OnClick(Message.ClickedInvestigate())],
+				},
+				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
+			),
 		),
 	]
 }
@@ -349,7 +350,9 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 											])
 										: incident.signalType === "uptime"
 											? sourceNote(h, {
-													text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+													text: isUptimeCertificateIncident(incident)
+														? "This incident follows an uptime monitor's TLS certificate: it opened when the certificate came within 14 days of expiry and resolves once a check sees a renewed one. The monitor stays up meanwhile."
+														: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
 													href: inputs.sourceHref ?? null,
 													label: "Open monitor",
 													fallback: {
@@ -553,16 +556,28 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						silenceBadges(h, model, view, timeZone),
 					),
 					actions: hstack(h, { gap: "2", wrap: true }, [
-						...(canRespondToIncidents(model)
-							? acknowledgeAction(h, {
-									incident: view.incident,
-									isLoading: model.isUpdatingAcknowledgement,
-									onAcknowledge: (acknowledged) =>
-										Message.ClickedAcknowledge({ acknowledged }),
-								})
-							: []),
-						...(canManageAlerts(model) && isOpenIncident(model)
-							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
+						...Arr.map(
+							acknowledgeAction(h, {
+								incident: view.incident,
+								isLoading: model.isUpdatingAcknowledgement,
+								isDisabled: !canRespondToIncidents(model),
+								onAcknowledge: (acknowledged) => Message.ClickedAcknowledge({ acknowledged }),
+							}),
+							(control) =>
+								canRespondToIncidents(model)
+									? control
+									: lockedControl(h, denialReason("incidents:respond"), control),
+						),
+						...(isOpenIncident(model)
+							? [
+									gatedControl(h, model, "alerts:manage", (isLocked) =>
+										silenceButton(
+											h,
+											Message.ClickedSilence(),
+											isLocked || model.rules === null,
+										),
+									),
+								]
 							: []),
 						...investigateAction(
 							h,

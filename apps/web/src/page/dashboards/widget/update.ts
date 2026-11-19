@@ -35,9 +35,10 @@ import {
 	type Widget,
 } from "./lowering"
 import { initRawSql, isRunnableSql, type RawSqlDraft, rawSqlDataSourceOf } from "./raw-sql"
+import { initPromql, isRunnablePromql, type PromqlDraft, promqlDataSourceOf } from "./promql"
 import { askMetricOptions } from "./metric-options"
 import { eventNamesKeyOf, requestSuggestions } from "./product-step"
-import { dataSourceRawSql } from "@maple/widgets/dashboard"
+import { dataSourcePromql, dataSourceRawSql } from "@maple/widgets/dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { codeUnitAt } from "@maple/strings"
@@ -50,7 +51,7 @@ export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardWidgetSearch.Type
 type Route = Readonly<{ dashboardId: string; widgetId: string; search: Search }>
 
-export const SOURCE_MODES = ["builder", "rawSql"]
+export const SOURCE_MODES = ["builder", "rawSql", "promql"]
 
 export const init = (route: Route, _context: PageContext): Return => ({
 	model: {
@@ -65,6 +66,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		sourceMode: "builder",
 		initialSourceMode: "builder",
 		rawSql: null,
+		promql: null,
 		timeRange: null,
 		nowMs: null,
 		previewWidth: null,
@@ -156,16 +158,16 @@ export const previewWidgetOf = (model: Model): Widget | null => {
 		// A fixed query always previews its stored route.
 		keepsStoredSource: state.queryFixed || state.keepsStoredSource,
 	}
-	const isSql = isSqlSource(model) && model.rawSql !== null
+	const source = editedSourceOf(model, "staged")
 	return {
 		...widget,
 		timeRange: state.timeRange ?? undefined,
 		visualization: state.visualization,
 		dataSource:
-			isSql && model.rawSql !== null
-				? rawSqlDataSourceOf(widget, model.rawSql.staged, state)
-				: builderDataSourceOf(widget, preview),
-		display: isSql ? buildSqlDisplay(widget, state) : buildDisplay(widget, preview),
+			source === null
+				? builderDataSourceOf(widget, preview)
+				: sourceDataSourceOf(widget, source, state),
+		display: source === null ? buildDisplay(widget, preview) : buildSqlDisplay(widget, state),
 	}
 }
 
@@ -278,6 +280,7 @@ const ask = (planned: Planned, gate: Model["gate"]): Planned => {
 /** Apply's gate: a valid query set, or SQL the warehouse check accepts. */
 export const canApply = (model: Model): boolean => {
 	if (model.state === null) return false
+	if (isPromqlSource(model) && model.promql !== null) return isRunnablePromql(model.promql)
 	const rawSql = isSqlSource(model) ? model.rawSql : null
 	return rawSql === null ? validationErrorOf(model.state) === null : isRunnableSql(rawSql)
 }
@@ -321,6 +324,7 @@ export const receiveDocument = (
 					initial: model.initial ?? seeded,
 					staged: model.staged ?? seeded,
 					rawSql: model.rawSql ?? initRawSql(widget),
+					promql: model.promql ?? initPromql(widget),
 				},
 				context,
 			)
@@ -337,11 +341,20 @@ export const showsSourceToggle = (state: EditorState): boolean => {
 export const isSqlSource = (model: Model): boolean =>
 	model.sourceMode === "rawSql" && model.state !== null && showsSourceToggle(model.state)
 
+/** The PromQL tab is picked and the panel type has a rows rendering. */
+export const isPromqlSource = (model: Model): boolean =>
+	model.sourceMode === "promql" && model.state !== null && showsSourceToggle(model.state)
+
 const openedSource = (
 	model: Model,
 	widget: Widget,
 ): Pick<Model, "sourceMode" | "initialSourceMode" | "sourceTabs"> => {
-	const mode = dataSourceRawSql(widget.dataSource) === null ? "builder" : "rawSql"
+	const mode =
+		dataSourcePromql(widget.dataSource) !== null
+			? "promql"
+			: dataSourceRawSql(widget.dataSource) === null
+				? "builder"
+				: "rawSql"
 	return {
 		sourceMode: mode,
 		initialSourceMode: mode,
@@ -363,7 +376,8 @@ export const editState = (
 export const isDirty = (model: Model): boolean =>
 	model.sourceMode !== model.initialSourceMode ||
 	encodeJson(model.state) !== encodeJson(model.initial) ||
-	(model.sourceMode === "rawSql" && jsonKeyOf(model.rawSql?.draft) !== jsonKeyOf(model.rawSql?.initial))
+	(model.sourceMode === "rawSql" && jsonKeyOf(model.rawSql?.draft) !== jsonKeyOf(model.rawSql?.initial)) ||
+	(model.sourceMode === "promql" && jsonKeyOf(model.promql?.draft) !== jsonKeyOf(model.promql?.initial))
 
 export const navigate = (model: Model, url: string): Return => ({
 	model,
@@ -389,14 +403,31 @@ export const askToLeave = (model: Model, url: string): Return => {
 	}
 }
 
-/** The widget Apply writes; with `rawSql`, the Raw SQL source built for the type picked in the editor. */
-export const editedWidget = (widget: Widget, state: EditorState, rawSql: RawSqlDraft | null): Widget => {
+/** A Raw SQL or PromQL draft the editor writes instead of the builder's query set. */
+export type EditedSource =
+	| Readonly<{ kind: "rawSql"; draft: RawSqlDraft }>
+	| Readonly<{ kind: "promql"; draft: PromqlDraft }>
+
+const sourceDataSourceOf = (widget: Widget, source: EditedSource, state: EditorState): Widget["dataSource"] =>
+	source.kind === "rawSql"
+		? rawSqlDataSourceOf(widget, source.draft, state)
+		: promqlDataSourceOf(widget, source.draft, state)
+
+/** The picked tab's draft (or its staged copy), or null on the query builder. */
+export const editedSourceOf = (model: Model, copy: "draft" | "staged"): EditedSource | null => {
+	if (isPromqlSource(model) && model.promql !== null) return { kind: "promql", draft: model.promql[copy] }
+	if (isSqlSource(model) && model.rawSql !== null) return { kind: "rawSql", draft: model.rawSql[copy] }
+	return null
+}
+
+/** The widget Apply writes; with a `source`, the Raw SQL or PromQL source built for the picked type. */
+export const editedWidget = (widget: Widget, state: EditorState, source: EditedSource | null): Widget => {
 	const edited: Widget = {
 		...widget,
 		visualization: state.visualization,
 		dataSource:
-			rawSql === null ? builderDataSourceOf(widget, state) : rawSqlDataSourceOf(widget, rawSql, state),
-		display: rawSql === null ? buildDisplay(widget, state) : buildSqlDisplay(widget, state),
+			source === null ? builderDataSourceOf(widget, state) : sourceDataSourceOf(widget, source, state),
+		display: source === null ? buildDisplay(widget, state) : buildSqlDisplay(widget, state),
 	}
 	if (state.timeRange !== null) return { ...edited, timeRange: state.timeRange }
 	// No override: the key goes, so the widget follows the dashboard again.

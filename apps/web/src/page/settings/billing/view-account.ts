@@ -16,7 +16,8 @@ import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { settingsSection } from "../../kit/settings-section"
-import { canManage, Message, type Model } from "./model"
+import { Message, type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { linkTargetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -61,19 +62,20 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 					`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
 				]),
 			]),
-			...(canManage(model)
-				? [
-						button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
-							},
-							[`Stop billing through ${payer}`],
-						),
-					]
-				: []),
+			gatedControl(h, model, "billing:manage", (isDisabled) =>
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isDisabled,
+						attributes: isDisabled
+							? []
+							: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
+					},
+					[`Stop billing through ${payer}`],
+				),
+			),
 		]),
 	])
 }
@@ -82,7 +84,7 @@ export const memberSection = (h: H, model: Model, account: BillingAccount): Html
 const volumeLabel = (usage: BillingAccountOrgUsage): string =>
 	Arr.join(
 		[
-			formatUsage(usage.logsGB + usage.tracesGB + usage.metricsGB),
+			formatUsage(usage.logsGB + usage.tracesGB + usage.metricsGB + (usage.profilesGB ?? 0)),
 			...(usage.browserSessions > 0 ? [`${formatCount(usage.browserSessions)} sessions`] : []),
 			...(usage.productEvents > 0 ? [`${formatCount(usage.productEvents)} events`] : []),
 		],
@@ -138,22 +140,23 @@ const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: stri
 			]),
 			hstack(h, { gap: "4" }, [
 				volumeCell(h, model, member),
-				...(canManage(model)
-					? [
-							button(
-								h,
-								{
-									variant: "ghost",
-									size: "sm",
-									attributes: [
-										h.AriaLabel(`Remove ${name} from billing`),
-										h.OnClick(Message.ClickedUnlink({ orgId: member.orgId })),
-									],
-								},
-								["Remove"],
-							),
-						]
-					: []),
+				gatedControl(h, model, "billing:manage", (isDisabled) =>
+					button(
+						h,
+						{
+							variant: "ghost",
+							size: "sm",
+							isDisabled,
+							attributes: [
+								h.AriaLabel(`Remove ${name} from billing`),
+								...(isDisabled
+									? []
+									: [h.OnClick(Message.ClickedUnlink({ orgId: member.orgId }))]),
+							],
+						},
+						["Remove"],
+					),
+				),
 			]),
 		],
 	)

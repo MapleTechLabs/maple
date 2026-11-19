@@ -391,7 +391,14 @@ const GithubApiPullRequestHead = Schema.Struct({
 		ref: Schema.String,
 		repo: Schema.NullOr(Schema.Struct({ full_name: Schema.String })),
 	}),
-	base: Schema.Struct({ sha: Schema.String, ref: Schema.String }),
+	base: Schema.Struct({
+		sha: Schema.String,
+		ref: Schema.String,
+		/** The repository the pull request merges into; its default branch is what an approval is held to. */
+		repo: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ default_branch: Schema.optionalKey(Schema.String) })),
+		),
+	}),
 })
 export type GithubApiPullRequestHead = Schema.Schema.Type<typeof GithubApiPullRequestHead>
 const GithubApiCreatedComment = Schema.Struct({ id: Schema.Number, html_url: Schema.String })
@@ -473,7 +480,11 @@ const GithubReviewThreadsResponse = Schema.Struct({
 										Schema.Struct({
 											id: Schema.String,
 											isResolved: Schema.Boolean,
+											resolvedBy: Schema.optionalKey(
+												Schema.NullOr(Schema.Struct({ login: Schema.String })),
+											),
 											comments: Schema.Struct({
+												totalCount: Schema.optionalKey(Schema.Number),
 												nodes: Schema.Array(
 													Schema.Struct({
 														databaseId: Schema.NullOr(Schema.Number),
@@ -537,6 +548,17 @@ const GithubApiReviewSchema = Schema.Struct({
 	html_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
+/** One review in a pull request's list: who left it and what it says now. */
+const GithubApiListedReview = Schema.Struct({
+	id: Schema.Number,
+	state: Schema.String,
+	user: Schema.NullOr(GithubApiUser),
+	/** The head the review was given on; absent when its commit is gone from the repository. */
+	commit_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+export type GithubApiListedReview = Schema.Schema.Type<typeof GithubApiListedReview>
+const GithubApiListedReviewList = Schema.Array(GithubApiListedReview)
+
 /** GitHub accepts at most this many annotations per check-run request. */
 export const CHECK_RUN_ANNOTATION_LIMIT = 50
 
@@ -568,7 +590,15 @@ export interface GithubReviewInput {
 		readonly startLine?: number
 		readonly body: string
 	}>
+	/**
+	 * `COMMENT` (the default) never approves or blocks a merge. `APPROVE` is only for a repository
+	 * that turned on `autoApprove` and a pull request the review found safe to merge unread.
+	 */
+	readonly event?: "COMMENT" | "APPROVE"
 }
+
+/** Every pull request has few reviews; ten pages is far past what one gets. */
+const MAX_REVIEW_PAGES = 10
 
 const GithubCodeSearchResponseSchema = Schema.Struct({
 	items: Schema.Array(
@@ -644,8 +674,9 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
         nodes {
-          id isResolved
+          id isResolved resolvedBy { login }
           comments(first: 20) {
+            totalCount
             nodes { databaseId author { login __typename } body reactionGroups { content reactors { totalCount } } }
           }
         }
@@ -688,6 +719,7 @@ const graphqlUrl = (apiBaseUrl: string) =>
 		? `${Str.slice(0, -"/v3".length)(apiBaseUrl)}/graphql`
 		: `${apiBaseUrl}/graphql`
 const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
+const decodeListedReviewList = Schema.decodeUnknownEffect(GithubApiListedReviewList)
 const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
 const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
 const decodeCodeSearch = Schema.decodeUnknownEffect(GithubCodeSearchResponseSchema)
@@ -701,7 +733,7 @@ const rejectsCredentials = (answer: GithubAnswer) =>
 			(answer.detail === "Bad credentials" || Str.includes("Bad credentials")(answer.body))))
 
 interface GithubCall {
-	readonly method?: "GET" | "POST" | "PATCH" | "DELETE"
+	readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 	readonly url: string
 	readonly auth: VendorHttp.VendorAuth
 	readonly accept?: string
@@ -1233,7 +1265,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						return Option.none<GithubApiCommit>()
 					return yield* failure(response, "Get commit", "repository")
 				}
-				if (!isOk(response)) return yield* failure(response, "Get commit", "repository")
+				// A blocked repository fails as the anticipated domain error, so the span stays out of error tracking.
+				if (!isOk(response))
+					return yield* failure(response, "Get commit", "repository").pipe(
+						Effect.mapError(toRepositoryListingError),
+					)
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
 					Effect.mapBoth({
@@ -1371,7 +1407,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			/** A write is sent once (a DELETE may repeat); `retry` marks a POST that only reads, like a GraphQL query. */
 			const authedSend = (
-				method: "POST" | "PATCH" | "DELETE",
+				method: "POST" | "PUT" | "PATCH" | "DELETE",
 				token: string,
 				url: string,
 				body: unknown,
@@ -1392,7 +1428,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 
 			// Every page: a review needs the whole diff, and GitHub itself stops at
-			// 3,000 files, which is PER_PAGE * MAX_PR_FILE_PAGES.
+			// 3,000 files, which is PER_PAGE * MAX_PR_FILE_PAGES. `truncated` says the listing hit that.
 			const listPullRequestFiles = Effect.fn("GithubAppClient.listPullRequestFiles")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -1401,7 +1437,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const { items } = yield* collectPages(MAX_PR_FILE_PAGES, (page) =>
+				const { items: files, truncated } = yield* collectPages(MAX_PR_FILE_PAGES, (page) =>
 					Effect.gen(function* () {
 						const response = yield* authedGet(
 							config,
@@ -1422,7 +1458,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						)
 					}),
 				)
-				return items
+				return { files, truncated }
 			})
 
 			// One page of each: the reviewer wants the recent story, not the archive. Checks come
@@ -2060,9 +2096,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			// Needs `pull_requests: write`. `event: COMMENT` so the review never
-			// approves or blocks a merge; every comment is on the new side of the
-			// diff, which is the only side a line-anchored comment can name.
+			// Needs `pull_requests: write`. `event` is `COMMENT` unless the caller asks to approve
+			// (see GithubReviewInput); a review never requests changes. Every comment is on the new
+			// side of the diff, which is the only side a line-anchored comment can name.
 			const createPullRequestReview = Effect.fn("GithubAppClient.createPullRequestReview")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -2079,7 +2115,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					{
 						commit_id: input.commitId,
 						body: input.body,
-						event: "COMMENT",
+						event: input.event ?? "COMMENT",
 						comments: Arr.map(input.comments, (comment) => ({
 							path: comment.path,
 							line: comment.line,
@@ -2100,6 +2136,59 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(cause) => new GithubAppError({ message: "Unexpected review payload", cause }),
 					),
 				)
+			})
+
+			/** Every review on the pull request, oldest first. Needs `pull_requests: read`. */
+			const listPullRequestReviews = Effect.fn("GithubAppClient.listPullRequestReviews")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				// GitHub lists oldest first, so a truncated list misses the newest reviews.
+				return yield* collectPages(MAX_REVIEW_PAGES, (page) =>
+					Effect.gen(function* () {
+						const response = yield* authedGet(
+							config,
+							token,
+							`${repoBase(config, owner, repo)}/pulls/${number}/reviews?per_page=${PER_PAGE}&page=${page}`,
+						)
+						if (!isOk(response)) return yield* failure(response, "List reviews", "repository")
+						const json = yield* parseJson(response, "List reviews")
+						return yield* decodeListedReviewList(json).pipe(
+							Effect.mapError(
+								(cause) =>
+									new GithubAppError({ message: "Unexpected reviews payload", cause }),
+							),
+						)
+					}),
+				)
+			})
+
+			/**
+			 * Dismiss a review, so an approval no longer counts toward a merge. Needs
+			 * `pull_requests: write`; an App can always dismiss its own review.
+			 */
+			const dismissPullRequestReview = Effect.fn("GithubAppClient.dismissPullRequestReview")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				reviewId: number,
+				message: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"PUT",
+					token,
+					`${repoBase(config, owner, repo)}/pulls/${number}/reviews/${reviewId}/dismissals`,
+					{ message, event: "DISMISS" },
+					"Dismiss review",
+				)
+				if (!isOk(response)) return yield* failure(response, "Dismiss review", "repository")
 			})
 
 			/**
@@ -2365,8 +2454,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						? Option.none<GithubRecursiveTree>()
 						: Option.some(listing)
 				})
-				const read = (sha: string, recursive: boolean) =>
-					readOnce(sha, recursive).pipe(gate.withPermit)
+				const read = (sha: string, recursive: boolean) => gate.withPermit(readOnce(sha, recursive))
 				type Walked = { readonly tree: GithubRecursiveTree["tree"]; readonly truncated: boolean }
 				const under = (prefix: string, walked: Walked): Walked => ({
 					truncated: walked.truncated,
@@ -2753,6 +2841,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				commitFiles,
 				upsertCheckRun,
 				createPullRequestReview,
+				listPullRequestReviews,
+				dismissPullRequestReview,
 				upsertIssueComment,
 				searchCode,
 				getSourceFile,

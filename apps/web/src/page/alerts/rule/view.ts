@@ -31,7 +31,7 @@ import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silen
 import type { V2AlertSilence } from "@maple/domain/http/v2"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import * as SilenceDialogView from "../silence-dialog/view"
-import { canManageAlerts } from "../../kit/session-grants"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -144,7 +144,9 @@ const header = (h: H, model: Model, rule: AlertRuleDocument, timeZone: string) =
 						},
 					}),
 			}),
-			...(canManageAlerts(model) ? [silenceButton(h, Message.ClickedSilence())] : []),
+			gatedControl(h, model, "alerts:manage", (isDisabled) =>
+				silenceButton(h, Message.ClickedSilence(), isDisabled),
+			),
 			linkButton(h, { variant: "outline", size: "sm", href: createHref({ ruleId: rule.id }) }, [
 				icon(h, "PencilIcon"),
 				"Edit rule",

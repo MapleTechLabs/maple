@@ -13,6 +13,8 @@ export class DeleteOrganizationResponse extends Schema.Class<DeleteOrganizationR
 	"DeleteOrganizationResponse",
 )({
 	deleted: Schema.Literal(true),
+	/** Integrations whose access Maple could not end at the vendor; absent when every one ended. */
+	incompleteTeardowns: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
 export class OrganizationForbiddenError extends HttpTaggedError<OrganizationForbiddenError>()(

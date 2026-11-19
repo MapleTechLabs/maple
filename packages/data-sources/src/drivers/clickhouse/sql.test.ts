@@ -25,13 +25,69 @@ describe("clickHouseSqlIssue", () => {
 		["SELECT * FROM url('http://169.254.169.254/', CSV)", "Table function 'url'"],
 		["SELECT * FROM s3('https://bucket/x.csv')", "Table function 's3'"],
 		["SELECT 1 SETTINGS readonly = 0", "SETTINGS is managed by Maple"],
+		["SELECT * FROM url\u200B('http://169.254.169.254/', CSV)", "plain ASCII"],
+		["SELECT \u2018'\u2019 AS a, 1 SETTINGS readonly = 0, log_comment = \u2018'\u2019", "plain ASCII"],
+		["SELECT $1$ ' $1$ AS a, 1 SETTINGS readonly = 0, log_comment = $1$ ' $1$", "Heredoc strings"],
+		["SELECT 1 /* /* */ '*/ SETTINGS readonly = 0, log_comment = '", "Nested /* */ comments"],
+		["SELECT 1 // '\n, (SELECT 2 SETTINGS readonly = 0) AS h -- '", "'//' comments"],
+		[
+			"SELECT 1 /*/*/ 'x */ ' != '*/ , (SELECT 2 SETTINGS readonly = 0) AS h -- '",
+			"Nested /* */ comments",
+		],
+		["SELECT `getClientHTTPHe\\x61der`('Authorization')", "Backslashes are not supported"],
+		["SELECT 1) UNION ALL (SELECT 2", "Unbalanced"],
+		["SELECT getClientHTTPHeader('Authorization')", "getClientHTTPHeader"],
+		["SELECT `getClientHTTPHeader` /* c */ ('Authorization')", "getClientHTTPHeader"],
 		["SHOW TABLES", "Send a SELECT query"],
+		["SELECT * FROM 'payments'", "A string literal cannot stand where a table goes"],
+		["SELECT 1 FROM shop.orders AS o JOIN 'payments' AS p ON o.id = p.id", "A string literal cannot"],
+		["SELECT 1 FROM shop.orders AS o, 'payments' AS p", "A string literal cannot"],
+		["SELECT * FROM orders_$__interval_s", "$__interval_s is joined to a name or number"],
+		["SELECT * FROM shop.pay$__interval_s", "$__interval_s is joined to a name or number"],
+		["SELECT 1 AS x WHERE ts > 1$__from", "$__from is joined to a name or number"],
 		["SELECT $__orgFilter", "Unknown macro $__orgFilter"],
 		["SELECT $__timeFilter(created_at OR 1)", "must be a column name"],
 		["SELECT $__timeGroup", "takes a column"],
 		["", "between 1 and"],
 	])("refuses %s", (sql, message) => {
 		expect(clickHouseSqlIssue(sql)).toContain(message)
+	})
+
+	it("takes a string anywhere a value goes, and a macro set off from the names around it", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT trim(BOTH ' ' FROM name) AS n, extract(day FROM '2026-11-01'::Date) FROM shop.orders WHERE kind IN ('a', 'b') ORDER BY n, 'x'",
+			),
+		).toBeNull()
+		expect(
+			clickHouseSqlIssue(
+				"SELECT count()/$__interval_s AS rate, ($__from) AS f FROM shop.orders WHERE ts>=$__from AND $__timeFilter(ts)",
+			),
+		).toBeNull()
+	})
+
+	it("takes a string in an array or beside a quoted name that spells a keyword", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT a.id FROM shop.orders AS a JOIN shop.kinds AS b ON a.id = b.id AND a.name IN ['x', 'o']",
+			),
+		).toBeNull()
+		expect(clickHouseSqlIssue("SELECT `from`, 'x' FROM (SELECT 1 AS `from`)")).toBeNull()
+		expect(clickHouseSqlIssue("SELECT `join`, 'x' FROM (SELECT 1 AS `join`)")).toBeNull()
+	})
+
+	it("still refuses a string as a table after an array or a quoted keyword name", () => {
+		expect(
+			clickHouseSqlIssue(
+				"SELECT 1 FROM shop.orders AS o WHERE o.k IN ['a'] UNION ALL SELECT 1 FROM 'x'",
+			),
+		).toContain("A string literal cannot")
+		expect(clickHouseSqlIssue("SELECT `from` FROM shop.orders AS `join`, 'x'")).toContain(
+			"A string literal cannot",
+		)
+		expect(clickHouseSqlIssue("SELECT 1 FROM shop.orders AS `join`, foo(1)")).toContain(
+			"Table function 'foo",
+		)
 	})
 
 	it("ignores keywords inside literals and comments", () => {
@@ -89,6 +145,13 @@ describe("expandMacros", () => {
 		)
 		expect(expanded).toContain("(b >= toDateTime64(")
 		expect(expanded).not.toContain("$__")
+	})
+
+	it("leaves a macro glued to a name alone, so expansion never completes a name", () => {
+		expect(expandMacros("SELECT * FROM orders_$__interval_s", window)).toBe(
+			"SELECT * FROM orders_$__interval_s",
+		)
+		expect(expandMacros("SELECT a$__from", window)).toBe("SELECT a$__from")
 	})
 
 	it("never buckets below one second", () => {

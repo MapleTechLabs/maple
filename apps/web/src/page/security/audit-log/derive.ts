@@ -87,3 +87,21 @@ export const nextCursorOf = (model: Pick<Model, "firstPage" | "laterPages">): st
 			}),
 		onSome: (page) => page.nextCursor,
 	})
+
+/**
+ * The platforms the filter offers: the ones connected here, or with events in the window, plus the
+ * one the URL already filters on. Every platform until the sources answer, so the filter still works.
+ */
+export const filterProviders = (model: Pick<Model, "sources" | "search">): ReadonlyArray<string> =>
+	AsyncData.matchData(model.sources.data, {
+		onEmpty: () => AuditTrailProvider.literals,
+		onFailure: () => AuditTrailProvider.literals,
+		onData: ({ sources }) => {
+			const shown = Arr.map(
+				Arr.filter(sources, (source) => source.state !== "not_connected" || source.events > 0),
+				(source) => source.provider,
+			)
+			const current = model.search.provider
+			return current === undefined || shown.includes(current) ? shown : [...shown, current]
+		},
+	})

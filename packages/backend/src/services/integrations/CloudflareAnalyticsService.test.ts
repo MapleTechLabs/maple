@@ -291,6 +291,9 @@ const recordSpans = () => {
 	return { tracer, named }
 }
 
+const spanFailed = (span: Tracer.NativeSpan) =>
+	span.status._tag === "Ended" && span.status.exit._tag === "Failure"
+
 /** Holds the first GraphQL call until `release()`; `reached` resolves once a poll is parked there. */
 const gateFirstGraphql = () => {
 	const released = Promise.withResolvers<void>()
@@ -2632,9 +2635,10 @@ describe("CloudflareAnalyticsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, captured, fetchOptions)))
 	})
 
-	it.effect("pollOrg surfaces a zone authz failure as an observable failure, not just a DB write", () => {
+	it.effect("a zone authz failure is the connection's health, not an exception event", () => {
 		const testDb = createTestDb(trackedDbs)
 		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(T0)
 			yield* seedConnection()
@@ -2646,12 +2650,17 @@ describe("CloudflareAnalyticsService", () => {
 				settingsFetchedAt: T0 - 5 * MIN,
 			})
 			const service = yield* CloudflareAnalyticsService
-			const summary = yield* service.pollOrg(ORG)
+			const summary = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			// The token's missing permission repeats every tick until the tenant reconnects, so it
+			// lands on the summary and the row, never as a failed span.
+			const observed = named("CloudflareAnalyticsService.datasetPollFailed")
+			assert.isAbove(observed.length, 0)
+			assert.deepStrictEqual(Arr.filter(observed, spanFailed), [])
 			// Regression for the invisible outage: a Cloudflare "not authorized" on the zone dataset
 			// used to be written ONLY to cloudflare_analytics_state.lastError with zero telemetry, so a
 			// fully-broken integration was invisible to find_errors/logs for hours. It must now be a
-			// classified, first-class failure on the summary (which the seam turns into an exception
-			// event + ERROR log through Maple's own error pipeline).
+			// classified, first-class failure on the summary (which the seam logs as a warning and
+			// the source's health shows).
 			const authz = Option.getOrThrow(
 				Arr.findFirst(
 					summary.failures,
@@ -2668,6 +2677,37 @@ describe("CloudflareAnalyticsService", () => {
 			Effect.provide(
 				makeLayer(testDb, captured, {
 					graphqlErrors: [{ message: "not authorized to access these fields" }],
+				}),
+			),
+		)
+	})
+
+	it.effect("an unrecognised GraphQL error still fails its span", () => {
+		const testDb = createTestDb(trackedDbs)
+		const captured: CapturedIngest[] = []
+		const { tracer, named } = recordSpans()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "http_requests",
+				zoneId: ZONE_ID,
+				zoneName: ZONE_NAME,
+				watermarkAt: T0 - 30 * MIN,
+				settingsFetchedAt: T0 - 5 * MIN,
+			})
+			const service = yield* CloudflareAnalyticsService
+			const summary = yield* service.pollOrg(ORG).pipe(Effect.withTracer(tracer))
+			assert.include(
+				Arr.map(summary.failures, (failure) => failure.kind),
+				"other",
+			)
+			const observed = named("CloudflareAnalyticsService.datasetPollFailed")
+			assert.isAbove(Arr.filter(observed, spanFailed).length, 0)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, captured, {
+					graphqlErrors: [{ message: "cannot parse filter argument" }],
 				}),
 			),
 		)

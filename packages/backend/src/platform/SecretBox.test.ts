@@ -145,6 +145,109 @@ describe("v2 envelope", () => {
 	)
 })
 
+interface DestinationRef extends Ref {
+	readonly url: string
+}
+
+const destinationSlot: SecretSlot<DestinationRef> = {
+	name: "widgets.secret",
+	binding: (ref) => [ref.orgId, ref.id],
+	destination: (ref) => [ref.url],
+}
+
+const relabel = (stored: { readonly ciphertext: string }, version: string) => ({
+	...stored,
+	ciphertext: Str.replace(/^v2\./, `${version}.`)(stored.ciphertext),
+})
+
+describe("v3 envelope", () => {
+	it.effect("seals a slot with a destination in v3, which opens only for that destination", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const sealed = yield* sealSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://a" },
+				"hunter2",
+				fail,
+			)
+			expect(Str.startsWith(`v3.${ring.primary.id}.`)(sealed.ciphertext)).toBe(true)
+			expect(yield* openSecret(ring, destinationSlot, { ...ref, url: "https://a" }, sealed, fail)).toBe(
+				"hunter2",
+			)
+			const moved = yield* openSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://attacker" },
+				sealed,
+				fail,
+			).pipe(Effect.flip)
+			expect(moved).toBe("Decryption failed")
+		}),
+	)
+
+	it.effect("refuses a v2 value on a slot that has a destination: it is not bound to one", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
+			const error = yield* openSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://a" },
+				sealed,
+				fail,
+			).pipe(Effect.flip)
+			expect(error).toBe("Stored value is not bound to its destination")
+		}),
+	)
+
+	it.effect("does not open a v2 value relabelled v3: the destination is not in its AAD", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
+			const error = yield* openSecret(
+				ring,
+				destinationSlot,
+				{ ...ref, url: "https://a" },
+				{ ...sealed, ...relabel(sealed, "v3") },
+				fail,
+			).pipe(Effect.flip)
+			expect(error).toBe("Decryption failed")
+		}),
+	)
+
+	it.effect("does not open a v2 value relabelled v3 even when the destination is empty", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const noDestination: SecretSlot<Ref> = { ...slot, destination: () => [] }
+			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
+			const error = yield* openSecret(
+				ring,
+				noDestination,
+				ref,
+				{ ...sealed, ...relabel(sealed, "v3") },
+				fail,
+			).pipe(Effect.flip)
+			expect(error).toBe("Decryption failed")
+		}),
+	)
+
+	it.effect("is refused on a slot that names no destination", () =>
+		Effect.gen(function* () {
+			const ring = yield* keyring(1)
+			const sealed = yield* sealSecret(ring, slot, ref, "hunter2", fail)
+			const error = yield* openSecret(
+				ring,
+				slot,
+				ref,
+				{ ...sealed, ...relabel(sealed, "v3") },
+				fail,
+			).pipe(Effect.flip)
+			expect(error).toBe("Stored value names a destination this slot has not")
+		}),
+	)
+})
+
 describe("pre-v2 envelope", () => {
 	it.effect("is refused, so an unbound value cannot be replayed onto a row", () =>
 		Effect.gen(function* () {
@@ -155,7 +258,7 @@ describe("pre-v2 envelope", () => {
 				tag: Buffer.alloc(16, 1).toString("base64"),
 			}
 			const error = yield* openSecret(ring, slot, ref, old, fail).pipe(Effect.flip)
-			expect(error).toBe("Stored value is not in the v2 envelope")
+			expect(error).toBe("Stored value is not in the v2 or v3 envelope")
 		}),
 	)
 })

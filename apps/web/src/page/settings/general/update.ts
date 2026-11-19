@@ -9,7 +9,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import * as Draft from "../kit/draft"
-import { checkImage, clickFileInput } from "../kit/image-dropzone"
+import { checkImage, clickFileInput } from "../../kit/image-dropzone"
 import { otherAdminName } from "../kit/members"
 import { canManage, AdminsInfo, Message, type Model, OrgInfo } from "./model"
 

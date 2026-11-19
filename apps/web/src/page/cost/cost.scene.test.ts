@@ -48,6 +48,7 @@ import {
 	seriesLabels,
 	withFilter,
 } from "./derive"
+import * as FeatureRequest from "../kit/feature-request"
 import { Message } from "./message"
 import { type Model, type Search, sourcesOf } from "./model"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
@@ -254,6 +255,8 @@ describe("cost page", () => {
 			given(step.model),
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
+			// Free while in beta, said before anything is connected.
+			expectView(text("Free during the beta")).toExist(),
 			expectView(text(/a PlanetScale organization by database and branch/)).toExist(),
 			expectView(role("button", { name: "Add a cost source" })).toExist(),
 			expectView(text("Group by")).not.toExist(),
@@ -427,14 +430,14 @@ describe("cost page", () => {
 			expectView(text("Replace the OpenRouter key")).toExist(),
 			expectView(role("button", { name: "Back" })).not.toExist(),
 		)
-		// The providers list a source that exists as added, with nothing to click.
+		// The providers list a source that exists as added, its card disabled.
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(text("Already added")).toExist(),
-			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(text("Added")).toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).toBeDisabled(),
 		)
 
 		const confirming = pageUpdate(
@@ -743,8 +746,8 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: /^Cloudflare/ })).not.toExist(),
-			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(role("button", { name: /^Cloudflare/ })).toBeDisabled(),
+			expectView(role("button", { name: /^OpenRouter/ })).toBeDisabled(),
 			expectView(text("Replace its token in the Sources panel")).toExist(),
 		)
 
@@ -1365,8 +1368,8 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(text("Already added")).toExist(),
-			expectView(role("button", { name: /^Vercel/ })).not.toExist(),
+			expectView(text("Added")).toExist(),
+			expectView(role("button", { name: /^Vercel/ })).toBeDisabled(),
 			expectView(role("button", { name: /^OpenRouter/ })).toExist(),
 		)
 
@@ -2034,7 +2037,7 @@ describe("cost page", () => {
 			given(pageUpdate(model, Message.ClickedAddSource()).model),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: /^PlanetScale/ })).not.toExist(),
+			expectView(role("button", { name: /^PlanetScale/ })).toBeDisabled(),
 			expectView(text("Remove it in the Sources panel")).toExist(),
 		)
 
@@ -2099,7 +2102,7 @@ describe("cost page", () => {
 		expect(previousPeriodOf(aws, window, 30, {})).toBe("synced")
 	})
 
-	test("a member who may not manage integrations is offered no source action the API would refuse", () => {
+	test("a member who may not manage integrations sees every source action locked, with who can", () => {
 		const openRouter = source({
 			id: "0190f2b3-0000-7000-8000-00000000c060",
 			provider: "openrouter",
@@ -2113,10 +2116,13 @@ describe("cost page", () => {
 			resolveTheme,
 			// The sources still show how their sync is doing.
 			expectView(text("user_2openrouterAccount")).toExist(),
-			expectView(role("button", { name: "Add source" })).not.toExist(),
-			expectView(role("button", { name: /^Replace/ })).not.toExist(),
-			expectView(role("button", { name: /^Remove/ })).not.toExist(),
+			expectView(role("button", { name: "Add source" })).toBeDisabled(),
+			expectView(role("button", { name: /^Replace/ })).toBeDisabled(),
+			expectView(role("button", { name: /^Remove/ })).toBeDisabled(),
 			expectView(role("link", { name: /^Manage/ })).not.toExist(),
+			expectView(
+				role("group", { name: "Only org admins and engineers can manage integrations." }),
+			).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -2124,7 +2130,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost source yet")).toExist(),
 			expectView(text("Only organization admins and engineers can add a cost source.")).toExist(),
-			expectView(role("button", { name: "Add a cost source" })).not.toExist(),
+			expectView(role("button", { name: "Add a cost source" })).toBeDisabled(),
 		)
 		// Before the viewer's roles are known the page neither offers the button nor says who can add.
 		scene(
@@ -2875,8 +2881,8 @@ describe("cost page", () => {
 				watermarkDate: null,
 				backfillDate: null,
 				lastSyncedAt: null,
-				lastError: "Cloud cost is not enabled for this organization.",
-				lastErrorReason: "rollout",
+				lastError: "This month's provider request budget is spent; pulls resume next month.",
+				lastErrorReason: "budget",
 			}),
 		])
 		scene(
@@ -2885,7 +2891,7 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(text("No cost read yet")).toExist(),
 			expectView(text("The sync is on hold. The source below says why.")).toExist(),
-			expectView(text("Cloud cost is not enabled for this organization.")).toExist(),
+			expectView(text(/provider request budget is spent/)).toExist(),
 			expectView(text(/Each source below is paused/)).not.toExist(),
 		)
 	})
@@ -2907,6 +2913,145 @@ describe("cost page", () => {
 				text("This month's provider request budget is spent; pulls resume next month."),
 			).toExist(),
 			expectView(text("Sync failing")).not.toExist(),
+		)
+	})
+})
+
+describe("the provider search", () => {
+	test("narrows the cards by name and what they bring in, groups what is left and clears", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Cloud and platforms")).toExist(),
+			expectView(text("AI")).toExist(),
+			expectView(role("button", { name: /^Google Cloud/ })).toExist(),
+		)
+		const invoices = pageUpdate(opened, Message.ChangedProviderSearch({ value: "invoice" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(invoices),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^PlanetScale/ })).toExist(),
+			expectView(role("button", { name: /^OpenRouter/ })).not.toExist(),
+			expectView(text("AI")).not.toExist(),
+		)
+		const none = pageUpdate(opened, Message.ChangedProviderSearch({ value: "mainframe" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(none),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("No providers match")).toExist(),
+		)
+		// Back from a provider's step returns to the search as it was left.
+		const stepped = pageUpdate(invoices, Message.ClickedAddPlanetScale()).model
+		expect(pageUpdate(stepped, Message.ClickedBackToProviders()).model.providerSearch).toBe("invoice")
+		// A dialog opened anew starts with no search.
+		expect(pageUpdate(invoices, Message.ClickedAddSource()).model.providerSearch).toBe("")
+	})
+})
+
+describe("requesting a provider", () => {
+	const request = (model: Model, message: FeatureRequest.Message) =>
+		pageUpdate(model, Message.GotRequestMessage({ message }))
+	const typedProvider = (model: Model, value: string) =>
+		request(
+			model,
+			FeatureRequest.Message.GotSubjectMessage({ message: Field.Message.ChangedValue({ value }) }),
+		).model
+
+	test("the providers end with a request button; a search that matches nothing offers its own", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: "Don't see your provider? Request it" })).toExist(),
+		)
+		const none = pageUpdate(opened, Message.ChangedProviderSearch({ value: " Hetzner " })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(none),
+			resolveTheme,
+			dialogMounted,
+			click(role("button", { name: "Request Hetzner" })),
+			expectView(text("Request a provider")).toExist(),
+			expectView(role("textbox", { name: "Provider" })).toHaveValue("Hetzner"),
+			expectView(role("button", { name: "Send request" })).not.toBeDisabled(),
+		)
+		// Back returns to the providers with the search as it was left.
+		const requesting = pageUpdate(none, Message.ClickedRequestProvider()).model
+		const back = pageUpdate(requesting, Message.ClickedBackToProviders()).model
+		expect([back.addStep, back.providerSearch]).toEqual(["pick", " Hetzner "])
+	})
+
+	test("sends the provider and note trimmed as a cost source request, then closes with a thanks", () => {
+		const form = pageUpdate(
+			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
+			Message.ClickedRequestProvider(),
+		).model
+		// Nothing typed sends nothing.
+		expect(names(request(form, FeatureRequest.Message.Submitted()).commands)).toEqual([])
+
+		const withNote = request(
+			typedProvider(form, "  Datadog "),
+			FeatureRequest.Message.ChangedNote({ value: "  per monitor  " }),
+		).model
+		const sending = request(withNote, FeatureRequest.Message.Submitted())
+		expect(sending.commands).toMatchObject([
+			{
+				name: "SendFeatureRequest",
+				args: { area: "cost_source", subject: "Datadog", note: "per monitor" },
+			},
+		])
+		// A second submit while the first is in flight sends nothing more, and the dialog stays.
+		expect(names(request(sending.model, FeatureRequest.Message.Submitted()).commands)).toEqual([])
+		expect(pageUpdate(sending.model, Message.ClickedBackToProviders()).model.addStep).toBe("request")
+
+		// A name the request would refuse is never sent.
+		const tooLong = request(typedProvider(form, Str.repeat(81)("a")), FeatureRequest.Message.Submitted())
+		expect(names(tooLong.commands)).toEqual([])
+		expect(tooLong.model.request.error).toBe("Use a shorter name.")
+
+		const failed = request(
+			sending.model,
+			FeatureRequest.Message.CompletedSend({
+				result: Result.fail({
+					...toLoadFailure("unavailable"),
+					message: "Try again in a few seconds.",
+				}),
+			}),
+		).model
+		expect([failed.addDialog.isOpen, failed.request.isSending, failed.request.subject.value]).toEqual([
+			true,
+			false,
+			"  Datadog ",
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("alert")).toHaveText("Try again in a few seconds."),
+		)
+
+		const sent = request(
+			sending.model,
+			FeatureRequest.Message.CompletedSend({ result: Result.succeed(undefined) }),
+		)
+		expect(sent.model.addDialog.isOpen).toBe(false)
+		expect([sent.model.request.subject.value, sent.model.request.note]).toEqual(["", ""])
+		expect(sent.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Request sent",
+				description: "Thanks. Requests decide which source Maple reads next.",
+			}),
 		)
 	})
 })

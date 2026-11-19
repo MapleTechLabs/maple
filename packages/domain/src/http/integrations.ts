@@ -48,6 +48,7 @@ const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
 // tricks), and no backslash, whitespace or control character anywhere — which
 // leaves no room for a scheme or embedded credentials.
+// oxlint-disable-next-line no-control-regex -- refusing control characters is the point
 export const RETURN_PATH_PATTERN = /^\/(?![/\\])[^\\\s\u0000-\u001f\u007f]*$/u
 
 /**
@@ -914,6 +915,8 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		repositorySelection: Schema.NullOr(VcsRepoSelection),
 		/** Whether GitHub Actions runs become traces. True before the org has connected. */
 		ciTracesEnabled: Schema.Boolean,
+		/** Whether organization and repository changes go to the Security audit log. True before the org has connected. */
+		auditLogEnabled: Schema.Boolean,
 		repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery),
 		repositories: Schema.Array(GithubRepoSummary),
 	},
@@ -983,6 +986,18 @@ export class GithubSetCiTracesRequest extends Schema.Class<GithubSetCiTracesRequ
 
 export class GithubSetCiTracesResponse extends Schema.Class<GithubSetCiTracesResponse>(
 	"GithubSetCiTracesResponse",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetAuditLogRequest extends Schema.Class<GithubSetAuditLogRequest>(
+	"GithubSetAuditLogRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetAuditLogResponse extends Schema.Class<GithubSetAuditLogResponse>(
+	"GithubSetAuditLogResponse",
 )({
 	enabled: Schema.Boolean,
 }) {}
@@ -1719,6 +1734,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("linearTeams", "/linear/teams", {
 			success: LinearTeamsListResponse,
 			error: [
+				IntegrationsForbiddenError,
 				IntegrationsValidationError,
 				IntegrationsNotConnectedError,
 				IntegrationsRevokedError,
@@ -1759,6 +1775,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("searchConsoleSites", "/google-search-console/sites", {
 			success: SearchConsoleAvailableSitesResponse,
 			error: [
+				IntegrationsForbiddenError,
 				IntegrationsNotConnectedError,
 				IntegrationsRevokedError,
 				IntegrationsValidationError,
@@ -2115,6 +2132,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.put("githubSetCiTraces", "/github/ci-traces", {
 			payload: GithubSetCiTracesRequest,
 			success: GithubSetCiTracesResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Org-wide opt-out of GitHub events in the Security audit log. Admin only.
+		HttpApiEndpoint.put("githubSetAuditLog", "/github/audit-log", {
+			payload: GithubSetAuditLogRequest,
+			success: GithubSetAuditLogResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

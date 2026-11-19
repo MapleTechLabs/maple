@@ -6,14 +6,16 @@ import { format } from "oxfmt"
 import { emitJsonPathSpec } from "../packages/domain/src/clickhouse/ddl-emitter"
 import { clickHouseSchemaVersion } from "../packages/domain/src/clickhouse/migrations"
 import { projectRevision as clickHouseProjectRevision } from "../packages/domain/src/generated/clickhouse-schema"
+import {
+	INGEST_INSERT_DATASOURCES,
+	INGEST_WRITTEN_DATASOURCES,
+} from "../packages/domain/src/tinybird/ingest-token"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
 
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
-// Datasources the local OTLP ingest path actually writes. session_* (replay
-// ingest) and alert_checks (alerting engine) are written by subsystems the
-// lightweight local binary does not run, so they are out of scope here.
+// Datasources the local OTLP ingest path writes.
 const OTLP_DATASOURCES = [
 	"traces",
 	"logs",
@@ -21,15 +23,17 @@ const OTLP_DATASOURCES = [
 	"metrics_gauge",
 	"metrics_histogram",
 	"metrics_exponential_histogram",
+	"profiles",
 ] as const
 
-const INGEST_DATASOURCES = [
-	...OTLP_DATASOURCES,
-	"session_replays",
-	"session_replay_events",
-	"session_events",
-	"product_events",
-] as const
+// Browser session ingest, written by local mode too. product_events stays
+// hosted-only: locally its browser rows come from product_events_mv.
+const SESSION_DATASOURCES = ["session_replays", "session_replay_events", "session_events"] as const
+
+const LOCAL_DATASOURCES = [...OTLP_DATASOURCES, ...SESSION_DATASOURCES] as const
+
+// The hosted gateway's list lives beside its warehouse token (`@maple/domain/tinybird/ingest-token`).
+const INGEST_DATASOURCES = INGEST_INSERT_DATASOURCES
 
 // Replaced by the Rust binary with the pinned, escaped org-id string literal.
 const ORG_PLACEHOLDER = "__ORG__"
@@ -53,10 +57,10 @@ const manifest = Effect.runSync(buildTinybirdProjectManifest)
 const byName = new Map(Arr.map(manifest.datasources, (ds) => [ds.name, ds]))
 
 const localDatasources: Record<string, DatasourceMapping> = {}
-for (const name of OTLP_DATASOURCES) {
+for (const name of LOCAL_DATASOURCES) {
 	const ds = byName.get(name)
 	if (!ds) {
-		throw new Error(`OTLP datasource "${name}" not found in Tinybird manifest`)
+		throw new Error(`local datasource "${name}" not found in Tinybird manifest`)
 	}
 	localDatasources[name] = buildMapping(name, emitJsonPathSpec(ds))
 }
@@ -117,7 +121,7 @@ if (checkMode) {
 		process.exit(1)
 	}
 	console.log(
-		`ClickHouse insert mappings are up to date (${clickHouseProjectRevision}, ${OTLP_DATASOURCES.length} local datasources, ${INGEST_DATASOURCES.length} ingest datasources).`,
+		`ClickHouse insert mappings are up to date (${clickHouseProjectRevision}, ${LOCAL_DATASOURCES.length} local datasources, ${INGEST_DATASOURCES.length} ingest datasources).`,
 	)
 } else {
 	mkdirSync(dirname(localOutputPath), { recursive: true })
@@ -125,7 +129,7 @@ if (checkMode) {
 	mkdirSync(dirname(rustOutputPath), { recursive: true })
 	writeFileSync(rustOutputPath, renderedRust)
 	console.log(
-		`Wrote ClickHouse insert mappings (${clickHouseProjectRevision}, ${OTLP_DATASOURCES.length} local datasources, ${INGEST_DATASOURCES.length} ingest datasources).`,
+		`Wrote ClickHouse insert mappings (${clickHouseProjectRevision}, ${LOCAL_DATASOURCES.length} local datasources, ${INGEST_DATASOURCES.length} ingest datasources).`,
 	)
 }
 
@@ -222,6 +226,11 @@ function renderRustMappings(revision: string, datasources: Record<string, Dataso
 		lines.push("    },")
 	}
 	lines.push("];")
+	lines.push("")
+	lines.push("// Datasources the gateway's append-only warehouse token covers.")
+	lines.push(
+		`pub const APPEND_TOKEN_DATASOURCES: &[&str] = ${rustStringArray([...INGEST_WRITTEN_DATASOURCES])};`,
+	)
 	lines.push("")
 	lines.push("pub fn mapping_for(datasource: &str) -> Option<&'static InsertMapping> {")
 	lines.push("    match datasource {")

@@ -26,24 +26,27 @@ const privateKey = generateKeyPairSync("rsa", {
 	privateKeyEncoding: { type: "pkcs8", format: "pem" },
 }).privateKey
 
-const env = EnvTestLive.pipe(
-	Layer.provide(
-		ConfigProvider.layer(
-			ConfigProvider.fromUnknown({
-				PORT: "3482",
-				TINYBIRD_HOST: "https://api.tinybird.co",
-				TINYBIRD_TOKEN: "test-token",
-				MAPLE_AUTH_MODE: "self_hosted",
-				MAPLE_ROOT_PASSWORD: "test-root-password",
-				MAPLE_DEFAULT_ORG_ID: "default",
-				MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
-				MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-				GITHUB_APP_ID: "123456",
-				GITHUB_APP_PRIVATE_KEY: privateKey,
-			}),
+const envWith = (extra: Record<string, string> = {}) =>
+	EnvTestLive.pipe(
+		Layer.provide(
+			ConfigProvider.layer(
+				ConfigProvider.fromUnknown({
+					...extra,
+					PORT: "3482",
+					TINYBIRD_HOST: "https://api.tinybird.co",
+					TINYBIRD_TOKEN: "test-token",
+					MAPLE_AUTH_MODE: "self_hosted",
+					MAPLE_ROOT_PASSWORD: "test-root-password",
+					MAPLE_DEFAULT_ORG_ID: "default",
+					MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+					MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+					GITHUB_APP_ID: "123456",
+					GITHUB_APP_PRIVATE_KEY: privateKey,
+				}),
+			),
 		),
-	),
-)
+	)
+const env = envWith()
 
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -63,6 +66,7 @@ const INSTALLATION = Schema.decodeSync(VcsInstallation)({
 	status: "active",
 	suspendedAt: null,
 	ciTracesEnabled: true,
+	auditLogEnabled: true,
 	repositoryDiscovery: null,
 	installedByUserId: "user_1",
 	createdAt: 0,
@@ -90,6 +94,7 @@ const providerLayer = (
 	requests: Array<string> = [],
 	bodies: Array<string> = [],
 	authorizations: Array<string | undefined> = [],
+	appEnv = env,
 ) => {
 	let next = 0
 	const http = fakeGithubHttp(({ url, body, headers }) => {
@@ -100,9 +105,12 @@ const providerLayer = (
 	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
-			Layer.effect(GithubAppClient, GithubAppClient.make).pipe(Layer.provide(http), Layer.provide(env)),
+			Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+				Layer.provide(http),
+				Layer.provide(appEnv),
+			),
 		),
-		Layer.provide(env),
+		Layer.provide(appEnv),
 	)
 }
 
@@ -525,6 +533,385 @@ describe("GithubProvider publishing a review", () => {
 			assert.lengthOf(review.comments, 1)
 			assert.include(review.body, "2 findings sit outside this diff")
 		}).pipe(Effect.provide(layer))
+	})
+
+	describe("with an approval", () => {
+		const appEnv = envWith({ GITHUB_APP_SLUG: "maple-review" })
+		const posted = () => [tokenResponse(), noRunningCheck(), checkRun(), jsonResponse([]), written(5)]
+		const pull = (overrides: Record<string, unknown> = {}) =>
+			jsonResponse({
+				number: 612,
+				title: "Rename a label",
+				html_url: "https://github.com/octo/shop/pull/612",
+				user: { login: "octocat" },
+				state: "open",
+				draft: false,
+				head: { sha: HEAD, ref: "chore/label", repo: { full_name: "octo/shop" } },
+				base: { sha: Str.repeat(40)("b"), ref: "main", repo: { default_branch: "main" } },
+				...overrides,
+			})
+		// The base the fixture pull request reports, which is the one the review read.
+		const BASE = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("b"))
+		const approve = (baseSha: GitCommitSha | undefined = BASE): PullRequestReviewPublication => ({
+			...publication(),
+			approval: {
+				action: "approve",
+				body: "Approved by Maple's review.",
+				...(baseSha === undefined ? undefined : { baseSha }),
+			},
+		})
+
+		it.effect(
+			"does not approve once the base is another commit than the review read, or was never recorded",
+			() =>
+				Effect.forEach(
+					[Schema.decodeSync(GitCommitSha)(Str.repeat(40)("d")), null],
+					(readBase) => {
+						const requests: Array<string> = []
+						const bodies: Array<string> = []
+						return Effect.gen(function* () {
+							const provider = yield* GithubProvider
+							const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, {
+								...publication(),
+								approval: {
+									action: "approve",
+									body: "Approved by Maple's review.",
+									...(readBase === null ? undefined : { baseSha: readBase }),
+								},
+							})
+							assert.equal(published.approval, "base_moved")
+							assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+						}).pipe(
+							Effect.provide(
+								providerLayer([...posted(), pull()], requests, bodies, [], appEnv),
+							),
+						)
+					},
+					{ discard: true },
+				),
+		)
+
+		it.effect("approves the reviewed head for an author who can push", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const layer = providerLayer(
+				[
+					...posted(),
+					pull(),
+					jsonResponse({ permission: "write" }),
+					jsonResponse([]),
+					jsonResponse({
+						id: 9,
+						html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-9",
+					}),
+				],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "approved")
+				assert.isTrue(
+					Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/pulls/612/reviews")),
+				)
+				const review = JSON.parse(Arr.lastNonEmpty(bodies as [string, ...Array<string>]))
+				assert.equal(review.event, "APPROVE")
+				assert.equal(review.commit_id, HEAD)
+				assert.deepEqual(review.comments, [])
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("does not approve an author without push access", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[...posted(), pull(), jsonResponse({ permission: "read" })],
+				requests,
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "untrusted_author")
+				assert.isFalse(Arr.some(requests, Str.endsWith("/reviews")))
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect(
+			"does not approve a head pushed past the one reviewed, a draft or a closed pull request",
+			() =>
+				Effect.forEach(
+					[
+						[{ head: { sha: Str.repeat(40)("d"), ref: "x", repo: null } }, "head_moved"],
+						[{ draft: true }, "draft"],
+						[{ state: "closed" }, "not_open"],
+					] as const,
+					([overrides, outcome]) => {
+						const requests: Array<string> = []
+						return Effect.gen(function* () {
+							const provider = yield* GithubProvider
+							const published = yield* provider.publishPullRequestReview(
+								INSTALLATION,
+								REPO,
+								approve(),
+							)
+							assert.equal(published.approval, outcome)
+							assert.isFalse(Arr.some(requests, Str.includes("/permission")))
+							assert.isFalse(Arr.some(requests, Str.endsWith("/reviews")))
+						}).pipe(
+							Effect.provide(
+								providerLayer([...posted(), pull(overrides)], requests, [], [], appEnv),
+							),
+						)
+					},
+					{ discard: true },
+				),
+		)
+
+		it.effect(
+			"does not approve a pull request into another branch, or one whose default branch is unknown",
+			() =>
+				Effect.forEach(
+					[
+						{
+							base: {
+								sha: Str.repeat(40)("b"),
+								ref: "release",
+								repo: { default_branch: "main" },
+							},
+						},
+						{ base: { sha: Str.repeat(40)("b"), ref: "main" } },
+					],
+					(overrides) => {
+						const requests: Array<string> = []
+						return Effect.gen(function* () {
+							const provider = yield* GithubProvider
+							const published = yield* provider.publishPullRequestReview(
+								INSTALLATION,
+								REPO,
+								approve(),
+							)
+							assert.equal(published.approval, "base_not_default")
+							assert.isFalse(Arr.some(requests, Str.includes("/permission")))
+							assert.isFalse(Arr.some(requests, Str.endsWith("/reviews")))
+						}).pipe(
+							Effect.provide(
+								providerLayer([...posted(), pull(overrides)], requests, [], [], appEnv),
+							),
+						)
+					},
+					{ discard: true },
+				),
+		)
+
+		it.effect("does not approve where it could not list every review to withdraw later", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const fullPage = () =>
+				jsonResponse(
+					Arr.makeBy(100, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			const layer = providerLayer(
+				[...posted(), pull(), jsonResponse({ permission: "write" }), ...Arr.makeBy(10, fullPage)],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "too_many_reviews")
+				assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("does not approve close to the most reviews it can list, so its own stays findable", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const reviews = (count: number) =>
+				jsonResponse(
+					Arr.makeBy(count, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			// 999 reviews: every one is listed, and an approval would be the one that fills the list.
+			const layer = providerLayer(
+				[
+					...posted(),
+					pull(),
+					jsonResponse({ permission: "write" }),
+					...Arr.makeBy(9, () => reviews(100)),
+					reviews(99),
+				],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "too_many_reviews")
+				assert.isFalse(Arr.some(bodies, Str.includes("APPROVE")))
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("keeps the published review when GitHub refuses the approval", () => {
+			const layer = providerLayer(
+				[
+					...posted(),
+					pull(),
+					jsonResponse({ permission: "admin" }),
+					jsonResponse([]),
+					jsonResponse({ message: "Resource not accessible by integration" }, 403),
+				],
+				[],
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
+				assert.isUndefined(published.approval)
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("withdraws only its own standing approvals", () => {
+			const requests: Array<string> = []
+			const bodies: Array<string> = []
+			const layer = providerLayer(
+				[
+					...posted(),
+					jsonResponse([
+						{ id: 1, state: "APPROVED", user: { login: "maple-review[bot]" } },
+						{ id: 2, state: "APPROVED", user: { login: "octocat" } },
+						{ id: 3, state: "DISMISSED", user: { login: "maple-review[bot]" } },
+						{ id: 4, state: "COMMENTED", user: { login: "maple-review[bot]" } },
+					]),
+					jsonResponse({ id: 1, state: "DISMISSED" }),
+				],
+				requests,
+				bodies,
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, {
+					...publication(),
+					approval: { action: "withdraw", reason: "the risk is medium" },
+				})
+				assert.equal(published.approval, "withdrawn")
+				assert.deepEqual(Arr.filter(requests, Str.includes("/dismissals")), [
+					"https://api.github.com/repos/octo/shop/pulls/612/reviews/1/dismissals",
+				])
+				assert.include(Arr.lastNonEmpty(bodies as [string, ...Array<string>]), "the risk is medium")
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("spares its approval of the head a repeated push event names", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[
+					tokenResponse(),
+					pull(),
+					jsonResponse([
+						{ id: 1, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: "a" },
+						{ id: 5, state: "APPROVED", user: { login: "maple-review[bot]" }, commit_id: HEAD },
+					]),
+					jsonResponse({ id: 1, state: "DISMISSED" }),
+				],
+				requests,
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const outcome = yield* provider.withdrawPullRequestApprovals(INSTALLATION, REPO, {
+					number: 612,
+					reason: "new commits were pushed since it approved",
+					keepHead: HEAD,
+				})
+				assert.equal(outcome, "withdrawn")
+				assert.deepEqual(Arr.filter(requests, Str.includes("/dismissals")), [
+					"https://api.github.com/repos/octo/shop/pulls/612/reviews/1/dismissals",
+				])
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("leaves approvals alone for an event about a head the pull request moved past", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(
+				[
+					tokenResponse(),
+					pull({
+						head: {
+							sha: Str.repeat(40)("d"),
+							ref: "chore/label",
+							repo: { full_name: "octo/shop" },
+						},
+					}),
+				],
+				requests,
+				[],
+				[],
+				appEnv,
+			)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const outcome = yield* provider.withdrawPullRequestApprovals(INSTALLATION, REPO, {
+					number: 612,
+					reason: "new commits were pushed since it approved",
+					keepHead: HEAD,
+				})
+				assert.equal(outcome, "stale")
+				assert.isFalse(Arr.some(requests, Str.includes("/reviews")))
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("fails rather than claim a withdrawal when the review list is cut short", () => {
+			const fullPage = () =>
+				jsonResponse(
+					Arr.makeBy(100, (i) => ({ id: i, state: "COMMENTED", user: { login: "octocat" } })),
+				)
+			const layer = providerLayer([tokenResponse(), ...Arr.makeBy(10, fullPage)], [], [], [], appEnv)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const result = yield* provider
+					.withdrawPullRequestApprovals(INSTALLATION, REPO, { number: 612, reason: "r" })
+					.pipe(Effect.exit)
+				assert.isTrue(Exit.isFailure(result))
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("never approves when it could not find its own approval again to withdraw it", () => {
+			const requests: Array<string> = []
+			// No GITHUB_APP_SLUG: the App's reviews cannot be told from anyone else's.
+			const layer = providerLayer(posted(), requests)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, approve())
+				assert.equal(published.approval, "unsupported")
+				assert.equal(requests.length, 5)
+			}).pipe(Effect.provide(layer))
+		})
+
+		it.effect("asks nothing of GitHub when the repository did not turn approvals on", () => {
+			const requests: Array<string> = []
+			const layer = providerLayer(posted(), requests)
+			return Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+				assert.isUndefined(published.approval)
+				assert.equal(requests.length, 5)
+			}).pipe(Effect.provide(layer))
+		})
 	})
 })
 

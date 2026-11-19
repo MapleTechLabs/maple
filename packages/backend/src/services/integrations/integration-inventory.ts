@@ -15,6 +15,8 @@ import {
 	AWS_NO_DELIVERY,
 	AWS_TEMPLATE_VERSION,
 	type AwsMetricStream,
+	awsGrantsMatch,
+	awsModuleGranted,
 	awsStreamState,
 } from "@maple/domain/aws"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
@@ -72,6 +74,7 @@ export interface IntegrationInventoryInputs {
 		readonly accountLogin: string
 		readonly status: string
 		readonly ciTracesEnabled: boolean
+		readonly auditLogEnabled: boolean
 		readonly createdAt: number
 	}>
 	readonly vcsRepositories: ReadonlyArray<{
@@ -207,6 +210,12 @@ export interface IntegrationInventoryInputs {
 		readonly streamLastError: string | null
 		readonly createdAt: number
 	}>
+	/** CloudTrail regions the security poller could not read, by account. Absent: none known. */
+	readonly awsCloudTrailProblems?: ReadonlyArray<{
+		readonly accountId: string
+		readonly state: string
+		readonly lastError: string | null
+	}>
 	/** Its grant is the `oauthConnections` row with provider "supabase". */
 	readonly supabaseConnection: {
 		readonly organizationName: string
@@ -245,6 +254,7 @@ export const INTEGRATION_FEEDS = {
 		"source code for Maple's investigations and pull request review",
 		"commit metadata for deploys (service_deployments)",
 		"GitHub Actions runs as traces under service.name=github-actions, with job logs as logs on their step spans",
+		"organization, member, team, repository and branch protection changes in the Security audit log",
 	],
 	cloudflare: [
 		"zone HTTP traffic and Worker invocations as metrics",
@@ -388,6 +398,19 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 			}
 		},
 	)
+	// An active installation feeds the audit log unless the org turned it off: its own lifecycle
+	// needs no permission, and the organization events ride the permissions the app already holds.
+	const auditLogs = Arr.map(
+		Arr.filter(active, (i) => i.auditLogEnabled),
+		(i): IntegrationResource => ({
+			kind: "audit log",
+			name: i.accountLogin,
+			status: "healthy",
+			lastSuccessAt: null,
+			lastError: null,
+			note: null,
+		}),
+	)
 	const ciTraces = Arr.some(active, (i) => i.ciTracesEnabled)
 	return entry("github", now, {
 		account: Arr.join(
@@ -405,10 +428,12 @@ const github = (inputs: IntegrationInventoryInputs, now: number): IntegrationEnt
 						)}; reinstall it in Sources.`,
 					}
 				: undefined,
-		resources,
+		resources: [...resources, ...auditLogs],
 		feeds: Arr.filter(
 			INTEGRATION_FEEDS.github,
-			(feed) => ciTraces || !Str.startsWith("GitHub Actions")(feed),
+			(feed) =>
+				(ciTraces || !Str.startsWith("GitHub Actions")(feed)) &&
+				(auditLogs.length > 0 || !Str.includes("Security audit log")(feed)),
 		),
 	})
 }
@@ -786,16 +811,13 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 	})
 }
 
-const sameModules = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && Arr.every(a, (module) => b.includes(module))
-
 const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const connections = inputs.awsConnections
 	if (connections.length === 0) return null
 	const resources = Arr.flatMap(connections, (c): ReadonlyArray<IntegrationResource> => {
 		const outdated =
 			c.grantedModules !== null &&
-			(c.templateVersion !== AWS_TEMPLATE_VERSION || !sameModules(c.modules, c.grantedModules))
+			(c.templateVersion !== AWS_TEMPLATE_VERSION || !awsGrantsMatch(c.modules, c.grantedModules))
 		// Before the first check that assumed the role, the setup is still being done.
 		const role: IntegrationResource =
 			c.verifiedAt === null
@@ -853,7 +875,32 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
 			}
 		})()
-		return [role, ...streams]
+		// CloudTrail feeds the audit log once the role grants the audit module. Before that there is
+		// no feed: the Sources panel reads off and points at the AWS source.
+		const granted = Arr.contains(c.modules, "audit") && awsModuleGranted(c.grantedModules, "audit")
+		const trailProblem = Arr.findFirst(
+			inputs.awsCloudTrailProblems ?? [],
+			(problem) => problem.accountId === c.accountId,
+		)
+		// A role that cannot be assumed reads nothing, whatever the last CloudTrail read said.
+		const trailError = Option.isSome(trailProblem)
+			? (trailProblem.value.lastError ?? `CloudTrail could not be read (${trailProblem.value.state})`)
+			: role.status === "failing"
+				? role.lastError
+				: null
+		const auditLog: ReadonlyArray<IntegrationResource> = !granted
+			? []
+			: [
+					{
+						kind: "audit log",
+						name: c.accountId,
+						status: trailError === null ? "healthy" : "failing",
+						lastSuccessAt: null,
+						lastError: trailError,
+						note: null,
+					},
+				]
+		return [role, ...streams, ...auditLog]
 	})
 	return entry("aws", now, {
 		account: Arr.join(

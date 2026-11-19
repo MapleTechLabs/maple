@@ -57,7 +57,7 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it once, after you have " +
 		"read every hunk you review, with your verdict, tests and risk signals, confidence reason, summary, key changes, what you checked, before-merge steps, coverage, line-anchored findings and the " +
-		"handles of earlier findings this head fixes. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
+		"handles of earlier findings this head fixes. An earlier finding that does not hold (a person's reply showed why) goes in dismissed with its handle and reason. When the kickoff lists removed telemetry names and the head still emits one elsewhere, " +
 		"pass that location in telemetryDismissals. A warning or critical a review_files child reported is either " +
 		"filed or listed in childDismissals with the reason it does not hold. It " +
 		"persists the review and posts it to the pull request. A refusal says what to do before calling " +
@@ -203,7 +203,7 @@ export const reviewCompletion = (
 }
 
 const buildReviewCompletion = (
-	{ usage, modelName, partial, sessionAttributes }: CompletionRun,
+	{ usage, modelName, partial, sessionAttributes, content }: CompletionRun,
 	review: ReviewTurnState,
 	submitReview: SubmitReview,
 ) => {
@@ -226,7 +226,7 @@ const buildReviewCompletion = (
 	const record = (submission: PrReviewSubmission) =>
 		Effect.suspend(() => {
 			const normalized = normalizePrReviewSubmission(submission)
-			const { filled, droppedFindings, resolved, telemetryDismissals } = normalized
+			const { filled, droppedFindings, resolved, telemetryDismissals, dismissed } = normalized
 			const unread = unreadToRefuse(normalized.report.verdict)
 			if (unread.length > 0) {
 				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
@@ -294,7 +294,14 @@ const buildReviewCompletion = (
 					inputTokens: usage.input,
 					outputTokens: usage.output,
 					...(partial ? { partial: true } : undefined),
+					submitted: {
+						...(normalized.submittedVerdict === undefined
+							? undefined
+							: { verdict: normalized.submittedVerdict }),
+						droppedFindings,
+					},
 					...(resolved.length > 0 ? { resolved } : undefined),
+					...(dismissed.length > 0 ? { dismissed } : undefined),
 					...(telemetryDismissals.length > 0 ? { telemetryDismissals } : undefined),
 				}),
 			).pipe(
@@ -308,12 +315,14 @@ const buildReviewCompletion = (
 						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
+						"maple.pr_review.dismissed_by_reviewer": dismissed.length,
 						"maple.pr_review.child_findings": childFindings.all().length,
 						"maple.pr_review.child_findings_filed_unaccounted": childPosted,
 						// Unpostable, or cut by the report's finding cap.
 						"maple.pr_review.child_findings_dropped": unaccounted.length - childPosted,
 						"maple.pr_review.child_dismissals": normalized.childDismissals.length,
-						...(normalized.childDismissals.length > 0
+						// The reasons quote the customer's code: only Maple's own org records them.
+						...(normalized.childDismissals.length > 0 && content === "record"
 							? {
 									"maple.pr_review.child_dismissal_reasons": Arr.join(
 										Arr.map(
@@ -369,6 +378,7 @@ const buildReviewCompletion = (
 		...toolHandlersWithContent(
 			toolkit,
 			{ [SUBMIT_REVIEW]: record, [RECORD_FINDING]: save },
+			content,
 			sessionAttributes,
 		),
 		submitted: () => submitted,

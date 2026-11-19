@@ -41,15 +41,17 @@
         addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(onFrame); }, { passive: true });
         onFrame();
 
-        /* Copy-link with inline confirmation. */
-        const copy = document.querySelector("[data-copy-link]");
-        const label = document.querySelector("[data-copy-label]");
-        copy?.addEventListener("click", () => {
-            navigator.clipboard.writeText(location.origin + location.pathname).then(() => {
-                if (!label) return;
-                label.textContent = "copied";
-                setTimeout(() => { label.textContent = "copy link"; }, 1600);
+        /* Copy-link with inline confirmation. A page can carry more than one. */
+        for (const copy of document.querySelectorAll("[data-copy-link]")) {
+            const label = copy.querySelector("[data-copy-label]");
+            const idle = label?.textContent ?? "";
+            copy.addEventListener("click", () => {
+                navigator.clipboard.writeText(location.origin + location.pathname).then(() => {
+                    if (!label) return;
+                    label.textContent = /^[A-Z]/.test(idle) ? "Copied" : "copied";
+                    setTimeout(() => { label.textContent = idle; }, 1600);
+                });
             });
-        });
+        }
     })();
 </script>

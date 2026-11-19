@@ -10,6 +10,7 @@ import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-r
 import { type SecretKeyring, secretKeyringFrom } from "./SecretBox"
 import { DEFAULT_AUTUMN_API_URL } from "@maple/backend/services/billing/autumn-api"
 import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
+import { rootPasswordProblem } from "@maple/auth"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
@@ -25,11 +26,6 @@ export interface EnvConfig {
 	readonly TINYBIRD_WORKSPACE_ID: Option.Option<string>
 	/** Optional Tinybird-enforced RPS ceiling, bucketed independently per org. */
 	readonly TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Option.Option<number>
-	/**
-	 * Read the managed Tinybird warehouse with an org-scoped JWT instead of the shared token, so
-	 * Tinybird itself keeps a query to its tenant's rows. Set per Worker; needs the signing key.
-	 */
-	readonly MAPLE_WAREHOUSE_ORG_SCOPED_READS: boolean
 	readonly CLICKHOUSE_URL: Option.Option<string>
 	readonly CLICKHOUSE_PROVIDER: string
 	readonly CLICKHOUSE_USER: string
@@ -37,6 +33,7 @@ export interface EnvConfig {
 	readonly CLICKHOUSE_DATABASE: string
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	readonly MAPLE_SESSION_SIGNING_SECRET: Option.Option<Redacted.Redacted>
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_INGEST_KEY_ENCRYPTION_KEY: Redacted.Redacted
 	/** Comma-separated keys accepted for opening stored secrets only (docs/secret-encryption.md). */
@@ -206,9 +203,6 @@ const envConfig = Config.all({
 	TINYBIRD_SIGNING_KEY: optionalRedacted("TINYBIRD_SIGNING_KEY"),
 	TINYBIRD_WORKSPACE_ID: optionalString("TINYBIRD_WORKSPACE_ID"),
 	TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Config.option(Config.Number("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT")),
-	MAPLE_WAREHOUSE_ORG_SCOPED_READS: stringWithDefault("MAPLE_WAREHOUSE_ORG_SCOPED_READS", "false").pipe(
-		Config.map((value) => value === "1" || value === "true"),
-	),
 	CLICKHOUSE_URL: optionalString("CLICKHOUSE_URL"),
 	CLICKHOUSE_PROVIDER: stringWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
@@ -216,6 +210,7 @@ const envConfig = Config.all({
 	CLICKHOUSE_DATABASE: stringWithDefault("CLICKHOUSE_DATABASE", "default"),
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
+	MAPLE_SESSION_SIGNING_SECRET: optionalRedacted("MAPLE_SESSION_SIGNING_SECRET"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Config.Redacted("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
 	MAPLE_INGEST_KEY_DECRYPTION_KEYS: optionalRedacted("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
@@ -378,11 +373,17 @@ const makeEnv = Effect.gen(function* () {
 		})
 	}
 
-	// At boot, not at the first query: with the flag on, every read of this Worker needs the token.
-	if (env.MAPLE_WAREHOUSE_ORG_SCOPED_READS && managedReadsAreTinybird(env) && !hasTinybirdSigningKey) {
+	// At boot, not at the first query: with several orgs on one Tinybird workspace, every tenant read
+	// runs on an org-scoped token so Tinybird itself keeps it to its org. Single-org self-hosted has
+	// nothing to isolate and may leave the key unset.
+	if (
+		Str.toLowerCase(env.MAPLE_AUTH_MODE) !== "self_hosted" &&
+		managedReadsAreTinybird(env) &&
+		!hasTinybirdSigningKey
+	) {
 		return yield* new EnvValidationError({
 			message:
-				"MAPLE_WAREHOUSE_ORG_SCOPED_READS needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID to mint the org-scoped read token",
+				"A multi-org deployment reading Tinybird needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID: every tenant read runs on an org-scoped token",
 		})
 	}
 
@@ -419,11 +420,14 @@ const makeEnv = Effect.gen(function* () {
 		})
 	}
 
-	if (
-		Option.isSome(env.MAPLE_ROOT_PASSWORD) &&
-		Str.trim(Redacted.value(env.MAPLE_ROOT_PASSWORD.value)).length === 0
-	) {
-		return yield* new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" })
+	if (authMode !== "clerk" && Option.isSome(env.MAPLE_ROOT_PASSWORD)) {
+		const problem = rootPasswordProblem(Redacted.value(env.MAPLE_ROOT_PASSWORD.value))
+		if (problem !== undefined) return yield* new EnvValidationError({ message: problem })
+		if (Option.isNone(env.MAPLE_SESSION_SIGNING_SECRET)) {
+			yield* Effect.logWarning(
+				"MAPLE_SESSION_SIGNING_SECRET is not set; session tokens are signed from the root password. Set it to `openssl rand -base64 32`.",
+			)
+		}
 	}
 
 	return Env.of({
@@ -445,6 +449,14 @@ const makeEnv = Effect.gen(function* () {
 export const managedReadsAreTinybird = (
 	env: Pick<EnvConfig, "CLICKHOUSE_URL" | "CLICKHOUSE_PROVIDER">,
 ): boolean => Option.isNone(env.CLICKHOUSE_URL) || env.CLICKHOUSE_PROVIDER === "tinybird"
+
+/**
+ * Whether a tenant read runs on an org-scoped token: managed reads are Tinybird and the signing key
+ * is set. Multi-org deployments must set it (checked at boot); single-org self-hosted may not.
+ */
+export const orgScopedReadsApply = (
+	env: Pick<EnvConfig, "CLICKHOUSE_URL" | "CLICKHOUSE_PROVIDER" | "TINYBIRD_SIGNING_KEY">,
+): boolean => managedReadsAreTinybird(env) && Option.isSome(env.TINYBIRD_SIGNING_KEY)
 
 /** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
 export interface EnvApi extends EnvConfig {

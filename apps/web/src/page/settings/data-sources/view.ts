@@ -51,9 +51,7 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 /** The list's primary action, drawn in the settings page header beside the `<h1>`. */
 export const headerActions = Submodel.defineView<Model, Message, Readonly<{ canManage: boolean }>>(
 	(model, inputs, h) =>
-		inputs.canManage &&
-		model.screen._tag === "List" &&
-		AsyncData.getOrElse(model.sources, () => []).length > 0
-			? connectButton(h)
+		model.screen._tag === "List" && AsyncData.getOrElse(model.sources, () => []).length > 0
+			? connectButton(h, inputs.canManage)
 			: h.empty,
 )

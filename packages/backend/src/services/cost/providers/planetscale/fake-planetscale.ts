@@ -1,12 +1,10 @@
 // A fake PlanetScale for tests: the OAuth token endpoint, and the invoice API answered in pages
 // from a mutable world, with every call recorded.
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { type OrgId, UserId } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr, Option, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { executeSql, insertTestSource, type TestDb } from "@maple/backend/testing/test-pglite"
 import { fakeCostEnvConfig } from "../fake-cost-env"
 
@@ -54,8 +52,6 @@ export interface FakePlanetScale {
 	lineItems: Readonly<Record<string, ReadonlyArray<FakeLineItem>>> | string
 	/** The most items a page holds, whatever `per_page` asks for. */
 	maxPerPage: number
-	/** Whether the org is in the `cloudCost` rollout. */
-	cloudCost: boolean
 	/** The fetch itself fails with this, as when the network does. */
 	networkError: string | null
 	/** Runs before an invoice request is answered: what another writer does while a read is in flight. */
@@ -83,7 +79,6 @@ export const makeFakePlanetScale = (overrides: Partial<FakePlanetScale> = {}): F
 	invoices: [],
 	lineItems: {},
 	maxPerPage: 100,
-	cloudCost: true,
 	networkError: null,
 	beforeAnswer: null,
 	urls: [],
@@ -189,20 +184,7 @@ export const fakePlanetScaleFetch =
 /** Everything the PlanetScale cost services need, over the fake and a test database. */
 export const fakePlanetScaleDeps = (testDb: TestDb, world: FakePlanetScale) =>
 	Layer.effect(PlanetScaleOAuthService, PlanetScaleOAuthService.make).pipe(
-		Layer.provideMerge(
-			Layer.mergeAll(
-				FetchHttpClient.layer,
-				Layer.succeed(OrganizationFeatureFlagsService, {
-					flags: () =>
-						Effect.sync(() => ({
-							...DISABLED_ORGANIZATION_FEATURE_FLAGS,
-							cloudCost: world.cloudCost,
-						})),
-				}),
-				testDb.layer,
-				EnvTestLive,
-			),
-		),
+		Layer.provideMerge(Layer.mergeAll(FetchHttpClient.layer, testDb.layer, EnvTestLive)),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fakePlanetScaleFetch(world))),
 		Layer.provide(
 			fakeCostEnvConfig(undefined, {

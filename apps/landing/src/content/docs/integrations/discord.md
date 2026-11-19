@@ -59,7 +59,7 @@ When a request would change something, such as creating a dashboard or editing a
 
 Answers are posted in the channel, so everyone who can read the channel sees them. Add the bot only where the members should see your data.
 
-This differs from [Slack](/docs/integrations/slack), which has no account linking: anyone in a Slack channel with the bot can ask, and anyone who can see a card can approve it.
+This differs from [Slack](/docs/integrations/slack), which has no account linking: anyone in a Slack channel with the bot can ask about telemetry and alerts, and the only action there is acknowledging an alert.
 
 ## Discord as an alert destination
 

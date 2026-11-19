@@ -45,6 +45,9 @@ export const AwsConnections = PG.table("aws_connections", {
 			name: "stream_last_received_at",
 		}),
 		streamLastError: PG.column(PG.nullable(PG.text), { name: "stream_last_error" }),
+		// Mixed into the events key, so a new salt is a new key. Null: a connection made before
+		// salts, whose key comes from its id alone.
+		eventsKeySalt: PG.column(PG.nullable(PG.text), { name: "events_key_salt" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
@@ -53,6 +56,8 @@ export const AwsConnections = PG.table("aws_connections", {
 	indexes: [
 		PG.index("aws_connections_source_idx", ["sourceId"]),
 		PG.uniqueIndex("aws_connections_org_account_idx", ["orgId", "accountId"]),
+		// What the cloud security tables reference, so their rows always name a connection of their own org.
+		PG.uniqueIndex("aws_connections_org_id_idx", ["orgId", "id"]),
 		PG.uniqueIndex("aws_connections_stream_secret_hash_idx", ["streamSecretHash"]),
 	],
 	foreignKeys: [

@@ -1,6 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
+import {
+	BillingAccountPersistenceError,
+	BillingCustomerId,
+	EnterpriseSsoUnavailableError,
+	OrgId,
+} from "@maple/domain/http"
 import { Clock, ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
@@ -15,6 +20,10 @@ import {
 } from "@maple/backend/services/product-events/ProductEventsService"
 import { signSvix } from "@maple/backend/services/product-events/svix"
 import { AuditLogService, type AuditLogRecordInput } from "@maple/backend/services/audit/AuditLogService"
+import {
+	EnterpriseSsoService,
+	type DirectoryGroupEvent,
+} from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import {
 	MembershipRevocationService,
 	MembershipRevocationError,
@@ -75,6 +84,8 @@ const EMPTY_SUMMARY: MembershipRevocationSummary = {
 	mobileDevicesDeleted: 0,
 	chatIdentitiesDeleted: 0,
 	digestSubscriptionsDisabled: 0,
+	dashboardSharesRevoked: 0,
+	alertDestinationsDisabled: 0,
 }
 
 /** Records the sweeps the route asks for, and can be made to fail on demand. */
@@ -133,6 +144,18 @@ const recordingCancellationQueue = (fail = false) => {
 	return { queued, layer }
 }
 
+/** Records directory-group webhooks; `owns` says whether this region holds the directory. */
+const recordingSso = (owns = true) => {
+	const applied: Array<DirectoryGroupEvent> = []
+	const layer = EnterpriseSsoService.webhookOnly((event) =>
+		Effect.sync(() => {
+			applied.push(event)
+			return owns ? ("applied" as const) : ("not_here" as const)
+		}),
+	)
+	return { applied, layer }
+}
+
 const makeRouterLayer = (
 	router: typeof ClerkWebhookRoute | typeof AutumnWebhookRouter,
 	config: Record<string, string>,
@@ -142,8 +165,10 @@ const makeRouterLayer = (
 	cancellationQueue: Layer.Layer<CancellationReviewQueue> = recordingCancellationQueue().layer,
 	billingCustomers: Layer.Layer<BillingCustomerResolver> = BillingCustomerResolver.standalone,
 	regions: Layer.Layer<OrganizationRegionService> = OrganizationRegionService.servesAll,
+	sso: Layer.Layer<EnterpriseSsoService> = recordingSso().layer,
 ) =>
 	router.pipe(
+		Layer.provide(sso),
 		Layer.provide(productEvents),
 		Layer.provide(regions),
 		Layer.provide(billingCustomers),
@@ -658,6 +683,215 @@ describe("ClerkWebhookRouter", () => {
 				// Clerk retries a 500, so the failed delivery must not emit member_removed.
 				assert.strictEqual(events.tracked.length, before)
 			}).pipe(Effect.ensuring(Effect.promise(broken.dispose)))
+		}),
+	)
+
+	// SCIM: groups feed the role mapping picker; a deprovisioned user loses every credential.
+	it.live("stores directory groups and sweeps a deprovisioned user in every region", () =>
+		Effect.gen(function* () {
+			const events = recordingProductEvents()
+			const revocation = recordingRevocation()
+			const sso = recordingSso()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					events.layer,
+					revocation.layer,
+					undefined,
+					undefined,
+					undefined,
+					// The org lives elsewhere: the sweep still runs here.
+					regionsAnswering("elsewhere", "eu"),
+					sso.layer,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const send = (id: string, payload: unknown) =>
+					Effect.gen(function* () {
+						const body = JSON.stringify(payload)
+						const headers = yield* signedHeaders(CLERK_SECRET, body, now, id)
+						return yield* post(handler, "/webhooks/clerk", body, headers)
+					})
+				const group = {
+					id: "grp_1",
+					directory_id: "dir_1",
+					display_name: "Maple Admins",
+					updated_at: now,
+				}
+
+				const created = yield* send("msg_g1", { type: "directoryGroup.created", data: group })
+				assert.strictEqual(created.status, 200)
+				const removed = yield* send("msg_g2", { type: "directoryGroup.deleted", data: group })
+				assert.strictEqual(removed.status, 200)
+				assert.deepStrictEqual(
+					Arr.map(sso.applied, (e) => [e.directoryId, e.groupId, e.displayName, e.deleted]),
+					[
+						["dir_1", "grp_1", "Maple Admins", false],
+						["dir_1", "grp_1", "Maple Admins", true],
+					],
+				)
+
+				const malformed = yield* send("msg_g3", {
+					type: "directoryGroup.created",
+					data: { id: "grp_2" },
+				})
+				assert.strictEqual(malformed.status, 400)
+
+				// Reactivation and ordinary profile edits revoke nothing.
+				const active = yield* send("msg_u1", {
+					type: "user.updated",
+					data: { id: "user_5", deprovisioned: false },
+				})
+				const edited = yield* send("msg_u2", { type: "user.updated", data: { id: "user_5" } })
+				assert.strictEqual(active.status, 200)
+				assert.strictEqual(edited.status, 200)
+				assert.deepStrictEqual(revocation.calls, [])
+
+				const deprovisioned = yield* send("msg_u3", {
+					type: "user.updated",
+					data: { id: "user_5", deprovisioned: true },
+				})
+				assert.strictEqual(deprovisioned.status, 200)
+				assert.deepStrictEqual(revocation.calls, ["revokeUser:user_5"])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.live("ignores a deprovision delivery Clerk no longer stands behind (the user was reactivated)", () =>
+		Effect.gen(function* () {
+			const revocation = recordingRevocation()
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					recordingProductEvents().layer,
+					revocation.layer,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					EnterpriseSsoService.webhookOnly(
+						() => Effect.succeed("not_here" as const),
+						() => Effect.succeed(false),
+					),
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const body = JSON.stringify({
+					type: "user.updated",
+					data: { id: "user_7", deprovisioned: true },
+				})
+				const headers = yield* signedHeaders(CLERK_SECRET, body, now, "msg_stale")
+				const response = yield* post(handler, "/webhooks/clerk", body, headers)
+				assert.strictEqual(response.status, 200)
+				assert.deepStrictEqual(revocation.calls, [])
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}),
+	)
+
+	it.live(
+		"takes a removed member off the org's SSO bypass list after the sweep, and retries when that fails",
+		() =>
+			Effect.gen(function* () {
+				const revocation = recordingRevocation()
+				const events = recordingProductEvents()
+				const clerk = { down: false }
+				const removals: Array<string> = []
+				const sso = EnterpriseSsoService.webhookOnly(
+					() => Effect.succeed("not_here" as const),
+					() => Effect.succeed(true),
+					(orgId, userId) =>
+						Effect.suspend(() => {
+							// The sweep has already run by the time the bypass entry goes.
+							removals.push(`${orgId}:${userId} after ${revocation.calls.at(-1) ?? "nothing"}`)
+							return clerk.down
+								? Effect.fail(new EnterpriseSsoUnavailableError({ message: "Clerk is down" }))
+								: Effect.succeed("removed" as const)
+						}),
+				)
+				const { handler, dispose } = HttpRouter.toWebHandler(
+					makeRouterLayer(
+						ClerkWebhookRoute,
+						{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+						events.layer,
+						revocation.layer,
+						undefined,
+						undefined,
+						undefined,
+						undefined,
+						sso,
+					),
+					{ disableLogger: true },
+				)
+				yield* Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					const send = (type: string, id: string) =>
+						Effect.gen(function* () {
+							const body = JSON.stringify({
+								type,
+								data: {
+									organization: { id: "org_9" },
+									public_user_data: { user_id: "user_9" },
+									role: "org:member",
+								},
+							})
+							const headers = yield* signedHeaders(CLERK_SECRET, body, now, id)
+							return yield* post(handler, "/webhooks/clerk", body, headers)
+						})
+
+					// Joining or changing role leaves the list alone.
+					yield* send("organizationMembership.created", "msg_bp_created")
+					yield* send("organizationMembership.updated", "msg_bp_updated")
+					assert.deepStrictEqual(removals, [])
+
+					const removed = yield* send("organizationMembership.deleted", "msg_bp_deleted")
+					assert.strictEqual(removed.status, 200)
+					assert.deepStrictEqual(removals, ["org_9:user_9 after revoke:org_9:user_9"])
+
+					// Clerk redelivers a 500, so a failed removal must not count the member as removed twice.
+					clerk.down = true
+					const tracked = events.tracked.length
+					const failed = yield* send("organizationMembership.deleted", "msg_bp_failed")
+					assert.strictEqual(failed.status, 500)
+					assert.strictEqual(events.tracked.length, tracked)
+				}).pipe(Effect.ensuring(Effect.promise(dispose)))
+			}),
+	)
+
+	it.live("500s a directory group the database could not save, so Clerk redelivers it", () =>
+		Effect.gen(function* () {
+			const failing = EnterpriseSsoService.webhookOnly(() =>
+				Effect.fail(new EnterpriseSsoUnavailableError({ message: "db down" })),
+			)
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(
+					ClerkWebhookRoute,
+					{ CLERK_WEBHOOK_SECRET: CLERK_SECRET },
+					recordingProductEvents().layer,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					failing,
+				),
+				{ disableLogger: true },
+			)
+			yield* Effect.gen(function* () {
+				const now = yield* Clock.currentTimeMillis
+				const body = JSON.stringify({
+					type: "directoryGroup.updated",
+					data: { id: "grp_1", directory_id: "dir_1", display_name: "Admins", updated_at: now },
+				})
+				const headers = yield* signedHeaders(CLERK_SECRET, body, now, "msg_gf")
+				const response = yield* post(handler, "/webhooks/clerk", body, headers)
+				assert.strictEqual(response.status, 500)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
 		}),
 	)
 })

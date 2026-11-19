@@ -1,6 +1,6 @@
 import { isRedundantTreeAttribute, type SpanNode } from "@maple/query-engine/observability"
 import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outputs"
-import { formatDurationFromMs, toSecondTimestamp, truncate } from "./format"
+import { formatDurationFromMs, logAttributeLines, toSecondTimestamp, untrustedText } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
@@ -11,6 +11,8 @@ export interface TraceOverviewLog {
 	readonly serviceName: string
 	readonly body: string
 	readonly spanId: string
+	/** Cause-bearing attributes (`log.error`, `exception.*`, ...), when the log has any. */
+	readonly keyAttributes?: Readonly<Record<string, string>>
 }
 
 export interface TraceOverviewInput {
@@ -135,7 +137,7 @@ const renderTree = (output: Output): string => {
 		]
 		if (notes.length > 0) lines.push(`${detailPrefix}    ${Arr.join(notes, ", ")}`)
 		if (node.statusCode === "Error" && node.statusMessage) {
-			lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
+			lines.push(`${detailPrefix}    Status: ${untrustedText(node.statusMessage, 100)}`)
 		}
 		const attrs = Arr.filter(Rec.toEntries(node.attributes), ([k]) => !isRedundantTreeAttribute(k)).slice(
 			0,
@@ -144,7 +146,7 @@ const renderTree = (output: Output): string => {
 		if (attrs.length > 0) {
 			lines.push(
 				`${detailPrefix}    {${Arr.join(
-					Arr.map(attrs, ([k, v]) => `${k}=${truncate(v, 60)}`),
+					Arr.map(attrs, ([k, v]) => `${k}=${untrustedText(v, 60)}`),
 					", ",
 				)}}`,
 			)
@@ -156,7 +158,7 @@ const renderTree = (output: Output): string => {
 			servicesWithResource.add(node.serviceName)
 			lines.push(
 				`${detailPrefix}    resource: {${Arr.join(
-					Arr.map(resourceAttrs, ([k, v]) => `${k}=${truncate(v, 60)}`),
+					Arr.map(resourceAttrs, ([k, v]) => `${k}=${untrustedText(v, 60)}`),
 					", ",
 				)}}`,
 			)
@@ -186,7 +188,7 @@ const renderLogs = (logs: Output["logs"]): string =>
 				const sevUpper = Str.toUpperCase(log.severityText)
 				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
 				const spanRef = log.spanId ? ` span=${log.spanId}` : ""
-				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${truncate(log.body, 100)}${spanRef}`
+				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${untrustedText(log.body, 100)}${spanRef}${logAttributeLines(log.keyAttributes, "    ")}`
 			}),
 		],
 		"\n",
@@ -221,7 +223,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 	}
 	const truncated = output.truncated === true
 	const policy = output.errorsOnly ? "error spans and their ancestors only" : "errors and longest first"
-	const blocks: Array<DocBlock> = [doc.text(renderTree(output))]
+	const blocks: Array<DocBlock> = [doc.untrusted(renderTree(output))]
 	blocks.push(
 		doc.text(
 			truncated
@@ -245,7 +247,7 @@ export function renderTraceOverview(output: Output): ToolDoc {
 			),
 		)
 	}
-	if (output.logs.length > 0) blocks.push(doc.text(renderLogs(output.logs)))
+	if (output.logs.length > 0) blocks.push(doc.untrusted(renderLogs(output.logs)))
 	const services = [...new Set(Arr.map(output.spans, (span) => span.serviceName))]
 	const focus = Option.getOrElse(Arr.findFirst(output.spans, isErrorSpan), () => output.spans[0])
 	return {

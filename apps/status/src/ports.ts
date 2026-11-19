@@ -17,7 +17,7 @@ export interface CachedValue {
 	readonly storedAt: number
 }
 
-/** Everything the status Worker reads or writes: KV, R2, the per-colo cache and a rate limiter. */
+/** Everything the status Worker reads or writes: KV, R2, the per-colo cache and the rate limiters. */
 export interface StatusStorage {
 	readonly kvGet: (key: string) => Effect.Effect<string | null, StatusStorageError>
 	readonly kvPut: (key: string, value: string) => Effect.Effect<void, StatusStorageError>
@@ -29,8 +29,10 @@ export interface StatusStorage {
 	readonly r2Get: (key: string) => Effect.Effect<string | null, StatusStorageError>
 	readonly cacheGet: (key: string) => Effect.Effect<CachedValue | null, StatusStorageError>
 	readonly cachePut: (key: string, entry: CachedValue) => Effect.Effect<void, StatusStorageError>
-	/** True when the request may proceed. */
+	/** True when the request may proceed; the per-client budget. */
 	readonly rateLimit: (key: string) => Effect.Effect<boolean, StatusStorageError>
+	/** True when the request may proceed; the larger budget one page's password form shares. */
+	readonly pageRateLimit: (key: string) => Effect.Effect<boolean, StatusStorageError>
 }
 
 /** Per-request inputs: storage, the clock and a random source, so handling is deterministic in tests. */
@@ -38,6 +40,6 @@ export interface StatusEnv {
 	readonly storage: StatusStorage
 	readonly nowMs: number
 	readonly randomId: () => string
-	/** Maple's own hosts for this Worker (its domain, workers.dev, local dev), which serve `/s/<slug>`. */
+	/** Maple's own hosts for this Worker (its domain, workers.dev, local dev), which serve `/s/<org key>/<slug>`. */
 	readonly isSharedHost: (hostname: string) => boolean
 }

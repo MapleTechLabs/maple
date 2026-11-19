@@ -5,9 +5,11 @@
 // wraps these in an `AuthService` Context.Service bound to its `Env`; the
 // standalone `apps/electric-sync` worker feeds them its own small config. Auth
 // is the one genuinely cross-service concern, so it lives in this lean package
-// (effect + @maple/domain + @clerk/backend) rather than an app.
-import { createHmac, timingSafeEqual } from "node:crypto"
+// (effect + @maple/domain + Clerk) rather than an app. `@clerk/backend` only verifies
+// session tokens; every Backend API call goes through `@distilled.cloud/clerk`.
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto"
 import { type ClerkClient, createClerkClient } from "@clerk/backend"
+import * as Clerk from "@distilled.cloud/clerk"
 import {
 	AuthMode,
 	AuthorizationUnavailableError,
@@ -17,6 +19,7 @@ import {
 	SelfHostedAuthDisabledError,
 	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
+	type SessionImpersonation,
 	type TenantContext,
 	UnauthorizedError,
 	UserId,
@@ -32,6 +35,7 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
+import { type ClerkApi, clerkApiFor } from "./clerk-api"
 
 /**
  * A self-hosted session is bounded by TWO clocks, because the HMAC key IS the
@@ -209,9 +213,30 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const encodeBase64Url = (value: unknown): string => Buffer.from(encodeJson(value)).toString("base64url")
 
+/** HKDF `info` for the session MAC key; bump the version to invalidate every session. */
+const SESSION_KEY_INFO = "maple/self-hosted-session-mac/v1"
+
+/**
+ * The HMAC key self-hosted sessions are signed with. With `MAPLE_SESSION_SIGNING_SECRET` set it is
+ * HKDF-SHA256 over that secret (salted with the root password, so rotating either revokes every
+ * session) and a captured token reveals nothing about the password. Without it the key is derived
+ * from the password alone, which is only as strong as the password.
+ */
+const selfHostedSessionKey = (
+	env: Pick<AuthEnv, "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET">,
+): Effect.Effect<Buffer> =>
+	Effect.map(requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD"), (rootPassword) => {
+		const signingSecret = getOptionalSecret(env.MAPLE_SESSION_SIGNING_SECRET ?? Option.none())
+		return Buffer.from(
+			signingSecret === undefined
+				? hkdfSync("sha256", rootPassword, "", SESSION_KEY_INFO, 32)
+				: hkdfSync("sha256", signingSecret, rootPassword, SESSION_KEY_INFO, 32),
+		)
+	})
+
 const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSessionToken")(function* (
 	token: string,
-	secret: string,
+	key: Buffer,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
 	const parts = Str.split(".")(token)
 	const [encodedHeader, encodedPayload, encodedSignature] = parts
@@ -224,13 +249,13 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	).pipe(Effect.mapError(() => unauthorized("Invalid JWT header")))
 	// HS256 is pinned, not negotiated: the header cannot select `none`, another MAC,
 	// or an asymmetric algorithm. The only verification below is an HMAC with the
-	// root password, so there is no key-confusion surface either.
+	// session key, so there is no key-confusion surface either.
 	if (header.alg !== "HS256") {
 		return yield* unauthorized("Unsupported JWT algorithm")
 	}
 
 	const data = `${encodedHeader}.${encodedPayload}`
-	const expected = createHmac("sha256", secret).update(data).digest("base64url")
+	const expected = createHmac("sha256", key).update(data).digest("base64url")
 	const expectedBuffer = Buffer.from(expected)
 	const actualBuffer = Buffer.from(encodedSignature)
 
@@ -291,12 +316,12 @@ type SelfHostedTokenClaims = {
 	readonly session_exp: number
 }
 
-const signHs256Jwt = (payload: SelfHostedTokenClaims, secret: string): string => {
+const signHs256Jwt = (payload: SelfHostedTokenClaims, key: Buffer): string => {
 	const header = { alg: "HS256", typ: "JWT" }
 	const encodedHeader = encodeBase64Url(header)
 	const encodedPayload = encodeBase64Url(payload)
 	const data = `${encodedHeader}.${encodedPayload}`
-	const signature = createHmac("sha256", secret).update(data).digest("base64url")
+	const signature = createHmac("sha256", key).update(data).digest("base64url")
 	return `${data}.${signature}`
 }
 
@@ -312,7 +337,7 @@ const mintSelfHostedSessionToken = (
 	tenant: TenantContext,
 	nowSeconds: number,
 	sessionExpiresAt: number,
-	secret: string,
+	key: Buffer,
 ): { readonly token: string; readonly expiresAt: number } => {
 	const expiresAt = Math.min(nowSeconds + SELF_HOSTED_SESSION_TTL_SECONDS, sessionExpiresAt)
 	const token = signHs256Jwt(
@@ -325,7 +350,7 @@ const mintSelfHostedSessionToken = (
 			exp: expiresAt,
 			session_exp: sessionExpiresAt,
 		},
-		secret,
+		key,
 	)
 	return { token, expiresAt }
 }
@@ -358,6 +383,22 @@ type ClerkSessionAuth = {
 	readonly userId: string | null | undefined
 	readonly orgId: string | null | undefined
 	readonly orgRole: string | null | undefined
+	/** Session tokens only: the session id and Clerk's `act` claim, set when someone signed in as this user. */
+	readonly sessionId?: string | null | undefined
+	readonly actor?: { readonly sub?: unknown } | null | undefined
+}
+
+/**
+ * The impersonation behind a Clerk session token, if any. Only session tokens carry
+ * `act`; an `act` without a usable `sub` or session id still counts, so it is never dropped.
+ */
+export const clerkSessionImpersonation = (auth: ClerkSessionAuth): SessionImpersonation | undefined => {
+	if (auth.tokenType !== "session_token" || auth.actor === null || auth.actor === undefined)
+		return undefined
+	return {
+		actorId: typeof auth.actor.sub === "string" && auth.actor.sub !== "" ? auth.actor.sub : "unknown",
+		sessionId: typeof auth.sessionId === "string" && auth.sessionId !== "" ? auth.sessionId : "unknown",
+	}
 }
 
 type ClerkRequestState = {
@@ -389,9 +430,37 @@ export interface AuthEnv {
 	 */
 	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	/** High-entropy key self-hosted sessions are signed from; absent, they derive from the root password. */
+	readonly MAPLE_SESSION_SIGNING_SECRET?: Option.Option<Redacted.Redacted> | undefined
 	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
 	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
+}
+
+/** Shortest root password a self-hosted deployment accepts. */
+export const MIN_ROOT_PASSWORD_LENGTH = 16
+const PLACEHOLDER_ROOT_PASSWORDS: ReadonlySet<string> = new Set([
+	"change-me",
+	"changeme",
+	"change-me-please",
+	"password",
+	"placeholder",
+	"maple",
+	"admin",
+	"root",
+])
+
+/** Why a root password is too weak to start with, or undefined when it is acceptable. */
+export const rootPasswordProblem = (password: string): string | undefined => {
+	const trimmed = Str.trim(password)
+	if (trimmed.length === 0) return "MAPLE_ROOT_PASSWORD cannot be empty"
+	if (PLACEHOLDER_ROOT_PASSWORDS.has(Str.toLowerCase(trimmed))) {
+		return "MAPLE_ROOT_PASSWORD is a placeholder value; generate one with `openssl rand -base64 24`"
+	}
+	if (password.length < MIN_ROOT_PASSWORD_LENGTH) {
+		return `MAPLE_ROOT_PASSWORD must be at least ${MIN_ROOT_PASSWORD_LENGTH} characters; generate one with \`openssl rand -base64 24\``
+	}
+	return undefined
 }
 
 const getOptionalString = <A>(option: Option.Option<A>): A | undefined => Option.getOrUndefined(option)
@@ -423,8 +492,8 @@ export type ClerkEnv = Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY
 
 const clerkClients = new WeakMap<ClerkEnv, ClerkClient>()
 
-/** The deployment's Clerk backend client, built once per env; `undefined` without a secret key. */
-export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
+/** The session verifier, built once per env; `undefined` without a secret key. */
+const clerkVerifierFor = (env: ClerkEnv): ClerkClient | undefined => {
 	if (Option.isNone(env.CLERK_SECRET_KEY)) return undefined
 	const cached = clerkClients.get(env)
 	if (cached !== undefined) return cached
@@ -437,12 +506,13 @@ export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
 	return client
 }
 
-/** {@link clerkClientFor}, only in Clerk auth mode. */
-export const clerkModeClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">): ClerkClient | undefined =>
-	getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkClientFor(env) : undefined
+/** {@link clerkApiFor}, only in Clerk auth mode. */
+export const clerkModeApi = (
+	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "MAPLE_AUTH_MODE">,
+): ClerkApi | undefined => (getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkApiFor(env) : undefined)
 
 const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest | undefined => {
-	const clerkClient = clerkClientFor(env)
+	const clerkClient = clerkVerifierFor(env)
 	if (clerkClient === undefined) return undefined
 
 	return (request, options) =>
@@ -454,7 +524,10 @@ const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest |
 }
 
 export const makeLoginSelfHosted = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_DEFAULT_ORG_ID" | "MAPLE_ROOT_PASSWORD">,
+	env: Pick<
+		AuthEnv,
+		"MAPLE_AUTH_MODE" | "MAPLE_DEFAULT_ORG_ID" | "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET"
+	>,
 ) =>
 	Effect.fn("AuthService.loginSelfHosted")(function* (
 		password: string,
@@ -481,7 +554,8 @@ export const makeLoginSelfHosted = (
 		// Entering the root password is what starts the absolute clock. Renewal
 		// never restarts it: only another login does.
 		const sessionExpiresAt = now + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
-		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, rootPassword)
+		const sessionKey = yield* selfHostedSessionKey(env)
+		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, sessionKey)
 
 		return new SelfHostedLoginResponse({
 			token,
@@ -501,7 +575,9 @@ export const makeLoginSelfHosted = (
  * thing standing between a token and a new one, so it does its own checking. An
  * expired token cannot be renewed; that is the point of the expiry.
  */
-export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_ROOT_PASSWORD">) =>
+export const makeRefreshSelfHostedSession = (
+	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "MAPLE_ROOT_PASSWORD" | "MAPLE_SESSION_SIGNING_SECRET">,
+) =>
 	Effect.fn("AuthService.refreshSelfHostedSession")(function* (
 		token: string,
 	): Effect.fn.Return<SelfHostedLoginResponse, SelfHostedAuthDisabledError | UnauthorizedError> {
@@ -511,8 +587,8 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 			})
 		}
 
-		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
-		const claims = yield* verifySelfHostedSessionToken(token, rootPassword)
+		const sessionKey = yield* selfHostedSessionKey(env)
+		const claims = yield* verifySelfHostedSessionToken(token, sessionKey)
 		const now = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 
 		// A token minted before `session_exp` existed still gets a bounded renewal
@@ -530,7 +606,7 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 			},
 			now,
 			sessionExpiresAt,
-			rootPassword,
+			sessionKey,
 		)
 
 		return new SelfHostedLoginResponse({
@@ -771,6 +847,10 @@ export const makeResolveTenant = (
 				return yield* auth.orgId ? unauthorized("Invalid Clerk token") : noActiveOrganization()
 			}
 
+			const impersonation = clerkSessionImpersonation(auth)
+			const stamp = (tenant: TenantContext): TenantContext =>
+				impersonation === undefined ? tenant : { ...tenant, impersonation }
+
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 
@@ -791,19 +871,24 @@ export const makeResolveTenant = (
 				// org). The role is the verified membership's; a non-member is only let
 				// in with their session's role on an explicitly opted-in development pin.
 				if (auth.orgId === pinnedOrgId) {
-					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
+					return stamp({ orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" })
 				}
 				const membership = verifyOrgMembership
 					? yield* verifyOrgMembership(userId, pinnedOrgId)
 					: Option.none<VerifiedOrgMembership>()
 				if (Option.isSome(membership)) {
-					return { orgId: pinnedOrgId, userId, roles: [membership.value.role], authMode: "clerk" }
+					return stamp({
+						orgId: pinnedOrgId,
+						userId,
+						roles: [membership.value.role],
+						authMode: "clerk",
+					})
 				}
 				if (
 					env.MAPLE_ENVIRONMENT === "development" &&
 					env.MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS === true
 				) {
-					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
+					return stamp({ orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" })
 				}
 				// Otherwise membership the resolver cannot prove (no verifier) is a refusal.
 				return yield* organizationAccessDenied(pinnedOrgId)
@@ -818,12 +903,12 @@ export const makeResolveTenant = (
 				if (Option.isNone(selected)) {
 					return yield* noActiveOrganization()
 				}
-				return {
+				return stamp({
 					orgId: selected.value.orgId,
 					userId,
 					roles: [selected.value.role],
 					authMode: "clerk",
-				}
+				})
 			}
 
 			const clerkTenant: TenantContext = {
@@ -833,7 +918,8 @@ export const makeResolveTenant = (
 				authMode: "clerk",
 			}
 
-			return yield* applyRequestedOrg(clerkTenant, headers, selectable)
+			const selectedTenant = yield* applyRequestedOrg(clerkTenant, headers, selectable)
+			return stamp(selectedTenant)
 		}
 
 		const token = getBearerToken(headers)
@@ -841,10 +927,10 @@ export const makeResolveTenant = (
 			return yield* unauthorized("Self-hosted mode requires a valid bearer token")
 		}
 
-		const rootPassword = yield* requireSecret(env.MAPLE_ROOT_PASSWORD, "MAPLE_ROOT_PASSWORD")
+		const sessionKey = yield* selfHostedSessionKey(env)
 		// `claims` is already the validated tenant: branded ids, a normalized role
 		// list and a literal `authMode`. Nothing below re-checks it.
-		const claims = yield* verifySelfHostedSessionToken(token, rootPassword)
+		const claims = yield* verifySelfHostedSessionToken(token, sessionKey)
 
 		const tenant: TenantContext = {
 			orgId: claims.org_id,
@@ -880,67 +966,40 @@ export const makeResolveMcpTenant = (
 	// acceptsToken, so this just brings Clerk mode to parity.
 ) => makeResolveTenant(env, authenticateClerkRequest, ["api_key", "session_token"])
 
-type ClerkUser = Awaited<ReturnType<ReturnType<typeof createClerkClient>["users"]["getUser"]>>
-
-class ClerkLookupError extends Schema.TaggedError<ClerkLookupError>()("@maple/auth/ClerkLookupError", {
-	operation: Schema.String,
-	cause: Schema.Defect(),
-}) {}
-
-const clerkLookup = <A>(
-	spanName: string,
-	attributes: Readonly<Record<string, string>>,
-	request: () => Promise<A>,
-): Effect.Effect<A, ClerkLookupError> =>
-	Effect.tryPromise({
-		try: request,
-		catch: (cause) => new ClerkLookupError({ operation: spanName, cause }),
-	}).pipe(
-		Effect.withSpan(spanName, {
-			kind: "client",
-			attributes: { "peer.service": "clerk", ...attributes },
-		}),
-	)
+type ClerkUser = Clerk.User
 
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
-	const primary = Arr.findFirst(u.emailAddresses ?? [], (e) => e.id === u.primaryEmailAddressId)
+	const primary = Arr.findFirst(u.email_addresses, (e) => e.id === u.primary_email_address_id)
 	return Option.getOrElse(
-		Option.flatMapNullishOr(primary, (e) => e.emailAddress),
-		() => u.emailAddresses?.[0]?.emailAddress ?? null,
+		Option.map(primary, (e) => e.email_address),
+		() => u.email_addresses[0]?.email_address ?? null,
 	)
 }
 
 /** The primary address only once Clerk has verified it; never a fallback to another address. */
 export const extractVerifiedPrimaryEmail = (u: {
-	readonly primaryEmailAddressId: string | null
-	readonly emailAddresses: ReadonlyArray<{
-		readonly id: string
-		readonly emailAddress: string
+	readonly primary_email_address_id: string | null
+	readonly email_addresses: ReadonlyArray<{
+		readonly id?: string | undefined
+		readonly email_address: string
 		readonly verification: { readonly status: string } | null
 	}>
 }): string | null => {
 	return Option.match(
-		Arr.findFirst(u.emailAddresses, (e) => e.id === u.primaryEmailAddressId),
+		Arr.findFirst(u.email_addresses, (e) => e.id === u.primary_email_address_id),
 		{
 			onNone: () => null,
-			onSome: (primary) => (primary.verification?.status === "verified" ? primary.emailAddress : null),
+			onSome: (primary) => (primary.verification?.status === "verified" ? primary.email_address : null),
 		},
 	)
 }
 
-const makeClerkClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">) => clerkModeClient(env) ?? null
-
 /** One Clerk user lookup per call; null outside Clerk mode or on a failed lookup. */
 const makeUserEmailLookup =
 	(spanName: string, extract: (user: ClerkUser) => string | null) =>
-	(
-		env: Pick<
-			AuthEnv,
-			"MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY"
-		>,
-	) => {
-		const clerkClient = makeClerkClient(env)
-		if (!clerkClient) {
+	(env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY">) => {
+		const api = clerkModeApi(env)
+		if (api === undefined) {
 			return Effect.fn(spanName)(function* (_userId: string) {
 				return null as string | null
 			})
@@ -948,9 +1007,7 @@ const makeUserEmailLookup =
 
 		return Effect.fn(spanName)(function* (userId: string) {
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-			const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-				clerkClient.users.getUser(userId),
-			).pipe(Effect.option)
+			const user = yield* api.run(Clerk.getUser({ user_id: userId })).pipe(Effect.option)
 
 			return Option.match(user, {
 				onNone: () => null as string | null,
@@ -966,11 +1023,9 @@ export const makeGetVerifiedPrimaryEmail = makeUserEmailLookup(
 	extractVerifiedPrimaryEmail,
 )
 
-export const makeGetCustomerData = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
+export const makeGetCustomerData = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY">) => {
+	const api = clerkModeApi(env)
+	if (api === undefined) {
 		return Effect.fn("AuthService.getCustomerData")(function* (_tenant: TenantContext) {
 			return { email: null as string | null, orgName: null as string | null }
 		})
@@ -980,14 +1035,8 @@ export const makeGetCustomerData = (
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "tenant.userId": tenant.userId })
 		const [user, org] = yield* Effect.all(
 			[
-				clerkLookup(
-					"Clerk.users.getUser",
-					{ orgId: tenant.orgId, "tenant.userId": tenant.userId },
-					() => clerkClient.users.getUser(tenant.userId),
-				).pipe(Effect.option),
-				clerkLookup("Clerk.organizations.getOrganization", { orgId: tenant.orgId }, () =>
-					clerkClient.organizations.getOrganization({ organizationId: tenant.orgId }),
-				).pipe(Effect.option),
+				api.run(Clerk.getUser({ user_id: tenant.userId })).pipe(Effect.option),
+				api.run(Clerk.getOrganization({ organization_id: tenant.orgId })).pipe(Effect.option),
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -996,8 +1045,17 @@ export const makeGetCustomerData = (
 			email: Option.match(user, { onNone: () => null as string | null, onSome: extractPrimaryEmail }),
 			orgName: Option.match(org, {
 				onNone: () => null as string | null,
-				onSome: (o) => o.name ?? null,
+				onSome: (o) => o.name,
 			}),
 		}
 	})
 }
+
+export {
+	type ClerkApi,
+	type ClerkApiServices,
+	CLERK_REQUEST_TIMEOUT,
+	clerkApiFor,
+	ClerkRequestError,
+	makeClerkApi,
+} from "./clerk-api"

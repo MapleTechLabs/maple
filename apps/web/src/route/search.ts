@@ -197,7 +197,7 @@ const planetscaleFilterSearchFields = {
 	branchContains: StringParam,
 }
 
-// Tab sets of the account, settings (plus retired settings tabs), issue and investigation navs
+// Tab sets of the account, settings, issue and investigation navs
 export const accountTabValues = [
 	"profile",
 	"emails",
@@ -212,6 +212,8 @@ export const accountTabValues = [
 export const settingsTabValues = [
 	"general",
 	"members",
+	"domains",
+	"sso",
 	"billing",
 	"audit-log",
 	"keys",
@@ -222,17 +224,6 @@ export const settingsTabValues = [
 	"data-sources",
 	"setup-health",
 	"automation",
-] as const
-export const legacySettingsTabValues = [
-	"organization",
-	"api-keys",
-	"ai-provider",
-	"setup-audit",
-	"notifications",
-	"connectors",
-	"integrations",
-	"escalations",
-	"developer",
 ] as const
 
 export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
@@ -307,8 +298,7 @@ export const ServiceMapSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const SettingsSearch = Schema.Struct({
-	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacySettingsTabValues])),
+const settingsSearchFields = {
 	checkout: Schema.optional(Schema.Literal("complete")),
 	range: StringParam,
 	since: StringParam,
@@ -326,7 +316,22 @@ export const SettingsSearch = Schema.Struct({
 	// Data sources deep links from `/integrations`: one source, or the connect form of a kind.
 	source: StringParam,
 	connect: Schema.optional(Schema.Literals(DATA_SOURCE_KINDS)),
+}
+
+export const SettingsTab = Schema.Literals(settingsTabValues)
+
+/**
+ * `/settings/<tab>`: `tab` is the path segment; `legacyTab` is a retired `?tab=` link, which
+ * `routeRedirect` moves to its path.
+ */
+export const SettingsSearch = Schema.Struct({
+	tab: Schema.optional(SettingsTab),
+	legacyTab: StringParam,
+	...settingsSearchFields,
 })
+
+/** The query string of `/settings`: `tab` here is only ever an old link's. */
+export const SettingsQuery = Schema.Struct({ tab: StringParam, ...settingsSearchFields })
 
 export const SignInSearch = Schema.Struct({
 	redirect_url: StringParam,
@@ -399,9 +404,22 @@ export const AlertsStatusPageSearch = Schema.Struct({
 	tab: StringParam,
 })
 
-/** `/status-pages/$pageId`: `view` is `appearance`, `settings`, `json` or `live`; none is the page itself. */
+/**
+ * `/status-pages/$pageId`: `view` is `incidents`, `maintenance`, `settings` or `live` (just
+ * published); none is the live page. `section` picks the Settings section.
+ */
 export const StatusPageSearch = Schema.Struct({
 	view: StringParam,
+	section: StringParam,
+})
+
+/** How `/status-pages/new` sets the page up: a coding agent over the MCP, or the builder. */
+export const StatusPageSetupMethod = Schema.Literals(["agent", "manual"])
+export type StatusPageSetupMethod = typeof StatusPageSetupMethod.Type
+
+/** `/status-pages/new`: none is the choice between the two `setup` methods. */
+export const StatusPageNewSearch = Schema.Struct({
+	setup: Schema.optional(StatusPageSetupMethod),
 })
 
 export const CodeReviewCiSearch = Schema.Struct(CodeReviewCiSearchFields)
@@ -484,6 +502,10 @@ export const ServiceSearch = Schema.Struct({
 	tab: StringParam,
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
 	endpoint: StringParam,
+	/** The Overview's open deploy drawer, by commit sha. */
+	deploy: StringParam,
+	/** The open deploy's environment, when its commit shipped to several. */
+	deployEnv: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
@@ -718,13 +740,8 @@ export const MetricsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const ReleasesSearch = Schema.Struct({
-	environments: OptionalStringArrayParam,
-	excludedEnvironments: OptionalStringArrayParam,
-	services: OptionalStringArrayParam,
-	impact: Schema.optional(Schema.Literals(["regressed", "watch", "rolling", "healthy"])),
-	...TimeRangeSearchFields,
-})
+/** Retired: `routeRedirect` sends `/releases` to the services, keeping the window. */
+export const ReleasesSearch = Schema.Struct({ ...TimeRangeSearchFields })
 
 export const ReplaysSearch = Schema.Struct({
 	service: StringParam,
@@ -1149,6 +1166,27 @@ export const SecurityAuditLogSearch = Schema.Struct({
 	actor: StringParam,
 })
 export type SecurityAuditLogSearch = typeof SecurityAuditLogSearch.Type
+
+/** The Security hub's Cloud findings filters; each absent one shows everything (status: active). */
+export const SecurityCloudSearch = Schema.Struct({
+	status: StringParam,
+	severity: StringParam,
+	source: StringParam,
+	account: StringParam,
+	region: StringParam,
+	/** Matched against a finding's title, type and resource id. */
+	q: StringParam,
+})
+export type SecurityCloudSearch = typeof SecurityCloudSearch.Type
+
+/** One cloud finding: its connection, region, service and the service's id for it. */
+export const SecurityCloudFindingSearch = Schema.Struct({
+	connection: StringParam,
+	region: StringParam,
+	source: StringParam,
+	id: StringParam,
+})
+export type SecurityCloudFindingSearch = typeof SecurityCloudFindingSearch.Type
 
 /**
  * `/security/detections/new`: `detectionId` edits that detection. The rest prefill a new one: a

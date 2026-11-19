@@ -1,3 +1,4 @@
+import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
 import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -24,7 +25,8 @@ import {
 } from "../../kit/uptime/derive"
 import { uptimeStatusChip } from "../../kit/uptime/view"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { type Model } from "./model"
+import { gatedControl } from "../../kit/session-grants"
 import { monitorOf } from "./update"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -72,49 +74,60 @@ const eyebrowLine = (monitor: UptimeMonitor): string =>
 
 const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 	detailActions(h, [
-		...(canManage(model)
-			? [
-					button(
+		gatedControl(h, model, "uptime_monitors:manage", (isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					isLoading: model.isToggling,
+					isDisabled,
+					attributes: [h.OnClick(Message.ClickedToggle())],
+				},
+				[
+					icon(h, monitor.enabled ? "MediaPauseIcon" : "MediaPlayIcon"),
+					monitor.enabled ? "Pause" : "Resume",
+				],
+			),
+		),
+		gatedControl(h, model, "uptime_monitors:manage", (isDisabled) => {
+			const children = [icon(h, "PencilIcon"), "Edit"]
+			return isDisabled
+				? button(h, { size: "sm", variant: "outline", isDisabled }, children)
+				: linkButton(
 						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isLoading: model.isToggling,
-							attributes: [h.OnClick(Message.ClickedToggle())],
-						},
-						[
-							icon(h, monitor.enabled ? "MediaPauseIcon" : "MediaPlayIcon"),
-							monitor.enabled ? "Pause" : "Resume",
-						],
-					),
-					linkButton(h, { size: "sm", variant: "outline", href: editMonitorHref(monitor.id) }, [
-						icon(h, "PencilIcon"),
-						"Edit",
-					]),
-				]
-			: []),
-		...(monitor.config.type === "http" && canManage(model)
+						{ size: "sm", variant: "outline", href: editMonitorHref(monitor.id) },
+						children,
+					)
+		}),
+		...(monitor.config.type === "http"
 			? [
-					button(
-						h,
-						{
-							size: "sm",
-							isLoading: model.isChecking,
-							attributes: [h.OnClick(Message.ClickedCheckNow())],
-						},
-						[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+					gatedControl(h, model, "uptime_monitors:manage", (isDisabled) =>
+						button(
+							h,
+							{
+								size: "sm",
+								isLoading: model.isChecking,
+								isDisabled,
+								attributes: [h.OnClick(Message.ClickedCheckNow())],
+							},
+							[icon(h, "ArrowRotateClockwiseIcon"), "Check now"],
+						),
 					),
 				]
 			: []),
 	])
 
-/** The open incident of the monitor's backing alert rule. */
+/** The open outage incident of the monitor's backing alert rule, not its certificate warning. */
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 	monitor.alert_rule_id === null
 		? null
 		: Arr.findFirst(
 				model.incidents ?? [],
-				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
+				(row) =>
+					row.rule_id === monitor.alert_rule_id &&
+					row.status === "open" &&
+					row.group_key !== UPTIME_CERTIFICATE_GROUP_KEY,
 			).pipe(
 				Option.flatMapNullishOr((found) => found.id),
 				Option.getOrNull,
@@ -197,10 +210,10 @@ const body = (
 					...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 						panel === null ? [] : [panel],
 					),
-					checksPanel(h, monitor, timeZone),
+					checksPanel(h, model, monitor, timeZone),
 				]),
 				vstack(h, { gap: "4" }, [
-					lastCheckPanel(h, monitor),
+					lastCheckPanel(h, monitor, nowMs),
 					setupPanel(h, model, monitor, serviceHrefOf(monitor)),
 				]),
 			],

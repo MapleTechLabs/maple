@@ -4,7 +4,7 @@ import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 // `Typography`: a run of text on the type scale and the text tones, instead of a hand-written
 // `text-xs text-muted-foreground` string. Every option maps to one token; omit one to inherit it.
 
-export type TypographySize = "4xs" | "3xs" | "2xs" | "xs" | "sm" | "base" | "lg"
+export type TypographySize = "4xs" | "3xs" | "2xs" | "xs" | "ui" | "sm" | "base" | "lg"
 export type TypographyTone =
 	| "foreground"
 	| "soft"
@@ -23,6 +23,8 @@ const SIZE = {
 	"3xs": "text-3xs",
 	"2xs": "text-2xs",
 	xs: "text-xs",
+	/** 13px, the chrome size. */
+	ui: "text-ui",
 	sm: "text-sm",
 	base: "text-base",
 	lg: "text-lg",

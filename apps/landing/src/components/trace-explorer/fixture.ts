@@ -9,7 +9,7 @@ export const TRACE_ID = "a3f8c1d2e5b7f901"
 export const TOTAL_DURATION_MS = 203
 export const SERVICES = ["api-gateway", "auth-service", "order-service", "payment-svc"] as const
 
-const traceId = Schema.decodeSync(TraceId)(TRACE_ID)
+export const CHECKOUT_TRACE_ID = Schema.decodeSync(TraceId)(TRACE_ID)
 const toSpanId = Schema.decodeSync(SpanId)
 const at = (offsetMs: number): string => new Date(new Date(BASE_TIME).getTime() + offsetMs).toISOString()
 
@@ -20,7 +20,7 @@ type SpanFields = Pick<
 	Partial<Pick<SpanNode, "parentSpanId" | "spanAttributes" | "children">> & { readonly spanId: string }
 
 const span = ({ spanId, ...fields }: SpanFields): SpanNode => ({
-	traceId,
+	traceId: CHECKOUT_TRACE_ID,
 	parentSpanId: "",
 	statusCode: "Ok",
 	statusMessage: "",
@@ -76,7 +76,7 @@ const createOrder = span({
 	spanId: "span-3",
 	spanName: "createOrder",
 	serviceName: "order-service",
-	durationMs: 85,
+	durationMs: 111,
 	startTime: at(34),
 	parentSpanId: "span-1",
 	spanKind: "SPAN_KIND_SERVER",

@@ -1,7 +1,8 @@
 /** Pieces the uptime monitor MCP tools share: rows, target summaries, config building, errors. */
 import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import type { UptimeMonitorRow } from "@maple/domain/mcp-outputs"
-import { UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
+import { scopeAllows, UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import type { UptimeMonitorKind } from "@maple/primitives"
 import {
 	UptimeMonitorConfig,
@@ -37,6 +38,13 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.recordType} ${config.hostname}${config.expected === undefined ? "" : ` = ${config.expected}`}`
+		case "multistep": {
+			const first = config.steps[0]
+			const count = `${config.steps.length} ${config.steps.length === 1 ? "step" : "steps"}`
+			return first === undefined
+				? count
+				: `${count}, from ${first.method} ${redactUrlSecrets(first.url)}`
+		}
 		case "heartbeat": {
 			const schedule =
 				config.schedule._tag === "interval"
@@ -51,7 +59,20 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 export const uptimeRatio = (recent: ReadonlyArray<UptimeRecentCheck>): number | null =>
 	recent.length === 0 ? null : Arr.filter(recent, (check) => check.ok).length / recent.length
 
-/** `canWrite`: the ping URL is a credential, so only org admins see it. */
+/**
+ * Whether the caller may change monitors, as the REST route judges it: the role, a credential
+ * that is not read-only, and for a scoped key the `uptime_monitors` write scope.
+ */
+export const canWriteUptimeMonitors = (tenant: {
+	readonly roles: ReadonlyArray<string>
+	readonly readOnly?: true
+	readonly scopes?: ReadonlyArray<string> | undefined
+}): boolean =>
+	Policy.can(tenant.roles, "uptime_monitors:manage") &&
+	tenant.readOnly !== true &&
+	scopeAllows(tenant.scopes, { family: "uptime_monitors", access: "write" })
+
+/** `canWrite`: the ping URL is a credential, so only callers who may change monitors see it. */
 export const toMonitorRow = (
 	monitor: UptimeMonitorRecord,
 	canWrite: boolean,
@@ -284,6 +305,13 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 	kind: UptimeMonitorKind,
 	fields: UptimeConfigFields,
 ) {
+	// Before the field checks, so a multi-step create always gets the REST guidance.
+	if (kind === "multistep") {
+		return yield* invalid(
+			"A multi-step check's steps are set through the REST API: POST /v2/uptime_monitors to create one, PATCH /v2/uptime_monitors/{id} to change them.",
+			"kind",
+		)
+	}
 	yield* rejectMisplaced(kind, fields)
 	switch (kind) {
 		case "http": {
@@ -353,9 +381,17 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 	current: UptimeMonitorConfig,
 	fields: UptimeConfigFields,
 ) {
+	const changesConfig = Arr.some(FIELD_KINDS, ([field]) => fields[field] !== undefined)
+	// Before the field checks, so a multi-step edit always gets the REST guidance.
+	if (current._tag === "multistep" && changesConfig) {
+		return yield* invalid(
+			"A multi-step check's steps change through the REST API (PATCH /v2/uptime_monitors/{id}); only its name, interval, service and destinations change here.",
+			"url",
+		)
+	}
 	yield* rejectMisplaced(current._tag, fields)
 	yield* rejectClearConflicts(fields)
-	if (!Arr.some(FIELD_KINDS, ([field]) => fields[field] !== undefined)) return undefined
+	if (!changesConfig) return undefined
 	switch (current._tag) {
 		case "http":
 			// Stored header values (an Authorization, say) must not follow the check to another host.
@@ -388,6 +424,8 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 				...(fields.record_type === undefined ? undefined : { recordType: fields.record_type }),
 				...(fields.expected === undefined ? undefined : { expected: fields.expected }),
 			}).pipe(Effect.map((config) => (fields.clear_expected === true ? omitExpected(config) : config)))
+		case "multistep":
+			return undefined
 		case "heartbeat": {
 			const currentZone =
 				current.schedule._tag === "cron" ? current.schedule.timezone : DEFAULT_HEARTBEAT_TIMEZONE

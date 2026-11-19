@@ -131,6 +131,9 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 		params: { service: "ap", service_match_mode: "contains", span_name_match_mode: "contains" },
 		allCapabilities: true,
 	},
+	{ pipe: "list_traces", label: "trace-id", params: { trace_id: TRACE_ID } },
+	{ pipe: "list_traces", label: "ok-only", params: { has_error: false } },
+	{ pipe: "span_search", label: "ok-only", params: { span_name: "GET /v1/x", has_error: false } },
 	{
 		pipe: "span_hierarchy",
 		label: "windowed",
@@ -198,6 +201,24 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 		pipe: "custom_traces_timeseries",
 		label: "errors-only",
 		params: { root_only: "1", bucket_seconds: 3600, errors_only: "1" },
+	},
+	{
+		pipe: "custom_traces_timeseries",
+		label: "numeric-attribute",
+		params: {
+			bucket_seconds: 3600,
+			numeric_attribute_key: "gen_ai.usage.cost",
+			numeric_aggregation: "avg",
+		},
+	},
+	{
+		pipe: "custom_traces_breakdown",
+		label: "numeric-attribute",
+		params: {
+			group_by_service: "1",
+			numeric_attribute_key: "gen_ai.usage.cost",
+			numeric_aggregation: "sum",
+		},
 	},
 	{ pipe: "custom_traces_breakdown", label: "by-service", params: { group_by_service: "1" } },
 	{
@@ -730,6 +751,40 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			filters: { groupByAttributeKey: "plan", country: "DE" },
 			seriesLimit: 5,
 		},
+		startTime: SHORT_START_TIME,
+		endTime: SHORT_END_TIME,
+	},
+	// A numeric span attribute reads raw `traces` even where every rollup could
+	// otherwise answer (root-only, hourly bucket, grouped by service).
+	{
+		label: "traces-timeseries-numeric-attribute",
+		query: {
+			kind: "timeseries",
+			source: "traces",
+			metric: "count",
+			bucketSeconds: 3600,
+			groupBy: ["service"],
+			filters: {
+				...TRACES_FILTERS,
+				rootSpansOnly: true,
+				numericAggregation: { key: "gen_ai.usage.cost", fn: "sum" },
+			},
+		},
+	},
+	{
+		label: "traces-breakdown-numeric-attribute",
+		query: {
+			kind: "breakdown",
+			source: "traces",
+			metric: "count",
+			groupBy: "service",
+			filters: {
+				rootSpansOnly: true,
+				numericAggregation: { key: "gen_ai.usage.output_tokens", fn: "p95" },
+			},
+			limit: 10,
+		},
+		// Raw breakdowns over a long window go through the span budget first.
 		startTime: SHORT_START_TIME,
 		endTime: SHORT_END_TIME,
 	},

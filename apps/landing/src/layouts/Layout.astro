@@ -10,13 +10,15 @@ interface Props {
     title?: string;
     description?: string;
     image?: string;
-    ogType?: "website" | "article";
+    ogType?: "website" | "article" | "profile";
     /**
      * Locales this page actually exists in. hreflang is advertised for these
      * only; the default keeps every page announcing all three, which is what
      * every caller relied on before this prop existed.
      */
     alternates?: readonly string[];
+    /** Robots directive. Error pages pass `noindex`. */
+    robots?: string;
     /**
      * Path of this page's markdown twin (`/pricing.md`), when it has one.
      * Advertised as `rel="alternate"` so an agent can find the machine-readable
@@ -34,12 +36,12 @@ const {
     image = "/og-image.png",
     ogType = "website",
     alternates = ["en", "ja", "ko"],
+    robots = "index,follow",
     mdHref,
 } = Astro.props;
 
 const currentLocale = Astro.currentLocale ?? "en";
 const localeMap: Record<string, string>  = { en: "en_US", ja: "ja_JP", ko: "ko_KR" } satisfies Record<string, string>;
-const ogLocale = localeMap[currentLocale] ?? "en_US";
 
 // Build path without locale prefix, used for both hreflang and the canonical.
 const pathWithoutLocale = Astro.url.pathname
@@ -55,6 +57,8 @@ const locales = alternates;
 // fallback) canonicalises to English, so the copy is not a duplicate.
 const canonicalLocale = locales.includes(currentLocale) ? currentLocale : "en";
 const canonicalUrl = new URL(getRelativeLocaleUrl(canonicalLocale, pathWithoutLocale), Astro.site).toString();
+// The language the page is written in: an untranslated page served under /ja/ or /ko/ is English.
+const ogLocale = localeMap[canonicalLocale] ?? "en_US";
 const absoluteImage = image.startsWith("http")
     ? image
     : new URL(image, Astro.site).toString();
@@ -63,7 +67,7 @@ const absoluteImage = image.startsWith("http")
 <!doctype html>
 <!-- Landing is dark-only: pin the shared theme's dark class (tokens live in
      @maple/ui/styles/tokens.css; light values exist but are unused here). -->
-<html lang={currentLocale} class="dark">
+<html lang={canonicalLocale} class="dark">
     <head>
         <meta charset="utf-8" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -74,7 +78,7 @@ const absoluteImage = image.startsWith("http")
         <FontPreloads />
         <meta name="description" content={description} />
         <meta name="theme-color" content={themeColor} />
-        <meta name="robots" content="index,follow" />
+        <meta name="robots" content={robots} />
         <link rel="canonical" href={canonicalUrl} />
         {locales.map((locale) => (
             <link
@@ -87,8 +91,6 @@ const absoluteImage = image.startsWith("http")
         {mdHref && (
             <link rel="alternate" type="text/markdown" href={new URL(mdHref, Astro.site).toString()} />
         )}
-        <link rel="dns-prefetch" href="https://cdn.brandfetch.io" />
-        <link rel="preconnect" href="https://cdn.brandfetch.io" crossorigin />
         <meta property="og:type" content={ogType} />
         <meta property="og:site_name" content="Maple" />
         <meta property="og:locale" content={ogLocale} />

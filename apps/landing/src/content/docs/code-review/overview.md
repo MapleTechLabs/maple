@@ -7,6 +7,8 @@ order: 1
 
 Maple reviews pull requests on GitHub. Each review reads the diff next to the production telemetry behind the changed code: the traffic of the operations it touches, open errors in those files, and the alerts and dashboards that read its spans and metrics. Findings come back on the pull request before you merge, and Maple checks production again after the change ships.
 
+On a public repository anyone can read what the review posts, so it gets no telemetry tools and sees only counts: calls a day per changed file, error occurrences, and how many alerts or dashboards read a name the diff removes. Apart from names the diff itself removes, it names no service, span, error, alert or dashboard.
+
 Reviews run through the [GitHub integration](/docs/integrations/github). Connect GitHub first.
 
 ## Turn reviews on
@@ -38,6 +40,32 @@ The review flags a change that removes a span, attribute or metric name that an 
 ### After merge
 
 When a reviewed pull request merges, Maple waits for the deploy that carries it, then compares an hour of traffic on each side of the deploy. It comments on the pull request with the deploy, the operations its files touch, new errors, and whether the errors the review linked to its files stopped. The first look is 15 minutes after the merge. Maple keeps looking for a deploy for 48 hours. Turn this off with **Check production after merge**.
+
+### Approval
+
+Turn on **Approve low-risk pull requests** and the review approves a pull request on GitHub when it is safe to merge without a person reading it. Only an organization admin can turn it on, and only an admin can change the instructions, lenses or ignored paths while it is on. Engineers can turn it off.
+
+The approval is a real GitHub review. It counts toward the approvals a branch requires, including on the author's own pull request, so with one required approval a low-risk change can merge with no person having read it. It never satisfies a `CODEOWNERS` review.
+
+Every one of these must hold:
+
+- The review read the whole diff, not only the commits since the last review, and finished. Maple could read the diff itself, every changed file has a patch to read (a binary file, or one too large for GitHub to show, needs a person), and no changed file is under an ignored path.
+- Maple checks the diff itself, whatever the review said it read. It does not approve when a changed file is of a kind the review does not read (generated files, tooling, lockfiles, or anything under `docs/` that is not `.md`, `.mdx`, `.rst`, `.txt` or `.adoc`), when a file's patch is longer than the review is shown (1,500 lines or 60,000 characters), or when the pull request changes more than the 500 files the review is listed.
+- The diff touches no sensitive path, however the review rated the risk: CI and deploy configuration (`.github/`, `Dockerfile`, compose files, Terraform, `wrangler` and similar), `CODEOWNERS`, lockfiles and dependency manifests such as `package.json`, database migrations and `.sql` files, paths named for sign-in, access or secrets (`auth`, `oauth`, `secrets`, `credentials`, `tokens`, `permissions`, `.env*`), and the files the reviewer takes instructions from (`CLAUDE.md`, `AGENTS.md`, `.maple/`). The comment names the paths.
+- The diff is small: at most 400 changed lines across the reviewed files, and at most 25 changed files.
+- No warning or critical finding is open, including ones from earlier pushes. Notes are fine.
+- The reviewer itself reported a clean verdict, and every finding it sent could be read.
+- No warning or critical on the pull request was ever dismissed, or held back by the repository's lenses or the team's feedback, and the review did not find again one a person had closed. A person set it aside, so a person approves.
+- No warning or critical was closed by a reply or a resolved thread from the pull request's author, or from someone who cannot push to the repository. A later review that confirms the fix closes it for good.
+- The review rated the risk low. Auth, tenancy, migrations, billing and concurrency are never low.
+- The review judged that tests cover the change, or that it needs none. A review that did not assess tests does not approve.
+- No step before merge is left unticked, none was ticked by the pull request's author, and no telemetry contract is broken.
+- The confidence is 9 or more.
+- The pull request is open and not a draft, it targets the repository's default branch, its head is still the commit reviewed, and its author can push to the repository.
+
+Maple dismisses its approval when new commits are pushed, when a later review does not approve, when a later review of the same commit ends early, and when the pull request is moved to another base branch, since that changes what merges. Editing the title or description leaves the approval in place. If Maple cannot withdraw an approval, it says so in a comment on the pull request so a person can dismiss it.
+
+Turning the rule off leaves existing approvals in place. GitHub may only let a repository admin, or someone listed as allowed to dismiss reviews, dismiss a review on a protected branch, so also turn on **Dismiss stale pull request approvals when new commits are pushed** in the branch's protection or ruleset. Changes to these settings are recorded in the audit log.
 
 ## Talk to the reviewer
 
@@ -79,6 +107,7 @@ A new push while a review runs supersedes it, and the newer head is reviewed.
 | **Learn from feedback**                | Whole organization   | Skips findings like ones your team downvoted or dismissed, learned across the organization, this repository only, or off. Security and critical findings are always posted. |
 | **Fail the check on broken telemetry** | Off                  | See [telemetry contracts](#telemetry-contracts).                                                                                                                            |
 | **Check production after merge**       | On                   | See [after merge](#after-merge).                                                                                                                                            |
+| **Approve low-risk pull requests**     | Off                  | See [approval](#approval).                                                                                                                                                  |
 
 Instructions and ignored paths add up: a repository's own are read after the organization's, so a repository can narrow the defaults but not drop them. The reviewer also reads `CLAUDE.md`, `AGENTS.md` and `.maple/review.md` from the repository.
 

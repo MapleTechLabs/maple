@@ -28,13 +28,17 @@ const jsonResponse = (body: unknown, status = 200) =>
 const mockCloudflareFetch =
 	(
 		accounts: ReadonlyArray<{ id: string; name: string; type: string }>,
-		counters?: { revoked: number },
+		counters?: { revoked: number; revokeStatus?: number; revokedTokens?: Array<string> },
 	): typeof globalThis.fetch =>
-	(input) => {
+	(input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (Str.includes("/oauth2/revoke")(url)) {
 			if (counters) counters.revoked += 1
-			return Promise.resolve(new Response(null, { status: 200 }))
+			const status = counters?.revokeStatus ?? 200
+			return new Request(url, init).text().then((body) => {
+				counters?.revokedTokens?.push(new URLSearchParams(body).get("token") ?? "")
+				return new Response(null, { status })
+			})
 		}
 		if (Str.includes("/oauth2/token")(url)) {
 			return Promise.resolve(
@@ -68,7 +72,7 @@ const mockCloudflareFetch =
 
 const withMockFetch = (
 	accounts: ReadonlyArray<{ id: string; name: string; type: string }>,
-	counters?: { revoked: number },
+	counters?: { revoked: number; revokeStatus?: number; revokedTokens?: Array<string> },
 ) => Layer.succeed(FetchHttpClient.Fetch, mockCloudflareFetch(accounts, counters))
 
 const baseConfig = {
@@ -387,7 +391,8 @@ describe("CloudflareOAuthService", () => {
 	it.effect("disconnect on a connected org revokes upstream and removes the row", () => {
 		const testDb = createTestDb(trackedDbs)
 		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
-		const counters = { revoked: 0 }
+		const revokedTokens: Array<string> = []
+		const counters = { revoked: 0, revokedTokens }
 		return Effect.gen(function* () {
 			const service = yield* CloudflareOAuthService
 			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
@@ -396,9 +401,9 @@ describe("CloudflareOAuthService", () => {
 			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			const result = yield* service.disconnect(asOrgId("org_a"))
-			assert.strictEqual(result.disconnected, true)
-			// The stored access token was best-effort revoked upstream before the row dropped.
-			assert.strictEqual(counters.revoked, 1)
+			assert.deepStrictEqual(result, { disconnected: true, grantRevoked: true })
+			// The refresh token is the live credential of an idle org, so it goes first.
+			assert.deepStrictEqual(revokedTokens, ["cf-refresh-token", "cf-access-token"])
 
 			const status = yield* service.getStatus(asOrgId("org_a"))
 			assert.strictEqual(status.connected, false)
@@ -410,6 +415,24 @@ describe("CloudflareOAuthService", () => {
 				),
 			)
 			assert.isUndefined(row)
+		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)]))
+	})
+
+	it.effect("disconnect removes the row and says so when Cloudflare refuses the revoke", () => {
+		const testDb = createTestDb(trackedDbs)
+		const accounts = [{ id: "acc_1", name: "Acme Inc", type: "standard" }]
+		const counters = { revoked: 0, revokeStatus: 503 }
+		return Effect.gen(function* () {
+			const service = yield* CloudflareOAuthService
+			const { state } = yield* service.startConnect(asOrgId("org_a"), asUserId("user_a"), {
+				callbackUrl: "https://api.example.com/api/integrations/cloudflare/callback",
+			})
+			yield* service.completeConnect("auth-code", state, initiatorA)
+
+			const result = yield* service.disconnect(asOrgId("org_a"))
+			assert.deepStrictEqual(result, { disconnected: true, grantRevoked: false })
+			const status = yield* service.getStatus(asOrgId("org_a"))
+			assert.strictEqual(status.connected, false)
 		}).pipe(Effect.provide([makeLayer(testDb, withOAuthApp), withMockFetch(accounts, counters)]))
 	})
 

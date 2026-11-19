@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { discord } from "./index"
-import { CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { API_BASE, BOT_TOKEN_CONFIG, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { discordAuthorizeUrl } from "./install"
 
 const config = new Map([
@@ -174,6 +174,95 @@ describe("discord callback", () => {
 				})
 				.pipe(Effect.provideService(HttpClient.HttpClient, noNetwork), Effect.flip)
 			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatConnectorNotConfigured")
+		}),
+	)
+})
+
+interface SeenRequest {
+	readonly url: string
+	readonly method: string
+	readonly authorization: string | null
+}
+
+/** Canned Discord REST; records what reached it. */
+const restFetch = (respond: () => Response, seen: Array<SeenRequest> = []) =>
+	Layer.succeed(FetchHttpClient.Fetch, ((
+		input: Parameters<typeof globalThis.fetch>[0],
+		init?: RequestInit,
+	) => {
+		const request = new Request(input, init)
+		seen.push({
+			url: request.url,
+			method: request.method,
+			authorization: request.headers.get("authorization"),
+		})
+		return Promise.resolve(respond())
+	}) as typeof globalThis.fetch)
+
+const GUILD_ID = "613425648685547541"
+const BOT_TOKEN = "a-deployments-bot-token"
+
+const revokeWith = (
+	externalWorkspaceId: string,
+	credentials: ReadonlyMap<string, string>,
+	fetchLayer: ReturnType<typeof restFetch>,
+) =>
+	(discord.install.revoke ?? (() => Effect.die("the connector has no revoke step")))({
+		externalWorkspaceId,
+		credentials,
+	}).pipe(Effect.provide(Layer.provide(FetchHttpClient.layer, fetchLayer)))
+
+const deployment = new Map([[BOT_TOKEN_CONFIG, BOT_TOKEN]])
+
+describe("discord revoke", () => {
+	it.effect("leaves the server as the bot, with the token in the header and not the URL", () =>
+		Effect.gen(function* () {
+			const seen: Array<SeenRequest> = []
+			yield* revokeWith(
+				GUILD_ID,
+				deployment,
+				restFetch(() => new Response(null, { status: 204 }), seen),
+			)
+			assert.deepStrictEqual(seen, [
+				{
+					url: `${API_BASE}/users/@me/guilds/${GUILD_ID}`,
+					method: "DELETE",
+					authorization: `Bot ${BOT_TOKEN}`,
+				},
+			])
+		}),
+	)
+
+	it.effect("counts a server the bot is no longer in as left", () =>
+		Effect.gen(function* () {
+			const seen: Array<SeenRequest> = []
+			yield* revokeWith(
+				GUILD_ID,
+				deployment,
+				restFetch(() => jsonResponse({ code: 10004, message: "Unknown Guild" }, 404), seen),
+			)
+			assert.strictEqual(seen.length, 1)
+		}),
+	)
+
+	it.effect("reports an outage, and sends nothing without a token or for an id that is not Discord's", () =>
+		Effect.gen(function* () {
+			const down = yield* revokeWith(
+				GUILD_ID,
+				deployment,
+				restFetch(() => jsonResponse({}, 503)),
+			).pipe(Effect.flip)
+			assert.strictEqual(down._tag, "@maple/chat-platform/ChatRevokeFailed")
+			assert.include(down.message, "HTTP 503")
+			assert.notInclude(down.message, BOT_TOKEN)
+
+			const seen: Array<SeenRequest> = []
+			const respond = restFetch(() => new Response(null, { status: 204 }), seen)
+			const unconfigured = yield* revokeWith(GUILD_ID, new Map(), respond).pipe(Effect.flip)
+			assert.strictEqual(unconfigured._tag, "@maple/chat-platform/ChatRevokeFailed")
+			const badId = yield* revokeWith("../applications/@me", deployment, respond).pipe(Effect.flip)
+			assert.strictEqual(badId._tag, "@maple/chat-platform/ChatRevokeFailed")
+			assert.strictEqual(seen.length, 0)
 		}),
 	)
 })

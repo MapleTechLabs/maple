@@ -337,6 +337,33 @@ browser went offline (or was offline when it failed). That span stays `Unset` an
 already-hidden tab, like a background poll, and then fails is still an error. No `error.message` is set: it is deprecated in the conventions, and the status
 code already says what went wrong.
 
+A reload or redirect (`location.reload()`, `location.replace()`) cancels the page's requests a
+moment before `pagehide`. A request that failed with no response and was still waiting for its
+deferred end (300ms after it settles) when `pagehide` came is treated the same way: `Unset`, with
+`maple.connection_lost: "page_unload"`. A timeout from `AbortSignal.timeout()` is never excused
+this way. The unhandled rejection of such a `fetch()` (`TypeError: Failed to fetch` and its Firefox
+and Safari spellings, or an `AbortError`) waits the same 300ms before it is reported and is dropped
+if the page unloads first; every other error is reported at once. The `fetch()` rejection of a
+request whose span is `Unset` because the connection was lost, or because its URL is ignored (below),
+is not reported at all. Only the rejection itself is recognized: an error your HTTP client builds
+from it (axios's `Network Error`) is reported as before. The flip side: a real failure that your code
+answers by navigating away within those 300ms (`location.assign("/error")`) is excused too.
+
+Some requests are expected to fail, such as third-party beacons an ad or privacy blocker stops.
+List them in `errors.ignoreNetworkFailuresFor`: a string is an absolute URL prefix (like
+`tracing.propagateTraceHeaderCorsUrls`), a RegExp is tested against the full request URL (with
+credentials already redacted), before `sanitizeUrl` rewrites it. It applies whether or not the
+session's traces are sampled. A network failure of a listed request leaves its span `Unset` with
+`maple.network_failure_ignored: true`, and its unhandled `fetch()` rejection is not reported. HTTP
+error statuses from those URLs still follow `captureHttpStatus`.
+
+```ts
+MapleBrowser.init({
+	// ...
+	errors: { ignoreNetworkFailuresFor: ["https://www.google-analytics.com", /\.doubleclick\.net\//] },
+})
+```
+
 ### Breadcrumbs
 
 The SDK keeps the last 50 clicks, inputs, navigations and console lines in memory. Nothing is sent

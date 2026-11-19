@@ -2,7 +2,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, pipe, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, onTestFinished, vi } from "vitest"
-import { make } from "./make.js"
+import { make, type MapleFoldkitConfig } from "./make.js"
 
 interface OtlpBody {
 	readonly resourceSpans?: ReadonlyArray<{
@@ -21,7 +21,7 @@ interface TestModel {
 	readonly filter: string
 }
 
-const setup = () => {
+const setup = (config: Partial<MapleFoldkitConfig> = {}) => {
 	// One target standing in for `window`: `make` and the flush both listen on `globalThis`.
 	const target = new EventTarget()
 	vi.stubGlobal("addEventListener", target.addEventListener.bind(target))
@@ -40,6 +40,7 @@ const setup = () => {
 		replay: { enabled: false },
 		emitSessionMeta: false,
 		captureGlobalErrors: false,
+		...config,
 	})
 	const spans = () =>
 		Arr.flatMap(bodies, (body) =>
@@ -290,6 +291,54 @@ describe("MapleFoldkit.make", () => {
 		)
 		const loadAlerts = Option.getOrThrow(Arr.findFirst(spans(), (span) => span.name === "LoadAlerts"))
 		expect(loadAlerts.traceId).toBe(pageload.traceId)
+	})
+
+	it("names a page load by the app's route label while a strict URL sanitizer is on", async () => {
+		// Like Maple's own: anything `new URL` rejects becomes `[url]`.
+		const sanitizeUrl = (url: string) => (URL.canParse(url) ? url : "[url]")
+		const pageload = async (config: Partial<MapleFoldkitConfig>) => {
+			const { target, maple, spans } = setup({ ...config, privacy: { sanitizeUrl } })
+			const app = maple.instrument({
+				resources: Layer.empty,
+				init: (_flags: undefined, _url: { readonly pathname: string }) => ({
+					model: {},
+					commands: [
+						{
+							name: "LoadService",
+							args: {},
+							// A Command with no traced child is dropped, and its page load with it.
+							effect: Effect.succeed({ _tag: "Loaded" }).pipe(Effect.withSpan("http.client GET")),
+						},
+					],
+				}),
+			})
+			const { commands } = app.init(undefined, { pathname: "/services/checkout" })
+			await Promise.all(
+				Arr.map(commands, (command) =>
+					Effect.runPromise(
+						command.effect.pipe(
+							Effect.withSpan(command.name, { attributes: command.args }),
+							Effect.provide(app.resources),
+						),
+					),
+				),
+			)
+			target.dispatchEvent(new Event("pagehide"))
+			await settle()
+			await maple.dispose()
+			vi.unstubAllGlobals()
+			const span = Option.getOrThrow(
+				Arr.findFirst(spans(), (span) => Str.startsWith("pageload ")(span.name)),
+			)
+			const path = Arr.findFirst(span.attributes, (a) => a.key === "url.path")
+			return { name: span.name, path: Option.map(path, (a) => a.value) }
+		}
+		const routed = await pageload({ routeName: () => "ServiceDetail" })
+		expect(routed.name).toBe("pageload ServiceDetail")
+		expect(routed.path).toEqual(Option.some({ stringValue: "[url]" }))
+		// No `routeName`: the raw path is the name, so it still goes through the sanitizer.
+		const unrouted = await pageload({})
+		expect(unrouted.name).toBe("pageload [url]")
 	})
 
 	it("reports a crash with the Message that caused it and the recent Messages", async () => {

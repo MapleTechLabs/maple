@@ -4,15 +4,17 @@ import {
 	DENY_LIST_RE,
 	INTO_OUTFILE_RE,
 	MAX_RAW_SQL_LENGTH,
-	UNMASKED_SYNTAX,
+	calledFunction,
 	disallowedTableFunction,
+	hasStringTableSource,
 	isReaderName,
 	maskLiteralsAndComments,
+	unlexableSyntaxIssue,
 } from "@maple/domain/raw-sql"
 
-// Static checks for SQL sent to an org's own ClickHouse. The same shape as Maple's raw SQL
-// (`rawSqlIssue`) minus `$__orgFilter` and the system-table ban: the data and the server are the
-// org's, isolated by its credentials. `readonly=1` on every request is the real boundary.
+// Static checks for SQL sent to an org's own ClickHouse: Maple's raw SQL rules (`rawSqlIssue`) minus
+// `$__orgFilter` and the system-table ban, since the data and server are the org's. `readonly=1`
+// does not bind a subquery's own `SETTINGS` (checked on 26.2), so refusing the clause is required.
 
 export const CLICKHOUSE_MACROS = [
 	"$__timeFilter",
@@ -72,16 +74,27 @@ const unknownMacroIssue = (sql: string): string | null => {
 	return null
 }
 
+// `$` and digits are name characters to the server, so `orders_$__interval_s` would expand into
+// one name the checks never read. `\w+` already takes a name glued on the right.
+const GLUED_MACRO_RE = /(?<=[\w$])\$__\w+|\$__\w+(?=\$)/
+
+const gluedMacroIssue = (sql: string): string | null => {
+	const glued = GLUED_MACRO_RE.exec(sql)
+	return glued === null
+		? null
+		: `${glued[0]} is joined to a name or number. Put a space or an operator around a macro: it expands to a value, never to part of a name.`
+}
+
 /** The first reason this SQL cannot run on an external ClickHouse source, or null. */
 export const clickHouseSqlIssue = (sql: string): string | null => {
 	if (Str.trim(sql).length === 0 || sql.length > MAX_RAW_SQL_LENGTH) {
 		return `SQL must contain between 1 and ${MAX_RAW_SQL_LENGTH} characters.`
 	}
 	const masked = maskLiteralsAndComments(sql)
-	const unmasked = Arr.findFirst(UNMASKED_SYNTAX, ([pattern]) => pattern.test(masked))
-	if (Option.isSome(unmasked)) return Str.replace(/raw SQL/g, "this query")(unmasked.value[1])
+	const unlexable = unlexableSyntaxIssue(sql, masked)
+	if (unlexable !== null) return Str.replace(/raw SQL/g, "this query")(unlexable)
 	// Masked text, like expansion: `'$__x'` in a literal or comment is text, not a macro.
-	const macroIssue = macroArgumentIssue(masked) ?? unknownMacroIssue(masked)
+	const macroIssue = gluedMacroIssue(masked) ?? macroArgumentIssue(masked) ?? unknownMacroIssue(masked)
 	if (macroIssue !== null) return macroIssue
 	const body = maskLiteralsAndComments(stripTerminal(sql))
 	if (Str.includes(";")(body)) return "Send one statement at a time: remove the ';' separators."
@@ -98,6 +111,16 @@ export const clickHouseSqlIssue = (sql: string): string | null => {
 		return isReaderName(tableFunction)
 			? `Table function '${tableFunction}' is not allowed: it reads outside this database.`
 			: `Table function '${tableFunction}(...)' is not allowed where a table goes; only numbers() and generateSeries() are.`
+	}
+	// The server reads a string in a table position as a table name (or a file to open), which no
+	// check on names sees.
+	if (hasStringTableSource(sql)) {
+		return "A string literal cannot stand where a table goes. Name the table as an identifier (`db.table`, in backticks if it needs them)."
+	}
+	// The server is the org's own, so its settings and system tables are theirs to read. The
+	// request headers are not: they carry the stored password.
+	if (calledFunction(sql, (name) => name === "getclienthttpheader") !== null) {
+		return "Function 'getClientHTTPHeader' is not allowed: it reads the connection Maple opens, not your data."
 	}
 	if (/\bSETTINGS\b/i.test(body)) {
 		return "SETTINGS is managed by Maple: queries run read-only under a fixed time and memory budget. Remove it."

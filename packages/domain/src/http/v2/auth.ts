@@ -106,6 +106,12 @@ const READ_ONLY_POST_PATHS = new Set([
 	"/v2/logs/breakdown",
 	"/v2/metrics/timeseries",
 	"/v2/metrics/breakdown",
+	// The Prometheus query API; Grafana POSTs its reads as forms.
+	"/v2/metrics/prometheus/api/v1/query",
+	"/v2/metrics/prometheus/api/v1/query_range",
+	"/v2/metrics/prometheus/api/v1/series",
+	"/v2/metrics/prometheus/api/v1/labels",
+	"/v2/metrics/prometheus/api/v1/query_exemplars",
 	// Live proxies to PlanetScale, POST because the window + filters make a long
 	// key that belongs in a body — reads, not writes.
 	"/v2/integrations/planetscale/query_insights",
@@ -124,9 +130,19 @@ const isReadOnlyPost = (path: string): boolean =>
 	READ_ONLY_POST_PATHS.has(path) || Arr.some(READ_ONLY_POST_PATTERNS, (pattern) => pattern.test(path))
 
 /**
+ * GETs whose answer carries a stored secret, by route template: a scoped key needs write for
+ * them, like the POSTs that hand the same kind of secret out.
+ */
+const WRITE_SCOPED_GET_PATHS = new Set([
+	"/v2/integrations/planetscale/webhook_config",
+	"/v2/integrations/aws/connections/:id/setup",
+])
+
+/**
  * Mechanical scope derivation: the resource family is the first path segment
  * after `/v2/`. GET/HEAD and explicitly registered read-only POST queries require
- * read access; mutation methods require write access.
+ * read access, except the GETs registered in `WRITE_SCOPED_GET_PATHS`; mutation
+ * methods require write access.
  *
  * `routePath` must be the router's **matched route template** (`/v2/api_keys`,
  * `/v2/api_keys/:keyId`), never the raw request URL. The router matches
@@ -138,11 +154,11 @@ const isReadOnlyPost = (path: string): boolean =>
 export const requiredScopeForRoute = (method: string, routePath: string): RequiredScope | null => {
 	const [, family] = /^\/v2\/([a-z][a-z0-9_]*)(?:\/|$)/.exec(routePath) ?? []
 	if (family === undefined) return null
-	const access =
-		method === "GET" || method === "HEAD" || (method === "POST" && isReadOnlyPost(routePath))
-			? "read"
-			: "write"
-	return { family, access }
+	const isRead =
+		method === "GET" || method === "HEAD"
+			? !WRITE_SCOPED_GET_PATHS.has(routePath)
+			: method === "POST" && isReadOnlyPost(routePath)
+	return { family, access: isRead ? "read" : "write" }
 }
 
 /**

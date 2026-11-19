@@ -82,11 +82,19 @@ export class ShareLinkRateLimit extends Context.Service<ShareLinkRateLimit, Rate
 export class CliAuthRateLimit extends Context.Service<CliAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/CliAuthRateLimit",
 ) {}
+/** Self-hosted root-password logins, keyed by client IP. */
+export class SelfHostedLoginRateLimit extends Context.Service<SelfHostedLoginRateLimit, RateLimiter>()(
+	"@maple/backend/platform/SelfHostedLoginRateLimit",
+) {}
 export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpOAuthRateLimit",
 ) {}
 export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpToolsRateLimit",
+) {}
+/** One AWS connection's finding event deliveries, keyed by connection id. */
+export class AwsEventsRateLimit extends Context.Service<AwsEventsRateLimit, RateLimiter>()(
+	"@maple/backend/platform/AwsEventsRateLimit",
 ) {}
 /** Maple's share of a production Clerk instance's API limit, keyed by data source id. */
 export class DataSourceProductionCallLimit extends Context.Service<
@@ -98,6 +106,10 @@ export class DataSourceDevelopmentCallLimit extends Context.Service<
 	DataSourceDevelopmentCallLimit,
 	RateLimiter
 >()("@maple/backend/platform/DataSourceDevelopmentCallLimit") {}
+/** Queries Maple sends one SQL data source (an org's own ClickHouse), keyed by data source id. */
+export class DataSourceSqlQueryLimit extends Context.Service<DataSourceSqlQueryLimit, RateLimiter>()(
+	"@maple/backend/platform/DataSourceSqlQueryLimit",
+) {}
 
 export class ObjectStoreError extends Schema.TaggedError<ObjectStoreError>()(
 	"@maple/backend/platform/ObjectStoreError",
@@ -116,6 +128,17 @@ export interface ObjectStore {
 /** Session-replay rrweb payloads, written by the ingest gateway. */
 export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectStore>()(
 	"@maple/backend/platform/ReplayBlobBucket",
+) {}
+
+/** Deletes a bucket's objects under a key prefix, one listing page at a time. */
+export interface ObjectPrefixEraser {
+	/** Deletes one page of objects under `prefix` and says how many went; `0` means none are left. */
+	readonly deletePage: (prefix: string) => Effect.Effect<number, ObjectStoreError>
+}
+
+/** The replay bucket's delete side, for erasing a deleted organization's recordings. */
+export class ReplayBlobEraser extends Context.Service<ReplayBlobEraser, ObjectPrefixEraser>()(
+	"@maple/backend/platform/ReplayBlobEraser",
 ) {}
 
 /** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */

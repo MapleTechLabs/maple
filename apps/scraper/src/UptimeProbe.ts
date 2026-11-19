@@ -1,4 +1,5 @@
 import { Option, Schema, String as Str } from "effect"
+import { capCheckError, type UptimeCertificate } from "@maple/domain/uptime"
 import type { PhaseTimings } from "./UptimePhases"
 
 /**
@@ -24,6 +25,25 @@ export interface ProbeOutcome {
 	readonly errorType: UptimeFailureType | null
 	/** HTTP only: where the check spent its time, absent when no phase was measured. */
 	readonly timings?: PhaseTimings
+	/** HTTPS only: the certificate the configured host presented, when the handshake completed. */
+	readonly certificate?: UptimeCertificate
+	/** Multi-step only: each step that ran, in order, for its child span. */
+	readonly steps?: ReadonlyArray<UptimeStepRun>
+}
+
+/** One step of a multi-step check as it ran: a child span of the check's span. */
+export interface UptimeStepRun {
+	readonly name: string
+	readonly method: string
+	/**
+	 * The step's URL as configured, `{{name}}` kept: values read from responses (tokens, ids) never
+	 * reach a span name or attribute.
+	 */
+	readonly url: string
+	readonly spanId: string
+	readonly startedAtMs: number
+	readonly endedAtMs: number
+	readonly outcome: ProbeOutcome
 }
 
 /** The W3C ids a check runs under; HTTP sends them so the target's server span joins the trace. */
@@ -43,12 +63,13 @@ export const succeeded = (durationMs: number, statusCode: number | null = null):
 	errorType: null,
 })
 
+/** A failed check. Its sentence is capped here, so spans, the report and the stored state all get the same bounded text. */
 export const failed = (
 	durationMs: number,
 	errorType: UptimeFailureType,
 	error: string,
 	statusCode: number | null = null,
-): ProbeOutcome => ({ ok: false, durationMs, statusCode, error, errorType })
+): ProbeOutcome => ({ ok: false, durationMs, statusCode, error: capCheckError(error), errorType })
 
 /** `10 s`, `2.5 s`: timeouts are whole or half seconds in practice. */
 export const formatSeconds = (ms: number): string => `${Number((ms / 1000).toFixed(1))} s`

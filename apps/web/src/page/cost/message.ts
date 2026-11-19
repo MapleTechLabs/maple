@@ -5,6 +5,9 @@ import {
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
+	GcpCostSourceAdded,
+	GcpCostSourceRemoved,
+	GcpCostStatus,
 	GithubCostInstallations,
 	GithubCostSourceAdded,
 	GithubCostSourceRemoved,
@@ -17,19 +20,21 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { VcsInstallationId } from "@maple/domain/vcs"
-import { CostSourceId } from "@maple/primitives"
+import { CostSourceId, GcpConnectorId } from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import { perDimension } from "./derive"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CredentialProvider } from "./providers"
 
@@ -72,6 +77,7 @@ export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	/** Opens the add-source dialog on the providers. */
 	ClickedAddSource: {},
+	ChangedProviderSearch: { value: Schema.String },
 	/** Picks a provider added by pasting a credential: the dialog moves to its form. */
 	PickedProvider: { provider: CredentialProvider },
 	/** Turns the dialog to Vercel and reads the org's connection; also the step's Try again. */
@@ -84,6 +90,17 @@ export const Message = defineMessageUnion({
 	CompletedLoadPlanetScaleStatus: result(PlanetScaleCostStatus),
 	ClickedConfirmAddPlanetScale: {},
 	CompletedAddPlanetScale: { result: Schema.Result(PlanetScaleCostSourceAdded, LoadFailure) },
+	/** Turns the dialog to Google Cloud and reads the org's connections; also the step's Try again. */
+	ClickedAddGcp: {},
+	CompletedLoadGcpStatus: result(GcpCostStatus),
+	PickedGcpConnector: { connectorId: GcpConnectorId },
+	GotGcpTableDraftMessage: { message: Field.Message },
+	GotGcpCommandCopyMessage: { message: CopyButton.Message },
+	SubmittedGcpExport: {},
+	CompletedAddGcp: { result: Schema.Result(GcpCostSourceAdded, LoadFailure) },
+	/** Turns the dialog to the request form, its provider filled from the search. */
+	ClickedRequestProvider: {},
+	GotRequestMessage: { message: FeatureRequest.Message },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
 	ClickedReplaceCredential: { provider: CredentialProvider },
@@ -115,6 +132,7 @@ export const Message = defineMessageUnion({
 	CompletedRemoveGithubSource: { result: Schema.Result(GithubCostSourceRemoved, LoadFailure) },
 	CompletedRemoveVercel: { result: Schema.Result(VercelCostSourceRemoved, LoadFailure) },
 	CompletedRemovePlanetScale: { result: Schema.Result(PlanetScaleCostSourceRemoved, LoadFailure) },
+	CompletedRemoveGcp: { result: Schema.Result(GcpCostSourceRemoved, LoadFailure) },
 	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

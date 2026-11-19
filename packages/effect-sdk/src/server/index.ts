@@ -1,5 +1,6 @@
 export * as Maple from "./layer.js"
 export type { MapleConfig } from "./layer.js"
+export type { ProfilingOptions } from "./profiling.js"
 export * as MapleFlush from "./flushable.js"
 export type { FlushableTelemetry, MapleFlushableConfig } from "./flushable.js"
 export type { FinishedSpan, MapleSpanOptions } from "../shared/span-options.js"

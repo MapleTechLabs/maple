@@ -6,7 +6,7 @@ import { rowsToV2ApiKeys } from "@maple/web-data/collections/api-keys"
 import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
-import { type SettingsSearch as SettingsSearchSchema, settingsTabValues } from "../../route/search"
+import type { SettingsSearch as SettingsSearchSchema } from "../../route/search"
 
 type SettingsSearch = typeof SettingsSearchSchema.Type
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
@@ -24,6 +24,8 @@ import * as Ai from "./ai/update"
 import * as Billing from "./billing/update"
 import * as Members from "./members/update"
 import * as General from "./general/update"
+import * as Domains from "./domains/update"
+import * as Sso from "./sso/update"
 import * as DataPlatform from "./data-platform/update"
 import * as DataSources from "./data-sources/update"
 import * as AuditLog from "./audit-log/update"
@@ -33,9 +35,7 @@ import { Message as KeysMessageValue } from "./keys/message"
 import type * as KeysModel from "./keys/model"
 import * as Keys from "./keys/update"
 import {
-	type LegacySettingsRedirect,
 	resolveActiveSettingsTab,
-	resolveLegacySettingsTab,
 	type SettingsTab,
 	visibleSections,
 	visibleTabs,
@@ -101,6 +101,8 @@ const TAB_TAGS = {
 	"data-sources": "DataSources",
 	general: "General",
 	members: "Members",
+	domains: "Domains",
+	sso: "Sso",
 	billing: "Billing",
 } as const satisfies Record<SettingsTab, TabModel["_tag"]>
 const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS[tab]
@@ -274,6 +276,24 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
+		case "Domains": {
+			const step = Domains.init()
+			return {
+				model: { ...model, tab: { _tag: "Domains", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDomainsMessage({ message }),
+				),
+			}
+		}
+		case "Sso": {
+			const step = Sso.init(Policy.has(grantsOf(model), "sso:manage"))
+			return {
+				model: { ...model, tab: { _tag: "Sso", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotSsoMessage({ message }),
+				),
+			}
+		}
 		case "Billing": {
 			const step = Billing.init(
 				grantsOf(model),
@@ -389,6 +409,24 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				),
 			}
 		}
+		case "Domains": {
+			const step = Domains.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Domains", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDomainsMessage({ message }),
+				),
+			}
+		}
+		case "Sso": {
+			const step = Sso.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "Sso", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotSsoMessage({ message }),
+				),
+			}
+		}
 		case "Members": {
 			const step = Members.revisit(kept.model)
 			return {
@@ -437,9 +475,7 @@ const syncTab = (model: Model, context: PageContext): Return => {
 		return {
 			model: {
 				...leaveTab(model),
-				deniedTab: Option.getOrNull(
-					Array.findFirst(settingsTabValues, (value) => value === model.search.tab),
-				),
+				deniedTab: model.search.tab,
 			},
 			outMessage: PageOutMessage.RequestedNavigation({
 				url: hrefOf(AppRoute.Settings({ search })),
@@ -464,17 +500,6 @@ const syncTab = (model: Model, context: PageContext): Return => {
 	return { model }
 }
 
-const redirectUrl = (redirect: LegacySettingsRedirect): string => {
-	switch (redirect.kind) {
-		case "integrations":
-			return hrefOf(AppRoute.Integrations({ search: {} }))
-		case "account":
-			return hrefOf(AppRoute.Account({ search: { tab: "email-preferences" } }))
-		case "tab":
-			return hrefOf(AppRoute.Settings({ search: { tab: redirect.tab } }))
-	}
-}
-
 /** The audit filters ride along on a tab switch. */
 const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	range: search.range,
@@ -485,18 +510,8 @@ const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	outcome: search.outcome,
 })
 
-/** Retired `?tab=` values are replaced by their new home before the page renders. */
-const enter = (model: Model, context: PageContext): Return =>
-	Option.match(resolveLegacySettingsTab(model.search.tab), {
-		onNone: () => syncTab(model, context),
-		onSome: (redirect) => ({
-			model: leaveTab(model),
-			outMessage: PageOutMessage.RequestedNavigation({ url: redirectUrl(redirect), isReplace: true }),
-		}),
-	})
-
 export const init = (route: SettingsRoute, context: PageContext): Return => {
-	const entered = enter(
+	const entered = syncTab(
 		{
 			search: route.search,
 			nowMs: 0,
@@ -526,7 +541,7 @@ export const routeChanged = (model: Model, route: SettingsRoute, context: PageCo
 	withRuleStats(changedRoute(model, route, context))
 
 const changedRoute = (model: Model, route: SettingsRoute, context: PageContext): Return =>
-	enter(
+	syncTab(
 		{
 			...model,
 			search: route.search,
@@ -750,6 +765,30 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				model: putTab(model, { _tag: "Members", model: step.model }),
 				commands: Command.mapMessages(step.commands ?? [], (child) =>
 					Message.GotMembersMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotDomainsMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Domains")
+			if (tab === undefined) return { model }
+			const step = Domains.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "Domains", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotDomainsMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
+		GotSsoMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "Sso")
+			if (tab === undefined) return { model }
+			const step = Sso.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "Sso", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotSsoMessage({ message: child }),
 				),
 				outMessage: step.outMessage,
 			}

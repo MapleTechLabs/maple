@@ -49,7 +49,7 @@ export const resolveShareWindow = (
 ): ShareWindow | null => {
 	const { search } = model
 	const options = {
-		snap: model.refreshTick === 0,
+		snap: model.clockRead !== "Reload",
 		nowMs: model.nowMs,
 		timeZone: shareTimeZoneOf(search, pageTimeZone),
 	}
@@ -108,7 +108,15 @@ const flush = (model: Model): Return => {
 	const pending = Arr.flatMap(share.dashboard.widgets, (widget) => {
 		const maxDataPoints = model.options[widget.id]
 		if (maxDataPoints === undefined) return []
-		const key = encodeJson([window.startTime, window.endTime, variablesKey, maxDataPoints])
+		// A pinned range moves on its own grid step, so a tick refetches the tile when it does.
+		const pinned =
+			widget.timeRange === undefined
+				? null
+				: resolveTimeRangeWindow(widget.timeRange, {
+						snap: model.clockRead !== "Reload",
+						nowMs: model.nowMs,
+					})
+		const key = encodeJson([window.startTime, window.endTime, variablesKey, maxDataPoints, pinned])
 		return model.requested[widget.id] === key
 			? []
 			: [{ widgetId: widget.id, key, maxDataPoints, transform: widget.dataSource.transform }]
@@ -155,10 +163,13 @@ const withWindow = (model: Model, pageTimeZone: string): Model => {
 		: { ...model, window: resolveShareWindow(model, share, pageTimeZone) }
 }
 
+/** A tick keeps the snapped window: only failed tiles and tiles whose window moved refetch. */
 const reload = (model: Model, pageTimeZone: string): Return => {
-	const refreshTick = model.refreshTick + 1
-	const next = withWindow({ ...model, refreshTick, requested: {} }, pageTimeZone)
-	return flush(next)
+	const requested =
+		model.clockRead === "Reload"
+			? {}
+			: Rec.filter(model.requested, (key, widgetId) => model.failedKeys[widgetId] !== key)
+	return flush(withWindow({ ...model, requested, failedKeys: {} }, pageTimeZone))
 }
 
 export const init = (route: Route): Return => ({
@@ -166,10 +177,11 @@ export const init = (route: Route): Return => ({
 		token: route.token,
 		search: route.search,
 		resolve: { _tag: "Loading" },
-		refreshTick: 0,
+		clockRead: "Navigation",
 		window: null,
 		options: {},
 		requested: {},
+		failedKeys: {},
 		isFlushScheduled: false,
 		queuedBatches: [],
 		sentBatchId: 0,
@@ -223,9 +235,15 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 				...Rec.fromEntries(Arr.map(Rec.keys(keys), (widgetId) => [widgetId, missing])),
 				...states,
 			}
-			const isLive = Arr.some(
-				Rec.keys(settled),
-				(widgetId) => model.requested[widgetId] === keys[widgetId],
+			const live = Arr.filter(
+				Rec.toEntries(settled),
+				([widgetId]) => model.requested[widgetId] === keys[widgetId],
+			)
+			const isLive = live.length > 0
+			const failedKeys = Arr.reduce(live, model.failedKeys, (failed, [widgetId, state]) =>
+				state._tag === "Error"
+					? { ...failed, [widgetId]: keys[widgetId] ?? "" }
+					: Rec.remove(failed, widgetId),
 			)
 			return {
 				model: {
@@ -234,15 +252,8 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 					sentBatchId: next === undefined ? model.sentBatchId : model.sentBatchId + 1,
 					// A batch whose widgets all moved on is skipped whole, its variables included.
 					variables: isLive && variables !== undefined ? variables : model.variables,
-					states: {
-						...model.states,
-						...Rec.fromEntries(
-							Arr.filter(
-								Rec.toEntries(settled),
-								([widgetId]) => model.requested[widgetId] === keys[widgetId],
-							),
-						),
-					},
+					failedKeys,
+					states: { ...model.states, ...Rec.fromEntries(live) },
 				},
 				commands:
 					next === undefined
@@ -250,8 +261,11 @@ export const update = (model: Model, message: Message, pageTimeZone: string): Re
 						: [FetchBatch({ token: model.token, batchId: model.sentBatchId + 1, ...next })],
 			}
 		},
-		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
-		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
+		ClickedReload: () => ({ model: { ...model, clockRead: "Reload" }, commands: [ResolveReloadClock()] }),
+		TickedAutoRefresh: () => ({
+			model: { ...model, clockRead: "AutoRefresh" },
+			commands: [ResolveReloadClock()],
+		}),
 		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
 		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {

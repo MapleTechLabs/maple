@@ -33,6 +33,9 @@ export const init = (route: ViewRoute, context: PageContext): Return =>
 			rawPageId: route.pageId,
 			pageId: Option.getOrNull(pageIdFromUrl(route.pageId)),
 			snapshot: Keyed.idle(),
+			previewState: "live",
+			previewWidth: "desktop",
+			previewScheme: "light",
 		},
 		context,
 		"Load",
@@ -44,4 +47,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, snapshot: Keyed.accept(model.snapshot, key, result) },
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
+		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
+		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
+		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
 	})

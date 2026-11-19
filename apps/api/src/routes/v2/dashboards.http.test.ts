@@ -39,9 +39,11 @@ import {
 	WarehouseServiceStubLayer,
 } from "./v2-test-support"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2SharePublicLive } from "./share.http"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { nodeExporterDashboard } from "@maple/backend/services/dashboards/grafana-dashboard-import.fixtures"
 import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 
 const createdDbs: TestDb[] = []
@@ -96,7 +98,6 @@ const SharePublicLive = HttpV2SharePublicLive.pipe(
 				Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
 			create: () => Effect.die("organization creation is not exercised by this harness"),
 			chooseRegion: () => Effect.die("organization regions are not exercised by this harness"),
-			delete: () => Effect.die("organization deletion is not exercised by this harness"),
 		}),
 	),
 	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),
@@ -152,7 +153,12 @@ const makeHarness = () => {
 			Layer.mergeAll(
 				// Real widget evaluation over the inert warehouse and query engine below.
 				HttpV2DashboardsLive.pipe(
-					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+					Layer.provide(
+						Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
+							// Over the inert warehouse below, not the real one `PromqlQueryService.layer` brings.
+							Layer.provide(Layer.effect(PromqlQueryService, PromqlQueryService.make)),
+						),
+					),
 				),
 				SharePublicLive,
 			),
@@ -310,6 +316,40 @@ describe("v2 dashboards over HTTP", () => {
 			type: "not_found_error",
 			code: "dashboard_not_found",
 		})
+		await harness.dispose()
+	})
+
+	it("imports a Grafana dashboard with its sections, PromQL widgets, warnings and stats", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+
+		const imported = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: { dashboard: nodeExporterDashboard, meta: {} },
+		})
+		expect(imported.status).toBe(200)
+		expect(imported.body.object).toBe("dashboard_import")
+		expect(imported.body.stats).toEqual({ panels: 7, converted: 7, placeholders: 0 })
+		expect(imported.body.warnings).toContain(
+			'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
+		)
+		expect(imported.body.dashboard.txid).toMatch(/^\d+$/)
+
+		const stored = await harness.request(
+			"GET",
+			`/v2/dashboards/${imported.body.dashboard.id}`,
+			key.secret,
+		)
+		expect(stored.body.name).toBe("Node overview")
+		expect(stored.body.sections).toHaveLength(2)
+		const cpu = stored.body.widgets.find(
+			(widget: { display: { title: string } }) => widget.display.title === "CPU basic",
+		)
+		expect(cpu.data_source).toMatchObject({ kind: "promql", legend_format: "{{mode}}" })
+
+		const refused = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: { kind: "Dashboard", spec: {} },
+		})
+		expect(refused.status).toBe(400)
 		await harness.dispose()
 	})
 
@@ -996,6 +1036,38 @@ describe("v2 dashboard shares", () => {
 		const again = await harness.request("DELETE", `/v2/dashboards/${id}/share`, key.secret)
 		expect(again.status).toBe(200)
 		expect(again.body.deleted).toBe(true)
+
+		await harness.dispose()
+	})
+
+	it("takes an expires_at, and an expired link answers like a revoked one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, key.secret)
+		const later = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: later,
+		})
+		expect(shared.body.expires_at).toBe(later)
+		const token: string = shared.body.token
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
+
+		const past = new Date(Date.now() - 1000).toISOString()
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: past,
+		})
+		expect(await resolve(harness, token)).toBe("__not_found__")
+
+		const cleared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: null,
+		})
+		expect(cleared.body.expires_at).toBeUndefined()
+		expect(cleared.body.token).toBe(token)
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
 
 		await harness.dispose()
 	})

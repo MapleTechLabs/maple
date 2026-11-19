@@ -282,6 +282,42 @@ describe.skipIf(!enabled)("WarehouseQueryService ClickHouse raw-SQL E2E", () => 
 		120_000,
 	)
 
+	// Sent past the text checks on purpose: this is the server refusing, not the validator.
+	it.effect(
+		"runs raw SQL in the server's read-only mode, under Maple's limits",
+		() => {
+			const layer = buildLayer()
+			return Effect.gen(function* () {
+				const settings = yield* WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(
+						tenant,
+						"SELECT toString(getSetting('readonly')) AS readonly, toString(getSetting('max_execution_time')) AS seconds",
+						{ profile: "rawInteractive" },
+					),
+				)
+				assert.deepStrictEqual(settings, [{ readonly: "1", seconds: "10" }])
+
+				const reader = yield* Effect.flip(
+					WarehouseQueryService.use((service) =>
+						service.rawSqlQuery(
+							tenant,
+							"SELECT * FROM file('maple_raw_sql_e2e_absent.csv', 'CSV', 'a String')",
+						),
+					),
+				)
+				assert.match(reader.message, /readonly mode/)
+
+				const lifted = yield* Effect.flip(
+					WarehouseQueryService.use((service) =>
+						service.rawSqlQuery(tenant, "SELECT 1 AS n SETTINGS readonly = 0"),
+					),
+				)
+				assert.match(lifted.message, /Cannot modify 'readonly'/)
+			}).pipe(Effect.provide(layer))
+		},
+		120_000,
+	)
+
 	// Pins the wire-format parity fix itself, independent of catalog coverage:
 	// the production ClickHouse client must receive 64-bit ints as JSON numbers
 	// (output_format_json_quote_64bit_integers=0), exactly like the Tinybird SDK,

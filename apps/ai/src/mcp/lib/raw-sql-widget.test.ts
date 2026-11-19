@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { buildRawSqlDataSource, validateRawSql, visualizationToDisplayType } from "./raw-sql-widget"
+import { makePromqlDataSource } from "@maple/widgets/dashboard"
+import {
+	buildRawSqlDataSource,
+	validateRawSql,
+	visualizationToDisplayType,
+	withScalarReduction,
+} from "./raw-sql-widget"
 
 describe("visualizationToDisplayType", () => {
 	it("derives line/area/bar for chart based on chartId hint", () => {
@@ -113,5 +119,26 @@ describe("validateRawSql", () => {
 				"SELECT 1 FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) FORMAT JSONEachRow",
 			),
 		).toBeNull()
+	})
+})
+
+describe("withScalarReduction on PromQL", () => {
+	it("gives a PromQL stat a stat display type, so `first` reads the newest point", () => {
+		const repaired = withScalarReduction(makePromqlDataSource({ query: "vector(time())" }), true)
+		expect(repaired).toMatchObject({
+			kind: "promql",
+			displayType: "stat",
+			transform: { reduceToValue: { field: "value", aggregate: "first" } },
+		})
+	})
+
+	it("keeps a display type the caller chose", () => {
+		const source = makePromqlDataSource({ query: "up", displayType: "gauge" })
+		expect(withScalarReduction(source, true)).toMatchObject({ displayType: "gauge" })
+	})
+
+	it("replaces a line display type on a scalar, whose rows would be oldest first", () => {
+		const source = makePromqlDataSource({ query: "up", displayType: "line" })
+		expect(withScalarReduction(source, true)).toMatchObject({ displayType: "stat" })
 	})
 })

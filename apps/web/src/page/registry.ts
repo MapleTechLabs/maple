@@ -47,6 +47,7 @@ import * as SecurityFinding from "./security/finding"
 import * as SecurityRun from "./security/run"
 import * as SecurityTabs from "./security/tabs"
 import * as SecurityTelemetry from "./security/telemetry"
+import * as SecurityCloud from "./security/cloud"
 import * as ErrorsHub from "./errors/hub"
 import * as ErrorIssue from "./errors/issue"
 import * as InfraContainer from "./infra/containers/detail"
@@ -90,8 +91,6 @@ import * as CostBudgets from "./cost/budgets"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
-import * as ReleaseDetail from "./releases/detail"
-import * as ReleasesList from "./releases/list"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ReplayDetail from "./replays/detail"
@@ -179,6 +178,7 @@ export const pages = [
 	CodeReview.page,
 	SecurityTabs.page,
 	SecurityTelemetry.page,
+	SecurityCloud.page,
 	SecurityDependencies.page,
 	SecurityAuditLog.page,
 	SecurityDetections.page,
@@ -193,8 +193,6 @@ export const pages = [
 	Integrations.page,
 	Recommendation.page,
 	AnomalyDetail.page,
-	ReleasesList.page,
-	ReleaseDetail.page,
 	InvestigationsList.page,
 	InvestigationDetail.page,
 	Settings.page,

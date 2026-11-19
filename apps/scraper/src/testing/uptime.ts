@@ -20,21 +20,24 @@ export const httpConfig = (overrides: Record<string, unknown> = {}) => ({
 export const mkUptimeTarget = (
 	options: {
 		readonly id?: string
+		readonly orgId?: string
 		readonly intervalSeconds?: number
 		readonly serviceName?: string | null
 		readonly ingestKey?: string
 		readonly name?: string
 		readonly config?: Record<string, unknown>
+		readonly revision?: number
 	} = {},
 ): UptimeProbeTarget =>
 	decodeTarget({
 		id: options.id ?? MONITOR_A,
-		orgId: "org_test",
+		orgId: options.orgId ?? "org_test",
 		name: options.name ?? "Checkout health",
 		serviceName: options.serviceName === undefined ? "checkout" : options.serviceName,
 		intervalSeconds: options.intervalSeconds ?? 30,
 		config: options.config ?? httpConfig(),
 		ingestKey: options.ingestKey ?? "maple_pk_test",
+		...(options.revision === undefined ? undefined : { revision: options.revision }),
 	})
 
 /** A fixed DNS: no test reaches a real resolver. Unknown names fail like NXDOMAIN. */

@@ -5,7 +5,7 @@ import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { truncate } from "../lib/format"
+import { truncate, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -56,17 +56,17 @@ const formatLine = (ev: TranscriptEvent): string => {
 				// Mobile SDKs leave `url` empty and put the screen name in `message`.
 				return `NAV   → ${ev.url || ev.message}`
 			case "click":
-				return `CLICK ${ev.targetSelector}${ev.targetText ? ` "${truncate(ev.targetText, 60)}"` : ""}`
+				return `CLICK ${ev.targetSelector}${ev.targetText ? ` ${untrustedText(ev.targetText, 60)}` : ""}`
 			case "input":
 				return `INPUT ${ev.targetSelector}`
 			case "console":
-				return `LOG   [${ev.level || "log"}] ${truncate(ev.message, 200)}`
+				return `LOG   [${ev.level || "log"}] ${untrustedText(ev.message, 200)}`
 			case "network":
 				return `NET   ${ev.netMethod} ${ev.netStatus} ${truncate(ev.netUrl, 100)} (${ev.netDurationMs}ms)`
 			case "error":
-				return `ERROR ${truncate(ev.message, 200)}`
+				return `ERROR ${untrustedText(ev.message, 200)}`
 			default:
-				return `${ev.type} ${truncate(ev.message, 120)}`
+				return `${ev.type} ${untrustedText(ev.message, 120)}`
 		}
 	})()
 	return `${time}  ${detail}${trace}`
@@ -92,6 +92,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 100, max: 250, noun: "events" }),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Reading a session transcript"],
 		handler: Effect.fn("McpTool.getSessionTranscript")(function* (params) {
@@ -190,9 +191,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 						}
 					: undefined),
 				blocks:
-					events.length === 0
-						? []
-						: [doc.code("text", Arr.join(Arr.map(events, formatLine), "\n"))],
+					events.length === 0 ? [] : [doc.untrusted(Arr.join(Arr.map(events, formatLine), "\n"))],
 				...(pagination.nextOffset === undefined
 					? undefined
 					: {

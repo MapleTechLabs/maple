@@ -1,6 +1,6 @@
 import { DashboardId } from "@maple/domain/http"
 import { displayError } from "@maple/web-data/lib/error-messages"
-import { Effect, Schema } from "effect"
+import { Clock, DateTime, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
@@ -32,6 +32,22 @@ export const WriteShare = Command.define("WriteDashboardShare", {
 							payload: { mode: write.access },
 						})
 					return
+				case "SetBoardExpiry": {
+					const now = yield* Clock.currentTimeMillis
+					yield* client.dashboards.upsertShare({
+						params: { id },
+						payload: {
+							mode: write.mode,
+							expiresAt:
+								write.days === null
+									? null
+									: DateTime.formatIso(
+											DateTime.makeUnsafe(now + write.days * 24 * 60 * 60 * 1000),
+										),
+						},
+					})
+					return
+				}
 				case "RotateBoard":
 					yield* client.dashboards.rotateShare({ params: { id } })
 					return

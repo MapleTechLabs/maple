@@ -63,24 +63,40 @@ export const AWS_MODULE_SPECS = {
 	},
 	security: {
 		title: "Security scan",
-		summary: "Misconfigurations and findings, ranked by the traffic they are exposed to.",
+		summary:
+			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect.",
 		available: false,
+		rolloutFlag: "cloudSecurity",
 		managedPolicies: ["arn:aws:iam::aws:policy/SecurityAudit"],
+		// Every read the findings poller makes, so none hangs on the managed policy. SecurityAudit also
+		// allows CloudTrail's LookupEvents, so this module grants `audit` too.
 		actions: [
-			"securityhub:GetFindings",
+			"account:ListRegions",
 			"guardduty:ListDetectors",
 			"guardduty:ListFindings",
 			"guardduty:GetFindings",
+			"securityhub:DescribeHub",
+			"securityhub:GetFindings",
+			"inspector2:BatchGetAccountStatus",
 			"inspector2:ListFindings",
+			"access-analyzer:ListAnalyzers",
 			"access-analyzer:ListFindingsV2",
+			"cloudtrail:LookupEvents",
 		],
+	},
+	audit: {
+		title: "Audit log",
+		summary:
+			"CloudTrail management write events (IAM, access keys, sign-ins, resource changes) in the audit log.",
+		available: true,
+		managedPolicies: [],
+		actions: ["account:ListRegions", "cloudtrail:LookupEvents"],
 	},
 	cost: {
 		title: "Cost",
 		summary:
 			"Daily spend by service, region and usage type. AWS bills USD 0.01 per Cost Explorer request.",
-		available: false,
-		rolloutFlag: "cloudCost",
+		available: true,
 		managedPolicies: [],
 		// Every cost read Maple plans to make: adding one later means each customer updates the stack.
 		actions: [
@@ -144,6 +160,8 @@ export const awsConnectionResourceNames = (connectionId: AwsConnectionId) => {
 		/** The stack of one region's metric stream; the same name in every region it runs in. */
 		metricsStackName: `maple-metrics-${hex}`,
 		metricStreamName: `maple-${hex}`,
+		/** The stack that forwards one region's finding events to the main stack's region. */
+		eventsStackName: `maple-events-${hex}`,
 	}
 }
 
@@ -188,6 +206,22 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 	return isAwsModule(rest) ? rest : undefined
 }
 
+/**
+ * Whether a role with these module policies attached can do what `module` needs. Security scan's
+ * SecurityAudit policy allows CloudTrail's LookupEvents, so it also covers the audit log. The
+ * attached list itself stays exact: it is compared with the asked-for modules to spot a stale stack.
+ */
+export const awsModuleGranted = (attached: ReadonlyArray<string> | null, module: AwsModule): boolean =>
+	attached !== null && (attached.includes(module) || (module === "audit" && attached.includes("security")))
+
+/**
+ * Whether the deployed role matches what is asked for: every asked-for module is granted (one
+ * covered by another's policy counts), and no module policy is left attached that is not asked for.
+ */
+export const awsGrantsMatch = (modules: ReadonlyArray<string>, attached: ReadonlyArray<string>): boolean =>
+	Arr.every(modules, (module) => isAwsModule(module) && awsModuleGranted(attached, module)) &&
+	Arr.every(attached, (module) => isAwsModule(module) && modules.includes(module))
+
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId
 	readonly accountId: AwsAccountId
@@ -214,6 +248,7 @@ export interface AwsSetupPlan {
 	readonly stackName: string
 	readonly metricsStackName: string
 	readonly metricStreamName: string
+	readonly eventsStackName: string
 	readonly roleArn: string
 	/** The account's IAM OIDC provider for Maple's issuer, shared by every connection to it. */
 	readonly oidcProvider: { readonly arn: string; readonly url: string; readonly audience: string }
@@ -240,6 +275,7 @@ export const awsSetupPlan = (input: AwsSetupPlanInput): AwsSetupPlan => {
 		stackName: names.stackName,
 		metricsStackName: names.metricsStackName,
 		metricStreamName: names.metricStreamName,
+		eventsStackName: names.eventsStackName,
 		roleArn,
 		oidcProvider: { arn: providerArn, url: input.issuer, audience: AWS_OIDC_AUDIENCE },
 		// Only a token Maple signed for this connection: the audience every Maple token carries,

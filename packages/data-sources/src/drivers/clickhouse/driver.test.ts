@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Duration, Effect, Exit, Fiber, Option, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import type { SourceCatalog } from "@maple/domain/data-sources"
+import { DataSourceRateLimitedError, type SourceCatalog } from "@maple/domain/data-sources"
 import { DEFAULT_LIMITS } from "../../limits"
 import type { QueryRequest } from "../../port"
 import { chError, connection, fakeFetch, rows } from "./fake-fetch"
@@ -27,6 +27,7 @@ const request: QueryRequest = {
 	limits: { ...DEFAULT_LIMITS.interactive, maxRows: 2 },
 	workload: "interactive",
 	redactPii: true,
+	hiddenEntries: [],
 }
 const run = (sql: string) =>
 	Effect.flatMap(prepareClickHouse(connection, { _tag: "sql", sql }, request, catalog), (prepared) =>
@@ -96,6 +97,98 @@ describe("ClickHouse driver over HTTP", () => {
 			expect(fake.sent).toHaveLength(0)
 			yield* fake.provide(run("SELECT count(*) AS n, sum(amount) AS total FROM shop.payments"))
 			expect(fake.sent.length).toBeGreaterThan(0)
+		}),
+	)
+
+	it.effect("refuses an escaped spelling of a personal data field", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			const exit = yield* Effect.exit(fake.provide(run("SELECT `e\\x6dail` FROM shop.payments")))
+			expect(failureOf(exit)).toContain("Backslashes are not supported")
+			expect(fake.sent).toHaveLength(0)
+		}),
+	)
+
+	it.effect(
+		"refuses an agent's query on a hidden table or the system database, and runs one on a visible table",
+		() =>
+			Effect.gen(function* () {
+				const fake = fakeFetch(() => rows({ n: "1" }))
+				const asAgent = (sql: string) =>
+					Effect.flatMap(
+						prepareClickHouse(
+							connection,
+							{ _tag: "sql", sql },
+							{ ...request, redactPii: false, hiddenEntries: ["shop.refunds"] },
+							catalog,
+						),
+						(prepared) => prepared.run({ spend: () => Effect.void }),
+					)
+				const refused = [
+					"SELECT count() AS n FROM shop.refunds",
+					"SELECT count() AS n FROM `refunds`",
+					"SELECT name FROM system.tables",
+					"SELECT count() AS n FROM shop.`ref\\x75nds`",
+					"SELECT count() AS n FROM 'refunds'",
+					"SELECT * FROM (EXPLAIN SELECT * FROM shop.payments)",
+					// Both pass the general gate: the walk of the FROM list ends at the alias.
+					"SELECT n FROM numbers(1) select, 'refunds'",
+					"SELECT n FROM numbers(1) `limit`, 'ref\\x75nds'",
+				]
+				const failures = yield* Effect.forEach(refused, (sql) =>
+					Effect.exit(fake.provide(asAgent(sql))),
+				)
+				expect(Arr.map(failures, (exit) => Exit.isFailure(exit))).toEqual(
+					Arr.replicate(true, refused.length),
+				)
+				expect(fake.sent).toHaveLength(0)
+				const table = yield* fake.provide(asAgent("SELECT count() AS n FROM shop.payments"))
+				expect(table.rows).toEqual([{ n: "1" }])
+			}),
+	)
+
+	it.effect("checks the names in the SQL as it is sent, after macros expand", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			// The window buckets by 3600 s, so the macro spells the hidden table `shop.3600`.
+			const prepared = prepareClickHouse(
+				connection,
+				{ _tag: "sql", sql: "SELECT count() AS n FROM shop.$__interval_s" },
+				{ ...request, redactPii: false, hiddenEntries: ["shop.3600"] },
+				catalog,
+			)
+			const error = yield* Effect.flip(prepared)
+			expect(error.message).toContain("`shop.3600` names a table")
+			const personal = yield* Effect.flip(
+				prepareClickHouse(
+					connection,
+					{ _tag: "sql", sql: "SELECT count() AS n FROM shop.payments WHERE $__timeFilter(email)" },
+					request,
+					catalog,
+				),
+			)
+			expect(personal.message).toContain("personal data")
+			expect(fake.sent).toHaveLength(0)
+		}),
+	)
+
+	it.effect("takes one unit of the source's budget per query, and sends nothing when it is refused", () =>
+		Effect.gen(function* () {
+			const fake = fakeFetch(() => rows({ n: "1" }))
+			const spent: Array<number> = []
+			const prepared = yield* prepareClickHouse(
+				connection,
+				{ _tag: "sql", sql: "SELECT count() AS n FROM shop.payments" },
+				request,
+				catalog,
+			)
+			yield* fake.provide(prepared.run({ spend: (calls) => Effect.sync(() => void spent.push(calls)) }))
+			expect(spent).toEqual([1])
+			const sentBefore = fake.sent.length
+			const refusal = new DataSourceRateLimitedError({ message: "slow down", retryAfterSeconds: 60 })
+			const exit = yield* Effect.exit(fake.provide(prepared.run({ spend: () => Effect.fail(refusal) })))
+			expect(failureOf(exit)).toContain("slow down")
+			expect(fake.sent).toHaveLength(sentBefore)
 		}),
 	)
 

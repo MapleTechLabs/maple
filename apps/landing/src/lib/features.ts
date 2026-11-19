@@ -13,19 +13,26 @@
  * `distributed-tracing` takes `hero-traces` (3600 w) over `flow-02-trace`.
  * `flow-04-agent` stays homepage-only: at 1984 w it renders soft on a plate.
  *
+ * The hero shows the product: the live artifact by default, else a `heroShot` or a
+ * `heroAside`. Whatever goes there appears nowhere else on the page. Plates and gallery
+ * shots carry a `crop`: a capture scaled whole into a column is too small to read.
+ *
  * `related` is hand-picked rather than derived. The old RelatedFeatures did
  * `filter().slice(0, 3)` over one array, which sent every page to the same
  * first three slugs and left four features with no inbound links at all. Each
  * slug below appears in at least two others' lists.
  */
 import * as m from "../paraglide/messages.js"
-import type { Feature } from "./page-registry"
+import { APP_MAIN, type Feature } from "./page-registry"
 import { Array as Arr } from "effect"
 
 export const features: Feature[] = [
 	{
 		slug: "distributed-tracing",
 		illustration: "/art/features/distributed-tracing.webp",
+		illustrationAlt: "Engraving of a Roman aqueduct carrying water down a hillside through a round basin",
+		// The waterfall, not the explorer artifact: its opening flow view is too small beside a headline.
+		heroAside: "trace-waterfall",
 		navLabel: m.nav_distributed_tracing,
 		navDesc: m.nav_desc_distributed_tracing,
 		seoTitle: m.feat_tracing_seo_title,
@@ -40,6 +47,7 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "A slow database span selected in an 18-span waterfall, with its query attributes open alongside",
+				crop: APP_MAIN,
 			},
 			facts: [
 				{ key: "signal", value: "traces" },
@@ -65,24 +73,28 @@ export const features: Feature[] = [
 				route: "/traces",
 				title: "One row per trace",
 				alt: "The trace list with one row per request, its services, span count, duration and status",
+				crop: { x: 0.333, y: 0.155, zoom: 1.5 },
 			},
 			{
 				id: "surface-traces-peek",
 				route: "/traces",
 				title: "Peek without leaving the list",
 				alt: "A failed checkout opened in the peek sheet beside the trace list",
+				crop: { x: 0.248, y: 0, zoom: 1.33 },
 			},
 			{
 				id: "gallery-trace-waterfall",
 				route: "/traces/:id",
 				title: "Where the 5 seconds went",
 				alt: "A failed checkout's waterfall, with the payment insert waiting five seconds for a pool connection",
+				crop: { x: 0.1785, y: 0.17, zoom: 1.35 },
 			},
 			{
 				id: "gallery-trace-flow",
 				route: "/traces/:id",
 				title: "Services the request touched",
 				alt: "The same trace reduced to the services it passed through",
+				crop: { x: 0.4, y: 0.43, zoom: 2.4 },
 			},
 		],
 		capTitle: m.feat_tracing_cap_title,
@@ -93,6 +105,12 @@ export const features: Feature[] = [
 			{ op: "db.statement", title: m.feat_tracing_cap_4_title, body: m.feat_tracing_cap_4_body },
 			{ op: "trace_id", title: m.feat_tracing_cap_5_title, body: m.feat_tracing_cap_5_body },
 		],
+		plan: {
+			meters: ["traces"],
+			retention: m.feat_plan_ret_traces,
+			limit: null,
+			docs: "/docs/explore/traces",
+		},
 		related: ["service-catalog", "log-management", "error-tracking"],
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
@@ -101,6 +119,7 @@ export const features: Feature[] = [
 	{
 		slug: "browser-sessions",
 		illustration: "/art/features/browser-sessions.webp",
+		illustrationAlt: "Engraving of a Roman amphitheatre seen through a stone archway",
 		navLabel: m.nav_browser_sessions,
 		navDesc: m.nav_desc_browser_sessions,
 		seoTitle: m.feat_sessions_seo_title,
@@ -115,6 +134,7 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "A session replay with the recorded viewport playing beside its console, network and error tabs",
+				crop: APP_MAIN,
 			},
 			facts: [
 				{ key: "signal", value: "sessions" },
@@ -142,6 +162,12 @@ export const features: Feature[] = [
 			{ op: "http.status_code", title: m.feat_sessions_cap_4_title, body: m.feat_sessions_cap_4_body },
 			{ op: "mask rules", title: m.feat_sessions_cap_5_title, body: m.feat_sessions_cap_5_body },
 		],
+		plan: {
+			meters: ["browser_sessions"],
+			retention: m.feat_plan_ret_sessions,
+			limit: null,
+			docs: "/docs/session-replay/browser-sdk",
+		},
 		related: ["distributed-tracing", "error-tracking", "product-events"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
@@ -157,7 +183,8 @@ export const features: Feature[] = [
 		heroTitle: m.feat_pe_hero_title,
 		heroLede: m.feat_pe_hero_lede,
 		// No panel: there is no funnel capture in the library yet. The live funnel
-		// carries the surface, and the sources section shows how events get in.
+		// carries the hero, the paths chart the second view, and the sources section
+		// shows how events get in.
 		panel: null,
 		artifact: {
 			id: "funnel",
@@ -165,7 +192,7 @@ export const features: Feature[] = [
 			lede: m.feat_pe_artifact_lede,
 			wide: true,
 		},
-		extraSections: ["product-events-sources"],
+		extraSections: ["product-events-paths", "product-events-sources"],
 		gallery: [],
 		capTitle: m.feat_pe_cap_title,
 		capabilities: [
@@ -176,6 +203,12 @@ export const features: Feature[] = [
 			{ op: "source: product_events", title: m.feat_pe_cap_5_title, body: m.feat_pe_cap_5_body },
 			{ op: "query_funnel()", title: m.feat_pe_cap_6_title, body: m.feat_pe_cap_6_body },
 		],
+		plan: {
+			meters: ["product_events"],
+			retention: m.feat_plan_ret_events,
+			limit: null,
+			docs: "/docs/product-events/overview",
+		},
 		related: ["browser-sessions", "metrics-dashboards", "distributed-tracing"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
@@ -184,6 +217,7 @@ export const features: Feature[] = [
 	{
 		slug: "log-management",
 		illustration: "/art/features/log-management.webp",
+		illustrationAlt: "Engraving of a Roman archive with shelves of scrolls and a reading table",
 		navLabel: m.nav_log_management,
 		navDesc: m.nav_desc_log_management,
 		seoTitle: m.feat_logs_seo_title,
@@ -198,6 +232,7 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "Structured log search with severity facets and attribute filters down the left rail",
+				crop: APP_MAIN,
 			},
 			facts: [
 				{ key: "signal", value: "logs" },
@@ -222,12 +257,14 @@ export const features: Feature[] = [
 				route: "/logs",
 				title: "ERROR across every service",
 				alt: "Log search filtered to ERROR, with the volume chart and the lines that explain each failure",
+				crop: { x: 0.355, y: 0.08, zoom: 1.551 },
 			},
 			{
 				id: "gallery-logs-service",
 				route: "/logs",
 				title: "Warnings before the failures",
 				alt: "WARN lines: payment-svc reporting 20 of 20 pool connections in use, and slow requests upstream",
+				crop: { x: 0.355, y: 0.08, zoom: 1.551 },
 			},
 		],
 		capTitle: m.feat_logs_cap_title,
@@ -238,6 +275,7 @@ export const features: Feature[] = [
 			{ op: "volume histogram", title: m.feat_logs_cap_4_title, body: m.feat_logs_cap_4_body },
 			{ op: "OTLP", title: m.feat_logs_cap_5_title, body: m.feat_logs_cap_5_body },
 		],
+		plan: { meters: ["logs"], retention: m.feat_plan_ret_logs, limit: null, docs: "/docs/explore/logs" },
 		related: ["distributed-tracing", "error-tracking", "metrics-dashboards"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
@@ -246,6 +284,15 @@ export const features: Feature[] = [
 	{
 		slug: "metrics-dashboards",
 		illustration: "/art/features/metrics-dashboards.webp",
+		illustrationAlt: "Engraving of a Roman water clock beside a row of columns",
+		// A metric's own chart, where the page's artifact is a log histogram.
+		heroShot: {
+			id: "gallery-metric-latency",
+			route: "/metrics/:name",
+			title: "Request duration, six hours",
+			alt: "http.server.request.duration charted over six hours, with the jump after the bad deploy",
+			crop: { x: 0.1785, y: 0.09, zoom: 1.4, aspect: 1.45 },
+		},
 		navLabel: m.nav_metrics_dashboards,
 		navDesc: m.nav_desc_metrics_dashboards,
 		seoTitle: m.feat_metrics_seo_title,
@@ -260,6 +307,8 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "The metric explorer listing every metric with its type, service and data point count",
+				// Six metric cards fill the top of the screen: a wide window, not an empty lower half.
+				crop: { ...APP_MAIN, aspect: 2.1 },
 			},
 			facts: [
 				{ key: "signal", value: "metrics" },
@@ -279,28 +328,18 @@ export const features: Feature[] = [
 		extraSections: [],
 		gallery: [
 			{
-				id: "gallery-metrics-list",
-				route: "/metrics",
-				title: "Every metric, typed",
-				alt: "The metric explorer listing each metric with its type, service and last seen time",
-			},
-			{
-				id: "gallery-metric-latency",
-				route: "/metrics/:name",
-				title: "Request duration",
-				alt: "http.server.request.duration charted over six hours, with the jump after the bad deploy",
-			},
-			{
 				id: "gallery-metric-pool",
 				route: "/metrics/:name",
 				title: "Requests waiting on the pool",
 				alt: "db.client.connection.pending_requests for payment-svc: zero until the deploy, then 30 to 40 requests waiting for a connection",
+				crop: { x: 0.1785, y: 0.335, zoom: 1.6 },
 			},
 			{
 				id: "gallery-dashboard-templates",
 				route: "/dashboards/templates",
 				title: "Templates your data supports",
 				alt: "Dashboard templates sorted by which ones the incoming telemetry can fill",
+				crop: { x: 0.1785, y: 0.115, zoom: 2.05 },
 			},
 		],
 		capTitle: m.feat_metrics_cap_title,
@@ -311,7 +350,13 @@ export const features: Feature[] = [
 			{ op: "group by", title: m.feat_metrics_cap_4_title, body: m.feat_metrics_cap_4_body },
 			{ op: "select range", title: m.feat_metrics_cap_5_title, body: m.feat_metrics_cap_5_body },
 		],
-		related: ["alerts", "log-management", "kubernetes-monitoring"],
+		plan: {
+			meters: ["metrics"],
+			retention: m.feat_plan_ret_metrics,
+			limit: null,
+			docs: "/docs/explore/metrics",
+		},
+		related: ["cost-explorer", "log-management", "kubernetes-monitoring"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
 	},
@@ -319,6 +364,7 @@ export const features: Feature[] = [
 	{
 		slug: "service-catalog",
 		illustration: "/art/features/service-catalog.webp",
+		illustrationAlt: "Engraving of a Roman city from above, its districts joined by streets",
 		navLabel: m.nav_service_catalog,
 		navDesc: m.nav_desc_service_catalog,
 		seoTitle: m.feat_catalog_seo_title,
@@ -335,6 +381,7 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "The service catalog listing latency percentiles, error-rate trends and throughput per service",
+				crop: APP_MAIN,
 			},
 			facts: [
 				{ key: "topology", value: "derived from spans" },
@@ -359,24 +406,28 @@ export const features: Feature[] = [
 				route: "/services/:name",
 				title: "Operations, slowest first",
 				alt: "payment-svc operations: the payments queries and POST /charges at 10 to 12% errors and a 5 second p95",
-			},
-			{
-				id: "surface-service-map",
-				route: "/service-map",
-				title: "Built from real calls",
-				alt: "The service map grouped by namespace, with databases, caches and the failing edge in red",
-			},
-			{
-				id: "surface-service-detail",
-				route: "/services/:name",
-				title: "Deploy on the chart",
-				alt: "payment-svc latency, Apdex and error rate with the 3.5.0 deploy marked",
+				crop: { x: 0.1785, y: 0.02, zoom: 1.25, aspect: 2.4 },
 			},
 			{
 				id: "gallery-service-dependencies",
 				route: "/services/:name",
 				title: "What it calls",
 				alt: "payment-svc dependencies: Postgres at 7.8% errors and a 5 second p95, and api.stripe.com",
+				crop: { x: 0.1785, y: 0.02, zoom: 1.25, aspect: 2.4 },
+			},
+			{
+				id: "surface-service-map",
+				route: "/service-map",
+				title: "Built from real calls",
+				alt: "The service map grouped by namespace, with databases, caches and the failing edge in red",
+				crop: { x: 0.27, y: 0.25, zoom: 1.75 },
+			},
+			{
+				id: "surface-service-detail",
+				route: "/services/:name",
+				title: "Deploy on the chart",
+				alt: "payment-svc latency, Apdex and error rate with the 3.5.0 deploy marked",
+				crop: { x: 0.1785, y: 0.16, zoom: 1.218 },
 			},
 		],
 		capTitle: m.feat_catalog_cap_title,
@@ -387,6 +438,12 @@ export const features: Feature[] = [
 			{ op: "service.name", title: m.feat_catalog_cap_4_title, body: m.feat_catalog_cap_4_body },
 			{ op: "service.version", title: m.feat_catalog_cap_5_title, body: m.feat_catalog_cap_5_body },
 		],
+		plan: {
+			meters: ["traces"],
+			retention: m.feat_plan_ret_services,
+			limit: null,
+			docs: "/docs/explore/services",
+		},
 		related: ["anomalies", "kubernetes-monitoring", "uptime-monitoring"],
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
@@ -395,6 +452,14 @@ export const features: Feature[] = [
 	{
 		slug: "error-tracking",
 		illustration: "/art/features/error-tracking.webp",
+		illustrationAlt: "Engraving of a Roman arch with a cracked keystone",
+		heroShot: {
+			id: "gallery-issue-detail",
+			route: "/errors/issues/:id",
+			title: "One issue, every occurrence",
+			alt: "The ConnectionTimeout issue open with its stack trace, trend and affected traces",
+			crop: { x: 0.1785, y: 0.105, zoom: 1.6, aspect: 1.45 },
+		},
 		navLabel: m.nav_error_tracking,
 		navDesc: m.nav_desc_error_tracking,
 		seoTitle: m.feat_errors_seo_title,
@@ -409,6 +474,8 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "Errors grouped by type with counts, affected services and last-seen times",
+				// The list ends two thirds down the screen.
+				crop: { ...APP_MAIN, aspect: 1.9 },
 			},
 			facts: [
 				{ key: "groups.by", value: "exception.type + message" },
@@ -421,22 +488,17 @@ export const features: Feature[] = [
 			title: m.feat_errors_panel_title,
 			lede: m.feat_errors_panel_lede,
 		},
-		// The plate is the proof here — an errors list is a static surface, and a
+		// Captures are the proof here: an errors list is a static surface, and a
 		// live artifact would be animation for its own sake.
 		artifact: null,
 		extraSections: [],
 		gallery: [
 			{
-				id: "gallery-issue-detail",
-				route: "/errors/issues/:id",
-				title: "One issue, every occurrence",
-				alt: "The ConnectionTimeout issue open with its stack trace, trend and affected traces",
-			},
-			{
 				id: "surface-traces-peek",
 				route: "/traces",
 				title: "The trace behind it",
 				alt: "A failing checkout opened from the issue, showing the span that threw",
+				crop: { x: 0.248, y: 0, zoom: 1.33 },
 			},
 		],
 		capTitle: m.feat_errors_cap_title,
@@ -447,6 +509,12 @@ export const features: Feature[] = [
 			{ op: "claim", title: m.feat_errors_cap_4_title, body: m.feat_errors_cap_4_body },
 			{ op: "set severity", title: m.feat_errors_cap_5_title, body: m.feat_errors_cap_5_body },
 		],
+		plan: {
+			meters: ["traces"],
+			retention: m.feat_plan_ret_errors,
+			limit: null,
+			docs: "/docs/errors/overview",
+		},
 		related: ["github", "anomalies", "ai-mcp-integration"],
 		relatedUseCases: ["ecommerce-observability"],
 		locales: ["en", "ja", "ko"],
@@ -455,6 +523,7 @@ export const features: Feature[] = [
 	{
 		slug: "alerts",
 		illustration: "/art/features/alerts.webp",
+		illustrationAlt: "Engraving of a watchtower with a lit beacon on a rocky coast",
 		navLabel: m.nav_alerts,
 		navDesc: m.nav_desc_alerts,
 		seoTitle: m.feat_alerts_seo_title,
@@ -469,6 +538,8 @@ export const features: Feature[] = [
 				width: 2560,
 				height: 1320,
 				alt: "An error-rate rule's detail page: the evaluator-produced preview chart crossing the 5% threshold, with the rule reported healthy",
+				// A 1280 px capture, so the same 256 px sidebar is a fifth of it.
+				crop: { x: 0.2, y: 0, zoom: 1.25, aspect: 1024 / 660 },
 			},
 			facts: [
 				{ key: "signals", value: "error_rate · p95 · p99 · apdex · throughput" },
@@ -497,12 +568,14 @@ export const features: Feature[] = [
 				route: "/alerts/create",
 				title: "Preview before you save",
 				alt: "A high error rate rule on payment-svc, previewed against the last day of data",
+				crop: { x: 0.1785, y: 0.085, zoom: 1.25 },
 			},
 			{
 				id: "surface-service-detail",
 				route: "/services/:name",
 				title: "What it would have caught",
 				alt: "payment-svc error rate climbing after the 3.5.0 deploy",
+				crop: { x: 0.583, y: 0.53, zoom: 2.4 },
 			},
 		],
 		capTitle: m.feat_alerts_cap_title,
@@ -513,6 +586,12 @@ export const features: Feature[] = [
 			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
+		plan: {
+			meters: [],
+			retention: m.feat_plan_ret_alerts,
+			limit: null,
+			docs: "/docs/alerting/alert-rules",
+		},
 		related: ["uptime-monitoring", "status-pages", "product-events"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
@@ -535,7 +614,7 @@ export const features: Feature[] = [
 			lede: m.feat_uptime_artifact_lede,
 			wide: true,
 		},
-		extraSections: ["uptime-check-trace"],
+		extraSections: ["uptime-check-trace", "uptime-setup"],
 		gallery: [],
 		capTitle: m.feat_uptime_cap_title,
 		capabilities: [
@@ -550,6 +629,12 @@ export const features: Feature[] = [
 				body: m.feat_uptime_cap_6_body,
 			},
 		],
+		plan: {
+			meters: [],
+			retention: null,
+			limit: m.feat_plan_limit_uptime,
+			docs: "/docs/alerting/uptime-monitoring",
+		},
 		related: ["alerts", "status-pages", "distributed-tracing"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
@@ -557,17 +642,41 @@ export const features: Feature[] = [
 
 	{
 		slug: "status-pages",
-		// No engraving yet: the prompt is in public/art/features/status-pages-prompt.md.
+		illustration: "/art/features/status-pages.webp",
+		illustrationAlt: "Engraving of a Roman forum with a speaker's platform in front of a colonnade",
 		navLabel: m.nav_status_pages,
 		navDesc: m.nav_desc_status_pages,
 		seoTitle: m.feat_status_seo_title,
 		seoDescription: m.feat_status_seo_desc,
 		heroTitle: m.feat_status_hero_title,
 		heroLede: m.feat_status_hero_lede,
-		// No panel: there is no status page capture yet. TODO: a real capture of a published
-		// page (components, bars, an open incident) as the panel plate. Until then the live
-		// page carries the surface, and the feeds section shows what it publishes for code.
-		panel: null,
+		// Plates come from the real public-page renderer: `bun run screenshots:status-pages`.
+		// The hero runs the live page mid-incident, so the panel shows what sits below it.
+		panel: {
+			route: "status.acme.com",
+			constant: "theme maple",
+			plate: {
+				src: "/screenshots/gallery-status-page-uptime.webp",
+				width: 2880,
+				height: 1620,
+				alt: "System status with a 90-day bar per component, the days with failed checks or downtime marked, above the incident calendar",
+				// The page's own column, without the empty margins either side.
+				crop: { x: 0.14, y: 0, zoom: 1.39, aspect: 1.28, hardRight: true },
+			},
+			facts: [
+				{
+					key: "status",
+					value: "operational · degraded · partial_outage · major_outage · maintenance",
+				},
+				{ key: "incident", value: "investigating → identified → monitoring → resolved" },
+				{ key: "maintenance", value: "scheduled → in_progress → completed" },
+				{ key: "history", value: "90 days per component" },
+				{ key: "theme", value: "default · maple · mono · midnight · paper" },
+				{ key: "feeds", value: "rss · atom · status.json · badge.svg" },
+			],
+			title: m.feat_status_panel_title,
+			lede: m.feat_status_panel_lede,
+		},
 		artifact: {
 			id: "status-page",
 			title: m.feat_status_artifact_title,
@@ -575,7 +684,16 @@ export const features: Feature[] = [
 			wide: true,
 		},
 		extraSections: ["status-page-feeds"],
-		gallery: [],
+		gallery: [
+			{
+				id: "gallery-status-page-paper",
+				route: "status.acme.com",
+				title: "The same page in the paper theme",
+				alt: "The status page in the light paper theme with a serif font, showing the major outage banner and the open incident",
+				// The page's own column: a phone window from the capture's corner would be mostly margin.
+				crop: { x: 0.14, y: 0, zoom: 1.39, hardRight: true },
+			},
+		],
 		capTitle: m.feat_status_cap_title,
 		capabilities: [
 			{ op: "CNAME", title: m.feat_status_cap_1_title, body: m.feat_status_cap_1_body },
@@ -591,6 +709,7 @@ export const features: Feature[] = [
 				body: m.feat_status_cap_8_body,
 			},
 		],
+		plan: { meters: [], retention: null, limit: null, docs: null },
 		related: ["uptime-monitoring", "alerts", "ai-mcp-integration"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
@@ -624,6 +743,7 @@ export const features: Feature[] = [
 			{ op: "log_volume", title: m.feat_anomalies_cap_5_title, body: m.feat_anomalies_cap_5_body },
 			{ op: "investigate", title: m.feat_anomalies_cap_6_title, body: m.feat_anomalies_cap_6_body },
 		],
+		plan: { meters: [], retention: null, limit: null, docs: "/docs/alerting/anomalies" },
 		related: ["alerts", "error-tracking", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
@@ -632,6 +752,7 @@ export const features: Feature[] = [
 	{
 		slug: "ai-mcp-integration",
 		illustration: "/art/features/ai-mcp-integration.webp",
+		illustrationAlt: "Engraving of an armillary sphere on a table inside a small Roman temple",
 		navLabel: m.nav_ai_mcp,
 		navDesc: m.nav_desc_ai_mcp,
 		seoTitle: m.feat_mcp_seo_title,
@@ -646,14 +767,22 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "The MCP server page showing the endpoint and client setup",
+				crop: APP_MAIN,
 			},
 			facts: [
-				{ key: "protocol", value: "MCP / HTTP" },
-				{ key: "clients", value: "Claude Code · any MCP client" },
-				{ key: "auth", value: "API key · OAuth" },
+				{ key: "protocol", value: "MCP · Streamable HTTP" },
+				{ key: "clients", value: "Claude Code · Cursor · any Streamable HTTP client" },
+				{ key: "auth", value: "API key · OAuth with PKCE" },
 				{ key: "scope", value: "one org per key" },
-				{ key: "reads", value: "traces · logs · metrics · sessions · issues" },
-				{ key: "writes", value: "issues · alert rules" },
+				{ key: "tools", value: "130+ · each marked read or write" },
+				{
+					key: "reads",
+					value: "traces · logs · metrics · sessions · issues · agent sessions · infra",
+				},
+				{
+					key: "writes",
+					value: "issues · alert rules · on-call · SLOs · uptime monitors · status pages · dashboards · ingest rules",
+				},
 			],
 			title: m.feat_mcp_panel_title,
 			lede: m.feat_mcp_panel_lede,
@@ -674,6 +803,7 @@ export const features: Feature[] = [
 			{ op: "claim_error_issue()", title: m.feat_mcp_cap_4_title, body: m.feat_mcp_cap_4_body },
 			{ op: "org scope", title: m.feat_mcp_cap_5_title, body: m.feat_mcp_cap_5_body },
 		],
+		plan: { meters: [], retention: null, limit: null, docs: "/docs/reference/mcp" },
 		related: ["error-tracking", "github", "service-catalog"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],
@@ -682,6 +812,7 @@ export const features: Feature[] = [
 	{
 		slug: "kubernetes-monitoring",
 		illustration: "/art/features/kubernetes-monitoring.webp",
+		illustrationAlt: "Engraving of a Roman harbour with rows of warehouses and a lighthouse",
 		navLabel: m.nav_kubernetes,
 		navDesc: m.nav_desc_kubernetes,
 		seoTitle: m.page_k8s_title,
@@ -709,13 +840,71 @@ export const features: Feature[] = [
 			{ op: "OTel Operator", title: m.page_k8s_operator, body: m.page_k8s_operator_desc },
 			{ op: "one endpoint", title: m.page_k8s_multi, body: m.page_k8s_multi_desc },
 		],
-		related: ["service-catalog", "metrics-dashboards", "distributed-tracing"],
+		plan: {
+			meters: ["metrics"],
+			retention: m.feat_plan_ret_k8s,
+			limit: null,
+			docs: "/docs/infrastructure/kubernetes",
+		},
+		related: ["service-catalog", "metrics-dashboards", "cost-explorer"],
+		relatedUseCases: ["microservices-debugging"],
+		locales: ["en", "ja", "ko"],
+	},
+
+	{
+		slug: "cost-explorer",
+		// No engraving: the hero carries the bill itself, as one statement.
+		heroAside: "cost-statement",
+		navLabel: m.nav_cost_explorer,
+		navDesc: m.nav_desc_cost_explorer,
+		seoTitle: m.feat_cost_seo_title,
+		seoDescription: m.feat_cost_seo_desc,
+		heroTitle: m.feat_cost_hero_title,
+		heroLede: m.feat_cost_hero_lede,
+		// No panel and no artifact: there is no Cost capture in the library, and the surface is
+		// carried by the explorer section, which is the page's own chart and table at full width.
+		panel: null,
+		artifact: null,
+		extraSections: ["cost-explorer", "cost-sources", "cost-budgets"],
+		gallery: [],
+		capTitle: m.feat_cost_cap_title,
+		capabilities: [
+			{ op: "group by", title: m.feat_cost_cap_1_title, body: m.feat_cost_cap_1_body },
+			{ op: "drill down", title: m.feat_cost_cap_2_title, body: m.feat_cost_cap_2_body },
+			{ op: "previous period", title: m.feat_cost_cap_3_title, body: m.feat_cost_cap_3_body },
+			{ op: "billing currency", title: m.feat_cost_cap_4_title, body: m.feat_cost_cap_4_body },
+		],
+		plan: {
+			meters: [],
+			retention: m.feat_plan_ret_cost,
+			limit: m.feat_plan_limit_cost,
+			docs: null,
+		},
+		faq: [
+			{ question: m.feat_cost_faq_1_q, answer: m.feat_cost_faq_1_a },
+			{ question: m.feat_cost_faq_2_q, answer: m.feat_cost_faq_2_a },
+			{ question: m.feat_cost_faq_3_q, answer: m.feat_cost_faq_3_a },
+			{ question: m.feat_cost_faq_4_q, answer: m.feat_cost_faq_4_a },
+			{ question: m.feat_cost_faq_5_q, answer: m.feat_cost_faq_5_a },
+			{ question: m.feat_cost_faq_6_q, answer: m.feat_cost_faq_6_a },
+		],
+		cta: { title: m.feat_cost_cta_title, lede: m.feat_cost_cta_lede },
+		related: ["alerts", "kubernetes-monitoring", "metrics-dashboards"],
 		relatedUseCases: ["microservices-debugging"],
 		locales: ["en", "ja", "ko"],
 	},
 
 	{
 		slug: "github",
+		// The review sheet: the artifact below is the comment itself, too tall to sit beside a headline.
+		heroShot: {
+			id: "gallery-code-review-pr",
+			route: "/code-review/pull-requests",
+			title: "A review, with its outcome and confidence",
+			alt: "A pull request's review sheet: outcome, confidence, quality, summary, key changes and before-merge steps",
+			// Starts under the sheet's close button, which would sit in the frame's corner.
+			crop: { x: 0.528, y: 0.055, zoom: 2.12, aspect: 1.45 },
+		},
 		navLabel: m.nav_github,
 		navDesc: m.nav_desc_github,
 		seoTitle: m.feat_github_seo_title,
@@ -730,6 +919,7 @@ export const features: Feature[] = [
 				width: 2880,
 				height: 1620,
 				alt: "Code Review analytics: pull requests reviewed and issues caught per day, with the repositories that had the most issues",
+				crop: APP_MAIN,
 			},
 			facts: [
 				{ key: "writes", value: "summary comment · inline review · check run" },
@@ -747,8 +937,8 @@ export const features: Feature[] = [
 			title: m.feat_github_artifact_title,
 			lede: m.feat_github_artifact_lede,
 		},
-		// The CI captures live in their section rather than the gallery: the tab, the run's
-		// trace and the PR sheet read as one story about a red build.
+		// The CI captures live in their section rather than the gallery: the tab and the
+		// run's trace read as one story about a red build.
 		extraSections: ["github-ci", "github-after-merge"],
 		gallery: [],
 		capTitle: m.feat_github_cap_title,
@@ -762,6 +952,12 @@ export const features: Feature[] = [
 			{ op: "read_source_file()", title: m.feat_github_cap_7_title, body: m.feat_github_cap_7_body },
 			{ op: "review.rules", title: m.feat_github_cap_8_title, body: m.feat_github_cap_8_body },
 		],
+		plan: {
+			meters: ["ai_credits"],
+			retention: m.feat_plan_ret_ci,
+			limit: null,
+			docs: "/docs/code-review/overview",
+		},
 		related: ["error-tracking", "ai-mcp-integration", "distributed-tracing"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],

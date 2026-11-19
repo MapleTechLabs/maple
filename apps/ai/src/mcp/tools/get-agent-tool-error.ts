@@ -78,6 +78,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 				description: "Characters kept of each argument and result block",
 			}),
 		}),
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Inspecting an agent tool error"],
 		handler: Effect.fn("McpTool.getAgentToolError")(function* (params) {

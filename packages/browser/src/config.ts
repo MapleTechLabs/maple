@@ -151,6 +151,7 @@ export interface ResolvedConfig extends ResolvedSignalOptions {
 	readonly tracingInstrumentXhr: boolean
 	readonly tracingCaptureErrors: boolean
 	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<RegExp>
+	readonly ignoreNetworkFailuresFor: ReadonlyArray<RegExp>
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly replayOnErrorSampleRate: number
@@ -214,9 +215,8 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
 		tracingInstrumentXhr: config.tracing?.instrumentXhr ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
-		propagateTraceHeaderCorsUrls: (config.tracing?.propagateTraceHeaderCorsUrls ?? []).map(
-			corsUrlMatcher,
-		),
+		propagateTraceHeaderCorsUrls: (config.tracing?.propagateTraceHeaderCorsUrls ?? []).map(urlMatcher),
+		ignoreNetworkFailuresFor: (config.errors?.ignoreNetworkFailuresFor ?? []).map(urlMatcher),
 		replayEnabled: replay.enabled,
 		replaySampleRate: replay.sampleRate,
 		replayOnErrorSampleRate: replay.onErrorSampleRate,
@@ -244,7 +244,7 @@ export function escapeRegExp(value: string): string {
  * would never match `https://api.example.com/v1/users`. A string is a prefix that
  * ends on a URL boundary, so it does not also match `https://api.example.com.evil.io`.
  */
-function corsUrlMatcher(entry: string | RegExp): RegExp {
+function urlMatcher(entry: string | RegExp): RegExp {
 	if (typeof entry !== "string") return entry
 	// A configured trailing slash is part of the prefix; without one, the prefix ends on a boundary.
 	return new RegExp(`^${escapeRegExp(entry)}${entry.endsWith("/") ? "" : "(?:[/?#]|$)"}`)

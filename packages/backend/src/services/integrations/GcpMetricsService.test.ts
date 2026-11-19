@@ -896,14 +896,8 @@ describe("GcpMetricsService", () => {
 					2,
 				)
 				assert.notInclude(recorder.text(), "must not be stored")
-				// The request's Client span fails on the 403 (OTel client semantics); Maple's do not.
-				assert.deepStrictEqual(
-					Arr.filter(
-						recorder.failedSpans(),
-						(span) => !Str.startsWith("VendorHttp.request: ")(span),
-					),
-					[],
-				)
+				// A refused impersonation fails no span, the request's own Client span included.
+				assert.deepStrictEqual(recorder.failedSpans(), [])
 			}),
 			{ recorder },
 		)
@@ -1819,6 +1813,38 @@ describe("GcpMetricsService resource inventory", () => {
 				yield* TestClock.setTime(now + 5 * minute)
 				yield* pollAll
 				assert.lengthOf(calls.assets, 2)
+			}),
+		)
+	})
+
+	it.effect("keeps the stored inventory when a resource search answers an empty 200", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let empty: string | undefined
+		const stub = stubFetch(calls, {
+			assets: () =>
+				empty === undefined
+					? json({ results: [runService("checkout")] })
+					: new Response(empty, { status: 200 }),
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				// The SDK reads both as `{}`, which would end the listing with nothing in it.
+				yield* Effect.forEach(["", "null"], (body, index) =>
+					Effect.gen(function* () {
+						empty = body
+						yield* TestClock.setTime(now + (index + 1) * 60 * minute)
+						yield* pollAll
+						const state = yield* pollState(testDb, CONNECTOR_A)
+						assert.isNotNull(state.last_resources_error)
+						const names = Arr.map(yield* inventory(testDb, CONNECTOR_A), (row) => row[2])
+						assert.deepStrictEqual(names, ["checkout"])
+					}),
+				)
 			}),
 		)
 	})

@@ -1,4 +1,4 @@
-import type { AuditTrailEntry, AuditTrailListResponse } from "@maple/domain/http"
+import type { AuditTrailEntry, AuditTrailListResponse, AuditTrailSourcesResponse } from "@maple/domain/http"
 import { Array as Arr, String as Str } from "effect"
 
 // Audit events for the Security hub's audit log lab: Maple's own changes and refusals over the
@@ -69,6 +69,32 @@ const SEEDS: ReadonlyArray<Seed> = [
 		target: { type: "service_account", name: "projects/-/serviceAccounts/deploy@acme-prod" },
 		originIp: "198.51.100.24",
 		raw: { insertId: "abc123", protoPayload: { serviceName: "iam.googleapis.com" } },
+	},
+	{
+		provider: "github",
+		account: "acme",
+		minutesAgo: 18,
+		action: "branch_protection_rule.deleted",
+		category: "configuration",
+		actor: { type: "user", id: "583231", name: "octocat", email: null },
+		target: { type: "branch_protection_rule", id: "9001", name: "acme/api: main" },
+		raw: { action: "deleted", rule: { id: 9001, name: "main" } },
+	},
+	{
+		provider: "aws",
+		account: "123456789012",
+		minutesAgo: 27,
+		action: "iam:CreateAccessKey",
+		category: "credential",
+		actor: {
+			type: "user",
+			id: "arn:aws:sts::123456789012:assumed-role/AWSReservedSSO_Admin_4f1/grace@acme.test",
+			name: "grace@acme.test",
+			email: null,
+		},
+		target: { type: "AWS::IAM::User", id: "arn:aws:iam::123456789012:user/deploy-bot" },
+		originIp: "203.0.113.90",
+		raw: { eventSource: "iam.amazonaws.com", eventName: "CreateAccessKey" },
 	},
 	{
 		minutesAgo: 4,
@@ -189,3 +215,90 @@ export const auditEventsOf = (nowMs: number, hasMore = true): AuditTrailListResp
 }
 
 export const noAuditEvents: AuditTrailListResponse = { events: [], nextCursor: null }
+
+/** Maple, a Vercel team, an AWS account and a GitHub organization sending, Google Cloud connected with its log forwarding off. */
+export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
+	windowDays: 30,
+	sources: [
+		{
+			provider: "maple",
+			state: "built_in",
+			account: null,
+			problem: null,
+			events: 214,
+			lastEventAt: nowMs - 4 * MINUTE,
+		},
+		{
+			provider: "vercel",
+			state: "receiving",
+			account: "Acme (6 projects)",
+			problem: null,
+			events: 37,
+			lastEventAt: nowMs - 52 * MINUTE,
+		},
+		{
+			provider: "gcp",
+			state: "off",
+			account: "project acme-prod",
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "aws",
+			state: "receiving",
+			account: "123456789012",
+			problem: null,
+			events: 61,
+			lastEventAt: nowMs - 27 * MINUTE,
+		},
+		{
+			provider: "github",
+			state: "receiving",
+			account: "acme",
+			problem: null,
+			events: 9,
+			lastEventAt: nowMs - 18 * MINUTE,
+		},
+	],
+})
+
+/** A new org: only Maple's own feed, nothing connected. */
+export const noAuditSources: AuditTrailSourcesResponse = {
+	windowDays: 30,
+	sources: [
+		{ provider: "maple", state: "built_in", account: null, problem: null, events: 0, lastEventAt: null },
+		{
+			provider: "vercel",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "gcp",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "aws",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+		{
+			provider: "github",
+			state: "not_connected",
+			account: null,
+			problem: null,
+			events: 0,
+			lastEventAt: null,
+		},
+	],
+}

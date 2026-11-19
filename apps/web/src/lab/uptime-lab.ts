@@ -19,10 +19,13 @@ import { update as pageUpdate } from "../page/alerts/uptime-monitor/update"
 import {
 	CHART_TOKENS,
 	checksScatterPanel,
+	checksPanel,
+	lastCheckPanel,
 	phaseBreakdownPanel,
 	responseTimePanel,
 } from "../page/alerts/uptime-monitor/view-panels"
 import type { Resources } from "../platform/resources"
+import { httpMonitor } from "../page/kit/uptime/test-monitors"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/uptime`: the HTTP monitor page's three charts over a fixture shaped like production checks
@@ -59,7 +62,10 @@ const jitter = (seed: number): number => {
 const inOutage = (atMs: number): boolean => atMs >= NOW_MS - 4 * 3_600_000 && atMs < NOW_MS - 2.5 * 3_600_000
 
 const sampleAt = (atMs: number, index: number): CheckSample => {
-	const failed = atMs === FAILED_AT_MS
+	const refused = atMs === FAILED_AT_MS
+	// A few 503s, one about 23 minutes ago, so the Checks table's Failed filter has rows in every window.
+	const unavailable = index % 389 === 0 || index === 490
+	const failed = refused || unavailable
 	const spike = index % 97 === 0 ? 3 : 1
 	const phases = {
 		dnsMs: 4 + jitter(index) * 11,
@@ -73,7 +79,8 @@ const sampleAt = (atMs: number, index: number): CheckSample => {
 		at: new Date(atMs).toISOString(),
 		durationMs: failed ? 2_400 : total + 1,
 		ok: !failed,
-		statusCode: failed ? null : 200,
+		statusCode: refused ? null : unavailable ? 503 : 200,
+		error: refused ? "connect ECONNREFUSED" : unavailable ? "Expected status 2xx, got 503" : null,
 		traceId: `lab-${index}`,
 		phases: failed ? null : phases,
 	}
@@ -153,6 +160,8 @@ const fixtureStats = (window: LabWindow): CheckStats => {
 		samples,
 		samplesTruncated: false,
 		samplesFailed: false,
+		failedSamples: Arr.filter(samples, (sample) => !sample.ok).reverse(),
+		failedSamplesFailed: false,
 		windowStartMs: startMs,
 		windowEndMs: NOW_MS,
 		checks: samples.length,
@@ -191,6 +200,7 @@ export const init = (_flags: Flags): Return => ({
 		isChecking: false,
 		copies: {},
 		window: "24h",
+		checksFilter: "all",
 		stats: { key: null, data: AsyncData.Success({ data: fixtureStats("24h") }) },
 		hoveredCheck: null,
 		chart: Chart.init(),
@@ -216,6 +226,20 @@ export const update = (model: Model, message: Message): Return => {
 	return { model: next.model, commands: withoutReads(next.commands) }
 }
 
+/** The HTTP fixture monitor with a certificate `days` from now: healthy, inside the warning window, expired. */
+const withCertificate = (days: number) => {
+	const monitor = httpMonitor()
+	const last = monitor.state.last_check
+	if (last === null) return monitor
+	const certificate = {
+		expires_at: new Date(NOW_MS + days * 86_400_000).toISOString(),
+		subject: "checkout.example.com",
+		issuer: "R11",
+	}
+	return httpMonitor({ state: { ...monitor.state, last_check: { ...last, certificate } } })
+}
+const CERTIFICATE_FIXTURES = [withCertificate(62), withCertificate(9), withCertificate(-2)]
+
 export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const timeZone = "UTC"
 	const context =
@@ -236,7 +260,12 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html => {
 							...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
 								panel === null ? [] : [panel],
 							),
+							checksPanel(h, model, httpMonitor(), timeZone),
 						],
+					),
+					h.div(
+						[h.Class("flex min-w-0 flex-col gap-4")],
+						Arr.map(CERTIFICATE_FIXTURES, (monitor) => lastCheckPanel(h, monitor, NOW_MS)),
 					),
 				],
 			),

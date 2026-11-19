@@ -107,7 +107,7 @@ describe("renderTraceOverview", () => {
 		]
 		const { text } = render({ ...base, spanCount: 2, spans, budget: 100 })
 		expect(text).toContain('span_name="http.server GET", duration not recorded')
-		expect(Arr.fromIterable(Str.matchAll(/service\.version=1\.2\.3/g)(text))).toHaveLength(1)
+		expect(Arr.fromIterable(Str.matchAll(/service\.version="1\.2\.3"/g)(text))).toHaveLength(1)
 		expect(text).toContain("`inspect_span` with a `span=` id lists every attribute")
 	})
 
@@ -132,6 +132,7 @@ describe("renderTraceOverview", () => {
 				serviceName: "api",
 				body: "boom",
 				spanId: "deadbeefcafef00d",
+				keyAttributes: { "log.error": "connect ECONNREFUSED 10.0.0.1:5432" },
 			},
 			{
 				timestamp: "2026-06-02 10:00:01",
@@ -146,6 +147,8 @@ describe("renderTraceOverview", () => {
 		expect(text).toContain("Related Logs (2):")
 		expect(text).toContain("● ") // ERROR marker
 		expect(text).toContain("span=deadbeefcafef00d") // full span id, never a prefix
+		// The cause the generic body hides, on its own line under the log.
+		expect(text).toContain('\n    "log.error": "connect ECONNREFUSED 10.0.0.1:5432"')
 	})
 })
 

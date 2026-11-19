@@ -1,7 +1,7 @@
 import {
 	searchConsoleSiteLabel,
 	type SearchConsoleIntegrationStatus,
-	type SearchConsoleSiteChoice,
+	SearchConsoleSiteChoice,
 	type SearchConsoleSiteStatus,
 } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -26,6 +26,7 @@ import {
 } from "../kit/integration-empty"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
+import { gatedControl } from "../kit/session-grants"
 import {
 	isDirty,
 	permissionLabel,
@@ -42,8 +43,6 @@ const toHub = (message: SearchConsoleMessage): Message => Message.GotSearchConso
 type H = HtmlBuilder<Message>
 
 const BRAND = providerBrand("google-search-console")
-
-const ADMIN_ONLY = "Only org admins and engineers can change the Google Search Console connection."
 
 /**
  * From the click until the status re-read after Google's popup lands: the popup is out, or the
@@ -85,20 +84,18 @@ const notConnected = (h: H, model: Model, status: SearchConsoleIntegrationStatus
 							? "Checking the connection with Google."
 							: "Your Search Console properties will appear here after you connect a Google account.",
 			]),
-			button(
-				h,
-				{
-					isDisabled: !status.configured || !canManage(model) || model.disconnect.isPending,
-					isLoading: connecting,
-					attributes: [h.OnClick(Message.ClickedConnect())],
-				},
-				connecting ? ["Connecting to Google"] : [icon(h, "GoogleIcon"), "Connect Google"],
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						isDisabled: !status.configured || isLocked || model.disconnect.isPending,
+						isLoading: connecting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					connecting ? ["Connecting to Google"] : [icon(h, "GoogleIcon"), "Connect Google"],
+				),
 			),
-			integrationEmptyFooter(h, [
-				canManage(model)
-					? "Maple asks for read-only access to your Search Console data."
-					: ADMIN_ONLY,
-			]),
+			integrationEmptyFooter(h, ["Maple asks for read-only access to your Search Console data."]),
 		]),
 	])
 }
@@ -154,6 +151,30 @@ const unavailableNote = (h: H, siteUrls: ReadonlyArray<string>): Html =>
 		)}.`,
 	])
 
+/**
+ * What a viewer who cannot manage sees: the imported properties, from the status, or that there
+ * are none yet. Google's own list is a manager's read.
+ */
+const importedList = (
+	h: H,
+	status: SearchConsoleIntegrationStatus,
+	list: (sites: ReadonlyArray<SearchConsoleSiteChoice>) => Html,
+): Html => {
+	const imported = Arr.map(
+		Arr.filter(status.sites, (site) => site.enabled),
+		(site) =>
+			new SearchConsoleSiteChoice({
+				siteUrl: site.siteUrl,
+				permissionLevel: site.permissionLevel,
+				selectable: true,
+				enabled: true,
+			}),
+	)
+	return imported.length === 0
+		? typography(h, { size: "xs", tone: "muted", as: "p" }, ["No properties are imported yet."])
+		: list(imported)
+}
+
 const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus): Html => {
 	const card = model.searchConsoleCard
 	const selection = selectionOf(card, status)
@@ -181,35 +202,35 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 		])
 	return vstack(h, { gap: "3" }, [
 		heading(h, { level: 4, variant: "subsection" }, ["Properties to import"]),
-		AsyncData.match(card.sites.data, {
-			onIdle: () => skeletonBlock(h, { height: "32" }),
-			onLoading: () => skeletonBlock(h, { height: "32" }),
-			onFailure: (failure) =>
-				errorState(h, {
-					failure,
-					title: "Couldn't load your Search Console properties",
-					onRetry: toHub(SearchConsoleMessage.ClickedRetrySites()),
-				}),
-			onStale: ({ data }) => list(data.sites),
-			onRefreshing: (data) => list(data.sites),
-			onSuccess: (data) => list(data.sites),
-		}),
-		...(canManage(model)
-			? [
-					hstack(h, { gap: "2" }, [
-						button(
-							h,
-							{
-								size: "sm",
-								isDisabled: !isDirty(card, status) || card.isSaving,
-								isLoading: card.isSaving,
-								attributes: [h.OnClick(toHub(SearchConsoleMessage.ClickedSave()))],
-							},
-							["Save properties"],
-						),
-					]),
-				]
-			: []),
+		canManage(model)
+			? AsyncData.match(card.sites.data, {
+					onIdle: () => skeletonBlock(h, { height: "32" }),
+					onLoading: () => skeletonBlock(h, { height: "32" }),
+					onFailure: (failure) =>
+						errorState(h, {
+							failure,
+							title: "Couldn't load your Search Console properties",
+							onRetry: toHub(SearchConsoleMessage.ClickedRetrySites()),
+						}),
+					onStale: ({ data }) => list(data.sites),
+					onRefreshing: (data) => list(data.sites),
+					onSuccess: (data) => list(data.sites),
+				})
+			: importedList(h, status, list),
+		hstack(h, { gap: "2" }, [
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						isDisabled: isLocked || !isDirty(card, status) || card.isSaving,
+						isLoading: card.isSaving,
+						attributes: [h.OnClick(toHub(SearchConsoleMessage.ClickedSave()))],
+					},
+					["Save properties"],
+				),
+			),
+		]),
 	])
 }
 
@@ -234,32 +255,34 @@ const connected = (h: H, model: Model, status: SearchConsoleIntegrationStatus): 
 		],
 		summaryLayout: "stacked",
 		body: status.revoked ? [] : [sitePicker(h, model, status)],
-		actions: canManage(model)
-			? hstack(h, { gap: "2", align: "stretch", wrap: true }, [
-					button(
-						h,
-						{
-							size: "sm",
-							variant: status.revoked ? "default" : "outline",
-							isDisabled: busy || !status.configured,
-							isLoading: reconnecting,
-							attributes: [h.OnClick(Message.ClickedConnect())],
-						},
-						["Reconnect"],
-					),
-					button(
-						h,
-						{
-							size: "sm",
-							variant: "outline",
-							isDisabled: busy,
-							isLoading: model.disconnect.isPending,
-							attributes: [h.OnClick(Message.ClickedDisconnect())],
-						},
-						["Disconnect"],
-					),
-				])
-			: typography(h, { size: "2xs", tone: "muted", as: "p" }, [ADMIN_ONLY]),
+		actions: hstack(h, { gap: "2", align: "stretch", wrap: true }, [
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: status.revoked ? "default" : "outline",
+						isDisabled: isLocked || busy || !status.configured,
+						isLoading: reconnecting,
+						attributes: [h.OnClick(Message.ClickedConnect())],
+					},
+					["Reconnect"],
+				),
+			),
+			gatedControl(h, model, "integrations:manage", (isLocked) =>
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						isDisabled: isLocked || busy,
+						isLoading: model.disconnect.isPending,
+						attributes: [h.OnClick(Message.ClickedDisconnect())],
+					},
+					["Disconnect"],
+				),
+			),
+		]),
 		contentGap: "gap-4",
 	})
 }

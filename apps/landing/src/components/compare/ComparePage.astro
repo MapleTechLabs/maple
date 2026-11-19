@@ -5,11 +5,15 @@
  *
  * The spine, and why it is in this order:
  *
- *   00  PageHero          bg-bg        the question: "Maple vs X"
+ *   00  PageHero          bg-bg        the question: "Maple vs X", beside the
+ *                                      pairing and a live trace
  *   01  CompareNav        sticky       five anchors, the page's wayfinding
+ *   01a Surfaces          bg-bg        optional: what the vendor leaves you
+ *                                      to build, drawn by the live artifacts.
+ *                                      Before the table: product ahead of prose
  *   02  DifferenceTable   bg-bg-deep   the evidence, difference-first
- *   02a Surfaces          bg-bg        optional: what the vendor leaves you
- *                                      to build, drawn by the live artifacts
+ *   02a ProductBand       bg-bg        the service map, on pages with no
+ *                                      Surfaces section
  *   03  Receipts          bg-bg        the same month billed twice, then the
  *                                      calculator for the visitor's numbers
  *   04  Migration         bg-bg-deep   three steps + the exporter change
@@ -27,7 +31,8 @@
  */
 import * as m from "../../paraglide/messages.js";
 import { alternativesBySlug, alternativesPath } from "../../lib/alternatives";
-import { comparePath, competitorBySlug, competitors } from "../../lib/competitors";
+import { comparePath, competitorBySlug, competitors, MAPLE_SURFACES } from "../../lib/competitors";
+import { featurePath } from "../../lib/page-registry";
 import Layout from "../../layouts/Layout.astro";
 import FAQ from "../FAQ.astro";
 import Footer from "../Footer.astro";
@@ -36,6 +41,8 @@ import SeoHead from "../SeoHead.astro";
 import CrossLinks from "../page/CrossLinks.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
+import ProductBand from "../marketing/ProductBand.astro";
+import ProductFrame from "../marketing/ProductFrame.astro";
 import CompareNav from "./CompareNav.astro";
 import ComparePair from "./ComparePair.astro";
 import DifferenceTable from "./DifferenceTable.astro";
@@ -85,6 +92,9 @@ const crossLinks = [
 		.map((entry) => ({ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() })),
 ];
 
+// The one surface every comparison can show without a per-vendor claim.
+const serviceMap = MAPLE_SURFACES["service-map"];
+
 const faqItems = competitor.faqs.map((faq) => ({ question: faq.question(), answer: faq.answer() }));
 
 // The latest month any source was checked doubles as the page's modified
@@ -118,10 +128,15 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 			{ label: competitor.name },
 		]}
 	>
-		<ComparePair slot="aside" competitor={competitor} />
+		<div slot="aside" class="flex flex-col gap-4">
+			<ComparePair competitor={competitor} compact />
+			<ProductFrame surface="trace" />
+		</div>
 	</PageHero>
 
 	<CompareNav competitorName={competitor.name} surfaces={Boolean(competitor.surfaces)} />
+
+	{competitor.surfaces && <Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />}
 
 	<DifferenceTable
 		competitorName={competitor.name}
@@ -130,7 +145,18 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		sources={competitor.sources}
 	/>
 
-	{competitor.surfaces && <Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />}
+	{
+		!competitor.surfaces && (
+			<ProductBand
+				class="border-t border-border"
+				eyebrow={m.cmp_surfaces_eyebrow()}
+				title={serviceMap.name()}
+				lede={serviceMap.body()}
+				surface="service-map"
+				link={{ href: featurePath(locale, "service-catalog"), label: m.cmp_surfaces_link() }}
+			/>
+		)
+	}
 
 	<Receipts vendor={competitor.vendor} competitorName={competitor.name} />
 
@@ -148,7 +174,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 
 	<CrossLinks eyebrow={m.cmp_related_eyebrow()} title={m.cmp_related_title()} links={crossLinks} />
 
-	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" artworkAlt="Engraving of a long Roman aqueduct crossing a valley" />
 
 	<Footer />
 </Layout>

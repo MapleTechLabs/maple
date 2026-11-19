@@ -1,0 +1,93 @@
+---
+// One author: photo, role, bio, profiles and every post they wrote, with a schema.org
+// ProfilePage so search engines tie the posts to the person.
+import Layout from "../../../layouts/Layout.astro";
+import Nav from "../../../components/Nav.astro";
+import Footer from "../../../components/Footer.astro";
+import SeoHead from "../../../components/SeoHead.astro";
+import PostCard from "../../../components/blog/PostCard.astro";
+import Icon from "../../../components/Icon.astro";
+import { AUTHORS, authorPerson, type Author } from "../../../lib/authors";
+import { getSortedPosts } from "../../../lib/blog";
+
+export function getStaticPaths() {
+    return AUTHORS.map((author) => ({ params: { slug: author.slug }, props: { author } }));
+}
+
+const { author } = Astro.props as { author: Author };
+const posts = (await getSortedPosts()).filter((post) => post.data.author === author.name);
+
+const pageTitle = `${author.name}, ${author.role} | Maple Blog`;
+const pageDescription = `${author.bio} Posts by ${author.name} on the Maple blog.`;
+const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    mainEntity: authorPerson(author, Astro.site),
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} {...(author.avatar ? { image: author.avatar } : {})} ogType="profile" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <Nav />
+
+    <section class="pt-[19px]">
+        <div class="shell pt-24 pb-12 md:pt-28 md:pb-16">
+            <a href="/blog" class="inline-flex items-center gap-1.5 font-display text-[13px] text-fg-muted hover:text-fg active:text-fg">
+                <span aria-hidden="true">←</span> Blog
+            </a>
+
+            <div class="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center sm:gap-8">
+                {author.avatar ? (
+                    <img
+                        src={author.avatar}
+                        alt={author.name}
+                        width="128"
+                        height="128"
+                        class="size-24 shrink-0 rounded-full border border-border object-cover sm:size-32"
+                    />
+                ) : (
+                    <span class="flex size-24 shrink-0 items-center justify-center rounded-full border border-border bg-bg-deep sm:size-32" aria-hidden="true">
+                        <Icon name="MapleMark" size={44} class="text-primary" />
+                    </span>
+                )}
+                <div class="min-w-0">
+                    <h1 class="m-0 font-display text-[clamp(30px,5vw,48px)] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground">
+                        {author.name}
+                    </h1>
+                    <div class="mt-2 font-mono text-xs text-fg-muted">{author.role}</div>
+                    <div class="mt-4 max-w-[60ch] text-[15px] leading-[1.7] text-fg-muted">{author.bio}</div>
+                    {author.sameAs.length > 0 && (
+                        <div class="mt-4 flex flex-wrap gap-4 font-mono text-xs">
+                            {author.sameAs.map((link) => (
+                                <a href={link.url} rel="me noopener" target="_blank" class="text-fg/80 underline decoration-border underline-offset-4 transition-colors hover:text-primary">
+                                    {link.label}
+                                </a>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="pb-20 md:pb-28">
+        <div class="shell">
+            {/* One row per post, as on the blog index. */}
+            {posts.length === 0 ? (
+                <div class="border-t border-border pt-8 font-display text-[15px] text-fg-muted">No published posts yet.</div>
+            ) : (
+                <>
+                    <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">
+                        {posts.length === 1 ? "1 post" : `${posts.length} posts`}
+                    </h2>
+                    <div class="border-b border-border">
+                        {posts.map((post, i) => <PostCard post={post} variant="row" first={i === 0} />)}
+                    </div>
+                </>
+            )}
+        </div>
+    </section>
+
+    <Footer />
+</Layout>

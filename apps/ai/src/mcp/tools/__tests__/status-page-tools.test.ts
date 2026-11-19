@@ -1,9 +1,13 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from "vitest"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { RoleName } from "@maple/domain/http"
+import { permissions } from "@maple/domain/policy"
 import {
 	ApplyStatusPageConfigOutput,
+	CreateStatusPageOutput,
 	GetStatusPageOutput,
+	PublishStatusPageOutput,
+	SetStatusPageDomainOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
@@ -11,6 +15,14 @@ import { executeSql } from "@maple/backend/testing/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
+
+// Custom domains look their ownership TXT record up over DNS over HTTPS: here no name has one.
+// Installed before any request, as the HTTP client keeps the `fetch` it first sees.
+const realFetch = globalThis.fetch
+globalThis.fetch = (input, init) =>
+	String(input instanceof Request ? input.url : input).startsWith("https://cloudflare-dns.com/")
+		? Promise.resolve(Response.json({ Status: 3 }))
+		: realFetch(input, init)
 
 let rt: EvalRuntime
 beforeAll(async () => {
@@ -162,8 +174,8 @@ describe("status page tools", () => {
 			page: "acme-status",
 			title: "Database upgrade",
 			message: "The API may be read-only for a few minutes.",
-			starts_at: "2026-08-01 02:00:00",
-			ends_at: "2026-08-01T03:00:00Z",
+			starts_at: "2099-08-01 02:00:00",
+			ends_at: "2099-08-01T03:00:00Z",
 			components: ["API"],
 		})
 		const output = decode(StatusPageIncidentMutationOutput, result)
@@ -172,8 +184,8 @@ describe("status page tools", () => {
 			kind: "maintenance",
 			status: "scheduled",
 			published: false,
-			scheduledStart: "2026-08-01T02:00:00.000Z",
-			scheduledEnd: "2026-08-01T03:00:00.000Z",
+			scheduledStart: "2099-08-01T02:00:00.000Z",
+			scheduledEnd: "2099-08-01T03:00:00.000Z",
 		})
 		expect(markdown(result)).toContain("draft")
 
@@ -450,20 +462,63 @@ describe("status page tools", () => {
 			expect(after.structuredContent.config.version).not.toBe(config.version)
 		})
 
-		it("refuses an engineer's change of who can read the page", async () => {
+		it("lets an engineer change who can read the page", async () => {
+			const engineer = withRole("org:engineer")
 			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			expect(config.visibility).toBe("public")
-			const refused = await runToolDirect(withRole("org:engineer"), "apply_status_page_config", {
+			const applied = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, visibility: "internal" },
+			})
+			expect(markdown(applied)).toContain("Fields changed: visibility")
+			const after = await readConfig(rt, "config-page")
+			expect(after.structuredContent.config.visibility).toBe("internal")
+			const restored = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...after.structuredContent.config, visibility: "public" },
+			})
+			expect(markdown(restored)).toContain("Fields changed: visibility")
+		})
+
+		it("asks for the access permission, beyond the edit one, when a config changes who can read the page", async () => {
+			// Engineers hold both today, so the two checks only tell apart with access raised to admins.
+			const held = permissions["status_pages:access"]
+			onTestFinished(() => void Reflect.set(permissions, "status_pages:access", held))
+			Reflect.set(permissions, "status_pages:access", { ...held, min: "admin" })
+
+			const engineer = withRole("org:engineer")
+			const read = await readConfig(rt, "config-page")
+			const { config } = read.structuredContent
+			const refused = await runToolDirect(engineer, "apply_status_page_config", {
 				page: "config-page",
 				config: { ...config, visibility: "internal" },
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config would change who can read the page, which only org admins may do. Leave `visibility` as it is, or ask an admin.",
+				"apply_status_page_config would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
 			)
+			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
+
+			// The same visibility, or none, is no change: the edit permission is enough.
+			const edited = await runToolDirect(engineer, "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, description: "Edited by an engineer." },
+			})
+			expect(markdown(edited)).toContain("Fields changed: description")
 			const after = await readConfig(rt, "config-page")
-			expect(after.structuredContent.config).toEqual(config)
+			expect(after.structuredContent.config.visibility).toBe(config.visibility)
+
+			const changed = await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...after.structuredContent.config, visibility: "internal" },
+			})
+			expect(markdown(changed)).toContain("Fields changed: visibility")
+			const hidden = await readConfig(rt, "config-page")
+			await runToolDirect(admin(), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...hidden.structuredContent.config, visibility: "public" },
+			})
 		})
 
 		it("refuses members and names a component id from another page", async () => {
@@ -474,7 +529,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or edit it in Maple under Status pages.",
+				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
 			)
 
 			const other = await readConfig(rt, "acme-status")
@@ -513,6 +568,9 @@ describe("status page tools outside the statusPages rollout", () => {
 			["post_status_page_update", { page: "acme-status", title: "x", message: "y" }],
 			["post_status_page_update", { incident, status: "identified", message: "y" }],
 			["apply_status_page_config", { page: "acme-status", config }],
+			["create_status_page", { name: "Acme Status" }],
+			["publish_status_page", { page: "acme-status" }],
+			["set_status_page_domain", { page: "acme-status", domain: "status.acme.com" }],
 		]
 		for (const [name, params] of calls) {
 			const result: McpToolResult = await runToolDirect(off, name, params)
@@ -520,5 +578,165 @@ describe("status page tools outside the statusPages rollout", () => {
 			expect(result.failureCategory).toBe("unavailable")
 			expect(markdown(result)).toContain("not enabled for this organization")
 		}
+	})
+})
+
+const asRole = (runtime: EvalRuntime, role: string): EvalRuntime => ({
+	...runtime,
+	tenant: { ...runtime.tenant, roles: [Schema.decodeSync(RoleName)(role)] },
+})
+
+describe("setting a status page up", () => {
+	let setup: EvalRuntime
+	beforeAll(() => {
+		setup = makeEvalRuntime(undefined, undefined, {
+			MAPLE_STATUS_DOMAINS_ZONE_ID: "zone-test",
+			MAPLE_STATUS_DOMAINS_API_TOKEN: "token-test",
+			MAPLE_STATUS_DOMAINS_CNAME_TARGET: "status-domains.maple.test",
+			MAPLE_STATUS_WORKER_NAME: "maple-status-test",
+		})
+	})
+	afterAll(async () => {
+		await setup.dispose()
+	})
+	const admin = () => asRole(setup, "org:admin")
+
+	it("creates a draft with a slug made from the name, then publishes it once", async () => {
+		const result = await runToolDirect(admin(), "create_status_page", {
+			name: " Crème Status! ",
+			description: "How our services are doing.",
+		})
+		const created = decode(CreateStatusPageOutput, result)
+		expect(created.page).toMatchObject({ name: "Crème Status!", slug: "creme-status", draft: true })
+		expect(created.page.id).toMatch(/^stp_/)
+		expect(markdown(result)).toContain("publish_status_page")
+		expect(markdown(result)).toContain('`get_status_page page="creme-status" include_config=true`')
+
+		const config = await readConfig(admin(), "creme-status")
+		expect(config.structuredContent.config).toMatchObject({
+			description: "How our services are doing.",
+			components: [],
+		})
+
+		const published = await runToolDirect(admin(), "publish_status_page", { page: "creme-status" })
+		expect(decode(PublishStatusPageOutput, published)).toMatchObject({
+			action: "published",
+			page: { draft: false },
+		})
+		const again = await runToolDirect(admin(), "publish_status_page", { page: created.page.id })
+		expect(decode(PublishStatusPageOutput, again).action).toBe("already_public")
+		expect(markdown(again)).toContain("nothing changed")
+	})
+
+	it("names `slug` when the address is taken or cannot be made from the name", async () => {
+		await runToolDirect(admin(), "create_status_page", { name: "Taken", slug: "taken-page" })
+		const taken = await runToolDirect(admin(), "create_status_page", {
+			name: "Other",
+			slug: "taken-page",
+		})
+		expect(taken.failureCategory).toBe("invalid_input")
+		expect(markdown(taken)).toContain("Pass a different `slug`")
+
+		const short = await runToolDirect(admin(), "create_status_page", { name: "!!" })
+		expect(short.failureCategory).toBe("invalid_input")
+		expect(markdown(short)).toContain("Pass `slug`")
+		const listed = decode(GetStatusPageOutput, await runToolDirect(setup, "get_status_page", {}))
+		expect(Arr.filter(listed.pages ?? [], (page) => page.name === "Other")).toEqual([])
+	})
+
+	it("refuses members every setup tool", async () => {
+		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+			["create_status_page", { name: "Member Page" }],
+			["publish_status_page", { page: "taken-page" }],
+			["set_status_page_domain", { page: "taken-page", domain: "status.acme.com" }],
+		]
+		for (const [name, params] of calls) {
+			const result = await runToolDirect(setup, name, params)
+			expect(result.failureCategory, name).toBe("unavailable")
+			expect(markdown(result)).toContain("only org admins and engineers may do")
+		}
+	})
+
+	it("sets a custom domain with its DNS records, checks it again, shows it on the page and removes it", async () => {
+		await runToolDirect(admin(), "create_status_page", { name: "Domain Page" })
+		const set = await runToolDirect(admin(), "set_status_page_domain", {
+			page: "domain-page",
+			domain: " Status.Domain-Page.com ",
+		})
+		const output = decode(SetStatusPageDomainOutput, set)
+		expect(output.action).toBe("set")
+		expect(output.domain).toMatchObject({ hostname: "status.domain-page.com", status: "pending_dns" })
+		expect(Arr.map(output.domain?.dnsRecords ?? [], (r) => [r.type, r.name, r.purpose])).toEqual([
+			["CNAME", "status.domain-page.com", "routing"],
+			["TXT", "_maple-challenge.status.domain-page.com", "ownership"],
+		])
+		expect(output.domain?.dnsRecords[0]?.value).toBe("status-domains.maple.test")
+		const text = markdown(set)
+		expect(text).toContain("Add these records")
+		expect(text).toContain("_maple-challenge.status.domain-page.com")
+		expect(text).toContain("The page is a draft")
+
+		const checked = decode(
+			SetStatusPageDomainOutput,
+			await runToolDirect(admin(), "set_status_page_domain", {
+				page: "domain-page",
+				domain: "status.domain-page.com",
+			}),
+		)
+		expect(checked.action).toBe("checked")
+		expect(checked.domain?.status).toBe("pending_dns")
+		expect(checked.domain?.lastError).toContain("did not find the ownership TXT record")
+
+		const detail = await runToolDirect(setup, "get_status_page", { page: "domain-page" })
+		expect(pageOf(detail).customDomain).toMatchObject({
+			hostname: "status.domain-page.com",
+			status: "pending_dns",
+		})
+		expect(markdown(detail)).toContain("status.domain-page.com is not live yet")
+
+		const removed = await runToolDirect(admin(), "set_status_page_domain", {
+			page: "domain-page",
+			remove: true,
+		})
+		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({ action: "removed", domain: null })
+		const gone = pageOf(await runToolDirect(setup, "get_status_page", { page: "domain-page" }))
+		expect(gone.customDomain).toBeUndefined()
+		const again = await runToolDirect(admin(), "set_status_page_domain", {
+			page: "domain-page",
+			remove: true,
+		})
+		expect(decode(SetStatusPageDomainOutput, again).action).toBe("unchanged")
+	})
+
+	it("names `domain` or `remove` for a domain it cannot set", async () => {
+		await runToolDirect(admin(), "create_status_page", { name: "Invalid Domain Page" })
+		await runToolDirect(admin(), "create_status_page", { name: "Hidden Page" })
+		await runToolDirect(admin(), "apply_status_page_config", {
+			page: "hidden-page",
+			config: {
+				...(await readConfig(admin(), "hidden-page")).structuredContent.config,
+				visibility: "internal",
+			},
+		})
+		const cases: ReadonlyArray<readonly [Record<string, unknown>, string]> = [
+			[{ page: "invalid-domain-page" }, "Pass `domain`"],
+			[{ page: "invalid-domain-page", domain: "status.acme.com", remove: true }, "not both"],
+			[{ page: "invalid-domain-page", domain: "acme.com" }, "subdomain"],
+			[{ page: "hidden-page", domain: "status.hidden-page.com" }, "internal page"],
+		]
+		for (const [params, expected] of cases) {
+			const result = await runToolDirect(admin(), "set_status_page_domain", params)
+			expect(result.failureCategory, JSON.stringify(params)).toBe("invalid_input")
+			expect(markdown(result)).toContain(expected)
+		}
+	})
+
+	it("says custom domains are unavailable on a deployment without them", async () => {
+		const result = await runToolDirect(asRole(rt, "org:admin"), "set_status_page_domain", {
+			page: "acme-status",
+			domain: "status.acme.com",
+		})
+		expect(result.failureCategory).toBe("unavailable")
+		expect(markdown(result)).toContain("Custom domains are not available")
 	})
 })

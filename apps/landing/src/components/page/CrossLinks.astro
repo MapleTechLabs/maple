@@ -5,9 +5,9 @@
  *
  * The construction is PlatformSheet's: one ruled plate, cells sharing hairline
  * edges via `gap-px` on a `bg-border` fill, no per-cell radius, no per-cell
- * background lift, no icons. The old RelatedFeatures was a `max-w-6xl` grid
- * with a `text-primary` "Learn more →" in every cell — three amber links in one
- * section, against a two-per-page budget.
+ * background lift, no icons and no index numbers. The old RelatedFeatures was a
+ * `max-w-6xl` grid with a `text-primary` "Learn more →" in every cell: three
+ * amber links in one section, against a two-per-page budget.
  *
  * Links are hand-picked per page in the registry, not `filter().slice(0, 3)`
  * over a fixed array. The mechanical version sent every page to the same first
@@ -38,33 +38,26 @@ const spanOf = (i: number) => {
 ---
 
 <section class={`bg-bg-deep ${className}`}>
-	<div class="shell py-16 md:py-24">
+	<div class="shell py-12 md:py-16">
 		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
-		<h2
-			class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl"
-		>
+		<h2 class="mt-3 max-w-[24ch] font-display text-xl font-medium leading-[1.15] tracking-[-0.02em] text-fg md:text-2xl">
 			{title}
 		</h2>
 
 		<div
-			class:list={["mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2", columns]}
+			class:list={["mt-6 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2", columns]}
 		>
 			{
 				links.map((link, i) => (
 					<a
 						href={link.href}
-						class:list={["group flex flex-col gap-3 bg-bg p-6 transition-colors hover:bg-bg-elevated md:p-8", spanOf(i)]}
+						class:list={["group flex flex-col gap-1.5 bg-bg p-5 transition-colors hover:bg-bg-elevated md:p-6", spanOf(i)]}
 					>
-						<span class="text-[11px] font-medium tabular-nums text-fg-muted">
-							{String(i + 1).padStart(2, "0")}
-						</span>
-						<h3 class="font-display text-lg leading-snug tracking-[-0.01em] text-fg md:text-xl">
+						<h3 class="flex items-baseline justify-between gap-3 font-display text-base leading-snug tracking-[-0.01em] text-fg md:text-lg">
 							{link.name}
+							<span class="text-sm text-fg-muted transition-colors group-hover:text-fg" aria-hidden="true">→</span>
 						</h3>
 						<p class="max-w-[46ch] text-[13px] leading-relaxed text-fg-muted">{link.desc}</p>
-						<span class="mt-auto inline-flex items-center gap-1.5 pt-2 text-xs text-fg-muted transition-colors group-hover:text-fg">
-							<span class="transition-transform group-hover:translate-x-0.5">→</span>
-						</span>
 					</a>
 				))
 			}

@@ -12,6 +12,8 @@
 	},
 	"dependencies": {
 		"@clerk/backend": "^3.29.0",
+		"@distilled.cloud/clerk": "1.0.0-rc.20",
+		"@distilled.cloud/core": "1.0.0-rc.20",
 		"@maple/domain": "workspace:*",
 		"effect": "catalog:effect"
 	},

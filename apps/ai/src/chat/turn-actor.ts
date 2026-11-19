@@ -16,6 +16,8 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { ActorDocument, TenantContext } from "@maple/domain/http"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import * as Policy from "@maple/domain/policy"
+import { RoleName } from "@maple/primitives"
 import { Cause, Effect, Option, Schema } from "effect"
 
 /**
@@ -83,14 +85,14 @@ export const withConnectorActor = Effect.fn("ChatTurnActor.withConnectorActor")(
  * The linked Maple user may not act in this org, or nobody can find out whether they may.
  *
  * Fail closed on purpose: a Clerk blip must not silently fall back to the connector identity,
- * which on an approval carries `org:admin`.
+ * which is a turn for nobody in particular and never one a change is applied as.
  */
 export class LinkedUserNotPermitted extends Schema.TaggedError<LinkedUserNotPermitted>()(
 	"@maple/ai/LinkedUserNotPermitted",
 	{
 		message: Schema.String,
-		/** Which of the two it was. They read the same to the person in the channel, not to an operator. */
-		reason: Schema.Literals(["not_a_member", "unavailable"]),
+		/** Which one it was. They read much the same to the person in the channel, not to an operator. */
+		reason: Schema.Literals(["not_a_member", "unavailable", "not_linked"]),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -135,10 +137,55 @@ export const linkedUserTenant = Effect.fn("ChatTurnActor.linkedUserTenant")(func
 })
 
 const decodeUserId = Schema.decodeUnknownOption(UserId)
+const decodeRoles = Schema.decodeUnknownOption(Schema.Array(RoleName))
+
+type AutonomousOrigin = Extract<ChatTurnOrigin, { readonly kind: "autonomous" }>
+
+/** A person nobody can name or confirm: they answer for the pass, holding nothing. */
+const NOBODY = { kind: "person", roles: [] } as const satisfies NonNullable<TenantContext["turnStarter"]>
+
+/**
+ * Who answers for an unattended pass. A person does so with the lower of the roles they hold in the
+ * org now and the roles their credential held when they started it, and with none when that
+ * credential could not read data sources. An unreadable membership answers as nobody.
+ */
+export const turnStarterOf = Effect.fn("ChatTurnActor.turnStarterOf")(function* (
+	orgId: OrgId,
+	origin: AutonomousOrigin,
+) {
+	const startedBy = origin.startedBy
+	if (startedBy?.kind === "producer") return { kind: "producer" } as const
+	// What the starter's roles gate here is a query on a data source, so a credential whose scopes
+	// did not reach them answers as nobody, whatever role it held.
+	if (startedBy?.mayReadDataSources !== true) return NOBODY
+	const then = decodeRoles(startedBy.roles)
+	if (Option.isNone(then)) return NOBODY
+	const memberships = yield* OrgMembershipService
+	// No directory to ask (self-hosted): the roles the credential held are the only answer there is.
+	if (memberships.directory === "none") return { kind: "person", roles: then.value } as const
+	const userId = Option.flatMap(Option.fromNullishOr(startedBy.userId), decodeUserId)
+	if (Option.isNone(userId)) return NOBODY
+	const membership = yield* memberships
+		.verify(userId.value, orgId)
+		.pipe(
+			Effect.catch((error) =>
+				Effect.logWarning(
+					"Could not read the roles of the person who started an unattended pass",
+				).pipe(Effect.annotateLogs({ orgId, error: error.message }), Effect.as(Option.none())),
+			),
+		)
+	if (Option.isNone(membership)) return NOBODY
+	const now = [membership.value.role]
+	return {
+		kind: "person",
+		roles: Policy.outranks(Policy.highestRole(now), Policy.highestRole(then.value)) ? then.value : now,
+	} as const
+})
 
 /**
  * Who a turn's tools run as: the linked Maple user when the connector named one, the connector's
- * agent actor otherwise, and the tenant itself for an app or autonomous turn.
+ * agent actor otherwise, the tenant itself for an app turn, and for an unattended one the tenant
+ * with who answers for it.
  */
 export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 	tenant: TenantContext,
@@ -155,7 +202,12 @@ export const turnTenant = Effect.fn("ChatTurnActor.turnTenant")(function* (
 				message: "Maple could not tell which Maple user you are.",
 			})
 		}
-		return yield* linkedUserTenant(tenant.orgId, userId.value, origin)
+		const linked: TenantContext = yield* linkedUserTenant(tenant.orgId, userId.value, origin)
+		return linked
+	}
+	if (origin.kind === "autonomous") {
+		const turnStarter = yield* turnStarterOf(tenant.orgId, origin)
+		return { ...tenant, turnStarter } satisfies TenantContext
 	}
 	return yield* withConnectorActor(tenant, origin)
 })

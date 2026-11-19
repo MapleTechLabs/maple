@@ -58,6 +58,16 @@ const McpApiKeyMetadata = Schema.Struct({
 const decodeMcpApiKeyMetadata = Schema.decodeUnknownOption(McpApiKeyMetadata)
 
 /**
+ * Metadata written when someone without `api_keys:manage` (an engineer) creates a restricted API
+ * key: their roles are pinned so the key never resolves with the `root` default.
+ */
+const RestrictedApiKeyMetadata = Schema.Struct({
+	source: Schema.Literal("maple_api_key"),
+	roles: Schema.Array(RoleName),
+})
+const decodeRestrictedApiKeyMetadata = Schema.decodeUnknownOption(RestrictedApiKeyMetadata)
+
+/**
  * Metadata written when a signed-in app mints a credential for one of its own
  * devices. Two fields carry weight:
  *
@@ -88,7 +98,13 @@ const McpOAuthApiKeyMetadata = Schema.Struct({
 const decodeMcpOAuthApiKeyMetadata = Schema.decodeUnknownOption(McpOAuthApiKeyMetadata)
 
 /** Metadata `source` values that pin roles onto a key. */
-const ROLE_BEARING_SOURCES = ["maple_cli", "maple_mcp", "maple_mcp_oauth", WIDGET_DEVICE_KEY_SOURCE] as const
+const ROLE_BEARING_SOURCES = [
+	"maple_cli",
+	"maple_mcp",
+	"maple_api_key",
+	"maple_mcp_oauth",
+	WIDGET_DEVICE_KEY_SOURCE,
+] as const
 
 interface KeyRoleMetadata {
 	readonly roles: ReadonlyArray<RoleName> | null
@@ -114,6 +130,10 @@ const readKeyRoleMetadata = (metadata: unknown): Option.Option<KeyRoleMetadata> 
 	const mcp = decodeMcpApiKeyMetadata(metadata)
 	if (Option.isSome(mcp)) {
 		return Option.some({ roles: mcp.value.roles, cliManaged: false, mcpOAuthResource: null })
+	}
+	const restricted = decodeRestrictedApiKeyMetadata(metadata)
+	if (Option.isSome(restricted)) {
+		return Option.some({ roles: restricted.value.roles, cliManaged: false, mcpOAuthResource: null })
 	}
 	const device = decodeDeviceApiKeyMetadata(metadata)
 	if (Option.isSome(device)) {
@@ -245,6 +265,20 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			})
 
 			/**
+			 * The roles pinned onto a key; none for an unpinned key (it resolves as `root`) or
+			 * metadata that does not decode.
+			 */
+			const pinnedRoles = Effect.fn("ApiKeysService.pinnedRoles")(function* (
+				orgId: OrgId,
+				keyId: ApiKeyId,
+			) {
+				const row = yield* requireById(orgId, keyId)
+				return Option.flatMap(readKeyRoleMetadata(row.metadataJson), (metadata) =>
+					Option.fromNullishOr(metadata.roles),
+				)
+			})
+
+			/**
 			 * Whether the org holds a live key of `kind` that has authenticated at least
 			 * once. The onboarding checklist reads it for "connected an MCP agent": a
 			 * minted-but-unused key is intent, not a connection.
@@ -317,6 +351,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 					name: string
 					description?: string
 					expiresInSeconds?: number
+					/** The latest the key may expire, whatever lifetime was asked for (or none). */
+					expiresAtCeiling?: number
 					kind?: ApiKeyKind
 					scopes?: ReadonlyArray<string> | null
 					createdByEmail?: string | null
@@ -330,8 +366,13 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const keyHash = hashApiKey(rawKey, hmacKey)
 				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
-				const expiresAt =
+				const requestedExpiresAt =
 					params.expiresInSeconds !== undefined ? now + params.expiresInSeconds * 1000 : undefined
+				// Applied to the stored time, so the clock moving between a caller's check and here cannot pass it.
+				const expiresAt =
+					params.expiresAtCeiling === undefined
+						? requestedExpiresAt
+						: Math.min(requestedExpiresAt ?? params.expiresAtCeiling, params.expiresAtCeiling)
 				const kind: ApiKeyKind = params.kind ?? "standard"
 				const scopes = params.scopes == null ? null : [...params.scopes]
 				const createdByEmail = params.createdByEmail ?? null
@@ -761,6 +802,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 
 			return {
 				get,
+				pinnedRoles,
 				list,
 				hasUsedKeyOfKind,
 				create,

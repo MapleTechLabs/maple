@@ -1,6 +1,6 @@
 import { DB_QUERY_LABEL_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { describe, expect, it } from "vitest"
-import { SQL_TABLE_RE, SQL_VERB_RE, summarizeSql } from "./fingerprint"
+import { SQL_TABLE_RE, SQL_VERB_RE, redactSqlLiterals, summarizeSql } from "./fingerprint"
 import { String as Str } from "effect"
 
 /**
@@ -94,5 +94,47 @@ describe("summarizeSql / ClickHouse parity", () => {
 
 	it("uses the same table pattern as derivedStatementSummarySql", () => {
 		expect(DB_QUERY_LABEL_SQL).toContain(`(?i)${asClickHouseLiteral(SQL_TABLE_RE)}`)
+	})
+})
+
+describe("redactSqlLiterals", () => {
+	it("replaces strings, escaped quotes included, and numbers, and keeps identifiers", () => {
+		expect(
+			redactSqlLiterals(
+				"SELECT count() FROM traces_v2 WHERE Name = 'O\\'Brien' AND Note = 'it''s' AND Ms > 1.5e3 AND Id IN (7, 8)",
+			),
+		).toBe("SELECT count() FROM traces_v2 WHERE Name = ? AND Note = ? AND Ms > ? AND Id IN (?, ?)")
+	})
+
+	it("reads a quote in a comment or a quoted identifier as no string", () => {
+		expect(
+			redactSqlLiterals(
+				"SELECT 1 -- don't\nFROM t /* it's */ WHERE \"it's\" = 'a@b.c' AND `x'y` = 'secret'",
+			),
+		).toBe("SELECT ? --\nFROM t /* */ WHERE \"it's\" = ? AND `x'y` = ?")
+	})
+
+	it("redacts an unclosed string to the end, a trailing backslash included", () => {
+		expect(redactSqlLiterals("WHERE e = 'a@b.c")).toBe("WHERE e = ?")
+		expect(redactSqlLiterals("WHERE e = 'a@b.c\\")).toBe("WHERE e = ?")
+	})
+
+	it("leaves no value behind in the other comment, string and number forms the server reads", () => {
+		const cases: ReadonlyArray<readonly [string, string]> = [
+			["SELECT 1 # alice@example.com", "SELECT ? #"],
+			["SELECT 1 /* outer /* inner */ alice@example.com */ FROM t", "SELECT ? /* */ FROM t"],
+			["WHERE UserId = 0xDEADBEEF OR b = 0b1011", "WHERE UserId = ? OR b = ?"],
+			["SELECT $tag$alice@example.com$tag$, $$x$$", "SELECT ?, ?"],
+			["SELECT `a\\`'b` FROM t WHERE e = 'alice@example.com'", "SELECT `a\\`'b` FROM t WHERE e = ?"],
+			["SELECT 1 // alice@example.com\nFROM t", "SELECT ? //\nFROM t"],
+			["SELECT /* a */ 'b*/ alice@example.com'", "SELECT /* */ ?"],
+			["SELECT $tag$x$TAG$alice@example.com$tag$ AS v", "SELECT ? AS v"],
+			["SELECT 123_456, 1.5e-3, 0x1E-2 FROM traces_v2", "SELECT ?, ?, ?-? FROM traces_v2"],
+			["SELECT a / b FROM t", "SELECT a / b FROM t"],
+			["SELECT a$t$ FROM t WHERE e = 'alice@example.com'", "SELECT a$t$ FROM t WHERE e = ?"],
+		]
+		for (const [sql, redacted] of cases) {
+			expect(redactSqlLiterals(sql)).toBe(redacted)
+		}
 	})
 })

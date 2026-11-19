@@ -1,6 +1,6 @@
 //! Minimal S3-compatible object writer for Cloudflare R2.
 //!
-//! The gateway runs as a container (Railway), not on Workers, so it can't reach
+//! The gateway runs as a container (ECS), not on Workers, so it can't reach
 //! R2 through a native binding — it signs S3 requests with SigV4 like any other
 //! client. That is the whole reason this module exists.
 //!

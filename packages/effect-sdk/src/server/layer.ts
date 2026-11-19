@@ -4,6 +4,8 @@ import { FetchHttpClient } from "effect/http"
 import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
 import { makeOtlpLayer } from "../shared/otlp-layer.js"
 import type { MapleSpanOptions } from "../shared/span-options.js"
+import { makeSpanTimeline } from "../shared/span-timeline.js"
+import { profilerLayer, type ProfilingOptions } from "./profiling.js"
 import { type ResolvedResource, resolveResource } from "./resource.js"
 import { SDK_VERSION } from "../version.js"
 
@@ -70,6 +72,12 @@ export interface MapleConfig extends MapleSpanOptions {
 	readonly metricsExportInterval?: Duration.Input | undefined
 	readonly tracerExportInterval?: Duration.Input | undefined
 	readonly shutdownTimeout?: Duration.Input | undefined
+	/**
+	 * Continuous CPU profiling on Node and Bun: `true` for the defaults, or the options. Off by
+	 * default. Samples are linked to the span that was running, so a span shows its own flame
+	 * graph. A runtime without a profiler (Cloudflare Workers) logs one warning and runs without.
+	 */
+	readonly profiling?: boolean | ProfilingOptions | undefined
 }
 
 /**
@@ -122,17 +130,24 @@ export const layer = (config: MapleConfig = {}) =>
 			// that one gets a warning rather than silence — see `warnIfDoomed`.
 			warnIfDoomed(resolved)
 
-			return makeOtlpLayer({
+			const headers = {
+				// The exporter appends its own agent to this one.
+				"user-agent": SERVER_SDK_HINT,
+				"x-maple-sdk": SERVER_SDK_HINT,
+				...(resolved.ingestKey
+					? { Authorization: `Bearer ${Redacted.value(resolved.ingestKey)}` }
+					: undefined),
+			}
+			const profiling =
+				config.profiling === true ? {} : config.profiling === false ? undefined : config.profiling
+			const spanTimeline =
+				profiling !== undefined && profiling.linkSpans !== false ? makeSpanTimeline() : undefined
+
+			const signals = makeOtlpLayer({
 				baseUrl: resolved.endpoint,
 				resource: resolved.resource,
-				headers: {
-					// The exporter appends its own agent to this one.
-					"user-agent": SERVER_SDK_HINT,
-					"x-maple-sdk": SERVER_SDK_HINT,
-					...(resolved.ingestKey
-						? { Authorization: `Bearer ${Redacted.value(resolved.ingestKey)}` }
-						: undefined),
-				},
+				headers,
+				spanTimeline,
 				maxBatchSize: config.maxBatchSize,
 				loggerExportInterval: config.loggerExportInterval,
 				metricsExportInterval: config.metricsExportInterval,
@@ -142,6 +157,21 @@ export const layer = (config: MapleConfig = {}) =>
 				// Matches the stock `OtlpTracer` this layer used before, so existing
 				// stack traces (and the error fingerprints hashed from them) don't move.
 				spans: { ...config, includeCauseInStack: true },
-			}).pipe(Layer.provide(FetchHttpClient.layer))
+			})
+			const exported =
+				profiling === undefined
+					? signals
+					: Layer.merge(
+							signals,
+							profilerLayer({
+								baseUrl: resolved.endpoint,
+								resource: resolved.resource,
+								headers,
+								profiling,
+								timeline: spanTimeline,
+								shutdownTimeout: config.shutdownTimeout,
+							}),
+						)
+			return exported.pipe(Layer.provide(FetchHttpClient.layer))
 		}),
 	)

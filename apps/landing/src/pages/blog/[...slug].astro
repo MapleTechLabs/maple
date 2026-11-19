@@ -11,6 +11,8 @@ import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro
 import TableOfContents from "../../components/TableOfContents.astro";
 import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
 import Icon from "../../components/Icon.astro";
+import { authorByName, authorHref, authorPerson } from "../../lib/authors";
+import { Option } from "effect";
 
 export async function getStaticPaths() {
     const posts = await getCollection("blog", ({ data }) => !data.draft || import.meta.env.DEV);
@@ -32,6 +34,8 @@ const hasToc = headings.some((h) => h.depth === 2);
 const all = await getSortedPosts();
 const readNext = all.filter((p) => p.id !== post.id).slice(0, 3);
 
+const authorProfile = Option.getOrUndefined(authorByName(author));
+
 const pageTitle = `${title} — Maple Blog`;
 const canonicalUrl = Astro.site ? new URL(Astro.url.pathname, Astro.site).toString() : undefined;
 const absoluteCover = cover && Astro.site ? new URL(cover, Astro.site).toString() : undefined;
@@ -43,7 +47,9 @@ const jsonLd = {
     description,
     datePublished: isoDate(date),
     dateModified: isoDate(date),
-    author: { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
+    author: authorProfile
+        ? authorPerson(authorProfile, Astro.site)
+        : { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -53,16 +59,15 @@ const jsonLd = {
     ...((absoluteCover) ? ({ image: absoluteCover }) : undefined),
 };
 
-const backLink =
-    "inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary";
+const quietLink = "cursor-pointer border-0 bg-transparent p-0 text-left hover:text-fg active:text-fg";
 ---
 
-<Layout title={pageTitle} description={description} image={cover} ogType="article">
+<Layout title={pageTitle} description={description} image={cover} ogType="article" alternates={["en"]}>
     <SeoHead title={pageTitle} description={description} />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <Nav />
 
-    {/* Reading progress — a hairline of amber across the very top. */}
+    {/* Reading progress: a hairline of amber across the very top. */}
     <div
         data-read-progress
         class="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left scale-x-0 bg-primary"
@@ -70,113 +75,116 @@ const backLink =
     >
     </div>
 
-    <article class="relative pt-[19px]">
-        <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
-            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
-                {/* ── Main column: one centered reading measure ── */}
+    <article class="relative">
+        {/* ── Header: the title block beside the cover, on the nav's edges ── */}
+        <header class="border-b border-border pt-[19px]">
+            <div class="shell grid gap-10 pb-12 pt-20 md:pt-24 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-end lg:gap-14 lg:pb-16 xl:gap-16">
                 <div class="min-w-0">
-                    <div class="mx-auto w-full max-w-[42rem]">
-                        <a href="/blog" class={backLink}>
-                            <span aria-hidden="true">←</span> all posts
-                        </a>
+                    <a href="/blog" class="inline-flex items-center gap-1.5 font-display text-[13px] text-fg-muted hover:text-fg active:text-fg">
+                        <span aria-hidden="true">←</span> Blog
+                    </a>
 
-                        <div class="mt-[22px] flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums tracking-[0.02em] text-fg-muted">
-                            {featured && (
-                                <span class="border border-primary/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-primary">
-                                    featured
-                                </span>
-                            )}
-                            <time datetime={isoDate(date)}>{formatDate(date)}</time>
-                            {catLabel && (
-                                <>
-                                    <span aria-hidden="true" class="opacity-50">·</span>
-                                    <span>{catLabel}</span>
-                                </>
-                            )}
-                            <span aria-hidden="true" class="opacity-50">·</span>
-                            <span>{minutes} min read</span>
-                        </div>
-
-                        <h1 class="mt-3.5 font-display text-[clamp(30px,4.5vw,44px)] font-semibold leading-[1.08] tracking-[-0.025em] text-balance text-foreground">
-                            {title}
-                        </h1>
-                        <p class="mt-5 font-display text-[17px] leading-[1.65] text-pretty text-fg-muted">{description}</p>
-
-                        <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
-                            <Icon name="MapleMark" size={22} class="text-primary" aria-hidden="true" />
-                            <span>{author}</span>
-                            {authorRole && <span class="text-fg-muted">{authorRole}</span>}
-                        </div>
-
-                        {/* Cover banner — a step wider than the prose for presence. */}
-                        <div class="mt-10 overflow-hidden rounded-lg border border-border md:mt-12 xl:-mx-16">
-                            <PostCover
-                                title={title}
-                                category={category}
-                                cover={cover}
-                                coverAlt={coverAlt}
-                                variant="banner"
-                                drench={featured}
-                            />
-                        </div>
-
-                        {/* On this page: collapsible, small screens only */}
-                        {hasToc && (
-                            <details class="group mt-10 border border-border lg:hidden">
-                                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted [&::-webkit-details-marker]:hidden">
-                                    On this page
-                                    <span class="transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
-                                </summary>
-                                <div class="border-t border-border px-4 py-3.5">
-                                    <TableOfContents headings={headings} maxDepth={2} spy={false} showLabel={false} />
-                                </div>
-                            </details>
+                    <div class="mt-7 flex flex-wrap items-center gap-x-2.5 gap-y-2 font-mono text-[11px] tabular-nums text-fg-muted">
+                        {catLabel && (
+                            <span class="border border-primary/40 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-primary">{catLabel}</span>
                         )}
-
-                        {/* Body */}
-                        {/* blog-content regrows the docs prose to essay scale (global.css) */}
-                        <div class="docs-content blog-content mt-12 md:mt-14">
-                            <Content />
-                        </div>
-
-                        <div class="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
-                            <a href="/blog" class={backLink}>
-                                <span aria-hidden="true">←</span> back to all posts
-                            </a>
-                            <button
-                                type="button"
-                                data-copy-link
-                                class="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 font-mono text-xs text-fg-muted transition-colors hover:text-primary"
-                            >
-                                <span data-copy-label>copy link</span>
-                                <span aria-hidden="true">⌁</span>
-                            </button>
-                        </div>
+                        <time datetime={isoDate(date)}>{formatDate(date)}</time>
+                        <span aria-hidden="true">·</span>
+                        <span>{minutes} min read</span>
                     </div>
+
+                    <h1 class="mt-5 font-display text-[clamp(30px,3.5vw,52px)] font-semibold leading-[1.06] tracking-[-0.03em] text-balance text-foreground">
+                        {title}
+                    </h1>
+                    <p class="mt-5 max-w-[58ch] font-display text-[17px] leading-[1.6] text-pretty text-fg-muted lg:text-lg">{description}</p>
+
+                    {/* Byline: the round slot takes an author photo when there is one. */}
+                    {/* A known author links to their page; the slot shows their photo when there is one. */}
+                    <a
+                        href={authorProfile ? authorHref(authorProfile) : undefined}
+                        rel={authorProfile ? "author" : undefined}
+                        class="group mt-8 flex w-fit items-center gap-3"
+                    >
+                        <span class="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-bg-elevated">
+                            {authorProfile?.avatar ? (
+                                <img src={authorProfile.avatar} alt={authorProfile.name} width="36" height="36" class="size-full object-cover" />
+                            ) : (
+                                <Icon name="MapleMark" size={18} class="text-primary" aria-hidden="true" />
+                            )}
+                        </span>
+                        <span class="flex min-w-0 flex-col font-display leading-tight">
+                            <span class:list={["text-sm font-medium text-fg", authorProfile && "transition-colors group-hover:text-primary"]}>{authorProfile?.name ?? author}</span>
+                            {(authorProfile?.role ?? authorRole) && <span class="mt-0.5 text-[13px] text-fg-muted">{authorProfile?.role ?? authorRole}</span>}
+                        </span>
+                    </a>
                 </div>
 
-                {/* ── On this page (sticky TOC) ── */}
+                <div class="overflow-hidden rounded-lg border border-border">
+                    <PostCover
+                        title={title}
+                        category={category}
+                        cover={cover}
+                        coverAlt={coverAlt}
+                        variant="banner"
+                        drench={featured}
+                    />
+                </div>
+            </div>
+        </header>
+
+        <div class="shell pt-10 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14 lg:pt-16 xl:grid-cols-[14rem_minmax(0,1fr)] xl:gap-16">
+            {/* ── Rail: the outline, then the two things to do with a post ── */}
+            <aside class="hidden lg:block">
+                <div class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto">
+                    {hasToc && <TableOfContents headings={headings} maxDepth={2} class="mb-6 border-b border-border pb-6" />}
+                    <div class="flex flex-col items-start gap-2.5 font-display text-[13px] text-fg-muted">
+                        <button type="button" data-copy-link class={quietLink}>
+                            <span data-copy-label>Copy link</span>
+                        </button>
+                        <a href="/blog" class="hover:text-fg active:text-fg">All posts</a>
+                    </div>
+                </div>
+            </aside>
+
+            {/* ── Body: centered below `lg`, beside the rail from there up ── */}
+            <div class="mx-auto w-full max-w-[42rem] min-w-0 lg:mx-0 lg:max-w-none">
                 {hasToc && (
-                    <aside class="hidden lg:block">
-                        <TableOfContents headings={headings} maxDepth={2} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
-                    </aside>
+                    <details class="group mb-10 rounded-lg border border-border lg:hidden">
+                        <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-display text-[13px] font-medium text-fg [&::-webkit-details-marker]:hidden">
+                            On this page
+                            <span class="text-fg-muted transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+                        </summary>
+                        <div class="border-t border-border px-4 py-3.5">
+                            <TableOfContents headings={headings} maxDepth={2} spy={false} showLabel={false} />
+                        </div>
+                    </details>
                 )}
+
+                {/* blog-content regrows the docs prose to essay scale and sets the widths (global.css) */}
+                <div class="docs-content blog-content">
+                    <Content />
+                </div>
+
+                <div class="mt-14 flex max-w-[42rem] flex-wrap items-center justify-between gap-4 border-t border-border pt-5 font-display text-[13px] text-fg-muted">
+                    <a href="/blog" class="inline-flex items-center gap-1.5 hover:text-fg active:text-fg">
+                        <span aria-hidden="true">←</span> All posts
+                    </a>
+                    <button type="button" data-copy-link class={quietLink}>
+                        <span data-copy-label>Copy link</span>
+                    </button>
+                </div>
             </div>
         </div>
     </article>
 
     {/* ── Read next ── */}
     {readNext.length > 0 && (
-        <section class="mt-16 border-t border-border pt-12">
-            <div class="mx-auto max-w-6xl px-6">
-                <div class="mb-[22px] flex items-center gap-3">
-                    <span class="font-mono text-xs text-primary">#</span>
-                    <span class="h-px w-9 shrink-0 bg-border" aria-hidden="true"></span>
-                    <h2 class="m-0 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">Read next</h2>
-                </div>
-                <div class="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
-                    {readNext.map((p) => (
-                        <PostCard post={p} />
+        <section class="mt-20 border-t border-border pt-12 md:mt-24 md:pt-14">
+            <div class="shell">
+                <h2 class="m-0 mb-2 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">Read next</h2>
+                <div class="border-b border-border">
+                    {readNext.map((p, i) => (
+                        <PostCard post={p} variant="row" first={i === 0} />
                     ))}
                 </div>
             </div>

@@ -59,6 +59,7 @@ const scriptedModel = (script: ReadonlyArray<ReadonlyArray<Response.StreamPartEn
 	}
 	const model: ResolvedModel = {
 		provider: "openrouter",
+		content: "record",
 		name: "scripted",
 		limits: { context: 100_000, output: 4_000 },
 		layer: AiModel.make(
@@ -411,7 +412,12 @@ describe("runChatTurn review refusals", () => {
 			completion: reviewCompletion(
 				{ kind: "autonomous" },
 				{
-					coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
+					coverage: {
+						observe: () => {},
+						unread: () => ["src/b.ts"],
+						wholeDiff: () => true,
+						progress: () => ({ due: [], read: [] }),
+					},
 					ledger: makeReviewLedger(),
 					childFindings: makeChildFindings(),
 				},

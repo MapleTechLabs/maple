@@ -27,6 +27,20 @@ describe("parseChildFindings", () => {
 		)
 	})
 
+	it("carries the assigning code a child cites for a PII-01 finding as its source", () => {
+		const [finding, other] = parseChildFindings(
+			Arr.join(
+				[
+					"src/auth.ts:50 | critical | security | `token` logged | src/auth.ts:42 `const token = req.headers.authorization` | Drop it | PII-01",
+					"src/a.ts:4 | warn | correctness | T | Why | Fix | -",
+				],
+				"\n",
+			),
+		)
+		assert.equal(finding?.source, "src/auth.ts:42 `const token = req.headers.authorization`")
+		assert.isUndefined(other?.source)
+	})
+
 	it("files a child's path repo-relative", () => {
 		assert.deepStrictEqual(anchors("./src/a.ts:4 | warn | correctness | T | Why | Fix | -"), [
 			["src/a.ts", 4, "warn"],

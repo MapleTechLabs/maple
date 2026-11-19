@@ -37,6 +37,9 @@ export const QUERY_ENDPOINT_RESULT_KINDS = Rec.fromEntries(
 
 export const RAW_SQL_ENDPOINT = "raw_sql_chart"
 
+/** The transport identity of a `promql` source: its server function on both hosts. Never stored. */
+export const PROMQL_ENDPOINT = "promql_chart"
+
 /**
  * The one route that never had a query: a markdown note.
  *

@@ -1,5 +1,5 @@
 import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
-import { isPricingCardFeature } from "@maple/domain/billing"
+import { isAdvertisedPricingFeature } from "@maple/domain/billing"
 import { formatCurrency } from "@maple/domain/format"
 import { formatCount, formatQuoteUnits, quoteUnits } from "../kit/billing/usage"
 import type { IconName } from "@maple/views/ui/icon"
@@ -12,6 +12,7 @@ export const FEATURE_ICONS = new Map<string, IconName>([
 	["logs", "FileIcon"],
 	["traces", "PulseIcon"],
 	["metrics", "ChartLineIcon"],
+	["profiles", "FireIcon"],
 	["browser_sessions", "PlayRotateClockwiseIcon"],
 	["product_events", "GlobePointerIcon"],
 	["ai_credits", "SquareSparkleIcon"],
@@ -21,6 +22,7 @@ const DATA_FEATURE_LABELS = new Map<string, string>([
 	["logs", "Logs"],
 	["traces", "Traces"],
 	["metrics", "Metrics"],
+	["profiles", "Profiles"],
 	["browser_sessions", "Browser sessions"],
 	["product_events", "Product events"],
 	["ai_credits", "AI usage"],
@@ -72,7 +74,7 @@ const padCents = (text: string): string =>
 	replaceWith(text, /\$(\d+)\.(\d)(?!\d)/g, (_, dollars = "", tenths = "") => `$${dollars}.${tenths}0`)
 
 const normalizeDetailText = (text: string): string =>
-	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")(text))
+	padCents(Str.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?|profiles?)\b/i, "per GB")(text))
 
 /** Autumn words the rate per billing block; events are quoted per million, in its style. */
 const formatDetail = (item: CatalogPlanItem): string | undefined => {
@@ -134,7 +136,7 @@ export type FeatureRow = Readonly<{ featureId: string; label: string; value: str
 
 export const getFeatureRows = (plan: CatalogPlan): ReadonlyArray<FeatureRow> =>
 	Arr.map(
-		Arr.filter(plan.items, (item) => isPricingCardFeature(item.featureId)),
+		Arr.filter(plan.items, (item) => isAdvertisedPricingFeature(item.featureId)),
 		(item) => {
 			const detail = formatDetail(item)
 			return {

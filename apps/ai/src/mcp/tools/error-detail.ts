@@ -1,6 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
-import { formatDurationFromMs, formatNumber, truncate } from "../lib/format"
+import { formatDurationFromMs, formatNumber, logAttributeLines, truncate, untrustedText } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -141,7 +141,7 @@ const NO_EXCEPTION =
 	"no exception recorded: the span set status Error without an exception event or status message"
 
 const errorIdentityLine = (error: NonNullable<Output["error"]>): string => {
-	const detail = error.message === "" ? "" : `: ${truncate(error.message, 120)}`
+	const detail = error.message === "" ? "" : `: ${untrustedText(error.message, 120)}`
 	const service = error.serviceName === "" ? "" : ` (${error.serviceName})`
 	return `${error.label || error.exceptionType || "Error"}${detail}${service}`
 }
@@ -180,7 +180,7 @@ const summaryBlock = (output: Output): DocBlock | undefined => {
 	const routes = topRoutes(output.traces)
 	return doc.fields([
 		["Exception", error === undefined ? undefined : error.exceptionType || "none recorded"],
-		["Message", error === undefined ? undefined : error.message || NO_EXCEPTION],
+		["Message", error === undefined ? undefined : untrustedText(error.message || NO_EXCEPTION, 400)],
 		[
 			"Services",
 			summary === undefined
@@ -224,36 +224,30 @@ const traceBlocks =
 					"Error span (this fingerprint)",
 					span === undefined ? undefined : `${span.name} (${span.serviceName}) span=${span.spanId}`,
 				],
-				["Error", `"${truncate(message, 160)}"`],
+				["Error", untrustedText(message, 160)],
 			]),
 		]
 		const attrs = Rec.toEntries(span?.attributes ?? {})
-		if (attrs.length > 0) {
-			blocks.push(
-				doc.text(
-					`Error span attributes: {${Arr.join(
-						Arr.map(attrs, ([k, v]) => `${k}=${truncate(v, 60)}`),
-						", ",
-					)}}`,
-				),
-			)
-		}
-		if (trace.logs.length > 0) {
-			blocks.push(
-				doc.text(
-					Arr.join(
-						[
-							`Logs (${trace.logs.length}, error-level first):`,
-							...Arr.map(trace.logs, (log) => {
-								const time = Str.split(" ")(log.timestamp)[1] ?? log.timestamp
-								return `  ${time} [${Str.padEnd(5)(log.severityText)}] ${truncate(log.body, 90)}`
-							}),
-						],
-						"\n",
-					),
-				),
-			)
-		}
+		const telemetry = [
+			...(attrs.length === 0
+				? []
+				: [
+						`Error span attributes: {${Arr.join(
+							Arr.map(attrs, ([k, v]) => `${untrustedText(k, 60)}=${untrustedText(v, 60)}`),
+							", ",
+						)}}`,
+					]),
+			...(trace.logs.length === 0
+				? []
+				: [
+						`Logs (${trace.logs.length}, error-level first):`,
+						...Arr.map(trace.logs, (log) => {
+							const time = Str.split(" ")(log.timestamp)[1] ?? log.timestamp
+							return `  ${time} [${Str.padEnd(5)(log.severityText)}] ${untrustedText(log.body, 90)}${logAttributeLines(log.keyAttributes, "      ")}`
+						}),
+					]),
+		]
+		if (telemetry.length > 0) blocks.push(doc.untrusted(Arr.join(telemetry, "\n")))
 		return blocks
 	}
 
@@ -282,7 +276,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		name: "error_detail",
 		title: "Error Detail",
 		description:
-			"Sample traces (failing span, correlated logs) and a summary for one error, by `fingerprint` (decimal UInt64 from find_errors) or `issue_id` (UUID from list_error_issues). Without start_time/end_time it counts the last 30 days and samples the 6 hours before the last occurrence. Use inspect_trace on a trace_id for the full span tree.",
+			"Sample traces (failing span, correlated logs with their cause attributes such as log.error and exception.*) and a summary for one error, by `fingerprint` (decimal UInt64 from find_errors) or `issue_id` (UUID from list_error_issues). Without start_time/end_time it counts the last 30 days and samples the 6 hours before the last occurrence. Use inspect_trace on a trace_id for the full span tree.",
 		parameters: Schema.Struct({
 			fingerprint: P.optionalText(
 				'The error FingerprintHash from find_errors or list_error_issues: a decimal UInt64 string, e.g. "11640295108927840024".',
@@ -302,6 +296,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 5, max: 20, noun: "sample traces" }),
 		}),
 		aliases: { ...P.SERVICE_ALIASES, fingerprint_hash: "fingerprint" },
+		untrustedOutput: true,
 		hints: { readOnly: true },
 		phrases: ["Reading error details", "Looking into an error"],
 		handler: Effect.fn("McpTool.errorDetail")(function* (params) {

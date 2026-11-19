@@ -1,4 +1,3 @@
-import * as Policy from "@maple/domain/policy"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
@@ -62,6 +61,7 @@ import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr, String as Str, Option } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { canRunInvestigations } from "../../kit/session-grants"
+import { gatedLinkButton } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 
@@ -492,7 +492,6 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
 	// The limit lives on the AI settings tab, which needs llm_keys:manage to open.
-	const canEditSettings = Policy.has(model.grants, "llm_keys:manage")
 	return alert(h, { variant: "warn", className: "mb-4" }, [
 		alertTitle(
 			h,
@@ -516,21 +515,15 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 				],
 			),
 		]),
-		...(canEditSettings
-			? [
-					alertAction(h, [
-						linkButton(
-							h,
-							{
-								size: "sm",
-								variant: "ghost",
-								href: hrefOf(AppRoute.Settings({ search: { tab: "ai" } })),
-							},
-							["Raise the limit"],
-						),
-					]),
-				]
-			: []),
+		alertAction(h, [
+			gatedLinkButton(
+				h,
+				model,
+				"llm_keys:manage",
+				{ size: "sm", variant: "ghost", href: hrefOf(AppRoute.Settings({ search: { tab: "ai" } })) },
+				["Raise the limit"],
+			),
+		]),
 	])
 }
 

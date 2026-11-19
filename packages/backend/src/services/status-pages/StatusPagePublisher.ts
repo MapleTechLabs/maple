@@ -2,6 +2,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { StatusPageCleanups, StatusPageCustomDomains, StatusPages } from "@maple/db/tables"
 import type { StatusPageCleanupRow } from "@maple/db/tables"
 import type { StatusPageId } from "@maple/primitives"
+import { statusPageAddress } from "@maple/domain/status-page"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -41,7 +42,7 @@ export type StatusPagePublishError = StatusPageGoneError | StatusPagePublishDbEr
 export interface StatusPagePublisherApi {
 	/**
 	 * A draft page is a no-op: nothing reaches the edge until it is made public. An internal page
-	 * is taken off the edge instead: its slug route and snapshot go.
+	 * is taken off the edge instead: its slug route and snapshot go, each leaving an R2 tombstone.
 	 */
 	readonly publish: (pageId: StatusPageId) => Effect.Effect<StatusPagePublishResult, StatusPagePublishError>
 	/**
@@ -123,7 +124,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				const nowMs = yield* Clock.currentTimeMillis
 				if (current.visibility === "internal") {
 					yield* Effect.annotateCurrentSpan({ "maple.status_page.visibility": "internal" })
-					yield* unpublish(pageId, current.slug).pipe(
+					yield* unpublish(pageId, statusPageAddress(current.orgId, current.slug)).pipe(
 						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
 					)
 					// A lost race leaves the revision ahead, so the next sweep takes the page off again.
@@ -156,7 +157,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				// An active custom domain routes here too; the snapshot carries it, so its hash covers it.
 				const customDomain = snapshot.page.customDomain
 				const routes = {
-					slug: snapshot.page.slug,
+					address: statusPageAddress(current.orgId, snapshot.page.slug),
 					hostnames: customDomain === null ? [] : [customDomain],
 				}
 				if (written) {
@@ -170,7 +171,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				const reroutedOnly = written
 					? false
 					: yield* Effect.all([
-							store.readSlugRoute(routes.slug),
+							store.readSlugRoute(routes.address),
 							customDomain === null
 								? Effect.succeed(pageId)
 								: store.readHostRoute(customDomain),
@@ -221,8 +222,9 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 						// Deleted mid-publish, maybe after its cleanup drained: take back what we wrote.
 						if (written)
 							yield* cleanEdge({
+								orgId: current.orgId,
 								pageId,
-								slug: routes.slug,
+								slug: snapshot.page.slug,
 								deleteSnapshot: true,
 								hostname: customDomain,
 								cloudflareHostnameId: null,
@@ -248,14 +250,19 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				return { pageId, revision, written }
 			})
 
-			/** Takes an internal page off the edge: its slug route while it still names the page, and its snapshot. */
+			/**
+			 * Takes an internal page off the edge: its address route while it still names the page, and its
+			 * snapshot. Both leave a tombstone in R2, so the status Worker answers "not found" from R2
+			 * when KV fails instead of serving a copy it cached while the page was public. The next
+			 * publish or the page's delete replaces or removes them.
+			 */
 			const unpublish = Effect.fn("StatusPagePublisher.unpublish")(function* (
 				pageId: StatusPageId,
-				slug: string,
+				address: string,
 			) {
-				const routedTo = yield* store.readSlugRoute(slug)
-				if (routedTo === pageId) yield* store.deleteRoutes({ slug, hostnames: [] })
-				yield* store.deleteSnapshot(pageId)
+				const routedTo = yield* store.readSlugRoute(address)
+				if (routedTo === pageId) yield* store.retireSlugRoute(address)
+				yield* store.retireSnapshot(pageId)
 			})
 
 			/**
@@ -266,6 +273,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 			const cleanEdge = (
 				row: Pick<
 					StatusPageCleanupRow,
+					| "orgId"
 					| "pageId"
 					| "slug"
 					| "deleteSnapshot"
@@ -289,14 +297,19 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 							db.run(
 								PG.from(StatusPages)
 									.select(($) => ({ id: $.id }))
-									.where(($) => [$.slug.eq(slug)])
+									.where(($) => [$.orgId.eq(row.orgId), $.slug.eq(slug)])
 									.limit(1),
 							),
 						)
-						const routedTo = yield* store.readSlugRoute(slug)
+						const address = statusPageAddress(row.orgId, slug)
+						const routedTo = yield* store.readSlugRoute(address)
 						const slugIsOurs =
 							owners.length === 0 && (routedTo === null || routedTo === row.pageId)
-						if (slugIsOurs) yield* store.deleteRoutes({ slug, hostnames: [] })
+						if (slugIsOurs) yield* store.deleteRoutes({ address, hostnames: [] })
+						// The bare-slug route of a page published before slugs were per org; nothing writes those now.
+						const legacyTo = yield* store.readSlugRoute(slug)
+						if (legacyTo === row.pageId)
+							yield* store.deleteRoutes({ address: slug, hostnames: [] })
 					}
 					if (row.hostname !== null) yield* cleanCustomDomain({ ...row, hostname: row.hostname })
 					if (row.deleteSnapshot && alive.length === 0) yield* store.deletePage(row.pageId)

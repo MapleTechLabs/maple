@@ -23,7 +23,7 @@ export const AuditResources = {
 	ai_provider_key: { verbs: ["updated", "deleted"] },
 	alert_destination: {
 		prefix: PublicIdPrefixes.alertDestination,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "disabled"],
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
 	alert_silence: { prefix: PublicIdPrefixes.alertSilence, verbs: ["created", "updated", "ended"] },
@@ -73,11 +73,35 @@ export const AuditResources = {
 			"identity_unlinked",
 		],
 	},
-	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	dashboard_share: {
+		prefix: PublicIdPrefixes.dashboardShare,
+		verbs: ["created", "rotated", "deleted", "revoked"],
+	},
 	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
+	/** Org-singleton SSO and SCIM setup; secrets (OIDC client secret, SCIM token) are never in `changes`. */
+	enterprise_sso: {
+		verbs: [
+			"domain_added",
+			"domain_verified",
+			"domain_removed",
+			"connection_created",
+			"connection_updated",
+			"connection_enforced",
+			"connection_relaxed",
+			"connection_deleted",
+			"directory_created",
+			"directory_key_rotated",
+			"directory_paused",
+			"directory_resumed",
+			"directory_deleted",
+			"role_mapping_updated",
+			"bypass_added",
+			"bypass_removed",
+		],
+	},
 	escalation_chain: {
 		prefix: PublicIdPrefixes.escalationChain,
 		verbs: ["created", "updated", "deleted"],
@@ -90,15 +114,22 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.oncallOverride,
 		verbs: ["created", "deleted"],
 	},
-	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
+	/**
+	 * One connected Google Cloud scope; the scope and what it collects are in `metadata`.
+	 * `push_secret_read` is a render of its scripts, which carry the push secret; the secret is never recorded.
+	 */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
-		verbs: ["created", "updated", "removal_confirmed", "deleted"],
+		verbs: ["created", "updated", "removal_confirmed", "deleted", "push_secret_read"],
 	},
-	/** One connected AWS account; the account and its modules are in `metadata`. */
+	/**
+	 * One connected AWS account; the account and its modules are in `metadata`. `stream_key_read` and
+	 * `events_key_read` are a setup that carried the metric stream's access key or the key its
+	 * findings arrive with; the keys themselves are never recorded.
+	 */
 	aws_connection: {
 		prefix: PublicIdPrefixes.awsConnection,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "stream_key_read", "events_key_read", "events_key_rotated"],
 	},
 	/** Anything that sends data; a token source's secret is never in `changes`. */
 	source: {
@@ -108,7 +139,11 @@ export const AuditResources = {
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
 	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
-	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
+	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["granted", "revoked"] },
+	/** A `maple auth login` approved in the dashboard; the device name is in `metadata`. */
+	cli_session: { verbs: ["approved"] },
+	/** A session someone else signed in to as this member; the impersonator and session are in `metadata`. */
+	auth: { verbs: ["impersonation"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
@@ -123,7 +158,8 @@ export const AuditResources = {
 	onboarding_reward: { verbs: ["claimed"] },
 	/**
 	 * Org-singleton connections. `*_started` is the admin action Maple sees; the
-	 * OAuth round trip completes at the provider's callback.
+	 * OAuth round trip completes at the provider's callback. `webhook_secret_read` is a
+	 * read of the webhook configuration that returned its signing secret, never the secret.
 	 */
 	planetscale_integration: {
 		verbs: [
@@ -132,12 +168,20 @@ export const AuditResources = {
 			"metrics_token_set",
 			"features_updated",
 			"disconnected",
+			"webhook_secret_read",
 		],
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
 	cloudflare_integration: { verbs: ["zones_updated", "features_updated"] },
 	/** Org-singleton connection; the switches it saved ride in `metadata`. */
 	linear_integration: { verbs: ["features_updated"] },
+	/**
+	 * Pull request review setup: a repository switched on or off, its rules, and the organization's
+	 * defaults. `metadata` names the repository and says whether automatic approval is on.
+	 */
+	code_review: {
+		verbs: ["repository_enabled", "repository_disabled", "repository_rules_updated", "settings_updated"],
+	},
 	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
 	cost_source_key: { verbs: ["updated", "deleted"] },
 	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
@@ -232,6 +276,7 @@ export const AuditResourceLabels = {
 	ai_provider_key: "AI provider key",
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
+	enterprise_sso: "SSO and SCIM",
 	escalation_chain: "Escalation chain",
 	oncall_schedule: "On-call schedule",
 	oncall_override: "On-call override",
@@ -253,12 +298,15 @@ export const AuditResourceLabels = {
 	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
-	mcp_tool: "MCP tool",
+	cli_session: "CLI session",
+	auth: "Sign-in",
+	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
 	linear_integration: "Linear integration",
+	code_review: "Code review",
 	cost_source_key: "Cost source key",
 	cost_source: "Cost source",
 	member: "Member",
@@ -290,9 +338,26 @@ export const AuditActionLabels = {
 	"alert_destination.created": "Created alert destination",
 	"alert_destination.updated": "Updated alert destination",
 	"alert_destination.deleted": "Deleted alert destination",
+	"alert_destination.disabled": "Disabled alert destination",
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
+	"enterprise_sso.domain_added": "Added SSO domain",
+	"enterprise_sso.domain_verified": "Verified SSO domain",
+	"enterprise_sso.domain_removed": "Removed SSO domain",
+	"enterprise_sso.connection_created": "Connected identity provider",
+	"enterprise_sso.connection_updated": "Updated identity provider",
+	"enterprise_sso.connection_enforced": "Enforced SSO",
+	"enterprise_sso.connection_relaxed": "Stopped enforcing SSO",
+	"enterprise_sso.connection_deleted": "Removed identity provider",
+	"enterprise_sso.directory_created": "Set up SCIM provisioning",
+	"enterprise_sso.directory_key_rotated": "Rotated SCIM token",
+	"enterprise_sso.directory_paused": "Paused SCIM provisioning",
+	"enterprise_sso.directory_resumed": "Resumed SCIM provisioning",
+	"enterprise_sso.directory_deleted": "Removed SCIM provisioning",
+	"enterprise_sso.role_mapping_updated": "Updated SCIM role mapping",
+	"enterprise_sso.bypass_added": "Added SSO bypass user",
+	"enterprise_sso.bypass_removed": "Removed SSO bypass user",
 	"escalation_chain.created": "Created escalation chain",
 	"escalation_chain.updated": "Updated escalation chain",
 	"escalation_chain.deleted": "Deleted escalation chain",
@@ -338,6 +403,7 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"dashboard_share.revoked": "Revoked dashboard share link",
 	"device_credential.registered": "Registered device key",
 	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
@@ -366,9 +432,13 @@ export const AuditActionLabels = {
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
 	"gcp_connector.deleted": "Removed Google Cloud connector",
+	"gcp_connector.push_secret_read": "Read Google Cloud push secret",
 	"aws_connection.created": "Connected AWS",
 	"aws_connection.updated": "Updated AWS connection",
 	"aws_connection.deleted": "Removed AWS connection",
+	"aws_connection.stream_key_read": "Read AWS stream access key",
+	"aws_connection.events_key_read": "Read AWS events key",
+	"aws_connection.events_key_rotated": "Rotated AWS events key",
 	"ingest_key.rolled": "Rolled ingest key",
 	"source.created": "Created source",
 	"source.updated": "Updated source",
@@ -376,8 +446,11 @@ export const AuditActionLabels = {
 	"source.resumed": "Resumed source",
 	"source.rolled": "Rolled source token",
 	"source.deleted": "Deleted source",
+	"mcp_connection.granted": "Granted MCP connection",
 	"mcp_connection.revoked": "Revoked MCP connection",
-	"mcp_tool.called": "Called MCP tool",
+	"cli_session.approved": "Approved CLI login",
+	"auth.impersonation": "Signed in as this member",
+	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",
 	"investigation.status_changed": "Changed investigation status",
@@ -387,9 +460,14 @@ export const AuditActionLabels = {
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.features_updated": "Changed what PlanetScale collects",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
+	"planetscale_integration.webhook_secret_read": "Read PlanetScale webhook secret",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
 	"linear_integration.features_updated": "Changed what Maple does in Linear",
+	"code_review.repository_enabled": "Turned on code review for a repository",
+	"code_review.repository_disabled": "Turned off code review for a repository",
+	"code_review.repository_rules_updated": "Changed a repository's code review rules",
+	"code_review.settings_updated": "Changed the organization's code review settings",
 	"cost_source_key.updated": "Updated cost source key",
 	"cost_source_key.deleted": "Removed cost source key",
 	"cost_source.created": "Added cost source",
@@ -461,7 +539,15 @@ const isAuditResourceType = (type: string): type is AuditResourceType =>
  * and API requests. A heavy agent user writes hundreds of these a day. The
  * server filters by them and the web mutes them, so both read this one list.
  */
-export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [
+	".read",
+	".called",
+	".sql_executed",
+	".request",
+	// Reading a setup or a configuration that carries a key or a secret changes nothing.
+	"_key_read",
+	"_secret_read",
+] as const
 
 /** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */
 export const isAuditAccessAction = (action: string): boolean =>
@@ -474,3 +560,54 @@ export const auditActionLabel = (action: string): string | null =>
 /** Label for a `resource_type` read off a row; null for one this build does not know. */
 export const auditResourceLabel = (type: string): string | null =>
 	isAuditResourceType(type) ? AuditResourceLabels[type] : null
+
+/**
+ * Who called a tool, as the `mcp_tool` Resource column names it. A public MCP call is the
+ * customer's own client; every other surface is one of Maple's agents using the same tools.
+ */
+const MAPLE_AGENT_LABELS = new Map<string, string>([
+	["default", "Maple chat"],
+	["investigate", "Maple investigation"],
+	["pr-review", "Maple code review"],
+	["pr-reply", "Maple code review"],
+])
+
+/** "Maple code review" for a `ChatMode`; null for a value this build does not know. */
+export const mapleAgentLabel = (agent: string): string | null => MAPLE_AGENT_LABELS.get(agent) ?? null
+
+export const auditToolCallerLabel = (surface: string | null, agent: string | null): string => {
+	if (surface === null || surface === "mcp") return "MCP tool"
+	if (surface === "bot" || surface === "bot_anonymous") return "Maple bot"
+	return (agent !== null ? mapleAgentLabel(agent) : null) ?? "Maple agent"
+}
+
+const SURFACE_LABELS = new Map<string, string>([
+	["mcp", "MCP client"],
+	["chat", "Maple agent"],
+	["bot", "Maple bot"],
+	["bot_anonymous", "Maple bot"],
+	["workflow", "Maple agent"],
+	["rpc", "Maple internal"],
+])
+
+const SQL_CONTEXT_LABELS = new Map<string, string>([
+	["mcp.run_sql", "run_sql tool"],
+	["rawSql", "Dashboard or SQL editor"],
+])
+
+/**
+ * A metadata value as the audit detail shows it: the internal codes Maple writes (`surface`,
+ * `agent`, a SQL `context`) in words, or null to show the value as recorded.
+ */
+export const auditMetadataValueLabel = (key: string, value: string): string | null => {
+	switch (key) {
+		case "surface":
+			return SURFACE_LABELS.get(value) ?? null
+		case "agent":
+			return mapleAgentLabel(value)
+		case "context":
+			return SQL_CONTEXT_LABELS.get(value) ?? null
+		default:
+			return null
+	}
+}

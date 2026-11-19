@@ -20,4 +20,4 @@ data arrives:
 Sessions ingested before this change keep their old numbers. Cost is not shown in the session
 views yet: Claude Code reports it only on its log events, which you can search under **Logs**.
 
-Get started with the [Claude Code setup](/docs/agent-sessions/overview#claude-code).
+Get started with the [Claude Code setup](/docs/agent-sessions/overview).

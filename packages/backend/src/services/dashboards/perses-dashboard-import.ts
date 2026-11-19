@@ -1,20 +1,26 @@
-import { dashboardTimeBoundIssue } from "@maple/domain/raw-sql"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DashboardValidationError,
-	DashboardWidgetSchema,
 	PortableDashboardDocument,
 	type RawSqlDisplayType,
 	defaultWidgetLayout,
 	findNextPosition,
 	widgetTypeByPersesKind,
-	widgetTypeByVisualization,
 	type WidgetVisualization,
 } from "@maple/domain/http"
-import { makeRawSqlDataSource, makeStaticDataSource } from "@maple/widgets/dashboard"
-
-type UnknownRecord = Record<string, unknown>
-type DashboardWidget = typeof DashboardWidgetSchema.Type
+import {
+	type DashboardWidget,
+	type UnknownRecord,
+	asArray,
+	asFiniteNumber,
+	asRecord,
+	asString,
+	markdownWidget,
+	normalizeClickHouseSql,
+	placeholderWidget as sharedPlaceholderWidget,
+	rawSqlDataSource,
+	uniqueWidgetId,
+} from "./dashboard-import-shared"
 
 export interface PersesImportConversion {
 	readonly dashboard: PortableDashboardDocument
@@ -39,24 +45,6 @@ const SUPPORTED_PANEL_KINDS = new Set([
 	"HeatMapChart",
 	"Heatmap",
 ])
-
-const isRecord = (value: unknown): value is UnknownRecord =>
-	typeof value === "object" && value !== null && !Arr.isArray(value)
-
-const asRecord = (value: unknown): UnknownRecord | null => (isRecord(value) ? value : null)
-
-const asArray = (value: unknown): unknown[] => (Arr.isArray(value) ? value : [])
-
-const asString = (value: unknown): string | undefined =>
-	typeof value === "string" && Str.trim(value).length > 0 ? value : undefined
-
-const asFiniteNumber = (value: unknown): number | undefined =>
-	typeof value === "number" && Number.isFinite(value) ? value : undefined
-
-const sanitizeIdSegment = (value: string): string => {
-	const normalized = Str.replace(/^-+|-+$/g, "")(Str.replace(/[^a-z0-9_-]+/g, "-")(Str.toLowerCase(value)))
-	return normalized.length > 0 ? normalized : "panel"
-}
 
 const jsonPointerSegment = (segment: string): string =>
 	decodeURIComponent(Str.replace(/~0/g, "~")(Str.replace(/~1/g, "/")(segment)))
@@ -203,17 +191,6 @@ function gridLayoutFromItem(
 	return { x, y, w, h, minW: defaults.minW, minH: defaults.minH }
 }
 
-function uniqueWidgetId(panelKey: string, existing: Set<string>): string {
-	const base = `perses-${sanitizeIdSegment(panelKey)}`
-	let candidate = base
-	let index = 2
-	while (existing.has(candidate)) {
-		candidate = `${base}-${index++}`
-	}
-	existing.add(candidate)
-	return candidate
-}
-
 function queryPluginFromQuery(query: unknown) {
 	const queryRecord = asRecord(query)
 	const spec = asRecord(queryRecord?.spec)
@@ -235,119 +212,20 @@ function querySummaries(queries: readonly unknown[]): string[] {
 	})
 }
 
-function hasOrgScope(sql: string): boolean {
-	return Str.includes("$__orgFilter")(sql) || /\bOrgId\b/.test(sql)
-}
-
-function insertBeforeTrailingClauses(sql: string, fragment: string): string {
-	const match = /\b(GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT)\b/i.exec(sql)
-	if (!match) return `${Str.trimEnd(sql)} ${fragment}`
-	return `${Str.trimEnd(Str.slice(0, match.index)(sql))} ${fragment} ${Str.trimStart(Str.slice(match.index)(sql))}`
-}
-
-type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
-
-function normalizeClickHouseSql(sql: string, warnings: string[], panelTitle: string): NormalizedSql {
-	if (!hasOrgScope(sql)) {
-		warnings.push(
-			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query does not include $__orgFilter or an OrgId predicate.`,
-		)
-		return { placeholderReason: "This ClickHouse query needs Maple org scoping before it can run." }
-	}
-
-	const normalized = Str.includes("$__orgFilter")(sql)
-		? sql
-		: insertBeforeTrailingClauses(sql, /\bWHERE\b/i.test(sql) ? "AND $__orgFilter" : "WHERE $__orgFilter")
-
-	if (!Str.includes("$__orgFilter")(sql)) {
-		warnings.push(
-			`Panel "${panelTitle}" had an explicit OrgId reference; Maple added $__orgFilter so the widget stays tenant-scoped.`,
-		)
-	}
-
-	// Saving refuses raw SQL that reads outside the dashboard range (DashboardPersistenceService).
-	if (dashboardTimeBoundIssue(normalized) !== null) {
-		warnings.push(
-			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query does not use $__timeFilter(...) or $__startTime, so it would read all retained data on every refresh.`,
-		)
-		return {
-			placeholderReason:
-				"This ClickHouse query needs a Maple time filter ($__timeFilter(...) or $__startTime) before it can run.",
-		}
-	}
-
-	return { sql: normalized }
-}
-
-function rawSqlDataSource(args: {
-	visualization: string
-	sql: string
-	displayType: RawSqlDisplayType
-}): DashboardWidget["dataSource"] {
-	// `displayType === "stat"` is kept alongside the panel's own scalar flag: a
-	// Perses panel can import as a non-scalar type while its query still yields
-	// the single-row shape a stat renders.
-	const isScalar =
-		args.displayType === "stat" || widgetTypeByVisualization(args.visualization)?.isScalar === true
-
-	return makeRawSqlDataSource({
-		sql: args.sql,
-		displayType: args.displayType,
-		...(isScalar ? { transform: { reduceToValue: { field: "value", aggregate: "first" } } } : undefined),
-	})
-}
-
-function markdownDataSource(): DashboardWidget["dataSource"] {
-	return makeStaticDataSource()
-}
-
-function markdownWidgetContent(args: {
-	reason: string
-	panelKind?: string
-	querySummaries?: readonly string[]
-}) {
-	const lines = [
-		"### Perses import placeholder",
-		args.reason,
-		...(args.panelKind ? [`Panel plugin: \`${args.panelKind}\``] : []),
-	]
-
-	if (args.querySummaries && args.querySummaries.length > 0) {
-		lines.push("", "Queries:")
-		for (const summary of args.querySummaries) {
-			lines.push(`- ${summary}`)
-		}
-	}
-
-	return Arr.join(lines, "\n")
-}
-
 function placeholderWidget(args: {
 	id: string
 	title: string
-	description?: string
+	description?: string | undefined
 	layout: DashboardWidget["layout"]
 	reason: string
 	panelKind?: string
 	querySummaries?: readonly string[]
 }): DashboardWidget {
-	return {
-		id: args.id,
-		visualization: "markdown",
-		dataSource: markdownDataSource(),
-		display: {
-			title: args.title,
-			...(args.description ? { description: args.description } : undefined),
-			markdown: {
-				content: markdownWidgetContent({
-					reason: args.reason,
-					panelKind: args.panelKind,
-					querySummaries: args.querySummaries,
-				}),
-			},
-		},
-		layout: args.layout,
-	}
+	return sharedPlaceholderWidget({
+		...args,
+		source: "Perses",
+		panelKind: args.panelKind === undefined ? undefined : ["Panel plugin", args.panelKind],
+	})
 }
 
 function convertPanel(args: {
@@ -360,7 +238,7 @@ function convertPanel(args: {
 	const { spec, kind, pluginSpec } = getPanelPlugin(args.panel)
 	const display = getDisplay(spec)
 	const title = display.title ?? args.panelKey
-	const id = uniqueWidgetId(args.panelKey, args.widgetIds)
+	const id = uniqueWidgetId("perses", args.panelKey, args.widgetIds)
 	const visualization = defaultVisualizationForPanelKind(kind)
 
 	if (!kind) {
@@ -394,17 +272,13 @@ function convertPanel(args: {
 		if (!text) {
 			args.warnings.push(`Markdown panel "${title}" has no text content.`)
 		}
-		return {
+		return markdownWidget({
 			id,
-			visualization: "markdown",
-			dataSource: markdownDataSource(),
-			display: {
-				title,
-				...(display.description ? { description: display.description } : undefined),
-				markdown: { content: text },
-			},
+			title,
+			description: display.description,
+			content: text,
 			layout: args.layout,
-		}
+		})
 	}
 
 	const queries = asArray(spec?.queries)
