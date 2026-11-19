@@ -28,7 +28,6 @@ import {
 import { INGEST_APPEND_TOKEN } from "@maple/domain/tinybird/ingest-token"
 import { createIngestCollector } from "./alchemy/collector.ts"
 import {
-	ingestPgUrl,
 	ingestSecrets,
 	ingestSlotKeyMasters,
 	ingestWarehouseAdminToken,
@@ -107,8 +106,8 @@ CONFIG
 export interface CreateMapleIngestOptions extends Pick<MapleStackContext, "stage" | "region" | "profile"> {
 	/** The public hostname (`domains.ingest`). Every stage that deploys a fleet has one. */
 	hostname: string
-	/** The declared database's gateway login; a stage without one reads `MAPLE_INGEST_PG_URL` instead. */
-	dbLogin?: MapleDbLogin
+	/** The declared database's gateway login. */
+	dbLogin: MapleDbLogin
 }
 
 /**
@@ -310,11 +309,7 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 		)
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
 		// ingest keys through the pooler as its own role.
-		const pgUrl = dbLogin
-			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
-			: yield* resolveAs("ingest", ingestPgUrl).pipe(
-					Effect.flatMap((url) => secret("maple-pg-url", url)),
-				)
+		const pgUrl = yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
 		// Only the subkeys for the one slot the gateway opens, derived here from the master keys.
 		const chPasswordSlotKeys = yield* resolveDerived(
 			"ingest",
@@ -528,7 +523,7 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				INGEST_KEY_STORE_BACKEND: "postgres",
 				// A replaced role changes the task definition, so the fleet rolls onto the
 				// new secret before alchemy deletes the old role.
-				...(dbLogin && { MAPLE_PG_ROLE_ID: dbLogin.id }),
+				MAPLE_PG_ROLE_ID: dbLogin.id,
 
 				// Trust `Cf-IPCountry` (fills `session_replays.Country`): the ALB admits only Cloudflare.
 				MAPLE_INGEST_TRUST_PROXY_GEO: "true",

@@ -14,11 +14,6 @@ export class MaplePgUrl extends Secret<MaplePgUrl>()("MAPLE_PG_URL", {
 	consumers: ["managed-db"],
 }) {}
 
-export class IngestPgUrl extends Secret<IngestPgUrl>()("MAPLE_INGEST_PG_URL", {
-	issuer: "postgres",
-	consumers: ["ingest"],
-}) {}
-
 // Warehouse
 
 // A preview deploys on its branch's token (docs/pr-previews.md), never prod's. The parent workspace

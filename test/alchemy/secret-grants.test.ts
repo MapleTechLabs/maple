@@ -19,7 +19,6 @@ import { chatBotConfiguredEnv } from "../../apps/chat-bot/src/resources/env.ts"
 import { electricSecrets } from "../../apps/electric/alchemy/secrets.ts"
 import { electricSyncConfiguredEnv } from "../../apps/electric-sync/src/resources/env.ts"
 import {
-	ingestPgUrl,
 	ingestSecrets,
 	ingestSlotKeyMasters,
 	ingestWarehouseAdminToken,
@@ -102,7 +101,7 @@ const DEPLOYABLES = {
 	"audit-archive": onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
 	web: onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
 	landing: [landingBuildSecrets],
-	ingest: [ingestSecrets, ingestPgUrl],
+	ingest: [ingestSecrets],
 	scraper: [scraperSecrets],
 	electric: [electricSecrets],
 	"workers-observability": [workersObservabilitySecrets],
