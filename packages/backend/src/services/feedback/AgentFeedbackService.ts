@@ -217,7 +217,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 				// An admin of the Maple team's own organization.
 				yield* Policy.check(
 					caller.permissions,
-					"members:manage",
+					"agent_feedback:triage",
 					(denial) => new AgentFeedbackTriageForbiddenError({ message: denial.message }),
 				)
 				const related = nonBlank(filter.relatedTo)

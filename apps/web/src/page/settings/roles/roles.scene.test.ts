@@ -53,9 +53,9 @@ describe("roles list", () => {
 			{ update, view },
 			given(loaded()),
 			expectView(role("link", { name: "Admin" })).toExist(),
-			expectView(text("All 49")).toExist(),
-			expectView(text("16 of 49")).toExist(),
-			expectView(text(`${ON_CALL.permissions.length} of 49`)).toExist(),
+			expectView(text(`All ${Policy.allPermissions.length}`)).toExist(),
+			expectView(text(`16 of ${Policy.allPermissions.length}`)).toExist(),
+			expectView(text(`${ON_CALL.permissions.length} of ${Policy.allPermissions.length}`)).toExist(),
 		)
 	})
 

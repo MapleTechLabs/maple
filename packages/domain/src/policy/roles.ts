@@ -59,6 +59,7 @@ const engineerAccess = [
 	"ingest_keys:roll",
 	"status_pages:access",
 	"data_sources:manage",
+	"data_sources:query",
 	"api_keys:create_restricted",
 ] as const satisfies ReadonlyArray<Permission>
 

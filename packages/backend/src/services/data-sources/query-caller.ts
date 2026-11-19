@@ -28,4 +28,4 @@ export const queryCallerOf = (
 
 /** Whether `query` would admit this caller, for a surface deciding whether to offer it at all. */
 export const mayQueryDataSources = (caller: QueryCaller): boolean =>
-	caller.kind === "unattended" || Policy.can(caller.permissions, "data_sources:manage")
+	caller.kind === "unattended" || Policy.can(caller.permissions, "data_sources:query")

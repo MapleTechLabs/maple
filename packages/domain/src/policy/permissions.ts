@@ -282,6 +282,14 @@ export const permissions = {
 		description: "External databases and APIs that Maple AI can query.",
 		action: "connect and manage data sources",
 	},
+	// A query runs on the org's own database, so it takes the role that may connect one.
+	"data_sources:query": {
+		code: 49,
+		group: "ingestion",
+		label: "Query data sources",
+		description: "Run queries against connected databases and APIs.",
+		action: "query connected data sources",
+	},
 	"warehouse:manage": {
 		code: 29,
 		group: "ingestion",
@@ -408,6 +416,16 @@ export const permissions = {
 		description: "SAML connections and SCIM provisioning.",
 		action: "manage single sign-on and SCIM provisioning",
 		sensitive: true,
+	},
+	// Only in Maple's own org: feedback from every organization, free text included.
+	"agent_feedback:triage": {
+		code: 50,
+		group: "organization",
+		label: "Triage agent feedback",
+		description: "Read agent feedback from every organization. Maple's own org only.",
+		action: "read agent feedback from every organization",
+		sensitive: true,
+		customRoles: false,
 	},
 	"audit_log:read": {
 		code: 31,

@@ -169,7 +169,7 @@ export interface ExternalDataSourceServiceApi {
 		audience: Audience,
 		limit?: number,
 	) => Effect.Effect<ReadonlyArray<DataSourceSearchHit>, DataSourcePersistenceError>
-	/** Refused unless the caller holds `data_sources:manage`; an unattended run always reads as an agent. */
+	/** Refused unless the caller holds `data_sources:query`; an unattended run always reads as an agent. */
 	readonly query: (
 		orgId: OrgId,
 		ref: string,
@@ -1060,7 +1060,7 @@ export class ExternalDataSourceService extends Context.Service<
 			if (caller.kind === "principal") {
 				yield* Policy.check(
 					caller.permissions,
-					"data_sources:manage",
+					"data_sources:query",
 					(denial) =>
 						new DataSourceForbiddenError({
 							message: denial.message,
