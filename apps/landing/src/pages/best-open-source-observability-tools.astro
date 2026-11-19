@@ -40,7 +40,7 @@ const itemListJsonLd = {
 };
 ---
 
-<Layout title={pageTitle} description={pageDescription} ogType="article">
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
     <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
     <script type="application/ld+json" set:html={JSON.stringify(itemListJsonLd)} />
 

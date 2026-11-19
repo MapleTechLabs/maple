@@ -11,6 +11,7 @@ import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
 import { foldkitIslands } from "./src/foldkit-island/integration.ts"
+import { builtPage, trailingSlashLinks } from "./src/lib/build-seo.mjs"
 import sitemap from "@astrojs/sitemap"
 import tailwindcss from "@tailwindcss/vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
@@ -63,8 +64,11 @@ const telemetryEnv = {
 }
 
 // https://astro.build/config
+const SITE = "https://maple.dev"
+const DIST = new URL("./dist/", import.meta.url).pathname
+
 export default defineConfig({
-	site: "https://maple.dev",
+	site: SITE,
 	trailingSlash: "ignore",
 	redirects: {
 		// The monthly release became individual entries.
@@ -134,13 +138,20 @@ export default defineConfig({
 					ko: "ko",
 				},
 			},
-			filter: (page) => !page.includes("/docs/404"),
-			// Stamp a build-time lastmod so the sitemap exposes a freshness signal.
+			// Only pages that are their own canonical: a locale URL that falls back to
+			// English, and every 404, points elsewhere or is not for the index.
+			filter: (page) => !/\/404\/?$/.test(page) && builtPage(DIST, SITE, page)?.canonical === page,
+			// Alternates and dates come from the page's own head, so the two cannot disagree.
+			// A page with no date of its own gets none, not the build time.
 			serialize(item) {
-				item.lastmod = new Date().toISOString()
+				const facts = builtPage(DIST, SITE, item.url)
+				const alternates = facts?.alternates.filter((alternate) => alternate.lang !== "x-default") ?? []
+				item.links = alternates.length > 1 ? alternates : undefined
+				item.lastmod = facts?.modified ? new Date(facts.modified).toISOString() : undefined
 				return item
 			},
 		}),
+		trailingSlashLinks(),
 	],
 	vite: {
 		plugins: [
