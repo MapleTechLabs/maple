@@ -184,6 +184,7 @@ export const filterCounts = (rows: ReadonlyArray<ConnectedRow>): Record<HubFilte
 	query: Arr.filter(rows, (row) => row.capability === "query").length,
 	alerts: Arr.filter(rows, (row) => row.capability === "alerts").length,
 	analytics: Arr.filter(rows, (row) => row.capability === "analytics").length,
+	security: Arr.filter(rows, (row) => row.capability === "security").length,
 	attention: Arr.filter(rows, needsAttention).length,
 })
 

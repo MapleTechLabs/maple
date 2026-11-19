@@ -246,6 +246,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/fleet",
+		title: "Fleet",
+		description:
+			"The Fleet card from the connect form to a rejected token, an admin-role token and the read-only view, over fixtures, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/search-console",
 		title: "Google Search Console",
 		description:

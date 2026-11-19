@@ -4,6 +4,7 @@ import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
+	FleetIntegrationStatus,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
@@ -63,6 +64,7 @@ import {
 } from "../infra-integrations/gcp/integration/gcp-schema"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
+import { FleetMessage } from "./fleet/fleet"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
@@ -83,6 +85,7 @@ export const StatusName = Schema.Literals([
 	"linear",
 	"github",
 	"searchConsole",
+	"fleet",
 	"chat",
 	"scrapeTargets",
 	"dataSources",
@@ -107,6 +110,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
+	CompletedLoadFleet: result(FleetIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
@@ -219,6 +223,8 @@ export const Message = defineMessageUnion({
 	GotSearchConsoleMessage: { message: SearchConsoleMessage },
 	GotChatMessage: { message: ChatMessage },
 	GotLinearMessage: { message: LinearMessage },
+	/** A message for the Fleet module (`provider-modules.ts`). */
+	GotFleetMessage: { message: FleetMessage },
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },
