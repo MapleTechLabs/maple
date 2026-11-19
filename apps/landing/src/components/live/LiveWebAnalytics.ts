@@ -8,7 +8,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { gapMs, linePreview, noise, plotLayer, RunClock } from "./live-script"
+import { gapMs, linePreview, noise, plotLayer, RunClock, SCRIPT_MS } from "./live-script"
 
 /**
  * The Web Analytics page's traffic chart (`AnalyticsTraffic`, through the `analytics-traffic`
@@ -23,10 +23,11 @@ const HEIGHT = 200
 const VISITORS_TOKEN = "var(--chart-1)"
 const PAGE_VIEWS_TOKEN = "var(--chart-2)"
 const TOKENS = ["--border", "--background", VISITORS_TOKEN, PAGE_VIEWS_TOKEN]
-/** How many visits the script has in it, and the shortest and longest wait between two. */
-const VISITS_TO_COME = 420
+/** The shortest and longest wait between two visits. */
 const QUICK_MS = 240
 const SLOW_MS = 2100
+/** Nothing here eases, so the clock only has to notice a visit landing. */
+const FRAME_MS = 100
 /** People on the site right now stay within this range. */
 const ONLINE = { atStart: 34, least: 26, most: 47 }
 
@@ -111,7 +112,7 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 	Message.match<Update.Return<Model, Message>>(message, {
 		Advanced: ({ byMs }) => {
 			const left = model.untilNextMs - byMs
-			if (left > 0 || model.visits >= VISITS_TO_COME) return { model: { ...model, untilNextMs: left } }
+			if (left > 0) return { model: { ...model, untilNextMs: left } }
 			const visits = model.visits + 1
 			return {
 				model: {
@@ -245,7 +246,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			),
 			tiles(h, model),
 			h.div(
-				[h.Class("px-4 pt-3 pb-4"), h.OnMount(RunClock({ everyMs: 0 }))],
+				[h.Class("px-4 pt-3 pb-4"), h.OnMount(RunClock({ everyMs: FRAME_MS, forMs: SCRIPT_MS }))],
 				[
 					h.div(
 						[h.Class("text-fg-muted mb-2 flex gap-4 text-xs")],

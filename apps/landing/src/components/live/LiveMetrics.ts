@@ -9,7 +9,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { linePreview, plotLayer, RunClock } from "./live-script"
+import { linePreview, plotLayer, RunClock, SCRIPT_MS } from "./live-script"
 
 /**
  * A latency chart as a dashboard draws it: the query builder's line chart (`QueryBuilderArea`,
@@ -25,8 +25,8 @@ const BUCKET_MS = 60_000
 const WINDOW = 36
 /** Script time a bucket takes to cross its own width. */
 const MS_PER_BUCKET = 4200
-/** Thirty frames a second is smooth for a line moving two pixels a second. */
-const FRAME_MS = 30
+/** Twenty frames a second is smooth for a line moving two pixels a second. */
+const FRAME_MS = 50
 const HEIGHT = 190
 /** Above the highest p99 the example data reaches. */
 const AXIS_TOP_MS = 700
@@ -204,7 +204,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				],
 			),
 			h.div(
-				[h.Class("px-4 pt-3.5 pb-4"), h.OnMount(RunClock({ everyMs: FRAME_MS }))],
+				[h.Class("px-4 pt-3.5 pb-4"), h.OnMount(RunClock({ everyMs: FRAME_MS, forMs: SCRIPT_MS }))],
 				[
 					figures(h, model.minutes),
 					h.div(

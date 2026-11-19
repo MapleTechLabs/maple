@@ -17,34 +17,36 @@ export type ScriptMessage = typeof ScriptMessage.Type
 /** A tab that was in the background hands back one long frame: the script does not jump over it. */
 const LONGEST_FRAME_MS = 64
 
+/** How much script time a frame gets: three minutes on screen, then it holds what it shows. */
+export const SCRIPT_MS = 180_000
+
 /**
  * The clock: `Advanced` on animation frames, at most one per `everyMs`, while the element is on
- * screen. It stops asking for frames while the element is off screen, and never starts under
- * reduced motion.
+ * screen. It stops asking for frames while the element is off screen, stops for good once it has
+ * handed out `forMs` of script time, and never starts under reduced motion.
  */
 export const RunClock = Mount.defineStream("RunClock", {
-	args: { everyMs: Schema.Number },
+	args: { everyMs: Schema.Number, forMs: Schema.Number },
 	messages: [ScriptMessage.Advanced],
-	execute: ({ element, everyMs }) =>
+	execute: ({ element, everyMs, forMs }) =>
 		matchMedia("(prefers-reduced-motion: reduce)").matches
 			? Stream.never
 			: Stream.callback<ScriptMessage>((queue) =>
 					Effect.acquireRelease(
 						Effect.sync(() => {
-							const clock = { onScreen: false, frame: 0, last: 0 }
+							const clock = { onScreen: false, frame: 0, last: 0, spentMs: 0 }
 							const step = (now: number) => {
 								clock.frame = 0
-								if (!clock.onScreen) return
+								// A frame left on screen for minutes has told its story: it rests.
+								if (!clock.onScreen || clock.spentMs >= forMs) return
 								const byMs = clock.last === 0 ? 0 : now - clock.last
 								if (clock.last === 0 || byMs >= everyMs) {
 									clock.last = now
-									if (byMs > 0)
-										Queue.offerUnsafe(
-											queue,
-											ScriptMessage.Advanced({
-												byMs: Math.min(LONGEST_FRAME_MS, byMs),
-											}),
-										)
+									if (byMs > 0) {
+										const passed = Math.min(LONGEST_FRAME_MS, byMs)
+										clock.spentMs += passed
+										Queue.offerUnsafe(queue, ScriptMessage.Advanced({ byMs: passed }))
+									}
 								}
 								clock.frame = requestAnimationFrame(step)
 							}

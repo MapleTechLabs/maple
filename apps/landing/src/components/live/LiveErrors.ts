@@ -9,7 +9,7 @@ import { Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../../foldkit-island/island"
-import { follow, gapMs, noise, plotLayer, RunClock } from "./live-script"
+import { follow, gapMs, noise, plotLayer, RunClock, SCRIPT_MS } from "./live-script"
 
 /**
  * One issue taking events: the dashboard's occurrence chart (`Occurrences`, through the
@@ -23,13 +23,15 @@ const HOUR_MS = 3_600_000
 const HOURS = 24
 const HEIGHT = 132
 const ERROR_TOKEN = "--severity-error"
-/** Events at the first frame, and how many more the script has in it. */
+/** Events at the first frame. */
 const EVENTS_AT_START = 142
-const EVENTS_TO_COME = 240
 const NEWEST_HOUR_AT_START = 9
-/** The shortest and longest wait between two events. */
+/** The shortest and longest wait between two events, and how many events it takes for waits to double. */
 const QUICK_MS = 380
 const SLOW_MS = 3400
+const EVENTS_TO_HALVE_THE_RATE = 30
+/** Thirty frames a second: plenty for a bar easing up a few pixels. */
+const FRAME_MS = 30
 const SERVICES = ["checkout-api", "payment-svc", "order-worker"] as const
 /** Rows the list shows, and the one more it keeps so a row can slide out as one slides in. */
 const ROWS_SHOWN = 3
@@ -101,14 +103,16 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 	Message.match<Update.Return<Model, Message>>(message, {
 		Advanced: ({ byMs }) => {
 			const left = model.untilNextMs - byMs
-			const lands = left <= 0 && model.arrived < EVENTS_TO_COME
+			const lands = left <= 0
 			const arrived = lands ? model.arrived + 1 : model.arrived
+			// The burst tails off: each event makes the next a little slower to come.
+			const thinning = 1 + arrived / EVENTS_TO_HALVE_THE_RATE
 			return {
 				model: {
 					...model,
 					arrived,
 					onBar: follow(model.onBar, arrived, byMs),
-					untilNextMs: lands ? left + gapMs(arrived, QUICK_MS, SLOW_MS) : left,
+					untilNextMs: lands ? left + gapMs(arrived, QUICK_MS, SLOW_MS) * thinning : left,
 				},
 			}
 		},
@@ -235,7 +239,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 				],
 			),
 			h.div(
-				[h.Class("px-4 pt-3.5 pb-3"), h.OnMount(RunClock({ everyMs: 0 }))],
+				[h.Class("px-4 pt-3.5 pb-3"), h.OnMount(RunClock({ everyMs: FRAME_MS, forMs: SCRIPT_MS }))],
 				[
 					h.div(
 						[h.Class("mb-3 flex min-w-0 items-baseline gap-2 text-sm")],

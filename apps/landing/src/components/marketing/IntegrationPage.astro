@@ -66,9 +66,9 @@ const COPY = {
 } satisfies Record<Runtime, Record<string, () => string>>;
 
 const OTHERS = [
-	{ runtime: "nextjs", name: "Next.js", desc: "Auto-instrument routes, server components, and middleware" },
-	{ runtime: "python", name: "Python", desc: "Trace Django, Flask, and FastAPI services" },
-	{ runtime: "nodejs", name: "Node.js", desc: "Auto-instrument Express, Fastify, and database clients" },
+	{ runtime: "nextjs", name: "Next.js", desc: m.intg_other_nextjs_desc() },
+	{ runtime: "python", name: "Python", desc: m.intg_other_python_desc() },
+	{ runtime: "nodejs", name: "Node.js", desc: m.intg_other_nodejs_desc() },
 ];
 
 const copy = COPY[runtime];
@@ -135,7 +135,7 @@ const crossLinks = [
 		</div>
 	</section>
 
-	<CrossLinks eyebrow={m.breadcrumb_integrations()} title="Other integrations" links={crossLinks} />
+	<CrossLinks eyebrow={m.breadcrumb_integrations()} title={m.intg_others_title()} links={crossLinks} />
 
 	<BottomCTA />
 	<Footer />
