@@ -49,6 +49,8 @@ describe("interpolatePromqlVariables", () => {
 		expect(interpolatePromqlVariables('up{job=~ # pick one\n"$v"}', wide)).toBe(
 			'up{job=~ # pick one\n"\\\\.\\\\*"}',
 		)
+		// An operator inside a comment does not make an equality matcher a regex one.
+		expect(interpolatePromqlVariables('up{job= # =~\n"$v"}', wide)).toBe('up{job= # =~\n".*"}')
 		// Equality matchers read the value literally already.
 		expect(interpolatePromqlVariables('up{job="$v"}', wide)).toBe('up{job=".*"}')
 	})

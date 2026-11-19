@@ -21,8 +21,9 @@ export const promqlRegexEscape = (value: string): string =>
 /** Where in a query a variable sits: PromQL code, or inside a string with that quote. */
 type QuoteContext = "code" | '"' | "'" | "`"
 
-/** Code that opens a string as the value of a `=~` or `!~` matcher. */
-const OPENS_REGEX_MATCHER = /[=!]~(?:\s|#[^\n]*\n)*["'`]$/
+/** Code that opens a string as the value of a `=~` or `!~` matcher, once its comments are gone. */
+const OPENS_REGEX_MATCHER = /[=!]~\s*["'`]$/
+const PROMQL_COMMENT = /#[^\n]*/g
 
 /** A value escaped for the inside of a double- or single-quoted PromQL string (no raw newline). */
 export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>
@@ -146,7 +147,9 @@ export function interpolatePromqlVariables(query: string, values: VariableValues
 	const runs = quoteRuns(query)
 	return Arr.join(
 		Arr.map(runs, ({ text, context }, index) => {
-			const inRegex = context !== "code" && OPENS_REGEX_MATCHER.test(runs[index - 1]?.text ?? "")
+			const inRegex =
+				context !== "code" &&
+				OPENS_REGEX_MATCHER.test(Str.replace(PROMQL_COMMENT, "")(runs[index - 1]?.text ?? ""))
 			return replaceWith(
 				text,
 				PROMQL_VAR_REF,
