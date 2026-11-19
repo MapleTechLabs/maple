@@ -64,11 +64,12 @@ export const AWS_MODULE_SPECS = {
 	security: {
 		title: "Security scan",
 		summary:
-			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect, and the CloudTrail audit log.",
+			"GuardDuty, Security Hub, Inspector and Access Analyzer findings, matched to the services they affect.",
 		available: false,
 		rolloutFlag: "cloudSecurity",
 		managedPolicies: ["arn:aws:iam::aws:policy/SecurityAudit"],
-		// Every read the findings poller and the CloudTrail feed make, so none hangs on the managed policy.
+		// Every read the findings poller makes, so none hangs on the managed policy. SecurityAudit also
+		// allows CloudTrail's LookupEvents, so this module grants `audit` too.
 		actions: [
 			"account:ListRegions",
 			"guardduty:ListDetectors",
@@ -82,6 +83,14 @@ export const AWS_MODULE_SPECS = {
 			"access-analyzer:ListFindingsV2",
 			"cloudtrail:LookupEvents",
 		],
+	},
+	audit: {
+		title: "Audit log",
+		summary:
+			"CloudTrail management write events (IAM, access keys, sign-ins, resource changes) in the audit log.",
+		available: true,
+		managedPolicies: [],
+		actions: ["account:ListRegions", "cloudtrail:LookupEvents"],
 	},
 	cost: {
 		title: "Cost",
@@ -196,6 +205,22 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 	const rest = Str.slice(prefix.length)(policyName)
 	return isAwsModule(rest) ? rest : undefined
 }
+
+/**
+ * Whether a role with these module policies attached can do what `module` needs. Security scan's
+ * SecurityAudit policy allows CloudTrail's LookupEvents, so it also covers the audit log. The
+ * attached list itself stays exact: it is compared with the asked-for modules to spot a stale stack.
+ */
+export const awsModuleGranted = (attached: ReadonlyArray<string> | null, module: AwsModule): boolean =>
+	attached !== null && (attached.includes(module) || (module === "audit" && attached.includes("security")))
+
+/**
+ * Whether the deployed role matches what is asked for: every asked-for module is granted (one
+ * covered by another's policy counts), and no module policy is left attached that is not asked for.
+ */
+export const awsGrantsMatch = (modules: ReadonlyArray<string>, attached: ReadonlyArray<string>): boolean =>
+	Arr.every(modules, (module) => isAwsModule(module) && awsModuleGranted(attached, module)) &&
+	Arr.every(attached, (module) => isAwsModule(module) && modules.includes(module))
 
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId

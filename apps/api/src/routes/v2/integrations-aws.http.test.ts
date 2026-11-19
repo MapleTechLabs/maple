@@ -250,6 +250,7 @@ describe("v2 aws integration over HTTP", () => {
 			"inventory",
 			"security",
 			"cost",
+			"audit",
 		])
 		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, member.secret)).status).toBe(403)
 		expect((await harness.request("DELETE", `${CONNECTIONS}/${id}`, member.secret)).status).toBe(403)
@@ -385,7 +386,7 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("offers and accepts the cost module for every org", async () => {
+	it("offers and accepts the cost and audit modules for every org", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const availability = (body: { modules: ReadonlyArray<{ module: string; available: boolean }> }) =>
@@ -394,26 +395,41 @@ describe("v2 aws integration over HTTP", () => {
 				(module) => module.module,
 			)
 
-		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual(["cost"])
-		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
-			account_id: "123456789012",
-			modules: ["cost"],
-		})
-		expect(created.status).toBe(200)
-		expect(created.body.modules).toEqual(["cost"])
-		// The role's policy carries the module's reads.
-		const setup = await harness.request("GET", `${CONNECTIONS}/${created.body.id}/setup`, admin.secret)
-		expect(setup.body.cloudformation_template).toContain("ce:GetCostAndUsage")
+		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual([
+			"cost",
+			"audit",
+		])
+		// Each module, on its own account, survives create, clear and restore, and its role policy
+		// carries the reads it makes.
+		const lifecycles = [
+			{ module: "cost", account: "123456789012", reads: ["ce:GetCostAndUsage"] },
+			{
+				module: "audit",
+				account: "210987654321",
+				reads: ["cloudtrail:LookupEvents", "account:ListRegions"],
+			},
+		]
+		for (const { module, account, reads } of lifecycles) {
+			const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+				account_id: account,
+				modules: [module],
+			})
+			expect(created.status).toBe(200)
+			expect(created.body.modules).toEqual([module])
+			const setup = await harness.request(
+				"GET",
+				`${CONNECTIONS}/${created.body.id}/setup`,
+				admin.secret,
+			)
+			for (const read of reads) expect(setup.body.cloudformation_template).toContain(read)
 
-		const cleared = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
-			modules: [],
-		})
-		expect(cleared.body.modules).toEqual([])
-		const restored = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
-			modules: ["cost"],
-		})
-		expect(restored.status).toBe(200)
-		expect(restored.body.modules).toEqual(["cost"])
+			const path = `${CONNECTIONS}/${created.body.id}`
+			const cleared = await harness.request("PATCH", path, admin.secret, { modules: [] })
+			expect(cleared.body.modules).toEqual([])
+			const restored = await harness.request("PATCH", path, admin.secret, { modules: [module] })
+			expect(restored.status).toBe(200)
+			expect(restored.body.modules).toEqual([module])
+		}
 		await harness.dispose()
 	})
 

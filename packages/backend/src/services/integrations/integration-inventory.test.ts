@@ -668,8 +668,8 @@ describe("aws", () => {
 	it("shows the audit log failing while the role cannot be assumed", () => {
 		const security = {
 			...connection,
-			modules: ["security"],
-			grantedModules: ["security"],
+			modules: ["audit"],
+			grantedModules: ["audit"],
 			lastCheckError: "Maple can no longer assume the role",
 		}
 		const auditLog = Arr.findFirst(
@@ -682,8 +682,8 @@ describe("aws", () => {
 		})
 	})
 
-	it("shows a security-module account's audit log failing while CloudTrail cannot be read", () => {
-		const security = { ...connection, modules: ["security"], grantedModules: ["security"] }
+	it("shows an audit-module account's audit log failing while CloudTrail cannot be read", () => {
+		const security = { ...connection, modules: ["audit"], grantedModules: ["audit"] }
 		const auditLogOf = (
 			problems: ReadonlyArray<{ accountId: string; state: string; lastError: string | null }>,
 		) =>
