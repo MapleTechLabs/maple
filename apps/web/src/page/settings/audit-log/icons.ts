@@ -80,6 +80,7 @@ const VERB_ICONS = {
 	request: "BracketsCurlyIcon",
 	tested: "MediaPlayIcon",
 	paused: "MediaPauseIcon",
+	disabled: "MediaPauseIcon",
 	resumed: "MediaPlayIcon",
 	published: "PaperPlaneIcon",
 	update_posted: "PaperPlaneIcon",

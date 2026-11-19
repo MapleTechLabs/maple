@@ -23,7 +23,7 @@ export const AuditResources = {
 	ai_provider_key: { verbs: ["updated", "deleted"] },
 	alert_destination: {
 		prefix: PublicIdPrefixes.alertDestination,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "disabled"],
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
 	alert_silence: { prefix: PublicIdPrefixes.alertSilence, verbs: ["created", "updated", "ended"] },
@@ -73,7 +73,10 @@ export const AuditResources = {
 			"identity_unlinked",
 		],
 	},
-	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	dashboard_share: {
+		prefix: PublicIdPrefixes.dashboardShare,
+		verbs: ["created", "rotated", "deleted", "revoked"],
+	},
 	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
@@ -335,6 +338,7 @@ export const AuditActionLabels = {
 	"alert_destination.created": "Created alert destination",
 	"alert_destination.updated": "Updated alert destination",
 	"alert_destination.deleted": "Deleted alert destination",
+	"alert_destination.disabled": "Disabled alert destination",
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
@@ -399,6 +403,7 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"dashboard_share.revoked": "Revoked dashboard share link",
 	"device_credential.registered": "Registered device key",
 	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
