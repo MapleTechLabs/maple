@@ -102,9 +102,9 @@ export const ApiAuthorizationLive = Layer.effect(
 
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
-					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* checkAnalystAccess(tenant.roles, options)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),

@@ -48,8 +48,8 @@ export const SessionAuthorizationLive = Layer.effect(
 
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
-					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* regions.ensureServedHere(tenant.orgId)
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* checkAnalystAccess(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(

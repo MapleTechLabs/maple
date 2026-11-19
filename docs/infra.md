@@ -147,10 +147,13 @@ A developer machine holds no path to production that the deploy workflow does no
   `TB_TOKEN`, and a local `tinybird-pr-branch.ts up` writes the branch env to an owner-only
   file instead of printing it.
 - **Impersonation is audited.** A Clerk session that carries an `act` claim (someone signed
-  in as a member) resolves with `tenant.impersonation` set. The auth middlewares write one
+  in as a member) resolves with `tenant.impersonation` set. The session paths of
+  `SessionAuthorizationLive`, `ApiAuthorizationLive` and `ApiAuthorizationV2Live` write one
   `auth.impersonation` audit entry per session per isolate, naming the impersonator and the
-  session. Impersonated sessions may write, with the member's own role; the entry is what
-  attributes those writes.
+  session. Impersonated sessions may write with the member's own role; their other entries name
+  the member, and this entry ties the session to the impersonator. MCP and chat sessions in
+  `apps/ai` write no `auth.impersonation` entry yet, and an entry whose delivery fails is not
+  retried for that session in the same isolate.
 
 ## Local dev: one `alchemy dev` stack
 

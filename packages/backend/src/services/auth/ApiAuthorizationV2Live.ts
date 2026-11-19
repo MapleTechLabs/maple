@@ -342,12 +342,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						}),
 					)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
-					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					if (Option.isSome(regions)) {
 						yield* regions.value
 							.ensureServedHere(tenant.orgId)
 							.pipe(Effect.mapError((error) => V2OrganizationAccessDenied.make(error.message)))
 					}
+					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					const { route } = yield* HttpRouter.RouteContext
 					yield* checkAnalystAccessV2(tenant.roles, options, route.path)
 					return yield* httpEffect.pipe(

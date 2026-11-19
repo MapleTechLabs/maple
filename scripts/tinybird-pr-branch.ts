@@ -226,7 +226,7 @@ const create = async (branchName: string, handoffFile: string): Promise<void> =>
 	}
 
 	const { id, token } = await resolveBranch(parent, branchName)
-	console.log(`::add-mask::${token}`)
+	if (process.env.GITHUB_ACTIONS === "true") console.log(`::add-mask::${token}`)
 	// The branch is reached on the same regional host as its parent: the
 	// branch-scoped token does the routing, so only the token changes.
 	const sealed = await sealHandoff(requireEnv("PREVIEW_HANDOFF_KEY"), branchName, {
@@ -249,7 +249,7 @@ const deploy = async (branchName: string, handoffFile: string): Promise<void> =>
 		return fail(`The Tinybird handoff for ${branchName} did not open: wrong key, wrong PR or damaged.`)
 	}
 	// Mask the tokens in CI logs before they can appear anywhere downstream.
-	console.log(`::add-mask::${handoff.token}`)
+	if (process.env.GITHUB_ACTIONS === "true") console.log(`::add-mask::${handoff.token}`)
 	const branch = { host: handoff.host, token: handoff.token }
 
 	// The branch is ephemeral, so destructive schema iteration is acceptable.
@@ -261,7 +261,7 @@ const deploy = async (branchName: string, handoffFile: string): Promise<void> =>
 	}
 
 	const signingKey = await resolveSigningKey(branch, branchName)
-	console.log(`::add-mask::${signingKey}`)
+	if (process.env.GITHUB_ACTIONS === "true") console.log(`::add-mask::${signingKey}`)
 
 	// Raw-SQL JWTs are signed with the branch's workspace admin token and name the
 	// branch, or they would query the parent.

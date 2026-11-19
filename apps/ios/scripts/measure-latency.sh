@@ -57,13 +57,20 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$label" && -n "$udid" ]] || { echo "--label and --udid are required" >&2; exit 2; }
 # Development instances only: a live key or the production API is refused outright.
+# A build must name both, or Xcode falls back to the production defaults.
+if [[ $build == 1 && ( -z "$api" || -z "$clerk_key" ) ]]; then
+	echo "--build needs --api (dev or preview) and --clerk-key (pk_test_...)" >&2; exit 2
+fi
 if [[ -n "$clerk_key" && "$clerk_key" != pk_test_* ]]; then
 	echo "--clerk-key must be a development publishable key (pk_test_...)" >&2; exit 2
 fi
-case "$api" in
-https://api.maple.dev | https://api.maple.dev/* | https://api.eu.maple.dev | https://api.eu.maple.dev/*)
-	echo "--api must be a dev or preview API, not production" >&2; exit 2 ;;
-esac
+if [[ -n "$api" ]]; then
+	api_host="${api#*://}"; api_host="${api_host%%[/:?#]*}"; api_host="${api_host%.}"
+	case "$(printf %s "$api_host" | tr "[:upper:]" "[:lower:]")" in
+	maple.dev | api.maple.dev | api.eu.maple.dev | app.maple.dev | app.eu.maple.dev | "")
+		echo "--api must be a dev or preview API, not production" >&2; exit 2 ;;
+	esac
+fi
 
 derived="/private/tmp/maple-latency-$label"
 xcrun simctl boot "$udid" 2>/dev/null || true
