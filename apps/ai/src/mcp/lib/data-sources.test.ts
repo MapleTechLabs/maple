@@ -72,7 +72,7 @@ describe("dataSourcesPromptSection for a turn that cannot query", () => {
 		expect(withQuery).toContain("`query_data_source`")
 		expect(withoutQuery).not.toContain("query_data_source")
 		expect(withoutQuery).toContain("`describe_data_source`")
-		expect(withoutQuery).toContain("engineer or admin role")
+		expect(withoutQuery).toContain(Policy.permissions["data_sources:query"].label)
 		expect(withoutQuery).toContain("- src-0 (")
 	})
 })

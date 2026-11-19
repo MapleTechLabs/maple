@@ -35,10 +35,10 @@ const canManage = (tool: string) =>
 		const tenant = yield* CurrentMcpTenant
 		yield* Policy.check(
 			tenant.permissions,
-			"alerts:manage",
-			() =>
+			"slos:manage",
+			(denial) =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's SLOs and their burn-rate alerts, which only org admins and engineers may do. Ask an admin or engineer, or change it in Maple.`,
+					message: `${tool} changes the organization's SLOs and their burn-rate alerts. ${denial.message}`,
 					capability: "org_admin",
 				}),
 		)
