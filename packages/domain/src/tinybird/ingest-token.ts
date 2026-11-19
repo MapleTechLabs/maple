@@ -4,10 +4,10 @@ import * as Datasources from "./datasources"
 export const INGEST_APPEND_TOKEN = "maple_ingest_append"
 
 /**
- * Every datasource `apps/ingest` posts rows to (`telemetry.rs`, `audit_trail.rs`, `profiles.rs`,
- * `clickhouse_insert_mappings.rs`) plus the collector's. A datasource missing here refuses its rows.
+ * The datasources the gateway inserts telemetry into. `scripts/generate-clickhouse-insert-mappings.ts`
+ * builds the gateway's insert table (`clickhouse_insert_mappings.rs`) from this list.
  */
-export const INGEST_WRITTEN_DATASOURCES: ReadonlySet<string> = new Set([
+export const INGEST_INSERT_DATASOURCES = [
 	Datasources.traces._name,
 	Datasources.logs._name,
 	Datasources.metricsSum._name,
@@ -19,6 +19,15 @@ export const INGEST_WRITTEN_DATASOURCES: ReadonlySet<string> = new Set([
 	Datasources.sessionReplayEvents._name,
 	Datasources.sessionEvents._name,
 	Datasources.productEvents._name,
+] as const
+
+/**
+ * Every datasource the append token covers: the insert list plus the audit trail, which the
+ * gateway writes outside it. Emitted into Rust as `APPEND_TOKEN_DATASOURCES`, where a test holds
+ * the gateway's own datasource constants to it.
+ */
+export const INGEST_WRITTEN_DATASOURCES: ReadonlySet<string> = new Set([
+	...INGEST_INSERT_DATASOURCES,
 	Datasources.auditTrailEvents._name,
 ])
 
