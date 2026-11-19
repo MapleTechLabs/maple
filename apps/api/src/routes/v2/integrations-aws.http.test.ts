@@ -250,6 +250,7 @@ describe("v2 aws integration over HTTP", () => {
 			"inventory",
 			"security",
 			"cost",
+			"audit",
 		])
 		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, member.secret)).status).toBe(403)
 		expect((await harness.request("DELETE", `${CONNECTIONS}/${id}`, member.secret)).status).toBe(403)
@@ -385,7 +386,7 @@ describe("v2 aws integration over HTTP", () => {
 		await harness.dispose()
 	})
 
-	it("offers and accepts the cost module for every org", async () => {
+	it("offers and accepts the cost and audit modules for every org", async () => {
 		const harness = makeHarness()
 		const admin = await harness.adminKey()
 		const availability = (body: { modules: ReadonlyArray<{ module: string; available: boolean }> }) =>
@@ -394,7 +395,10 @@ describe("v2 aws integration over HTTP", () => {
 				(module) => module.module,
 			)
 
-		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual(["cost"])
+		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual([
+			"cost",
+			"audit",
+		])
 		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
 			account_id: "123456789012",
 			modules: ["cost"],
