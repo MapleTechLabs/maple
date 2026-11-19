@@ -10,6 +10,7 @@ export const PROVIDER_LABEL = {
 	gcp: "Google Cloud",
 	aws: "AWS",
 	github: "GitHub",
+	fleet: "Fleet",
 } satisfies Record<AuditTrailProvider, string>
 
 export const CATEGORY_LABEL = {
