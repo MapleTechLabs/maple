@@ -42,9 +42,6 @@ import * as Policy from "@maple/domain/policy"
  *
  * - membership removal also takes the member off the organization's SSO bypass list.
  *
- * - a member moved off `org:custom` in Clerk directly loses the custom role on their membership,
- *   so moving them back later grants nothing rather than reviving it.
- *
  * - SCIM: `directoryGroup.*` keeps the org's IdP groups for the role mapping picker (home region
  *   only), and `user.updated` with `deprovisioned` runs the user sweep in every region. A member
  *   whose membership predates directory sync keeps it after deactivation, so this is what ends

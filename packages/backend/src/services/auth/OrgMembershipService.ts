@@ -56,7 +56,7 @@ export const ORG_MEMBERSHIP_CACHE_BUCKET = "org-membership"
  * and the extra Clerk volume is small. Do not "fix" it by removing the cache:
  * this read sits in auth, in front of every request that carries the header.
  *
- * The Clerk webhook on `organizationMembership.deleted`/`.updated` now closes
+ * The Clerk webhook on `organizationMembership.created`/`.deleted`/`.updated` closes
  * the window from the other side: `MembershipRevocationService` invalidates
  * `{ bucket, key: userId }` and drops the memo. These TTLs remain the ceiling
  * for the case where the webhook is missed or delayed.
