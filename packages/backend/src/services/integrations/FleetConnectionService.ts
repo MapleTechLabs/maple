@@ -192,10 +192,21 @@ export class FleetConnectionService extends Context.Service<
 				updatedAt: now,
 			}
 			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(FleetConnections)
-						.values({ id: randomUUID(), orgId, createdAt: now, ...next })
-						.onConflictDoUpdate({ target: ["orgId"], set: next }),
+				db.transaction(
+					Effect.gen(function* () {
+						// Another server is a new connection: nothing read from the old one carries over.
+						yield* db.run(
+							PG.deleteFrom(FleetConnections).where(($) => [
+								$.orgId.eq(orgId),
+								$.baseUrl.neq(baseUrl),
+							]),
+						)
+						yield* db.run(
+							PG.insertInto(FleetConnections)
+								.values({ id: randomUUID(), orgId, createdAt: now, ...next })
+								.onConflictDoUpdate({ target: ["orgId"], set: next }),
+						)
+					}),
 				),
 			)
 			return yield* getStatus(orgId)

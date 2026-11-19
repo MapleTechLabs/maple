@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Array as Arr, Effect, Layer, Order, Schema, String as Str } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { FleetConnectionService } from "./FleetConnectionService"
 import { FAKE_FLEET_TOKEN, type FakeFleet, fakeFleetDeps, makeFakeFleet } from "./fleet/fake-fleet"
@@ -36,6 +37,14 @@ const stored = (testDb: TestDb) =>
 			"SELECT base_url, token_ciphertext, organization_name FROM fleet_connections WHERE org_id = 'org_fleet'",
 		),
 	)
+
+const connectedAt = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ readonly created_at: Date }>(
+			testDb,
+			"SELECT created_at FROM fleet_connections WHERE org_id = 'org_fleet'",
+		),
+	).pipe(Effect.map((row) => row?.created_at.getTime() ?? 0))
 
 describe("FleetConnectionService", () => {
 	it.effect("checks the token with the server, seals it and reports what the server said", () => {
@@ -125,6 +134,13 @@ describe("FleetConnectionService", () => {
 				world.orgName = "Acme Devices"
 				const again = yield* connect("https://fleet.example.com")
 				assert.strictEqual(again.organizationName, "Acme Devices")
+
+				// Another server is a new connection, connected now.
+				const before = yield* connectedAt(testDb)
+				yield* TestClock.adjust(60_000)
+				yield* connect("https://devices.example.com")
+				assert.strictEqual((yield* connectedAt(testDb)) - before, 60_000)
+				assert.strictEqual((yield* stored(testDb))?.base_url, "https://devices.example.com")
 
 				const service = yield* FleetConnectionService
 				assert.isTrue(yield* service.disconnect(ORG))
