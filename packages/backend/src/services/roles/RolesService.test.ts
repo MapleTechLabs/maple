@@ -128,7 +128,6 @@ const recordingRevocation = () => {
 					deviceCredentialsRevoked: 0,
 					dashboardSharesRevoked: 0,
 					digestSubscriptionsDisabled: 0,
-					alertDestinationsDisabled: 0,
 				}
 			}),
 		invalidateMembership: () => Effect.void,

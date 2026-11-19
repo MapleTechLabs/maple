@@ -72,7 +72,6 @@ export interface MembershipDemotionSummary {
 	readonly deviceCredentialsRevoked: number
 	readonly dashboardSharesRevoked: number
 	readonly digestSubscriptionsDisabled: number
-	readonly alertDestinationsDisabled: number
 }
 
 export interface MembershipRevocationServiceApi {
@@ -478,17 +477,16 @@ const make = Effect.gen(function* () {
 				deviceCredentialsRevoked: 0,
 				dashboardSharesRevoked: 0,
 				digestSubscriptionsDisabled: 0,
-				alertDestinationsDisabled: 0,
 			} satisfies MembershipDemotionSummary
 		}
 		const readsTelemetry = Policy.can(current, "telemetry:read")
 
 		const now = yield* Clock.currentTimeMillis
-		const { sharesRevoked, destinationsDisabled, ...summary } = yield* dbExecute((db) =>
+		const { sharesRevoked, ...summary } = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					// What the member set up that the new role could not: a public link to telemetry, the
-					// digest of it, and alert destinations.
+					// What carries telemetry to the member that the new role could not: a public link and the
+					// digest. Alert destinations are the org's routing, so a demotion leaves them alone.
 					const sharesRevoked =
 						readsTelemetry && Policy.can(current, "dashboards:share")
 							? []
@@ -496,16 +494,7 @@ const make = Effect.gen(function* () {
 					const digestSubscriptionsDisabled = readsTelemetry
 						? 0
 						: (yield* disableDigests(db, orgId, userId, now)).length
-					const destinationsDisabled = Policy.can(current, "alerts:manage")
-						? []
-						: yield* disableDestinations(
-								db,
-								orgId,
-								userId,
-								now,
-								"Creator's role no longer manages alerts",
-							)
-					const retired = { sharesRevoked, destinationsDisabled, digestSubscriptionsDisabled }
+					const retired = { sharesRevoked, digestSubscriptionsDisabled }
 					// An approval not yet redeemed froze the old role and would mint a credential at it.
 					const cliApprovals = yield* db.run(
 						PG.from(CliDeviceAuthorizations)
@@ -605,12 +594,11 @@ const make = Effect.gen(function* () {
 				}),
 			),
 		)
-		yield* recordRetired(userId, sharesRevoked, destinationsDisabled, "role_changed")
+		yield* recordRetired(userId, sharesRevoked, [], "role_changed")
 
 		const demoted = {
 			...summary,
 			dashboardSharesRevoked: sharesRevoked.length,
-			alertDestinationsDisabled: destinationsDisabled.length,
 		} satisfies MembershipDemotionSummary
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.demoted_api_keys_revoked": demoted.apiKeysRevoked,
@@ -618,7 +606,6 @@ const make = Effect.gen(function* () {
 			"maple.membership.demoted_device_credentials_revoked": demoted.deviceCredentialsRevoked,
 			"maple.membership.demoted_dashboard_shares_revoked": demoted.dashboardSharesRevoked,
 			"maple.membership.demoted_digest_subscriptions_disabled": demoted.digestSubscriptionsDisabled,
-			"maple.membership.demoted_alert_destinations_disabled": demoted.alertDestinationsDisabled,
 		})
 		return demoted
 	})

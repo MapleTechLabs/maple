@@ -789,7 +789,7 @@ describe("MembershipRevocationService", () => {
 				}
 			})
 
-		it.effect("a role without telemetry, sharing or alerts loses links, digest and destinations", () => {
+		it.effect("a role without telemetry or sharing loses links and digest, and the org keeps its destinations", () => {
 			const db = createTestDb(createdDbs)
 			const audit = recordingAudit()
 			return Effect.gen(function* () {
@@ -799,27 +799,20 @@ describe("MembershipRevocationService", () => {
 				const summary = yield* revocation.demoteMembership(
 					orgId,
 					userId,
-					Policy.grantsOf([custom], ["dashboards:edit"]),
+					Policy.grantsOf([custom], ["billing:manage"]),
 				)
 
-				expect([
-					summary.dashboardSharesRevoked,
-					summary.digestSubscriptionsDisabled,
-					summary.alertDestinationsDisabled,
-				]).toEqual([1, 1, 1])
+				expect([summary.dashboardSharesRevoked, summary.digestSubscriptionsDisabled]).toEqual([1, 1])
 				expect(yield* state(db)).toEqual({
 					shares: [
 						{ id: "dshare_demoted", revoked: true },
 						{ id: "dshare_stayer", revoked: false },
 					],
 					digests: [false],
-					destinations: [
-						{ enabled: false, disabled_reason: "Creator's role no longer manages alerts" },
-					],
+					destinations: [{ enabled: true, disabled_reason: null }],
 				})
 				expect(Arr.map(audit.recorded, (entry) => [entry.action, entry.metadata])).toEqual([
 					["dashboard_share.revoked", { reason: "role_changed" }],
-					["alert_destination.disabled", { reason: "role_changed" }],
 				])
 			}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer, audit.layer)))
 		})
@@ -834,7 +827,7 @@ describe("MembershipRevocationService", () => {
 
 					yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 					const asMember = yield* state(db)
-					// A member reads and shares, but does not manage alerts.
+					// A member reads and shares; the engineer's alert destinations keep routing.
 					expect([asMember.shares, asMember.digests]).toEqual([
 						[
 							{ id: "dshare_demoted", revoked: false },
@@ -842,7 +835,7 @@ describe("MembershipRevocationService", () => {
 						],
 						[true],
 					])
-					expect(Arr.map(asMember.destinations, (row) => row.enabled)).toEqual([false])
+					expect(Arr.map(asMember.destinations, (row) => row.enabled)).toEqual([true])
 
 					yield* revocation.demoteMembership(
 						orgId,
