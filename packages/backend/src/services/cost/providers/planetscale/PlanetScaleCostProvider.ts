@@ -22,7 +22,6 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	type PlanetScaleAccessTokenError,
-	planetScaleBearerHeader,
 	PlanetScaleOAuthService,
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleTokenRejectedError } from "../../../integrations/planetscale/api"
@@ -202,7 +201,7 @@ export class PlanetScaleCostProvider extends Context.Service<
 							use({
 								apiBaseUrl: env.MAPLE_PLANETSCALE_API_BASE_URL,
 								organization: connection.psOrganization,
-								authorization: Redacted.make(planetScaleBearerHeader(accessToken)),
+								accessToken: Redacted.make(accessToken),
 							}).pipe(
 								// The page shows the mapped message; which failure it was stays on the span.
 								Effect.tapError((error) =>

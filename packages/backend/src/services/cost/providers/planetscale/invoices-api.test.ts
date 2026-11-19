@@ -18,7 +18,7 @@ const BEARER = `Bearer ${FAKE_PLANETSCALE_ACCESS_TOKEN}`
 const CREDENTIALS: PlanetScaleInvoiceCredentials = {
 	apiBaseUrl: FAKE_PLANETSCALE_API_URL,
 	organization: FAKE_PLANETSCALE_ORGANIZATION,
-	authorization: Redacted.make(BEARER),
+	accessToken: Redacted.make(FAKE_PLANETSCALE_ACCESS_TOKEN),
 }
 
 const MONTHS = ["2026-11", "2026-10", "2026-09", "2026-08", "2026-07", "2026-06"] as const
@@ -50,7 +50,7 @@ describe("PlanetScale invoice API", () => {
 					Arr.map(invoices, (invoice) => invoice.id),
 					Arr.map(SIX_MONTHS, (invoice) => invoice.id),
 				)
-				assert.deepStrictEqual(world.urls, ["/v1/organizations/acme/invoices?per_page=50&page=1"])
+				assert.deepStrictEqual(world.urls, ["/v1/organizations/acme/invoices?page=1&per_page=50"])
 				assert.deepStrictEqual(world.authorizations, [BEARER])
 			}),
 		)
@@ -76,9 +76,9 @@ describe("PlanetScale invoice API", () => {
 					[1.5, 2.5, 3.5, 4.5, 5.5],
 				)
 				assert.deepStrictEqual(world.urls, [
-					"/v1/organizations/acme/invoices/inv_2026-10/line-items?per_page=100&page=1",
-					"/v1/organizations/acme/invoices/inv_2026-10/line-items?per_page=100&page=2",
-					"/v1/organizations/acme/invoices/inv_2026-10/line-items?per_page=100&page=3",
+					"/v1/organizations/acme/invoices/inv_2026-10/line-items?page=1&per_page=100",
+					"/v1/organizations/acme/invoices/inv_2026-10/line-items?page=2&per_page=100",
+					"/v1/organizations/acme/invoices/inv_2026-10/line-items?page=3&per_page=100",
 				])
 			}),
 		)
@@ -105,10 +105,10 @@ describe("PlanetScale invoice API", () => {
 				// Listing stops at the page that holds August, wholly before the window. November bills
 				// no day of the window and is not read.
 				assert.deepStrictEqual(world.urls, [
-					"/v1/organizations/acme/invoices?per_page=50&page=1",
-					"/v1/organizations/acme/invoices?per_page=50&page=2",
-					"/v1/organizations/acme/invoices/inv_2026-10/line-items?per_page=100&page=1",
-					"/v1/organizations/acme/invoices/inv_2026-09/line-items?per_page=100&page=1",
+					"/v1/organizations/acme/invoices?page=1&per_page=50",
+					"/v1/organizations/acme/invoices?page=2&per_page=50",
+					"/v1/organizations/acme/invoices/inv_2026-10/line-items?page=1&per_page=100",
+					"/v1/organizations/acme/invoices/inv_2026-09/line-items?page=1&per_page=100",
 				])
 			}),
 		)
@@ -168,7 +168,7 @@ describe("PlanetScale invoice API", () => {
 					const reasons = yield* Effect.forEach(
 						[
 							{ ...CREDENTIALS, organization: "someone-else" },
-							{ ...CREDENTIALS, authorization: Redacted.make("Bearer wrong") },
+							{ ...CREDENTIALS, accessToken: Redacted.make("wrong") },
 						],
 						(credentials) =>
 							Effect.flip(

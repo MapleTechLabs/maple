@@ -667,6 +667,7 @@
       "dependencies": {
         "@alchemy.run/cloudflare": "catalog:alchemy",
         "@clerk/backend": "^3.29.0",
+        "@distilled.cloud/anthropic": "1.0.0-rc.20",
         "@distilled.cloud/aws": "1.0.0-rc.20",
         "@distilled.cloud/core": "1.0.0-rc.20",
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
@@ -1372,6 +1373,8 @@
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.12.0", "", {}, "sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow=="],
 
     "@distilled.cloud/acme": ["@distilled.cloud/acme@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-+rLrcJaCJJGOWDmF0cIN47fu6Gjt0QbKV4U5rX5KbYZpSe6qhE6h5ZVo8yfQYIlLkqal7r3Lt/eplDMidqK7pw=="],
+
+    "@distilled.cloud/anthropic": ["@distilled.cloud/anthropic@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-XzzMh/0QPB1SmBjRAvi+aLudc2XUKcAzIrfc6NnxmwNGMqXlLKDSGeh8m1txa/qRkRQ+ephPM/N3/UQe8xl0nQ=="],
 
     "@distilled.cloud/aws": ["@distilled.cloud/aws@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-fRh8t95wyYVGPxLVJld0k9NLA9Dt8lb+Juvo6ky9HqOxQ/QfwX8FzONkxEVZy+RnVb5HhHoz19eOtOXvRMpMBw=="],
 

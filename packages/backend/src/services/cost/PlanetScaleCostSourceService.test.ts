@@ -157,7 +157,7 @@ describe("PlanetScaleCostSourceService", () => {
 
 				assert.deepStrictEqual(yield* add(), { organization: "acme", created: true })
 				// One page of the list, with the grant: a refusal would show before the source exists.
-				assert.deepStrictEqual(world.urls, [`${INVOICES_PATH}?per_page=50&page=1`])
+				assert.deepStrictEqual(world.urls, [`${INVOICES_PATH}?page=1&per_page=50`])
 				assert.deepStrictEqual(world.authorizations, ["Bearer ps-access-token"])
 
 				const made = yield* source(testDb)
