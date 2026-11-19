@@ -68,7 +68,7 @@ export const Model = Schema.TaggedStruct("QuickStart", {
 	/** The plan step's pricing cards; the catalog is read the first time the step is shown. */
 	pricing: PricingCards.Model,
 	isPlansRequested: Schema.Boolean,
-	/** Back from Stripe (`?checkout=complete`): the plan step's cards wait on the sync. */
+	/** Back from Stripe (`?checkout=complete`): the plan step's cards wait on the sync. Cleared once the plan shows. */
 	isCheckoutReturn: Schema.Boolean,
 	region: RegionChoice,
 	/** Counted for the rest of the visit once shown, so the step total does not shrink. */
@@ -120,7 +120,8 @@ export const Message = defineMessageUnion({
 	CompletedFinish: {},
 	CompletedMountDitherField: {},
 	/** The root read the customer: the save that loaded before it is settled now. */
-	SettledPlan: {},
+	/** `isPlanActive`: the customer holds a live subscription, not just app access (a failed read fails open). */
+	SettledPlan: { isPlanActive: Schema.Boolean },
 })
 export type Message = typeof Message.Type
 
@@ -399,6 +400,36 @@ export const update = (
 	hasPlan: boolean | null,
 	/** The active org's, for the connect drawer's flow; without it the drawer stays shut. */
 	context: PageContext | null = null,
+): UpdateReturn => {
+	const result = updateSteps(model, message, hasPlan, context)
+	return message._tag === "SettledPlan" && message.isPlanActive ? withPlanSeen(result) : result
+}
+
+/**
+ * Back from Stripe, the plan showed up: the pricing cards' wait ends as confirmed, once. A plan that
+ * synced before the first read skipped the plan step, so no wait ran; that return is recorded too.
+ */
+const withPlanSeen = (result: UpdateReturn): UpdateReturn => {
+	const { model } = result
+	const isWaiting = model.pricing.checkoutReturn === "Confirming"
+	const isReturnUnwaited = model.isCheckoutReturn && !model.isPlansRequested
+	if (!model.isCheckoutReturn || !(isWaiting || isReturnUnwaited)) return result
+	const next = PricingCards.update(model.pricing, PricingCards.Message.SawPlan({ isReturnUnwaited }))
+	// A finished save leaves with `Finish`'s replace; clearing the marker too would race it back here.
+	const isFinishing = model.state !== null && isQuickStartFinished(model.state)
+	return {
+		...result,
+		model: { ...model, isCheckoutReturn: false, pricing: next.model },
+		commands: [...(result.commands ?? []), ...Command.mapMessages(next.commands ?? [], toPricing)],
+		outMessage: result.outMessage ?? (isFinishing ? undefined : next.outMessage),
+	}
+}
+
+const updateSteps = (
+	model: Model,
+	message: Message,
+	hasPlan: boolean | null,
+	context: PageContext | null,
 ): UpdateReturn => {
 	if (hasPlan === null)
 		return message._tag === "LoadedQuickStartState"
