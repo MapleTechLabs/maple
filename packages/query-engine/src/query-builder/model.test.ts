@@ -13,7 +13,11 @@ import {
 	GROUP_BY_TOKENS,
 	resolveGroupBy,
 } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Exit, Schema, String as Str } from "effect"
+import {
+	QueryEngineExecuteRequest,
+	TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH,
+} from "@maple/domain/query-engine"
 
 // Minimal traces draft factory — only the fields the builder reads matter; the
 // rest satisfy the payload shape.
@@ -667,6 +671,22 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 			tracesDraft({ aggregation: "p95", valueField: "attr.result.rowCount" }),
 		)
 		expect(result.error).toBeNull()
+	})
+
+	it("a valueField key over the request limit fails in the builder; one at the limit decodes", () => {
+		const build = (length: number) =>
+			buildTimeseriesQuerySpec(
+				tracesDraft({ aggregation: "sum", valueField: `attr.${Str.repeat(length)("x")}` }),
+			)
+		expect(build(TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH + 1).error).toContain("limit")
+		const atLimit = build(TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH)
+		expect(atLimit.error).toBeNull()
+		const decoded = Schema.decodeUnknownExit(QueryEngineExecuteRequest)({
+			startTime: "2026-11-19 00:00:00",
+			endTime: "2026-11-19 01:00:00",
+			query: atLimit.query,
+		})
+		expect(Exit.isSuccess(decoded)).toBe(true)
 	})
 
 	it("a trace aggregation on metrics is rejected and the error lists the valid set", () => {

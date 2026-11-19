@@ -3,7 +3,7 @@
 // DSL-based query definitions for traces timeseries, breakdown, and list.
 
 import type { DateTime } from "effect"
-import type { TracesMetric } from "@maple/domain/query-engine"
+import type { TracesMetric, TracesNumericAggregation } from "@maple/domain/query-engine"
 import { subqueryCond, subqueryExpr, untypedSubqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 import {
@@ -150,6 +150,60 @@ function metricSelectExprs(
 		// keys and the web app's `resolveThroughput` still read it; it is now by
 		// construction equal to `count` whenever it is emitted.
 		estimatedSpanCount: needsSampling ? weightedCount : CH.lit(0),
+	}
+}
+
+/**
+ * `fn` over a numeric span attribute. `toFloat64OrNull` turns a missing or
+ * non-numeric value into NULL, which every aggregate skips, so avg/min and the
+ * quantiles see only spans carrying a finite number. `sum` is sample-weighted like
+ * `count` (see COUNT SEMANTICS). `valueCount` counts the spans that carried one,
+ * so callers can tell "no values" from a real 0.
+ */
+function numericValueColumns(
+	$: ColumnAccessor<typeof Datasources.traces.columns>,
+	aggregation: TracesNumericAggregation | undefined,
+): { value?: CH.Expr<number>; valueCount?: CH.Expr<number> } {
+	if (aggregation === undefined) return {}
+	const parsed = CH.compileTypedFnCall(
+		"toFloat64OrNull",
+		T.nullable(T.float64).schema,
+		$.SpanAttributes.get(aggregation.key),
+	)
+	// "NaN" and "inf" parse; read them as no value so one cannot poison a bucket.
+	const numeric = CH.compileTypedFnCall(
+		"if",
+		T.nullable(T.float64).schema,
+		CH.compileFnCallCond("isFinite", parsed),
+		parsed,
+		CH.rawExpr("NULL", T.nullable(T.float64)),
+	)
+	return {
+		value: CH.ifNull(aggregateNumeric(numeric, $.SampleRate, aggregation.fn), CH.lit(0)),
+		valueCount: CH.countIf(numeric.isNotNull()),
+	}
+}
+
+function aggregateNumeric(
+	value: CH.Expr<number | null>,
+	sampleRate: CH.Expr<number>,
+	fn: TracesNumericAggregation["fn"],
+): CH.Expr<number | null> {
+	switch (fn) {
+		case "sum":
+			return CH.sum(value.mul(sampleRate))
+		case "avg":
+			return CH.avg(value)
+		case "min":
+			return CH.min_(value)
+		case "max":
+			return CH.max_(value)
+		case "p50":
+			return CH.quantile(0.5)(value)
+		case "p95":
+			return CH.quantile(0.95)(value)
+		case "p99":
+			return CH.quantile(0.99)(value)
 	}
 }
 
@@ -369,6 +423,8 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	overviewTiers?: "hour" | "minute"
 	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
 	wholeRange?: boolean
+	/** Fills `value`. Forces the raw `traces` route: no rollup carries SpanAttributes. */
+	numericAggregation?: TracesNumericAggregation
 }
 
 export interface TracesTimeseriesOutput {
@@ -387,6 +443,10 @@ export interface TracesTimeseriesOutput {
 	readonly toleratingCount: number
 	readonly apdexScore: number
 	readonly estimatedSpanCount: number
+	/** `numericAggregation` result (0 with no values); present only when the query sets one. */
+	readonly value?: number
+	/** Spans that carried a numeric value; present only with `numericAggregation`. */
+	readonly valueCount?: number
 }
 
 // Synthetic column defs matching TracesTimeseriesOutput, used to wrap the inner
@@ -464,6 +524,7 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 	const prefersAggregatesHourly = opts.allMetrics !== true && bucketSeconds % 3600 === 0
 
 	return (
+		opts.numericAggregation === undefined &&
 		!prefersAggregatesHourly &&
 		(opts.apdexThresholdMs ?? 500) === 500 &&
 		opts.rootOnly === true &&
@@ -704,6 +765,7 @@ export function tracesTimeseriesQuery(
 	if (
 		!opts.allMetrics &&
 		opts.metric !== "apdex" &&
+		opts.numericAggregation === undefined &&
 		canUseTracesAggregatesMv(opts, opts.groupBy, opts.bucketSeconds)
 	) {
 		const needs = new Set(METRIC_NEEDS[opts.metric])
@@ -823,7 +885,7 @@ export function tracesTimeseriesQuery(
 	// span set that tracesBaseWhereConditions applies when rootOnly is set
 	// (Server/Consumer OR root), and has Duration/StatusCode/TraceState ready,
 	// so the query reads orders of magnitude fewer rows and bytes.
-	if (canUseServiceOverviewMv(opts, opts.groupBy)) {
+	if (opts.numericAggregation === undefined && canUseServiceOverviewMv(opts, opts.groupBy)) {
 		const mv = from(Datasources.serviceOverviewSpans)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
@@ -852,14 +914,22 @@ export function tracesTimeseriesQuery(
 				opts.groupByResourceAttributeKey,
 			),
 			...metricSelectExprs($, opts.metric, apdexThresholdMs, opts.needsSampling, opts.allMetrics),
+			...numericValueColumns($, opts.numericAggregation),
 		}))
 		.where(($) => [...buildWhereConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
-		ColumnDefs,
-		TracesTimeseriesOutput
-	>
+	// A numeric-attribute chart keeps the groups with the largest values, not the busiest.
+	return (
+		opts.numericAggregation === undefined
+			? finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts)
+			: finalizeTimeseries(
+					raw,
+					{ ...TRACES_TS_COLUMNS, value: T.float64, valueCount: T.uint64 },
+					"value",
+					opts,
+				)
+	) as CHQuery<ColumnDefs, TracesTimeseriesOutput>
 }
 
 export interface TracesBreakdownOpts extends TracesQueryOpts {
@@ -871,6 +941,8 @@ export interface TracesBreakdownOpts extends TracesQueryOpts {
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
 	allMetrics?: boolean
+	/** Fills `value` and ranks by it. Forces the raw `traces` route. */
+	numericAggregation?: TracesNumericAggregation
 }
 
 export interface TracesBreakdownOutput {
@@ -886,11 +958,14 @@ export interface TracesBreakdownOutput {
 	readonly satisfiedCount: number
 	readonly toleratingCount: number
 	readonly apdexScore: number
+	/** `numericAggregation` result (0 with no values); present only when the query sets one. */
+	readonly value?: number
+	readonly valueCount?: number
 }
 
 /** Whether `tracesBreakdownQuery` scans raw `traces` rather than the entry-span rollup. */
 export function tracesBreakdownReadsRaw(opts: TracesBreakdownOpts): boolean {
-	return !canUseServiceOverviewMv(opts, [opts.groupBy])
+	return opts.numericAggregation !== undefined || !canUseServiceOverviewMv(opts, [opts.groupBy])
 }
 
 export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
@@ -937,11 +1012,12 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 					opts.groupByResourceAttributeKey,
 				),
 				...metrics,
+				...numericValueColumns($, opts.numericAggregation),
 			}
 		})
 		.where(($) => buildWhereConditions($, opts))
 		.groupBy("name")
-		.orderBy(["count", "desc"])
+		.orderBy([opts.numericAggregation === undefined ? "count" : "value", "desc"])
 		.limit(limit)
 		.format("JSON")
 	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
