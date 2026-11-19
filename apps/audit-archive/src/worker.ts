@@ -1,13 +1,13 @@
 /**
- * The audit-archive Worker: sole consumer of `audit-events`. Each batch is written to the
- * write-once bucket, then forwarded to `audit-log-ingest` for api's warehouse write. Kept apart
+ * The audit-archive Worker: sole consumer of `audit-intake`. Each batch is written to the
+ * write-once bucket, then forwarded to `audit-events` for api's warehouse write. Kept apart
  * from api so api holds no binding to the bucket and cannot consume entries before they are kept.
  */
 import {
 	AuditArchiveBucket,
 	AuditEventsDlq,
 	AuditEventsQueue,
-	AuditLogIngestQueue,
+	AuditIntakeQueue,
 	MapleStack,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
@@ -50,7 +50,7 @@ export default class AuditArchiveWorker extends Cloudflare.Worker<AuditArchiveWo
 	props,
 	Effect.gen(function* () {
 		const bucket = yield* Cloudflare.R2.WriteBucket(AuditArchiveBucket)
-		const ingest = yield* Cloudflare.Queues.WriteQueue(AuditLogIngestQueue)
+		const ingest = yield* Cloudflare.Queues.WriteQueue(AuditEventsQueue)
 		const ports: ArchivePorts = {
 			putObject: (key, body) =>
 				dischargeRuntimeContext(
@@ -72,7 +72,7 @@ export default class AuditArchiveWorker extends Cloudflare.Worker<AuditArchiveWo
 		}
 		// The dead-letter setting is a plan-time value: the DLQ's props are empty in the isolate.
 		const dlq = yield* AuditEventsDlq
-		const queue = yield* AuditEventsQueue
+		const queue = yield* AuditIntakeQueue
 		yield* Cloudflare.Queues.consumeQueueMessages(
 			queue,
 			{ ...AUDIT_ARCHIVE_CONSUMER, deadLetterQueue: dlq.Props.name },

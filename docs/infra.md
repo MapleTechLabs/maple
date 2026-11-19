@@ -588,13 +588,14 @@ proxied hostnames without a Worker, such as ingest. Setup steps and the lifecycl
 
 ## Audit log: the write-once copy
 
-Audit entries flow `api` / `maple-ai` -> `audit-events` queue -> the `audit-archive` Worker
-(`apps/audit-archive`) -> `audit-log-ingest` queue -> api's consumer -> warehouse. The archive
-Worker is the only consumer of `audit-events`: it writes each batch, per org, to the
-`audit-archive` R2 bucket before forwarding it, so nothing reaches the warehouse without a kept
-copy. api holds no binding to that bucket and cannot consume `audit-events`, so a compromised api
-can neither delete the copy nor drain entries before they are archived. Both queues dead-letter to
-`audit-events-dlq`. Resources: `packages/infra/src/cloudflare/audit-events.ts`.
+Audit entries flow `api` / `maple-ai` -> `audit-intake` queue -> the `audit-archive` Worker
+(`apps/audit-archive`) -> `audit-events` queue -> api's consumer -> warehouse. The archive Worker
+is the only consumer of `audit-intake`: it writes each batch, per org, to the `audit-archive` R2
+bucket before forwarding it, so nothing reaches the warehouse without a kept copy. api holds a
+producer binding to `audit-intake` and nothing else on that path: no binding to the bucket, none
+to consume `audit-intake`, none to send to `audit-events`. A compromised api can neither delete the
+copy nor drain entries before they are archived. Both queues dead-letter to `audit-events-dlq`.
+Resources: `packages/infra/src/cloudflare/audit-events.ts`.
 
 - **Lock.** On prd the bucket carries an R2 bucket lock rule (`audit-write-once`, prefix `audit/`):
   objects cannot be deleted or overwritten for `MAPLE_AUDIT_ARCHIVE_RETENTION_DAYS` days (default

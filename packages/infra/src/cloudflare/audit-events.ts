@@ -1,8 +1,8 @@
 /**
  * The org audit log's queues and its write-once archive. api and maple-ai produce to
- * `audit-events`; the audit-archive Worker is its only consumer: it writes each batch to the
- * locked bucket, then forwards it to `audit-log-ingest`, which api consumes into the warehouse.
- * api holds no binding to the bucket and cannot consume `audit-events`.
+ * `audit-intake`; the audit-archive Worker is its only consumer: it writes each batch to the
+ * locked bucket, then forwards it to `audit-events`, which api consumes into the warehouse.
+ * api holds no binding to the bucket and cannot consume `audit-intake`.
  */
 import { REGION_INFRA } from "../region.ts"
 import { stageDeployment, stageNamed } from "./stack.ts"
@@ -12,11 +12,11 @@ import { Config, Effect } from "effect"
 import { resolveWorkerName } from "./stage.ts"
 import type { MapleStage } from "./stage.ts"
 
-/** Org audit-log entries on their way to the archive, then the warehouse. */
-export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
+/** Org audit-log entries on their way to the archive; what producers send to. */
+export const AuditIntakeQueue = Cloudflare.Queues.Queue("audit-intake", stageNamed("audit-intake"))
 
 /** Archived entries on their way to the warehouse; api consumes it. */
-export const AuditLogIngestQueue = Cloudflare.Queues.Queue("audit-log-ingest", stageNamed("audit-log-ingest"))
+export const AuditEventsQueue = Cloudflare.Queues.Queue("audit-events", stageNamed("audit-events"))
 
 /** Audit entries that exhausted retries on either queue. No consumer on purpose: kept for inspection. */
 export const AuditEventsDlq = Cloudflare.Queues.Queue("audit-events-dlq", stageNamed("audit-events-dlq"))
