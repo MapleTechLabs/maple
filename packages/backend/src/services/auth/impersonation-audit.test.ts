@@ -44,6 +44,15 @@ describe("recordImpersonation", () => {
 		}),
 	)
 
+	it.effect("records every request of an impersonation with no session id", () =>
+		Effect.gen(function* () {
+			const audit = makeMemoryAuditLog()
+			yield* recordImpersonation(audit, request(), tenant("unknown"), "dashboard")
+			yield* recordImpersonation(audit, request(), tenant("unknown"), "dashboard")
+			expect(yield* audit.list(ORG, { limit: 10, offset: 0 })).toHaveLength(2)
+		}),
+	)
+
 	it.effect("records nothing for an ordinary session", () =>
 		Effect.gen(function* () {
 			const audit = makeMemoryAuditLog()

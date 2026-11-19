@@ -58,6 +58,9 @@ done
 [[ -n "$label" && -n "$udid" ]] || { echo "--label and --udid are required" >&2; exit 2; }
 # Development instances only: a live key or the production API is refused outright.
 # A build must name both, or Xcode falls back to the production defaults.
+if [[ $build == 0 && ( -n "$api" || -n "$clerk_key" ) ]]; then
+	echo "--api and --clerk-key only apply with --build; the installed app keeps its own settings" >&2; exit 2
+fi
 if [[ $build == 1 && ( -z "$api" || -z "$clerk_key" ) ]]; then
 	echo "--build needs --api (dev or preview) and --clerk-key (pk_test_...)" >&2; exit 2
 fi

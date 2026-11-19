@@ -37,7 +37,9 @@ export const recordImpersonation = (
 	const impersonation = tenant.impersonation
 	if (
 		impersonation === undefined ||
-		!firstSighting(`${tenant.orgId}|${impersonation.actorId}|${impersonation.sessionId}`)
+		// No session id to key on: record every request rather than fold distinct sessions together.
+		(impersonation.sessionId !== "unknown" &&
+			!firstSighting(`${tenant.orgId}|${impersonation.actorId}|${impersonation.sessionId}`))
 	) {
 		return Effect.void
 	}
