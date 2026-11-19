@@ -1,6 +1,7 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import {
+	AlertForbiddenError,
 	AlertValidationError,
 	WarehouseQuotaExceededError,
 	WebhookAlertDestinationConfig,
@@ -531,6 +532,40 @@ describe("AlertsService.previewRule", () => {
 			// (which freezes counters), so no close within the window either way.
 			assert.lengthOf(response.wouldFire, 1)
 			assert.strictEqual(response.wouldFire[0]?.start, "2026-01-01T00:00:00.000Z")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
+	it.effect("refuses a caller who cannot read telemetry, whatever else they may do with alerts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: [bucketRow("2026-01-01 00:00:00", 10)] }
+
+		return Effect.gen(function* () {
+			const alerts = yield* alertServices
+			const request = decodePreviewRequest({
+				rule: {
+					name: "Preview rule",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [],
+				},
+				startTime: "2026-01-01T00:00:00.000Z",
+				endTime: "2026-01-01T00:30:00.000Z",
+			})
+
+			const error = yield* Effect.flip(
+				alerts.previewRule(asOrgId("org_preview_no_read"), ["uptime_monitors:manage"], request),
+			)
+			assert.instanceOf(error, AlertForbiddenError)
+			assert.include(error.message, "Read telemetry")
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 

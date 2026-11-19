@@ -1,5 +1,5 @@
 import { Array as Arr, Option, Record as Rec, Schema } from "effect"
-import { type Permission, permissions } from "./permissions"
+import { type Permission, permissions, withImplied } from "./permissions"
 
 /**
  * The built-in roles and the permissions each holds. A built-in role is only a preset list: nothing
@@ -129,14 +129,14 @@ export const builtInRoleOf = (clerkKey: string): Option.Option<BuiltInRole> =>
 /**
  * The permissions one role string holds. `custom` is what the membership carries for `org:custom`.
  * A role this code does not know reads as an analyst, and `org:custom` with nothing on the
- * membership holds nothing: both fail towards less.
+ * membership holds nothing: both fail towards less. A custom set holds what it implies.
  */
 export const permissionsOfRole = (
 	role: string,
 	custom: ReadonlyArray<Permission> | undefined,
 ): ReadonlyArray<Permission> => {
 	if (role === "root") return allPermissionKeys
-	if (role === CUSTOM_ROLE_CLERK_KEY) return custom ?? []
+	if (role === CUSTOM_ROLE_CLERK_KEY) return withImplied(custom ?? [])
 	return Option.match(builtInRoleOf(role), {
 		onNone: () => analystRole.permissions,
 		onSome: (entry) => entry.permissions,

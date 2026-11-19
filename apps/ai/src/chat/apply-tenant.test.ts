@@ -369,7 +369,13 @@ describe("whose authority a connector turn reads under", () => {
 
 			assert.strictEqual(tenant.userId, CONNECTOR_TENANT_USER_ID)
 			assert.deepStrictEqual(tenant.roles, [])
+			assert.deepStrictEqual(tenant.permissions, ["telemetry:read"])
 			assert.strictEqual(tenant.actorId, CONNECTOR_ACTOR)
 		}),
 	)
+
+	it("only reads telemetry when nobody is named, even from a host that sent no permissions", () => {
+		const { permissions: _sent, ...fromOlderHost } = connectorTurnTenant(ORG)
+		assert.deepStrictEqual(toTenantContext(fromOlderHost, asking()).permissions, ["telemetry:read"])
+	})
 })

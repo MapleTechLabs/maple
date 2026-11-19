@@ -428,7 +428,7 @@ const make = Effect.gen(function* () {
 					id: yield* newRoleId,
 					name: request.name,
 					description: request.description ?? "",
-					permissions: Policy.encodePermissions(request.permissions),
+					permissions: Policy.encodePermissions(Policy.withImplied(request.permissions)),
 					createdAt: now,
 					updatedAt: now,
 				}
@@ -454,7 +454,7 @@ const make = Effect.gen(function* () {
 					...current,
 					name: request.name,
 					description: request.description,
-					permissions: Policy.encodePermissions(request.permissions),
+					permissions: Policy.encodePermissions(Policy.withImplied(request.permissions)),
 					updatedAt: yield* Clock.currentTimeMillis,
 				}
 				return {

@@ -272,7 +272,7 @@ describe("DigestService.runDigestTick", () => {
 	it.effect("sends only to subscribers whose role still reads telemetry", () => {
 		const directory = new Map<string, DirectoryMember>([
 			["user-reader", { role: "org:custom", customPermissions: ["telemetry:read"] }],
-			["user-blind", { role: "org:custom", customPermissions: ["dashboards:edit"] }],
+			["user-blind", { role: "org:custom", customPermissions: ["billing:manage"] }],
 		])
 		const { sends, layer } = makeHarness(defaultFixture, undefined, undefined, directory)
 		return Effect.gen(function* () {
@@ -1033,7 +1033,7 @@ describe("digestRecipientsOf", () => {
 		const recipients = digestRecipientsOf(ORG_ID, [
 			member("user-analyst", "org:analyst"),
 			member("user-reader", "org:custom", customRole(["telemetry:read"])),
-			member("user-builder", "org:custom", customRole(["dashboards:edit"])),
+			member("user-billing", "org:custom", customRole(["billing:manage"])),
 			member("user-unset", "org:custom"),
 			{ role: "org:admin", publicMetadata: {}, publicUserData: null },
 		])

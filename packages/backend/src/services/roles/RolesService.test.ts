@@ -309,6 +309,24 @@ describe("RolesService.create", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("stores what the permissions imply, so a role cannot act on telemetry it cannot read", () => {
+		const { layer, clerk } = setup([], [])
+		return Effect.gen(function* () {
+			const created = yield* (yield* RolesService).create(
+				adminTenant,
+				request("Responders", ["incidents:respond", "ingest_keys:roll"]),
+			)
+			const closed: ReadonlyArray<Policy.Permission> = [
+				"telemetry:read",
+				"incidents:respond",
+				"ingest_keys:view",
+				"ingest_keys:roll",
+			]
+			assert.deepStrictEqual(created.permissions, closed)
+			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, Policy.encodePermissions(closed))
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("redoes the edit from a fresh read when another write lands first, keeping both", () => {
 		const { layer, clerk } = setup([], [])
 		// Between this create's read and its write, another admin adds a role.
@@ -412,6 +430,23 @@ describe("RolesService.update", () => {
 				),
 				[`user_cat ${Arr.join(narrowed, ",")}`, `user_dan ${Arr.join(narrowed, ",")}`],
 			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("stores and hands holders what an update's permissions imply", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			yield* (yield* RolesService).update(
+				adminTenant,
+				ON_CALL,
+				new UpdateRoleRequest({ name: "On-call", description: "", permissions: ["alerts:manage"] }),
+			)
+			const closed = Policy.encodePermissions(["telemetry:read", "alerts:manage"])
+			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, closed)
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, closed)
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -41,6 +41,8 @@ import * as CreateDialog from "../roles/create-dialog"
 import {
 	findRole,
 	isSensitive,
+	isValidRoleDescription,
+	isValidRoleName,
 	memberCountLabel,
 	membersHref,
 	permissionCountLabel,
@@ -52,7 +54,7 @@ import { holderLabel, roleTextField, roleTypeBadge } from "../roles/view-parts"
 import { Message } from "./message"
 import { canManageRoles } from "../roles/model"
 import type { Model, PermissionFilter } from "./model"
-import { isEditable, roleOf, unsavedChanges } from "./update"
+import { isEditable, isValidDraft, requiredBy, roleOf, unsavedChanges } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -146,6 +148,12 @@ const compareCell = (
 	])
 }
 
+/** "Required by Run raw SQL", or "… and 3 more" when several ticked permissions need it. */
+const requiredNote = (needers: ReadonlyArray<Policy.Permission>): string => {
+	const [first, ...rest] = Arr.map(needers, (needer) => Policy.permissions[needer].label)
+	return rest.length === 0 ? `Required by ${first}` : `Required by ${first} and ${rest.length} more`
+}
+
 const permissionRow = (
 	h: H,
 	model: Model,
@@ -154,6 +162,7 @@ const permissionRow = (
 ): Html => {
 	const spec = Policy.permissions[permission]
 	const isChecked = model.permissions.includes(permission)
+	const needers = isEditable(model) ? requiredBy(model.permissions, permission) : []
 	const isAdded = isChecked && !Option.exists(compared, (role) => role.permissions.includes(permission))
 	const inputId = `role-permission-${Str.replaceAll(":", "-")(permission)}`
 	return label(
@@ -173,7 +182,7 @@ const permissionRow = (
 				toParentMessage: () => Message.ToggledPermission({ permission }),
 				id: `${inputId}-root`,
 				inputId,
-				isDisabled: !isEditable(model),
+				isDisabled: !isEditable(model) || needers.length > 0,
 				className: "mt-0.5",
 			}),
 			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
@@ -185,6 +194,9 @@ const permissionRow = (
 						: []),
 				]),
 				typography(h, { size: "xs", tone: "muted" }, [spec.description]),
+				...(needers.length === 0
+					? []
+					: [typography(h, { size: "xs", tone: "subtle" }, [requiredNote(needers)])]),
 			]),
 			compareCell(h, model, permission, compared),
 		],
@@ -365,7 +377,8 @@ const detailsFields = (h: H, model: Model): Html =>
 			label: "Name",
 			value: model.name,
 			isDisabled: !isEditable(model),
-			isInvalid: isEditable(model) && Str.trim(model.name) === "",
+			isInvalid: isEditable(model) && !isValidRoleName(model.name),
+			maxLength: Policy.CUSTOM_ROLE_NAME_MAX,
 			onInput: (value) => Message.ChangedName({ value }),
 		}),
 		roleTextField(h, {
@@ -373,7 +386,9 @@ const detailsFields = (h: H, model: Model): Html =>
 			label: "Description",
 			value: model.description,
 			isDisabled: !isEditable(model),
+			isInvalid: isEditable(model) && !isValidRoleDescription(model.description),
 			description: "Shown in the role picker.",
+			maxLength: Policy.CUSTOM_ROLE_DESCRIPTION_MAX,
 			onInput: (value) => Message.ChangedDescription({ value }),
 		}),
 	])
@@ -425,7 +440,7 @@ const unsavedBar = (h: H, model: Model, role: RoleEntry): ReadonlyArray<Html> =>
 					{
 						size: "sm",
 						isLoading: model.isSaving,
-						isDisabled: Str.trim(model.name) === "",
+						isDisabled: !isValidDraft(model),
 						attributes: [h.OnClick(Message.ClickedSave())],
 					},
 					["Save role"],

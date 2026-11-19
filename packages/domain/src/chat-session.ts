@@ -25,7 +25,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/primitives"
-import { PermissionName } from "./policy"
+import { type Grants, PermissionName } from "./policy"
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -555,18 +555,23 @@ export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
  */
 export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
 
+/** What a connector turn nobody is named on holds: its tools only read telemetry. */
+export const ANONYMOUS_CONNECTOR_GRANTS = ["telemetry:read"] as const satisfies Grants
+
 /**
  * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
  *
  * No roles, and there is no connector identity that carries any: a change is only ever applied as
  * a Maple user. A turn whose origin names an `actingUserId` is widened to that user's tenant on
- * the other side of the hop; one that names nobody stays here and is offered no mutating tool.
+ * the other side of the hop; one that names nobody stays here, holding
+ * {@link ANONYMOUS_CONNECTOR_GRANTS}, and is offered no mutating tool.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({
 		orgId,
 		userId: CONNECTOR_TENANT_USER_ID,
 		roles: [],
+		permissions: ANONYMOUS_CONNECTOR_GRANTS,
 		authMode: "self_hosted",
 	})
 

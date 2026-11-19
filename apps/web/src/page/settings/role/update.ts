@@ -1,4 +1,4 @@
-import { type CustomRoleResponse, RoleKey, RoleListResponse, UpdateRoleRequest } from "@maple/domain/http"
+import { type CustomRoleResponse, RoleKey, RoleListResponse } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -9,7 +9,14 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { acceptGrants } from "../../kit/session-grants"
 import * as CreateDialog from "../roles/create-dialog"
-import { findRole, type RoleEntry, roleHref } from "../roles/roles"
+import {
+	findRole,
+	isValidRoleDescription,
+	isValidRoleName,
+	type RoleDraft,
+	type RoleEntry,
+	roleHref,
+} from "../roles/roles"
 import { entriesOf } from "../roles/update"
 import { canManageRoles } from "../roles/model"
 import { FetchRoleMembers, FetchRoles, FetchSession, SaveRole } from "./command"
@@ -94,21 +101,34 @@ const loadDrafts = (model: Model): Model =>
 		? model
 		: Option.match(roleOf(model), { onNone: () => model, onSome: (role) => withDrafts(model, role) })
 
-const toggled = (
+/** The ticked permissions that need `permission`: while any stays ticked, so does it. */
+export const requiredBy = (
 	permissions: ReadonlyArray<Policy.Permission>,
 	permission: Policy.Permission,
 ): ReadonlyArray<Policy.Permission> =>
-	Arr.filter(Policy.allPermissions, (candidate) =>
-		candidate === permission ? !permissions.includes(candidate) : permissions.includes(candidate),
-	)
+	Arr.filter(permissions, (held) => Policy.implicationsOf(held).includes(permission))
+
+/** Ticking adds what the permission implies; unticking one another ticked permission needs does nothing. */
+const toggled = (
+	permissions: ReadonlyArray<Policy.Permission>,
+	permission: Policy.Permission,
+): ReadonlyArray<Policy.Permission> => {
+	if (!permissions.includes(permission)) return Policy.withImplied([...permissions, permission])
+	return requiredBy(permissions, permission).length > 0
+		? permissions
+		: Arr.filter(permissions, (held) => held !== permission)
+}
+
+/** Whether the drafted name and description make a valid role. */
+export const isValidDraft = (model: Model): boolean =>
+	isValidRoleName(model.name) && isValidRoleDescription(model.description)
 
 /** The drafts as one update: a rename and a permission change are the same call. */
-const savePayload = (model: Model): UpdateRoleRequest =>
-	new UpdateRoleRequest({
-		name: Str.trim(model.name),
-		description: Str.trim(model.description),
-		permissions: model.permissions,
-	})
+const savePayload = (model: Model): RoleDraft => ({
+	name: Str.trim(model.name),
+	description: Str.trim(model.description),
+	permissions: model.permissions,
+})
 
 const replaceSaved = (list: RoleListResponse, saved: CustomRoleResponse): RoleListResponse =>
 	new RoleListResponse({
@@ -197,7 +217,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				!isEditable(model) ||
 				model.isSaving ||
 				unsavedChanges(model) === 0 ||
-				Str.trim(model.name) === "" ||
+				!isValidDraft(model) ||
 				Option.isNone(role) ||
 				role.value.ref._tag !== "Custom"
 			)

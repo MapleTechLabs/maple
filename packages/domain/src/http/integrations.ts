@@ -1830,7 +1830,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("cloudflareUsage", "/cloudflare/usage", {
 			success: CloudflareUsageResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("cloudflareTopTraffic", "/cloudflare/top-traffic", {

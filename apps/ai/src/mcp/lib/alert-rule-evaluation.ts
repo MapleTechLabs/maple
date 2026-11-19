@@ -1,6 +1,7 @@
 /** What a rule write can tell the caller about its first evaluation, from a short preview. */
 import { Clock, DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { IsoDateTimeString } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import {
 	AlertRulePreviewRequest,
 	type AlertRulePreviewResponse,
@@ -76,6 +77,15 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 			current: [],
 			previewSkipped:
 				"An anomaly rule pages on the anomaly detector's open anomalies, so there is no query window to preview.",
+		}
+		return { evaluation, warnings: noWarnings }
+	}
+	// The preview's values are telemetry: a caller who may manage alerts but not read it sees none.
+	if (!Policy.can(tenant.permissions, "telemetry:read")) {
+		const evaluation: typeof AlertRuleFirstEvaluation.Type = {
+			nextEvaluationAt,
+			current: [],
+			previewSkipped: "Your role can't read telemetry, so the latest window's values are not shown.",
 		}
 		return { evaluation, warnings: noWarnings }
 	}

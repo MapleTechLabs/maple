@@ -2,7 +2,14 @@ import { Array as Arr, Effect, Record as Rec, Schema } from "effect"
 import { type Permission, permissions } from "./permissions"
 import { builtInRoles, NO_ROLE_PERMISSIONS, permissionsOfRole } from "./roles"
 
-export { type Permission, type PermissionGroup, permissionGroups, permissions } from "./permissions"
+export {
+	implicationsOf,
+	type Permission,
+	type PermissionGroup,
+	permissionGroups,
+	permissions,
+	withImplied,
+} from "./permissions"
 export {
 	type ApiKeyScopeFamily,
 	apiKeyScopeFamilies,
@@ -21,6 +28,8 @@ export {
 	CUSTOM_ROLE_CLERK_KEY,
 } from "./roles"
 export {
+	CUSTOM_ROLE_DESCRIPTION_MAX,
+	CUSTOM_ROLE_NAME_MAX,
 	CustomRoleDescription,
 	CustomRoleId,
 	CustomRoleName,

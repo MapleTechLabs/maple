@@ -1,7 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
-import { Authorization, SessionAuthorization, TenantSchema, UnauthorizedError } from "./current-tenant"
+import {
+	Authorization,
+	SessionAuthorization,
+	SessionTenantResponse,
+	UnauthorizedError,
+} from "./current-tenant"
 import { EndpointAccess, requires } from "./endpoint-access"
 
 export class CliDeviceStartRequest extends Schema.Class<CliDeviceStartRequest>("CliDeviceStartRequest")({
@@ -266,7 +271,7 @@ export class AuthPublicApiGroup extends HttpApiGroup.make("authPublic")
 export class AuthApiGroup extends HttpApiGroup.make("auth")
 	.add(
 		HttpApiEndpoint.get("session", "/session", {
-			success: TenantSchema,
+			success: SessionTenantResponse,
 		}),
 	)
 	// Renewal for self-hosted sessions, whose tokens are deliberately short-lived.

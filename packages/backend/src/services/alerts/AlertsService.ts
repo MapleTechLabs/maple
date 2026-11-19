@@ -1,4 +1,4 @@
-import type * as Policy from "@maple/domain/policy"
+import * as Policy from "@maple/domain/policy"
 import {
 	alertDeliveryRetryDelayMs,
 	canRetryAlertDelivery,
@@ -2114,6 +2114,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				| WarehouseQueryPathError
 			> {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				// The series are telemetry, whatever else the caller may do with alerts.
+				yield* Policy.check(
+					permissions,
+					"telemetry:read",
+					(denial) => new AlertForbiddenError({ message: denial.message }),
+				)
 				const normalized = yield* normalizeRule(orgId, request.rule, {
 					forPreview: true,
 				})
@@ -2122,7 +2128,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				}
 				const plan = normalized.compiledPlan
 
-				// Preview only needs `alerts:read`, but a raw-SQL rule executes
+				// Beyond reading telemetry, a raw-SQL rule executes
 				// user-authored ClickHouse against the org's warehouse — the same
 				// capability `createRule`/`testRule` gate behind `alerts:manage` and `query:sql`.
 				// Previewing one must not be a cheaper route to that than creating it.

@@ -1,13 +1,15 @@
-import { RoleConflictError } from "@maple/domain/http"
+import { CreateRoleRequest, RoleConflictError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Option, Result } from "effect"
+import { Array as Arr, Context, Effect, Option, Result, Schema, String as Str } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import * as Dialog from "@maple/views/ui/dialog"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as CreateDialog from "./create-dialog"
 import { Message, type Model } from "./model"
-import { ON_CALL, roleList, roleMembers, STATUS_EDITOR } from "./test-roles"
+import { MapleInternalApiClient } from "../../../platform/api-clients"
+import { createRole } from "./roles"
+import { customRole, ON_CALL, roleId, roleList, roleMembers, STATUS_EDITOR } from "./test-roles"
 import { entriesOf, init, update } from "./update"
 import { headerActions, view as tabView } from "./view"
 
@@ -118,6 +120,53 @@ describe("create role dialog", () => {
 		])
 		expect(failed.create.dialog.isOpen).toBe(true)
 		scene({ update, view }, given(failed), dialogMounted, expectView(text(failure.message)).toExist())
+	})
+
+	test("a long role's copy is named to fit, and creates", () => {
+		const longRole = customRole({
+			id: roleId("long"),
+			name: "Platform reliability incident commander",
+			permissions: ["telemetry:read"],
+		})
+		const listed = run(init(ADMIN).model, [
+			Message.CompletedFetchRoles({ result: Result.succeed(roleList([longRole])) }),
+		])
+		const duplicated = update(
+			listed,
+			Message.GotRowMenuMessage({
+				menuId: `role-actions-${longRole.id}`,
+				message: { _tag: "ClickedItem", index: 1, item: { kind: "Item", value: "duplicate" } },
+			}),
+		).model
+		expect(duplicated.create.name).toBe("Platform reliability incident comma copy")
+		const args = argsOf(update(duplicated, child(CreateDialog.Message.SubmittedCreate())), "CreateRole")
+		expect(Schema.decodeUnknownExit(CreateRoleRequest)(args)._tag).toBe("Success")
+	})
+
+	test("a name past the limit cannot be submitted", () => {
+		const tooLong = run(opened(), [
+			child(
+				CreateDialog.Message.ChangedName({ value: Str.repeat(Policy.CUSTOM_ROLE_NAME_MAX + 1)("x") }),
+			),
+		])
+		expect(namesOf(update(tooLong, child(CreateDialog.Message.SubmittedCreate())))).not.toContain(
+			"CreateRole",
+		)
+	})
+
+	test("a draft the dialog let through fails the call instead of throwing", async () => {
+		const outcome = await Effect.runPromise(
+			createRole({
+				name: Str.repeat(Policy.CUSTOM_ROLE_NAME_MAX + 1)("x"),
+				description: "",
+				permissions: [],
+			}).pipe(
+				// The decode fails first, so the API client is never reached.
+				Effect.provide(Context.makeUnsafe<MapleInternalApiClient>(new Map())),
+				Effect.result,
+			),
+		)
+		expect(outcome._tag).toBe("Failure")
 	})
 
 	test("a nameless role cannot be submitted", () => {

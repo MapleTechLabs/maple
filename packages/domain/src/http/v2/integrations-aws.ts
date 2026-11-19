@@ -15,7 +15,7 @@ import { V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { V2WarehouseReadErrors } from "./query-errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { EndpointAccess } from "../endpoint-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // AWS integration. No OAuth and no stored AWS secret: an org registers a connection for an account,
 // an administrator deploys the generated CloudFormation stack, and Maple assumes the role it creates
@@ -422,14 +422,17 @@ export class V2AwsIntegrationsApiGroup extends HttpApiGroup.make("awsIntegration
 			params: connectionParams,
 			success: V2AwsIngest,
 			error: [connectionNotFound, integrationPersistence, ...V2WarehouseReadErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getAwsConnectionIngest",
-				summary: "See what a connection sends",
-				description:
-					"Returns the CloudWatch metrics the connection's stream delivered over the last hour, by namespace and region: how many metrics, data points and resources, and when the newest point arrived. Requires the `integrations:read` scope.",
-			}),
-		),
+		})
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getAwsConnectionIngest",
+					summary: "See what a connection sends",
+					description:
+						"Returns the CloudWatch metrics the connection's stream delivered over the last hour, by namespace and region: how many metrics, data points and resources, and when the newest point arrived. Requires the `integrations:read` scope.",
+				}),
+			)
+			// Read from the warehouse: the connection's own telemetry.
+			.annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.delete("deleteConnection", "/connections/:id", {

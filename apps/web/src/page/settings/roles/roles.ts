@@ -9,7 +9,7 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import type { UserId } from "@maple/primitives"
-import { Array as Arr, Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import { AppRoute, hrefOf } from "../../../route"
 
@@ -106,23 +106,46 @@ export const listRoles = Effect.flatMap(MapleInternalApiClient, (client) => clie
 export const listRoleMembers = (roleId: RoleKey) =>
 	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.members({ params: { roleId } }))
 
-export const createRole = (input: {
-	readonly name: string
-	readonly description: string
-	readonly permissions: ReadonlyArray<Policy.Permission>
-}) =>
-	Effect.flatMap(MapleInternalApiClient, (client) =>
-		client.roles.create({
-			payload: new CreateRoleRequest(
-				input.description === ""
-					? { name: input.name, permissions: input.permissions }
-					: { name: input.name, permissions: input.permissions, description: input.description },
-			),
-		}),
+/** A role's name, description and permissions as typed: checked only when sent. */
+export const RoleDraft = Schema.Struct({
+	name: Schema.String,
+	description: Schema.String,
+	permissions: Schema.Array(Policy.PermissionName),
+})
+export type RoleDraft = typeof RoleDraft.Type
+
+const isRoleName = Schema.is(Policy.CustomRoleName)
+const isRoleDescription = Schema.is(Policy.CustomRoleDescription)
+
+/** Whether a typed name makes a role name once trimmed: present and within the limit. */
+export const isValidRoleName = (name: string): boolean => isRoleName(Str.trim(name))
+
+/** Whether a typed description fits once trimmed. */
+export const isValidRoleDescription = (description: string): boolean =>
+	isRoleDescription(Str.trim(description))
+
+// The drafts are decoded into the request, so a value the page let through fails the call (said
+// where the call was made) instead of throwing.
+const decodeCreate = Schema.decodeUnknownEffect(CreateRoleRequest)
+const decodeUpdate = Schema.decodeUnknownEffect(UpdateRoleRequest)
+
+export const createRole = (draft: RoleDraft) =>
+	decodeCreate(
+		draft.description === "" ? { name: draft.name, permissions: draft.permissions } : draft,
+	).pipe(
+		Effect.flatMap((payload) =>
+			Effect.flatMap(MapleInternalApiClient, (client) => client.roles.create({ payload })),
+		),
 	)
 
-export const updateRole = (roleId: Policy.CustomRoleId, payload: UpdateRoleRequest) =>
-	Effect.flatMap(MapleInternalApiClient, (client) => client.roles.update({ params: { roleId }, payload }))
+export const updateRole = (roleId: Policy.CustomRoleId, draft: RoleDraft) =>
+	decodeUpdate(draft).pipe(
+		Effect.flatMap((payload) =>
+			Effect.flatMap(MapleInternalApiClient, (client) =>
+				client.roles.update({ params: { roleId }, payload }),
+			),
+		),
+	)
 
 export const deleteRole = (roleId: Policy.CustomRoleId, reassignTo: RoleRef | null) =>
 	Effect.flatMap(MapleInternalApiClient, (client) =>

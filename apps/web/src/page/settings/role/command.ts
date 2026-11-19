@@ -1,9 +1,9 @@
-import { RoleKey, UpdateRoleRequest } from "@maple/domain/http"
+import { RoleKey } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { fetchSessionGrants } from "../../kit/session-grants"
-import { listRoleMembers, listRoles, updateRole } from "../roles/roles"
+import { listRoleMembers, listRoles, RoleDraft, updateRole } from "../roles/roles"
 import { Message } from "./message"
 
 export const FetchSession = fetchSessionGrants("FetchRoleEditorSession", Message.CompletedFetchSession)
@@ -21,7 +21,7 @@ export const FetchRoleMembers = Command.define("FetchRoleMembers", {
 })
 
 export const SaveRole = Command.define("SaveRole", {
-	args: { roleId: Policy.CustomRoleId, payload: UpdateRoleRequest },
+	args: { roleId: Policy.CustomRoleId, payload: RoleDraft },
 	messages: [Message.CompletedSave],
 	execute: ({ roleId, payload }) =>
 		updateRole(roleId, payload).pipe(settleTo((result) => Message.CompletedSave({ result }))),

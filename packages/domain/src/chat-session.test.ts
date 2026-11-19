@@ -260,13 +260,14 @@ describe("ChatTurnTenant", () => {
 		expect(decoded.authMode).toBe("self_hosted")
 	})
 
-	it("runs a connector turn as an org-level tenant, with no roles", () => {
+	it("runs a connector turn as an org-level tenant, with no roles and only telemetry:read", () => {
 		const encoded = connectorTurnTenant(orgId("org_1"))
 
 		expect(encoded).toStrictEqual({
 			orgId: "org_1",
 			userId: CONNECTOR_TENANT_USER_ID,
 			roles: [],
+			permissions: ["telemetry:read"],
 			authMode: "self_hosted",
 		})
 		// The prototype, not `structuredClone`: Node clones a class instance happily and only

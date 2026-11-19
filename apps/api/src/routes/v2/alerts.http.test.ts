@@ -1134,7 +1134,8 @@ describe("v2 alerts over HTTP", () => {
 				return warehouseStub.compiledQuery(tenant, compiled)
 			},
 		})
-		const key = await harness.bootstrapKey(["alerts:write", "traces:read"], ["alerts:manage"])
+		// Not alerts:manage alone: every permission that acts on alerts implies telemetry:read.
+		const key = await harness.bootstrapKey(["alerts:write", "traces:read"], ["uptime_monitors:manage"])
 		const response = await harness.request("POST", "/v2/alerts/rules/test", key.secret, {
 			rule: errorRatePreview.rule,
 			send_notification: false,

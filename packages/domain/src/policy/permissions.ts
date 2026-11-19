@@ -1,3 +1,5 @@
+import { Array as Arr, Record as Rec } from "effect"
+
 /**
  * Every permission in Maple. This is the one place to read or change what a permission is: the API,
  * the MCP tools and the dashboard all check against it, and the built-in roles (`roles.ts`) are
@@ -8,6 +10,8 @@
  * - `action` finishes "You need … to …" in denial messages and reads as a sentence fragment.
  * - `label` and `description` are what the role editor shows.
  * - `customRoles: false` keeps a permission out of custom roles: it stays with Admin.
+ * - `implies` lists what the permission is unusable without. Every grant set holds what its
+ *   permissions imply (`withImplied`), so no role can act on telemetry it may not read.
  *
  * Not to be confused with `@maple/domain/permission`, which decides what an agent may run.
  */
@@ -33,6 +37,7 @@ interface PermissionSpec {
 	readonly action: string
 	readonly sensitive?: true
 	readonly customRoles?: false
+	readonly implies?: ReadonlyArray<string>
 }
 
 export const permissions = {
@@ -50,6 +55,7 @@ export const permissions = {
 		label: "Run raw SQL",
 		description: "Query the warehouse directly in Explore, the API and MCP.",
 		action: "run raw SQL",
+		implies: ["telemetry:read"],
 	},
 	"dashboards:edit": {
 		code: 38,
@@ -57,6 +63,7 @@ export const permissions = {
 		label: "Build dashboards",
 		description: "Create and edit dashboards and widgets.",
 		action: "build dashboards",
+		implies: ["telemetry:read"],
 	},
 	"dashboards:share": {
 		code: 39,
@@ -65,6 +72,7 @@ export const permissions = {
 		description: "Create, rotate and revoke public share links.",
 		action: "share dashboards publicly",
 		sensitive: true,
+		implies: ["telemetry:read"],
 	},
 	"ai:ask": {
 		code: 40,
@@ -72,6 +80,7 @@ export const permissions = {
 		label: "Ask Maple AI",
 		description: "Chat with Maple AI. Answers only; changes need Approve Maple AI actions.",
 		action: "ask Maple AI",
+		implies: ["telemetry:read"],
 	},
 	"devices:connect": {
 		code: 41,
@@ -88,6 +97,7 @@ export const permissions = {
 		label: "Approve Maple AI actions",
 		description: "Approve changes Maple AI proposes, and send chat messages that can act.",
 		action: "approve Maple AI actions",
+		implies: ["telemetry:read"],
 	},
 	"service_map:edit": {
 		code: 43,
@@ -95,6 +105,7 @@ export const permissions = {
 		label: "Edit the shared service map",
 		description: "Arrange and annotate the organization's service map.",
 		action: "edit the shared service map",
+		implies: ["telemetry:read"],
 	},
 	"api_keys:create_mcp": {
 		code: 44,
@@ -118,6 +129,7 @@ export const permissions = {
 		label: "Triage error issues",
 		description: "Assign, resolve, merge, comment on and set severity on error issues.",
 		action: "triage error issues",
+		implies: ["telemetry:read"],
 	},
 	"incidents:respond": {
 		code: 2,
@@ -125,6 +137,7 @@ export const permissions = {
 		label: "Respond to incidents",
 		description: "Acknowledge and resolve alert and anomaly incidents.",
 		action: "acknowledge and resolve incidents",
+		implies: ["telemetry:read"],
 	},
 	"investigations:run": {
 		code: 3,
@@ -132,6 +145,7 @@ export const permissions = {
 		label: "Run investigations",
 		description: "Start Maple AI investigations and follow-ups.",
 		action: "start investigations",
+		implies: ["telemetry:read"],
 	},
 	"status_page_incidents:post": {
 		code: 4,
@@ -146,6 +160,7 @@ export const permissions = {
 		label: "Triage recommendations",
 		description: "Dismiss and reopen instrumentation recommendations.",
 		action: "dismiss and reopen recommendations",
+		implies: ["telemetry:read"],
 	},
 
 	// Alerting and detection.
@@ -155,6 +170,7 @@ export const permissions = {
 		label: "Manage alerts",
 		description: "Alert rules, destinations, silences and maintenance windows.",
 		action: "manage alerts",
+		implies: ["telemetry:read"],
 	},
 	"oncall:manage": {
 		code: 46,
@@ -169,6 +185,7 @@ export const permissions = {
 		label: "Manage SLOs and budgets",
 		description: "Service level objectives and cost budgets.",
 		action: "manage SLOs and budgets",
+		implies: ["telemetry:read"],
 	},
 	"uptime_monitors:manage": {
 		code: 11,
@@ -190,6 +207,7 @@ export const permissions = {
 		label: "Configure anomaly detection",
 		description: "Detector sensitivity and which services it watches.",
 		action: "manage anomaly detector settings",
+		implies: ["telemetry:read"],
 	},
 	"ai_triage:configure": {
 		code: 18,
@@ -246,6 +264,7 @@ export const permissions = {
 		description: "Replace an ingest key. Senders using the old key stop until updated.",
 		action: "roll ingest keys",
 		sensitive: true,
+		implies: ["ingest_keys:view"],
 	},
 	"sources:manage": {
 		code: 9,
@@ -442,3 +461,18 @@ export const permissions = {
 } as const satisfies Record<string, PermissionSpec>
 
 export type Permission = keyof typeof permissions
+
+const permissionKeys: ReadonlyArray<Permission> = Rec.keys(permissions)
+
+/** What `permission` is unusable without. Typed by the catalog: an `implies` naming no permission fails to compile. */
+export const implicationsOf = (permission: Permission): ReadonlyArray<Permission> => {
+	const spec = permissions[permission]
+	return "implies" in spec ? spec.implies : []
+}
+
+/** `list` with everything its permissions imply, in catalog order. */
+export const withImplied = (list: ReadonlyArray<Permission>): ReadonlyArray<Permission> => {
+	const closed = new Set(list)
+	for (const permission of closed) for (const implied of implicationsOf(permission)) closed.add(implied)
+	return Arr.filter(permissionKeys, (permission) => closed.has(permission))
+}

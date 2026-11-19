@@ -1,5 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import * as Policy from "@maple/domain/policy"
+import { ANONYMOUS_CONNECTOR_GRANTS } from "@maple/domain/chat-session"
 import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/primitives"
@@ -233,6 +234,15 @@ describe("MCP dispatcher", () => {
 			const bot = new Set(Arr.map(mapleToolCatalogFor("bot"), (d) => d.name))
 			const mcp = new Set(Arr.map(mapleToolCatalogFor("mcp"), (d) => d.name))
 			expect(Arr.filter(WITHHELD_READS, (name) => !bot.has(name) || !mcp.has(name))).toEqual([])
+		})
+
+		it("offers that surface only tools a turn nobody is named on may call", () => {
+			const needing = Arr.filter(
+				mapleToolCatalogFor("bot_anonymous"),
+				(tool) =>
+					tool.permission !== null && !Policy.can(ANONYMOUS_CONNECTOR_GRANTS, tool.permission),
+			)
+			expect(Arr.map(needing, (tool) => tool.name)).toEqual([])
 		})
 
 		it.effect("refuses by name, as an unknown tool, every tool that surface does not list", () =>

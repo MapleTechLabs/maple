@@ -6,6 +6,7 @@
  * model, the agent engine or any of the graph `turn-runner` pulls in at module scope.
  */
 import {
+	ANONYMOUS_CONNECTOR_GRANTS,
 	decodeChatTurnTenant,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
@@ -36,8 +37,13 @@ export const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurn
 		orgId: tenant.orgId,
 		userId: tenant.userId,
 		roles: [...tenant.roles],
-		// Never wider than the roles: a turn recorded before permissions holds what its roles grant.
-		permissions: tenant.permissions ?? Policy.grantsOf(tenant.roles),
+		// Never wider than the roles: a turn recorded before permissions holds what its roles grant,
+		// and a connector turn nobody is named on (from a host that predates its grants) only reads.
+		permissions:
+			tenant.permissions ??
+			(origin.kind === "connector" && origin.actingUserId === undefined
+				? ANONYMOUS_CONNECTOR_GRANTS
+				: Policy.grantsOf(tenant.roles)),
 		authMode: tenant.authMode,
 		turnOrigin: origin,
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),

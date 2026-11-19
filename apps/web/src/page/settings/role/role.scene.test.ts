@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import * as Tabs from "@maple/views/ui/tabs"
 import { describe, expect, test } from "vitest"
@@ -101,6 +101,47 @@ describe("custom role editor", () => {
 			tabsMounted,
 			expectView(text("Manage members")).toBeAbsent(),
 			expectView(text("Manage billing")).toExist(),
+		)
+	})
+
+	test("ticking a permission ticks what it needs, which stays ticked while it is", () => {
+		const reader = run(opened(STATUS_EDITOR.id), [
+			Message.ToggledPermission({ permission: "telemetry:read" }),
+		])
+		expect(reader.permissions).not.toContain("telemetry:read")
+		const withSql = run(reader, [Message.ToggledPermission({ permission: "query:sql" })])
+		expect(withSql.permissions).toEqual(expect.arrayContaining(["telemetry:read", "query:sql"]))
+		expect(
+			run(withSql, [Message.ToggledPermission({ permission: "telemetry:read" })]).permissions,
+		).toContain("telemetry:read")
+		scene(
+			{ update: pageUpdate, view },
+			given(withSql),
+			tabsMounted,
+			expectView(role("checkbox", { name: /Read telemetry/u })).toBeDisabled(),
+			expectView(text("Required by Run raw SQL")).toExist(),
+		)
+	})
+
+	test("a permission needed by several says how many more need it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened(ON_CALL.id)),
+			tabsMounted,
+			expectView(text(/^Required by Run raw SQL and \d+ more$/u)).toExist(),
+		)
+	})
+
+	test("a name past the limit cannot be saved", () => {
+		const tooLong = run(opened(ON_CALL.id), [
+			Message.ChangedName({ value: Str.repeat(Policy.CUSTOM_ROLE_NAME_MAX + 1)("x") }),
+		])
+		expect(saveArgs(pageUpdate(tooLong, Message.ClickedSave()))).toBeUndefined()
+		scene(
+			{ update: pageUpdate, view },
+			given(tooLong),
+			tabsMounted,
+			expectView(role("button", { name: "Save role" })).toBeDisabled(),
 		)
 	})
 

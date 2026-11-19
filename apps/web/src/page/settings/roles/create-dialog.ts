@@ -17,7 +17,15 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import type { Resources } from "../../../platform/resources"
-import { createRole, findRole, grantablePermissions, type RoleEntry } from "./roles"
+import {
+	createRole,
+	findRole,
+	grantablePermissions,
+	isValidRoleDescription,
+	isValidRoleName,
+	RoleDraft,
+	type RoleEntry,
+} from "./roles"
 import { roleTextField } from "./view-parts"
 
 // The create-role dialog, one Submodel shared by the Roles tab and the role editor (Duplicate):
@@ -71,14 +79,16 @@ export const init = (id: string): Model => ({
 })
 
 export const CreateRole = Command.define("CreateRole", {
-	args: {
-		name: Schema.String,
-		description: Schema.String,
-		permissions: Schema.Array(Policy.PermissionName),
-	},
+	args: RoleDraft.fields,
 	messages: [Message.CompletedCreate],
 	execute: (input) => createRole(input).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })
+
+const COPY_SUFFIX = " copy"
+
+/** "<name> copy", the name cut so the whole fits a role name. */
+const copyName = (name: string): string =>
+	`${Str.trimEnd(Str.slice(0, Policy.CUSTOM_ROLE_NAME_MAX - COPY_SUFFIX.length)(name))}${COPY_SUFFIX}`
 
 const customRoles = (entries: ReadonlyArray<RoleEntry>) => Arr.filter(entries, (entry) => !entry.isBuiltIn)
 
@@ -101,8 +111,11 @@ export const open = (model: Model, entries: ReadonlyArray<RoleEntry>, from: stri
 	})
 	const fresh: Model = {
 		...model,
-		name: Option.match(source, { onNone: () => "", onSome: (role) => `${role.name} copy` }),
-		description: Option.match(source, { onNone: () => "", onSome: (role) => role.description }),
+		name: Option.match(source, { onNone: () => "", onSome: (role) => copyName(role.name) }),
+		description: Option.match(source, {
+			onNone: () => "",
+			onSome: (role) => Str.slice(0, Policy.CUSTOM_ROLE_DESCRIPTION_MAX)(role.description),
+		}),
 		start: RadioGroup.init(start),
 		copyFrom: Select.init(model.copyFrom.id, {
 			value: copyFrom,
@@ -137,7 +150,9 @@ export const startingPermissions = (
 }
 
 const canSubmit = (model: Model): boolean =>
-	Str.trim(model.name).length > 0 && (startValue(model) !== CUSTOM || model.copyFrom.value !== "")
+	isValidRoleName(model.name) &&
+	isValidRoleDescription(model.description) &&
+	(startValue(model) !== CUSTOM || model.copyFrom.value !== "")
 
 export const update = (model: Model, message: Message, entries: ReadonlyArray<RoleEntry>): Return =>
 	Message.match<Return>(message, {
@@ -287,6 +302,7 @@ const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html
 				label: "Name",
 				value: model.name,
 				placeholder: "On-call responder",
+				maxLength: Policy.CUSTOM_ROLE_NAME_MAX,
 				isInvalid: model.error !== null,
 				onInput: (value) => Message.ChangedName({ value }),
 			}),
@@ -295,6 +311,7 @@ const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html
 				label: "Description (optional)",
 				value: model.description,
 				description: "Shown in the role picker.",
+				maxLength: Policy.CUSTOM_ROLE_DESCRIPTION_MAX,
 				onInput: (value) => Message.ChangedDescription({ value }),
 			}),
 			vstack(h, { gap: "2" }, [

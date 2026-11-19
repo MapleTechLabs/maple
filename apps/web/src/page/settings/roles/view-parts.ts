@@ -51,6 +51,7 @@ export const roleTextField = <M>(
 		placeholder?: string
 		isDisabled?: boolean
 		isInvalid?: boolean
+		maxLength?: number
 	}>,
 ): Html => {
 	const state: FieldState = {
@@ -73,6 +74,7 @@ export const roleTextField = <M>(
 				h.Value(options.value),
 				h.OnInput(options.onInput),
 				...(options.placeholder === undefined ? [] : [h.Placeholder(options.placeholder)]),
+				...(options.maxLength === undefined ? [] : [h.Maxlength(options.maxLength)]),
 			],
 		}),
 		...(options.description === undefined

@@ -1,5 +1,5 @@
 import { Array as Arr, Option, Order, Record as Rec, Schema } from "effect"
-import { type Permission, permissions } from "./permissions"
+import { type Permission, permissions, withImplied } from "./permissions"
 
 /**
  * Custom roles live in Clerk, not in Maple's database:
@@ -23,8 +23,18 @@ export const CustomRoleId = Schema.String.check(Schema.isPattern(/^role_[a-z0-9]
 )
 export type CustomRoleId = typeof CustomRoleId.Type
 
-export const CustomRoleName = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(40))
-export const CustomRoleDescription = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(160))
+export const CUSTOM_ROLE_NAME_MAX = 40
+export const CUSTOM_ROLE_DESCRIPTION_MAX = 160
+
+export const CustomRoleName = Schema.String.check(
+	Schema.isTrimmed(),
+	Schema.isMinLength(1),
+	Schema.isMaxLength(CUSTOM_ROLE_NAME_MAX),
+)
+export const CustomRoleDescription = Schema.String.check(
+	Schema.isTrimmed(),
+	Schema.isMaxLength(CUSTOM_ROLE_DESCRIPTION_MAX),
+)
 
 const permissionByCode: ReadonlyMap<number, Permission> = new Map(
 	Arr.map(Rec.toEntries(permissions), ([key, spec]) => [spec.code, key] as const),
@@ -39,15 +49,18 @@ export const encodePermissions = (list: ReadonlyArray<Permission>): ReadonlyArra
 	Arr.sort(Arr.dedupe(Arr.map(list, (permission): number => permissions[permission].code)), Order.Number)
 
 /**
- * The permissions stored codes name. A code this build does not know is dropped (a newer deploy
- * wrote it), and so is anything a custom role may not hold: stored data never widens access.
+ * The permissions stored codes name, with what they imply (a role stored before an implication
+ * existed gains it). A code this build does not know is dropped (a newer deploy wrote it), and so is
+ * anything a custom role may not hold: stored data never widens access past the catalog.
  */
 export const decodeCustomPermissions = (codes: ReadonlyArray<number>): ReadonlyArray<Permission> =>
 	Arr.filter(
-		Arr.flatMap(codes, (code) => {
-			const permission = permissionByCode.get(code)
-			return permission === undefined ? [] : [permission]
-		}),
+		withImplied(
+			Arr.flatMap(codes, (code) => {
+				const permission = permissionByCode.get(code)
+				return permission === undefined ? [] : [permission]
+			}),
+		),
 		grantableToCustomRoles,
 	)
 

@@ -124,6 +124,40 @@ describe("EndpointAccess", () => {
 		expect(decideEndpointAccess(ANALYST, insights)._tag).toBe("Allowed")
 	})
 
+	it("needs telemetry:read for every code review read: CI traces and post-merge telemetry", () => {
+		for (const name of [
+			"analytics",
+			"listReviews",
+			"getReview",
+			"listFindings",
+			"ciAnalytics",
+			"ciRuns",
+			"team",
+		]) {
+			expect(decideEndpointAccess(["code_review:configure"], find(internal.codeReview, name))).toEqual({
+				_tag: "Denied",
+				permission: "telemetry:read",
+			})
+			expect(decideEndpointAccess(ANALYST, find(internal.codeReview, name))._tag).toBe("Allowed")
+		}
+	})
+
+	it("needs telemetry:read for reads that return telemetry beside integration and monitor setup", () => {
+		const reads = [
+			find(internal.integrations, "cloudflareUsage"),
+			find(v2.awsIntegration, "ingest"),
+			find(v2.uptimeMonitors, "list"),
+			find(v2.uptimeMonitors, "retrieve"),
+		]
+		for (const read of reads) {
+			expect(decideEndpointAccess(["integrations:manage", "uptime_monitors:manage"], read)).toEqual({
+				_tag: "Denied",
+				permission: "telemetry:read",
+			})
+			expect(decideEndpointAccess(ANALYST, read)._tag).toBe("Allowed")
+		}
+	})
+
 	it("needs dashboards:share to publish a share link", () => {
 		const share = find(v2.dashboards, "upsertShare")
 		expect(decideEndpointAccess(ANALYST, share)._tag).toBe("Allowed")

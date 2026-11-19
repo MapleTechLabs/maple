@@ -35,3 +35,16 @@ describe("session tenant cache", () => {
 		expect(outcome.reads).toBe(2)
 	})
 })
+
+describe("session read", () => {
+	test("keeps the permissions this build knows and drops ones a newer API added", () => {
+		const read = Schema.decodeSync(CurrentTenant.SessionTenantResponse)({
+			orgId: "org_parity",
+			userId: "user_ada",
+			roles: ["org:member"],
+			permissions: ["telemetry:read", "reports:schedule", "alerts:manage"],
+			authMode: "clerk",
+		})
+		expect(read.permissions).toEqual(["telemetry:read", "alerts:manage"])
+	})
+})

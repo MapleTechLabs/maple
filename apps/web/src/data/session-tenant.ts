@@ -4,7 +4,7 @@ import { Context, Deferred, Effect, Layer, Option, type Scope, SynchronizedRef }
 import { MapleApiClient } from "../platform/api-clients"
 import { SessionBearer } from "../platform/session-bearer"
 
-type Tenant = CurrentTenant.TenantSchema
+type Tenant = CurrentTenant.SessionTenantResponse
 type Entry<E> = Readonly<{ token: Option.Option<string>; result: Deferred.Deferred<Tenant, E> }>
 type SessionError = Effect.Error<ReturnType<MapleApiClient["Service"]["auth"]["session"]>>
 

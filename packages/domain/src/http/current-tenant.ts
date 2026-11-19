@@ -1,5 +1,5 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
-import { Schema, Context as EffectContext } from "effect"
+import { Array as Arr, Schema, SchemaGetter, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
@@ -163,6 +163,23 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	scopes: Schema.optional(Schema.Array(Schema.String)),
 	impersonation: Schema.optional(Schema.Struct({ actorId: Schema.String, sessionId: Schema.String })),
 }) {}
+
+const isPermissionName = Schema.is(PermissionName)
+
+/**
+ * The session as `GET /api/auth/session` answers it. A reader drops permission names it does not
+ * know: a newer API may grant one that an open tab's build predates, and that must not fail the read.
+ */
+export const SessionTenantResponse = Schema.Struct({
+	...TenantSchema.fields,
+	permissions: Schema.Array(Schema.String).pipe(
+		Schema.decodeTo(Schema.Array(PermissionName), {
+			decode: SchemaGetter.transform((names) => Arr.filter(names, isPermissionName)),
+			encode: SchemaGetter.passthroughSubtype(),
+		}),
+	),
+})
+export type SessionTenantResponse = typeof SessionTenantResponse.Type
 
 export class Context extends EffectContext.Service<Context, TenantSchema>()(
 	"@maple/domain/http/CurrentTenant",

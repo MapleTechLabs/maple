@@ -54,14 +54,24 @@ describe("Policy.grantsOf", () => {
 		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY])).toEqual([])
 	})
 
-	it("holds exactly the membership's permissions for org:custom", () => {
-		const custom = Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "incidents:respond"])
-		expect(Policy.can(custom, "alerts:manage")).toBe(true)
-		expect(Policy.can(custom, "telemetry:read")).toBe(false)
+	it("holds the membership's permissions for org:custom, with what they imply", () => {
+		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "ingest_keys:roll"])).toEqual([
+			"telemetry:read",
+			"alerts:manage",
+			"ingest_keys:view",
+			"ingest_keys:roll",
+		])
+		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["oncall:manage"])).toEqual(["oncall:manage"])
 	})
 
 	it("holds what any of several roles holds", () => {
 		expect(Policy.can(Policy.grantsOf(["org:member", "org:admin"]), "billing:manage")).toBe(true)
+	})
+
+	it("holds what each built-in role's permissions imply", () => {
+		for (const entry of Policy.builtInRoles) {
+			expect(Policy.withImplied(entry.permissions)).toEqual(presetOf(entry.clerkKey))
+		}
 	})
 
 	it("nests the built-in roles: each holds everything the one below it holds", () => {
@@ -138,8 +148,15 @@ describe("permission codes", () => {
 	})
 
 	it("drops codes it does not know and permissions a custom role may not hold", () => {
-		const stored = [...Policy.encodePermissions(["members:manage", "roles:manage", "alerts:manage"]), 9999]
-		expect(Policy.decodeCustomPermissions(stored)).toEqual(["alerts:manage"])
+		const stored = [...Policy.encodePermissions(["members:manage", "roles:manage", "oncall:manage"]), 9999]
+		expect(Policy.decodeCustomPermissions(stored)).toEqual(["oncall:manage"])
+	})
+
+	it("adds what stored permissions imply, so a role stored before an implication gains it", () => {
+		expect(Policy.decodeCustomPermissions(Policy.encodePermissions(["query:sql"]))).toEqual([
+			"telemetry:read",
+			"query:sql",
+		])
 	})
 })
 
@@ -153,7 +170,7 @@ describe("custom role metadata", () => {
 				permissions: Policy.encodePermissions(["alerts:manage"]),
 			},
 		}
-		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual(["alerts:manage"])
+		expect(Policy.customPermissionsFromMembershipMetadata(metadata)).toEqual(["telemetry:read", "alerts:manage"])
 	})
 
 	it("grants nothing for missing or malformed membership metadata", () => {
