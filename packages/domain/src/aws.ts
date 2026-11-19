@@ -214,6 +214,14 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 export const awsModuleGranted = (attached: ReadonlyArray<string> | null, module: AwsModule): boolean =>
 	attached !== null && (attached.includes(module) || (module === "audit" && attached.includes("security")))
 
+/**
+ * Whether the deployed role matches what is asked for: every asked-for module is granted (one
+ * covered by another's policy counts), and no module policy is left attached that is not asked for.
+ */
+export const awsGrantsMatch = (modules: ReadonlyArray<string>, attached: ReadonlyArray<string>): boolean =>
+	modules.every((module) => isAwsModule(module) && awsModuleGranted(attached, module)) &&
+	attached.every((module) => isAwsModule(module) && modules.includes(module))
+
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId
 	readonly accountId: AwsAccountId

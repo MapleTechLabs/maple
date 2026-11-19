@@ -37,7 +37,7 @@ import { awsStreamOf, isoMs } from "../../../integrations/derive"
 import type { FlowStage } from "../../../integrations/flow"
 import { awsFlowConnection, awsStatusOf } from "./flow-aws"
 import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { manageLock, type Model } from "../../../integrations/model"
 import { ingestPanel, moduleList, moduleSpec, roleName, setupPanel } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
@@ -125,7 +125,9 @@ const newModuleCard = (h: H, model: Model): ReadonlyArray<Html> => {
 			],
 		}),
 	)
-	return rows.length === 0 ? [] : [collectCard(h, [featureList(h, { idPrefix: "aws-new", rows })])]
+	return rows.length === 0
+		? []
+		: [collectCard(h, [featureList(h, { idPrefix: "aws-new", rows, lockReason: manageLock(model) })])]
 }
 
 /** "Choose what to collect": each module is a policy on the role, so it is picked with the role. */

@@ -15,6 +15,7 @@ import {
 	AWS_NO_DELIVERY,
 	AWS_TEMPLATE_VERSION,
 	type AwsMetricStream,
+	awsGrantsMatch,
 	awsModuleGranted,
 	awsStreamState,
 } from "@maple/domain/aws"
@@ -810,16 +811,13 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 	})
 }
 
-const sameModules = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-	a.length === b.length && Arr.every(a, (module) => b.includes(module))
-
 const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const connections = inputs.awsConnections
 	if (connections.length === 0) return null
 	const resources = Arr.flatMap(connections, (c): ReadonlyArray<IntegrationResource> => {
 		const outdated =
 			c.grantedModules !== null &&
-			(c.templateVersion !== AWS_TEMPLATE_VERSION || !sameModules(c.modules, c.grantedModules))
+			(c.templateVersion !== AWS_TEMPLATE_VERSION || !awsGrantsMatch(c.modules, c.grantedModules))
 		// Before the first check that assumed the role, the setup is still being done.
 		const role: IntegrationResource =
 			c.verifiedAt === null

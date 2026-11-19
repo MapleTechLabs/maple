@@ -471,9 +471,13 @@ describe("AwsConnectionService", () => {
 			assert.isFalse((yield* later(service.check(orgId, created.id))).setupOutdated)
 
 			// Asking for the audit log too: SecurityAudit already allows CloudTrail, so the check passes.
-			yield* service.update(orgId, created.id, { modules: ["security", "audit"] })
+			const asked = yield* service.update(orgId, created.id, { modules: ["security", "audit"] })
+			assert.isFalse(asked.setupOutdated)
 			const both = yield* later(service.check(orgId, created.id))
 			assert.isNull(both.lastCheckError)
+			assert.isFalse(both.setupOutdated)
+			// Turning Security scan off leaves its policy attached until the stack is updated.
+			assert.isTrue((yield* service.update(orgId, created.id, { modules: ["audit"] })).setupOutdated)
 		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
 	})
 
