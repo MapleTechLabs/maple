@@ -673,6 +673,7 @@
         "@distilled.cloud/aws": "1.0.0-rc.20",
         "@distilled.cloud/clerk": "1.0.0-rc.20",
         "@distilled.cloud/core": "1.0.0-rc.20",
+        "@distilled.cloud/gcp": "1.0.0-rc.20",
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
         "@distilled.cloud/supabase": "1.0.0-rc.20",
         "@distilled.cloud/vercel": "1.0.0-rc.20",
@@ -1393,6 +1394,8 @@
     "@distilled.cloud/cloudflare": ["@distilled.cloud/cloudflare@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20", "@distilled.cloud/s3": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-Vcb9hNRqlrec3pSaf9mOFHg5bKoUfpKytAH9w6+Y9L2HmU2Bval3zAXx4viQx9yqUeU5CbhaEH+/SdKywcaEZw=="],
 
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.20", "", { "peerDependencies": { "effect": "^4.1.2" } }, "sha512-uoZ8W5QhxcSyyM6/XZzRJCKc55FC4fZfXWX2ypx8AOIC4PTOtdyDZ3fswGpVp/SRiC4ua0HYGhAgFA8Ub7Ot5Q=="],
+
+    "@distilled.cloud/gcp": ["@distilled.cloud/gcp@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-PzgA5phbgz8bewSM29vh+RXWNt8Vbt/j6BtCUM6280zEpsY4FIiB1ezPJ0Z5pSX3lP0aQmd99UYA/9nrZLgPlQ=="],
 
     "@distilled.cloud/iceberg": ["@distilled.cloud/iceberg@1.0.0-rc.20", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.20" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-m0JErahIw1Z+/EDYJRqDA0A8iW9Xv5xHGFeUqSn/ne8VdZX1GAqX4uxesAFQV0ZdoW2yPh4zoKj3JLWphYTtbw=="],
 
