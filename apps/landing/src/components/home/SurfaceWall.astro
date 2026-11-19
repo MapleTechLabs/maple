@@ -1,17 +1,19 @@
 ---
 /**
  * Platform: every other surface as one bento, visible without a click, and the link hub to the
- * feature pages. Each cell is its headline, its copy and its link, then the real product in a
- * window that runs off the cell's edge: a legible part of a capture (the lightbox opens the whole
- * screen) or the live component.
+ * feature pages. Each cell is its headline, its copy and its link, then the product in a window
+ * that runs off the cell's edge: the surface's scripted frame where it has one, and otherwise a
+ * legible part of a capture (the lightbox opens the whole screen).
  */
 import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
 import { featurePath, type Crop } from "../../lib/page-registry";
 import Shot from "../page/Shot.astro";
 import PrReviewComment from "../github/PrReviewComment.astro";
+import LiveAlertFiring from "../live/LiveAlertFiring.astro";
 import LiveFunnel from "../live/LiveFunnel.astro";
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
+import LiveServiceMap from "../live/LiveServiceMap.astro";
 import LiveUptime from "../live/LiveUptime.astro";
 import LedgerHead from "./LedgerHead.astro";
 
@@ -53,13 +55,6 @@ const surfaces: Surface[] = [
 		desc: m.platform_map_desc(),
 		href: l("service-catalog"),
 		link: m.nav_service_catalog(),
-		shot: {
-			src: "/screenshots/surface-map.webp",
-			alt: "A focused service neighborhood showing API, database, and cache dependencies with live request flow",
-			width: 2880,
-			height: 1620,
-			crop: { x: 0.185, y: 0.29, zoom: 1.45, aspect: 8 / 3 },
-		},
 	},
 	{
 		key: "metrics",
@@ -96,20 +91,6 @@ const surfaces: Surface[] = [
 		desc: m.platform_alerts_desc(),
 		href: l("alerts"),
 		link: m.nav_alerts(),
-		shot: {
-			src: "/screenshots/surface-alerts.webp",
-			alt: "Alert rules with severity, signal type and current state",
-			width: 2880,
-			height: 1620,
-			crop: { x: 0.19, y: 0.085, zoom: 2.4, aspect: CELL },
-		},
-	},
-	{
-		key: "kubernetes",
-		title: m.k8s_title(),
-		desc: firstSentence(m.k8s_lede()),
-		href: l("kubernetes-monitoring"),
-		link: m.nav_kubernetes(),
 	},
 	{
 		key: "analytics",
@@ -125,6 +106,13 @@ const surfaces: Surface[] = [
 			height: 1392,
 			crop: { x: 0.005, y: 0.3, zoom: 1.08, aspect: CELL },
 		},
+	},
+	{
+		key: "kubernetes",
+		title: m.k8s_title(),
+		desc: firstSentence(m.k8s_lede()),
+		href: l("kubernetes-monitoring"),
+		link: m.nav_kubernetes(),
 	},
 	{
 		key: "events",
@@ -150,12 +138,19 @@ const surfaces: Surface[] = [
 	},
 ];
 
-// One bento on a wide screen, two strips to swipe on a phone: the captures, then the live frames.
-const LIVE = ["kubernetes", "events", "uptime", "github"];
-const groups = [
-	surfaces.filter((surface) => !LIVE.includes(surface.key)),
-	surfaces.filter((surface) => LIVE.includes(surface.key)),
-];
+// The surfaces that have a scripted frame of their own; the rest show a capture.
+const FRAMES = {
+	map: LiveServiceMap,
+	alerts: LiveAlertFiring,
+	kubernetes: LiveK8sHeatmap,
+	events: LiveFunnel,
+	uptime: LiveUptime,
+};
+const frameOf = (key: string) => Object.entries(FRAMES).find(([name]) => name === key)?.[1];
+
+// One bento on a wide screen, two strips to swipe on a phone.
+const STRIP = 5;
+const groups = [surfaces.slice(0, STRIP), surfaces.slice(STRIP)];
 ---
 
 <section id="features" class="ledger ledger-wall">
@@ -167,7 +162,9 @@ const groups = [
 			{
 				groups.map((group) => (
 					<div class="bento__group">
-						{group.map((surface) => (
+						{group.map((surface) => {
+							const Frame = frameOf(surface.key);
+							return (
 							<article
 								class:list={["ledger-cell bento-cell", surface.side && "bento-cell--side"]}
 								style={`grid-area: ${surface.key}`}
@@ -196,14 +193,12 @@ const groups = [
 									</div>
 								) : (
 									<div class:list={["bento-window bento-window--live", surface.key === "github" && "bento-window--pad"]}>
-										{surface.key === "kubernetes" && <LiveK8sHeatmap />}
-										{surface.key === "events" && <LiveFunnel />}
-										{surface.key === "uptime" && <LiveUptime />}
-										{surface.key === "github" && <PrReviewComment variant="compact" />}
+										{surface.key === "github" ? <PrReviewComment variant="compact" /> : <Frame />}
 									</div>
 								)}
 							</article>
-						))}
+							);
+						})}
 					</div>
 				))
 			}

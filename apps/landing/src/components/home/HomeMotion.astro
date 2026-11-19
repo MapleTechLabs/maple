@@ -1,9 +1,9 @@
 ---
 /**
  * The sheet's two entrances, each played once: section headlines rise a line at a time, and the
- * captures resolve out of coarse blocks. Both skip anything already on screen at load and all of
- * it under reduced motion, and without this script the page is simply drawn. Styles are in
- * home-ledger.css.
+ * captures resolve out of coarse blocks. Both skip anything already on screen at load. It also
+ * holds the bento's scripted frames still until they are on screen. None of it runs under reduced
+ * motion, and without this script the page is simply drawn. Styles are in home-ledger.css.
  */
 ---
 
@@ -123,6 +123,18 @@
 			if (!belowFold(headline)) continue;
 			headline.dataset.rise = "armed";
 			headlines.observe(headline);
+		}
+
+		// The bento's scripted frames hold their first frame until they are on screen.
+		const frames = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) entry.target.toggleAttribute("data-held", !entry.isIntersecting);
+			},
+			{ threshold: 0.4 },
+		);
+		for (const frame of document.querySelectorAll(".bento-window--live")) {
+			frame.toggleAttribute("data-held", true);
+			frames.observe(frame);
 		}
 
 		const covers = new Map<Element, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>();

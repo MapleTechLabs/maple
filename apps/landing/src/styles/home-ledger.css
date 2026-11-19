@@ -350,10 +350,22 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 .monumental-home .ledger .media-crop {
 	mask-image: none;
 }
-/* The live frames loop on their own pages. In a sheet of nine nothing does: each holds the
-   still it shows under reduced motion. */
-.monumental-home .ledger-wall .ledger-cell :is(.k8s-hm-cell, .fn-anim, .ut-anim) {
+/* The pod heatmap's cells breathe on their own page. Here they hold still: it is the one frame
+   whose motion is a pulse and not a story. */
+.monumental-home .ledger-wall .k8s-hm-cell {
 	animation: none;
+}
+/* A scripted frame runs while it is on screen and holds its frame while it is not, so its story
+   starts as the reader arrives (HomeMotion.astro). */
+.bento-window--live[data-held] *,
+.bento-window--live[data-held] *::before,
+.bento-window--live[data-held] *::after {
+	animation-play-state: paused !important;
+}
+/* The map is drawn a little wider than its window, so its labels stay legible. */
+.bento-cell[data-surface="map"] svg {
+	width: 116%;
+	max-width: none;
 }
 @media (min-width: 768px) {
 	.bento {
@@ -397,6 +409,10 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	/* A full row: its copy ends on the column line the row above divides on. */
 	.bento-cell[data-surface="analytics"] {
 		--bento-copy: 33.333%;
+	}
+	/* The alert frame is two panes and needs the width for both. */
+	.bento-cell[data-surface="alerts"] {
+		--bento-copy: 34%;
 	}
 }
 
@@ -650,18 +666,19 @@ html:not([lang="en"]) .monumental-home .faq--split h2 {
 	.bento-cap {
 		padding: 20px;
 	}
-	/* Cells in a strip share its height. The window leads, so the spare height falls under the
-	   copy, or inside a live frame's own ground. */
+	/* Every window in a strip is one height and leads its cell, so the copy lines up under them.
+	   A frame taller than that runs off the bottom, as the captures do. */
 	.bento-window {
+		flex: none;
 		order: -1;
+		height: 400px;
 		margin-left: 0;
 		border-top: 0;
 		border-bottom: 1px solid var(--home-rule);
 		border-left: 0;
 	}
-	.bento-window:not(.bento-window--live) {
-		flex: none;
-		height: 260px;
+	.bento-cell[data-surface="map"] svg {
+		width: 260%;
 	}
 	.bento-window--pad {
 		padding: 16px;
