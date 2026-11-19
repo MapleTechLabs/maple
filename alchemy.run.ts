@@ -19,6 +19,7 @@ import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import { withSecretGuard } from "@maple/infra/secret-guard"
 import {
 	ApiWorker,
+	AuditArchiveBucket,
 	AiWorker,
 	SandboxWorker,
 	declareStatusDomainsOrigin,
@@ -47,12 +48,14 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import OrgEraser from "./apps/org-eraser/src/worker.ts"
 import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import StatusWorker from "./apps/status/src/worker.ts"
+import AuditArchiveWorker from "./apps/audit-archive/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -353,6 +356,11 @@ export default Alchemy.Stack(
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
 
+		// Sole consumer of the audit queue: writes the write-once copy, then feeds api's
+		// warehouse consumer. The bucket is yielded here so its retention read stays out of Worker init.
+		yield* AuditArchiveBucket
+		yield* AuditArchiveWorker
+
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
 		const electric =
@@ -402,6 +410,9 @@ export default Alchemy.Stack(
 		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
+		// Erases deleted orgs' data on a cron; never served, it alone holds the warehouse delete token.
+		const orgEraser = yield* OrgEraser
+
 		// Chat-platform ingress. Its Live layer registers its Durable Object classes.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
@@ -450,6 +461,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			orgEraserWorker: orgEraser.workerName,
 			chatBotWorker: chatBot.workerName,
 		}
 	}).pipe(

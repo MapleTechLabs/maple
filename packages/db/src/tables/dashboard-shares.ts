@@ -35,6 +35,9 @@ const dashboardSharesColumns = {
 	updatedBy: PG.column(PG.brand(PG.text, UserId), { name: "updated_by" }),
 	// Null = live. Set = this token no longer resolves, for any reason.
 	revokedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "revoked_at" }),
+	// Null = never expires. Past this instant the link resolves as if revoked, but
+	// the row still holds its scope's live slot, so the owner can extend it in place.
+	expiresAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "expires_at" }),
 }
 type DashboardSharesColumns = PG.ColumnsOf<typeof dashboardSharesColumns>
 

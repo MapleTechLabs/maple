@@ -60,6 +60,7 @@ const makeStub = (turns: Array<BeginTurnInput>): ChatSessionStub => ({
 	holdsTurn: () => Promise.resolve(false),
 	endTurn: () => Promise.resolve(),
 	abort: () => Promise.resolve(),
+	erase: () => Promise.resolve(false),
 })
 
 /**

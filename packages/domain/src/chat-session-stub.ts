@@ -17,7 +17,7 @@ import type {
 } from "./chat-session"
 
 /** Why a turn was aborted: recorded on its `chat.turn` span as `maple.chat.abort_reason`. */
-export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted"] as const
+export const CHAT_ABORT_REASONS = ["user", "superseded", "stale", "evicted", "erased"] as const
 export type ChatAbortReason = (typeof CHAT_ABORT_REASONS)[number]
 
 export const isChatAbortReason = (value: unknown): value is ChatAbortReason =>
@@ -81,6 +81,11 @@ export interface ChatSessionStub {
 	readonly endTurn: (messageId: string) => Promise<void>
 	/** Abort the running turn; `reason` defaults to `"user"`. */
 	readonly abort: (reason?: ChatAbortReason) => Promise<void>
+	/**
+	 * Stop the running turn and wipe the object's storage and alarm, for a deleted organization.
+	 * Refused (`false`) unless `orgId` is the session's org; erasing an empty object is a no-op.
+	 */
+	readonly erase: (input: { readonly sessionId: string; readonly orgId: string }) => Promise<boolean>
 }
 
 /** The stub's surface with each method's Promise lifted to an Effect. */
@@ -144,6 +149,7 @@ export const chatSessionClient = <E>(rpc: ChatSessionRpc<E>): ChatSessionClient 
 	holdsTurn: (messageId) => rpc.holdsTurn(messageId).pipe(Effect.mapError(callFailed("holdsTurn"))),
 	endTurn: (messageId) => rpc.endTurn(messageId).pipe(Effect.mapError(callFailed("endTurn"))),
 	abort: (reason) => rpc.abort(reason).pipe(Effect.mapError(callFailed("abort"))),
+	erase: (input) => rpc.erase(input).pipe(Effect.mapError(callFailed("erase"))),
 })
 
 /** A client over a Promise-shaped stub: an in-process session, or a test's fake. */
@@ -166,5 +172,6 @@ export const chatSessionClientFromStub = (stub: ChatSessionStub): ChatSessionCli
 		holdsTurn: call("holdsTurn", (messageId: string) => stub.holdsTurn(messageId)),
 		endTurn: call("endTurn", (messageId: string) => stub.endTurn(messageId)),
 		abort: call("abort", (reason?: ChatAbortReason) => stub.abort(reason)),
+		erase: call("erase", (input: Parameters<ChatSessionStub["erase"]>[0]) => stub.erase(input)),
 	}
 }

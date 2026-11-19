@@ -77,6 +77,7 @@ import {
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
 import { FeatureRequests } from "./feature-requests"
+import { OrgErasures } from "./org-erasures"
 import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { OrgDirectoryGroups, OrgSsoConnections, OrgSsoDomains } from "./enterprise-sso"
@@ -173,6 +174,7 @@ export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
 export * from "./cost-connections"
 export * from "./feature-requests"
+export * from "./org-erasures"
 export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./enterprise-sso"
@@ -271,6 +273,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OpenRouterCostConnections,
 	CostConnections,
 	FeatureRequests,
+	OrgErasures,
 	OrgOpenRouterKeys,
 	OrgSsoDomains,
 	OrgSsoConnections,

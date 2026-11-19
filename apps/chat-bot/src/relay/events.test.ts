@@ -61,6 +61,7 @@ const promiseStub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): Chat
 		holdsTurn: () => Promise.resolve(false),
 		endTurn: () => Promise.resolve(),
 		abort: () => Promise.resolve(),
+		erase: () => Promise.resolve(false),
 		beginTurn: () => Promise.resolve(undefined),
 		settleProposal: () => Promise.resolve("unknown"),
 		subscribe: () => Promise.resolve(sse(connections[Math.min(opened++, connections.length - 1)] ?? [])),

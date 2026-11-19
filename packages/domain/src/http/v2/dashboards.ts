@@ -406,6 +406,8 @@ export const V2DashboardShare = Schema.Struct({
 	tokenSuffix: Schema.String,
 	createdAt: Timestamp,
 	updatedAt: Timestamp,
+	/** Absent = the link never expires. Past it, the link stops resolving. */
+	expiresAt: optional(Timestamp),
 })
 	.pipe(
 		Schema.encodeKeys({
@@ -414,6 +416,7 @@ export const V2DashboardShare = Schema.Struct({
 			tokenSuffix: "token_suffix",
 			createdAt: "created_at",
 			updatedAt: "updated_at",
+			expiresAt: "expires_at",
 		}),
 	)
 	.annotate({
@@ -426,7 +429,14 @@ export type V2DashboardShare = Schema.Schema.Type<typeof V2DashboardShare>
 
 export const V2DashboardShareParams = Schema.Struct({
 	mode: DashboardShareMode,
-}).annotate({ identifier: "DashboardShareParams", title: "Dashboard share parameters" })
+	/**
+	 * When the link stops resolving. Omitted keeps the current expiry (none for a
+	 * new link); `null` clears it so the link never expires.
+	 */
+	expiresAt: optional(Schema.NullOr(Timestamp)),
+})
+	.pipe(Schema.encodeKeys({ expiresAt: "expires_at" }))
+	.annotate({ identifier: "DashboardShareParams", title: "Dashboard share parameters" })
 export type V2DashboardShareParams = Schema.Schema.Type<typeof V2DashboardShareParams>
 
 export const V2DashboardShareDeleteResponse = Schema.Struct({

@@ -64,6 +64,8 @@ interface ChatSessionState {
 	readonly storage: {
 		readonly sql: SqlStorage
 		setAlarm(scheduledTime: number): Promise<void>
+		deleteAlarm(): Promise<void>
+		deleteAll(): Promise<void>
 	}
 	waitUntil(promise: Promise<unknown>): void
 }
@@ -335,6 +337,9 @@ export class ChatSession {
 	 */
 	private readonly settling = new Set<string>()
 
+	/** Set by {@link erase}: the tables are gone, so a turn still draining must not write. */
+	private erased = false
+
 	constructor(
 		private readonly ctx: ChatSessionState,
 		private readonly env: Record<string, unknown>,
@@ -382,6 +387,7 @@ export class ChatSession {
 	 * `turn-end`: leaving the slot and appending it are one synchronous step, so a turn gets one.
 	 */
 	private transition(change: SlotChange): boolean {
+		if (this.erased) return false
 		const slot = this.slot()
 		switch (change._tag) {
 			case "Begin": {
@@ -448,6 +454,7 @@ export class ChatSession {
 	 * the second statement was pure overhead in an isolate that is also serving every subscriber.
 	 */
 	append(event: ChatEventInput): number {
+		if (this.erased) return 0
 		const row = this.sql
 			.exec<CursorRow>(
 				"INSERT INTO events (created_at, payload) VALUES (?, ?) RETURNING seq",
@@ -724,6 +731,17 @@ export class ChatSession {
 		this.transition({ _tag: "Abort", reason: isChatAbortReason(reason) ? reason : "user" })
 	}
 
+	/**
+	 * Erase the conversation for a deleted organization: abort its turn, then drop the heartbeat
+	 * and every row. Idempotent: a later activation finds an empty object and erases it again.
+	 */
+	async erase(): Promise<void> {
+		if (!this.erased) this.transition({ _tag: "Abort", reason: "erased" })
+		this.erased = true
+		await this.ctx.storage.deleteAlarm()
+		await this.ctx.storage.deleteAll()
+	}
+
 	/** Interrupt `messageId`'s fiber if this activation runs it; a straggler's id matches nothing. */
 	private interruptTurn(messageId: string, reason: ChatAbortReason): void {
 		if (this.liveTurn?.messageId === messageId) this.liveTurn.controller.abort(reason)
@@ -742,6 +760,7 @@ export class ChatSession {
 	 * gone, so the slot is released with a terminal event now rather than when it goes stale.
 	 */
 	alarm(): void {
+		if (this.erased) return
 		const slot = this.slot()
 		switch (slot._tag) {
 			case "Idle":
@@ -960,6 +979,13 @@ export const chatSessionRpc = (session: ChatSession) =>
 		// A caller releasing a turn without saying how it ended is ending one that failed.
 		endTurn: (messageId) => Effect.sync(() => void session.endTurn(messageId, TURN_FAILED)),
 		abort: (reason) => Effect.sync(() => session.abort(reason)),
+		// Over RPC like `beginTurn`: the object cannot read its own name, so the caller's id is checked.
+		erase: (input) =>
+			orgIdFromChatSessionId(input.sessionId) === input.orgId
+				? Effect.promise(() => session.erase()).pipe(Effect.as(true))
+				: Effect.logError("[chat.erase] Refused an erase for another org's session").pipe(
+						Effect.as(false),
+					),
 		alarm: () => Effect.sync(() => session.alarm()),
 	}) satisfies ChatSessionRpc
 

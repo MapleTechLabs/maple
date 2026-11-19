@@ -76,6 +76,8 @@ export class DashboardShare extends Schema.Class<DashboardShare>("DashboardShare
 	tokenSuffix: Schema.String,
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
+	/** Absent = never expires. Past it, the link answers like a revoked one. */
+	expiresAt: Schema.optionalKey(IsoDateTimeString),
 }) {}
 
 export class DashboardShareTombstone extends Schema.Class<DashboardShareTombstone>("DashboardShareTombstone")(

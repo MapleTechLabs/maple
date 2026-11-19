@@ -103,7 +103,16 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			return Arr.flatMap(shares, (share) =>
 				share.token === undefined
 					? []
-					: [{ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }],
+					: [
+							{
+								widgetId: share.widgetId ?? null,
+								mode: share.mode,
+								token: share.token,
+								...(share.expiresAt === undefined
+									? undefined
+									: { expiresAt: share.expiresAt }),
+							},
+						],
 			)
 		}).pipe(
 			settleTo((result) =>

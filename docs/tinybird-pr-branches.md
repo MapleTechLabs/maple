@@ -43,7 +43,7 @@ credentials never sit beside PR code:
 The close-event teardown is best effort. The scheduled `cleanup-preview-orphans.yml` workflow runs
 `bun scripts/tinybird-pr-branch.ts sweep`, which removes every `pr_<n>` branch whose PR is closed.
 
-Every `tb` call in the script is `tb --cloud --host … --token …`, never `--branch=`. The CLI
+Every `tb` call in the script is `tb --cloud --host …` with the token in `TB_TOKEN` (never argv), never `--branch=`. The CLI
 resolves `--branch=` through the user-workspaces endpoint, which lists branches only for a human
 login token, so under a workspace token every branch is "not found".
 

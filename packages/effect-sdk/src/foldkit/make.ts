@@ -132,7 +132,8 @@ export interface MapleFoldkitConfig extends MapleClientFlushableConfig {
 	readonly navigationSampleRate?: number | undefined
 	/**
 	 * Span name suffix for a navigation, from the URL path: a route template like
-	 * `/chat/:channelId` or a route name. Default: the path itself.
+	 * `/chat/:channelId` or a route name. Default: the path itself, after URL redaction.
+	 * The result is used as is, so it must not carry ids or other user data.
 	 */
 	readonly routeName?: ((pathname: string) => string) | undefined
 	/**
@@ -224,7 +225,9 @@ export const make = (config: MapleFoldkitConfig): MapleFoldkit => {
 	const scrubArgs = makeArgsScrubber(config.commandArgs)
 	const recent = makeRecentMessages(20)
 	const marks = makeNavigationMarks()
-	const routeOf = (url: FoldkitUrl): string => scrubUrl(config.routeName?.(url.pathname) ?? url.pathname)
+	// A `routeName` result is the app's route label, not a URL: URL sanitizers would mangle it.
+	const routeOf = (url: FoldkitUrl): string =>
+		config.routeName === undefined ? scrubUrl(url.pathname) : config.routeName(url.pathname)
 
 	const layer = Layer.effect(Tracer.Tracer, Effect.map(Effect.tracer, tracing.wrap)).pipe(
 		Layer.provideMerge(telemetry.layer),
