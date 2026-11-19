@@ -3,6 +3,7 @@ import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Context, Effect, Option, Result, Schema, String as Str } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import * as Dialog from "@maple/views/ui/dialog"
+import { MountSelect, Message as SelectMessage } from "@maple/views/ui/select"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as CreateDialog from "./create-dialog"
@@ -215,6 +216,25 @@ describe("delete role dialog", () => {
 			name: ON_CALL.name,
 			reassignTo: { _tag: "BuiltIn", clerkKey: "org:engineer" },
 		})
+	})
+
+	test("its members may move to any other role but Admin, which would promote them all unconfirmed", () => {
+		const { model } = deleting()
+		const withMembers = run(model, [
+			Message.CompletedFetchDeleteMembers({
+				roleId: ON_CALL.id,
+				result: Result.succeed(roleMembers([{ id: "user_grace", name: "Grace Hopper" }])),
+			}),
+			Message.GotReassignMessage({ message: SelectMessage.ClickedTrigger({ selectedIndex: 1 }) }),
+		])
+		scene(
+			{ update, view },
+			given(withMembers),
+			dialogMounted,
+			Mount.resolve(MountSelect, SelectMessage.CompletedMountSelect()),
+			expectView(role("option", { name: "Engineer" })).toExist(),
+			expectView(role("option", { name: "Admin" })).toBeAbsent(),
+		)
 	})
 
 	test("deleted, the list reads again and the toast names the role", () => {
