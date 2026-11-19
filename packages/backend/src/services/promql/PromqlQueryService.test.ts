@@ -143,6 +143,31 @@ describe("PromqlQueryService", () => {
 		}),
 	)
 
+	it.effect("refuses a query whose ranges, offsets or @ widen its reads past the cap, before reading", () =>
+		Effect.gen(function* () {
+			const now = Date.UTC(2026, 0, 1)
+			const refused = (query: string) =>
+				Effect.map(failureOf({ query, startMs: now, endMs: now, stepMs: 0 }), (error) => [
+					error._tag,
+					error.message,
+				])
+			const expected = ["@maple/backend/promql/PromqlBadQueryError", expect.stringMatching(/400 days/)]
+			expect(yield* refused("rate(up[10y])")).toEqual(expected)
+			expect(yield* refused("up offset 500d")).toEqual(expected)
+			expect(yield* refused("up + (up @ 0)")).toEqual(expected)
+			expect(yield* refused("max_over_time(up[1h:1h] offset 450d)")).toEqual(expected)
+			const service = yield* PromqlQueryService
+			const widget = yield* Effect.flip(
+				service.widget(tenant, {
+					query: "rate(up[10y])",
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-01 01:00:00",
+				}),
+			)
+			expect([widget._tag, widget.message]).toEqual(expected)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
 	it.effect("refuses a range query over a range vector or string as a bad query, as Prometheus does", () =>
 		Effect.gen(function* () {
 			const matrix = yield* failureOf({ query: "up[5m]", startMs: 0, endMs: 60_000, stepMs: 15_000 })
