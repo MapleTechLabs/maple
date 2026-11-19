@@ -267,12 +267,12 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
-	it.effect("offers and accepts the cost module for every org", () => {
+	it.effect("offers and accepts the cost and audit modules for every org", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
-			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost"])
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost", "audit"])
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: ["cost"] })
 			assert.deepStrictEqual(created.modules, ["cost"])
 			const cleared = yield* service.update(orgId, created.id, { modules: [] })
@@ -451,6 +451,34 @@ describe("AwsConnectionService", () => {
 			assert.isDefined(keyOf(first.setupScript))
 			assert.strictEqual(keyOf(again.setupScript), keyOf(first.setupScript))
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("a Security scan stack is up to date, and covers the audit log once that is asked for", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			const checked = yield* later(service.check(orgId, created.id))
+			// The attached policies are recorded as they are: nothing implied reads as stale.
+			assert.deepStrictEqual(checked.grantedModules, ["security"])
+			assert.isFalse(checked.setupOutdated)
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			assert.isFalse((yield* later(service.check(orgId, created.id))).setupOutdated)
+
+			// Asking for the audit log too: SecurityAudit already allows CloudTrail, so the check passes.
+			const asked = yield* service.update(orgId, created.id, { modules: ["security", "audit"] })
+			assert.isFalse(asked.setupOutdated)
+			const both = yield* later(service.check(orgId, created.id))
+			assert.isNull(both.lastCheckError)
+			assert.isFalse(both.setupOutdated)
+			// Turning Security scan off leaves its policy attached until the stack is updated.
+			assert.isTrue((yield* service.update(orgId, created.id, { modules: ["audit"] })).setupOutdated)
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
 	})
 
 	it.effect("hands each security connection its own events key, the same on every setup", () => {
