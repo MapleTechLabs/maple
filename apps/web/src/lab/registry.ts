@@ -471,7 +471,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/code-review-rules",
 		title: "Code review rules",
 		description:
-			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on.",
+			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on; `&repo=private` or `&repo=public` shows a repository's rules over them.",
 		kind: "lab",
 		session: "none",
 	},

@@ -280,6 +280,7 @@ const cleanPrReviewConfig = Effect.fn("GithubConnectService.cleanPrReviewConfig"
 		...(config.reviewExternalContributors === undefined
 			? undefined
 			: { reviewExternalContributors: config.reviewExternalContributors }),
+		...(config.mapleToolAccess === undefined ? undefined : { mapleToolAccess: config.mapleToolAccess }),
 		...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
 		...(config.automaticReviewLimit === undefined
 			? undefined
@@ -1168,7 +1169,19 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				repositoryId: VcsRepositoryId,
 				config: PrReviewRepositoryConfig,
 			) {
-				yield* requireRepository(orgId, repositoryId)
+				const repository = yield* requireRepository(orgId, repositoryId)
+				// A public repository's review is world-readable, so its agent never reads telemetry. A
+				// value saved while it was private stays (reviews ignore it), so its other rules still save.
+				if (
+					!repository.isPrivate &&
+					config.mapleToolAccess === true &&
+					(yield* asPersistence(repo.getPrReviewConfig(orgId, repositoryId))).mapleToolAccess !==
+						true
+				) {
+					return yield* new IntegrationsValidationError({
+						message: "Maple tools cannot be turned on for a public repository.",
+					})
+				}
 				const cleaned = yield* cleanPrReviewConfig(config)
 				const ignorePaths = cleaned.ignorePaths ?? []
 				const instructions = cleaned.instructions
