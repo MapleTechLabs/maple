@@ -23,12 +23,12 @@ export interface RoleMembership {
 }
 
 export interface ClerkRolesGatewayApi {
-	/** The organization's public metadata. */
-	readonly organizationMetadata: (orgId: OrgId) => Effect.Effect<unknown, RolesUnavailableError>
+	/** The custom role definitions in the organization's public metadata. */
+	readonly customRoles: (orgId: OrgId) => Effect.Effect<Policy.VersionedCustomRoles, RolesUnavailableError>
 	/** Replace the organization's custom role definitions; other metadata keys stay. */
 	readonly writeCustomRoles: (
 		orgId: OrgId,
-		roles: ReadonlyArray<Policy.StoredCustomRole>,
+		stored: Policy.VersionedCustomRoles,
 	) => Effect.Effect<void, RolesUnavailableError>
 	/** Every membership of the organization, one Clerk call per 100. */
 	readonly memberships: (
@@ -86,18 +86,22 @@ const make = Effect.gen(function* () {
 			? Effect.fail(new RolesUnavailableError({ message: "Roles need Clerk" }))
 			: clerkRequest(spanName, attributes, () => request(clerk)).pipe(Effect.mapError(unavailable))
 
-	const organizationMetadata: ClerkRolesGatewayApi["organizationMetadata"] = (orgId) =>
+	const customRoles: ClerkRolesGatewayApi["customRoles"] = (orgId) =>
 		withClerk("Clerk.organizations.getOrganization", { orgId }, (client) =>
 			client.organizations.getOrganization({ organizationId: orgId }),
-		).pipe(Effect.map((organization) => organization.publicMetadata))
+		).pipe(
+			Effect.map((organization) =>
+				Policy.versionedCustomRolesFromOrgMetadata(organization.publicMetadata),
+			),
+		)
 
 	// Clerk merges public metadata by key, so the region and rollout flags stay as they are. It has
-	// no conditional write: two admins saving at once both succeed and the last write wins.
-	const writeCustomRoles: ClerkRolesGatewayApi["writeCustomRoles"] = (orgId, roles) =>
+	// no conditional write: RolesService re-reads the version just before writing instead.
+	const writeCustomRoles: ClerkRolesGatewayApi["writeCustomRoles"] = (orgId, stored) =>
 		withClerk("Clerk.organizations.updateOrganizationMetadata", { orgId }, (client) =>
 			client.organizations.updateOrganizationMetadata(orgId, {
 				publicMetadata: {
-					[Policy.ORG_ROLES_METADATA_KEY]: { roles } satisfies Policy.StoredCustomRoles,
+					[Policy.ORG_ROLES_METADATA_KEY]: stored satisfies Policy.StoredCustomRoles,
 				},
 			}),
 		).pipe(Effect.asVoid)
@@ -143,7 +147,7 @@ const make = Effect.gen(function* () {
 		).pipe(Effect.asVoid)
 
 	return {
-		organizationMetadata,
+		customRoles,
 		writeCustomRoles,
 		memberships,
 		setMembershipRole,

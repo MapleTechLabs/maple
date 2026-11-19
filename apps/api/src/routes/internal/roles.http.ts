@@ -1,10 +1,16 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleInternalApi, type RoleRef, RolesForbiddenError } from "@maple/domain/http"
+import {
+	CurrentTenant,
+	type CustomRoleResponse,
+	MapleInternalApi,
+	type RoleRef,
+	RolesForbiddenError,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { Array as Arr, Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { RolesService } from "@maple/backend/services/roles/RolesService"
-import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
+import { diffAuditChanges } from "@/routes/v2/audit-changes"
 
 const requirePermission = (permission: Policy.Permission) =>
 	Effect.gen(function* () {
@@ -20,11 +26,12 @@ const requirePermission = (permission: Policy.Permission) =>
 /** How the audit log names a role: the Clerk key of a built-in one, the id of a custom one. */
 const roleKey = (ref: RoleRef): string => (ref._tag === "BuiltIn" ? ref.clerkKey : ref.id)
 
-const roleAuditKeys: ReadonlyArray<"name" | "description" | "permissions"> = [
-	"name",
-	"description",
-	"permissions",
-]
+/** What a role update can change, as the audit log diffs it. */
+const auditedFields = (role: CustomRoleResponse) => ({
+	name: role.name,
+	description: role.description,
+	permissions: role.permissions,
+})
 
 // Every member reads the roles (the Members page names each member's role); only Admin changes them.
 export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (handlers) =>
@@ -55,10 +62,7 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 					const tenant = yield* requirePermission("roles:manage")
 					const { before, role } = yield* roles.update(tenant, params.roleId, payload)
 					yield* recordHttpAudit("role.updated", {
-						changes: diffAuditChanges(
-							pickPresentFields(roleAuditKeys, payload, before),
-							pickPresentFields(roleAuditKeys, payload, role),
-						),
+						changes: diffAuditChanges(auditedFields(before), auditedFields(role)),
 						metadata: { roleId: role.id, name: role.name, memberCount: role.memberCount },
 					})
 					return role

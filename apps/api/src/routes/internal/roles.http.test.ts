@@ -43,19 +43,34 @@ afterEach(() => {
 
 const makeHarness = (role: string) => {
 	const creates: Array<string> = []
-	const audited: Array<Pick<AuditLogRecordInput, "action" | "metadata">> = []
+	const audited: Array<Pick<AuditLogRecordInput, "action" | "changes" | "metadata">> = []
 	const unused = () => Effect.die("unused")
 	const service = Layer.succeed(RolesService, {
 		list: unused,
 		members: unused,
 		create: (_tenant, request) => Effect.sync(() => (creates.push(request.name), created)),
-		update: unused,
+		update: (_tenant, _roleId, request) =>
+			Effect.succeed({
+				before: created,
+				role: new CustomRoleResponse({
+					...created,
+					name: request.name,
+					description: request.description,
+				}),
+			}),
 		delete: unused,
 		setMemberRole: unused,
 	})
 	const audit = Layer.succeed(AuditLogService, {
 		record: (input) =>
-			Effect.sync(() => void audited.push({ action: input.action, metadata: input.metadata })),
+			Effect.sync(
+				() =>
+					void audited.push({
+						action: input.action,
+						metadata: input.metadata,
+						...(input.changes !== undefined ? { changes: input.changes } : undefined),
+					}),
+			),
 		list: () => Effect.die("unused"),
 	})
 	const roleName = Schema.decodeSync(RoleName)(role)
@@ -85,19 +100,21 @@ const makeHarness = (role: string) => {
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	handlers.push(() => void dispose())
 
-	const createRole = async () => {
+	const send = async (method: string, path: string, body: unknown) => {
 		const response = await handler(
-			new Request("http://maple.test/internal/roles", {
-				method: "POST",
+			new Request(`http://maple.test/internal/roles${path}`, {
+				method,
 				headers: { authorization: "Bearer test-token", "content-type": "application/json" },
-				body: JSON.stringify({ name: "On-call", permissions: ["telemetry:read"] }),
+				body: JSON.stringify(body),
 			}),
 			Context.empty() as never,
 		)
 		return { status: response.status, body: await response.json() }
 	}
 
-	return { createRole, creates, audited }
+	const createRole = () => send("POST", "", { name: "On-call", permissions: ["telemetry:read"] })
+
+	return { send, createRole, creates, audited }
 }
 
 describe("/internal/roles", () => {
@@ -120,5 +137,29 @@ describe("/internal/roles", () => {
 				metadata: { roleId: "role_oncall000000", name: "On-call", permissions: "telemetry:read" },
 			},
 		])
+	})
+
+	it("audits only the fields an update changed", async () => {
+		const harness = makeHarness("org:admin")
+		const response = await harness.send("PATCH", "/role_oncall000000", {
+			name: "Responders",
+			description: "",
+			permissions: ["telemetry:read"],
+		})
+		expect(response.status).toBe(200)
+		expect(harness.audited).toEqual([
+			{
+				action: "role.updated",
+				changes: { fields: ["name"], before: { name: "On-call" }, after: { name: "Responders" } },
+				metadata: { roleId: "role_oncall000000", name: "Responders", memberCount: 0 },
+			},
+		])
+	})
+
+	it("refuses an update that leaves a field out", async () => {
+		const harness = makeHarness("org:admin")
+		const response = await harness.send("PATCH", "/role_oncall000000", { name: "Responders" })
+		expect(response.status).toBe(400)
+		expect(harness.audited).toEqual([])
 	})
 })

@@ -148,7 +148,10 @@ export class RoleMemberNotFoundError extends HttpTaggedError<RoleMemberNotFoundE
 	},
 ) {}
 
-/** The request is well formed but cannot be done: a taken name, the role limit, a role still held. */
+/**
+ * The request is well formed but cannot be done: a taken name, the role limit, a role still held,
+ * or other admins changing the roles at the same moment.
+ */
 export class RoleConflictError extends HttpTaggedError<RoleConflictError>()(
 	"@maple/http/roles/RoleConflictError",
 	{
@@ -158,9 +161,9 @@ export class RoleConflictError extends HttpTaggedError<RoleConflictError>()(
 			"limit_reached",
 			"in_use",
 			"not_grantable",
-			"exceeds_caller",
 			"last_admin",
 			"self",
+			"concurrent_edit",
 		]),
 	},
 	{

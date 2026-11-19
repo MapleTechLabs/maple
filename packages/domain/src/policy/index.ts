@@ -38,6 +38,8 @@ export {
 	ORG_ROLES_METADATA_KEY,
 	StoredCustomRole,
 	StoredCustomRoles,
+	type VersionedCustomRoles,
+	versionedCustomRolesFromOrgMetadata,
 } from "./custom-roles"
 
 export const allPermissions: ReadonlyArray<Permission> = Rec.keys(permissions)

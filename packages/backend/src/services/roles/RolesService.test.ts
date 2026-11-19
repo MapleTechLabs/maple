@@ -4,6 +4,7 @@ import {
 	OrgId,
 	RoleConflictError,
 	RoleMemberNotFoundError,
+	RoleNotFoundError,
 	RolesUnavailableError,
 	UpdateRoleRequest,
 	UserId,
@@ -50,12 +51,17 @@ const onCallPermissions: ReadonlyArray<Policy.Permission> = [
 	"oncall:manage",
 ]
 
-/** One Clerk organization in memory, with every write recorded. */
+/**
+ * One Clerk organization in memory, with every write recorded. `onRolesRead` runs, in order, one
+ * per read of the definitions, to land another admin's change between two of them.
+ */
 const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
 	const state = {
+		version: 0,
 		roles: [...roles],
 		members: new Map(Arr.map(members, (member) => [member.userId, member] as const)),
 		writes: [] as Array<string>,
+		onRolesRead: [] as Array<() => void>,
 	}
 	const toMembership = (member: FakeMember): RoleMembership => ({
 		userId: user(member.userId),
@@ -69,13 +75,22 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 		const member = state.members.get(userId)
 		if (member !== undefined) state.members.set(userId, edit(member))
 	}
+	/** Another admin's write to the definitions. */
+	const writeElsewhere = (next: ReadonlyArray<Policy.StoredCustomRole>) => {
+		state.version += 1
+		state.roles = [...next]
+	}
 	const layer = Layer.succeed(ClerkRolesGateway, {
-		organizationMetadata: () =>
-			Effect.sync(() => ({ region: "eu", [Policy.ORG_ROLES_METADATA_KEY]: { roles: state.roles } })),
+		customRoles: () =>
+			Effect.sync(() => {
+				state.onRolesRead.shift()?.()
+				return { version: state.version, roles: state.roles }
+			}),
 		writeCustomRoles: (_orgId, next) =>
 			Effect.sync(() => {
-				state.writes.push("roles")
-				state.roles = [...next]
+				state.writes.push(`roles@${next.version}`)
+				state.version = next.version
+				state.roles = [...next.roles]
 			}),
 		memberships: () => Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
 		setMembershipRole: (_orgId, userId, role) =>
@@ -93,7 +108,7 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 	})
 	const roleOf = (userId: string) => state.members.get(userId)?.role
 	const customOf = (userId: string) => state.members.get(userId)?.custom
-	return { state, layer, roleOf, customOf }
+	return { state, layer, roleOf, customOf, writeElsewhere }
 }
 
 const recordingRevocation = () => {
@@ -179,6 +194,28 @@ describe("RolesService.list", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("lists a built-in role's holders by its name, leaving custom holders out", () => {
+		const { layer } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[
+				{ userId: "user_admin", role: "org:admin" },
+				{ userId: "user_ana", role: "org:member" },
+				{ userId: "user_ben", role: "org:member" },
+				onCallHolder("user_cat"),
+			],
+		)
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			const holders = yield* roles.members(adminTenant, "member")
+			assert.deepStrictEqual(
+				Arr.map(holders.members, (member) => member.userId),
+				["user_ana", "user_ben"],
+			)
+			const engineers = yield* roles.members(adminTenant, "engineer")
+			assert.deepStrictEqual(engineers.members, [])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("lists a custom role's holders and refuses a role that does not exist", () => {
 		const { layer } = setup(
 			[stored(ON_CALL, "On-call", onCallPermissions)],
@@ -250,22 +287,48 @@ describe("RolesService.create", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("refuses a permission custom roles may not hold, and one the caller lacks", () => {
+	it.effect("refuses a permission custom roles may not hold", () => {
 		const { layer, clerk } = setup([], [])
-		const engineer = {
-			orgId: ORG,
-			userId: user("user_eng"),
-			permissions: Policy.grantsOf(["org:engineer"]),
-		}
 		return Effect.gen(function* () {
-			const roles = yield* RolesService
 			assert.strictEqual(
-				yield* conflictReason(roles.create(adminTenant, request("Managers", ["members:manage"]))),
+				yield* conflictReason(
+					(yield* RolesService).create(adminTenant, request("Managers", ["members:manage"])),
+				),
 				"not_grantable",
 			)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("redoes the edit from a fresh read when another write lands first, keeping both", () => {
+		const { layer, clerk } = setup([], [])
+		// Between this create's read and its write, another admin adds a role.
+		clerk.state.onRolesRead.push(
+			() => undefined,
+			() => clerk.writeElsewhere([stored(VIEWER, "Viewer", ["telemetry:read"])]),
+		)
+		return Effect.gen(function* () {
+			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			assert.deepStrictEqual(
+				Arr.map(clerk.state.roles, (role) => role.id),
+				[VIEWER, created.id],
+			)
+			assert.deepStrictEqual(clerk.state.writes, ["roles@2"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("gives up with concurrent_edit when other writes keep landing first", () => {
+		const { layer, clerk } = setup([], [])
+		for (let attempt = 0; attempt < 3; attempt++) {
+			clerk.state.onRolesRead.push(
+				() => undefined,
+				() => clerk.writeElsewhere(clerk.state.roles),
+			)
+		}
+		return Effect.gen(function* () {
 			assert.strictEqual(
-				yield* conflictReason(roles.create(engineer, request("Billing", ["billing:manage"]))),
-				"exceeds_caller",
+				yield* conflictReason((yield* RolesService).create(adminTenant, request("On-call"))),
+				"concurrent_edit",
 			)
 			assert.deepStrictEqual(clerk.state.writes, [])
 		}).pipe(Effect.provide(layer))
@@ -283,7 +346,7 @@ describe("RolesService.update", () => {
 			const { before, role } = yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ permissions: narrowed }),
+				new UpdateRoleRequest({ name: "On-call", description: "", permissions: narrowed }),
 			)
 			assert.deepStrictEqual(before.permissions, [
 				"telemetry:read",
@@ -320,11 +383,41 @@ describe("RolesService.update", () => {
 			const { role } = yield* (yield* RolesService).update(
 				adminTenant,
 				ON_CALL,
-				new UpdateRoleRequest({ name: "Responders" }),
+				new UpdateRoleRequest({
+					name: "Responders",
+					description: "",
+					permissions: onCallPermissions,
+				}),
 			)
 			assert.strictEqual(role.name, "Responders")
-			assert.deepStrictEqual(clerk.state.writes, ["roles"])
+			assert.deepStrictEqual(clerk.state.writes, ["roles@1"])
 			assert.deepStrictEqual(revocation.demoted, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("narrows a holder put on the role, with its old permissions, while the update saved", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[{ userId: "user_ana", role: "org:member" }],
+		)
+		// Another admin moves Ana onto On-call from the definition as it was, just before this save.
+		clerk.state.onRolesRead.push(
+			() => undefined,
+			() => clerk.state.members.set("user_ana", onCallHolder("user_ana")),
+		)
+		const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read"]
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				ON_CALL,
+				new UpdateRoleRequest({ name: "On-call", description: "", permissions: narrowed }),
+			)
+			assert.strictEqual(role.memberCount, 1)
+			assert.deepStrictEqual(clerk.customOf("user_ana"), {
+				id: ON_CALL,
+				permissions: Policy.encodePermissions(narrowed),
+			})
+			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_ana", grants: narrowed }])
 		}).pipe(Effect.provide(layer))
 	})
 })
@@ -369,6 +462,47 @@ describe("RolesService.delete", () => {
 			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_cat", grants: ["telemetry:read"] }])
 		}).pipe(Effect.provide(layer))
 	})
+
+	it.effect("refuses to move holders to a role deleted since the page loaded, and moves no one", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const missing = yield* Effect.flip(
+				(yield* RolesService).delete(adminTenant, ON_CALL, { _tag: "Custom", id: VIEWER }),
+			)
+			assert.instanceOf(missing, RoleNotFoundError)
+			assert.strictEqual(missing.roleId, VIEWER)
+			assert.deepStrictEqual(clerk.state.writes, [])
+			assert.strictEqual(clerk.customOf("user_cat")?.id, ON_CALL)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("moves a member put on the role while it was removed along with the others", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat"), { userId: "user_ana", role: "org:member" }],
+		)
+		// Another admin puts Ana on On-call between this delete's version check and its write.
+		clerk.state.onRolesRead.push(
+			() => undefined,
+			() => undefined,
+			() => clerk.state.members.set("user_ana", onCallHolder("user_ana")),
+		)
+		return Effect.gen(function* () {
+			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, {
+				_tag: "BuiltIn",
+				clerkKey: "org:member",
+			})
+			assert.strictEqual(deleted.moved, 2)
+			assert.deepStrictEqual(
+				[clerk.roleOf("user_cat"), clerk.roleOf("user_ana")],
+				["org:member", "org:member"],
+			)
+			assert.strictEqual(clerk.customOf("user_ana"), undefined)
+		}).pipe(Effect.provide(layer))
+	})
 })
 
 describe("RolesService.setMemberRole", () => {
@@ -401,6 +535,35 @@ describe("RolesService.setMemberRole", () => {
 			assert.deepStrictEqual(revocation.demoted, [
 				{ userId: "user_ana", grants: change.member.permissions },
 			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("rewrites the member to the role's permissions when it was narrowed during the move", () => {
+		const { layer, clerk, revocation } = setup([stored(ON_CALL, "On-call", onCallPermissions)], members)
+		// Another admin narrows On-call after this move read it.
+		clerk.state.onRolesRead.push(
+			() => undefined,
+			() => clerk.writeElsewhere([stored(ON_CALL, "On-call", ["telemetry:read"])]),
+		)
+		return Effect.gen(function* () {
+			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_ana"), {
+				_tag: "Custom",
+				id: ON_CALL,
+			})
+			assert.deepStrictEqual(change.member.permissions, ["telemetry:read"])
+			assert.deepStrictEqual(
+				clerk.customOf("user_ana")?.permissions,
+				Policy.encodePermissions(["telemetry:read"]),
+			)
+			// The role's other holder follows too.
+			assert.deepStrictEqual(
+				clerk.customOf("user_cat")?.permissions,
+				Policy.encodePermissions(["telemetry:read"]),
+			)
+			assert.deepStrictEqual(
+				Arr.filter(revocation.demoted, (entry) => entry.userId === "user_ana").at(-1),
+				{ userId: "user_ana", grants: ["telemetry:read"] },
+			)
 		}).pipe(Effect.provide(layer))
 	})
 

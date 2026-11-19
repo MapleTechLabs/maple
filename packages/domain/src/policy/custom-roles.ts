@@ -27,7 +27,7 @@ export const CustomRoleName = Schema.String.check(Schema.isTrimmed(), Schema.isM
 export const CustomRoleDescription = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(160))
 
 const permissionByCode: ReadonlyMap<number, Permission> = new Map(
-	Arr.map(Rec.toEntries(permissions), ([key, spec]) => [spec.code, key as Permission] as const),
+	Arr.map(Rec.toEntries(permissions), ([key, spec]) => [spec.code, key] as const),
 )
 
 /** Whether a custom role may hold `permission`. Members, roles and the organization stay with Admin. */
@@ -63,9 +63,12 @@ export const StoredCustomRole = Schema.Struct({
 export type StoredCustomRole = typeof StoredCustomRole.Type
 
 export const StoredCustomRoles = Schema.Struct({
+	/** Bumped by every write, so a write can tell another landed since it read. Absent reads as 0. */
+	version: Schema.optionalKey(Schema.Int),
 	roles: Schema.Array(StoredCustomRole),
 })
 export type StoredCustomRoles = typeof StoredCustomRoles.Type
+export type VersionedCustomRoles = Required<StoredCustomRoles>
 
 /** What a membership on a custom role carries. */
 export const MembershipRoleMetadata = Schema.Struct({
@@ -74,22 +77,25 @@ export const MembershipRoleMetadata = Schema.Struct({
 })
 export type MembershipRoleMetadata = typeof MembershipRoleMetadata.Type
 
-const decodeStoredRoles = Schema.decodeUnknownOption(StoredCustomRoles)
-const decodeMembershipRole = Schema.decodeUnknownOption(MembershipRoleMetadata)
+// Each reads only its own key: the rest of the metadata (region, feature flags) is ignored.
+const decodeStoredRoles = Schema.decodeUnknownOption(Schema.Struct({ [ORG_ROLES_METADATA_KEY]: StoredCustomRoles }))
+const decodeMembershipRole = Schema.decodeUnknownOption(
+	Schema.Struct({ [MEMBERSHIP_ROLE_METADATA_KEY]: MembershipRoleMetadata }),
+)
 
-const field = (metadata: unknown, key: string): unknown =>
-	typeof metadata === "object" && metadata !== null ? (metadata as Record<string, unknown>)[key] : undefined
-
-/** The custom roles an organization's public metadata defines; none when absent or unreadable. */
-export const customRolesFromOrgMetadata = (metadata: unknown): ReadonlyArray<StoredCustomRole> =>
-	Option.match(decodeStoredRoles(field(metadata, ORG_ROLES_METADATA_KEY)), {
-		onNone: () => [],
-		onSome: (stored) => stored.roles,
+/** The custom roles an organization's public metadata defines; none, at version 0, when unreadable. */
+export const versionedCustomRolesFromOrgMetadata = (metadata: unknown): VersionedCustomRoles =>
+	Option.match(decodeStoredRoles(metadata), {
+		onNone: () => ({ version: 0, roles: [] }),
+		onSome: ({ [ORG_ROLES_METADATA_KEY]: stored }) => ({ version: stored.version ?? 0, roles: stored.roles }),
 	})
+
+export const customRolesFromOrgMetadata = (metadata: unknown): ReadonlyArray<StoredCustomRole> =>
+	versionedCustomRolesFromOrgMetadata(metadata).roles
 
 /** The custom role a membership's public metadata names, if it names one that decodes. */
 export const membershipRoleFromMetadata = (metadata: unknown): Option.Option<MembershipRoleMetadata> =>
-	decodeMembershipRole(field(metadata, MEMBERSHIP_ROLE_METADATA_KEY))
+	Option.map(decodeMembershipRole(metadata), (decoded) => decoded[MEMBERSHIP_ROLE_METADATA_KEY])
 
 /** The permissions a membership's public metadata grants an `org:custom` member. */
 export const customPermissionsFromMembershipMetadata = (metadata: unknown): ReadonlyArray<Permission> =>

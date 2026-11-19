@@ -11,13 +11,25 @@ import {
 	RoleMemberResponse,
 	RoleMembersResponse,
 	RoleNotFoundError,
+	type RoleKey,
 	type RoleRef,
 	RolesUnavailableError,
 	type UpdateRoleRequest,
 	type UserId,
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Random, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Order,
+	Random,
+	Schema,
+	String as Str,
+} from "effect"
 import {
 	type MembershipRevocationError,
 	MembershipRevocationService,
@@ -25,15 +37,19 @@ import {
 import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
 
 /**
- * Custom roles and who holds which role. Clerk is the store (`Policy.customRolesFromOrgMetadata`):
+ * Custom roles and who holds which role. Clerk is the store (`Policy.versionedCustomRolesFromOrgMetadata`):
  * the definitions sit in the organization's public metadata, and an `org:custom` member carries the
  * role's id and a copy of its permissions on their membership. Every write that can narrow what
  * someone holds ends with `demoteMembership`, so pinned credentials and membership caches follow at
  * once rather than when Clerk's webhook arrives.
+ *
+ * Two admins can edit at once and Clerk has no locks: the definitions carry a version that every
+ * write checks and bumps (`editRoles`), and every write to a role or onto one ends by re-reading
+ * its holders (`reconcileHolders`).
  */
 
 /** What the roles endpoints read off the caller. */
-export type RolesTenant = Pick<CurrentTenant.TenantContext, "orgId" | "userId" | "permissions">
+export type RolesTenant = Pick<CurrentTenant.TenantContext, "orgId" | "userId">
 
 export interface RoleUpdate {
 	readonly before: CustomRoleResponse
@@ -57,13 +73,14 @@ export interface RolesServiceApi {
 	readonly list: (tenant: RolesTenant) => Effect.Effect<RoleListResponse, RolesUnavailableError>
 	readonly members: (
 		tenant: RolesTenant,
-		roleId: Policy.CustomRoleId,
+		/** A custom role's id or a built-in role's name. */
+		roleKey: RoleKey,
 	) => Effect.Effect<RoleMembersResponse, RolesUnavailableError | RoleNotFoundError>
 	readonly create: (
 		tenant: RolesTenant,
 		request: CreateRoleRequest,
 	) => Effect.Effect<CustomRoleResponse, RolesUnavailableError | RoleConflictError>
-	/** Holders whose membership carries other permissions are rewritten, then demoted. */
+	/** Holders whose membership then carries other permissions are rewritten, then demoted. */
 	readonly update: (
 		tenant: RolesTenant,
 		roleId: Policy.CustomRoleId,
@@ -85,28 +102,57 @@ export interface RolesServiceApi {
 	>
 }
 
-const ADMIN_CLERK_KEY = "org:admin"
+/** How many times a write to the definitions is tried while other writes keep landing first. */
+const MAX_EDIT_ATTEMPTS = 3
+
+/** Where the members of a role that is gone move: the least access, as an unknown role reads. */
+const ORPHANS_TO = { _tag: "BuiltIn", clerkKey: "org:analyst" } as const satisfies RoleRef
 
 /** A role a member can be moved to, resolved to what Clerk stores and what it grants. */
 interface AssignTarget {
-	readonly ref: RoleRef
 	readonly clerkKey: Policy.AssignableClerkRole
 	/** The membership metadata for a custom role; `null` clears it for a built-in one. */
 	readonly metadata: Policy.MembershipRoleMetadata | null
 	readonly grants: Policy.Grants
 }
 
+/** The definitions to write, and what the edit answers. */
+interface RolesEdit<A> {
+	readonly next: ReadonlyArray<Policy.StoredCustomRole>
+	readonly result: A
+}
+
 const conflict = (reason: RoleConflictError["reason"], message: string) =>
 	new RoleConflictError({ reason, message })
+
+const isConflict = Schema.is(RoleConflictError)
+
+const isConcurrentEdit = (error: unknown): boolean => isConflict(error) && error.reason === "concurrent_edit"
 
 const notFound = (roleId: Policy.CustomRoleId) => new RoleNotFoundError({ roleId, message: "No such role." })
 
 const revocationUnavailable = (error: MembershipRevocationError) =>
 	new RolesUnavailableError({ message: "Could not apply the role change to credentials", cause: error })
 
+const isAdmin = (clerkKey: string): boolean =>
+	Option.exists(Policy.builtInRoleOf(clerkKey), (role) => role.role === "admin")
+
 /** What a custom role's stored codes grant, in catalog order. */
 const customGrants = (codes: ReadonlyArray<number>): Policy.Grants =>
 	Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], Policy.decodeCustomPermissions(codes))
+
+const builtInTarget = (ref: Extract<RoleRef, { _tag: "BuiltIn" }>): AssignTarget => ({
+	clerkKey: ref.clerkKey,
+	metadata: null,
+	grants: Policy.grantsOf([ref.clerkKey]),
+})
+
+const customTarget = (role: Policy.StoredCustomRole) =>
+	({
+		clerkKey: Policy.CUSTOM_ROLE_CLERK_KEY,
+		metadata: { id: role.id, permissions: role.permissions },
+		grants: customGrants(role.permissions),
+	}) satisfies AssignTarget
 
 /** The custom role an `org:custom` membership names. */
 const heldCustomRole = (membership: RoleMembership): Option.Option<Policy.MembershipRoleMetadata> =>
@@ -135,47 +181,70 @@ const toCustomRole = (role: Policy.StoredCustomRole, memberCount: number) =>
 
 const byName = Order.mapInput(Order.String, (role: Policy.StoredCustomRole) => Str.toLowerCase(role.name))
 
+const findRole = (roles: ReadonlyArray<Policy.StoredCustomRole>, roleId: Policy.CustomRoleId) =>
+	Effect.fromOption(
+		Arr.findFirst(roles, (role) => role.id === roleId),
+		() => notFound(roleId),
+	)
+
+const resolveTarget = (roles: ReadonlyArray<Policy.StoredCustomRole>, ref: RoleRef) =>
+	ref._tag === "BuiltIn"
+		? Effect.succeed<AssignTarget>(builtInTarget(ref))
+		: Effect.map(findRole(roles, ref.id), (role): AssignTarget => customTarget(role))
+
+/** roles:manage is Admin's alone, so the caller holds every permission; only the grantable ones are a question. */
+const checkGrantable = (permissions: ReadonlyArray<Policy.Permission>) =>
+	Arr.every(permissions, Policy.grantableToCustomRoles)
+		? Effect.void
+		: Effect.fail(conflict("not_grantable", "Members, roles and the organization stay with Admin."))
+
+const checkName = (
+	roles: ReadonlyArray<Policy.StoredCustomRole>,
+	name: string,
+	except?: Policy.CustomRoleId,
+) => {
+	const wanted = Str.toLowerCase(name)
+	const taken =
+		Arr.some(Policy.builtInRoles, (role) => Str.toLowerCase(role.label) === wanted) ||
+		Arr.some(roles, (role) => role.id !== except && Str.toLowerCase(role.name) === wanted)
+	return taken ? Effect.fail(conflict("name_taken", `A role named ${name} already exists.`)) : Effect.void
+}
+
 const make = Effect.gen(function* () {
 	const clerk = yield* ClerkRolesGateway
 	const revocation = yield* MembershipRevocationService
 
-	const readRoles = (orgId: OrgId) =>
-		clerk.organizationMetadata(orgId).pipe(Effect.map(Policy.customRolesFromOrgMetadata))
-
 	const readState = (orgId: OrgId) =>
-		Effect.all({ roles: readRoles(orgId), memberships: clerk.memberships(orgId) }, { concurrency: 2 })
-
-	const findRole = (roles: ReadonlyArray<Policy.StoredCustomRole>, roleId: Policy.CustomRoleId) =>
-		Effect.fromOption(
-			Arr.findFirst(roles, (role) => role.id === roleId),
-			() => notFound(roleId),
+		Effect.all(
+			{
+				roles: Effect.map(clerk.customRoles(orgId), (stored) => stored.roles),
+				memberships: clerk.memberships(orgId),
+			},
+			{ concurrency: 2 },
 		)
 
-	const checkPermissions = (tenant: RolesTenant, permissions: ReadonlyArray<Policy.Permission>) => {
-		if (!Arr.every(permissions, Policy.grantableToCustomRoles)) {
-			return Effect.fail(
-				conflict("not_grantable", "Members, roles and the organization stay with Admin."),
-			)
-		}
-		if (Policy.exceeds(permissions, tenant.permissions)) {
-			return Effect.fail(conflict("exceeds_caller", "A role can only hold permissions you hold."))
-		}
-		return Effect.void
-	}
-
-	const checkName = (
-		roles: ReadonlyArray<Policy.StoredCustomRole>,
-		name: string,
-		except?: Policy.CustomRoleId,
-	) => {
-		const wanted = Str.toLowerCase(name)
-		const taken =
-			Arr.some(Policy.builtInRoles, (role) => Str.toLowerCase(role.label) === wanted) ||
-			Arr.some(roles, (role) => role.id !== except && Str.toLowerCase(role.name) === wanted)
-		return taken
-			? Effect.fail(conflict("name_taken", `A role named ${name} already exists.`))
-			: Effect.void
-	}
+	/**
+	 * Write the definitions `edit` derives from the list Clerk holds. Clerk has no conditional write,
+	 * so the version is re-read just before writing; when another write landed in between, the edit
+	 * is redone from the fresh list, at most {@link MAX_EDIT_ATTEMPTS} times in all.
+	 */
+	const editRoles = <A, E>(
+		orgId: OrgId,
+		edit: (roles: ReadonlyArray<Policy.StoredCustomRole>) => Effect.Effect<RolesEdit<A>, E>,
+	) =>
+		Effect.gen(function* () {
+			const { version, roles } = yield* clerk.customRoles(orgId)
+			const { next, result } = yield* edit(roles)
+			const latest = yield* clerk.customRoles(orgId)
+			if (latest.version !== version) {
+				return yield* conflict(
+					"concurrent_edit",
+					"Another admin changed the roles at the same time. Try again.",
+				)
+			}
+			yield* clerk.writeCustomRoles(orgId, { version: version + 1, roles: next })
+			return result
+		}).pipe(Effect.retry({ times: MAX_EDIT_ATTEMPTS - 1, while: isConcurrentEdit }))
 
 	// Twelve base-36 digits: [a-z0-9].
 	const newRoleId = Effect.map(
@@ -188,21 +257,6 @@ const make = Effect.gen(function* () {
 				)}`,
 			),
 	)
-
-	const resolveTarget = (roles: ReadonlyArray<Policy.StoredCustomRole>, ref: RoleRef) =>
-		ref._tag === "BuiltIn"
-			? Effect.succeed<AssignTarget>({
-					ref,
-					clerkKey: ref.clerkKey,
-					metadata: null,
-					grants: Policy.grantsOf([ref.clerkKey]),
-				})
-			: Effect.map(findRole(roles, ref.id), (role): AssignTarget => ({
-					ref,
-					clerkKey: Policy.CUSTOM_ROLE_CLERK_KEY,
-					metadata: { id: role.id, permissions: role.permissions },
-					grants: customGrants(role.permissions),
-				}))
 
 	const demote = (orgId: OrgId, userId: UserId, grants: Policy.Grants) =>
 		revocation.demoteMembership(orgId, userId, grants).pipe(Effect.mapError(revocationUnavailable))
@@ -223,6 +277,51 @@ const make = Effect.gen(function* () {
 			}
 			yield* demote(orgId, userId, target.grants)
 		})
+
+	/**
+	 * Bring the holders of `roleId` in line with the definition Clerk holds now. Every write to a role
+	 * or onto one ends here, after its own write, so of two admins racing the later always sees the
+	 * other's change. Holders carrying other codes are rewritten and demoted, not only after a
+	 * permission change: a rewrite that failed half way is finished by the next save. If the role is
+	 * gone its holders move to `orphansTo`, or to Analyst when that is gone too.
+	 */
+	const reconcileHolders = Effect.fn("RolesService.reconcileHolders")(function* (
+		orgId: OrgId,
+		roleId: Policy.CustomRoleId,
+		orphansTo: RoleRef,
+	) {
+		const { roles, memberships } = yield* readState(orgId)
+		const holders = holdersOf(memberships, roleId)
+		const role = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
+		if (Option.isSome(role)) {
+			const target = customTarget(role.value)
+			const stale = Arr.filter(holders, (holder) =>
+				Option.exists(
+					heldCustomRole(holder),
+					(held) => !sameCodes(held.permissions, role.value.permissions),
+				),
+			)
+			yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
+			yield* Effect.forEach(
+				stale,
+				(holder) =>
+					clerk
+						.setMembershipCustomRole(orgId, holder.userId, target.metadata)
+						.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
+				{ concurrency: 4, discard: true },
+			)
+			return { role, holders: holders.length }
+		}
+		const target = yield* resolveTarget(roles, orphansTo).pipe(
+			Effect.orElseSucceed(() => builtInTarget(ORPHANS_TO)),
+		)
+		yield* Effect.annotateCurrentSpan({ "maple.role.holders_moved": holders.length })
+		yield* Effect.forEach(holders, (holder) => assign(orgId, holder.userId, target), {
+			concurrency: 4,
+			discard: true,
+		})
+		return { role, holders: holders.length }
+	})
 
 	const list = Effect.fn("RolesService.list")(function* (tenant: RolesTenant) {
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
@@ -249,16 +348,17 @@ const make = Effect.gen(function* () {
 		})
 	})
 
-	const members = Effect.fn("RolesService.members")(function* (
-		tenant: RolesTenant,
-		roleId: Policy.CustomRoleId,
-	) {
-		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.role.id": roleId })
+	const members = Effect.fn("RolesService.members")(function* (tenant: RolesTenant, roleKey: RoleKey) {
+		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.role.id": roleKey })
 		const { roles, memberships } = yield* readState(tenant.orgId)
-		yield* findRole(roles, roleId)
+		const holders = Schema.is(Policy.CustomRoleId)(roleKey)
+			? yield* Effect.as(findRole(roles, roleKey), holdersOf(memberships, roleKey))
+			: Arr.filter(memberships, (membership) =>
+					Option.exists(Policy.builtInRoleOf(membership.role), (role) => role.role === roleKey),
+				)
 		return new RoleMembersResponse({
 			members: Arr.map(
-				holdersOf(memberships, roleId),
+				holders,
 				(holder) =>
 					new RoleMemberResponse({
 						userId: holder.userId,
@@ -275,26 +375,29 @@ const make = Effect.gen(function* () {
 		request: CreateRoleRequest,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
-		yield* checkPermissions(tenant, request.permissions)
-		const roles = yield* readRoles(tenant.orgId)
-		yield* checkName(roles, request.name)
-		if (roles.length >= Policy.MAX_CUSTOM_ROLES) {
-			return yield* conflict(
-				"limit_reached",
-				`An organization can define up to ${Policy.MAX_CUSTOM_ROLES} custom roles.`,
-			)
-		}
-		const now = yield* Clock.currentTimeMillis
-		const role: Policy.StoredCustomRole = {
-			id: yield* newRoleId,
-			name: request.name,
-			description: request.description ?? "",
-			permissions: Policy.encodePermissions(request.permissions),
-			createdAt: now,
-			updatedAt: now,
-		}
+		yield* checkGrantable(request.permissions)
+		const role = yield* editRoles(tenant.orgId, (roles) =>
+			Effect.gen(function* () {
+				yield* checkName(roles, request.name)
+				if (roles.length >= Policy.MAX_CUSTOM_ROLES) {
+					return yield* conflict(
+						"limit_reached",
+						`An organization can define up to ${Policy.MAX_CUSTOM_ROLES} custom roles.`,
+					)
+				}
+				const now = yield* Clock.currentTimeMillis
+				const role: Policy.StoredCustomRole = {
+					id: yield* newRoleId,
+					name: request.name,
+					description: request.description ?? "",
+					permissions: Policy.encodePermissions(request.permissions),
+					createdAt: now,
+					updatedAt: now,
+				}
+				return { next: [...roles, role], result: role }
+			}),
+		)
 		yield* Effect.annotateCurrentSpan({ "maple.role.id": role.id })
-		yield* clerk.writeCustomRoles(tenant.orgId, [...roles, role])
 		return toCustomRole(role, 0)
 	})
 
@@ -304,45 +407,27 @@ const make = Effect.gen(function* () {
 		request: UpdateRoleRequest,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.role.id": roleId })
-		const { roles, memberships } = yield* readState(tenant.orgId)
-		const current = yield* findRole(roles, roleId)
-		if (request.permissions !== undefined) yield* checkPermissions(tenant, request.permissions)
-		if (request.name !== undefined) yield* checkName(roles, request.name, roleId)
-
-		const next: Policy.StoredCustomRole = {
-			...current,
-			name: request.name ?? current.name,
-			description: request.description ?? current.description,
-			permissions:
-				request.permissions === undefined
-					? current.permissions
-					: Policy.encodePermissions(request.permissions),
-			updatedAt: yield* Clock.currentTimeMillis,
-		}
-		const holders = holdersOf(memberships, roleId)
-		// Every holder whose membership carries other codes, not only on a permission change: a
-		// rewrite that failed half way is finished by the next save.
-		const stale = Arr.filter(holders, (holder) =>
-			Option.exists(heldCustomRole(holder), (held) => !sameCodes(held.permissions, next.permissions)),
+		yield* checkGrantable(request.permissions)
+		const { before, after } = yield* editRoles(tenant.orgId, (roles) =>
+			Effect.gen(function* () {
+				const current = yield* findRole(roles, roleId)
+				yield* checkName(roles, request.name, roleId)
+				const next: Policy.StoredCustomRole = {
+					...current,
+					name: request.name,
+					description: request.description,
+					permissions: Policy.encodePermissions(request.permissions),
+					updatedAt: yield* Clock.currentTimeMillis,
+				}
+				return {
+					next: Arr.map(roles, (role) => (role.id === roleId ? next : role)),
+					result: { before: current, after: next },
+				}
+			}),
 		)
-		yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
-		const metadata: Policy.MembershipRoleMetadata = { id: roleId, permissions: next.permissions }
-		// Holders before the definition: a retry after a failure here still sees the change to make.
-		yield* Effect.forEach(
-			stale,
-			(holder) => clerk.setMembershipCustomRole(tenant.orgId, holder.userId, metadata),
-			{ concurrency: 4, discard: true },
-		)
-		yield* clerk.writeCustomRoles(
-			tenant.orgId,
-			Arr.map(roles, (role) => (role.id === roleId ? next : role)),
-		)
-		const grants = customGrants(next.permissions)
-		yield* Effect.forEach(stale, (holder) => demote(tenant.orgId, holder.userId, grants), {
-			concurrency: 4,
-			discard: true,
-		})
-		return { before: toCustomRole(current, holders.length), role: toCustomRole(next, holders.length) }
+		// After the definition, so a member put on the role meanwhile with its old codes is caught.
+		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, ORPHANS_TO)
+		return { before: toCustomRole(before, holders), role: toCustomRole(after, holders) }
 	})
 
 	const deleteRole = Effect.fn("RolesService.delete")(function* (
@@ -361,17 +446,28 @@ const make = Effect.gen(function* () {
 			if (reassignTo._tag === "Custom" && reassignTo.id === roleId) {
 				return yield* conflict("in_use", "Its members must move to a different role.")
 			}
+			// From the read just made, right before the move: a target deleted since is a 404.
 			const target = yield* resolveTarget(roles, reassignTo)
 			yield* Effect.forEach(holders, (holder) => assign(tenant.orgId, holder.userId, target), {
 				concurrency: 4,
 				discard: true,
 			})
 		}
-		yield* clerk.writeCustomRoles(
-			tenant.orgId,
-			Arr.filter(roles, (candidate) => candidate.id !== roleId),
+		yield* editRoles(tenant.orgId, (current) =>
+			Effect.succeed({
+				next: Arr.filter(current, (candidate) => candidate.id !== roleId),
+				result: undefined,
+			}),
 		)
-		return { id: role.id, name: role.name, moved: holders.length }
+		// Members put on the role while it was removed follow the others, to Analyst if none was named.
+		const late = yield* reconcileHolders(tenant.orgId, roleId, reassignTo ?? ORPHANS_TO)
+		const moved = holders.length + late.holders
+		// The target may have changed, or gone, while its new members arrived.
+		if (reassignTo?._tag === "Custom" && moved > 0) {
+			const settled = yield* reconcileHolders(tenant.orgId, reassignTo.id, ORPHANS_TO)
+			if (Option.isNone(settled.role)) return yield* notFound(reassignTo.id)
+		}
+		return { id: role.id, name: role.name, moved }
 	})
 
 	const setMemberRole = Effect.fn("RolesService.setMemberRole")(function* (
@@ -389,17 +485,25 @@ const make = Effect.gen(function* () {
 			return yield* conflict("self", "You cannot change your own role.")
 		}
 		const target = yield* resolveTarget(roles, ref)
-		const admins = Arr.filter(memberships, (membership) => membership.role === ADMIN_CLERK_KEY)
-		if (member.role === ADMIN_CLERK_KEY && target.clerkKey !== ADMIN_CLERK_KEY && admins.length <= 1) {
+		const admins = Arr.filter(memberships, (membership) => isAdmin(membership.role))
+		if (isAdmin(member.role) && !isAdmin(target.clerkKey) && admins.length <= 1) {
 			return yield* conflict("last_admin", "An organization needs at least one Admin.")
 		}
 		yield* assign(tenant.orgId, userId, target)
+		// The custom role may have changed, or gone, while the member moved onto it.
+		const grants =
+			ref._tag === "Custom"
+				? yield* reconcileHolders(tenant.orgId, ref.id, ORPHANS_TO).pipe(
+						Effect.flatMap(({ role }) => Effect.fromOption(role, () => notFound(ref.id))),
+						Effect.map((role) => customTarget(role).grants),
+					)
+				: target.grants
 		return {
 			previousRole: Option.match(heldCustomRole(member), {
 				onNone: () => member.role,
 				onSome: (held) => held.id,
 			}),
-			member: new MemberRoleResponse({ userId, role: ref, permissions: target.grants }),
+			member: new MemberRoleResponse({ userId, role: ref, permissions: grants }),
 		}
 	})
 
