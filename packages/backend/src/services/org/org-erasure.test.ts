@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Option, Order, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Investigations, OrgErasures, PrReviewReplies, PrReviews, type OrgErasureRow } from "@maple/db/tables"
 import type { OrgId } from "@maple/domain/http"
@@ -314,6 +315,39 @@ describe("runOrgErasures", () => {
 			assert.strictEqual(failed?.attempts, 1)
 			assert.strictEqual(failed?.lastError, "too many parts")
 			assert.strictEqual(failed?.nextAttemptAt, erasureBackoffMs(0))
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("holds an org's lower targets back with a failed rollup, then resumes in order", () => {
+		const testDb = createTestDb(trackedDbs)
+		let failing = true
+		const jobs = warehouse(() =>
+			failing ? { _tag: "Failed", message: "too many parts" } : { _tag: "Done" },
+		)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						warehouseRow("service_overview_minutely", "job-rollup"),
+						warehouseRow("traces", null),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			// The raw table is not started, and is no longer due before the rollup it waits on.
+			assert.deepStrictEqual(jobs.submitted, [])
+			const held = Arr.map(yield* erasures, (row) => [row.target, row.nextAttemptAt] as const)
+			assert.deepStrictEqual(held, [
+				["service_overview_minutely", erasureBackoffMs(0)],
+				["traces", erasureBackoffMs(0)],
+			])
+
+			failing = false
+			yield* TestClock.adjust(erasureBackoffMs(0))
+			yield* Effect.forEach(Arr.range(1, 4), () => runOrgErasures, { discard: true })
+			assert.deepStrictEqual(jobs.submitted, ["service_overview_minutely", "traces"])
+			assert.deepStrictEqual(yield* erasures, [])
 		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
 	})
 

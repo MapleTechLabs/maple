@@ -130,8 +130,8 @@ const DRAIN_BATCH = 50
 /** Replay listing pages one target may delete per tick; a bigger org finishes over later ticks. */
 const REPLAY_PAGES_PER_TICK = 20
 const SESSION_CONCURRENCY = 4
-/** Warehouse targets one tick looks at; an org has one per OrgId datasource. */
-const WAREHOUSE_BATCH = 500
+/** Orgs with warehouse targets one tick looks at; each has one target per OrgId datasource. */
+const WAREHOUSE_ORGS = 50
 /** Delete jobs in flight at once across every org; the warehouse runs them one by one anyway. */
 export const MAX_WAREHOUSE_JOBS = 2
 const MAX_BACKOFF = Duration.hours(24)
@@ -230,17 +230,27 @@ const eraseTarget = (row: OrgErasureRow, database: DatabaseApi) => {
 }
 
 /**
- * The due warehouse targets this tick may touch: per org only those of its highest pending rank,
- * so rollups go before what feeds them; jobs in flight are polled; new ones fill the free slots.
+ * The warehouse targets this tick may touch. Picked per org, not from a flat batch: of each org with
+ * a target due, only the due targets of its highest pending rank run, so rollups go before what
+ * feeds them. Jobs in flight are polled; new ones fill the free slots.
  */
-const runnableWarehouseRows = (database: DatabaseApi, due: ReadonlyArray<OrgErasureRow>) =>
+const warehouseRowsToRun = (database: DatabaseApi, now: number) =>
 	Effect.gen(function* () {
-		if (due.length === 0) return []
-		const orgs = Arr.dedupe(Arr.map(due, (row) => row.orgId))
+		const orgRows = yield* database.execute((db) =>
+			db.run(
+				PG.from(OrgErasures)
+					.select(($) => ({ orgId: $.orgId, due: PG.count() }))
+					.where(($) => [$.kind.eq("warehouse"), $.nextAttemptAt.lte(now)])
+					.groupBy("orgId")
+					.limit(WAREHOUSE_ORGS),
+			),
+		)
+		if (orgRows.length === 0) return []
+		const orgs = Arr.map(orgRows, (row) => row.orgId)
 		const pending = yield* database.execute((db) =>
 			db.run(
 				PG.from(OrgErasures)
-					.select("orgId", "target", "jobId")
+					.select()
 					.where(($) => [$.kind.eq("warehouse"), PG.inList($.orgId, orgs)]),
 			),
 		)
@@ -257,7 +267,10 @@ const runnableWarehouseRows = (database: DatabaseApi, due: ReadonlyArray<OrgEras
 				0,
 				(top, row) => Math.max(top, warehouseErasureRank(row.target)),
 			)
-		const eligible = Arr.filter(due, (row) => warehouseErasureRank(row.target) === topRank(row.orgId))
+		const eligible = Arr.filter(
+			pending,
+			(row) => row.nextAttemptAt <= now && warehouseErasureRank(row.target) === topRank(row.orgId),
+		)
 		const slots = Math.max(0, MAX_WAREHOUSE_JOBS - Number(inFlight?.count ?? 0))
 		return [
 			...Arr.filter(eligible, (row) => row.jobId !== null),
@@ -276,22 +289,16 @@ export const runOrgErasures = Effect.gen(function* () {
 	const database = yield* Database
 	const now = yield* Clock.currentTimeMillis
 	// Warehouse targets apart: many wait on their order, and must not crowd the rest out.
-	const dueOf = (warehouse: boolean, limit: number) =>
-		database.execute((db) =>
-			db.run(
-				PG.from(OrgErasures)
-					.select()
-					.where(($) => [
-						$.nextAttemptAt.lte(now),
-						warehouse ? $.kind.eq("warehouse") : $.kind.neq("warehouse"),
-					])
-					.orderBy(($) => [[$.nextAttemptAt, "asc"]])
-					.limit(limit),
-			),
-		)
-	const others = yield* dueOf(false, DRAIN_BATCH)
-	const dueWarehouse = yield* dueOf(true, WAREHOUSE_BATCH)
-	const warehouse = yield* runnableWarehouseRows(database, dueWarehouse)
+	const others = yield* database.execute((db) =>
+		db.run(
+			PG.from(OrgErasures)
+				.select()
+				.where(($) => [$.nextAttemptAt.lte(now), $.kind.neq("warehouse")])
+				.orderBy(($) => [[$.nextAttemptAt, "asc"]])
+				.limit(DRAIN_BATCH),
+		),
+	)
+	const warehouse = yield* warehouseRowsToRun(database, now)
 	const due = [...others, ...warehouse]
 	const results = yield* Effect.forEach(
 		due,
@@ -316,15 +323,29 @@ export const runOrgErasures = Effect.gen(function* () {
 						}),
 						Effect.andThen(
 							database.execute((db) =>
-								db.run(
-									PG.update(OrgErasures)
-										.set({
-											attempts: row.attempts + 1,
-											lastError: error.message,
-											nextAttemptAt: now + erasureBackoffMs(row.attempts),
-										})
-										.where(($) => [$.id.eq(row.id)]),
-								),
+								Effect.gen(function* () {
+									const retryAt = now + erasureBackoffMs(row.attempts)
+									yield* db.run(
+										PG.update(OrgErasures)
+											.set({
+												attempts: row.attempts + 1,
+												lastError: error.message,
+												nextAttemptAt: retryAt,
+											})
+											.where(($) => [$.id.eq(row.id)]),
+									)
+									// The org's other warehouse targets wait behind this one, so they wait as long.
+									if (row.kind !== "warehouse") return
+									yield* db.run(
+										PG.update(OrgErasures)
+											.set({ nextAttemptAt: retryAt })
+											.where(($) => [
+												$.orgId.eq(row.orgId),
+												$.kind.eq("warehouse"),
+												$.nextAttemptAt.lt(retryAt),
+											]),
+									)
+								}),
 							),
 						),
 						Effect.as(false),
