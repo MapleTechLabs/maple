@@ -4,10 +4,13 @@
  * decide a bill. The other five lines (free plan, retention, OpenTelemetry, licence, self-hosting)
  * are on /compare, which prints the same data with a column per vendor.
  */
+import { getRelativeLocaleUrl } from "astro:i18n";
 import * as m from "../../paraglide/messages.js";
 import { billRowLabels, billVendors, type BillRowKey } from "../../lib/bill-comparison";
 
 const COLUMNS: ReadonlyArray<BillRowKey> = ["base", "perHost", "perSeat", "ingest"];
+const locale = Astro.currentLocale ?? "en";
+const l = (path: string) => getRelativeLocaleUrl(locale, path);
 const vendors = billVendors();
 const labels = billRowLabels();
 ---
@@ -36,12 +39,12 @@ const labels = billRowLabels();
 								{COLUMNS.map((key) => <td>{vendor.cells[key]}</td>)}
 								<td class="ledger-bill__link">
 									{vendor.href ? (
-										<a href={vendor.href}>
+										<a href={l(vendor.href)}>
 											{vendor.link}
 											<span aria-hidden="true"> →</span>
 										</a>
 									) : (
-										<a href="/pricing">{m.bill_link_calculator()}</a>
+										<a href={l("/pricing")}>{m.bill_link_calculator()}</a>
 									)}
 								</td>
 							</tr>

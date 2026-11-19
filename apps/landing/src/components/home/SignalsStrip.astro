@@ -72,9 +72,13 @@ const session = {
 	// The timeline cells light in start order, once. The cells are the waterfall's own markup,
 	// so the order is a column index set here and the rest is CSS (home-ledger.css).
 	const root = document.querySelector<HTMLElement>("[data-trace-play]");
-	if (root && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+	// Already on screen at load (a restored scroll position): leave it drawn, with no dim-then-play.
+	const onScreen = root ? root.getBoundingClientRect().top < innerHeight : true;
+	if (root && !onScreen && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
 		root.toggleAttribute("data-armed", true);
 		const play = () => {
+			// `.w-48` is the waterfall's timeline column. If the kit renames it nothing matches and the
+			// cells simply stay lit: the dimmed state is keyed on the same selector.
 			for (const row of root.querySelectorAll<HTMLElement>(".w-48")) {
 				[...row.children].forEach((cell, i) => (cell as HTMLElement).style.setProperty("--i", String(i)));
 			}

@@ -26,14 +26,14 @@ const stars = await getGitHubStars();
 				{m.sov_link_source()}
 				{stars !== null && <span class="tabular-nums text-fg-muted"> {formatStars(stars)}</span>}
 			</a>
-			<a href={l("/opentelemetry")} class="ledger-link">{m.sov_link_otel()}</a>
-			<a href={l("/pricing")} class="ledger-link">{m.sov_link_pricing()}</a>
+			<a href={l("/opentelemetry")} class="ledger-link">{m.sov_link_otel()}<span aria-hidden="true"> →</span></a>
+			<a href={l("/pricing")} class="ledger-link">{m.sov_link_pricing()}<span aria-hidden="true"> →</span></a>
 		</LedgerHead>
 
 		<div class="ledger-grid">
 			{/* min-w-0 (on the cell) so the install <pre> scrolls inside itself. */}
 			<div class="ledger-cell ledger-cell--pad">
-				<h2 class="ledger-local__title">{m.local_title()}</h2>
+				<h3 class="ledger-local__title">{m.local_title()}</h3>
 				<p class="mt-4 max-w-[52ch] text-[15px] text-fg-muted">{m.local_body()}</p>
 
 				<div class="ledger-install mt-8">

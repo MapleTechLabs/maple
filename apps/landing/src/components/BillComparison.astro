@@ -1,32 +1,23 @@
 ---
 /**
- * BillComparison: spec-sheet-style table.
+ * BillComparison: the spec-sheet table on the compare hub, a column per vendor.
  * Dense, numerical, deliberately not pretty. No icons, no checkmarks, no
  * card grid. The Maple column is amber-tinted to register as the answer.
  *
- * Numbers/positions are approximations meant for editorial comparison;
- * exact pricing is in /pricing and /compare/* pages.
+ * The cells come from `lib/bill-comparison.ts`, which the home page's bill and
+ * `/compare.md` print too. Exact pricing is on /pricing and the /compare/* pages.
  */
 import * as m from "../paraglide/messages.js";
 import { BILL_ROW_KEYS, billRowLabels, billVendors } from "../lib/bill-comparison";
 
 interface Props {
-	/** The homepage passes nothing and gets its own chapter heading; /compare
-	 *  overrides the three lines and drops the link row it already is. */
-	eyebrow?: string;
-	title?: string;
-	lede?: string;
-	links?: boolean;
+	eyebrow: string;
+	title: string;
+	lede: string;
 	class?: string;
 }
 
-const {
-	eyebrow = m.bill_eyebrow(),
-	title = m.bill_title(),
-	lede = m.bill_lede(),
-	links = true,
-	class: className = "",
-} = Astro.props;
+const { eyebrow, title, lede, class: className = "" } = Astro.props;
 
 const vendors = billVendors();
 const labels = billRowLabels();
@@ -72,35 +63,5 @@ const labels = billRowLabels();
 		<p class="mt-4 text-[11px] text-fg-muted/80 max-w-[80ch]">
 			{m.bill_footnote()}
 		</p>
-
-		{links && <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
-			<a href="/pricing" class="text-primary border-b border-primary/40 hover:border-primary pb-px transition-colors">
-				{m.bill_link_calculator()}
-			</a>
-			<a href="/compare/datadog" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_dd()}
-			</a>
-			<a href="/compare/grafana" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_gf()}
-			</a>
-			<a href="/compare/new-relic" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_nr()}
-			</a>
-			<a href="/compare/dash0" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_dash0()}
-			</a>
-			<a href="/compare/signoz" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_signoz()}
-			</a>
-			<a href="/compare/axiom" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_axiom()}
-			</a>
-			<a href="/compare/better-stack" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_better_stack()}
-			</a>
-			<a href="/compare/honeycomb" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
-				{m.bill_link_vs_honeycomb()}
-			</a>
-		</div>}
 	</div>
 </section>

@@ -2,13 +2,12 @@
 /**
  * Platform: every other surface on one ruled sheet, visible without a click, and the link hub to
  * the feature pages. Each cell is the real product: a legible window of a capture (the lightbox
- * opens the whole screen) or the live component, then its headline, one sentence and its link.
+ * opens the whole screen) or the live component, then its headline, its copy and its link.
  */
 import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
 import { featurePath, type Crop } from "../../lib/page-registry";
 import Shot from "../page/Shot.astro";
-import PostMergeComment from "../github/PostMergeComment.astro";
 import PrReviewComment from "../github/PrReviewComment.astro";
 import LiveFunnel from "../live/LiveFunnel.astro";
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
@@ -148,9 +147,11 @@ const surfaces: Surface[] = [
 	},
 ];
 
-const githubSteps = [m.home_github_step_1_title(), m.home_github_step_2_title(), m.home_github_step_3_title()];
-const github = surfaces.find((surface) => surface.key === "github");
-const cells = surfaces.filter((surface) => surface.key !== "github");
+// Captures read at a third of the sheet. The live components lay themselves out by viewport
+// width, so they get half of it each and are never squeezed into a narrow cell.
+const CAPTURES = ["map", "metrics", "errors", "alerts", "analytics"];
+const captures = surfaces.filter((surface) => CAPTURES.includes(surface.key));
+const live = surfaces.filter((surface) => !CAPTURES.includes(surface.key));
 ---
 
 <section id="features" class="ledger ledger-wall">
@@ -158,97 +159,48 @@ const cells = surfaces.filter((surface) => surface.key !== "github");
 		{/* The lede names every surface in plain text. */}
 		<LedgerHead title={m.platform_title()} lede={m.platform_lede()} />
 
-		{/* On a phone the sheet is a strip to swipe: nine stacked cells would be six screens. */}
-		<div class="ledger-grid ledger-grid--thirds ledger-wall__strip" role="group" aria-label={m.platform_title()} tabindex="0">
-			{
-				cells.map((surface) => (
-					<article class:list={["ledger-cell", surface.wide && "ledger-cell--two"]}>
-						{surface.shot ? (
-							<Shot
-								src={surface.shot.src}
-								alt={surface.shot.alt}
-								width={surface.shot.width}
-								height={surface.shot.height}
-								crop={surface.shot.crop}
-							/>
-						) : (
-							<div class="ledger-wall__stage">
-								{surface.key === "kubernetes" && <LiveK8sHeatmap />}
-								{surface.key === "events" && <LiveFunnel />}
-								{surface.key === "uptime" && <LiveUptime />}
+		{/* On a phone each sheet is a strip to swipe: nine stacked cells would be six screens. */}
+		{
+			[captures, live].map((group, groupIndex) => (
+				<div
+					class:list={[
+						"ledger-grid ledger-wall__strip",
+						groupIndex === 0 ? "ledger-grid--thirds" : "ledger-wall__live",
+					]}
+				>
+					{group.map((surface) => (
+						<article class:list={["ledger-cell", surface.wide && "ledger-cell--two"]}>
+							{surface.shot ? (
+								<Shot
+									src={surface.shot.src}
+									alt={surface.shot.alt}
+									width={surface.shot.width}
+									height={surface.shot.height}
+									crop={surface.shot.crop}
+								/>
+							) : (
+								<div class:list={["ledger-wall__stage", surface.key === "github" && "ledger-wall__stage--pad"]}>
+									{surface.key === "kubernetes" && <LiveK8sHeatmap />}
+									{surface.key === "events" && <LiveFunnel />}
+									{surface.key === "uptime" && <LiveUptime />}
+									{surface.key === "github" && <PrReviewComment variant="compact" />}
+								</div>
+							)}
+							<div class="ledger-cap ledger-cap--bottom">
+								<h3>{surface.title}</h3>
+								<p>{surface.desc}</p>
+								<div class="ledger-cap__links">
+									<a href={surface.href}>
+										{surface.link}
+										<span aria-hidden="true"> →</span>
+									</a>
+									{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
+								</div>
 							</div>
-						)}
-						<div class="ledger-cap ledger-cap--bottom">
-							<h3>{surface.title}</h3>
-							<p>{surface.desc}</p>
-							<div class="ledger-cap__links">
-								<a href={surface.href}>
-									{surface.link}
-									<span aria-hidden="true"> →</span>
-								</a>
-								{surface.also && <a href={surface.also.href}>{surface.also.link}</a>}
-							</div>
-						</div>
-					</article>
-				))
-			}
-		</div>
-
-		{/* GitHub is three artifacts, not one: its own row, joined to the sheet above it. */}
-		<div class="ledger-grid ledger-wall__last">
-			{
-				github && (
-					<article class="ledger-cell ledger-cell--wide">
-						<div class="ledger-cap ledger-cap--top">
-							<h3>{github.title}</h3>
-							<a href={github.href}>
-								{github.link}
-								<span aria-hidden="true"> →</span>
-							</a>
-							<p>{github.desc}</p>
-						</div>
-						<ol class="ledger-wall__github">
-							{githubSteps.map((step, index) => (
-								<li>
-									<p>{step}</p>
-									{index === 0 && <PrReviewComment variant="compact" />}
-									{index === 1 && (
-										<div class="overflow-hidden border border-border bg-bg-deep">
-											<div class="ci-crop">
-												<img
-													src="/screenshots/surface-ci.webp"
-													alt="The CI tab's run count, success rate and p50 run time over a chart of runs by result per day"
-													width="2880"
-													height="1620"
-													loading="lazy"
-													decoding="async"
-												/>
-											</div>
-										</div>
-									)}
-									{index === 2 && <PostMergeComment variant="compact" />}
-								</li>
-							))}
-						</ol>
-					</article>
-				)
-			}
-		</div>
+						</article>
+					))}
+				</div>
+			))
+		}
 	</div>
 </section>
-
-<style>
-	/* The 1140 × 885 region of the 2880 × 1620 capture at (545, 385): stat cards and the runs chart. */
-	.ci-crop {
-		aspect-ratio: 1140 / 885;
-		overflow: hidden;
-	}
-	.ci-crop img {
-		display: block;
-		max-width: none;
-		width: calc(2880 / 1140 * 100%);
-		height: auto;
-		margin-left: calc(-545 / 1140 * 100%);
-		margin-top: calc(-385 / 1140 * 100%);
-	}
-</style>

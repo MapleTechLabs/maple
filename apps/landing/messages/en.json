@@ -144,7 +144,6 @@
 	"pe_paths_title": "See where people went next",
 	"pe_paths_lede": "Pick any event and see what people did before or after it. Hover a step to follow the people who took it.",
 
-	"bill_eyebrow": "The bill",
 	"bill_title": "The bill, line by line.",
 	"bill_lede": "Each vendor's public list pricing next to Maple's.",
 	"bill_col_metric": "Line item",
@@ -1409,9 +1408,6 @@
 	"home_github_title": "Your pull requests, checked against production.",
 	"home_github_lede": "Install the GitHub App and Maple follows each change from the pull request to the hour after it deploys.",
 	"home_github_link": "GitHub, CI and code review",
-	"home_github_step_1_title": "Before merge",
-	"home_github_step_2_title": "In CI",
-	"home_github_step_3_title": "After it ships",
 	"nav_uptime": "Uptime Monitoring",
 	"nav_desc_uptime": "Know the moment a site, port or cron job stops",
 	"feat_uptime_seo_title": "Uptime Monitoring | Maple",
