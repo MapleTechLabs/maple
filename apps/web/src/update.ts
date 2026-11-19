@@ -64,7 +64,7 @@ import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Policy from "@maple/domain/policy"
 import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
-import { getActivePlan } from "./page/kit/billing/plan-gating"
+import { getActivePlan, hasSelectedPlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -874,11 +874,13 @@ const elapsedCustomerGrace = (model: Model, orgId: string): UpdateReturn =>
  */
 const withSettledPlan = (step: UpdateReturn): UpdateReturn => {
 	const screen = step.model.onboarding?.screen._tag
+	// App access fails open (a failed read, a lapsed plan); only a live subscription ends a checkout wait.
+	const isPlanActive = hasSelectedPlan(customerOf(step.model.customer))
 	const message =
 		screen === "QuickStart"
-			? Onboarding.settledPlanMessage
+			? Onboarding.settledPlanMessage(isPlanActive)
 			: screen === "SelectPlan"
-				? Onboarding.settledSelectPlanMessage
+				? Onboarding.settledSelectPlanMessage(isPlanActive)
 				: null
 	if (message === null) return step
 	const next = updateOnboarding(step.model, message)

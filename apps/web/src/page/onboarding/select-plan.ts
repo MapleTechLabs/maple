@@ -22,8 +22,8 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	GotPricingMessage: { message: PricingCards.Message },
-	/** Sent by the root once the customer read settles. */
-	SettledPlan: {},
+	/** Sent by the root once the customer read settles; `isPlanActive`: it holds a live subscription. */
+	SettledPlan: { isPlanActive: Schema.Boolean },
 })
 export type Message = typeof Message.Type
 
@@ -40,12 +40,12 @@ export const init = (isCheckoutReturn: boolean): UpdateReturn => {
 	}
 }
 
-/** `hasPlan`: the root's (`planOf`); once the plan shows, a wait on the Stripe return ends. */
-export const update = (model: Model, message: Message, hasPlan: boolean | null): UpdateReturn => {
+/** Once a live subscription shows, a wait on the Stripe return ends. */
+export const update = (model: Model, message: Message): UpdateReturn => {
 	const child = Message.match(message, {
 		GotPricingMessage: ({ message: pricing }) => pricing,
-		SettledPlan: () =>
-			hasPlan === true ? PricingCards.Message.SawPlan({ isReturnUnwaited: false }) : null,
+		SettledPlan: ({ isPlanActive }) =>
+			isPlanActive ? PricingCards.Message.SawPlan({ isReturnUnwaited: false }) : null,
 	})
 	if (child === null) return { model }
 	const next = PricingCards.update(model.pricing, child)

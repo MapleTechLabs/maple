@@ -120,7 +120,8 @@ export const Message = defineMessageUnion({
 	CompletedFinish: {},
 	CompletedMountDitherField: {},
 	/** The root read the customer: the save that loaded before it is settled now. */
-	SettledPlan: {},
+	/** `isPlanActive`: the customer holds a live subscription, not just app access (a failed read fails open). */
+	SettledPlan: { isPlanActive: Schema.Boolean },
 })
 export type Message = typeof Message.Type
 
@@ -401,7 +402,7 @@ export const update = (
 	context: PageContext | null = null,
 ): UpdateReturn => {
 	const result = updateSteps(model, message, hasPlan, context)
-	return message._tag === "SettledPlan" && hasPlan === true ? withPlanSeen(result) : result
+	return message._tag === "SettledPlan" && message.isPlanActive ? withPlanSeen(result) : result
 }
 
 /**

@@ -79,7 +79,9 @@ describe("quick start", () => {
 		expect(names(settled)).toContain("FinishQuickStart")
 		expect(settled.model.saveEntry).toBe("Entered")
 		expect(settled.model.languageQuery).toBe("py")
-		expect(names(update(settled.model, Message.SettledPlan()))).not.toContain("FinishQuickStart")
+		expect(names(update(settled.model, Message.SettledPlan({ isPlanActive: true })))).not.toContain(
+			"FinishQuickStart",
+		)
 	})
 
 	test("stack picks are saved and set what the setup checklist shows", () => {
@@ -153,16 +155,20 @@ describe("quick start", () => {
 		const loading = init("maple-onboarding-v6-org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), null)
 		expect(names(early)).toEqual([])
-		expect(names(updateWith(early.model, Message.SettledPlan(), true))).toEqual(["FinishQuickStart"])
+		expect(names(updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true))).toEqual([
+			"FinishQuickStart",
+		])
 		const fresh = updateWith(
 			loading,
 			Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }),
 			null,
 		)
 		expect(names(fresh)).toEqual([])
-		expect(names(updateWith(fresh.model, Message.SettledPlan(), false))).toContain("LoadPlans")
-		const settled = updateWith(early.model, Message.SettledPlan(), true).model
-		expect(names(updateWith(settled, Message.SettledPlan(), true))).toEqual([])
+		expect(names(updateWith(fresh.model, Message.SettledPlan({ isPlanActive: true }), false))).toContain(
+			"LoadPlans",
+		)
+		const settled = updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true).model
+		expect(names(updateWith(settled, Message.SettledPlan({ isPlanActive: true }), true))).toEqual([])
 	})
 
 	test("back from Stripe, the return is recorded as confirmed once the plan shows, and only once", () => {
@@ -171,24 +177,40 @@ describe("quick start", () => {
 		// Autumn has not synced yet: the plan step opens and waits.
 		const waiting = updateWith(returning, load, false)
 		expect(waiting.model.pricing.checkoutReturn).toBe("Confirming")
-		const seen = updateWith(waiting.model, Message.SettledPlan(), true)
+		const seen = updateWith(waiting.model, Message.SettledPlan({ isPlanActive: true }), true)
 		expect(names(seen)).toContain("TrackCheckoutReturned")
 		expect(seen.model.pricing.checkoutReturn).toBe("Idle")
 		expect(seen.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
-		expect(names(updateWith(seen.model, Message.SettledPlan(), true))).not.toContain(
-			"TrackCheckoutReturned",
-		)
+		expect(
+			names(updateWith(seen.model, Message.SettledPlan({ isPlanActive: true }), true)),
+		).not.toContain("TrackCheckoutReturned")
 	})
 
 	test("back from Stripe with the plan already synced, the return is still recorded", () => {
 		const returning = init("maple-onboarding-v6-org_1", true).model
 		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
 		const early = updateWith(returning, load, null)
-		const seen = updateWith(early.model, Message.SettledPlan(), true)
+		const seen = updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true)
 		expect(names(seen)).toContain("TrackCheckoutReturned")
-		expect(names(updateWith(seen.model, Message.SettledPlan(), true))).not.toContain(
-			"TrackCheckoutReturned",
-		)
+		expect(
+			names(updateWith(seen.model, Message.SettledPlan({ isPlanActive: true }), true)),
+		).not.toContain("TrackCheckoutReturned")
+	})
+
+	test("app access without a live subscription keeps the return waiting", () => {
+		// A failed customer read, or one holding only a lapsed plan, still lets the app render.
+		const returning = init("maple-onboarding-v6-org_1", true).model
+		const waiting = updateWith(
+			returning,
+			Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }),
+			false,
+		).model
+		const failOpen = updateWith(waiting, Message.SettledPlan({ isPlanActive: false }), true)
+		expect(names(failOpen)).not.toContain("TrackCheckoutReturned")
+		expect(failOpen.model.pricing.checkoutReturn).toBe("Confirming")
+		expect(
+			names(updateWith(failOpen.model, Message.SettledPlan({ isPlanActive: true }), true)),
+		).toContain("TrackCheckoutReturned")
 	})
 
 	test("a plan that shows up after the wait gave up is not recorded a second time", () => {
@@ -208,17 +230,17 @@ describe("quick start", () => {
 			false,
 		)
 		expect(names(timedOut)).toContain("TrackCheckoutReturned")
-		expect(names(updateWith(timedOut.model, Message.SettledPlan(), true))).not.toContain(
-			"TrackCheckoutReturned",
-		)
+		expect(
+			names(updateWith(timedOut.model, Message.SettledPlan({ isPlanActive: true }), true)),
+		).not.toContain("TrackCheckoutReturned")
 	})
 
 	test("a visit that did not come back from Stripe records no return", () => {
 		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
 		const early = updateWith(init("maple-onboarding-v6-org_1").model, load, null)
-		expect(names(updateWith(early.model, Message.SettledPlan(), true))).not.toContain(
-			"TrackCheckoutReturned",
-		)
+		expect(
+			names(updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true)),
+		).not.toContain("TrackCheckoutReturned")
 	})
 
 	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
@@ -278,7 +300,7 @@ describe("quick start live step", () => {
 		}
 		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
-		const settled = updateWith(early.model, Message.SettledPlan(), true)
+		const settled = updateWith(early.model, Message.SettledPlan({ isPlanActive: true }), true)
 		expect(names(settled)).toEqual(
 			expect.arrayContaining(["LoadOnboardingConnectPresence", "LoadOnboardingLiveFindings"]),
 		)
