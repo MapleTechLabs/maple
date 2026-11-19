@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "b6ca8143fa0db295a210223e6fa0c87121ad7c5f2e4f16717dce8e013f308b04",
+	"id": "2ffcb2dfbdbd5c548ba4e057b4b661826e1ce4d09da46e52036b424cf6b349bf",
 	"prevIds": [
-		"41c3320797ffc3f91e78d3246c71d605e087ca8ff22ccd22c33ed80df787a265"
+		"c2810e87f51aab1d133a305aa1448d23e7b4da9783b215b72525cb582f10c3c7"
 	],
 	"entities": [
 		{
@@ -6788,6 +6788,16 @@
 			"table": "dashboard_shares",
 			"name": "revoked_at",
 			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "dashboard_shares",
+			"name": "expires_at",
+			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
