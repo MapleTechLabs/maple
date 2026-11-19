@@ -6,13 +6,19 @@ import { FetchHttpClient, type HttpClient } from "effect/http"
 export type ClerkApiServices = Clerk.Credentials | HttpClient.HttpClient
 
 /** The deployment's Clerk Backend API: a secret key and an HTTP client for the distilled operations. */
-export type ClerkApi = Layer.Layer<ClerkApiServices>
+export type ClerkApi = Layer.Layer<ClerkApiServices | Clerk.Retry.Retry>
+
+/**
+ * One attempt per call. The SDK's default retries a lost response too, and Clerk's creates take no
+ * idempotency key, so a replay could make a second organization or rotate a SCIM key twice.
+ */
+const noRetry = Layer.succeed(Clerk.Retry.Retry, { while: () => false })
 
 /** A Clerk Backend API from a secret key; tests pass their own HTTP layer. */
 export const makeClerkApi = (
 	secretKey: Redacted.Redacted,
 	http: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer,
-): ClerkApi => Layer.merge(Clerk.fromApiKey({ apiKey: secretKey }), http)
+): ClerkApi => Layer.mergeAll(Clerk.fromApiKey({ apiKey: secretKey }), http, noRetry)
 
 const clerkApis = new WeakMap<object, ClerkApi>()
 

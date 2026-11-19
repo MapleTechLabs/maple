@@ -26,6 +26,7 @@ import {
 } from "@maple/domain/http"
 import {
 	Clock,
+	Duration,
 	Effect,
 	Option,
 	Redacted,
@@ -973,6 +974,8 @@ class ClerkLookupError extends Schema.TaggedError<ClerkLookupError>()("@maple/au
 	cause: Schema.Defect(),
 }) {}
 
+const CLERK_LOOKUP_TIMEOUT = Duration.seconds(10)
+
 const clerkLookup = <A, E>(
 	api: ClerkApi,
 	spanName: string,
@@ -984,6 +987,11 @@ const clerkLookup = <A, E>(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(api),
 		Effect.mapError((cause) => new ClerkLookupError({ operation: spanName, cause })),
+		// Callers fall back to null; a stalled lookup must not hold the request.
+		Effect.timeoutOrElse({
+			duration: CLERK_LOOKUP_TIMEOUT,
+			orElse: () => Effect.fail(new ClerkLookupError({ operation: spanName, cause: "timed out" })),
+		}),
 		Effect.withSpan(spanName, {
 			kind: "client",
 			attributes: { "peer.service": "clerk", ...attributes },

@@ -91,6 +91,26 @@ describe("clerkRequest", () => {
 		}),
 	)
 
+	it.effect("makes one attempt, so a create whose answer was lost is never replayed", () =>
+		Effect.gen(function* () {
+			const { api, authorizations } = fakeClerk(() =>
+				json(503, { errors: [{ code: "unavailable", message: "try later" }] }),
+			)
+
+			const error = yield* Effect.flip(
+				clerkRequest(
+					api,
+					"Clerk.organizations.createOrganization",
+					{},
+					Clerk.createOrganization({ name: "Acme" }),
+				),
+			)
+
+			assert.strictEqual(error.status, 503)
+			assert.strictEqual(authorizations.length, 1)
+		}),
+	)
+
 	it.effect("fails a stalled call as a typed request error once the timeout passes", () =>
 		Effect.gen(function* () {
 			const { api } = fakeClerk(() => new Promise<Response>(() => {}))
