@@ -132,4 +132,21 @@ describe("runAutonomousPhases", () => {
 			[false, true],
 		)
 	})
+
+	it("resumes a review whose prose continuation a provider error cut short", async () => {
+		const { outcome, turns } = await phasesOf(
+			"pr-review",
+			(turn) => turn.closeOut === true,
+			(index) => index === 1,
+		)
+		const prompts = AGENTS["pr-review"].completion
+		assert.deepEqual(
+			Arr.map(turns, (turn) => Str.slice(0, 40)(turn.text)),
+			Arr.map(
+				["kickoff", prompts.continuePrompt ?? "", prompts.resumePrompt ?? "", prompts.closeOutPrompt],
+				Str.slice(0, 40),
+			),
+		)
+		assert.equal(outcome.failure(), "provider_unavailable")
+	})
 })
