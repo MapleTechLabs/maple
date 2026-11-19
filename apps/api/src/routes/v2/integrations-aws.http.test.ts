@@ -399,25 +399,37 @@ describe("v2 aws integration over HTTP", () => {
 			"cost",
 			"audit",
 		])
-		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
-			account_id: "123456789012",
-			modules: ["cost"],
-		})
-		expect(created.status).toBe(200)
-		expect(created.body.modules).toEqual(["cost"])
-		// The role's policy carries the module's reads.
-		const setup = await harness.request("GET", `${CONNECTIONS}/${created.body.id}/setup`, admin.secret)
-		expect(setup.body.cloudformation_template).toContain("ce:GetCostAndUsage")
+		// Each module, on its own account, survives create, clear and restore, and its role policy
+		// carries the reads it makes.
+		const lifecycles = [
+			{ module: "cost", account: "123456789012", reads: ["ce:GetCostAndUsage"] },
+			{
+				module: "audit",
+				account: "210987654321",
+				reads: ["cloudtrail:LookupEvents", "account:ListRegions"],
+			},
+		]
+		for (const { module, account, reads } of lifecycles) {
+			const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+				account_id: account,
+				modules: [module],
+			})
+			expect(created.status).toBe(200)
+			expect(created.body.modules).toEqual([module])
+			const setup = await harness.request(
+				"GET",
+				`${CONNECTIONS}/${created.body.id}/setup`,
+				admin.secret,
+			)
+			for (const read of reads) expect(setup.body.cloudformation_template).toContain(read)
 
-		const cleared = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
-			modules: [],
-		})
-		expect(cleared.body.modules).toEqual([])
-		const restored = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
-			modules: ["cost"],
-		})
-		expect(restored.status).toBe(200)
-		expect(restored.body.modules).toEqual(["cost"])
+			const path = `${CONNECTIONS}/${created.body.id}`
+			const cleared = await harness.request("PATCH", path, admin.secret, { modules: [] })
+			expect(cleared.body.modules).toEqual([])
+			const restored = await harness.request("PATCH", path, admin.secret, { modules: [module] })
+			expect(restored.status).toBe(200)
+			expect(restored.body.modules).toEqual([module])
+		}
 		await harness.dispose()
 	})
 
