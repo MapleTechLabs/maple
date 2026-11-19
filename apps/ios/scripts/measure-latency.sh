@@ -9,6 +9,8 @@
 #
 # Development only: it runs against the Clerk development instance and a dev or preview API,
 # and refuses a live Clerk key, so it can never sign in as a production user.
+# Without --build it measures the app already installed, with that app's own API, Clerk
+# instance and session; build with --build first to be sure it targets a dev instance.
 #
 # --build    builds with MAPLE_ENVIRONMENT=latency-<label> and the public ingest key
 #            ($MAPLE_OTEL_PUBLIC_INGEST_KEY), then installs it.
