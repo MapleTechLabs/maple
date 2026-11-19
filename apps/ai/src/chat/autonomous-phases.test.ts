@@ -1,19 +1,31 @@
-import { Duration, Effect, Array as Arr } from "effect"
+import { ModelProtocolError } from "@yielded/agent/agent-error"
+import { Duration, Effect, Array as Arr, String as Str } from "effect"
 import { assert, describe, it } from "vitest"
 import { AGENTS, type RowMode } from "./agents"
 import { makeAutonomousOutcome } from "./autonomous-outcome"
 import { CLOSE_OUT_MAX_DURATION } from "./budgets"
 import { type PhaseTurn, runAutonomousPhases } from "./autonomous-phases"
 
+/** What the engine raises when a 200 stream ends on the provider's `error` part. */
+const PROVIDER_500 = ModelProtocolError.make({
+	message: "Model response failed: The server had an error while processing your request.",
+})
+
 /** Runs the phases over a scripted run: each phase files when `files` says so, and ends on `stop`. */
-const phasesOf = (mode: RowMode, files: (turn: PhaseTurn, index: number) => boolean) => {
+const phasesOf = (
+	mode: RowMode,
+	files: (turn: PhaseTurn, index: number) => boolean,
+	fails: (index: number) => boolean = () => false,
+) => {
 	const outcome = makeAutonomousOutcome()
 	const turns: Array<PhaseTurn> = []
 	const run = (turn: PhaseTurn) =>
-		Effect.sync(() => {
+		Effect.suspend(() => {
 			turns.push(turn)
+			const index = turns.length - 1
+			if (fails(index)) return Effect.fail(PROVIDER_500)
 			outcome.hold("stop")
-			return { submitted: files(turn, turns.length - 1), compactions: 0 }
+			return Effect.succeed({ submitted: files(turn, index), compactions: 0 })
 		})
 	const agent = AGENTS[mode]
 	return Effect.runPromise(
@@ -78,5 +90,63 @@ describe("runAutonomousPhases", () => {
 			Arr.map(turns, (turn) => turn.closeOut === true),
 			[false, true],
 		)
+	})
+
+	it("resumes a review a provider error cut short, which then files", async () => {
+		const { outcome, turns } = await phasesOf(
+			"pr-review",
+			(_, index) => index === 1,
+			(index) => index === 0,
+		)
+		assert.lengthOf(turns, 2)
+		assert.notStrictEqual(turns[1]?.closeOut, true, "the second run is the resume, not the close-out")
+		assert.isTrue(
+			Str.startsWith(AGENTS["pr-review"].completion.resumePrompt ?? "-")(turns[1]?.text ?? ""),
+		)
+		assert.include(turns[1]?.text ?? "", "kickoff")
+		assert.isDefined(turns[1]?.agent, "a resume runs on what is left of the pass's clock")
+		assert.isTrue(outcome.submitted())
+	})
+
+	it("resumes only once, then closes out with the provider as the reason", async () => {
+		const { outcome, turns } = await phasesOf(
+			"pr-review",
+			(turn) => turn.closeOut === true,
+			(index) => index < 2,
+		)
+		assert.deepEqual(
+			Arr.map(turns, (turn) => turn.closeOut === true),
+			[false, false, true],
+		)
+		assert.equal(outcome.failure(), "provider_unavailable")
+	})
+
+	it("closes an investigation out after a provider error, with no resume", async () => {
+		const { turns } = await phasesOf(
+			"investigate",
+			(turn) => turn.closeOut === true,
+			(index) => index === 0,
+		)
+		assert.deepEqual(
+			Arr.map(turns, (turn) => turn.closeOut === true),
+			[false, true],
+		)
+	})
+
+	it("resumes a review whose prose continuation a provider error cut short", async () => {
+		const { outcome, turns } = await phasesOf(
+			"pr-review",
+			(turn) => turn.closeOut === true,
+			(index) => index === 1,
+		)
+		const prompts = AGENTS["pr-review"].completion
+		assert.deepEqual(
+			Arr.map(turns, (turn) => Str.slice(0, 40)(turn.text)),
+			Arr.map(
+				["kickoff", prompts.continuePrompt ?? "", prompts.resumePrompt ?? "", prompts.closeOutPrompt],
+				Str.slice(0, 40),
+			),
+		)
+		assert.equal(outcome.failure(), "provider_unavailable")
 	})
 })

@@ -70,6 +70,15 @@ describe("reviewFailureReason over a provider failure", () => {
 		assert.equal(reviewFailureReason(provider(new RateLimitError({})), ORG_KEY), "provider_unavailable")
 	})
 
+	it("reads an error part inside a streamed response as a passing outage", () => {
+		const midStream = Cause.fail(
+			ModelProtocolError.make({
+				message: "Model response failed: The server had an error while processing your request.",
+			}),
+		)
+		assert.equal(reviewFailureReason(midStream, ORG_KEY), "provider_unavailable")
+	})
+
 	it("still reports a typed limit over a provider failure", () => {
 		assert.equal(
 			reviewFailureReason(Cause.combine(rejectedKey, policy("duration")), MAPLE_KEY),

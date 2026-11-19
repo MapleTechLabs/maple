@@ -133,6 +133,25 @@ export const runAutonomousPhases = <E, R>(input: AutonomousPhasesInput<E, R>): E
 			}
 			if (!outcome.submitted() && outcome.failure() === undefined) outcome.fail("answered_in_prose")
 		}
+		// A provider error mid-response (an upstream 500 after reasoning had streamed) is past the
+		// engine's own retry. The pass, or its continuation, resumes once from its transcript.
+		const resumePrompt = completion.resumePrompt
+		if (
+			resumePrompt !== undefined &&
+			!outcome.submitted() &&
+			outcome.failure() === "provider_unavailable" &&
+			holdsTurn()
+		) {
+			const remaining = yield* remainingAgent
+			if (remaining !== undefined) {
+				const resumed = yield* phase("continue", {
+					text: `${resumePrompt}\n\n${text}`,
+					history: withToolTranscript(input.transcript()),
+					agent: remaining,
+				})
+				yield* Effect.annotateCurrentSpan("maple.pr_review.resumed", resumed.submitted)
+			}
+		}
 		if (!outcome.submitted() && holdsTurn()) {
 			const closeOut = yield* phase("close-out", {
 				text: completion.closeOutPrompt,
