@@ -71,7 +71,7 @@ Every field accepted by `MapleBrowser.init`:
 | `tracing.captureHeaders`               | `{ request?, response? }`                                | none                                      | Header names to record on `fetch`/XHR spans. See [Request and response detail](#request-and-response-detail).                                                              |
 | `tracing.longFrames`                   | `boolean`                                                | `false`                                   | Span main-thread frames of 100ms or more. See [Jank](#jank).                                                                                                               |
 | `tracing.slowInteractions`             | `boolean`                                                | `false`                                   | Span interactions of 200ms or more. See [Jank](#jank).                                                                                                                     |
-| `errors`                               | `object`                                                 | see [Filtering errors](#filtering-errors) | `ignore`, `denyUrls`, `allowUrls`, `beforeCapture`, `defaultFilters` and `captureHttpStatus`.                                                                              |
+| `errors`                               | `object`                                                 | see [Filtering errors](#filtering-errors) | `ignore`, `denyUrls`, `allowUrls`, `beforeCapture`, `defaultFilters`, `captureHttpStatus` and `ignoreNetworkFailuresFor`.                                                  |
 | `breadcrumbs`                          | `boolean`                                                | `true`                                    | Keep the last clicks, inputs, navigations and console lines, and send them with the next error. See [Breadcrumbs](#breadcrumbs).                                           |
 | `webVitals`                            | `boolean`                                                | `true`                                    | Report Core Web Vitals. See [Web Vitals](#web-vitals).                                                                                                                     |
 | `logs.captureConsole`                  | `Array<"debug" \| "log" \| "info" \| "warn" \| "error">` | `[]`                                      | Console levels sent as logs as they happen. See [Logs](#logs).                                                                                                             |
@@ -260,7 +260,17 @@ errors: {
 } // a 404 from a search box is expected here
 ```
 
-A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is always an error. A request your code aborts with its own `AbortController` is not.
+A request that gets no response at all (offline, DNS, CORS, or a timeout from `AbortSignal.timeout()`) is an error. A request your code aborts with its own `AbortController` is not, and neither is one the browser cancelled because the page unloaded (including a `location.reload()`), was hidden or went offline while it was in flight: that span is marked `maple.connection_lost` instead.
+
+Some requests are expected to fail, such as analytics beacons an ad blocker stops. List them and their failures stop counting as errors (a string is an absolute URL prefix, a RegExp is tested against the full URL):
+
+```ts
+errors: {
+	ignoreNetworkFailuresFor: ["https://www.google-analytics.com"]
+}
+```
+
+Their spans are kept, marked `maple.network_failure_ignored`. A 4xx or 5xx response from those URLs still counts.
 
 ### Breadcrumbs
 

@@ -24,9 +24,18 @@ export interface ErrorFilterOptions {
 	 * HTTP response statuses that make a client request span an error (and so an
 	 * issue). Default `[[400, 599]]`, as the HTTP semantic conventions say for
 	 * client spans; narrow it, e.g. `[[500, 599]]`, to count fewer. A network
-	 * failure is always an error.
+	 * failure is an error unless its URL is in `ignoreNetworkFailuresFor`.
 	 */
 	readonly captureHttpStatus?: ReadonlyArray<HttpStatusRange>
+	/**
+	 * Request URLs whose network failures (no response at all) are not errors,
+	 * such as third-party beacons an ad blocker stops. Their spans stay `Unset`
+	 * with `maple.network_failure_ignored`, and a `fetch()` rejection left
+	 * unhandled is not reported either. A string is an absolute URL prefix
+	 * (`"https://www.google-analytics.com"` covers every path on that origin); a
+	 * RegExp is tested against the full URL. HTTP error statuses are unaffected.
+	 */
+	readonly ignoreNetworkFailuresFor?: ReadonlyArray<string | RegExp>
 	/**
 	 * Drop errors thrown from browser extensions and the benign `ResizeObserver
 	 * loop` notices. Default true.

@@ -1,6 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { CurrentMcpTenant } from "../tenant"
-import { formatDurationFromMs, formatNumber, truncate, untrustedText } from "../lib/format"
+import { formatDurationFromMs, formatNumber, logAttributeLines, truncate, untrustedText } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
@@ -243,7 +243,7 @@ const traceBlocks =
 						`Logs (${trace.logs.length}, error-level first):`,
 						...Arr.map(trace.logs, (log) => {
 							const time = Str.split(" ")(log.timestamp)[1] ?? log.timestamp
-							return `  ${time} [${Str.padEnd(5)(log.severityText)}] ${untrustedText(log.body, 90)}`
+							return `  ${time} [${Str.padEnd(5)(log.severityText)}] ${untrustedText(log.body, 90)}${logAttributeLines(log.keyAttributes, "      ")}`
 						}),
 					]),
 		]
@@ -276,7 +276,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		name: "error_detail",
 		title: "Error Detail",
 		description:
-			"Sample traces (failing span, correlated logs) and a summary for one error, by `fingerprint` (decimal UInt64 from find_errors) or `issue_id` (UUID from list_error_issues). Without start_time/end_time it counts the last 30 days and samples the 6 hours before the last occurrence. Use inspect_trace on a trace_id for the full span tree.",
+			"Sample traces (failing span, correlated logs with their cause attributes such as log.error and exception.*) and a summary for one error, by `fingerprint` (decimal UInt64 from find_errors) or `issue_id` (UUID from list_error_issues). Without start_time/end_time it counts the last 30 days and samples the 6 hours before the last occurrence. Use inspect_trace on a trace_id for the full span tree.",
 		parameters: Schema.Struct({
 			fingerprint: P.optionalText(
 				'The error FingerprintHash from find_errors or list_error_issues: a decimal UInt64 string, e.g. "11640295108927840024".',

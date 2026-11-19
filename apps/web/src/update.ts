@@ -64,7 +64,7 @@ import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
 import * as Policy from "@maple/domain/policy"
 import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
-import { getActivePlan } from "./page/kit/billing/plan-gating"
+import { getActivePlan, hasSelectedPlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -868,10 +868,22 @@ const elapsedCustomerGrace = (model: Model, orgId: string): UpdateReturn =>
 			)
 
 /** A customer read for the current org settled: remember the access, then re-run the gates. */
-/** The quick start learns the plan is known: a save it loaded before the customer read settles. */
+/**
+ * The onboarding screen learns the plan is known: the quick start settles a save it loaded before the
+ * customer read, and either plan screen back from Stripe stops waiting once the plan shows.
+ */
 const withSettledPlan = (step: UpdateReturn): UpdateReturn => {
-	if (step.model.onboarding?.screen._tag !== "QuickStart") return step
-	const next = updateOnboarding(step.model, Onboarding.settledPlanMessage)
+	const screen = step.model.onboarding?.screen._tag
+	// App access fails open (a failed read, a lapsed plan); only a live subscription ends a checkout wait.
+	const isPlanActive = hasSelectedPlan(customerOf(step.model.customer))
+	const message =
+		screen === "QuickStart"
+			? Onboarding.settledPlanMessage(isPlanActive)
+			: screen === "SelectPlan"
+				? Onboarding.settledSelectPlanMessage(isPlanActive)
+				: null
+	if (message === null) return step
+	const next = updateOnboarding(step.model, message)
 	return { ...next, commands: [...(step.commands ?? []), ...(next.commands ?? [])] }
 }
 

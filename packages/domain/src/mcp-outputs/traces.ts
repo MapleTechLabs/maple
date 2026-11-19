@@ -125,6 +125,7 @@ export const InspectTraceOutput = Schema.Struct({
 			serviceName: Schema.String,
 			body: Schema.String,
 			spanId: Schema.optionalKey(Schema.String),
+			keyAttributes: Schema.optionalKey(StringMap),
 		}),
 	),
 	/** Where the overview collapsed children, per parent. */

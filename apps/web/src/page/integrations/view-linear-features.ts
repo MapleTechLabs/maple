@@ -6,7 +6,7 @@ import { type FeatureRow, featurePanel } from "../kit/feature-list"
 import { shownSwitches } from "./feature-switches"
 import { LinearMessage, savedLinearFeatures } from "./linear"
 import { Message } from "./message"
-import { canManage, type Model } from "./model"
+import { manageLock, type Model } from "./model"
 
 // What Maple does in Linear, one switch per feature, on the connected card.
 
@@ -20,7 +20,7 @@ const rows = (model: Model, status: LinearIntegrationStatus): ReadonlyArray<Feat
 		return {
 			spec,
 			isChecked: shown[flag],
-			isDisabled: state.isSaving || !canManage(model),
+			isDisabled: state.isSaving,
 			onToggle: Message.GotLinearMessage({ message: LinearMessage.ToggledFeature({ flag }) }),
 		}
 	})
@@ -33,4 +33,5 @@ export const linearFeaturePanel = (h: H, model: Model, status: LinearIntegration
 		title: "What Maple does in Linear",
 		rows: rows(model, status),
 		error: model.linearCard.features.error,
+		lockReason: manageLock(model),
 	})

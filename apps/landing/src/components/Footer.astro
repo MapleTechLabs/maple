@@ -4,7 +4,8 @@ import * as m from "../paraglide/messages.js";
 import LanguageSwitcher from "./LanguageSwitcher.astro";
 import { getGitHubStars, formatStars } from "../lib/github-stars";
 import { features } from "../lib/features";
-import { featurePath } from "../lib/page-registry";
+import { featurePath, useCasePath } from "../lib/page-registry";
+import { useCases } from "../lib/use-cases";
 import Icon from "./Icon.astro";
 
 const locale = Astro.currentLocale ?? "en";
@@ -61,8 +62,8 @@ const stars = await getGitHubStars();
                     <!-- English-only, like /about: bare href, not l(). -->
                     <li><a href="/eu" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_eu_hosting()}</a></li>
                     <li><a href={l("/opentelemetry")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
-                    <li><a href={l("/roadmap")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
-                    <li><a href={l("/local")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>
+                    <li><a href="/roadmap" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
+                    <li><a href="/local" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>
                     <li><a href="/docs" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_docs()}</a></li>
                     <li><a href="/guides" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_guides()}</a></li>
                     <li><a href="/blog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_blog()}</a></li>
@@ -87,7 +88,7 @@ const stars = await getGitHubStars();
 
             <!-- Col 4: Compare -->
             <div>
-                <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4">{m.footer_compare()}</h4>
+                <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4"><a href={l("/compare")} class="hover:text-primary transition-colors">{m.footer_compare()}</a></h4>
                 <ul class="space-y-2">
                     <li><a href={l("/compare/datadog")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_datadog()}</a></li>
                     <li><a href={l("/compare/grafana")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_grafana()}</a></li>
@@ -99,7 +100,7 @@ const stars = await getGitHubStars();
                     <li><a href={l("/compare/honeycomb")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_honeycomb()}</a></li>
                 </ul>
 
-                <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_integrations()}</h4>
+                <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6"><a href={l("/integrations")} class="hover:text-primary transition-colors">{m.footer_integrations()}</a></h4>
                 <ul class="space-y-2">
                     <li><a href={l("/integrations/nextjs")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_nextjs()}</a></li>
                     <li><a href={l("/integrations/python")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_python()}</a></li>
@@ -121,9 +122,16 @@ const stars = await getGitHubStars();
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_learn()}</h4>
                 <ul class="space-y-2">
                     <li><a href="/guides/what-is-apm" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_what_is_apm()}</a></li>
-                    <li><a href={l("/observability")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_what_is_observability()}</a></li>
-                    <li><a href={l("/best-open-source-observability-tools")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_best_tools()}</a></li>
+                    <li><a href="/observability" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_what_is_observability()}</a></li>
+                    <li><a href="/best-open-source-observability-tools" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_best_tools()}</a></li>
                     <li><a href="/alternatives/dash0" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_dash0_alternatives()}</a></li>
+                </ul>
+
+                <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.nav_use_cases()}</h4>
+                <ul class="space-y-2">
+                    {useCases.map((useCase) => (
+                        <li><a href={useCasePath(locale, useCase.slug)} class="text-fg-muted text-xs hover:text-foreground transition-colors">{useCase.navLabel()}</a></li>
+                    ))}
                 </ul>
             </div>
         </div>
@@ -139,8 +147,8 @@ const stars = await getGitHubStars();
                 <!-- English-only trust pages (see lib/company.ts): bare hrefs, not l(). -->
                 <a href="/about" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_about()}</a>
                 <a href="/contact" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_contact()}</a>
-                <a href={l("/privacy")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_privacy()}</a>
-                <a href={l("/terms")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_terms()}</a>
+                <a href="/privacy" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_privacy()}</a>
+                <a href="/terms" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_terms()}</a>
                 <!-- English-only page, so a bare href rather than l(), same as
                      /changelog and /docs above. -->
                 <a href="/brand" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_brand()}</a>

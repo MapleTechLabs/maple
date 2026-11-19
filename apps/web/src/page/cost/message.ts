@@ -34,6 +34,7 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../data/time-range"
 import { COST_GROUP_BYS } from "../../route/search"
 import { perDimension } from "./derive"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CredentialProvider } from "./providers"
 
@@ -97,6 +98,9 @@ export const Message = defineMessageUnion({
 	GotGcpCommandCopyMessage: { message: CopyButton.Message },
 	SubmittedGcpExport: {},
 	CompletedAddGcp: { result: Schema.Result(GcpCostSourceAdded, LoadFailure) },
+	/** Turns the dialog to the request form, its provider filled from the search. */
+	ClickedRequestProvider: {},
+	GotRequestMessage: { message: FeatureRequest.Message },
 	ClickedBackToProviders: {},
 	/** Opens the dialog on the provider's form, for the source that exists. */
 	ClickedReplaceCredential: { provider: CredentialProvider },

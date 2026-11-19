@@ -19,8 +19,11 @@ export const FEEDBACK_SIMILARITY = 0.5
 /** Similar labelled findings on one side needed before that side decides. */
 export const FEEDBACK_VOTES = 3
 
-/** Labelled findings read per review, newest first; bounds the in-memory comparison. */
+/** Labelled findings read per review, newest first. */
 export const FEEDBACK_EXAMPLE_LIMIT = 2_000
+
+/** Examples read per query: all 2000 vectors at once (~140 MB parsed) reset a 128 MB Durable Object. */
+export const FEEDBACK_EXAMPLE_PAGE = 100
 
 export type FeedbackLabel = "positive" | "negative"
 
@@ -67,39 +70,41 @@ export const cosineSimilarity = (a: ReadonlyArray<number>, b: ReadonlyArray<numb
 	return normA === 0 || normB === 0 ? 0 : dot / Math.sqrt(normA * normB)
 }
 
-export interface FeedbackVerdict {
+/** How many labelled examples on each side read like one finding. */
+export interface FeedbackVotes {
 	readonly similarNegative: number
 	readonly similarPositive: number
-	readonly suppress: boolean
 }
 
-/** Block on enough similar negatives, unless as many similar positives say otherwise. */
-export const feedbackVerdict = (
+export const NO_FEEDBACK_VOTES: FeedbackVotes = { similarNegative: 0, similarPositive: 0 }
+
+/** `votes` with one page of examples added: counts, so pages tallied and dropped match all at once. */
+export const tallyFeedback = (
+	votes: FeedbackVotes,
 	embedding: ReadonlyArray<number>,
 	examples: ReadonlyArray<FeedbackExample>,
-): FeedbackVerdict => {
-	let similarNegative = 0
-	let similarPositive = 0
-	for (const example of examples) {
-		if (cosineSimilarity(embedding, example.embedding) < FEEDBACK_SIMILARITY) continue
-		if (example.label === "negative") similarNegative++
-		else similarPositive++
-	}
-	return {
-		similarNegative,
-		similarPositive,
-		suppress: similarNegative >= FEEDBACK_VOTES && similarPositive < FEEDBACK_VOTES,
-	}
-}
+): FeedbackVotes =>
+	Arr.reduce(examples, votes, (tally, example) =>
+		cosineSimilarity(embedding, example.embedding) < FEEDBACK_SIMILARITY
+			? tally
+			: example.label === "negative"
+				? { ...tally, similarNegative: tally.similarNegative + 1 }
+				: { ...tally, similarPositive: tally.similarPositive + 1 },
+	)
+
+/** Block on enough similar negatives, unless as many similar positives say otherwise. */
+export const suppressedByVotes = (votes: FeedbackVotes): boolean =>
+	votes.similarNegative >= FEEDBACK_VOTES && votes.similarPositive < FEEDBACK_VOTES
 
 /**
  * Split findings into the ones to post, with their vectors, and the ones the team's votes
- * suppress. `embeddings` is index-aligned with `findings`; an exempt finding is never compared.
+ * suppress. `embeddings` and `votes` are index-aligned with `findings`; an exempt finding is
+ * never suppressed.
  */
 export const applyFeedback = <F extends Pick<PrReviewFinding, "category" | "severity">>(
 	findings: ReadonlyArray<F>,
 	embeddings: ReadonlyArray<ReadonlyArray<number>>,
-	examples: ReadonlyArray<FeedbackExample>,
+	votes: ReadonlyArray<FeedbackVotes>,
 ): {
 	readonly kept: ReadonlyArray<F>
 	readonly keptVectors: ReadonlyArray<ReadonlyArray<number>>
@@ -109,12 +114,11 @@ export const applyFeedback = <F extends Pick<PrReviewFinding, "category" | "seve
 	const keptVectors: Array<ReadonlyArray<number>> = []
 	const suppressed: Array<F> = []
 	Arr.forEach(findings, (finding, i) => {
-		const embedding = embeddings[i] ?? []
-		if (!feedbackExempt(finding) && feedbackVerdict(embedding, examples).suppress) {
+		if (!feedbackExempt(finding) && suppressedByVotes(votes[i] ?? NO_FEEDBACK_VOTES)) {
 			suppressed.push(finding)
 		} else {
 			kept.push(finding)
-			keptVectors.push(embedding)
+			keptVectors.push(embeddings[i] ?? [])
 		}
 	})
 	return { kept, keptVectors, suppressed }

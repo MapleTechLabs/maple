@@ -1,6 +1,6 @@
 import { isRedundantTreeAttribute, type SpanNode } from "@maple/query-engine/observability"
 import type { InspectTraceOutput, TraceSpanOutput } from "@maple/domain/mcp-outputs"
-import { formatDurationFromMs, toSecondTimestamp, untrustedText } from "./format"
+import { formatDurationFromMs, logAttributeLines, toSecondTimestamp, untrustedText } from "./format"
 import { selectOverviewSpans, type OverviewOptions } from "./span-tree"
 import { doc, type DocBlock, type ToolDoc } from "./tool-doc"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
@@ -11,6 +11,8 @@ export interface TraceOverviewLog {
 	readonly serviceName: string
 	readonly body: string
 	readonly spanId: string
+	/** Cause-bearing attributes (`log.error`, `exception.*`, ...), when the log has any. */
+	readonly keyAttributes?: Readonly<Record<string, string>>
 }
 
 export interface TraceOverviewInput {
@@ -186,7 +188,7 @@ const renderLogs = (logs: Output["logs"]): string =>
 				const sevUpper = Str.toUpperCase(log.severityText)
 				const marker = sevUpper === "ERROR" || sevUpper === "FATAL" ? "●" : " "
 				const spanRef = log.spanId ? ` span=${log.spanId}` : ""
-				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${untrustedText(log.body, 100)}${spanRef}`
+				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${untrustedText(log.body, 100)}${spanRef}${logAttributeLines(log.keyAttributes, "    ")}`
 			}),
 		],
 		"\n",

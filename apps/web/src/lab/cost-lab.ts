@@ -52,6 +52,7 @@ import {
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
+import * as FeatureRequest from "../page/kit/feature-request"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
 import { CredentialProvider } from "../page/cost/providers"
@@ -99,6 +100,7 @@ export const LabState = Schema.Literals([
 	"add-source-added",
 	"add-source-search",
 	"add-source-no-match",
+	"request-provider",
 	"add-openrouter",
 	"key-refused",
 	"replace-key",
@@ -189,6 +191,7 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-source" ||
 	state === "add-source-search" ||
 	state === "add-source-no-match" ||
+	state === "request-provider" ||
 	state === "add-openrouter" ||
 	state === "key-refused" ||
 	state === "add-cloudflare" ||
@@ -225,6 +228,17 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 				CostMessage.ClickedAddSource(),
 				CostMessage.ChangedProviderSearch({
 					value: state === "add-source-search" ? "api" : "mainframe",
+				}),
+			]
+		case "request-provider":
+			return [
+				CostMessage.ClickedAddSource(),
+				CostMessage.ChangedProviderSearch({ value: "Hetzner" }),
+				CostMessage.ClickedRequestProvider(),
+				CostMessage.GotRequestMessage({
+					message: FeatureRequest.Message.ChangedNote({
+						value: "Cost per server and per project.",
+					}),
 				}),
 			]
 		case "add-openrouter":
@@ -597,6 +611,12 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedSaveCredential({
 					provider: "openai",
 					result: state === "openai-no-spend" ? Result.fail(noSpendKey) : Result.succeed(undefined),
+				}),
+			)
+		case FeatureRequest.SendFeatureRequest.name:
+			return Option.some(
+				CostMessage.GotRequestMessage({
+					message: FeatureRequest.Message.CompletedSend({ result: Result.succeed(undefined) }),
 				}),
 			)
 		case RemoveAnthropicCostKey.name:

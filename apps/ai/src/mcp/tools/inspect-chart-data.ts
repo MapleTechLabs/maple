@@ -1,5 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../tenant"
@@ -82,6 +82,7 @@ const inspectChartDataDescription =
 	"The mutation tools already run this on the widgets they touch; call it to re-verify after a fix or to check any existing widget. " +
 	"If the verdict is not looks_healthy, fix the widget with update_dashboard_widget and inspect again. " +
 	"Supports `query` data sources (timeseries and breakdown) and `raw_sql` (executed, rows returned). " +
+	"Dashboard variables (`$environment`, ...) are filled in as the board fills them (default, then All, then first option); pass `variables` to pick values. " +
 	"Limits: `formulas[]` are not evaluated, only the base queries; the requested window is checked without the UI's auto-fallback; " +
 	"a curated `route` data source (service_overview, errors_summary, ...) is not inspected and the result points you to query_data with the widget's params."
 
@@ -97,6 +98,10 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				"Start of an override window (pass with end_time; omit both for the widget's pinned timeRange, else the dashboard's)",
 			),
 			end_time: P.optionalTimestamp("End of the override window (pass with start_time)"),
+			variables: P.optionalJson(
+				Schema.Record(Schema.String, Schema.String),
+				'Dashboard variable values by name, as the picker would set them, e.g. {"environment":"production"}; "$__all" selects All. Omitted variables take the board\'s own value (default, then All, then first option).',
+			),
 		}),
 		hints: { readOnly: true },
 		phrases: ["Inspecting chart data"],
@@ -105,6 +110,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			widget_id,
 			start_time,
 			end_time,
+			variables,
 		}) {
 			if ((start_time === undefined) !== (end_time === undefined)) {
 				return yield* new McpInvalidInputError({
@@ -149,12 +155,42 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				}
 			}
 
-			const outcome = yield* inspectWidget({ tenant, dashboardName: dashboard.name, widget, timeRange })
+			// Variable options come from the board's window (or the override), not a pinned tile's.
+			const boardWindow = Option.getOrElse(
+				Option.fromNullishOr(
+					timeRange.source === "override"
+						? timeRange
+						: resolveDashboardTimeRange(dashboard.timeRange),
+				),
+				() => timeRange,
+			)
 
+			const declared = Arr.map(dashboard.variables ?? [], (variable) => variable.name)
+			const unknown = Arr.filter(Rec.keys(variables ?? {}), (name) => !declared.includes(name))
+			if (unknown.length > 0) {
+				return yield* new McpInvalidInputError({
+					message: `Unknown dashboard variable(s): ${Arr.join(unknown, ", ")}. This dashboard declares ${declared.length === 0 ? "no variables" : Arr.join(declared, ", ")}.`,
+					parameter: "variables",
+				})
+			}
+
+			const outcome = yield* inspectWidget({
+				tenant,
+				dashboardName: dashboard.name,
+				widget,
+				timeRange,
+				variables: dashboard.variables,
+				variableOverrides: variables,
+				variablesTimeRange: boardWindow,
+			})
+
+			const used =
+				outcome.kind === "supported" || outcome.kind === "raw_sql" ? outcome.variables.used : {}
 			const base = {
 				dashboardId: dashboard.id,
 				dashboardName: dashboard.name,
 				timeRange,
+				...(Rec.isEmptyRecord(used) ? undefined : { variables: used }),
 			}
 			const widgetInfo = {
 				id: widget.id,
@@ -200,7 +236,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 						queries: [],
 						verdict,
 						flags: [],
-						notes: [],
+						notes: outcome.variables.notes,
 						rawSql: {
 							sql: data.sql,
 							...(data.expandedSql === undefined
@@ -257,7 +293,14 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			const window = `Time range: ${output.timeRange.startTime} to ${output.timeRange.endTime} (source: ${output.timeRange.source})`
 			const recheck = doc.next(
 				TOOL,
-				{ dashboard_id: output.dashboardId, widget_id: output.widget.id },
+				{
+					dashboard_id: output.dashboardId,
+					widget_id: output.widget.id,
+					// The same selections, so the recheck runs the chart that was just inspected.
+					...(output.variables === undefined
+						? undefined
+						: { variables: stringifyJson(output.variables) }),
+				},
 				"re-verify after fixing it with update_dashboard_widget",
 			)
 
@@ -283,6 +326,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 
 			if (output.outcome === "raw_sql" && output.rawSql !== undefined) {
 				const raw = output.rawSql
+				const notes = output.notes.length > 0 ? [doc.heading("Notes"), doc.list(output.notes)] : []
 				if (raw.status === "error") {
 					return {
 						title,
@@ -294,6 +338,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 							doc.text(
 								"Fix the SQL via update_dashboard_widget and re-run inspect_chart_data to verify.",
 							),
+							...notes,
 						],
 						next: [recheck],
 					}
@@ -319,6 +364,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 										),
 									),
 								]),
+						...notes,
 					],
 					...(raw.truncated
 						? { truncation: { shown: raw.rows.length, total: raw.rowCount, noun: "rows" } }

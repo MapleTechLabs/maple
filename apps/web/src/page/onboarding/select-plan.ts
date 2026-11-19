@@ -20,7 +20,11 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 export const Model = Schema.TaggedStruct("SelectPlan", { pricing: PricingCards.Model })
 export type Model = typeof Model.Type
 
-export const Message = defineMessageUnion({ GotPricingMessage: { message: PricingCards.Message } })
+export const Message = defineMessageUnion({
+	GotPricingMessage: { message: PricingCards.Message },
+	/** Sent by the root once the customer read settles; `isPlanActive`: it holds a live subscription. */
+	SettledPlan: { isPlanActive: Schema.Boolean },
+})
 export type Message = typeof Message.Type
 
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PricingCards.OutMessage, Resources>
@@ -36,8 +40,15 @@ export const init = (isCheckoutReturn: boolean): UpdateReturn => {
 	}
 }
 
+/** Once a live subscription shows, a wait on the Stripe return ends. */
 export const update = (model: Model, message: Message): UpdateReturn => {
-	const next = PricingCards.update(model.pricing, message.message)
+	const child = Message.match(message, {
+		GotPricingMessage: ({ message: pricing }) => pricing,
+		SettledPlan: ({ isPlanActive }) =>
+			isPlanActive ? PricingCards.Message.SawPlan({ isReturnUnwaited: false }) : null,
+	})
+	if (child === null) return { model }
+	const next = PricingCards.update(model.pricing, child)
 	return {
 		model: { ...model, pricing: next.model },
 		commands: Command.mapMessages(next.commands ?? [], toPricing),

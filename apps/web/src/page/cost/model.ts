@@ -26,14 +26,18 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { TimeWindow } from "../../data/time-range"
 import { CostSearch } from "../../route/search"
 import { CostFacets } from "./message"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CredentialProvider } from "./providers"
 
 export type Search = typeof CostSearch.Type
 
-/** The add-source dialog's faces: the providers, then the chosen one's credential form, list or step. */
+/**
+ * The add-source dialog's faces: the providers, then the chosen one's credential form, list or
+ * step. `request`: asking Maple for a provider it does not read yet.
+ */
 export const AddStep = Schema.Union([
-	Schema.Literals(["pick", "github", "vercel", "planetscale", "gcp"]),
+	Schema.Literals(["pick", "github", "vercel", "planetscale", "gcp", "request"]),
 	CredentialProvider,
 ])
 export type AddStep = typeof AddStep.Type
@@ -136,6 +140,8 @@ export const Model = Schema.Struct({
 	/** Why the last add was refused, shown under the field until the id changes. */
 	gcpError: Schema.NullOr(Schema.String),
 	gcpCommandCopy: CopyButton.Model,
+	/** The request step's form: a provider Maple does not read yet. */
+	request: FeatureRequest.Model,
 	removeDialog: Dialog.Model,
 	/** The source the remove confirm is about, as it was when Remove was clicked. */
 	removeTarget: Schema.NullOr(CostSourceSummary),

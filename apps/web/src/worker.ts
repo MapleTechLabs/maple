@@ -11,6 +11,7 @@ import {
 	resolveDeploymentEnvironment,
 	resolveRegionAppUrls,
 } from "@maple/infra/cloudflare"
+import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { siteBuildMemo } from "@maple/infra/worker-build"
 import { commitSha, plainFrom, selfObservabilityEnv } from "@maple/infra/env"
 import { resolveWorkerEnv } from "@maple/infra/secret-guard"
@@ -54,11 +55,14 @@ const props = Effect.gen(function* () {
 					: urls.api,
 			VITE_API_PUBLIC_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
-			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys.
+			// The app's own telemetry. A preview's gateway knows none of Maple's internal keys, and the
+			// EU gateway does not know the US internal org's: both report to the US, as the EU API does.
 			VITE_MAPLE_SELF_INGEST_URL:
 				stage.kind === "pr"
 					? yield* plainFrom(["VITE_INGEST_URL"], prdOrigin("ingest"))
-					: urls.ingest,
+					: stage.kind === "prd" && region !== DEFAULT_MAPLE_REGION
+						? prdOrigin("ingest")
+						: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
 			// A `preview:web` stage has no Electric, so its shape proxy can only 503 (as electric-sync's env).
 			...(stage.kind === "pr" && !profile.deploys.electric

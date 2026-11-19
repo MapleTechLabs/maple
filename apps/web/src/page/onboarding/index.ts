@@ -91,8 +91,15 @@ export const toUnsubscribe = (message: Unsubscribe.Message) => Message.GotUnsubs
 export const toSwitcher = (message: OrgSwitcher.Message) => Message.GotSwitcherMessage({ message })
 export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkSignInMessage({ message })
 export const toQuickStart = (message: QuickStart.Message) => Message.GotQuickStartMessage({ message })
-/** Sent by the root once the customer read settles (`QuickStart.SettledPlan`). */
-export const settledPlanMessage = toQuickStart(QuickStart.Message.SettledPlan())
+/**
+ * Sent by the root once the customer read settles (`QuickStart.SettledPlan`); `isPlanActive` says it
+ * holds a live subscription, which ends a wait on a checkout return.
+ */
+export const settledPlanMessage = (isPlanActive: boolean) =>
+	toQuickStart(QuickStart.Message.SettledPlan({ isPlanActive }))
+/** The same for `/select-plan`. */
+export const settledSelectPlanMessage = (isPlanActive: boolean) =>
+	Message.GotSelectPlanMessage({ message: SelectPlan.Message.SettledPlan({ isPlanActive }) })
 export const toCreateOrg = (message: CreateOrg.Message) => Message.GotCreateOrgMessage({ message })
 export const toSelectPlan = (message: SelectPlan.Message) => Message.GotSelectPlanMessage({ message })
 export const toUserMenu = (message: Menu.Message) => Message.GotUserMenuMessage({ message })

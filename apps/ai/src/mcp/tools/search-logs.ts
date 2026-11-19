@@ -2,7 +2,7 @@ import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { formatNumber, toSecondTimestamp, untrustedText } from "../lib/format"
+import { formatNumber, logAttributeLines, toSecondTimestamp, untrustedText } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
@@ -159,13 +159,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				// Full ids: a prefix cannot be passed to inspect_trace / inspect_span.
 				const span = log.spanId ? ` span=${log.spanId}` : ""
 				const ref = log.traceId ? ` [trace=${log.traceId}${span}]` : ""
-				const attrs = Arr.join(
-					Arr.map(
-						Rec.toEntries(log.keyAttributes ?? {}),
-						([k, v]) => `\n    ${untrustedText(k, 120)}: ${untrustedText(v, 300)}`,
-					),
-					"",
-				)
+				const attrs = logAttributeLines(log.keyAttributes, "    ")
 				return `${marker} ${time} [${Str.padEnd(5)(log.severityText)}] ${log.serviceName}: ${untrustedText(log.body, 120)}${ref}${attrs}`
 			})
 			const pagination = output.pagination

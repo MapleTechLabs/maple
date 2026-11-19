@@ -9,6 +9,7 @@ import { DemoApiGroup } from "./demo"
 import { AuditTrailApiGroup } from "./audit-trail"
 import { CloudSecurityApiGroup } from "./cloud-security"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
+import { FeatureRequestApiGroup } from "./feature-requests"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { OpenAiCostApiGroup } from "./openai-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
@@ -78,6 +79,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OpenRouterCostApiGroup)
 	.add(CloudflareCostApiGroup)
 	.add(AnthropicCostApiGroup)
+	.add(FeatureRequestApiGroup)
 	.add(OpenAiCostApiGroup)
 	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)

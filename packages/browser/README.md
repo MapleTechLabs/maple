@@ -78,7 +78,17 @@ conventions say for client spans. Narrow that with `errors: { captureHttpStatus:
 A request that never got a response is an error too, unless the connection went away while it was
 in flight: the page unloaded or was hidden, or the browser went offline (or was offline when it
 failed). Those stay `Unset` with `maple.connection_lost` set to `page_unload`, `page_hidden` or
-`offline`, since the browser cancelled them, not your API.
+`offline`, since the browser cancelled them, not your API. That includes requests a reload or
+redirect (`location.reload()`, `location.replace()`) cancels a moment before the page unloads. When
+the `fetch()` rejection of such a request goes unhandled as it is, it is not reported either.
+
+Requests to URLs listed in `errors.ignoreNetworkFailuresFor` (a string is an absolute URL prefix, a
+RegExp is tested against the full URL) are not errors when they fail with no response, for example
+third-party beacons an ad blocker stops. Their spans stay `Unset` with
+`maple.network_failure_ignored`, and the unhandled `fetch()` rejection of one is not reported.
+Errors your HTTP client builds from those failures (axios's `Network Error`) are still reported;
+drop them with `errors.ignore`.
+HTTP error statuses from those URLs still count.
 
 ### Breadcrumbs
 
