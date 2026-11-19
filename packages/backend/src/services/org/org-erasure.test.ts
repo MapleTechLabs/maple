@@ -1,10 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Order, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Investigations, OrgErasures, PrReviewReplies, PrReviews, type OrgErasureRow } from "@maple/db/tables"
-import type { OrgId } from "@maple/domain/http"
+import { OrgId } from "@maple/domain/http"
 import { WAREHOUSE_ERASURE_TARGETS, warehouseErasureRank } from "@maple/domain/tinybird/org-erasure-plan"
 import { WarehouseDeleteToken } from "@maple/infra/secrets"
 import { ReplayBlobEraser } from "@maple/backend/platform/bindings"
@@ -64,26 +64,40 @@ const nonWarehouse = Effect.map(erasures, (rows) => Arr.filter(rows, (row) => ro
 /** A warehouse whose jobs end as `ending` says (done by default); records every job it starts. */
 const warehouse = (ending: (jobId: string) => WarehouseDeleteJobState = () => ({ _tag: "Done" })) => {
 	const submitted: Array<string> = []
+	const submittedFor: Array<OrgId> = []
+	const polled: Array<string> = []
 	const layer = Layer.succeed(WarehouseDeleteClient, {
-		submit: (datasource) =>
+		submit: (datasource, orgId) =>
 			Effect.sync(() => {
 				submitted.push(datasource)
+				submittedFor.push(orgId)
 				return `job-${datasource}`
 			}),
-		status: (jobId) => Effect.sync(() => ending(jobId)),
+		status: (jobId) =>
+			Effect.sync(() => {
+				polled.push(jobId)
+				return ending(jobId)
+			}),
 	})
-	return { submitted, layer }
+	return { submitted, submittedFor, polled, layer }
 }
 
-const warehouseRow = (datasource: string, jobId: string | null): OrgErasureRow => ({
-	id: datasource,
-	orgId: ORG_A,
+const orgNamed = Schema.decodeSync(OrgId)
+
+const warehouseRow = (
+	datasource: string,
+	jobId: string | null,
+	orgId: OrgId = ORG_A,
+	nextAttemptAt = 0,
+): OrgErasureRow => ({
+	id: `${orgId}:${datasource}`,
+	orgId,
 	kind: "warehouse",
 	target: datasource,
 	jobId,
 	attempts: 0,
 	lastError: null,
-	nextAttemptAt: 0,
+	nextAttemptAt,
 	createdAt: 0,
 })
 
@@ -348,6 +362,56 @@ describe("runOrgErasures", () => {
 			yield* Effect.forEach(Arr.range(1, 4), () => runOrgErasures, { discard: true })
 			assert.deepStrictEqual(jobs.submitted, ["service_overview_minutely", "traces"])
 			assert.deepStrictEqual(yield* erasures, [])
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("polls a job in flight even when its org falls outside the window of due orgs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs = warehouse()
+		// More orgs with a target due earlier than the window holds.
+		const crowd = Arr.map(Arr.range(1, 60), (n) =>
+			warehouseRow("traces", null, orgNamed(`org_crowd_${Str.padStart(2, "0")(String(n))}`), 0),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.adjust(1_000)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						...crowd,
+						warehouseRow("traces", "job-late", ORG_A, 900),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			assert.deepStrictEqual(jobs.polled, ["job-late"])
+			const left = yield* erasures
+			assert.isFalse(Arr.some(left, (row) => row.orgId === ORG_A))
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("starts new jobs for the org that has waited longest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs = warehouse()
+		const [first, second, third] = [
+			orgNamed("org_waited_b"),
+			orgNamed("org_waited_a"),
+			orgNamed("org_waited_c"),
+		]
+		return Effect.gen(function* () {
+			yield* TestClock.adjust(1_000)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						warehouseRow("traces", null, third, 300),
+						warehouseRow("traces", null, first, 100),
+						warehouseRow("traces", null, second, 200),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			assert.deepStrictEqual(jobs.submittedFor, [first, second])
 		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
 	})
 

@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, String as Str } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Exit, Layer, Option, Redacted, String as Str } from "effect"
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
+import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import { ORG_A } from "@maple/backend/testing/test-two-orgs"
 import { WarehouseDeleteToken } from "@maple/infra/secrets"
 import { orgDeleteCondition, WarehouseDeleteClient } from "./WarehouseDeleteClient"
@@ -70,6 +71,31 @@ describe("WarehouseDeleteClient", () => {
 			)
 			assert.strictEqual(poll?.url, "https://warehouse.test/v0/jobs/job-1")
 		}).pipe(Effect.provide(clientLayer(fake.client, Option.some("delete-token"))))
+	})
+
+	it.effect("names the warehouse as the peer on its client spans", () => {
+		const fake = warehouse((url) =>
+			Str.endsWith("/delete")(url)
+				? { status: 200, body: { job_id: "job-1" } }
+				: { status: 200, body: { status: "done" } },
+		)
+		const { spans, tracer } = makeRecordingTracer()
+		return Effect.gen(function* () {
+			const client = yield* WarehouseDeleteClient
+			yield* client.submit("traces", ORG_A)
+			yield* client.status("job-1")
+			const peers = Arr.map(
+				Arr.filter(spans, (span) => Str.startsWith("WarehouseDeleteClient.")(span.name)),
+				(span) => [span.name, span.attributes.get("peer.service")] as const,
+			)
+			assert.deepStrictEqual(peers, [
+				["WarehouseDeleteClient.submit", "tinybird"],
+				["WarehouseDeleteClient.status", "tinybird"],
+			])
+		}).pipe(
+			Effect.withTracer(tracer),
+			Effect.provide(clientLayer(fake.client, Option.some("delete-token"))),
+		)
 	})
 
 	it.effect("reads a finished job as done and an errored one as failed with its reason", () => {

@@ -41,6 +41,9 @@ const JobResponse = Schema.Struct({ status: Schema.String, error: Schema.optiona
 
 const PENDING = new Set(["waiting", "working"])
 
+/** The `peer.service` registry name for the hosted warehouse (maple-telemetry-conventions). */
+const PEER_SERVICE = "tinybird"
+
 const refused = (message: string) => new WarehouseDeleteError({ message, cause: undefined })
 
 export class WarehouseDeleteClient extends Context.Service<WarehouseDeleteClient, WarehouseDeleteClientApi>()(
@@ -92,7 +95,11 @@ export class WarehouseDeleteClient extends Context.Service<WarehouseDeleteClient
 				datasource: string,
 				orgId: OrgId,
 			) {
-				yield* Effect.annotateCurrentSpan({ orgId, "maple.warehouse.datasource": datasource })
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.warehouse.datasource": datasource,
+					"peer.service": PEER_SERVICE,
+				})
 				if (!SAFE_NAME.test(datasource)) return yield* refused(`Not a datasource name: ${datasource}`)
 				const condition = orgDeleteCondition(orgId)
 				if (Option.isNone(condition)) return yield* refused("The org id is not a plain identifier")
@@ -105,6 +112,10 @@ export class WarehouseDeleteClient extends Context.Service<WarehouseDeleteClient
 			})
 
 			const status = Effect.fn("WarehouseDeleteClient.status")(function* (jobId: string) {
+				yield* Effect.annotateCurrentSpan({
+					"maple.warehouse.job_id": jobId,
+					"peer.service": PEER_SERVICE,
+				})
 				const job = yield* send(
 					HttpClientRequest.get(`${base}/v0/jobs/${encodeURIComponent(jobId)}`),
 				).pipe(Effect.flatMap((body) => decodeJob(body).pipe(Effect.mapError(requestFailed))))

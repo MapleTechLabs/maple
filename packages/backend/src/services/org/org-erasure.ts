@@ -230,22 +230,36 @@ const eraseTarget = (row: OrgErasureRow, database: DatabaseApi) => {
 }
 
 /**
- * The warehouse targets this tick may touch. Picked per org, not from a flat batch: of each org with
- * a target due, only the due targets of its highest pending rank run, so rollups go before what
- * feeds them. Jobs in flight are polled; new ones fill the free slots.
+ * The warehouse targets this tick may touch. Every job in flight is polled, whichever org it
+ * belongs to. New jobs fill the free slots from a window of orgs with a target due, oldest due
+ * first: of each, only due targets of its highest pending rank start, so rollups go before what
+ * feeds them.
  */
 const warehouseRowsToRun = (database: DatabaseApi, now: number) =>
 	Effect.gen(function* () {
+		const inFlight = yield* database.execute((db) =>
+			db.run(
+				PG.from(OrgErasures)
+					.select()
+					.where(($) => [$.kind.eq("warehouse"), $.jobId.isNotNull()]),
+			),
+		)
+		const slots = Math.max(0, MAX_WAREHOUSE_JOBS - inFlight.length)
+		if (slots === 0) return inFlight
 		const orgRows = yield* database.execute((db) =>
 			db.run(
 				PG.from(OrgErasures)
-					.select(($) => ({ orgId: $.orgId, due: PG.count() }))
-					.where(($) => [$.kind.eq("warehouse"), $.nextAttemptAt.lte(now)])
+					.select(($) => ({ orgId: $.orgId, firstDue: PG.min($.nextAttemptAt) }))
+					.where(($) => [$.kind.eq("warehouse"), $.nextAttemptAt.lte(now), $.jobId.isNull()])
 					.groupBy("orgId")
+					.orderBy(($) => [
+						[PG.min($.nextAttemptAt), "asc"],
+						[$.orgId, "asc"],
+					])
 					.limit(WAREHOUSE_ORGS),
 			),
 		)
-		if (orgRows.length === 0) return []
+		if (orgRows.length === 0) return inFlight
 		const orgs = Arr.map(orgRows, (row) => row.orgId)
 		const pending = yield* database.execute((db) =>
 			db.run(
@@ -254,31 +268,24 @@ const warehouseRowsToRun = (database: DatabaseApi, now: number) =>
 					.where(($) => [$.kind.eq("warehouse"), PG.inList($.orgId, orgs)]),
 			),
 		)
-		const [inFlight] = yield* database.execute((db) =>
-			db.run(
-				PG.from(OrgErasures)
-					.select(() => ({ count: PG.count() }))
-					.where(($) => [$.kind.eq("warehouse"), $.jobId.isNotNull()]),
-			),
-		)
 		const topRank = (orgId: OrgId) =>
 			Arr.reduce(
 				Arr.filter(pending, (row) => row.orgId === orgId),
 				0,
 				(top, row) => Math.max(top, warehouseErasureRank(row.target)),
 			)
-		const eligible = Arr.filter(
-			pending,
-			(row) => row.nextAttemptAt <= now && warehouseErasureRank(row.target) === topRank(row.orgId),
-		)
-		const slots = Math.max(0, MAX_WAREHOUSE_JOBS - Number(inFlight?.count ?? 0))
-		return [
-			...Arr.filter(eligible, (row) => row.jobId !== null),
-			...Arr.take(
-				Arr.filter(eligible, (row) => row.jobId === null),
-				slots,
+		// In the window's order, so the oldest-due org starts first.
+		const fresh = Arr.flatMap(orgs, (orgId) =>
+			Arr.filter(
+				pending,
+				(row) =>
+					row.orgId === orgId &&
+					row.jobId === null &&
+					row.nextAttemptAt <= now &&
+					warehouseErasureRank(row.target) === topRank(orgId),
 			),
-		]
+		)
+		return [...inFlight, ...Arr.take(fresh, slots)]
 	})
 
 /**
