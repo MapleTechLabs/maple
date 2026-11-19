@@ -156,8 +156,8 @@ const notEnabledState = (h: H): Html =>
 const VISIBILITY_BADGE = {
 	public: { label: "Public", variant: "ok" },
 	password: { label: "Password", variant: "warn" },
-	internal: { label: "Internal", variant: "info" },
-} as const satisfies Record<StatusPageVisibility, { label: string; variant: "ok" | "warn" | "info" }>
+	internal: { label: "Internal", variant: "done" },
+} as const satisfies Record<StatusPageVisibility, { label: string; variant: "ok" | "warn" | "done" }>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
@@ -258,14 +258,21 @@ const cardHeader = (
 			gap: "4",
 			align: "start",
 			justify: "between",
-			className: stripClass("header", "relative hover:bg-surface-sunken active:bg-surface-sunken"),
+			className: stripClass(
+				"header",
+				"group/header relative hover:bg-surface-sunken active:bg-surface-sunken",
+			),
 		},
 		[
 			vstack(h, { gap: "1", className: "min-w-0" }, [
 				hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
 					...pageIcon(h, page.favicon_url),
 					heading(h, { level: 2, variant: "section", className: "truncate" }, [
-						rowLink(h, { href: statusPageHref(page.id) }, [page.name]),
+						rowLink(
+							h,
+							{ href: statusPageHref(page.id), className: "group-hover/header:underline" },
+							[page.name],
+						),
 					]),
 				]),
 				pageAddress(h, summary, inputs.orgKey),
