@@ -14,6 +14,11 @@
 	const RESOLVE_MS = 620;
 
 	const belowFold = (el: Element) => el.getBoundingClientRect().top >= innerHeight;
+	/** Mostly past the right edge: a frame waiting in a phone's swipe strip. */
+	const offToTheSide = (el: Element) => {
+		const rect = el.getBoundingClientRect();
+		return rect.left + rect.width / 2 > innerWidth;
+	};
 
 	/** The headline's text as the browser wrapped it, one string per line. */
 	const wrappedLines = (node: Text): Array<string> => {
@@ -134,8 +139,8 @@
 			{ threshold: 0.35 },
 		);
 		for (const frame of document.querySelectorAll<HTMLElement>(CAPTURES)) {
-			// A frame waiting off to the side in a phone's swipe strip stays drawn: its edge is the cue to swipe.
-			if (!belowFold(frame) || frame.getBoundingClientRect().left > innerWidth / 2) continue;
+			// Its visible edge is the cue to swipe, so it stays drawn.
+			if (!belowFold(frame) || offToTheSide(frame)) continue;
 			const covered = cover(frame);
 			if (!covered) continue;
 			covers.set(frame, covered);
