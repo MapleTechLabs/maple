@@ -105,8 +105,8 @@ export interface RolesServiceApi {
 /** How many times a write to the definitions is tried while other writes keep landing first. */
 const MAX_EDIT_ATTEMPTS = 3
 
-/** Where the members of a role that is gone move: the least access, as an unknown role reads. */
-const ORPHANS_TO = { _tag: "BuiltIn", clerkKey: "org:analyst" } as const satisfies RoleRef
+/** What an `org:custom` member with no role on the membership holds. */
+const NOTHING = Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], [])
 
 /** A role a member can be moved to, resolved to what Clerk stores and what it grants. */
 interface AssignTarget {
@@ -128,6 +128,25 @@ const conflict = (reason: RoleConflictError["reason"], message: string) =>
 const isConflict = Schema.is(RoleConflictError)
 
 const isConcurrentEdit = (error: unknown): boolean => isConflict(error) && error.reason === "concurrent_edit"
+
+const concurrentEdit = conflict(
+	"concurrent_edit",
+	"Another admin changed the roles at the same time. Try again.",
+)
+
+const sameRole = Schema.toEquivalence(Policy.StoredCustomRole)
+
+/** The roles two definition lists disagree on: in one only, or stored differently. */
+const disagreeing = (
+	a: ReadonlyArray<Policy.StoredCustomRole>,
+	b: ReadonlyArray<Policy.StoredCustomRole>,
+): ReadonlyArray<Policy.CustomRoleId> => {
+	const differs = (
+		from: ReadonlyArray<Policy.StoredCustomRole>,
+		to: ReadonlyArray<Policy.StoredCustomRole>,
+	) => Arr.filter(from, (role) => !Arr.some(to, (other) => sameRole(role, other)))
+	return Arr.dedupe(Arr.map([...differs(a, b), ...differs(b, a)], (role) => role.id))
+}
 
 const notFound = (roleId: Policy.CustomRoleId) => new RoleNotFoundError({ roleId, message: "No such role." })
 
@@ -225,8 +244,12 @@ const make = Effect.gen(function* () {
 
 	/**
 	 * Write the definitions `edit` derives from the list Clerk holds. Clerk has no conditional write,
-	 * so the version is re-read just before writing; when another write landed in between, the edit
-	 * is redone from the fresh list, at most {@link MAX_EDIT_ATTEMPTS} times in all.
+	 * so the version is re-read just before writing, and the list read back after: two writers can
+	 * both pass the version check, and the later write drops the earlier. When another write landed
+	 * first, or a role this edit changed is not stored as written, the holders of every role the two
+	 * lists disagree on are brought in line with what Clerk holds and the edit is redone from the
+	 * fresh list, at most {@link MAX_EDIT_ATTEMPTS} times in all. A later write that kept this one's
+	 * changes is not a loss. This narrows the race; it cannot close it.
 	 */
 	const editRoles = <A, E>(
 		orgId: OrgId,
@@ -236,13 +259,16 @@ const make = Effect.gen(function* () {
 			const { version, roles } = yield* clerk.customRoles(orgId)
 			const { next, result } = yield* edit(roles)
 			const latest = yield* clerk.customRoles(orgId)
-			if (latest.version !== version) {
-				return yield* conflict(
-					"concurrent_edit",
-					"Another admin changed the roles at the same time. Try again.",
-				)
-			}
+			if (latest.version !== version) return yield* concurrentEdit
 			yield* clerk.writeCustomRoles(orgId, { version: version + 1, roles: next })
+			const stored = yield* clerk.customRoles(orgId)
+			const differing = disagreeing(next, stored.roles)
+			if (Arr.some(disagreeing(roles, next), (roleId) => Arr.contains(differing, roleId))) {
+				yield* Effect.forEach(differing, (roleId) => reconcileHolders(orgId, roleId, undefined), {
+					discard: true,
+				})
+				return yield* concurrentEdit
+			}
 			return result
 		}).pipe(Effect.retry({ times: MAX_EDIT_ATTEMPTS - 1, while: isConcurrentEdit }))
 
@@ -283,12 +309,14 @@ const make = Effect.gen(function* () {
 	 * or onto one ends here, after its own write, so of two admins racing the later always sees the
 	 * other's change. Holders carrying other codes are rewritten and demoted, not only after a
 	 * permission change: a rewrite that failed half way is finished by the next save. If the role is
-	 * gone its holders move to `orphansTo`, or to Analyst when that is gone too.
+	 * gone its holders move to `orphansTo`; with none, or when that is gone too, they keep `org:custom`
+	 * with nothing on the membership, which holds nothing. Any built-in role could be more access than
+	 * the role that vanished.
 	 */
 	const reconcileHolders = Effect.fn("RolesService.reconcileHolders")(function* (
 		orgId: OrgId,
 		roleId: Policy.CustomRoleId,
-		orphansTo: RoleRef,
+		orphansTo: RoleRef | undefined,
 	) {
 		const { roles, memberships } = yield* readState(orgId)
 		const holders = holdersOf(memberships, roleId)
@@ -312,14 +340,24 @@ const make = Effect.gen(function* () {
 			)
 			return { role, holders: holders.length }
 		}
-		const target = yield* resolveTarget(roles, orphansTo).pipe(
-			Effect.orElseSucceed(() => builtInTarget(ORPHANS_TO)),
-		)
+		const target =
+			orphansTo === undefined
+				? Option.none<AssignTarget>()
+				: yield* Effect.option(resolveTarget(roles, orphansTo))
 		yield* Effect.annotateCurrentSpan({ "maple.role.holders_moved": holders.length })
-		yield* Effect.forEach(holders, (holder) => assign(orgId, holder.userId, target), {
-			concurrency: 4,
-			discard: true,
-		})
+		yield* Effect.forEach(
+			holders,
+			(holder) =>
+				Option.match(target, {
+					// Already `org:custom`: clearing the membership's role leaves them holding nothing.
+					onNone: () =>
+						clerk
+							.setMembershipCustomRole(orgId, holder.userId, null)
+							.pipe(Effect.andThen(demote(orgId, holder.userId, NOTHING))),
+					onSome: (to) => assign(orgId, holder.userId, to),
+				}),
+			{ concurrency: 4, discard: true },
+		)
 		return { role, holders: holders.length }
 	})
 
@@ -426,7 +464,7 @@ const make = Effect.gen(function* () {
 			}),
 		)
 		// After the definition, so a member put on the role meanwhile with its old codes is caught.
-		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, ORPHANS_TO)
+		const { holders } = yield* reconcileHolders(tenant.orgId, roleId, undefined)
 		return { before: toCustomRole(before, holders), role: toCustomRole(after, holders) }
 	})
 
@@ -459,12 +497,12 @@ const make = Effect.gen(function* () {
 				result: undefined,
 			}),
 		)
-		// Members put on the role while it was removed follow the others, to Analyst if none was named.
-		const late = yield* reconcileHolders(tenant.orgId, roleId, reassignTo ?? ORPHANS_TO)
+		// Members put on the role while it was removed follow the others, to nothing if none was named.
+		const late = yield* reconcileHolders(tenant.orgId, roleId, reassignTo)
 		const moved = holders.length + late.holders
 		// The target may have changed, or gone, while its new members arrived.
 		if (reassignTo?._tag === "Custom" && moved > 0) {
-			const settled = yield* reconcileHolders(tenant.orgId, reassignTo.id, ORPHANS_TO)
+			const settled = yield* reconcileHolders(tenant.orgId, reassignTo.id, undefined)
 			if (Option.isNone(settled.role)) return yield* notFound(reassignTo.id)
 		}
 		return { id: role.id, name: role.name, moved }
@@ -493,7 +531,7 @@ const make = Effect.gen(function* () {
 		// The custom role may have changed, or gone, while the member moved onto it.
 		const grants =
 			ref._tag === "Custom"
-				? yield* reconcileHolders(tenant.orgId, ref.id, ORPHANS_TO).pipe(
+				? yield* reconcileHolders(tenant.orgId, ref.id, undefined).pipe(
 						Effect.flatMap(({ role }) => Effect.fromOption(role, () => notFound(ref.id))),
 						Effect.map((role) => customTarget(role).grants),
 					)

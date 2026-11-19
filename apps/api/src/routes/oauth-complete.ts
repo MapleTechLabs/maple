@@ -1,9 +1,11 @@
 import {
 	type ChatConnectorId,
+	IntegrationsForbiddenError,
 	OAuthCompleteResponse,
 	type OAuthCompleteRequest,
 	type OAuthReturnFlow,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Effect, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
@@ -28,6 +30,18 @@ const LABELS = {
 	chat_install: "Chat",
 	chat_identity: "Chat",
 } satisfies { readonly [K in OAuthReturnFlow]: string }
+
+/** What finishing each flow takes: as much as starting it. A chat identity is the caller's own account. */
+const FLOW_PERMISSIONS = {
+	cloudflare: "integrations:manage",
+	linear: "integrations:manage",
+	google: "integrations:manage",
+	github: "integrations:manage",
+	planetscale: "integrations:manage",
+	supabase: "integrations:manage",
+	chat_install: "integrations:manage",
+	chat_identity: "devices:connect",
+} satisfies { readonly [K in OAuthReturnFlow]: Policy.Permission }
 
 const CLOSE_HINT = "You can close this window and return to Maple."
 
@@ -240,8 +254,14 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 	return Effect.fn("OAuthComplete.complete")(function* (
 		request: OAuthCompleteRequest,
 		initiator: OAuthFlowInitiator,
+		permissions: Policy.Grants,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId: initiator.orgId, "maple.integration.flow": request.flow })
+		yield* Policy.check(
+			permissions,
+			FLOW_PERMISSIONS[request.flow],
+			(denial) => new IntegrationsForbiddenError({ message: denial.message }),
+		)
 		const label = LABELS[request.flow]
 		const params = new URLSearchParams(request.query)
 		// A chat connector reads the whole query, its platform's error included.

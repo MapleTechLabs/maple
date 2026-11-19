@@ -53,7 +53,8 @@ const onCallPermissions: ReadonlyArray<Policy.Permission> = [
 
 /**
  * One Clerk organization in memory, with every write recorded. `onRolesRead` runs, in order, one
- * per read of the definitions, to land another admin's change between two of them.
+ * per read of the definitions, to land another admin's change between two of them; `onRolesWrite`
+ * runs one per write of them, just after it, for a second writer that passed the same check.
  */
 const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
 	const state = {
@@ -62,6 +63,7 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 		members: new Map(Arr.map(members, (member) => [member.userId, member] as const)),
 		writes: [] as Array<string>,
 		onRolesRead: [] as Array<() => void>,
+		onRolesWrite: [] as Array<() => void>,
 	}
 	const toMembership = (member: FakeMember): RoleMembership => ({
 		userId: user(member.userId),
@@ -91,6 +93,7 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 				state.writes.push(`roles@${next.version}`)
 				state.version = next.version
 				state.roles = [...next.roles]
+				state.onRolesWrite.shift()?.()
 			}),
 		memberships: () => Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
 		setMembershipRole: (_orgId, userId, role) =>
@@ -119,7 +122,14 @@ const recordingRevocation = () => {
 		demoteMembership: (_orgId, userId, grants) =>
 			Effect.sync(() => {
 				demoted.push({ userId, grants })
-				return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 }
+				return {
+					apiKeysRevoked: 0,
+					mcpFamiliesRevoked: 0,
+					deviceCredentialsRevoked: 0,
+					dashboardSharesRevoked: 0,
+					digestSubscriptionsDisabled: 0,
+					alertDestinationsDisabled: 0,
+				}
 			}),
 		invalidateMembership: () => Effect.void,
 	})
@@ -317,6 +327,38 @@ describe("RolesService.create", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("redoes the edit when a writer that passed the same check overwrites it", () => {
+		const { layer, clerk } = setup([], [])
+		// Another admin read version 0 too, and writes version 1 straight after this create.
+		clerk.state.onRolesWrite.push(() => {
+			clerk.state.roles = [stored(VIEWER, "Viewer", ["telemetry:read"])]
+		})
+		return Effect.gen(function* () {
+			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			assert.deepStrictEqual(
+				Arr.map(clerk.state.roles, (role) => role.id),
+				[VIEWER, created.id],
+			)
+			assert.deepStrictEqual(clerk.state.writes, ["roles@1", "roles@2"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("keeps the edit when a later write carried it", () => {
+		const { layer, clerk } = setup([], [])
+		clerk.state.onRolesWrite.push(() => {
+			clerk.state.version = 2
+			clerk.state.roles = [...clerk.state.roles, stored(VIEWER, "Viewer", ["telemetry:read"])]
+		})
+		return Effect.gen(function* () {
+			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			assert.deepStrictEqual(
+				Arr.map(clerk.state.roles, (role) => role.id),
+				[created.id, VIEWER],
+			)
+			assert.deepStrictEqual(clerk.state.writes, ["roles@1"])
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("gives up with concurrent_edit when other writes keep landing first", () => {
 		const { layer, clerk } = setup([], [])
 		for (let attempt = 0; attempt < 3; attempt++) {
@@ -422,6 +464,38 @@ describe("RolesService.update", () => {
 	})
 })
 
+describe("RolesService.update, racing a stale writer", () => {
+	it.effect("gives up after repeated losses, leaving holders as the stored definition says", () => {
+		const narrow = stored(ON_CALL, "On-call", ["telemetry:read"])
+		const { layer, clerk, revocation } = setup([narrow], [{ userId: "user_cat", role: "org:member" }])
+		// Each widening write is overwritten by a writer still holding the narrow definition; after the
+		// first, another admin put Cat on the role with the widened permissions it briefly had.
+		for (let attempt = 0; attempt < 3; attempt++) {
+			clerk.state.onRolesWrite.push(() => {
+				if (attempt === 0) clerk.state.members.set("user_cat", onCallHolder("user_cat"))
+				clerk.state.roles = [narrow]
+			})
+		}
+		return Effect.gen(function* () {
+			const reason = yield* conflictReason(
+				(yield* RolesService).update(
+					adminTenant,
+					ON_CALL,
+					new UpdateRoleRequest({
+						name: "On-call",
+						description: "",
+						permissions: onCallPermissions,
+					}),
+				),
+			)
+			assert.strictEqual(reason, "concurrent_edit")
+			assert.deepStrictEqual(clerk.state.roles, [narrow])
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, narrow.permissions)
+			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_cat", grants: ["telemetry:read"] }])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
 describe("RolesService.delete", () => {
 	it.effect("refuses to delete a role still held when no role is named for its members", () => {
 		const { layer, clerk } = setup(
@@ -501,6 +575,30 @@ describe("RolesService.delete", () => {
 				["org:member", "org:member"],
 			)
 			assert.strictEqual(clerk.customOf("user_ana"), undefined)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.delete, orphans", () => {
+	it.effect("leaves a member put on the role while it was removed holding nothing, not Analyst", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[{ userId: "user_ana", role: "org:member" }],
+		)
+		// Nobody holds the role when the delete reads; another admin puts Ana on it before the write.
+		clerk.state.onRolesRead.push(
+			() => undefined,
+			() => undefined,
+			() => clerk.state.members.set("user_ana", onCallHolder("user_ana")),
+		)
+		return Effect.gen(function* () {
+			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, undefined)
+			assert.strictEqual(deleted.moved, 1)
+			assert.deepStrictEqual(
+				[clerk.roleOf("user_ana"), clerk.customOf("user_ana")],
+				[Policy.CUSTOM_ROLE_CLERK_KEY, undefined],
+			)
+			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_ana", grants: [] }])
 		}).pipe(Effect.provide(layer))
 	})
 })

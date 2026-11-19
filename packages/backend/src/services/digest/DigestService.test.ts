@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Array as Arr, Option } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, Option, Schema } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
-import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
+import { OrgId, RoleName, UserId, WarehouseQueryError } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { DigestSubscriptions } from "@maple/db/tables"
@@ -15,7 +16,8 @@ import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
-import { DigestService } from "./DigestService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { DigestService, digestRecipientsOf } from "./DigestService"
 import { MAX_DIGEST_GROUPS_PER_TICK } from "./weekly-digest-tick"
 import { quarantineOrgWarehouse } from "@maple/backend/services/warehouse/warehouse-org-quarantine"
 
@@ -145,10 +147,35 @@ const makeWarehouseStub = (
 		}),
 	)
 
+interface DirectoryMember {
+	readonly role: string
+	readonly customPermissions?: ReadonlyArray<Policy.Permission>
+}
+
+/** Clerk's memberships by user id; without them the deployment has no directory (self-hosted). */
+const makeDirectory = (members?: ReadonlyMap<string, DirectoryMember>) =>
+	Layer.succeed(
+		OrgMembershipService,
+		members === undefined
+			? { directory: "none", verify: () => Effect.die("self-hosted has no directory") }
+			: {
+					directory: "clerk",
+					verify: (userId, orgId) =>
+						Effect.succeed(
+							Option.map(Option.fromUndefinedOr(members.get(userId)), (member) => ({
+								orgId,
+								role: Schema.decodeSync(RoleName)(member.role),
+								customPermissions: member.customPermissions ?? [],
+							})),
+						),
+				},
+	)
+
 const makeHarness = (
 	fixture: WarehouseFixture = defaultFixture,
 	seen?: Array<SeenQuery>,
 	failing?: ReadonlySet<string>,
+	directory?: ReadonlyMap<string, DirectoryMember>,
 ) => {
 	const sends: string[] = []
 	const messages: Array<{ to: string; html: string; headers: Readonly<Record<string, string>> }> = []
@@ -170,6 +197,7 @@ const makeHarness = (
 				makeWarehouseStub(fixture, seen, failing),
 				Layer.succeed(EdgeCacheService, edgeCache),
 				SecureRandom.layerWebCrypto,
+				makeDirectory(directory),
 			),
 		),
 		Layer.provideMerge(base),
@@ -238,6 +266,26 @@ describe("DigestService.runDigestTick", () => {
 				assert.strictEqual(row.lastSentAt, TICK_MS)
 				assert.strictEqual(row.lastAttemptedAt, TICK_MS)
 			}
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("sends only to subscribers whose role still reads telemetry", () => {
+		const directory = new Map<string, DirectoryMember>([
+			["user-reader", { role: "org:custom", customPermissions: ["telemetry:read"] }],
+			["user-blind", { role: "org:custom", customPermissions: ["dashboards:edit"] }],
+		])
+		const { sends, layer } = makeHarness(defaultFixture, undefined, undefined, directory)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedSub({ email: "reader@example.com", userId: "user-reader" })
+			yield* seedSub({ email: "blind@example.com", userId: "user-blind" })
+			yield* seedSub({ email: "departed@example.com", userId: "user-departed" })
+
+			const digest = yield* DigestService
+			const result = yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, ["reader@example.com"])
+			assert.strictEqual(result.sentCount, 1)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -966,6 +1014,33 @@ describe("DigestService — subscriber opt-out", () => {
 			assert.strictEqual(row.enabled, false)
 			assert.notStrictEqual(row.optedOutAt, null)
 		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("digestRecipientsOf", () => {
+	it("enrolls only members with an address whose role reads telemetry", () => {
+		const member = (userId: string, role: string, publicMetadata: unknown = {}) => ({
+			role,
+			publicMetadata,
+			publicUserData: { identifier: `${userId}@example.com`, userId },
+		})
+		const customRole = (list: ReadonlyArray<Policy.Permission>) => ({
+			[Policy.MEMBERSHIP_ROLE_METADATA_KEY]: {
+				id: "role_abcdefabcdef",
+				permissions: Policy.encodePermissions(list),
+			},
+		})
+		const recipients = digestRecipientsOf(ORG_ID, [
+			member("user-analyst", "org:analyst"),
+			member("user-reader", "org:custom", customRole(["telemetry:read"])),
+			member("user-builder", "org:custom", customRole(["dashboards:edit"])),
+			member("user-unset", "org:custom"),
+			{ role: "org:admin", publicMetadata: {}, publicUserData: null },
+		])
+		assert.deepStrictEqual(
+			Arr.map(recipients, (recipient) => recipient.userId),
+			["user-analyst", "user-reader"],
+		)
 	})
 })
 

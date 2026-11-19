@@ -18,8 +18,10 @@ import {
 	type AlertDestinationId,
 	ChatConnectorId,
 	ChatWorkspaceId,
+	AlertRulePreviewRequest,
 	AlertRuleUpsertRequest,
 } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
 import {
@@ -41,6 +43,7 @@ import {
 	asOrgId,
 	asUserId,
 	adminGrants,
+	asRoleName,
 	memberGrants,
 	createWebhookDestination,
 	createErrorRateRule,
@@ -256,6 +259,71 @@ describe("AlertsService", () => {
 			assert.strictEqual(result.value, 240)
 			assert.strictEqual(result.sampleCount, 20)
 		})
+	})
+
+	it.effect("refuses raw SQL rules to someone who manages alerts but cannot run SQL", () => {
+		const testDb = createTestDb(trackedDbs)
+		const alertsOnly = Policy.grantsOf([asRoleName("org:custom")], ["telemetry:read", "alerts:manage"])
+		const rawRule = new AlertRuleUpsertRequest({
+			name: "Raw SQL alert",
+			severity: "critical",
+			signalType: "raw_query",
+			rawQuerySql:
+				"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+			comparator: "gt",
+			threshold: 100,
+			windowMinutes: 5,
+			destinationIds: [],
+		})
+
+		return Effect.gen(function* () {
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_raw_sql_denied")
+			const userId = asUserId("user_raw_sql_denied")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const builderRule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			const refusals = yield* Effect.all([
+				alerts.createRule(orgId, userId, alertsOnly, rawRule).pipe(Effect.flip),
+				alerts.updateRule(orgId, userId, alertsOnly, builderRule.id, rawRule).pipe(Effect.flip),
+				alerts.testRule(orgId, userId, alertsOnly, rawRule).pipe(Effect.flip),
+				alerts
+					.previewRule(
+						orgId,
+						alertsOnly,
+						Schema.decodeUnknownSync(AlertRulePreviewRequest)({
+							rule: rawRule,
+							startTime: "2026-01-01T00:00:00.000Z",
+							endTime: "2026-01-01T00:30:00.000Z",
+						}),
+					)
+					.pipe(Effect.flip),
+			])
+			for (const refusal of refusals) {
+				assert.instanceOf(refusal, AlertForbiddenError)
+				assert.strictEqual(refusal.message, Policy.denialFor("query:sql").message)
+			}
+			// The same person still writes a builder rule; only raw SQL takes `query:sql`.
+			const renamed = yield* alerts.updateRule(
+				orgId,
+				userId,
+				alertsOnly,
+				builderRule.id,
+				new AlertRuleUpsertRequest({
+					name: "Renamed error rate",
+					severity: "critical",
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					destinationIds: [destination.id],
+				}),
+			)
+			assert.deepStrictEqual([renamed.name, renamed.signalType], ["Renamed error rate", "error_rate"])
+		}).pipe(
+			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+		)
 	})
 
 	it.effect("accepts a builder query when lowering emits a warning", () => {

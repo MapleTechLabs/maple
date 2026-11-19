@@ -104,7 +104,14 @@ const recordingRevocation = (fail = false) => {
 		revokeUser: (userId) => run(`revokeUser:${userId}`),
 		demoteMembership: (orgId, userId, current) =>
 			run(`demote:${orgId}:${userId}:${Arr.join(current, ",")}`).pipe(
-				Effect.map(() => ({ apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 })),
+				Effect.map(() => ({
+					apiKeysRevoked: 0,
+					mcpFamiliesRevoked: 0,
+					deviceCredentialsRevoked: 0,
+					dashboardSharesRevoked: 0,
+					digestSubscriptionsDisabled: 0,
+					alertDestinationsDisabled: 0,
+				})),
 			),
 		invalidateMembership: (userId) =>
 			fail

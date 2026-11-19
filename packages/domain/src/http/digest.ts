@@ -164,7 +164,8 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 			payload: UpsertDigestSubscriptionRequest,
 			success: DigestSubscriptionResponse,
 			error: [DigestPersistenceError, DigestNotFoundError, DigestEmailUnavailableError],
-		}).annotate(EndpointAccess, "personal"),
+			// The digest is telemetry; opting out (delete, or the email's link) stays open to everyone.
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.delete("deleteSubscription", "/", {

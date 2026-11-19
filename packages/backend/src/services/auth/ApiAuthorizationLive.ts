@@ -23,10 +23,8 @@ export const ApiAuthorizationLive = Layer.effect(
 		const audit = yield* AuditLogService
 		const regions = yield* OrganizationRegionService
 		// Looks up an `org:custom` session's permissions; the header stays refused here.
-		const membership = yield* Effect.serviceOption(OrgMembershipService)
-		const resolveTenant = makeResolveTenant(env, {
-			customRoleDirectory: Option.getOrUndefined(Option.map(membership, (service) => service.verify)),
-		})
+		const membership = yield* OrgMembershipService
+		const resolveTenant = makeResolveTenant(env, { customRoleDirectory: membership.verify })
 
 		return CurrentTenant.Authorization.of({
 			bearer: (httpEffect, options) =>

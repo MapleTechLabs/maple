@@ -177,6 +177,20 @@ export const makeAlertRulePersistence = (options: {
 		)
 	})
 
+	/** Writing or running a rule: a raw-SQL one runs its author's ClickHouse every check, so it takes `query:sql` too. */
+	const requireRulePermissions = Effect.fn("AlertRulesService.requireRulePermissions")(function* (
+		permissions: Policy.Grants,
+		signalType: string,
+	) {
+		yield* requireAlertsPermission(permissions)
+		if (signalType !== "raw_query") return
+		yield* Policy.check(
+			permissions,
+			"query:sql",
+			(denial) => new AlertForbiddenError({ message: denial.message }),
+		)
+	})
+
 	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
 		orgId: OrgId,
 		ruleId: AlertRuleDocument["id"],
@@ -509,7 +523,7 @@ export const makeAlertRulePersistence = (options: {
 		permissions: Policy.Grants,
 		request: AlertRuleUpsertRequest,
 	) {
-		yield* requireAlertsPermission(permissions)
+		yield* requireRulePermissions(permissions, request.signalType)
 		const { normalized, timestamp, txid } = yield* writeRuleRow(orgId, userId, null, request)
 		return normalizedRuleToDocument(normalized, {
 			notes: normalizeOptionalString(request.notes),
@@ -553,7 +567,7 @@ export const makeAlertRulePersistence = (options: {
 		listRules,
 		createRule,
 		deleteRule,
-		requireAlertsPermission,
+		requireRulePermissions,
 		normalizeRule,
 		normalizeRuleRow,
 		requireRuleRow,

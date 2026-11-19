@@ -760,4 +760,105 @@ describe("MembershipRevocationService", () => {
 			])
 		}).pipe(Effect.provide(makeLayer(db, cache.layer, audit.layer)))
 	})
+
+	describe("a demotion retires what the new role could not set up", () => {
+		const custom = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+		const seedAll = (db: TestDb) =>
+			Effect.gen(function* () {
+				yield* seedShare(db, "dshare_demoted", orgId, userId)
+				yield* seedShare(db, "dshare_stayer", orgId, stayerId)
+				yield* seedDigestSubscription(db, "digest_demoted", orgId, userId)
+				yield* seedWebhookDestination(db, "00000000-0000-4000-8000-0000000000f1", orgId, userId)
+			})
+		const state = (db: TestDb) =>
+			Effect.gen(function* () {
+				const shares = yield* Effect.promise(() =>
+					db.pglite.query<{ id: string; revoked: boolean }>(
+						"select id, revoked_at is not null as revoked from dashboard_shares order by id",
+					),
+				)
+				const destinations = yield* Effect.promise(() =>
+					db.pglite.query<{ enabled: boolean; disabled_reason: string | null }>(
+						"select enabled, disabled_reason from alert_destinations",
+					),
+				)
+				return {
+					shares: shares.rows,
+					digests: Arr.map(yield* digestState(db), (row) => row.enabled),
+					destinations: destinations.rows,
+				}
+			})
+
+		it.effect("a role without telemetry, sharing or alerts loses links, digest and destinations", () => {
+			const db = createTestDb(createdDbs)
+			const audit = recordingAudit()
+			return Effect.gen(function* () {
+				const revocation = yield* MembershipRevocationService
+				yield* seedAll(db)
+
+				const summary = yield* revocation.demoteMembership(
+					orgId,
+					userId,
+					Policy.grantsOf([custom], ["dashboards:edit"]),
+				)
+
+				expect([
+					summary.dashboardSharesRevoked,
+					summary.digestSubscriptionsDisabled,
+					summary.alertDestinationsDisabled,
+				]).toEqual([1, 1, 1])
+				expect(yield* state(db)).toEqual({
+					shares: [
+						{ id: "dshare_demoted", revoked: true },
+						{ id: "dshare_stayer", revoked: false },
+					],
+					digests: [false],
+					destinations: [
+						{ enabled: false, disabled_reason: "Creator's role no longer manages alerts" },
+					],
+				})
+				expect(Arr.map(audit.recorded, (entry) => [entry.action, entry.metadata])).toEqual([
+					["dashboard_share.revoked", { reason: "role_changed" }],
+					["alert_destination.disabled", { reason: "role_changed" }],
+				])
+			}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer, audit.layer)))
+		})
+
+		it.effect(
+			"a role that still reads and shares keeps them; losing only sharing revokes the links",
+			() => {
+				const db = createTestDb(createdDbs)
+				return Effect.gen(function* () {
+					const revocation = yield* MembershipRevocationService
+					yield* seedAll(db)
+
+					yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
+					const asMember = yield* state(db)
+					// A member reads and shares, but does not manage alerts.
+					expect([asMember.shares, asMember.digests]).toEqual([
+						[
+							{ id: "dshare_demoted", revoked: false },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						[true],
+					])
+					expect(Arr.map(asMember.destinations, (row) => row.enabled)).toEqual([false])
+
+					yield* revocation.demoteMembership(
+						orgId,
+						userId,
+						Policy.grantsOf([custom], ["telemetry:read"]),
+					)
+					const asReader = yield* state(db)
+					expect([asReader.shares, asReader.digests]).toEqual([
+						[
+							{ id: "dshare_demoted", revoked: true },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						[true],
+					])
+				}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer)))
+			},
+		)
+	})
 })

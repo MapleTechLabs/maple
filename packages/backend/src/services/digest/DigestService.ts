@@ -55,8 +55,31 @@ import { verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
-import { clerkClientFor } from "@maple/auth"
+import { clerkClientFor, membershipGrants } from "@maple/auth"
+import * as Policy from "@maple/domain/policy"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
+
+/** One Clerk membership, as much of it as enrolling a digest recipient reads. */
+export interface ClerkDigestMember {
+	readonly role: string
+	readonly publicMetadata: unknown
+	readonly publicUserData?: { readonly identifier: string; readonly userId: string } | null
+}
+
+/** The members the Clerk sweep enrolls: those with an address whose role reads telemetry. */
+export const digestRecipientsOf = (orgId: OrgId, members: ReadonlyArray<ClerkDigestMember>) =>
+	Arr.flatMap(members, (member) => {
+		const memberEmail = member.publicUserData?.identifier
+		const memberUserId = member.publicUserData?.userId
+		if (!memberEmail || !memberUserId) return []
+		const grants = Policy.grantsOf(
+			[member.role],
+			Policy.customPermissionsFromMembershipMetadata(member.publicMetadata),
+		)
+		if (!Policy.can(grants, "telemetry:read")) return []
+		return [{ orgId, userId: UserId.make(memberUserId), email: memberEmail }]
+	})
 
 const toPersistenceError = (error: unknown) =>
 	new DigestPersistenceError({
@@ -276,6 +299,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		const warehouse = yield* WarehouseQueryService
 		const edgeCache = yield* EdgeCacheService
 		const random = yield* SecureRandom.SecureRandom
+		const memberships = yield* OrgMembershipService
 		const linkConfig = {
 			secret: Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
@@ -918,18 +942,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 							`Failed to list Clerk members for org ${org.id}`,
 						)
 
-						return Arr.flatMap(members, (member) => {
-							const memberEmail = member.publicUserData?.identifier
-							const memberUserId = member.publicUserData?.userId
-							if (!memberEmail || !memberUserId) return []
-							return [
-								{
-									orgId: OrgId.make(org.id),
-									userId: UserId.make(memberUserId),
-									email: memberEmail,
-								},
-							]
-						})
+						return digestRecipientsOf(OrgId.make(org.id), members)
 					}),
 				{ concurrency: CLERK_ORG_CONCURRENCY },
 			)
@@ -1036,6 +1049,32 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			)
 		})
 
+		/**
+		 * Whether a subscriber's role still reads telemetry, checked before each send: the daily sweep
+		 * lags a role change by up to a day. Without a directory (self-hosted) everyone does; a failed
+		 * lookup skips them this window.
+		 */
+		const readsTelemetry = (sub: DigestSubscriptionRow) =>
+			memberships.directory === "none"
+				? Effect.succeed(true)
+				: memberships.verify(UserId.make(sub.userId), OrgId.make(sub.orgId)).pipe(
+						Effect.map(
+							Option.match({
+								onNone: () => false,
+								onSome: (membership) =>
+									Policy.can(membershipGrants(membership), "telemetry:read"),
+							}),
+						),
+						Effect.catch((error) =>
+							Effect.as(
+								Effect.logWarning(
+									"Skipping a digest recipient whose role could not be read",
+								).pipe(Effect.annotateLogs({ orgId: sub.orgId, error: error.message })),
+								false,
+							),
+						),
+					)
+
 		const runDigestTick = Effect.fn("DigestService.runDigestTick")(function* () {
 			if (!email.isConfigured) {
 				return { sentCount: 0, errorCount: 0, skipped: true }
@@ -1107,6 +1146,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 								renderDigestHtml({ ...props, unsubscribeUrl }),
 						}
 					}),
+				mayReceive: readsTelemetry,
 				failureMessage: "Digest failed for org",
 				skipMessage: "Skipping digest for org with quarantined warehouse",
 			})
@@ -1136,7 +1176,12 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(WarehouseQueryService.layer, EmailService.layer, SecureRandom.layerWebCrypto),
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				EmailService.layer,
+				SecureRandom.layerWebCrypto,
+				OrgMembershipService.layer,
+			),
 		),
 	)
 }

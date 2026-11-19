@@ -214,7 +214,11 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("oauthComplete", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						return yield* completeOAuth(payload, { orgId: tenant.orgId, userId: tenant.userId })
+						return yield* completeOAuth(
+							payload,
+							{ orgId: tenant.orgId, userId: tenant.userId },
+							tenant.permissions,
+						)
 					}),
 				)
 				.handle("linearStatus", () =>

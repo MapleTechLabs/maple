@@ -1,4 +1,5 @@
 import { EdgeCacheService } from "@maple/cache"
+import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
@@ -69,6 +70,9 @@ export interface MembershipDemotionSummary {
 	readonly apiKeysRevoked: number
 	readonly mcpFamiliesRevoked: number
 	readonly deviceCredentialsRevoked: number
+	readonly dashboardSharesRevoked: number
+	readonly digestSubscriptionsDisabled: number
+	readonly alertDestinationsDisabled: number
 }
 
 export interface MembershipRevocationServiceApi {
@@ -123,6 +127,56 @@ const decodePublicConfig = Schema.decodeUnknownOption(DestinationPublicConfigSch
 const decodeSecretConfig = Schema.decodeOption(SecretConfigFromJson)
 const encodeSecretConfig = Schema.encodeEffect(SecretConfigFromJson)
 
+// Shared by removal and demotion. `orgId` null is every org (`user.deleted`).
+
+/** Disabled the way the daily Clerk reconcile disables a departed member: opt-out stamps stay. */
+const disableDigests = (db: MapleDb, orgId: OrgId | null, userId: UserId, now: number) =>
+	db.run(
+		PG.update(DigestSubscriptions)
+			.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
+			.where(($) => [orgId === null ? undefined : $.orgId.eq(orgId), $.userId.eq(userId)])
+			.returning("id"),
+	)
+
+/**
+ * A share link serves the board to whoever holds it, with no membership check. Revoked, not
+ * deleted: the row is the audit record of the link.
+ */
+const revokeShares = (db: MapleDb, orgId: OrgId | null, userId: UserId, now: number) =>
+	db.run(
+		PG.update(DashboardShares)
+			.set({ revokedAt: now, updatedAt: now })
+			.where(($) => [
+				orgId === null ? undefined : $.orgId.eq(orgId),
+				$.createdBy.eq(userId),
+				$.revokedAt.isNull(),
+			])
+			.returning("id", "orgId"),
+	)
+
+/**
+ * A webhook or chat destination the member pointed somewhere keeps delivering the org's alerts
+ * there. Disabled with a reason so an admin can re-enable it.
+ */
+const disableDestinations = (
+	db: MapleDb,
+	orgId: OrgId | null,
+	userId: UserId,
+	now: number,
+	disabledReason: string,
+) =>
+	db.run(
+		PG.update(AlertDestinations)
+			.set({ enabled: false, disabledAt: now, disabledReason, updatedAt: now })
+			.where(($) => [
+				orgId === null ? undefined : $.orgId.eq(orgId),
+				$.createdBy.eq(userId),
+				$.type.neq("email"),
+				$.enabled.eq(true),
+			])
+			.returning("id", "orgId"),
+	)
+
 const make = Effect.gen(function* () {
 	const database = yield* Database
 	const env = yield* Env
@@ -139,6 +193,26 @@ const make = Effect.gen(function* () {
 		forgetMembershipMemo(userId)
 		yield* edgeCache.invalidate({ bucket: ORG_MEMBERSHIP_CACHE_BUCKET, key: userId })
 	})
+
+	type Retired = ReadonlyArray<{ readonly id: string; readonly orgId: OrgId }>
+	const recordRetired = (userId: UserId, shares: Retired, destinations: Retired, reason: string) =>
+		Effect.forEach(
+			[
+				...Arr.map(shares, (row) => ({ row, action: "dashboard_share.revoked" as const })),
+				...Arr.map(destinations, (row) => ({ row, action: "alert_destination.disabled" as const })),
+			],
+			({ row, action }) =>
+				audit.record({
+					orgId: row.orgId,
+					actor: { type: "system" },
+					source: "system",
+					action,
+					resourceId: row.id,
+					affectedUserId: userId,
+					metadata: { reason },
+				}),
+			{ discard: true },
+		)
 
 	/**
 	 * Email destinations store a snapshot of resolved member addresses inside
@@ -316,46 +390,15 @@ const make = Effect.gen(function* () {
 							])
 							.returning("id"),
 					)
-					// Disabled the way the daily Clerk reconcile disables a departed member: opt-out
-					// stamps stay untouched, so a member who rejoins is re-enabled by that reconcile.
-					const digestsDisabled = yield* db.run(
-						PG.update(DigestSubscriptions)
-							.set({ enabled: false, webAnalyticsEnabled: false, updatedAt: now })
-							.where(($) => [
-								orgId === null ? undefined : $.orgId.eq(orgId),
-								$.userId.eq(userId),
-							])
-							.returning("id"),
-					)
-					// A share link serves the board to whoever holds it, with no membership check.
-					// Revoked, not deleted: the row is the audit record of the link.
-					const sharesRevoked = yield* db.run(
-						PG.update(DashboardShares)
-							.set({ revokedAt: now, updatedAt: now })
-							.where(($) => [
-								orgId === null ? undefined : $.orgId.eq(orgId),
-								$.createdBy.eq(userId),
-								$.revokedAt.isNull(),
-							])
-							.returning("id", "orgId"),
-					)
-					// A webhook or chat destination the member pointed somewhere keeps delivering the
-					// org's alerts there. Disabled with a reason so an admin can re-enable it.
-					const destinationsDisabled = yield* db.run(
-						PG.update(AlertDestinations)
-							.set({
-								enabled: false,
-								disabledAt: now,
-								disabledReason: "Creator left the organization",
-								updatedAt: now,
-							})
-							.where(($) => [
-								orgId === null ? undefined : $.orgId.eq(orgId),
-								$.createdBy.eq(userId),
-								$.type.neq("email"),
-								$.enabled.eq(true),
-							])
-							.returning("id", "orgId"),
+					// A member who rejoins is re-enabled by the daily reconcile.
+					const digestsDisabled = yield* disableDigests(db, orgId, userId, now)
+					const sharesRevoked = yield* revokeShares(db, orgId, userId, now)
+					const destinationsDisabled = yield* disableDestinations(
+						db,
+						orgId,
+						userId,
+						now,
+						"Creator left the organization",
 					)
 					return {
 						sharesRevoked,
@@ -377,29 +420,7 @@ const make = Effect.gen(function* () {
 
 		// After the commit: a retry finds these rows already retired, so nothing is recorded twice.
 		const { sharesRevoked, destinationsDisabled, ...counts } = credentials
-		const removed = { reason: "membership_ended" }
-		yield* Effect.forEach(sharesRevoked, (row) =>
-			audit.record({
-				orgId: row.orgId,
-				actor: { type: "system" },
-				source: "system",
-				action: "dashboard_share.revoked",
-				resourceId: row.id,
-				affectedUserId: userId,
-				metadata: removed,
-			}),
-		)
-		yield* Effect.forEach(destinationsDisabled, (row) =>
-			audit.record({
-				orgId: row.orgId,
-				actor: { type: "system" },
-				source: "system",
-				action: "alert_destination.disabled",
-				resourceId: row.id,
-				affectedUserId: userId,
-				metadata: removed,
-			}),
-		)
+		yield* recordRetired(userId, sharesRevoked, destinationsDisabled, "membership_ended")
 
 		const summary = {
 			...counts,
@@ -455,13 +476,36 @@ const make = Effect.gen(function* () {
 				apiKeysRevoked: 0,
 				mcpFamiliesRevoked: 0,
 				deviceCredentialsRevoked: 0,
+				dashboardSharesRevoked: 0,
+				digestSubscriptionsDisabled: 0,
+				alertDestinationsDisabled: 0,
 			} satisfies MembershipDemotionSummary
 		}
+		const readsTelemetry = Policy.can(current, "telemetry:read")
 
 		const now = yield* Clock.currentTimeMillis
-		const summary = yield* dbExecute((db) =>
+		const { sharesRevoked, destinationsDisabled, ...summary } = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
+					// What the member set up that the new role could not: a public link to telemetry, the
+					// digest of it, and alert destinations.
+					const sharesRevoked =
+						readsTelemetry && Policy.can(current, "dashboards:share")
+							? []
+							: yield* revokeShares(db, orgId, userId, now)
+					const digestSubscriptionsDisabled = readsTelemetry
+						? 0
+						: (yield* disableDigests(db, orgId, userId, now)).length
+					const destinationsDisabled = Policy.can(current, "alerts:manage")
+						? []
+						: yield* disableDestinations(
+								db,
+								orgId,
+								userId,
+								now,
+								"Creator's role no longer manages alerts",
+							)
+					const retired = { sharesRevoked, destinationsDisabled, digestSubscriptionsDisabled }
 					// An approval not yet redeemed froze the old role and would mint a credential at it.
 					const cliApprovals = yield* db.run(
 						PG.from(CliDeviceAuthorizations)
@@ -538,7 +582,12 @@ const make = Effect.gen(function* () {
 					)
 					const [first, ...rest] = stale
 					if (first === undefined)
-						return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked }
+						return {
+							...retired,
+							apiKeysRevoked: 0,
+							mcpFamiliesRevoked: 0,
+							deviceCredentialsRevoked,
+						}
 
 					const revoked = yield* db.run(
 						PG.update(ApiKeys)
@@ -547,17 +596,31 @@ const make = Effect.gen(function* () {
 							.returning("id"),
 					)
 					const mcpFamiliesRevoked = yield* revokeFamiliesForAccessKeys(db, stale, now)
-					return { apiKeysRevoked: revoked.length, mcpFamiliesRevoked, deviceCredentialsRevoked }
+					return {
+						...retired,
+						apiKeysRevoked: revoked.length,
+						mcpFamiliesRevoked,
+						deviceCredentialsRevoked,
+					}
 				}),
 			),
 		)
+		yield* recordRetired(userId, sharesRevoked, destinationsDisabled, "role_changed")
 
+		const demoted = {
+			...summary,
+			dashboardSharesRevoked: sharesRevoked.length,
+			alertDestinationsDisabled: destinationsDisabled.length,
+		} satisfies MembershipDemotionSummary
 		yield* Effect.annotateCurrentSpan({
-			"maple.membership.demoted_api_keys_revoked": summary.apiKeysRevoked,
-			"maple.membership.demoted_mcp_families_revoked": summary.mcpFamiliesRevoked,
-			"maple.membership.demoted_device_credentials_revoked": summary.deviceCredentialsRevoked,
+			"maple.membership.demoted_api_keys_revoked": demoted.apiKeysRevoked,
+			"maple.membership.demoted_mcp_families_revoked": demoted.mcpFamiliesRevoked,
+			"maple.membership.demoted_device_credentials_revoked": demoted.deviceCredentialsRevoked,
+			"maple.membership.demoted_dashboard_shares_revoked": demoted.dashboardSharesRevoked,
+			"maple.membership.demoted_digest_subscriptions_disabled": demoted.digestSubscriptionsDisabled,
+			"maple.membership.demoted_alert_destinations_disabled": demoted.alertDestinationsDisabled,
 		})
-		return summary satisfies MembershipDemotionSummary
+		return demoted
 	})
 
 	const revokeMembership = Effect.fn("MembershipRevocationService.revokeMembership")(

@@ -61,6 +61,8 @@ export interface WeeklyDigestTickInput<EP, ER, R> {
 	readonly groupBy: (row: DigestSubscriptionRow) => string
 	/** The group's email, or `undefined` when there is nothing to say; `head` speaks for the group. */
 	readonly prepare: (head: DigestSubscriptionRow) => Effect.Effect<DigestEmail<ER> | undefined, EP, R>
+	/** Whether a claimed subscriber may still receive it; asked after the claim, so once a window. */
+	readonly mayReceive?: (row: DigestSubscriptionRow) => Effect.Effect<boolean>
 	readonly failureMessage: string
 	readonly skipMessage?: string
 	readonly logQuarantine?: boolean
@@ -141,11 +143,17 @@ export const runWeeklyDigestTick = <EP, ER, R>(input: WeeklyDigestTickInput<EP, 
 							}),
 						)
 					}
-					if (claimed.length === 0) return []
+					const recipients =
+						input.mayReceive === undefined
+							? claimed
+							: yield* Effect.filter(claimed, input.mayReceive)
+					if (recipients.length === 0) return []
 					rendered++
 					const message = yield* input.prepare(head)
 					if (message === undefined) return []
-					return yield* Effect.forEach(claimed, (sub) => sendTo(sub, message), { concurrency: 1 })
+					return yield* Effect.forEach(recipients, (sub) => sendTo(sub, message), {
+						concurrency: 1,
+					})
 				})
 				const turn = runWarehouseOrgTurn(input.edgeCache, head.orgId, now, sendGroup, {
 					skipped: [],

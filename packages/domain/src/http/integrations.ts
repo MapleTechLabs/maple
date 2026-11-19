@@ -2071,11 +2071,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	)
 	.add(
 		// Finishes any OAuth / app-install return for the signed-in caller (see `oauth-return.ts`).
-		// Failures come back as an `error` status with display copy, like the old callback page.
+		// Failures come back as an `error` status with display copy, like the old callback page. The
+		// handler checks the flow's permission: a chat identity link is the caller's own account.
 		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
 			payload: OAuthCompleteRequest,
 			success: OAuthCompleteResponse,
-		}).annotate(EndpointAccess, requires("integrations:manage")),
+			error: IntegrationsForbiddenError,
+		}).annotate(EndpointAccess, "handler"),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/github/start", {

@@ -1,7 +1,7 @@
 import { HttpServerRequest } from "effect/http"
 import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { CurrentTenant } from "@maple/domain/http"
-import { Effect, Layer, Option, String as Str } from "effect"
+import { Effect, Layer, String as Str } from "effect"
 import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
@@ -16,14 +16,13 @@ import { OrgMembershipService } from "./OrgMembershipService"
 
 /**
  * The session resolver both layers use. The membership directory looks up an `org:custom`
- * session's permissions (absent, such a session holds nothing); the header stays refused.
+ * session's permissions; it is required, so a graph that forgets it does not build (the header
+ * stays refused).
  */
 const sessionResolver = Effect.gen(function* () {
 	const env = yield* Env
-	const membership = yield* Effect.serviceOption(OrgMembershipService)
-	return makeResolveTenant(env, {
-		customRoleDirectory: Option.getOrUndefined(Option.map(membership, (service) => service.verify)),
-	})
+	const membership = yield* OrgMembershipService
+	return makeResolveTenant(env, { customRoleDirectory: membership.verify })
 })
 
 /**

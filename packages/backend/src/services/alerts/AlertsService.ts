@@ -591,8 +591,8 @@ export interface AlertsServiceApi {
 	>
 	/**
 	 * `permissions` gate raw-SQL previews only: preview itself needs just `alerts:read`,
-	 * but replaying a raw_query rule executes user-authored ClickHouse, which is
-	 * the org-admin capability `createRule`/`testRule` already require.
+	 * but replaying a raw_query rule executes user-authored ClickHouse, which takes
+	 * `alerts:manage` and `query:sql` as `createRule`/`testRule` do.
 	 */
 	readonly previewRule: (
 		orgId: OrgId,
@@ -689,7 +689,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const {
 				normalizeRule,
 				normalizeRuleRow,
-				requireAlertsPermission,
+				requireRulePermissions,
 				requireDestinationIds,
 				requireRuleRow,
 				upsertRuleRow,
@@ -1865,7 +1865,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					"tenant.userId": userId,
 					"maple.alert.rule_id": ruleId,
 				})
-				yield* requireAlertsPermission(permissions)
+				yield* requireRulePermissions(permissions, request.signalType)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				if (isManagedSignalType(oldRow.signalType)) {
 					return yield* makeValidationError(managedRuleMessage(oldRow.signalType))
@@ -1903,7 +1903,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				sendNotification = false,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
-				yield* requireAlertsPermission(permissions)
+				yield* requireRulePermissions(permissions, request.signalType)
 				const normalized = yield* normalizeRule(orgId, request)
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
@@ -2124,10 +2124,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 				// Preview only needs `alerts:read`, but a raw-SQL rule executes
 				// user-authored ClickHouse against the org's warehouse — the same
-				// capability `createRule`/`testRule` gate behind `alerts:manage`. Previewing
-				// one must not be a cheaper route to that than creating it.
+				// capability `createRule`/`testRule` gate behind `alerts:manage` and `query:sql`.
+				// Previewing one must not be a cheaper route to that than creating it.
 				if (plan.kind === "raw_sql") {
-					yield* requireAlertsPermission(permissions)
+					yield* requireRulePermissions(permissions, normalized.signalType)
 				}
 				// Alongside the series query, which spans many windows and so says nothing about one check.
 				const queryTiming = yield* Effect.forkChild(

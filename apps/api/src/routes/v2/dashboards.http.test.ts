@@ -14,7 +14,13 @@ import {
 } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
-import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import {
+	DashboardNotFoundError,
+	DashboardPersistenceError,
+	OrgId,
+	RoleName,
+	UserId,
+} from "@maple/domain/http"
 import { AlertRuleId } from "@maple/primitives"
 import * as Policy from "@maple/domain/policy"
 import { alertChartId } from "@maple/backend/platform/signed-ids"
@@ -104,7 +110,8 @@ const SharePublicLive = HttpV2SharePublicLive.pipe(
 	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),
 )
 
-const makeHarness = () => {
+/** `viewer` stands in for a signed-in Clerk session holding those permissions; a self-hosted one holds all. */
+const makeHarness = (viewer?: Policy.Grants) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	// Passthrough unless a test arms a failure: the real store cannot fail a read
@@ -140,9 +147,29 @@ const makeHarness = () => {
 			}
 		}),
 	).pipe(Layer.provide(DashboardPersistenceService.layer))
+	const authLive =
+		viewer === undefined
+			? AuthService.layer
+			: Layer.effect(
+					AuthService,
+					Effect.gen(function* () {
+						const live = yield* AuthService
+						return {
+							...live,
+							resolveTenant: () =>
+								Effect.succeed({
+									orgId: Schema.decodeSync(OrgId)("org_dashboard_e2e"),
+									userId: Schema.decodeSync(UserId)("user_dashboard_viewer"),
+									roles: [Schema.decodeSync(RoleName)("org:custom")],
+									permissions: viewer,
+									authMode: "clerk" as const,
+								}),
+						}
+					}),
+				).pipe(Layer.provide(AuthService.layer))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
-		AuthService.layer,
+		authLive,
 		persistenceLive,
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
@@ -1405,6 +1432,25 @@ describe("v2 dashboard shares", () => {
 		expect(await resolve(harness, rotated.body.token)).toBe(id)
 
 		await harness.dispose()
+	})
+
+	it("shows an org link only to a signed-in member whose role reads telemetry", async () => {
+		for (const [viewer, status, code] of [
+			[["dashboards:edit"], 403, "share_forbidden"],
+			[["telemetry:read"], 200, undefined],
+		] as const) {
+			const harness = makeHarness(viewer)
+			const key = await harness.bootstrapKey(SHARE_SCOPES)
+			const id = await createDashboard(harness, key.secret)
+			const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+				mode: "org",
+			})
+			const opened = await harness.request("POST", "/v2/share/resolve", "viewer-session", {
+				token: shared.body.token,
+			})
+			expect([opened.status, opened.body.error?.code]).toEqual([status, code])
+			await harness.dispose()
+		}
 	})
 
 	it("never grants a chart link more than its board's mode", async () => {
