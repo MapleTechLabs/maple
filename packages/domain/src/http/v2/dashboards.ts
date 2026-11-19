@@ -50,7 +50,7 @@ import {
 	ShareWidgetNotFoundError,
 } from "../share"
 import { WireValue } from "../../wire"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 import { AuditedRead } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -567,7 +567,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: dashboardCreateErrors,
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "createDashboard",
@@ -583,7 +583,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardPersesImportResponse,
 			error: dashboardCreateErrors,
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "importPersesDashboard",
@@ -599,7 +599,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardGrafanaImportResponse,
 			error: dashboardCreateErrors,
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "importGrafanaDashboard",
@@ -650,7 +650,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				...dashboardCreateErrors,
 			],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "instantiateDashboardTemplate",
@@ -702,7 +702,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, ...dashboardUpdateErrors],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "updateDashboard",
@@ -718,7 +718,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardDeleteResponse,
 			error: [dashboardPersistence, dashboardNotFound],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "deleteDashboard",
@@ -771,7 +771,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardMutation,
 			error: [dashboardNotFound, dashboardVersionNotFound, ...dashboardUpdateErrors],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:edit"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "restoreDashboardVersion",
@@ -823,7 +823,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				shareWidgetNotFound,
 			],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "upsertDashboardWidgetShare",
@@ -847,7 +847,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "rotateDashboardWidgetShare",
@@ -863,7 +863,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardShareDeleteResponse,
 			error: [sharePersistence, dashboardPersistence, dashboardNotFound, dashboardStoredConfigInvalid],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeDashboardWidgetShare",
@@ -901,7 +901,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "upsertDashboardShare",
@@ -925,7 +925,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				dashboardStoredConfigInvalid,
 			],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "rotateDashboardShare",
@@ -941,7 +941,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			success: V2DashboardShareDeleteResponse,
 			error: [sharePersistence, dashboardPersistence, dashboardNotFound, dashboardStoredConfigInvalid],
 		})
-			.annotate(AnalystAccess, "author")
+			.annotate(EndpointAccess, requires("dashboards:share"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeDashboardShare",

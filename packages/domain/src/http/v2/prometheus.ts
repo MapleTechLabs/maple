@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AuditedRead } from "../audit-log"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 import { AuthorizationV2 } from "./auth"
 
 /**
@@ -104,8 +104,8 @@ const readPost = <const Name extends string, const Path extends `/${string}`, S 
 	success: S,
 ) =>
 	HttpApiEndpoint.post(name, path, { query: PrometheusParams, payload: PrometheusForm, success }).annotate(
-		AnalystAccess,
-		"read",
+		EndpointAccess,
+		requires("telemetry:read"),
 	)
 
 const QUERY = "Evaluates an instant PromQL query at `time`."

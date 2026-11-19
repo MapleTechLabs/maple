@@ -46,7 +46,7 @@ import {
 	PathsInclude,
 } from "@maple/query-model"
 import { WireRow } from "../wire"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 /**
  * A timeseries bucket width.
@@ -5157,11 +5157,11 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 				QueryEngineTimeoutError,
 				...warehouseHttpErrors,
 			] as const,
-		}),
+		}).annotate(EndpointAccess, requires("query:sql")),
 	)
 	.prefix("/internal/query-engine")
 	.middleware(SessionAuthorization)
 	// Every endpoint here only reads, so an analyst may call it.
-	.annotate(AnalystAccess, "read")
+	.annotate(EndpointAccess, requires("telemetry:read"))
 	// Every endpoint here reads telemetry for the dashboard.
 	.annotate(AuditedRead, "telemetry.read") {}

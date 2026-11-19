@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import { Authorization, SessionAuthorization, TenantSchema, UnauthorizedError } from "./current-tenant"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 export class CliDeviceStartRequest extends Schema.Class<CliDeviceStartRequest>("CliDeviceStartRequest")({
 	deviceName: Schema.String,
@@ -279,13 +279,13 @@ export class AuthApiGroup extends HttpApiGroup.make("auth")
 		HttpApiEndpoint.post("sessionRefresh", "/session/refresh", {
 			success: SelfHostedLoginResponse,
 			error: [SelfHostedAuthDisabledError, UnauthorizedError],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.delete("cliSessionRevoke", "/cli/session", {
 			success: CliDeviceActionResponse,
 			error: [CliDeviceConflictError, CliDevicePersistenceError],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/api/auth")
 	.middleware(Authorization) {}
@@ -312,7 +312,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				CliDeviceConflictError,
 				CliDevicePersistenceError,
 			],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, requires("devices:connect")),
 	)
 	.add(
 		HttpApiEndpoint.post("cliDeviceDeny", "/cli/device/:userCode/deny", {
@@ -324,7 +324,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				CliDeviceConflictError,
 				CliDevicePersistenceError,
 			],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.get("mcpOAuthAuthorizationInspect", "/mcp/oauth/authorization/:requestId", {
@@ -347,7 +347,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				McpOAuthAuthorizationConflictError,
 				McpOAuthPersistenceError,
 			],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, requires("devices:connect")),
 	)
 	.add(
 		HttpApiEndpoint.post("mcpOAuthAuthorizationDeny", "/mcp/oauth/authorization/:requestId/deny", {
@@ -359,7 +359,7 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 				McpOAuthAuthorizationConflictError,
 				McpOAuthPersistenceError,
 			],
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/api/auth")
 	.middleware(SessionAuthorization) {}

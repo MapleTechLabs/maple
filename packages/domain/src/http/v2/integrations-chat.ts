@@ -14,7 +14,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // The chat-platform surface: one contract for every chat platform Maple can
 // connect to. The platform is a value (`connector`), never a path segment or a
@@ -425,7 +425,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 			success: V2ChatIdentityDeleteResponse,
 			error: [V2InsufficientPermissions.schema, chatNotFound, chatPersistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "deleteChatIdentity",

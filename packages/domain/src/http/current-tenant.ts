@@ -3,7 +3,7 @@ import { Schema, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
-import { analystMessage } from "../policy"
+import { limitedAccessMessage, type Permission, PermissionName } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -91,7 +91,7 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
-/** An analyst asked to operate the organization. 403: the session is fine, the role does not reach it. */
+/** The caller's role reaches no part of this endpoint. 403: the session is fine, the role does not reach it. */
 export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 	"@maple/http/errors/LimitedRoleError",
 	{ message: Schema.String },
@@ -99,7 +99,7 @@ export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 		status: 403,
 		code: "limited_role",
 		title: "Limited role",
-		message: analystMessage,
+		message: limitedAccessMessage,
 		retry: "never",
 		recovery: "request_access",
 		exposure: "public_message",
@@ -113,7 +113,10 @@ export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
 export interface TenantContext {
 	readonly orgId: OrgId
 	readonly userId: UserId
+	/** The Clerk roles the permissions came from: for display and pinning, never for checks. */
 	readonly roles: ReadonlyArray<RoleName>
+	/** What this request may do. Every authorization check reads these (`Policy.can`). */
+	readonly permissions: ReadonlyArray<Permission>
 	readonly authMode: AuthMode
 	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
 	readonly scopes?: ReadonlyArray<string> | undefined
@@ -148,6 +151,7 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	orgId: OrgId,
 	userId: UserId,
 	roles: Schema.Array(RoleName),
+	permissions: Schema.Array(PermissionName),
 	authMode: AuthMode,
 	// Present only for API-key auth with restricted scopes (v2). Undefined for
 	// session tokens and legacy full-access keys — those bypass scope checks.
