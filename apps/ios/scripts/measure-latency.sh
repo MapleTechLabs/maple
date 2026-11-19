@@ -2,17 +2,24 @@
 # Drive every screen of a Debug build on a simulator, cold, N times, so its
 # `screen.ready` / `screen.load` spans land in Maple tagged with one label.
 #
-#   infisical run --env prod -- apps/ios/scripts/measure-latency.sh \
-#     --label branch --udid <sim> --iterations 10 --build --signin you@example.com \
+#   infisical run --env dev -- apps/ios/scripts/measure-latency.sh \
+#     --label branch --udid <sim> --iterations 10 --build --signin you+clerk_test@example.com \
+#     --api https://api-pr-<n>.maple.dev --clerk-key pk_test_... \
 #     --route service/checkout --route issue/<id> --route trace/<id>
+#
+# Development only: it runs against the Clerk development instance and a dev or preview API,
+# and refuses a live Clerk key, so it can never sign in as a production user.
+# Without --build it measures the app already installed, with that app's own API, Clerk
+# instance and session; build with --build first to be sure it targets a dev instance.
 #
 # --build    builds with MAPLE_ENVIRONMENT=latency-<label> and the public ingest key
 #            ($MAPLE_OTEL_PUBLIC_INGEST_KEY), then installs it.
 # --api, --clerk-key  point the build at another API and its Clerk instance (a PR
 #            preview: https://api-pr-<n>.maple.dev and the dev publishable key).
 # --org      switches to this organization id first (maple://debug/org/<id>).
-# --signin   mints a one-time Clerk sign-in token ($CLERK_SECRET_KEY) and hands it to
-#            the app via MAPLE_DEBUG_SIGNIN_TICKET. Only needed once per simulator.
+# --signin   mints a one-time Clerk sign-in token with the development $CLERK_SECRET_KEY
+#            (sk_test_ only) and hands it to the app via MAPLE_DEBUG_SIGNIN_TICKET. Only
+#            needed once per simulator.
 #
 # Read the results in Maple, e.g. per screen:
 #   SELECT ResourceAttributes['deployment.environment'] run, SpanAttributes['screen.name'] screen,
@@ -51,12 +58,34 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 [[ -n "$label" && -n "$udid" ]] || { echo "--label and --udid are required" >&2; exit 2; }
+# Development instances only: a live key or the production API is refused outright.
+# A build must name both, or Xcode falls back to the production defaults.
+if [[ $build == 0 && ( -n "$api" || -n "$clerk_key" ) ]]; then
+	echo "--api and --clerk-key only apply with --build; the installed app keeps its own settings" >&2; exit 2
+fi
+if [[ $build == 1 && ( -z "$api" || -z "$clerk_key" ) ]]; then
+	echo "--build needs --api (dev or preview) and --clerk-key (pk_test_...)" >&2; exit 2
+fi
+if [[ -n "$clerk_key" && "$clerk_key" != pk_test_* ]]; then
+	echo "--clerk-key must be a development publishable key (pk_test_...)" >&2; exit 2
+fi
+if [[ -n "$api" ]]; then
+	api_host="${api#*://}"; api_host="${api_host%%[/?#]*}"; api_host="${api_host##*@}"; api_host="${api_host%%:*}"; api_host="${api_host%.}"
+	# Plain host names only: an encoded or unusual spelling could still resolve to production.
+	if [[ ! "$api_host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+		echo "--api host must be a plain host name" >&2; exit 2
+	fi
+	case "$(printf %s "$api_host" | tr "[:upper:]" "[:lower:]")" in
+	maple.dev | api.maple.dev | api.eu.maple.dev | app.maple.dev | app.eu.maple.dev | "")
+		echo "--api must be a dev or preview API, not production" >&2; exit 2 ;;
+	esac
+fi
 
 derived="/private/tmp/maple-latency-$label"
 xcrun simctl boot "$udid" 2>/dev/null || true
 
 if [[ $build == 1 ]]; then
-	: "${MAPLE_OTEL_PUBLIC_INGEST_KEY:?run under infisical run --env prod}"
+	: "${MAPLE_OTEL_PUBLIC_INGEST_KEY:?set MAPLE_OTEL_PUBLIC_INGEST_KEY to the public ingest key the spans go to}"
 	xcodegen generate -q
 	xcodebuild -project Maple.xcodeproj -scheme Maple -configuration Debug \
 		-destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$derived" \
@@ -68,7 +97,11 @@ if [[ $build == 1 ]]; then
 fi
 
 if [[ -n "$signin" ]]; then
-	: "${CLERK_SECRET_KEY:?run under infisical run --env prod}"
+	: "${CLERK_SECRET_KEY:?run under infisical run --env dev}"
+	if [[ "$CLERK_SECRET_KEY" != sk_test_* ]]; then
+		echo "CLERK_SECRET_KEY is not a development key (sk_test_...). --signin only works on dev instances." >&2
+		exit 2
+	fi
 	# The secret goes to curl on stdin, never in argv where `ps` would show it.
 	auth="Authorization: Bearer $CLERK_SECRET_KEY"
 	user_id=$(curl -sf -G https://api.clerk.com/v1/users --data-urlencode "email_address=$signin" -H @- <<<"$auth" |

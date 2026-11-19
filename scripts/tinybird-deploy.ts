@@ -88,10 +88,11 @@ const authFor = (region: Region): Auth => {
 /** Runs `tb --cloud` against `auth` from the repo root, where `tinybird.json` points at the datafiles. */
 const runTb = (region: Region, auth: Auth, args: ReadonlyArray<string>): boolean => {
 	console.log(`\n[${region.id}] ${auth.host}\n$ tb --cloud ${args.join(" ")}`)
-	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, "--token", auth.token, ...args], {
+	// The token goes in the environment (`tb` reads TB_TOKEN), never argv, where `ps` shows it.
+	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, ...args], {
 		cwd: REPO_ROOT,
 		stdio: "inherit",
-		env: { ...process.env, TB_VERSION_WARNING: "0" },
+		env: { ...process.env, TB_TOKEN: auth.token, TB_VERSION_WARNING: "0" },
 	})
 	if (proc.error) fail(`Failed to invoke \`tb\`; is the Tinybird CLI installed? (${proc.error.message})`)
 	return proc.status === 0
@@ -115,7 +116,8 @@ if (command === "start") {
 		fail(`Check failed for ${refused.map((t) => t.region.id).join(", ")}; no deployment was created.`)
 	}
 	const failed = targets.filter(
-		({ region, auth }) => !runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
+		({ region, auth }) =>
+			!runTb(region, auth, ["deployment", "create", "--no-auto", "--no-wait", ...destructive]),
 	)
 	if (failed.length > 0)
 		fail(`Could not create a deployment for ${failed.map((t) => t.region.id).join(", ")}.`)

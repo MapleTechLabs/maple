@@ -139,6 +139,8 @@ export const AuditResources = {
 	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["granted", "revoked"] },
 	/** A `maple auth login` approved in the dashboard; the device name is in `metadata`. */
 	cli_session: { verbs: ["approved"] },
+	/** A session someone else signed in to as this member; the impersonator and session are in `metadata`. */
+	auth: { verbs: ["impersonation"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
@@ -294,6 +296,7 @@ export const AuditResourceLabels = {
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
 	cli_session: "CLI session",
+	auth: "Sign-in",
 	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
@@ -441,6 +444,7 @@ export const AuditActionLabels = {
 	"mcp_connection.granted": "Granted MCP connection",
 	"mcp_connection.revoked": "Revoked MCP connection",
 	"cli_session.approved": "Approved CLI login",
+	"auth.impersonation": "Signed in as this member",
 	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",

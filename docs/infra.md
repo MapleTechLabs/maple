@@ -131,6 +131,30 @@ because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-pl
   `apps/ai/src/platform/Llm.ts`, #1052). Workers AI has no region pin, so
   `MAPLE_LLM_PROVIDER` stays unset there.
 
+## Production access from a laptop
+
+A developer machine holds no path to production that the deploy workflow does not.
+
+- **Production deploys run in CI.** `bun run alchemy:deploy:prd` runs
+  `scripts/prd-deploy-guard.ts` first, which refuses unless `CI=true` and
+  `GITHUB_ACTIONS=true`. Break glass, in an incident only, with
+  `MAPLE_PRD_DEPLOY_BREAK_GLASS="<reason>"`: the deploy prints a loud warning with the reason,
+  and the person running it tells the team.
+- **Sign-in helpers are development only.** `scripts/dev-signin.ts` and
+  `apps/ios/scripts/measure-latency.sh` mint tickets with a `sk_test_` key and refuse a live
+  one, so neither can sign in as a production user.
+- **Tokens stay out of `ps` and the terminal.** The Tinybird scripts hand `tb` its token as
+  `TB_TOKEN`, and a local `tinybird-pr-branch.ts up` writes the branch env to an owner-only
+  file instead of printing it.
+- **Impersonation is audited.** A Clerk session that carries an `act` claim (someone signed
+  in as a member) resolves with `tenant.impersonation` set. The session paths of
+  `SessionAuthorizationLive`, `ApiAuthorizationLive` and `ApiAuthorizationV2Live` write one
+  `auth.impersonation` audit entry per session per isolate, naming the impersonator and the
+  session. Impersonated sessions may write with the member's own role; their other entries name
+  the member, and this entry ties the session to the impersonator. MCP and chat sessions in
+  `apps/ai` write no `auth.impersonation` entry yet, and an entry whose delivery fails is not
+  retried for that session in the same isolate.
+
 ## Local dev: one `alchemy dev` stack
 
 `bun dev` (`scripts/dev.ts`) runs the whole local stack as a single `alchemy dev`:
