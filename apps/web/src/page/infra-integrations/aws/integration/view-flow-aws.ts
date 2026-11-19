@@ -345,7 +345,10 @@ const roleDeployed = (
 			onNonEmpty: (list) => [
 				collectCard(h, [
 					...list,
-					...(model.awsCard.setupId === connection.id ? [setupPanel(h, model, connection)] : []),
+					// Deploying the stack changes nothing Maple sees until the role is checked again.
+					...(model.awsCard.setupId === connection.id
+						? [setupPanel(h, model, connection), checkButton(h, model, connection, "Check now")]
+						: []),
 				]),
 			],
 		}),

@@ -8,7 +8,7 @@ import {
 	AWS_ROLE_TAGS,
 	AWS_TEMPLATE_VERSION,
 	awsConnectionResourceNames,
-	awsGrantedModules,
+	awsModuleGranted,
 	awsModuleOfPolicyName,
 	awsOidcIssuer,
 	awsOidcSubject,
@@ -300,14 +300,12 @@ const interpretCheck = (
 			),
 		)
 		const granted = normalizeModules(
-			awsGrantedModules(
-				Arr.flatMap(result.attachedPolicyNames, (name) => {
-					const module = awsModuleOfPolicyName(roleName, name)
-					return module === undefined ? [] : [module]
-				}),
-			),
+			Arr.flatMap(result.attachedPolicyNames, (name) => {
+				const module = awsModuleOfPolicyName(roleName, name)
+				return module === undefined ? [] : [module]
+			}),
 		)
-		const missing = Arr.filter(row.modules, (module) => !granted.includes(module))
+		const missing = Arr.filter(row.modules, (module) => !awsModuleGranted(granted, module))
 		const error =
 			missing.length === 0
 				? null

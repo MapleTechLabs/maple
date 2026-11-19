@@ -15,6 +15,7 @@ import {
 	AWS_NO_DELIVERY,
 	AWS_TEMPLATE_VERSION,
 	type AwsMetricStream,
+	awsModuleGranted,
 	awsStreamState,
 } from "@maple/domain/aws"
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
@@ -878,10 +879,7 @@ const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 		})()
 		// CloudTrail feeds the audit log once the role grants the audit module. Before that there is
 		// no feed: the Sources panel reads off and points at the AWS source.
-		const granted =
-			Arr.contains(c.modules, "audit") &&
-			c.grantedModules !== null &&
-			Arr.contains(c.grantedModules, "audit")
+		const granted = Arr.contains(c.modules, "audit") && awsModuleGranted(c.grantedModules, "audit")
 		const trailProblem = Arr.findFirst(
 			inputs.awsCloudTrailProblems ?? [],
 			(problem) => problem.accountId === c.accountId,

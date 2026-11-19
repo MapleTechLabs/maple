@@ -207,11 +207,12 @@ export const awsModuleOfPolicyName = (roleName: string, policyName: string): Aws
 }
 
 /**
- * The modules a role's attached policies grant. Security scan's SecurityAudit policy allows
- * CloudTrail's LookupEvents, so a role with it reads the audit log without another stack update.
+ * Whether a role with these module policies attached can do what `module` needs. Security scan's
+ * SecurityAudit policy allows CloudTrail's LookupEvents, so it also covers the audit log. The
+ * attached list itself stays exact: it is compared with the asked-for modules to spot a stale stack.
  */
-export const awsGrantedModules = (attached: ReadonlyArray<AwsModule>): ReadonlyArray<AwsModule> =>
-	attached.includes("security") && !attached.includes("audit") ? [...attached, "audit"] : attached
+export const awsModuleGranted = (attached: ReadonlyArray<string> | null, module: AwsModule): boolean =>
+	attached !== null && (attached.includes(module) || (module === "audit" && attached.includes("security")))
 
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId

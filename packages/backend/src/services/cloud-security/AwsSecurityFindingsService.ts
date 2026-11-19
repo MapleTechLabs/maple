@@ -5,7 +5,13 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type AwsConnectionRow, AwsConnections } from "@maple/db/tables"
-import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
+import {
+	awsConnectionResourceNames,
+	awsModuleGranted,
+	awsOidcIssuer,
+	awsOidcSubject,
+	awsRoleArn,
+} from "@maple/domain/aws"
 import {
 	CloudSecurityFeed,
 	type CloudServiceState,
@@ -295,7 +301,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 				),
 			)
 			const isOn = (row: AwsConnectionRow, module: AwsModule) =>
-				Arr.contains(row.modules, module) && Arr.contains(row.grantedModules ?? [], module)
+				Arr.contains(row.modules, module) && awsModuleGranted(row.grantedModules, module)
 			// The audit log reads CloudTrail for every org; findings only behind the `cloudSecurity` rollout.
 			const withFeeds = yield* Effect.forEach(
 				Arr.filter(rows, (row) => isOn(row, "audit") || isOn(row, "security")),

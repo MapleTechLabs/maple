@@ -416,7 +416,7 @@ describe("AwsSecurityFindingsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("skips orgs outside the rollout and connections whose role does not grant security", () => {
+	it.effect("reads no findings outside the rollout or without the security grant", () => {
 		const world = makeWorld()
 		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
 		return Effect.gen(function* () {
@@ -435,8 +435,10 @@ describe("AwsSecurityFindingsService", () => {
 				),
 			)
 			world.rolledOut.clear()
-			assert.strictEqual((yield* poll).connections, 0)
-			assert.deepStrictEqual(world.aws.requests, [])
+			// Outside the rollout only the audit log is read, which the security policy also allows.
+			assert.strictEqual((yield* poll).connections, 1)
+			assert.isFalse(Arr.some(world.aws.requests, (request) => request.service === "guardduty"))
+			assert.isTrue(Arr.some(world.aws.requests, (request) => request.service === "cloudtrail"))
 		}).pipe(Effect.provide(world.layer))
 	})
 	it.effect("reads only CloudTrail for the audit module, outside the findings rollout too", () => {

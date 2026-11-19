@@ -308,6 +308,21 @@ describe("aws connect flow", () => {
 				expectView(text("Needs a stack update")).toExist(),
 				expectView(role("button", { name: "Update the stack" })).toExist(),
 			)
+			// With the script open, the role can be checked right there once the stack is deployed.
+			const id = idOf(model)
+			expect(id).not.toBeNull()
+			if (id === null) return
+			const open = inner(model, IntegrationMessage.ClickedAwsSetup({ id }))
+			scene(
+				{ update: pageUpdate, view },
+				given(open),
+				expectView(role("button", { name: "Check now" })).toExist(),
+			)
+			const checked = pageUpdate(
+				open,
+				Message.GotIntegrationsMessage({ message: IntegrationMessage.ClickedAwsCheck({ id }) }),
+			)
+			expect(names(checked.commands)).toContain("CheckAwsConnection")
 		})
 	})
 

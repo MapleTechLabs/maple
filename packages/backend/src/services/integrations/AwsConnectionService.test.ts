@@ -453,6 +453,30 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
+	it.effect("a Security scan stack is up to date, and covers the audit log once that is asked for", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: ["security"],
+			})
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			const checked = yield* later(service.check(orgId, created.id))
+			// The attached policies are recorded as they are: nothing implied reads as stale.
+			assert.deepStrictEqual(checked.grantedModules, ["security"])
+			assert.isFalse(checked.setupOutdated)
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			assert.isFalse((yield* later(service.check(orgId, created.id))).setupOutdated)
+
+			// Asking for the audit log too: SecurityAudit already allows CloudTrail, so the check passes.
+			yield* service.update(orgId, created.id, { modules: ["security", "audit"] })
+			const both = yield* later(service.check(orgId, created.id))
+			assert.isNull(both.lastCheckError)
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, OrganizationFeatureFlagsService.allEnabled)))
+	})
+
 	it.effect("hands each security connection its own events key, the same on every setup", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
