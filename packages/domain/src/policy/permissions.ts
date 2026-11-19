@@ -10,8 +10,10 @@ import { Array as Arr, Record as Rec } from "effect"
  * - `action` finishes "You need … to …" in denial messages and reads as a sentence fragment.
  * - `label` and `description` are what the role editor shows.
  * - `customRoles: false` keeps a permission out of custom roles: it stays with Admin.
- * - `implies` lists what the permission is unusable without. Every grant set holds what its
- *   permissions imply (`withImplied`), so no role can act on telemetry it may not read.
+ * - Every permission implies `telemetry:read` unless marked `readsNoTelemetry`: most of Maple
+ *   acts on, routes or reveals telemetry, so a role may only lack read access when everything it
+ *   holds was checked not to need it. `implies` adds anything else a permission is unusable
+ *   without. Every grant set holds what its permissions imply (`withImplied`).
  *
  * Not to be confused with `@maple/domain/permission`, which decides what an agent may run.
  */
@@ -38,6 +40,8 @@ interface PermissionSpec {
 	readonly sensitive?: true
 	readonly customRoles?: false
 	readonly implies?: ReadonlyArray<string>
+	/** Checked to act on, route and reveal no telemetry, so it does not imply `telemetry:read`. */
+	readonly readsNoTelemetry?: true
 }
 
 export const permissions = {
@@ -55,7 +59,6 @@ export const permissions = {
 		label: "Run raw SQL",
 		description: "Query the warehouse directly in Explore, the API and MCP.",
 		action: "run raw SQL",
-		implies: ["telemetry:read"],
 	},
 	"dashboards:edit": {
 		code: 38,
@@ -63,7 +66,6 @@ export const permissions = {
 		label: "Build dashboards",
 		description: "Create and edit dashboards and widgets.",
 		action: "build dashboards",
-		implies: ["telemetry:read"],
 	},
 	"dashboards:share": {
 		code: 39,
@@ -72,7 +74,6 @@ export const permissions = {
 		description: "Create, rotate and revoke public share links.",
 		action: "share dashboards publicly",
 		sensitive: true,
-		implies: ["telemetry:read"],
 	},
 	"ai:ask": {
 		code: 40,
@@ -80,7 +81,6 @@ export const permissions = {
 		label: "Ask Maple AI",
 		description: "Chat with Maple AI. Answers only; changes need Approve Maple AI actions.",
 		action: "ask Maple AI",
-		implies: ["telemetry:read"],
 	},
 	"devices:connect": {
 		code: 41,
@@ -88,6 +88,7 @@ export const permissions = {
 		label: "Connect devices and clients",
 		description: "Sign in the mobile app, the CLI and MCP clients as yourself.",
 		action: "connect devices and clients",
+		readsNoTelemetry: true,
 	},
 
 	// Everyday work: what every role above Analyst does without a named permission today.
@@ -97,7 +98,6 @@ export const permissions = {
 		label: "Approve Maple AI actions",
 		description: "Approve changes Maple AI proposes, and send chat messages that can act.",
 		action: "approve Maple AI actions",
-		implies: ["telemetry:read"],
 	},
 	"service_map:edit": {
 		code: 43,
@@ -105,7 +105,6 @@ export const permissions = {
 		label: "Edit the shared service map",
 		description: "Arrange and annotate the organization's service map.",
 		action: "edit the shared service map",
-		implies: ["telemetry:read"],
 	},
 	"api_keys:create_mcp": {
 		code: 44,
@@ -113,6 +112,7 @@ export const permissions = {
 		label: "Create MCP keys",
 		description: "API keys for your own MCP clients, pinned to your role.",
 		action: "create MCP keys",
+		readsNoTelemetry: true,
 	},
 	"support:join": {
 		code: 45,
@@ -120,6 +120,7 @@ export const permissions = {
 		label: "Join the support channel",
 		description: "Get invited to the organization's shared Slack channel with Maple.",
 		action: "join the support channel",
+		readsNoTelemetry: true,
 	},
 
 	// Incident response.
@@ -129,7 +130,6 @@ export const permissions = {
 		label: "Triage error issues",
 		description: "Assign, resolve, merge, comment on and set severity on error issues.",
 		action: "triage error issues",
-		implies: ["telemetry:read"],
 	},
 	"incidents:respond": {
 		code: 2,
@@ -137,7 +137,6 @@ export const permissions = {
 		label: "Respond to incidents",
 		description: "Acknowledge and resolve alert and anomaly incidents.",
 		action: "acknowledge and resolve incidents",
-		implies: ["telemetry:read"],
 	},
 	"investigations:run": {
 		code: 3,
@@ -145,7 +144,6 @@ export const permissions = {
 		label: "Run investigations",
 		description: "Start Maple AI investigations and follow-ups.",
 		action: "start investigations",
-		implies: ["telemetry:read"],
 	},
 	"status_page_incidents:post": {
 		code: 4,
@@ -153,6 +151,7 @@ export const permissions = {
 		label: "Post status page updates",
 		description: "Open status page incidents and post updates to subscribers.",
 		action: "post status page incidents and updates",
+		readsNoTelemetry: true,
 	},
 	"recommendations:triage": {
 		code: 5,
@@ -160,7 +159,6 @@ export const permissions = {
 		label: "Triage recommendations",
 		description: "Dismiss and reopen instrumentation recommendations.",
 		action: "dismiss and reopen recommendations",
-		implies: ["telemetry:read"],
 	},
 
 	// Alerting and detection.
@@ -170,7 +168,6 @@ export const permissions = {
 		label: "Manage alerts",
 		description: "Alert rules, destinations, silences and maintenance windows.",
 		action: "manage alerts",
-		implies: ["telemetry:read"],
 	},
 	"oncall:manage": {
 		code: 46,
@@ -178,7 +175,6 @@ export const permissions = {
 		label: "Manage on-call schedules",
 		description: "Schedules, overrides and escalation chains.",
 		action: "manage on-call schedules",
-		implies: ["telemetry:read"],
 	},
 	"slos:manage": {
 		code: 47,
@@ -186,7 +182,6 @@ export const permissions = {
 		label: "Manage SLOs and budgets",
 		description: "Service level objectives and cost budgets.",
 		action: "manage SLOs and budgets",
-		implies: ["telemetry:read"],
 	},
 	"uptime_monitors:manage": {
 		code: 11,
@@ -194,7 +189,6 @@ export const permissions = {
 		label: "Manage uptime monitors",
 		description: "Create, pause and delete HTTP and TCP checks.",
 		action: "manage uptime monitors",
-		implies: ["telemetry:read"],
 	},
 	"error_policy:manage": {
 		code: 17,
@@ -202,7 +196,6 @@ export const permissions = {
 		label: "Manage error notifications",
 		description: "Who hears about new errors, and the escalation policy.",
 		action: "manage error notifications and escalation",
-		implies: ["telemetry:read"],
 	},
 	"anomalies:configure": {
 		code: 16,
@@ -210,7 +203,6 @@ export const permissions = {
 		label: "Configure anomaly detection",
 		description: "Detector sensitivity and which services it watches.",
 		action: "manage anomaly detector settings",
-		implies: ["telemetry:read"],
 	},
 	"ai_triage:configure": {
 		code: 18,
@@ -227,7 +219,6 @@ export const permissions = {
 		label: "Edit status pages",
 		description: "Components, monitors, appearance and custom domains.",
 		action: "edit status pages",
-		implies: ["telemetry:read"],
 	},
 	"status_pages:access": {
 		code: 21,
@@ -253,6 +244,7 @@ export const permissions = {
 		label: "View public ingest key",
 		description: "The browser key that ships in app bundles.",
 		action: "view the public ingest key",
+		readsNoTelemetry: true,
 	},
 	"ingest_keys:view": {
 		code: 15,
@@ -283,7 +275,6 @@ export const permissions = {
 		label: "Manage ingest rules",
 		description: "Drop, sample and redact data before it is stored.",
 		action: "manage ingest rules",
-		implies: ["telemetry:read"],
 	},
 	"attribute_mappings:manage": {
 		code: 14,
@@ -339,7 +330,6 @@ export const permissions = {
 		label: "Configure code review",
 		description: "Which repositories Maple reviews, and the review rules.",
 		action: "change code review settings",
-		implies: ["telemetry:read"],
 	},
 	// An approval counts toward a branch's required reviews, so who may give Maple that say is
 	// an admin's call, and so are the rules a review runs under while it has it.
@@ -350,7 +340,6 @@ export const permissions = {
 		description: "Let Maple approve pull requests, and change the rules while it does.",
 		action: "turn on automatic pull request approval or change the review rules while it is on",
 		sensitive: true,
-		implies: ["telemetry:read"],
 	},
 	"security:manage": {
 		code: 19,
@@ -375,6 +364,7 @@ export const permissions = {
 		label: "Create restricted API keys",
 		description: "Scoped keys limited to what the creator can do.",
 		action: "create restricted API keys",
+		readsNoTelemetry: true,
 	},
 	// A full-access key is unpinned and acts as root, so only Admin may mint one.
 	"api_keys:manage": {
@@ -394,7 +384,6 @@ export const permissions = {
 		description: "The organization's own OpenRouter and model provider keys.",
 		action: "manage the organization's model provider keys",
 		sensitive: true,
-		implies: ["telemetry:read"],
 	},
 	"mcp_connections:view_all": {
 		code: 34,
@@ -441,6 +430,7 @@ export const permissions = {
 		description: "Plans, payment methods, invoices and spend limits.",
 		action: "manage billing",
 		sensitive: true,
+		readsNoTelemetry: true,
 	},
 	// SCIM maps IdP groups to roles, Admin included, so it stays with Admin like members:manage.
 	"sso:manage": {
@@ -478,7 +468,10 @@ const permissionKeys: ReadonlyArray<Permission> = Rec.keys(permissions)
 /** What `permission` is unusable without. Typed by the catalog: an `implies` naming no permission fails to compile. */
 export const implicationsOf = (permission: Permission): ReadonlyArray<Permission> => {
 	const spec = permissions[permission]
-	return "implies" in spec ? spec.implies : []
+	const explicit: ReadonlyArray<Permission> = "implies" in spec ? spec.implies : []
+	return permission === "telemetry:read" || "readsNoTelemetry" in spec
+		? explicit
+		: [...explicit, "telemetry:read"]
 }
 
 /** `list` with everything its permissions imply, in catalog order. */

@@ -64,19 +64,6 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 		const chat = yield* ChatWorkspaceService
 		const env = yield* Env
 
-		/**
-		 * A connector that cannot name who asks answers anyone in the workspace from the org's
-		 * telemetry, so installing one or turning its assistant on takes telemetry:read too.
-		 */
-		const requireTelemetryReadIfAnonymous = Effect.fn(
-			"HttpV2ChatIntegrations.requireTelemetryReadIfAnonymous",
-		)(function* (tenant: CurrentTenant.TenantSchema, isTarget: (status: ChatConnectorStatus) => boolean) {
-			if (Policy.can(tenant.permissions, "telemetry:read")) return
-			const statuses = yield* chat.list(tenant.orgId)
-			if (!Arr.some(statuses, (status) => isTarget(status) && !status.supportsIdentity)) return
-			return yield* V2InsufficientPermissions.make(Policy.denialFor("telemetry:read").message)
-		})
-
 		return (
 			handlers
 				// No admin gate: the card renders link state for every org member, the
@@ -104,10 +91,6 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						const tenant = yield* CurrentTenant.Context
 						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
-						)
-						yield* requireTelemetryReadIfAnonymous(
-							tenant,
-							(status) => status.connector.id === params.connector,
 						)
 						// The install is bound to `tenant.userId`, who must be the one finishing it.
 						yield* requirePerson
@@ -193,11 +176,6 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						if (payload.assistant_enabled === true) {
-							yield* requireTelemetryReadIfAnonymous(tenant, (status) =>
-								Arr.some(status.workspaces, (workspace) => workspace.id === params.id),
-							)
-						}
 						const features = {
 							...(payload.alerts_enabled !== undefined && {
 								alertsEnabled: payload.alerts_enabled,

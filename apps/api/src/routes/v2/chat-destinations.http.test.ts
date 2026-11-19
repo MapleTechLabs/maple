@@ -26,12 +26,10 @@ import { SharedDashboardService } from "@maple/backend/services/dashboards/Share
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
-	type ChatConnectorStatus,
 	ChatWorkspaceService,
 	type ChatWorkspaceServiceApi,
 	type ChatWorkspaceUpdate,
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
-import * as Policy from "@maple/domain/policy"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
 import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
@@ -74,12 +72,11 @@ const chatLayer = (
 	listDestinations: ChatWorkspaceServiceApi["listDestinations"],
 	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"],
 	beginInstall: ChatWorkspaceServiceApi["beginInstall"],
-	list: ChatWorkspaceServiceApi["list"],
 ) =>
 	Layer.succeed(
 		ChatWorkspaceService,
 		ChatWorkspaceService.of({
-			list,
+			list: die,
 			beginInstall,
 			completeInstall: die,
 			beginLink: die,
@@ -141,7 +138,6 @@ const makeHarness = (
 	recorded: Recorded = {},
 	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"] = die,
 	beginInstall: ChatWorkspaceServiceApi["beginInstall"] = die,
-	list: ChatWorkspaceServiceApi["list"] = die,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -162,7 +158,7 @@ const makeHarness = (
 			Layer.mergeAll(
 				HttpV2AlertDestinationsLive,
 				HttpV2ChatIntegrationsLive.pipe(
-					Layer.provide(chatLayer(listDestinations, updateWorkspace, beginInstall, list)),
+					Layer.provide(chatLayer(listDestinations, updateWorkspace, beginInstall)),
 				),
 			),
 		),
@@ -226,13 +222,6 @@ const makeHarness = (
 		adminKey: () => key(),
 		session,
 		memberKey: () => key({ source: "maple_cli", roles: ["org:member"], deviceName: "laptop" }),
-		customKey: (permissions: ReadonlyArray<Policy.Permission>) =>
-			key({
-				source: "maple_cli",
-				roles: [Policy.CUSTOM_ROLE_CLERK_KEY],
-				deviceName: "laptop",
-				permissions: Policy.encodePermissions(permissions),
-			}),
 		request,
 		dispose: async () => {
 			await disposeHandler()
@@ -522,62 +511,6 @@ describe("v2 chat connector install over HTTP", () => {
 		expect([link.status, link.body.error.code]).toEqual([403, "insufficient_permissions"])
 		const unlink = await harness.request("DELETE", identity, key.secret)
 		expect([unlink.status, unlink.body.error.code]).toEqual([403, "insufficient_permissions"])
-		await harness.dispose()
-	})
-})
-
-describe("a chat connector that cannot name who asks", () => {
-	const workspace = {
-		id: WORKSPACE,
-		connector: TESTCHAT,
-		externalWorkspaceId: "T_ACME",
-		name: "Acme",
-		settings: {},
-		features: { alertsEnabled: true, directMessagesEnabled: true, assistantEnabled: false },
-		createdAt: Date.parse("2026-09-24T00:00:00.000Z"),
-	}
-	// The route reads only the connector's id, whether it can name who asks, and its workspaces.
-	const listed =
-		(supportsIdentity: boolean): ChatWorkspaceServiceApi["list"] =>
-		() =>
-			Effect.succeed([
-				{
-					connector: { id: TESTCHAT } as ChatConnectorStatus["connector"],
-					available: true,
-					workspaces: [workspace],
-					supportsIdentity,
-				},
-			])
-	const updated: ChatWorkspaceServiceApi["updateWorkspace"] = (_orgId, _id, update) =>
-		Effect.succeed({ ...workspace, features: { ...workspace.features, ...update.features } })
-	const WORKSPACE_PATH = `/v2/integrations/chat_workspaces/${WORKSPACE_PUBLIC_ID}`
-	const INSTALL_PATH = `/v2/integrations/chat_connectors/${TESTCHAT}/install`
-
-	it("needs telemetry:read to install, besides integrations:manage", async () => {
-		const harness = makeHarness(die, {}, die, die, listed(false))
-		const key = await harness.customKey(["integrations:manage"])
-		const refused = await harness.request("POST", INSTALL_PATH, key.secret, undefined, "app.maple.test")
-		expect(refused.status).toBe(403)
-		expect(refused.body.error.message).toContain("Read telemetry")
-		await harness.dispose()
-	})
-
-	it("needs telemetry:read to turn its assistant on, but not to change anything else", async () => {
-		const harness = makeHarness(die, {}, updated, die, listed(false))
-		const token = (await harness.customKey(["integrations:manage"])).secret
-		const assistant = await harness.request("PATCH", WORKSPACE_PATH, token, { assistant_enabled: true })
-		expect(assistant.status).toBe(403)
-		expect(assistant.body.error.message).toContain("Read telemetry")
-		const alerts = await harness.request("PATCH", WORKSPACE_PATH, token, { alerts_enabled: false })
-		expect(alerts.status).toBe(200)
-		await harness.dispose()
-	})
-
-	it("leaves a connector that names who asks to integrations:manage alone", async () => {
-		const harness = makeHarness(die, {}, updated, die, listed(true))
-		const token = (await harness.customKey(["integrations:manage"])).secret
-		const assistant = await harness.request("PATCH", WORKSPACE_PATH, token, { assistant_enabled: true })
-		expect([assistant.status, assistant.body.assistant_enabled]).toEqual([200, true])
 		await harness.dispose()
 	})
 })

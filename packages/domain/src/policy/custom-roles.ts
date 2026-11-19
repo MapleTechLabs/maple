@@ -54,14 +54,14 @@ export const encodePermissions = (list: ReadonlyArray<Permission>): ReadonlyArra
  * anything a custom role may not hold: stored data never widens access past the catalog.
  */
 export const decodeCustomPermissions = (codes: ReadonlyArray<number>): ReadonlyArray<Permission> =>
-	Arr.filter(
-		withImplied(
+	withImplied(
+		Arr.filter(
 			Arr.flatMap(codes, (code) => {
 				const permission = permissionByCode.get(code)
 				return permission === undefined ? [] : [permission]
 			}),
+			grantableToCustomRoles,
 		),
-		grantableToCustomRoles,
 	)
 
 /** One custom role as the organization's metadata stores it. */
