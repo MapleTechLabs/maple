@@ -33,7 +33,7 @@ import { groupSources, matchesSearch, sourceKindLine } from "./groups"
 import { cn } from "@maple/ui/lib/utils"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { gatedControl } from "../../kit/session-grants"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -230,7 +230,7 @@ const emptyState = (h: H, model: Model): Html =>
 				emptyDescription(h, [
 					canManage(model)
 						? "Give each SDK, cluster or host its own source to see what it sends, cap its rate, or pause it on its own."
-						: "Org admins and engineers can connect sources.",
+						: denialReason("sources:manage"),
 				]),
 			]),
 			connectButton(h, model),

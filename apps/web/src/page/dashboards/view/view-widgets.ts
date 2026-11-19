@@ -21,6 +21,7 @@ import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { DashboardWidgetSchema } from "@maple/widgets/dashboard"
+import { gatedEntries } from "../../kit/gated-controls"
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
@@ -36,6 +37,8 @@ type TileInputs = Readonly<{
 	request: Model["requests"][string] | undefined
 	sparkRequest: Model["requests"][string] | undefined
 	isEdit: boolean
+	/** The viewer's permissions: Embed chart writes a share link. */
+	grants: Model["grants"]
 	/** The "Move to" targets; only read while editing. */
 	sections: Sections | undefined
 	isSharesLoaded: boolean
@@ -67,6 +70,7 @@ const tileInputsOf = (model: Model, widget: Widget): TileInputs => {
 		request: requestOf(model, slot.gate),
 		sparkRequest: requestOf(model, slot.sparkGate),
 		isEdit,
+		grants: model.grants,
 		sections: isEdit ? model.document?.sections : undefined,
 		// A previewed version's widgets may not exist on the live board, so they are not embeddable.
 		isSharesLoaded: model.shares === "Loaded" && model.history.previewed === null,
@@ -108,7 +112,7 @@ const widgetMenuEntries = (inputs: TileInputs, widget: Widget): ReadonlyArray<Me
 		...(isAlertable(widget)
 			? [{ _tag: "Item", value: "alert", label: "Create alert", icon: "BellIcon" } as const]
 			: []),
-		...(inputs.isSharesLoaded ? [embedEntry(widget)] : []),
+		...(inputs.isSharesLoaded ? gatedEntries(inputs, "dashboards:share", [embedEntry(widget)]) : []),
 		...(isEdit
 			? [
 					{ _tag: "Separator" } as const,

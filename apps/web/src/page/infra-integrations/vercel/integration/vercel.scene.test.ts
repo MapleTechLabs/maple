@@ -386,7 +386,10 @@ describe("vercel card: connected", () => {
 			expectView(within(role("row", { name: /Logs/ }), text("live"))).toExist(),
 			expectView(within(role("row", { name: /Speed Insights/ }), text("off"))).toExist(),
 			expectView(
-				within(role("row", { name: /Audit log/ }), text(/Security audit log, org admins only/)),
+				within(
+					role("row", { name: /Audit log/ }),
+					text(/Security audit log, for roles that read it/),
+				),
 			).toExist(),
 			expectView(role("link", { name: "storefront" })).toHaveAttr("href", "/infra/vercel/prj_web"),
 			expectView(role("link", { name: /Open Vercel dashboard/ })).toHaveAttr("href", "/infra/vercel"),

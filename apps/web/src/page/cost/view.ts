@@ -85,16 +85,10 @@ const onRamp = (
 					emptyDescription(h, [
 						"Add a source and Maple reads what it bills each day: an AWS account by service, region and account, an OpenRouter account by model, a GitHub organization by product and repository, a Vercel team by product and project, a Cloudflare account by product, a PlanetScale organization by database and branch, an Anthropic or OpenAI organization by model and workspace or project, a Google Cloud billing account by project, service and resource.",
 					]),
-					// A member's save would be refused: say who can, and offer no form.
+					// A save would be refused: say which permission it needs, and offer no form.
 					...(!options.cannotManage
 						? []
-						: [
-								emptyDescription(
-									h,
-									["Only organization admins and engineers can add a cost source."],
-									"mt-3",
-								),
-							]),
+						: [emptyDescription(h, [denialReason("integrations:manage")], "mt-3")]),
 				],
 				"max-w-md",
 			),

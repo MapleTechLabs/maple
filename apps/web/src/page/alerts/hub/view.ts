@@ -1,5 +1,5 @@
 import type { AlertIncidentId } from "@maple/domain/http"
-import type * as Policy from "@maple/domain/policy"
+import * as Policy from "@maple/domain/policy"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
@@ -126,6 +126,7 @@ const newRuleButton = (h: H, model: Model): Html => {
 						"Telemetry rule",
 						"ChartLineIcon",
 						"Error rate, latency or any query on traces, logs and metrics.",
+						lockFor(model, "alerts:manage"),
 					),
 					newRuleItem(
 						h,
@@ -133,15 +134,16 @@ const newRuleButton = (h: H, model: Model): Html => {
 						"Anomaly rule",
 						"PulseIcon",
 						"Route what Maple's anomaly detector finds for some services, environments or signals.",
+						lockFor(model, "alerts:manage"),
 					),
-					// Uptime monitors and SLOs are for org admins and engineers; the API refuses members too.
+					// Each kind is locked by the permission the API checks on its create.
 					newRuleItem(
 						h,
 						"uptime",
 						"Uptime check",
 						"GlobeIcon",
 						"Check a URL, port, DNS record or cron job from outside.",
-						manageLock(model),
+						lockFor(model, "uptime_monitors:manage"),
 					),
 					newRuleItem(
 						h,
@@ -149,7 +151,7 @@ const newRuleButton = (h: H, model: Model): Html => {
 						"SLO",
 						"GaugeIcon",
 						"An error budget on a service's availability or latency, with burn-rate alerts.",
-						manageLock(model),
+						lockFor(model, "slos:manage"),
 					),
 				],
 				align: "end",
@@ -178,17 +180,11 @@ const newRuleButton = (h: H, model: Model): Html => {
 const hasRows = <A>(rows: Option.Option<ReadonlyArray<A>>): boolean =>
 	Option.exists(rows, (list) => list.length > 0)
 
-/** The denial a create item shows to a viewer who may not manage alerts, else none. */
-const manageLock = (model: Model): string | undefined =>
-	canManageAlerts(model) ? undefined : denialReason("alerts:manage")
+/** The denial a create item shows to a viewer without `permission`, else none. */
+const lockFor = (model: Model, permission: Policy.Permission): string | undefined =>
+	Policy.can(model.grants, permission) ? undefined : denialReason(permission)
 
-const primaryLink = (
-	h: H,
-	model: Model,
-	href: string,
-	label: string,
-	permission: Policy.Permission,
-): Html =>
+const primaryLink = (h: H, model: Model, href: string, label: string, permission: Policy.Permission): Html =>
 	gatedControl(h, model, permission, (isDisabled) =>
 		isDisabled
 			? button(h, { size: "sm", isDisabled }, [icon(h, "PlusIcon"), label])
@@ -225,7 +221,13 @@ const headerActions = (
 	switch (tab) {
 		case "uptime":
 			return hasRows(AsyncData.getData(model.monitors.data))
-				? primaryLink(h, model, newMonitorHref({ serviceName }), "New monitor", "alerts:manage")
+				? primaryLink(
+						h,
+						model,
+						newMonitorHref({ serviceName }),
+						"New monitor",
+						"uptime_monitors:manage",
+					)
 				: undefined
 		case "slos":
 			return hasRows(AsyncData.getData(model.slos.data))
@@ -400,7 +402,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				slotId: "alerts-destination",
 				model: model.destinationDialog,
 				view: DestinationDialogView.view,
-				viewInputs: { id: "alerts-destination" },
+				viewInputs: { id: "alerts-destination", grants: model.grants },
 				toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
 			}),
 			h.submodel({

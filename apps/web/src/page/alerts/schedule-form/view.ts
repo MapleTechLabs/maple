@@ -539,7 +539,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (model.isSessionLoaded && !canManageOnCall(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create or change on-call schedules",
+			permission: "oncall:manage",
 			back: { href: backHref(model), label: isEdit ? "Back to the schedule" : "Back to on-call" },
 		})
 	if (isEdit && AsyncData.isFailure(model.existing.data))

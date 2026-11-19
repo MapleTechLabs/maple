@@ -112,7 +112,7 @@ describe("sso tab", () => {
 		scene(
 			{ update, view },
 			given(model),
-			expectView(text("Only admins can change SSO and SCIM settings.")).toExist(),
+			expectView(text(Policy.denialFor("sso:manage").message)).toExist(),
 			expectView(role("button", { name: "Add domain" })).toBeDisabled(),
 			expectView(role("button", { name: "Edit" })).toBeDisabled(),
 			expectView(role("group", { name: Policy.denialFor("sso:manage").message })).toExist(),
@@ -362,7 +362,7 @@ describe("sso tab", () => {
 		scene(
 			{ update, view: withViewInputs(ssoView, { isKnownMember: false })() },
 			given(loaded(doc({ domains: [verifiedDomain], connection }), false)),
-			expectView(text("Only admins can change SSO and SCIM settings.")).not.toExist(),
+			expectView(text(Policy.denialFor("sso:manage").message)).not.toExist(),
 			expectView(role("button", { name: "Edit" })).toBeDisabled(),
 		)
 	})

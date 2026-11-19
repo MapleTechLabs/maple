@@ -51,7 +51,7 @@ import {
 } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { canManageOnCall, gatedControl } from "../../kit/session-grants"
+import { canManageOnCall, denialReason, gatedControl } from "../../kit/session-grants"
 import { gatedEntries } from "../../kit/gated-controls"
 import {
 	backHref,
@@ -681,7 +681,8 @@ const notices = (h: H, model: Model): ReadonlyArray<Html> => [
 		: [
 				alert(h, { variant: "info", size: "sm" }, [
 					icon(h, "ShieldIcon"),
-					alertTitle(h, ["Only org admins and engineers can change escalation chains"]),
+					alertTitle(h, ["Your role can't change this"]),
+					alertDescription(h, [denialReason("oncall:manage")]),
 				]),
 			]),
 	...(model.saveFailure === null
@@ -729,7 +730,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (!isEdit && !canManageOnCall(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create escalation chains",
+			permission: "oncall:manage",
 			back: { href: backHref(), label: "Back to routing" },
 		})
 	if (isEdit && AsyncData.isFailure(model.existing.data))

@@ -97,7 +97,12 @@ const isVisible = (id: string, visibility: Visibility): boolean => {
 		return visibility.canAccessDataPlatform || visibility.isDataPlatformLocked === true
 	if (id === "data-sources") return visibility.hasDataSources
 	if (id === "audit-log") return Policy.can(visibility.grants, "audit_log:read")
-	if (id === "ai") return Policy.can(visibility.grants, "llm_keys:manage")
+	// The model provider and auto-triage each have their own permission; either opens the tab.
+	if (id === "ai")
+		return (
+			Policy.can(visibility.grants, "llm_keys:manage") ||
+			Policy.can(visibility.grants, "ai_triage:configure")
+		)
 	return true
 }
 

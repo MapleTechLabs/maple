@@ -17,6 +17,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { actorInitials, KIND_DOT, KIND_LABEL, type VersionRow } from "./history"
 import { Message } from "./message"
 import { isWriteBlocked } from "./mode"
+import { gatedControl } from "../../kit/session-grants"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -270,23 +271,25 @@ export const previewBanner = (h: H, model: Model, version: VersionRow, clock: Cl
 						},
 						["Cancel"],
 					),
-					button(
-						h,
-						{
-							variant: "default",
-							size: "sm",
-							isDisabled: isRestoreBlocked,
-							attributes: [
-								h.OnClick(Message.ClickedRestoreVersion()),
-								...(isRestoreBlocked ? [h.AriaDescribedBy(RESTORE_BLOCKED_ID)] : []),
+					gatedControl(h, model, "dashboards:edit", (isLocked) =>
+						button(
+							h,
+							{
+								variant: "default",
+								size: "sm",
+								isDisabled: isRestoreBlocked || isLocked,
+								attributes: [
+									h.OnClick(Message.ClickedRestoreVersion()),
+									...(isRestoreBlocked ? [h.AriaDescribedBy(RESTORE_BLOCKED_ID)] : []),
+								],
+							},
+							[
+								icon(h, "ArrowPathIcon", {
+									attributes: [h.DataAttribute("icon", "inline-start")],
+								}),
+								"Restore this version",
 							],
-						},
-						[
-							icon(h, "ArrowPathIcon", {
-								attributes: [h.DataAttribute("icon", "inline-start")],
-							}),
-							"Restore this version",
-						],
+						),
 					),
 				]),
 			],

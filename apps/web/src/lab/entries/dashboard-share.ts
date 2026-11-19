@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema } from "effect"
@@ -66,6 +67,7 @@ const step = (model: Model, message: Message) => pageUpdate(model, message, CONT
 const init = (flags: Flags) => {
 	const booted = Arr.reduce(
 		[
+			Message.CompletedFetchSession({ orgId: CONTEXT.orgId, grants: Policy.allPermissions }),
 			Message.CompletedReadClock({ nowMs: NOW_MS }),
 			Message.UpdatedDashboard({ orgId: CONTEXT.orgId, maybeDocument: Option.some(DOCUMENT) }),
 			Message.GotShareMessage({ message: ShareMessage.GotOrigin({ origin: "https://app.maple.dev" }) }),

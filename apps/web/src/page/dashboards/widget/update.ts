@@ -22,7 +22,13 @@ import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_WIDGET_WIDTH_PX, maxDataPointsForWidth, toPanelType } from "../kit/chart-registry"
 import { planWidget } from "../kit/widget-data"
-import { FetchAutocomplete, FetchVariableOptions, FetchWidget, ReadClock } from "./command"
+import {
+	FetchAutocomplete,
+	FetchVariableOptions,
+	FetchWidget,
+	FetchWidgetSession,
+	ReadClock,
+} from "./command"
 import { planOptionRequests, planVariablesOf } from "../kit/variables"
 import type { EditorState } from "./editor-state"
 import {
@@ -53,11 +59,12 @@ type Route = Readonly<{ dashboardId: string; widgetId: string; search: Search }>
 
 export const SOURCE_MODES = ["builder", "rawSql", "promql"]
 
-export const init = (route: Route, _context: PageContext): Return => ({
+export const init = (route: Route, context: PageContext): Return => ({
 	model: {
 		dashboardId: route.dashboardId,
 		widgetId: route.widgetId,
 		search: route.search,
+		grants: [],
 		status: "Loading",
 		document: null,
 		state: null,
@@ -102,7 +109,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		leaveDialog: Dialog.init("widget-editor-leave-dialog", "alert-dialog"),
 		pendingLeaveUrl: null,
 	},
-	commands: [ReadClock(), LoadChartRuntime()],
+	commands: [ReadClock(), LoadChartRuntime(), FetchWidgetSession({ orgId: context.orgId })],
 })
 
 export const routeChanged = (model: Model, route: Route): Return => ({

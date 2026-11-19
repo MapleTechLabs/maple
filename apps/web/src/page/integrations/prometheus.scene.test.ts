@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -132,6 +133,22 @@ describe("prometheus scrape targets", () => {
 			given(failed.model),
 			expectView(role("button", { name: "Sync now" })).toBeEnabled(),
 			expectView(role("link", { name: "Add another target" })).toExist(),
+		)
+	})
+
+	test("probing, pausing and deleting a target follow scrape_targets:manage, not integrations:manage", () => {
+		const as = (grants: ReadonlyArray<Policy.Permission>) =>
+			pageUpdate(loaded(), Message.CompletedLoadSession({ grants, hasDataSources: false })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(as(["telemetry:read", "integrations:manage"])),
+			expectView(role("button", { name: "Sync now" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("scrape_targets:manage").message })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(as(["telemetry:read", "scrape_targets:manage"])),
+			expectView(role("button", { name: "Sync now" })).toBeEnabled(),
 		)
 	})
 })

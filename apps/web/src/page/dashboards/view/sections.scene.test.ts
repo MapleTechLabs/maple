@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Schema, Array as Arr } from "effect"
@@ -12,6 +13,13 @@ import { canvasGridOf } from "./grid"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+/** The session answering with a role that may edit and share dashboards. */
+const asEditor = (model: Model): Model =>
+	update(
+		model,
+		Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		context,
+	).model
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
@@ -63,7 +71,7 @@ const ready = (): Model =>
 			Message.CompletedReadClock({ nowMs: NOW }),
 			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 		],
-		init(ROUTE, context).model,
+		asEditor(init(ROUTE, context).model),
 		(model, message) => pageUpdate(model, message).model,
 	)
 

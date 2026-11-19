@@ -1333,7 +1333,7 @@ describe("components under Settings > Monitors", () => {
 			expectView(role("button", { name: "Reorder Component 1" })).toBeDisabled(),
 			expectView(role("button", { name: "Remove from page" })).toBeDisabled(),
 			expectView(role("textbox", { name: "Shown as" })).toBeDisabled(),
-			expectView(text("Only org admins and engineers can change components.")).toExist(),
+			expectView(text(Policy.denialFor("status_pages:edit").message)).toExist(),
 		)
 		expect(
 			pageUpdate(selected(1, { grants: MEMBER }), Message.ClickedAddComponent()).model.panel?._tag,
@@ -3385,6 +3385,23 @@ describe("settings", () => {
 			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
 			expectView(role("radio", { name: "Public" })).toBeChecked(),
 			expectView(text("Unsaved changes")).not.toExist(),
+		)
+	})
+
+	test("a visibility change saves the page, so status_pages:access alone does not offer it", () => {
+		const accessOnly = loaded({ ...ACCESS, grants: ["telemetry:read", "status_pages:access"] })
+		scene(
+			{ update: pageUpdate, view },
+			given(accessOnly),
+			expectView(text(Policy.denialFor("status_pages:edit").message)).toExist(),
+			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded({ ...ACCESS, grants: ["telemetry:read", "status_pages:access", "status_pages:edit"] }),
+			),
+			expectView(role("radio", { name: "Password-protected" })).toBeEnabled(),
 		)
 	})
 

@@ -459,7 +459,7 @@ describe("escalation chain editor", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			expectView(text("Only org admins and engineers can change escalation chains")).toExist(),
+			expectView(text(Policy.denialFor("oncall:manage").message)).toExist(),
 			expectView(text("Slack #alerts-api")).toExist(),
 			expectView(text("Used by 2 rules")).toExist(),
 			expectView(role("textbox", { name: "Name" })).toBeDisabled(),
@@ -480,7 +480,7 @@ describe("escalation chain editor", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(newChain(MEMBER)),
-			expectView(text("Only org admins and engineers can create escalation chains")).toExist(),
+			expectView(text(Policy.denialFor("oncall:manage").message)).toExist(),
 		)
 	})
 

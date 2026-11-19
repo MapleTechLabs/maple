@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Option, Array as Arr, String as Str } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -165,7 +166,7 @@ const accessField = (h: H, model: Model): Html => {
 					fieldDescription(
 						h,
 						{ ids: fieldIds, state: IDLE },
-						"Your key can reach what your role can. Full access and admin-only families need an org admin.",
+						`Your key can reach what your role can. Full access and admin-only families need ${Policy.permissions["api_keys:manage"].label}.`,
 					),
 				]),
 		isRestricted

@@ -572,7 +572,7 @@ export const view = Submodel.defineView<Model, Message, Inputs>((model, inputs, 
 	return settingsSections(h, [
 		...adminOnlyNotice(h, {
 			isKnownMember: inputs.isKnownMember && !canManage(model),
-			subject: "members",
+			permission: "members:manage",
 			adminName: model.adminName,
 		}),
 		membersSection(h, model, inputs),

@@ -44,7 +44,7 @@ import { view as dialogView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 
-const view = withViewInputs(dialogView, { id: "test-destination" })()
+const view = withViewInputs(dialogView, { id: "test-destination", grants: ENGINEER })()
 const workspaceWire = (n: number, name: string) => ({
 	id: encodePublicId(PublicIdPrefixes.chatWorkspace, `0199a0d5-0000-7000-8000-00000000000${n}`),
 	object: "chat_workspace",
@@ -197,6 +197,25 @@ describe("destination dialog", () => {
 		expect([chosen.form.chatChannelId, chosen.form.chatChannelName]).toEqual(["C2", "ops"])
 		expect(isFormReady(chosen.form, false)).toBe(true)
 		expect(names(update(chosen, Message.ClickedSave()).commands)).toEqual(["CreateAlertDestination"])
+	})
+
+	test("linking a chat workspace from here needs integrations:manage, not only alerts:manage", () => {
+		const unlinked = update(opened(), Message.CompletedFetchConnectors({ connectors: [slack([])] })).model
+		const alertsOnly: ReadonlyArray<Policy.Permission> = ["telemetry:read", "alerts:manage"]
+		scene(
+			{ update, view: withViewInputs(dialogView, { id: "test-destination", grants: alertsOnly })() },
+			given(unlinked),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(role("group", { name: Policy.denialFor("integrations:manage").message })).toExist(),
+		)
+		scene(
+			{ update, view },
+			given(unlinked),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(
+				role("group", { name: Policy.denialFor("integrations:manage").message }),
+			).not.toExist(),
+		)
 	})
 
 	test("Connect on an unlinked Slack links it in a popup, then the new workspace is the form's", () => {

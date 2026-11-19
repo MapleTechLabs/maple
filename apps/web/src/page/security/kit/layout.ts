@@ -173,7 +173,7 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	)
 
 const DESCRIPTION = {
-	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
+	code: "Deep code audits of your connected repositories. Findings are visible to roles that open the Security Center.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	cloud: "GuardDuty, Security Hub, Inspector and Access Analyzer findings from your AWS accounts, matched to the services they affect.",
 	runtimes:
@@ -181,7 +181,7 @@ const DESCRIPTION = {
 	dependencies:
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
 	auditLog:
-		"Who changed what, and what was refused, in Maple and your connected platforms. Visible to org admins.",
+		"Who changed what, and what was refused, in Maple and your connected platforms. Visible to roles that read the audit log.",
 	detections:
 		"A detection opens an alert incident when enough matching audit events arrive within its window.",
 } satisfies Record<SecuritySource, string>

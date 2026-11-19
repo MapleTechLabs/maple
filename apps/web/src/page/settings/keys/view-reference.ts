@@ -87,7 +87,7 @@ const SCOPE_FAMILY_ROWS = [
 	},
 	{ id: "query", label: "Query", description: "Structured telemetry queries" },
 	{ id: "organization", label: "Organization", description: "Read the organization's identity" },
-	{ id: "audit_log", label: "Audit log", description: "Read the audit log (org admins only)" },
+	{ id: "audit_log", label: "Audit log", description: "Read the audit log (needs Read the audit log)" },
 ] as const
 
 const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>

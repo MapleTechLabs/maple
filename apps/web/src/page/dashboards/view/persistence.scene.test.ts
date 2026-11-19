@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
@@ -14,6 +15,13 @@ import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+/** The session answering with a role that may edit and share dashboards. */
+const asEditor = (model: Model): Model =>
+	update(
+		model,
+		Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		context,
+	).model
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const run = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
@@ -36,7 +44,7 @@ const menuPick = (value: string) =>
 const failedWrite = Message.CompletedWrite({ result: Result.fail("Conflict") })
 
 const ready = (): Model =>
-	run(init({ dashboardId: "dash_rw", search: { mode: "edit" } }, context).model, [
+	run(asEditor(init({ dashboardId: "dash_rw", search: { mode: "edit" } }, context).model), [
 		Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
 		Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 	])

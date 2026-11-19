@@ -107,7 +107,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: AiView.view,
 					toParentMessage: (message) => Message.GotAiMessage({ message }),
-					viewInputs: {},
+					viewInputs: { grants: visibilityOf(model).grants },
 				}),
 			]
 		case "Automation":
@@ -260,7 +260,7 @@ const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	if (!visibility.isClerk) return `${label} isn't available on this deployment.`
 	if (tab === "data-platform" && Policy.can(visibility.grants, "warehouse:manage"))
 		return `${label} needs the Bring your own cloud add-on.`
-	return `You need admin access to view ${label}.`
+	return `Your role can't view ${label}.`
 }
 
 const isRoleUnknown = (model: Model): boolean =>

@@ -204,14 +204,12 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Ai": {
-			// An admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
+			// An org in the `aiAutoTriage` rollout (self-hosted has every rollout).
 			const hasFlag = AsyncData.getOrElse(
 				AsyncData.map(model.session, (session) => session.hasAiAutoTriage),
 				() => false,
 			)
-			const step = Ai.init(
-				Policy.can(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
-			)
+			const step = Ai.init(!isClerkAuthEnabled || hasFlag)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>

@@ -74,6 +74,7 @@ import {
 } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { denialReason } from "../../kit/session-grants"
 
 // `/status-pages/new`: the form on the left, the page as visitors get it on the right, and the
 // publish bar under both. Below 1000px the preview stacks under the form.
@@ -568,9 +569,11 @@ const agentSetup = (h: H, model: Model): Html =>
 						"Add to VS Code",
 					]),
 					typography(h, { size: "xs" }, [
-						textLink(h, { href: hrefOf(AppRoute.Settings({ search: { tab: "mcp" } })), tone: "muted" }, [
-							"Other clients",
-						]),
+						textLink(
+							h,
+							{ href: hrefOf(AppRoute.Settings({ search: { tab: "mcp" } })), tone: "muted" },
+							["Other clients"],
+						),
 					]),
 				]),
 			],
@@ -580,7 +583,8 @@ const agentSetup = (h: H, model: Model): Html =>
 			{
 				id: "status-page-agent-prompt",
 				title: "2. Give your agent this prompt",
-				description: "Run it in the repository of the product the page is for, so the agent can read its endpoints and brand.",
+				description:
+					"Run it in the repository of the product the page is for, so the agent can read its endpoints and brand.",
 			},
 			[
 				agentPromptButton(h, {
@@ -603,7 +607,8 @@ const agentSetup = (h: H, model: Model): Html =>
 			{
 				id: "status-page-agent-steps",
 				title: "What your agent does",
-				description: "It asks before each choice. The page shows up under Status pages as soon as the agent creates it.",
+				description:
+					"It asks before each choice. The page shows up under Status pages as soon as the agent creates it.",
 			},
 			[
 				numberedSteps(h, AGENT_STEPS),
@@ -621,8 +626,8 @@ const agentSetup = (h: H, model: Model): Html =>
 
 const membersOnly = (h: H): Html =>
 	resourceNotFound(h, {
-		title: "Only org admins and engineers can create status pages",
-		description: "Ask an admin to create one. You can read the existing pages.",
+		title: "Your role can't create status pages",
+		description: `${denialReason("status_pages:edit")} You can read the existing pages.`,
 		back: { href: statusPagesHref(), label: "Back to status pages" },
 	})
 

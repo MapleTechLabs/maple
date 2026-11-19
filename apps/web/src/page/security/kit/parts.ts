@@ -17,6 +17,7 @@ import { type Gate, issueSeverityOf, runLabelOf, runToneOf, SECURITY_SEVERITY_LA
 import { String as Str, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
+import { denialReason } from "../../kit/session-grants"
 
 // Marks and states the Security Center's pages share.
 
@@ -88,13 +89,12 @@ const GATE_COPY = {
 	},
 	forbidden: {
 		icon: "LockIcon",
-		title: "Security is visible to org admins and engineers only",
-		description:
-			"Findings can describe how to exploit your code, so only admins and engineers can open Security. Ask an admin of this organization for access.",
+		title: "Your role can't open Security",
+		description: `Findings can describe how to exploit your code, so Security needs its own permission. ${denialReason("security:manage")}`,
 	},
 } satisfies Record<Gate, { icon: IconName; title: string; description: string }>
 
-/** A 403 as a quiet state: the org is not in the rollout, or the reader is not an admin. */
+/** A 403 as a quiet state: the org is not in the rollout, or the reader's role lacks `security:manage`. */
 export const gateState = <M>(h: HtmlBuilder<M>, gate: Gate, className?: string): Html => {
 	const copy = GATE_COPY[gate]
 	return empty(

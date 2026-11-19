@@ -328,7 +328,7 @@ const actionBar = (h: H, model: Model): Html => {
 const notAllowedPage = (h: H, model: Model, header: Readonly<{ title: string; description: string }>) =>
 	managersOnlyPage(h, {
 		header,
-		title: "Only org admins and engineers can create or change SLOs",
+		permission: "slos:manage",
 		back:
 			model.editingId === null
 				? { href: slosTabHref(), label: "Back to SLOs" }

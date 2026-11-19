@@ -18,6 +18,7 @@ import { integrationMeta, platformPicker } from "./view-picker"
 import { pushStep } from "./view-push"
 import { trail } from "./view-trail"
 import { hstack } from "@maple/views/ui/stack"
+import { denialReason } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -85,9 +86,10 @@ const notPermitted = (h: H): Html =>
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "ConnectionIcon", { size: 16 })]),
-				emptyTitle(h, ["Only org admins and engineers can connect sources"]),
+				emptyTitle(h, ["Your role can't connect sources"]),
 				emptyDescription(h, [
-					"Ask one of them to connect it, or browse the sources already sending data.",
+					denialReason("sources:manage"),
+					" You can still browse the sources already sending data.",
 				]),
 			]),
 			linkButton(h, { href: hrefOf(AppRoute.Sources()), size: "sm", variant: "outline" }, [

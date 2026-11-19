@@ -302,7 +302,7 @@ const render = (h: HtmlBuilder<Message>, item: string): Html => {
 				model: { ...model, dialog: opened(model.dialog), form: destinationForm(item) },
 				view: DestinationView.view,
 				toParentMessage: ignore,
-				viewInputs: { id: "lab-destination" },
+				viewInputs: { id: "lab-destination", grants: Policy.grantsOf(["org:admin"]) },
 			})
 		}
 		case "general":
