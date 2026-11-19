@@ -41,7 +41,10 @@ import Api from "./src/worker.ts"
 
 export default Alchemy.Stack(
 	"my-app",
-	{ providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()) },
+	{
+		providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()),
+		state: Cloudflare.state(),
+	},
 	Effect.gen(function* () {
 		yield* Api
 	}),
@@ -123,7 +126,10 @@ import { localProviders } from "@maple-dev/alchemy/local"
 
 export default Alchemy.Stack(
 	"my-app",
-	{ providers: Layer.mergeAll(Cloudflare.providers(), localProviders()) },
+	{
+		providers: Layer.mergeAll(Cloudflare.providers(), localProviders()),
+		state: Cloudflare.state(),
+	},
 	Effect.gen(function* () {
 		const local = yield* Observability
 		const api = yield* Api
@@ -165,7 +171,10 @@ import Api from "./src/worker.ts"
 
 export default Alchemy.Stack(
 	"my-app",
-	{ providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()) },
+	{
+		providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()),
+		state: Cloudflare.state(),
+	},
 	Effect.gen(function* () {
 		yield* Api
 
