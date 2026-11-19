@@ -153,6 +153,8 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
 	"PlanetscaleIssueReceipts",
+	// The encrypted Fleet token would keep the poller reading a device server for a deleted org.
+	"FleetConnections",
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	"RailwayConnections",
 	"RailwayEnvironments",

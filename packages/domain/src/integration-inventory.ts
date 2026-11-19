@@ -9,6 +9,7 @@ export const INTEGRATION_PROVIDERS = [
 	"gcp",
 	"aws",
 	"railway",
+	"fleet",
 	"vercel",
 	"planetscale",
 	"supabase",

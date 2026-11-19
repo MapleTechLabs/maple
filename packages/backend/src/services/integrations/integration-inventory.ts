@@ -110,6 +110,14 @@ export interface IntegrationInventoryInputs {
 				readonly createdAt: number
 		  })
 		| null
+	readonly fleetConnection:
+		| (PollState & {
+				readonly organizationName: string | null
+				readonly baseUrl: string
+				readonly authFailedAt: number | null
+				readonly createdAt: number
+		  })
+		| null
 	readonly railwayEnvironments: ReadonlyArray<
 		PollState & {
 			readonly projectName: string
@@ -267,6 +275,7 @@ export const INTEGRATION_FEEDS = {
 	],
 	aws: ["CloudWatch metrics through a metric stream, for the regions and namespaces picked"],
 	railway: ["per-service CPU, memory, network and disk metrics"],
+	fleet: ["Fleet admin activity in the audit log", "failing device policies and vulnerable software"],
 	vercel: [
 		"function, edge, build and request logs through a log drain",
 		"deployment and AI Gateway traces through a trace drain",
@@ -514,6 +523,27 @@ const railway = (inputs: IntegrationInventoryInputs, now: number): IntegrationEn
 		connectedAt: connection.createdAt,
 		own,
 		resources,
+	})
+}
+
+const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const connection = inputs.fleetConnection
+	if (connection === null) return null
+	const status = pollStatus(connection, now, POLLER_STALE_MS)
+	const own =
+		connection.authFailedAt !== null
+			? {
+					status: "disconnected" as const,
+					problem: "Fleet rejected the API token; save a new one in Integrations.",
+				}
+			: status === "failing"
+				? { status: "failing" as const, problem: connection.lastError ?? "Reading Fleet failed" }
+				: undefined
+	return entry("fleet", now, {
+		account: connection.organizationName ?? new URL(connection.baseUrl).host,
+		connectedAt: connection.createdAt,
+		own,
+		resources: [],
 	})
 }
 
@@ -1081,6 +1111,7 @@ const BUILDERS = {
 	gcp,
 	aws,
 	railway,
+	fleet,
 	vercel,
 	planetscale,
 	supabase,

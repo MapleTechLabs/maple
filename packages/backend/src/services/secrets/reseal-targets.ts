@@ -18,6 +18,7 @@ import {
 	OrgClickHouseSettings,
 	OrgIngestKeys,
 	OpenRouterCostConnections,
+	FleetConnections,
 	OrgOpenRouterKeys,
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
@@ -305,6 +306,15 @@ export const RESEAL_TARGETS = {
 		identity: ["orgId"],
 		keys: One,
 		ref: org,
+	}),
+	fleetTokenSlot: tripleTargetWithContext({
+		slot: slots.fleetTokenSlot,
+		table: FleetConnections,
+		columns: { ciphertext: "tokenCiphertext", iv: "tokenIv", tag: "tokenTag" },
+		identity: ["orgId"],
+		keys: One,
+		context: { columns: ["baseUrl"], schema: One },
+		ref: ([orgId], [baseUrl]) => ({ orgId, baseUrl }),
 	}),
 	openRouterKeySlot: tripleTarget({
 		slot: slots.openRouterKeySlot,

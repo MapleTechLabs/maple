@@ -1,0 +1,171 @@
+/**
+ * Fleet's REST API (`/api/v1/fleet/*`) on the vendor HTTP kit, read-only. The server is the
+ * customer's own, so its URL is checked as an external address before every client is built and
+ * the kit never follows a redirect. Failures fold into one {@link FleetApiError} whose `kind`
+ * drives the poller and the connect form.
+ */
+import { validateExternalUrl } from "@maple/safe-fetch"
+import { Duration, Effect, Redacted, Schema, String as Str } from "effect"
+import type { HttpClient } from "effect/http"
+import * as VendorHttp from "../vendor-http"
+
+const REQUEST_TIMEOUT = Duration.seconds(20)
+const API_PREFIX = "/api/v1/fleet"
+
+export class FleetApiError extends Schema.TaggedError<FleetApiError>()(
+	"@maple/backend/integrations/FleetApiError",
+	{
+		message: Schema.String,
+		kind: Schema.Literals(["unauthorized", "forbidden", "rate_limited", "unreachable", "upstream"]),
+		status: Schema.optionalKey(Schema.Number),
+		retryAfterSeconds: Schema.optionalKey(Schema.Number),
+	},
+) {}
+
+/** Fleet's error body: `{ message, errors: [{ name, reason }] }`. */
+const ErrorBody = Schema.Struct({
+	message: Schema.optionalKey(Schema.String),
+	errors: Schema.optionalKey(
+		Schema.NullOr(Schema.Array(Schema.Struct({ reason: Schema.optionalKey(Schema.String) }))),
+	),
+})
+const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBody))
+
+const detailOf = (body: string): string | undefined => {
+	const parsed = decodeErrorBody(body)
+	if (parsed._tag === "None") return undefined
+	const reason = parsed.value.errors?.[0]?.reason
+	return reason ?? parsed.value.message
+}
+
+const toFleetError = (error: VendorHttp.VendorHttpError): FleetApiError => {
+	const status = error.status === undefined ? undefined : { status: error.status }
+	switch (error.kind) {
+		case "unauthorized":
+			return new FleetApiError({
+				message: "Fleet rejected the API token.",
+				kind: "unauthorized",
+				...status,
+			})
+		case "forbidden":
+			return new FleetApiError({
+				message: "The API token's user may not read this in Fleet.",
+				kind: "forbidden",
+				...status,
+			})
+		case "rate_limited":
+			return new FleetApiError({
+				message: "Fleet asked Maple to slow down.",
+				kind: "rate_limited",
+				...status,
+				...(error.retryAfterSeconds === undefined
+					? undefined
+					: { retryAfterSeconds: error.retryAfterSeconds }),
+			})
+		case "timeout":
+			return new FleetApiError({ message: "Fleet did not answer in time.", kind: "unreachable" })
+		case "not_found":
+			return new FleetApiError({
+				message: "This address does not serve the Fleet API. Use the URL you open Fleet at.",
+				kind: "upstream",
+				...status,
+			})
+		default:
+			// No status: the request never got an answer (DNS, TLS, refused connection).
+			return error.status === undefined
+				? new FleetApiError({
+						message: "Maple could not reach the Fleet server.",
+						kind: "unreachable",
+					})
+				: new FleetApiError({
+						message: `Fleet answered ${error.status}${error.detail === undefined ? "" : `: ${Str.slice(0, 200)(error.detail)}`}`,
+						kind: "upstream",
+						...status,
+					})
+	}
+}
+
+export interface FleetCredentials {
+	/** The normalized base URL ({@link normalizeFleetUrl}). */
+	readonly baseUrl: string
+	readonly token: Redacted.Redacted
+}
+
+/**
+ * The server's base URL as stored: `https` only (the token travels with every request), no query,
+ * fragment or credentials, no trailing slash, and the `/api/...` part dropped when one was pasted.
+ */
+export const normalizeFleetUrl = (raw: string): Effect.Effect<string, FleetApiError> =>
+	Effect.gen(function* () {
+		const trimmed = Str.trim(raw)
+		const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+		const url = yield* validateExternalUrl(withScheme).pipe(
+			Effect.mapError((error) => new FleetApiError({ message: error.message, kind: "upstream" })),
+		)
+		if (url.protocol !== "https:") {
+			return yield* new FleetApiError({
+				message: "Use an https:// address: the API token is sent with every request.",
+				kind: "upstream",
+			})
+		}
+		if (url.username !== "" || url.password !== "") {
+			return yield* new FleetApiError({
+				message: "Leave credentials out of the address; the API token is entered separately.",
+				kind: "upstream",
+			})
+		}
+		const path = Str.replace(/\/+$/, "")(Str.replace(/\/api(\/.*)?$/, "")(url.pathname))
+		return `${url.protocol}//${url.host}${path}`
+	})
+
+const client = (httpClient: HttpClient.HttpClient, credentials: FleetCredentials) =>
+	VendorHttp.make({
+		httpClient,
+		peerService: "fleet",
+		baseUrl: `${credentials.baseUrl}${API_PREFIX}`,
+		auth: VendorHttp.bearer(credentials.token),
+		headers: { accept: "application/json" },
+		detail: detailOf,
+		toError: toFleetError,
+		timeout: REQUEST_TIMEOUT,
+	})
+
+/** The client for one server; the stored URL is checked again, since the rules can tighten. */
+export const fleetClient = (httpClient: HttpClient.HttpClient, credentials: FleetCredentials) =>
+	validateExternalUrl(credentials.baseUrl).pipe(
+		Effect.mapError((error) => new FleetApiError({ message: error.message, kind: "upstream" })),
+		Effect.as(client(httpClient, credentials)),
+	)
+
+export type FleetClient = ReturnType<typeof client>
+
+const NullableString = Schema.optionalKey(Schema.NullOr(Schema.String))
+
+/** `GET /me`: the token's user. Team-only users have a null `global_role`. */
+export const FleetMe = Schema.Struct({
+	user: Schema.Struct({
+		id: Schema.Number,
+		name: NullableString,
+		email: NullableString,
+		global_role: NullableString,
+		api_only: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+	}),
+})
+export type FleetMe = typeof FleetMe.Type
+
+export const FleetVersion = Schema.Struct({ version: Schema.String })
+
+/** `GET /config`: only the parts Maple reads; observers see these. */
+export const FleetConfig = Schema.Struct({
+	org_info: Schema.optionalKey(Schema.NullOr(Schema.Struct({ org_name: NullableString }))),
+	license: Schema.optionalKey(Schema.NullOr(Schema.Struct({ tier: NullableString }))),
+})
+
+export const getMe = (fleet: FleetClient) =>
+	fleet.json(FleetMe, { path: "/me", operation: "reading the token's user" })
+
+export const getVersion = (fleet: FleetClient) =>
+	fleet.json(FleetVersion, { path: "/version", operation: "reading the server version" })
+
+export const getConfig = (fleet: FleetClient) =>
+	fleet.json(FleetConfig, { path: "/config", operation: "reading the server settings" })

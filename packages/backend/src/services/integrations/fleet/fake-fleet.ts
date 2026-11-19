@@ -1,0 +1,114 @@
+// A fake Fleet server for tests, answering the `/api/v1/fleet/*` reads Maple makes from a mutable
+// world, with every request recorded.
+import { Array as Arr, Layer, Order } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { Env } from "@maple/backend/platform/Env"
+import type { TestDb } from "@maple/backend/testing/test-pglite"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
+import { fakeCostEnvConfig } from "../../cost/providers/fake-cost-env"
+
+export const FAKE_FLEET_URL = "https://fleet.example.com"
+export const FAKE_FLEET_TOKEN = "fleet-api-token-0123456789"
+
+export interface FakeFleetActivity {
+	readonly id: number
+	readonly created_at: string
+	readonly type: string
+	readonly actor_full_name?: string | null
+	readonly actor_id?: number | null
+	readonly actor_email?: string | null
+	readonly fleet_initiated?: boolean
+	readonly details?: Readonly<Record<string, unknown>> | null
+}
+
+export interface FakeFleet {
+	/** Answers every request with this status instead, when set. */
+	status: number | null
+	globalRole: string | null
+	version: string
+	orgName: string
+	tier: string
+	activities: Array<FakeFleetActivity>
+	readonly fake: VendorFake.VendorFake
+}
+
+const PREFIX = "/api/v1/fleet"
+
+/** `GET /activities` as Fleet pages it: `order_key=id` with `after` is a keyset cursor. */
+const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
+	const after = search.get("after")
+	const start = search.get("start_created_at")
+	const perPage = Number(search.get("per_page") ?? "10000")
+	const matching = Arr.sort(
+		Arr.filter(
+			world.activities,
+			(activity) =>
+				(after === null || activity.id > Number(after)) &&
+				(start === null || activity.created_at >= start),
+		),
+		Order.mapInput(Order.Number, (activity: FakeFleetActivity) => activity.id),
+	)
+	return {
+		activities: matching.slice(0, perPage),
+		meta: { has_next_results: matching.length > perPage, has_previous_results: after !== null },
+	}
+}
+
+export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}): FakeFleet => {
+	const world: FakeFleet = {
+		status: null,
+		globalRole: "observer",
+		version: "4.62.0",
+		orgName: "Acme Corp",
+		tier: "free",
+		activities: [],
+		...overrides,
+		fake: VendorFake.make({
+			routes: [
+				{
+					respond: () =>
+						world.status === null
+							? undefined
+							: VendorFake.json(
+									{ message: "refused", errors: [{ reason: "refused" }] },
+									world.status,
+								),
+				},
+				{
+					path: `${PREFIX}/me`,
+					respond: () =>
+						VendorFake.json({
+							user: {
+								id: 7,
+								name: "Maple reader",
+								email: "maple@acme.test",
+								global_role: world.globalRole,
+								api_only: true,
+							},
+						}),
+				},
+				{ path: `${PREFIX}/version`, respond: () => VendorFake.json({ version: world.version }) },
+				{
+					path: `${PREFIX}/config`,
+					respond: () =>
+						VendorFake.json({
+							org_info: { org_name: world.orgName },
+							license: { tier: world.tier },
+						}),
+				},
+				{
+					path: `${PREFIX}/activities`,
+					respond: (request) => VendorFake.json(activitiesPage(world, request.search)),
+				},
+			],
+		}),
+	}
+	return world
+}
+
+/** Everything the Fleet services need, over the fake and a test database. */
+export const fakeFleetDeps = (testDb: TestDb, world: FakeFleet) =>
+	Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer).pipe(
+		Layer.provide(world.fake.layer),
+		Layer.provide(fakeCostEnvConfig()),
+	)

@@ -12,6 +12,7 @@ import {
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
 	PlanetscalePollState,
+	FleetConnections,
 	RailwayConnections,
 	SearchConsoleSites,
 	RailwayEnvironments,
@@ -222,6 +223,20 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							)
 							.where(($) => [$.orgId.eq(orgId), $.removedAt.isNull()]),
 					),
+					fleetConnections: db.run(
+						PG.from(FleetConnections)
+							.select(
+								"organizationName",
+								"baseUrl",
+								"authFailedAt",
+								"lastSuccessAt",
+								"lastErrorAt",
+								"lastError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
 					railwayConnections: db.run(
 						PG.from(RailwayConnections)
 							.select(
@@ -377,6 +392,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					rows.supabaseProjects,
 					(project) => project.connectionId === supabase?.id,
 				),
+				fleetConnection: rows.fleetConnections[0] ?? null,
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: Arr.map(rows.railwayEnvironments, ({ servicesJson, ...env }) => ({
 					...env,

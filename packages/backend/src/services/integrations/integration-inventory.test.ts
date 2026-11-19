@@ -23,6 +23,7 @@ const empty: IntegrationInventoryInputs = {
 	awsConnections: [],
 	supabaseConnection: null,
 	supabaseProjects: [],
+	fleetConnection: null,
 	railwayConnection: null,
 	railwayEnvironments: [],
 	vercelConnection: null,

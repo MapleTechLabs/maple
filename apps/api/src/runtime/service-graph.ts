@@ -80,6 +80,7 @@ import { PlanetScaleConnectionService } from "@maple/backend/services/integratio
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PlanetScaleWebhookService } from "@maple/backend/services/integrations/PlanetScaleWebhookService"
+import { FleetConnectionService } from "@maple/backend/services/integrations/FleetConnectionService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
@@ -239,6 +240,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	BillingOrgService.layer,
 	CloudflareAnalyticsService.layer,
 	RailwayMetricsService.layer,
+	FleetConnectionService.layer,
 	VercelIntegrationService.layer,
 	SupabaseOAuthService.layer,
 	SupabaseConnectionService.layer,
