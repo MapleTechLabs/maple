@@ -31,7 +31,9 @@
 ## Known limits
 
 - Role definition writes are version-checked, but Clerk has no conditional write: two admins
-  saving at once can still lose one edit. Holders are reconciled after every write.
+  saving at once can still lose one edit. Holders are reconciled after every write, and the
+  reconcile repeats until they match the latest stored definition (three passes, then
+  `concurrent_edit`).
 - Membership answers are cached up to 5 minutes (shared) and 60 s (per isolate). A narrowing
   evicts the shared entry and the handling isolate's memo; other isolates keep the old permissions
   up to 60 s, and everything up to 5 minutes if the eviction never ran.

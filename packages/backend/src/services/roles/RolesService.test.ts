@@ -55,6 +55,7 @@ const onCallPermissions: ReadonlyArray<Policy.Permission> = [
  * One Clerk organization in memory, with every write recorded. `onRolesRead` runs, in order, one
  * per read of the definitions, to land another admin's change between two of them; `onRolesWrite`
  * runs one per write of them, just after it, for a second writer that passed the same check.
+ * `onMetadataWrite` runs one per membership metadata write, just before it.
  */
 const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
 	const state = {
@@ -64,6 +65,7 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 		writes: [] as Array<string>,
 		onRolesRead: [] as Array<() => void>,
 		onRolesWrite: [] as Array<() => void>,
+		onMetadataWrite: [] as Array<() => void>,
 	}
 	const toMembership = (member: FakeMember): RoleMembership => ({
 		userId: user(member.userId),
@@ -103,6 +105,7 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 			}),
 		setMembershipCustomRole: (_orgId, userId, custom) =>
 			Effect.sync(() => {
+				state.onMetadataWrite.shift()?.()
 				state.writes.push(`metadata:${userId}`)
 				change(userId, ({ custom: _dropped, ...member }) =>
 					custom === null ? member : { ...member, custom },
@@ -527,6 +530,56 @@ describe("RolesService.update, racing a stale writer", () => {
 			assert.deepStrictEqual(clerk.state.roles, [narrow])
 			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, narrow.permissions)
 			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_cat", grants: ["telemetry:read"] }])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.update, racing a narrowing save", () => {
+	it.effect("ends with holders on the narrower definition saved while it rewrote them", () => {
+		const narrow = stored(ON_CALL, "On-call", ["telemetry:read"])
+		const { layer, clerk, revocation } = setup([narrow], [onCallHolder("user_cat", ["telemetry:read"])])
+		// This save widens the role and reads the wide definition to rewrite Cat. Before its write lands,
+		// another admin narrows the role again and rewrites Cat to it.
+		clerk.state.onMetadataWrite.push(() => {
+			clerk.writeElsewhere([narrow])
+			clerk.state.members.set("user_cat", onCallHolder("user_cat", ["telemetry:read"]))
+		})
+		return Effect.gen(function* () {
+			yield* (yield* RolesService).update(
+				adminTenant,
+				ON_CALL,
+				new UpdateRoleRequest({ name: "On-call", description: "", permissions: onCallPermissions }),
+			)
+			assert.deepStrictEqual(clerk.state.roles, [narrow])
+			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, narrow.permissions)
+			assert.deepStrictEqual(revocation.demoted.at(-1), {
+				userId: "user_cat",
+				grants: ["telemetry:read"],
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("gives up with concurrent_edit when the role keeps changing under its holders", () => {
+		const narrow = stored(ON_CALL, "On-call", ["telemetry:read"])
+		const wide = stored(ON_CALL, "On-call", onCallPermissions)
+		const { layer, clerk } = setup([narrow], [onCallHolder("user_cat", ["telemetry:read"])])
+		// Every rewrite of Cat is overtaken by a save flipping the role the other way.
+		for (let pass = 0; pass < 3; pass++) {
+			clerk.state.onMetadataWrite.push(() => clerk.writeElsewhere([pass % 2 === 0 ? narrow : wide]))
+		}
+		return Effect.gen(function* () {
+			const reason = yield* conflictReason(
+				(yield* RolesService).update(
+					adminTenant,
+					ON_CALL,
+					new UpdateRoleRequest({
+						name: "On-call",
+						description: "",
+						permissions: onCallPermissions,
+					}),
+				),
+			)
+			assert.strictEqual(reason, "concurrent_edit")
 		}).pipe(Effect.provide(layer))
 	})
 })

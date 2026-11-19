@@ -143,7 +143,6 @@ type SelfHostedSessionClaims = Schema.Schema.Type<typeof SelfHostedSessionClaims
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const decodeOrgIdOption = Schema.decodeUnknownOption(OrgId)
 const decodeRoleNameOption = Schema.decodeUnknownOption(RoleName)
 
 const unauthorized = (message: string) =>
@@ -685,9 +684,10 @@ export type VerifyOrgMembership = (
 
 /**
  * A {@link VerifyOrgMembership} that asks Clerk directly, for workers with no membership cache of
- * their own (electric-sync). Answers are kept per user for a minute in this isolate: that minute is
- * how long a role change takes to reach them, the same as a session token's lifetime. A failed
- * lookup is not kept, and concurrent misses for one user share one lookup.
+ * their own (electric-sync). Each lookup reads the one (user, organization) membership, so a user in
+ * many organizations is found in any of them. Answers are kept per pair for a minute in this isolate:
+ * that minute is how long a role change takes to reach them, the same as a session token's lifetime.
+ * A failed lookup is not kept, and concurrent misses for one pair share one lookup.
  */
 export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "MAPLE_AUTH_MODE">,
@@ -695,9 +695,18 @@ export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 	const clerk = clerkModeApi(env)
 	if (clerk === undefined) return undefined
 	const memberships = yield* Cache.makeWith(
-		Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (userId: UserId) {
+		Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (key: {
+			readonly userId: UserId
+			readonly orgId: OrgId
+		}) {
 			const page = yield* clerk
-				.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: 100 }))
+				.run(
+					Clerk.listOrganizationMemberships({
+						organization_id: key.orgId,
+						user_id: [key.userId],
+						limit: 1,
+					}),
+				)
 				.pipe(
 					Effect.mapError(
 						(error) =>
@@ -706,28 +715,20 @@ export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 							}),
 					),
 				)
-			return Arr.flatMap(page.data, (row): ReadonlyArray<VerifiedOrgMembership> => {
-				const orgId = decodeOrgIdOption(row.organization.id)
-				const role = decodeRoleNameOption(row.role)
-				if (Option.isNone(orgId) || Option.isNone(role)) return []
-				return [
-					{
-						orgId: orgId.value,
-						role: role.value,
-						customPermissions:
-							role.value === Policy.CUSTOM_ROLE_CLERK_KEY
-								? Policy.customPermissionsFromMembershipMetadata(row.public_metadata)
-								: [],
-					},
-				]
-			})
+			return Option.flatMap(Arr.head(page.data), (row) =>
+				Option.map(decodeRoleNameOption(row.role), (role): VerifiedOrgMembership => ({
+					orgId: key.orgId,
+					role,
+					customPermissions:
+						role === Policy.CUSTOM_ROLE_CLERK_KEY
+							? Policy.customPermissionsFromMembershipMetadata(row.public_metadata)
+							: [],
+				})),
+			)
 		}),
 		{ capacity: 1000, timeToLive: (exit) => (Exit.isSuccess(exit) ? "1 minute" : Duration.zero) },
 	)
-	const verify: VerifyOrgMembership = (userId, orgId) =>
-		Effect.map(Cache.get(memberships, userId), (rows) =>
-			Arr.findFirst(rows, (membership) => membership.orgId === orgId),
-		)
+	const verify: VerifyOrgMembership = (userId, orgId) => Cache.get(memberships, { userId, orgId })
 	return verify
 })
 

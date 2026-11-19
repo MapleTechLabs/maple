@@ -44,8 +44,8 @@ import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
  * once rather than when Clerk's webhook arrives.
  *
  * Two admins can edit at once and Clerk has no locks: the definitions carry a version that every
- * write checks and bumps (`editRoles`), and every write to a role or onto one ends by re-reading
- * its holders (`reconcileHolders`).
+ * write checks and bumps (`editRoles`), and every write to a role or onto one ends by reconciling
+ * its holders with the latest stored definition (`reconcileHolders`).
  */
 
 /** What the roles endpoints read off the caller. */
@@ -105,6 +105,9 @@ export interface RolesServiceApi {
 /** How many times a write to the definitions is tried while other writes keep landing first. */
 const MAX_EDIT_ATTEMPTS = 3
 
+/** How many times holders are reconciled while the role keeps changing under them. */
+const MAX_RECONCILE_PASSES = 3
+
 /** What an `org:custom` member with no role on the membership holds. */
 const NOTHING = Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], [])
 
@@ -135,6 +138,8 @@ const concurrentEdit = conflict(
 )
 
 const sameRole = Schema.toEquivalence(Policy.StoredCustomRole)
+
+const sameStoredRole = Option.makeEquivalence(sameRole)
 
 /** The roles two definition lists disagree on: in one only, or stored differently. */
 const disagreeing = (
@@ -305,60 +310,84 @@ const make = Effect.gen(function* () {
 		})
 
 	/**
-	 * Bring the holders of `roleId` in line with the definition Clerk holds now. Every write to a role
-	 * or onto one ends here, after its own write, so of two admins racing the later always sees the
-	 * other's change. Holders carrying other codes are rewritten and demoted, not only after a
+	 * One pass of {@link reconcileHolders}: the holders of `roleId` take the codes of the definition
+	 * read together with them. Holders carrying other codes are rewritten and demoted, not only after a
 	 * permission change: a rewrite that failed half way is finished by the next save. If the role is
 	 * gone its holders move to `orphansTo`; with none, or when that is gone too, they keep `org:custom`
 	 * with nothing on the membership, which holds nothing. Any built-in role could be more access than
 	 * the role that vanished.
+	 */
+	const reconcilePass = (orgId: OrgId, roleId: Policy.CustomRoleId, orphansTo: RoleRef | undefined) =>
+		Effect.gen(function* () {
+			const { roles, memberships } = yield* readState(orgId)
+			const holders = holdersOf(memberships, roleId)
+			const role = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
+			if (Option.isSome(role)) {
+				const target = customTarget(role.value)
+				const stale = Arr.filter(holders, (holder) =>
+					Option.exists(
+						heldCustomRole(holder),
+						(held) => !sameCodes(held.permissions, role.value.permissions),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
+				yield* Effect.forEach(
+					stale,
+					(holder) =>
+						clerk
+							.setMembershipCustomRole(orgId, holder.userId, target.metadata)
+							.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
+					{ concurrency: 4, discard: true },
+				)
+				return { role, holders: holders.length }
+			}
+			const target =
+				orphansTo === undefined
+					? Option.none<AssignTarget>()
+					: yield* Effect.option(resolveTarget(roles, orphansTo))
+			yield* Effect.annotateCurrentSpan({ "maple.role.holders_moved": holders.length })
+			yield* Effect.forEach(
+				holders,
+				(holder) =>
+					Option.match(target, {
+						// Already `org:custom`: clearing the membership's role leaves them holding nothing.
+						onNone: () =>
+							clerk
+								.setMembershipCustomRole(orgId, holder.userId, null)
+								.pipe(Effect.andThen(demote(orgId, holder.userId, NOTHING))),
+						onSome: (to) => assign(orgId, holder.userId, to),
+					}),
+				{ concurrency: 4, discard: true },
+			)
+			return { role, holders: holders.length }
+		})
+
+	/**
+	 * Bring the holders of `roleId` in line with the definition Clerk holds. Every write to a role or
+	 * onto one ends here. A pass writes the codes it read, so a save that narrowed the role in between
+	 * would be undone by it: the definition is read again after the pass, and while it no longer matches
+	 * the one applied the pass is redone, at most {@link MAX_RECONCILE_PASSES} times.
 	 */
 	const reconcileHolders = Effect.fn("RolesService.reconcileHolders")(function* (
 		orgId: OrgId,
 		roleId: Policy.CustomRoleId,
 		orphansTo: RoleRef | undefined,
 	) {
-		const { roles, memberships } = yield* readState(orgId)
-		const holders = holdersOf(memberships, roleId)
-		const role = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
-		if (Option.isSome(role)) {
-			const target = customTarget(role.value)
-			const stale = Arr.filter(holders, (holder) =>
-				Option.exists(
-					heldCustomRole(holder),
-					(held) => !sameCodes(held.permissions, role.value.permissions),
-				),
-			)
-			yield* Effect.annotateCurrentSpan({ "maple.role.holders_rewritten": stale.length })
-			yield* Effect.forEach(
-				stale,
-				(holder) =>
-					clerk
-						.setMembershipCustomRole(orgId, holder.userId, target.metadata)
-						.pipe(Effect.andThen(demote(orgId, holder.userId, target.grants))),
-				{ concurrency: 4, discard: true },
-			)
-			return { role, holders: holders.length }
+		for (let pass = 1; ; pass++) {
+			const result = yield* reconcilePass(orgId, roleId, orphansTo)
+			const { roles } = yield* clerk.customRoles(orgId)
+			const now = Arr.findFirst(roles, (candidate) => candidate.id === roleId)
+			if (sameStoredRole(now, result.role)) {
+				yield* Effect.annotateCurrentSpan({ "maple.role.reconcile_passes": pass })
+				return result
+			}
+			if (pass === MAX_RECONCILE_PASSES) {
+				yield* Effect.logWarning("Role holders did not settle while the role kept changing").pipe(
+					Effect.annotateLogs({ orgId, "maple.role.id": roleId }),
+				)
+				return yield* concurrentEdit
+			}
 		}
-		const target =
-			orphansTo === undefined
-				? Option.none<AssignTarget>()
-				: yield* Effect.option(resolveTarget(roles, orphansTo))
-		yield* Effect.annotateCurrentSpan({ "maple.role.holders_moved": holders.length })
-		yield* Effect.forEach(
-			holders,
-			(holder) =>
-				Option.match(target, {
-					// Already `org:custom`: clearing the membership's role leaves them holding nothing.
-					onNone: () =>
-						clerk
-							.setMembershipCustomRole(orgId, holder.userId, null)
-							.pipe(Effect.andThen(demote(orgId, holder.userId, NOTHING))),
-					onSome: (to) => assign(orgId, holder.userId, to),
-				}),
-			{ concurrency: 4, discard: true },
-		)
-		return { role, holders: holders.length }
 	})
 
 	const list = Effect.fn("RolesService.list")(function* (tenant: RolesTenant) {
