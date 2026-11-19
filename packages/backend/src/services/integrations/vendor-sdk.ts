@@ -5,7 +5,17 @@
  * The SDK's own retries are off: the client passes a no-retry policy in `sdk`. The SDK does not
  * check the bodies it returns, so each call decodes the fields Maple reads with its own schema.
  */
-import { Duration, Effect, Layer, Option, Ref, Schema, type Tracer, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Ref,
+	type Schedule,
+	Schema,
+	type Tracer,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import * as VendorHttp from "./vendor-http"
 import { VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
@@ -26,7 +36,13 @@ export interface VendorSdkOptions<E, R> {
 	readonly toError: (error: VendorHttp.VendorHttpError) => E
 	/** Per attempt, the answer's body included. */
 	readonly timeout: Duration.Input
+	/** Transient failures (5xx, transport, timeout); `false` turns retries off. */
+	readonly retry?: Schedule.Schedule<unknown> | false
 	readonly maxRetryAfter?: Duration.Input
+	/** Also retry an answer that does not decode, for a vendor whose bodies are sometimes cut short. */
+	readonly retryInvalidResponse?: boolean
+	/** The vendor's words for a refusal, read from the SDK's error; defaults to {@link messageOf}. */
+	readonly detail?: (error: SdkFailure, status: number) => string | undefined
 	/** A header holding the seconds to wait on a 429 without `retry-after`, e.g. `x-ratelimit-reset`. */
 	readonly rateLimitResetHeader?: string
 }
@@ -132,10 +148,12 @@ const retryAfterSecondsOf = (error: SdkFailure): number | undefined =>
 /** The SDK fills `HTTP <status>` in where the body had no message: that is no vendor message. */
 const STATUS_PLACEHOLDER = /^HTTP \d{3}$/
 
-const messageOf = (error: SdkFailure): string | undefined =>
+/** The error's message, unless it is empty or only the status the SDK fills in for a body without one. */
+export const messageOf = (error: SdkFailure, status: number): string | undefined =>
 	"message" in error &&
 	typeof error.message === "string" &&
 	error.message !== "" &&
+	error.message !== String(status) &&
 	!STATUS_PLACEHOLDER.test(error.message)
 		? error.message
 		: undefined
@@ -148,8 +166,11 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 			? refusing
 			: retryAfterFrom(options.rateLimitResetHeader)(refusing)
 	const retryPolicy: VendorHttp.VendorRetryPolicy = {
-		schedule: VENDOR_TRANSIENT_RETRY,
+		schedule: options.retry ?? VENDOR_TRANSIENT_RETRY,
 		maxRetryAfterSeconds: Duration.toSeconds(options.maxRetryAfter ?? DEFAULT_MAX_RETRY_AFTER),
+		...(options.retryInvalidResponse === undefined
+			? undefined
+			: { retryInvalidResponse: options.retryInvalidResponse }),
 	}
 
 	const fail = (
@@ -191,7 +212,7 @@ export const make = <E, R>(options: VendorSdkOptions<E, R>) => {
 		// What came over the wire first: the SDK's error classes stand for more than one status.
 		const status = answeredStatus ?? declared ?? options.statusByTag[error._tag]
 		if (status === undefined) return fail("upstream", "request failed", call, { cause: error })
-		const detail = messageOf(error)
+		const detail = (options.detail ?? messageOf)(error, status)
 		const retryAfterSeconds = retryAfterSecondsOf(error)
 		return fail(VendorHttp.defaultKind(status), `answered ${status}`, call, {
 			status,

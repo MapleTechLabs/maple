@@ -25,6 +25,7 @@ export const WORKER_PURE_OPTIONS = {
 		"@distilled.cloud/cloudflare",
 		"@distilled.cloud/anthropic",
 		"@distilled.cloud/aws",
+		"@distilled.cloud/gcp",
 		"@distilled.cloud/planetscale",
 		"@distilled.cloud/supabase",
 		"@distilled.cloud/vercel",
