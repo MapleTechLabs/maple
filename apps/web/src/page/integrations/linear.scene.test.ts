@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { LinearIntegrationStatus } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -45,6 +46,17 @@ const loaded = (): Model => {
 }
 
 describe("linear feature switches", () => {
+	test("a member sees every switch locked, with the permission it needs", () => {
+		const member = { ...loaded(), grants: Policy.grantsOf(["org:member"]) }
+		scene(
+			{ update: pageUpdate, view },
+			given(member),
+			expectView(role("switch", { name: "Reopen closed issues" })).toBeDisabled(),
+			expectView(role("switch", { name: "Open issues" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("integrations:manage").message })).toExist(),
+		)
+	})
+
 	test("turning reopening off saves only that switch and keeps it off once the status re-reads", () => {
 		scene(
 			{ update: pageUpdate, view },

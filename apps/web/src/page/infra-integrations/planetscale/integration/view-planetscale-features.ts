@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { type FeatureRow, featureList, featurePanel } from "../../../kit/feature-list"
 import { shownSwitches } from "../../../integrations/feature-switches"
 import type { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { type Model, manageLock } from "../../../integrations/model"
 import { PlanetscaleMessage, savedPlanetscaleFeatures } from "./planetscale"
 import { toHub } from "./view-planetscale-parts"
 
@@ -33,8 +33,13 @@ export const planetscaleFeaturePanel = (h: H, model: Model, status: V2PlanetScal
 		idPrefix: "planetscale-feature",
 		rows: rows(model, status),
 		error: model.planetscaleCard.features.error,
+		lockReason: manageLock(model),
 	})
 
 /** The connect flow's list, once the organization is saved. */
 export const planetscaleFeatureChoice = (h: H, model: Model, status: V2PlanetScaleIntegration): Html =>
-	featureList(h, { idPrefix: "planetscale-choose", rows: rows(model, status) })
+	featureList(h, {
+		idPrefix: "planetscale-choose",
+		rows: rows(model, status),
+		lockReason: manageLock(model),
+	})

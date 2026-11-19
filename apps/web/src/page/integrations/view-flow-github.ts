@@ -395,7 +395,7 @@ const chooseStep = (h: H, model: Model): Html => {
 			stepCard(
 				h,
 				{ icon: "SlidersIcon", title: "Choose what Maple does", note: CHANGE_LATER_NOTE },
-				status === null ? [skeleton(h, "h-32 w-full")] : [githubFeatures(h, model, status)],
+				status === null ? [skeleton(h, "h-32 w-full")] : [githubFeatures(h, model, status, "flow")],
 			),
 			// Discovery can still be running (or have failed) when Connect hands over.
 			...(discovery?._tag === "Pending"
