@@ -351,15 +351,15 @@ export default Alchemy.Stack(
 			})
 		}
 
-		// Every stage that deploys a fleet has its hostname (`resolveMapleDomains`).
+		// Every stage that deploys a fleet has its hostname and a declared database (profile.test.ts).
 		const ingest =
-			profile.deploys.ingest && domains.ingest
+			profile.deploys.ingest && domains.ingest && db
 				? yield* createMapleIngest({
 						stage,
 						region,
 						hostname: domains.ingest,
 						profile,
-						dbLogin: db?.ingest,
+						dbLogin: db.ingest,
 					})
 				: undefined
 

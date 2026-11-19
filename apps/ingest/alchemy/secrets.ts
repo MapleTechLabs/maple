@@ -11,9 +11,6 @@ export const ingestSecrets = Config.all({
 /** The admin token the deploy reads the gateway's append-only token with, through `resolveDerived`. */
 export const ingestWarehouseAdminToken = Secrets.TinybirdToken.requiredValue
 
-/** The gateway's own database login, on a stage whose deploy does not declare one. */
-export const ingestPgUrl = Secrets.IngestPgUrl.requiredValue
-
 /**
  * The master keys the deploy derives the gateway's ClickHouse password slot keys from, read only
  * through `resolveDerived`: the task never receives them (docs/secret-encryption.md).
