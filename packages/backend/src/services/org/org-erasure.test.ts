@@ -1,15 +1,24 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Order, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Investigations, OrgErasures, PrReviewReplies, PrReviews } from "@maple/db/tables"
-import type { OrgId } from "@maple/domain/http"
+import { Investigations, OrgErasures, PrReviewReplies, PrReviews, type OrgErasureRow } from "@maple/db/tables"
+import { OrgId } from "@maple/domain/http"
+import { WAREHOUSE_ERASURE_TARGETS, warehouseErasureRank } from "@maple/domain/tinybird/org-erasure-plan"
+import { WarehouseDeleteToken } from "@maple/infra/secrets"
 import { ReplayBlobEraser } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { countOrgRows, ORG_A, ORG_B, seedOrgRow } from "@maple/backend/testing/test-two-orgs"
 import {
+	type WarehouseDeleteJobState,
+	WarehouseDeleteClient,
+} from "@maple/backend/services/warehouse/WarehouseDeleteClient"
+import {
 	erasureBackoffMs,
+	MAX_WAREHOUSE_JOBS,
 	purgeConversationRows,
 	queueOrgErasures,
 	replayPrefix,
@@ -48,6 +57,49 @@ const erasures = Effect.flatMap(Database, (database) =>
 		),
 	),
 )
+
+/** Everything but the warehouse targets, which wait on their own client. */
+const nonWarehouse = Effect.map(erasures, (rows) => Arr.filter(rows, (row) => row.kind !== "warehouse"))
+
+/** A warehouse whose jobs end as `ending` says (done by default); records every job it starts. */
+const warehouse = (ending: (jobId: string) => WarehouseDeleteJobState = () => ({ _tag: "Done" })) => {
+	const submitted: Array<string> = []
+	const submittedFor: Array<OrgId> = []
+	const polled: Array<string> = []
+	const layer = Layer.succeed(WarehouseDeleteClient, {
+		submit: (datasource, orgId) =>
+			Effect.sync(() => {
+				submitted.push(datasource)
+				submittedFor.push(orgId)
+				return `job-${datasource}`
+			}),
+		status: (jobId) =>
+			Effect.sync(() => {
+				polled.push(jobId)
+				return ending(jobId)
+			}),
+	})
+	return { submitted, submittedFor, polled, layer }
+}
+
+const orgNamed = Schema.decodeSync(OrgId)
+
+const warehouseRow = (
+	datasource: string,
+	jobId: string | null,
+	orgId: OrgId = ORG_A,
+	nextAttemptAt = 0,
+): OrgErasureRow => ({
+	id: `${orgId}:${datasource}`,
+	orgId,
+	kind: "warehouse",
+	target: datasource,
+	jobId,
+	attempts: 0,
+	lastError: null,
+	nextAttemptAt,
+	createdAt: 0,
+})
 
 /** A replay bucket whose prefix holds `pages` full listing pages. */
 const replayBucket = (pages: number) => {
@@ -91,9 +143,20 @@ describe("queueOrgErasures and purgeConversationRows", () => {
 				yield* queue(ORG_A)
 
 				const rows = yield* erasures
+				assert.isTrue(Arr.every(rows, (row) => row.orgId === ORG_A))
+				// One per OrgId datasource in the plan, and nothing else under that kind.
 				assert.deepStrictEqual(
-					Arr.map(rows, (row) => row.orgId),
-					[ORG_A, ORG_A, ORG_A, ORG_A],
+					Arr.sort(
+						Arr.map(
+							Arr.filter(rows, (row) => row.kind === "warehouse"),
+							(row) => row.target,
+						),
+						Order.String,
+					),
+					Arr.sort(
+						Arr.map(WAREHOUSE_ERASURE_TARGETS, (target) => target.datasource),
+						Order.String,
+					),
 				)
 				const sessions = Arr.filter(rows, (row) => row.kind === "chat_session")
 				// One conversation per investigation, review and reply, each under the deleted org.
@@ -149,7 +212,7 @@ describe("runOrgErasures", () => {
 				replayPrefix(ORG_A),
 				replayPrefix(ORG_A),
 			])
-			assert.deepStrictEqual(yield* erasures, [])
+			assert.deepStrictEqual(yield* nonWarehouse, [])
 		}).pipe(Effect.provide([testDb.layer, sessions.layer, bucket.layer]))
 	})
 
@@ -168,6 +231,7 @@ describe("runOrgErasures", () => {
 							orgId: ORG_A,
 							kind: "chat_session",
 							target: failing,
+							jobId: null,
 							attempts: 2,
 							lastError: null,
 							nextAttemptAt: 0,
@@ -178,6 +242,7 @@ describe("runOrgErasures", () => {
 							orgId: ORG_A,
 							kind: "chat_session",
 							target: `${ORG_A}:inv-fine`,
+							jobId: null,
 							attempts: 0,
 							lastError: null,
 							nextAttemptAt: 0,
@@ -208,15 +273,163 @@ describe("runOrgErasures", () => {
 		return Effect.gen(function* () {
 			yield* queue(ORG_A)
 			yield* runOrgErasures
-			const [carried] = yield* erasures
+			const [carried] = yield* nonWarehouse
 			assert.strictEqual(carried?.kind, "replay_blobs")
 			// More to delete is not a failure.
 			assert.strictEqual(carried?.attempts, 0)
 
 			yield* runOrgErasures
-			assert.deepStrictEqual(yield* erasures, [])
+			assert.deepStrictEqual(yield* nonWarehouse, [])
 			assert.strictEqual(bucket.prefixes.length, 26)
 		}).pipe(Effect.provide([testDb.layer, sessions.layer, bucket.layer]))
+	})
+
+	it.effect(
+		"deletes rollups before what feeds them, a few jobs at a time, until every datasource is clear",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const jobs = warehouse()
+			return Effect.gen(function* () {
+				yield* queue(ORG_A)
+				const startedPerTick = yield* Effect.forEach(
+					Arr.range(1, WAREHOUSE_ERASURE_TARGETS.length * 2 + 4),
+					() =>
+						Effect.gen(function* () {
+							const before = jobs.submitted.length
+							yield* runOrgErasures
+							return jobs.submitted.length - before
+						}),
+				)
+				assert.isTrue(Arr.every(startedPerTick, (started) => started <= MAX_WAREHOUSE_JOBS))
+				assert.deepStrictEqual(
+					Arr.sort(jobs.submitted, Order.String),
+					Arr.sort(
+						Arr.map(WAREHOUSE_ERASURE_TARGETS, (target) => target.datasource),
+						Order.String,
+					),
+				)
+				const ranks = Arr.map(jobs.submitted, warehouseErasureRank)
+				assert.deepStrictEqual(ranks, Arr.sort(ranks, Order.flip(Order.Number)))
+				assert.deepStrictEqual(yield* erasures, [])
+			}).pipe(Effect.provide([testDb.layer, chatSessions().layer, replayBucket(0).layer, jobs.layer]))
+		},
+	)
+
+	it.effect("starts a failed job afresh after the backoff, keeping its reason", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs = warehouse(() => ({ _tag: "Failed", message: "too many parts" }))
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(PG.insertInto(OrgErasures).values([warehouseRow("traces", "job-traces")])),
+			)
+			yield* runOrgErasures
+			const [failed] = yield* erasures
+			assert.strictEqual(failed?.jobId, null)
+			assert.strictEqual(failed?.attempts, 1)
+			assert.strictEqual(failed?.lastError, "too many parts")
+			assert.strictEqual(failed?.nextAttemptAt, erasureBackoffMs(0))
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("holds an org's lower targets back with a failed rollup, then resumes in order", () => {
+		const testDb = createTestDb(trackedDbs)
+		let failing = true
+		const jobs = warehouse(() =>
+			failing ? { _tag: "Failed", message: "too many parts" } : { _tag: "Done" },
+		)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						warehouseRow("service_overview_minutely", "job-rollup"),
+						warehouseRow("traces", null),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			// The raw table is not started, and is no longer due before the rollup it waits on.
+			assert.deepStrictEqual(jobs.submitted, [])
+			const held = Arr.map(yield* erasures, (row) => [row.target, row.nextAttemptAt] as const)
+			assert.deepStrictEqual(held, [
+				["service_overview_minutely", erasureBackoffMs(0)],
+				["traces", erasureBackoffMs(0)],
+			])
+
+			failing = false
+			yield* TestClock.adjust(erasureBackoffMs(0))
+			yield* Effect.forEach(Arr.range(1, 4), () => runOrgErasures, { discard: true })
+			assert.deepStrictEqual(jobs.submitted, ["service_overview_minutely", "traces"])
+			assert.deepStrictEqual(yield* erasures, [])
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("polls a job in flight even when its org falls outside the window of due orgs", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs = warehouse()
+		// More orgs with a target due earlier than the window holds.
+		const crowd = Arr.map(Arr.range(1, 60), (n) =>
+			warehouseRow("traces", null, orgNamed(`org_crowd_${Str.padStart(2, "0")(String(n))}`), 0),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.adjust(1_000)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						...crowd,
+						warehouseRow("traces", "job-late", ORG_A, 900),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			assert.deepStrictEqual(jobs.polled, ["job-late"])
+			const left = yield* erasures
+			assert.isFalse(Arr.some(left, (row) => row.orgId === ORG_A))
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("starts new jobs for the org that has waited longest first", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs = warehouse()
+		const [first, second, third] = [
+			orgNamed("org_waited_b"),
+			orgNamed("org_waited_a"),
+			orgNamed("org_waited_c"),
+		]
+		return Effect.gen(function* () {
+			yield* TestClock.adjust(1_000)
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(OrgErasures).values([
+						warehouseRow("traces", null, third, 300),
+						warehouseRow("traces", null, first, 100),
+						warehouseRow("traces", null, second, 200),
+					]),
+				),
+			)
+			yield* runOrgErasures
+			assert.deepStrictEqual(jobs.submittedFor, [first, second])
+		}).pipe(Effect.provide([testDb.layer, jobs.layer]))
+	})
+
+	it.effect("waits with a reason while the delete token is not provisioned", () => {
+		const testDb = createTestDb(trackedDbs)
+		const unprovisioned = Layer.effect(WarehouseDeleteClient, WarehouseDeleteClient.make).pipe(
+			Layer.provide([Layer.succeed(WarehouseDeleteToken, Option.none()), FetchHttpClient.layer]),
+		)
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(PG.insertInto(OrgErasures).values([warehouseRow("traces", null)])),
+			)
+			yield* runOrgErasures
+			const [waiting] = yield* erasures
+			assert.strictEqual(waiting?.attempts, 1)
+			assert.strictEqual(waiting?.lastError, "The warehouse delete token is not provisioned")
+		}).pipe(Effect.provide([testDb.layer, unprovisioned]))
 	})
 
 	it.effect("backs off quickly first and settles at a day", () => {

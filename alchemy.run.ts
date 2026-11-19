@@ -48,6 +48,7 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import OrgEraser from "./apps/org-eraser/src/worker.ts"
 import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
@@ -409,6 +410,9 @@ export default Alchemy.Stack(
 		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
+		// Erases deleted orgs' data on a cron; never served, it alone holds the warehouse delete token.
+		const orgEraser = yield* OrgEraser
+
 		// Chat-platform ingress. Its Live layer registers its Durable Object classes.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
@@ -457,6 +461,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			orgEraserWorker: orgEraser.workerName,
 			chatBotWorker: chatBot.workerName,
 		}
 	}).pipe(

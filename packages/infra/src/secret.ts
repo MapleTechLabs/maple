@@ -12,6 +12,7 @@ export type SecretConsumer =
 	| "audit-archive"
 	| "ai"
 	| "alerting"
+	| "org-eraser"
 	| "chat-bot"
 	| "electric-sync"
 	| "sandbox"
