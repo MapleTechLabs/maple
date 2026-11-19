@@ -27,6 +27,8 @@ import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { panel } from "@maple/views/ui/panel"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
@@ -35,6 +37,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { formatDaysUptime } from "../../kit/uptime/derive"
+import { monitorHref } from "../../kit/uptime/commands"
 import { uptimeDaysStrip } from "../../kit/uptime/view"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import {
@@ -151,13 +154,10 @@ const notEnabledState = (h: H): Html =>
 
 /** Who can read each page, at a glance. */
 const VISIBILITY_BADGE = {
-	public: { label: "Public", variant: "outline" },
-	password: { label: "Password", variant: "info" },
-	internal: { label: "Internal", variant: "secondary" },
-} as const satisfies Record<
-	StatusPageVisibility,
-	{ label: string; variant: "outline" | "info" | "secondary" }
->
+	public: { label: "Public", variant: "ok" },
+	password: { label: "Password", variant: "warn" },
+	internal: { label: "Internal", variant: "info" },
+} as const satisfies Record<StatusPageVisibility, { label: string; variant: "ok" | "warn" | "info" }>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
@@ -216,6 +216,33 @@ const pageIcon = (h: H, favicon: string | null): ReadonlyArray<Html> =>
 		? [h.img([h.Src(favicon), h.Alt(""), h.Class("size-4 shrink-0 rounded-2xs object-contain")])]
 		: []
 
+/** The address visitors open, a link while the page is served; an internal page has none. */
+const pageAddress = (h: H, summary: StatusPageSummary, orgKey: string): Html => {
+	const page = summary.page
+	if (page.visibility === "internal")
+		return typography(h, { size: "xs", tone: "muted", truncate: true }, ["Members only, in Maple"])
+	const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, orgKey, page.slug))
+	const address = typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+		publicAddress(orgKey, page.slug),
+	])
+	return link._tag === "Open"
+		? textLink(
+				h,
+				{
+					href: link.url,
+					tone: "muted",
+					className: cn("min-w-0", ROW_LINK_LIFT),
+					attributes: [h.Target("_blank"), h.Rel("noopener")],
+				},
+				[address],
+			)
+		: typography(
+				h,
+				{ size: "xs", tone: "muted", mono: true, truncate: true, attributes: [h.Title(link.reason)] },
+				[publicAddress(orgKey, page.slug)],
+			)
+}
+
 const cardHeader = (
 	h: H,
 	model: Model,
@@ -225,28 +252,31 @@ const cardHeader = (
 ): Html => {
 	const page = summary.page
 	const visibility = VISIBILITY_BADGE[page.visibility]
-	return hstack(h, { gap: "4", align: "start", justify: "between", className: stripClass("header") }, [
-		vstack(h, { gap: "1", className: "min-w-0" }, [
-			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-				...pageIcon(h, page.favicon_url),
-				heading(h, { level: 2, variant: "section", className: "truncate" }, [
-					textLink(h, { href: statusPageHref(page.id), tone: "inherit" }, [page.name]),
+	return hstack(
+		h,
+		{
+			gap: "4",
+			align: "start",
+			justify: "between",
+			className: stripClass("header", "relative hover:bg-surface-sunken active:bg-surface-sunken"),
+		},
+		[
+			vstack(h, { gap: "1", className: "min-w-0" }, [
+				hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
+					...pageIcon(h, page.favicon_url),
+					heading(h, { level: 2, variant: "section", className: "truncate" }, [
+						rowLink(h, { href: statusPageHref(page.id) }, [page.name]),
+					]),
 				]),
+				pageAddress(h, summary, inputs.orgKey),
 			]),
-			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-				badge(h, { variant: visibility.variant, size: "sm" }, [visibility.label]),
-				typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-					page.visibility === "internal"
-						? "Members only, in Maple"
-						: publicAddress(inputs.orgKey, page.slug),
-				]),
+			hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+				badge(h, { variant: visibility.variant, size: "xs" }, [visibility.label]),
+				lastPublished(h, summary, inputs),
+				h.div([h.Class(ROW_LINK_LIFT)], [pageMenu(h, model, summary, inputs.orgKey, isEditable)]),
 			]),
-		]),
-		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
-			lastPublished(h, summary, inputs),
-			pageMenu(h, model, summary, inputs.orgKey, isEditable),
-		]),
-	])
+		],
+	)
 }
 
 // STATUS STRIP
@@ -346,10 +376,21 @@ const groupsOf = (
 				: [...groups, { group: component.group, components: [component] }],
 	)
 
+/** A monitored component's row opens its uptime monitor and checks. */
 const componentRow = (h: H, component: SummaryComponent): Html => {
 	const uptime = formatDaysUptime(component.days)
-	return h.div(
-		[h.Key(component.id), h.Class(cn(COMPONENT_GRID, "px-4 py-2"))],
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			href: component.monitorId === null ? undefined : monitorHref(component.monitorId),
+			className: cn(
+				COMPONENT_GRID,
+				"px-4 py-2",
+				component.monitorId !== null && "hover:bg-surface-sunken active:bg-surface-sunken",
+			),
+			attributes: [h.Key(component.id)],
+		},
 		[
 			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
 				statusDot(h, { tone: COMPONENT_STATUS_TONE[component.status] }),

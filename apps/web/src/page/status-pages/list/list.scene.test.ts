@@ -14,6 +14,8 @@ import { docsUrl } from "../../kit/docs"
 import { newStatusPageHref, statusPageHref, statusPageViewHref } from "../shared/commands"
 import { PageOutMessage } from "../../contract"
 import { type StatusPageSummary, summarizePage } from "../shared/derive"
+import { monitorHref } from "../../kit/uptime/commands"
+import { monitorId } from "../../kit/uptime/test-monitors"
 import { incident, pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -127,6 +129,30 @@ describe("status pages list", () => {
 			expectView(text("Draft")).toExist(),
 			expectView(role("link", { name: "New status page" })).toHaveAttr("href", newStatusPageHref()),
 			expectView(role("button", { name: "Actions for Acme Status" })).toExist(),
+		)
+	})
+
+	test("a monitored component opens its uptime monitor; a hand-set one links nowhere", () => {
+		const snapshot = makeSnapshot({
+			components: [
+				makeComponent(0, { name: "API" }),
+				makeComponent(1, { name: "Docs", monitored: false, days: [] }),
+			],
+		})
+		const summary = summarizePage({
+			page: statusPage(),
+			snapshot,
+			incidents: [],
+			components: [
+				{ id: snapshot.components[0]!.id, monitor_id: monitorId(1) },
+				{ id: snapshot.components[1]!.id, monitor_id: null },
+			],
+		})
+		scene(
+			{ update: listUpdate, view },
+			given(withPages([summary])),
+			expectView(role("link", { name: /^API/ })).toHaveAttr("href", monitorHref(monitorId(1))),
+			expectView(role("link", { name: /^Docs/ })).not.toExist(),
 		)
 	})
 
