@@ -300,7 +300,7 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	letter-spacing: -0.01em;
 }
 /* The marks are drawn for a dark ground; on amber they take the band's one ink. */
-.ledger-proof__logos svg {
+.ledger-proof__logos :is(svg, img) {
 	filter: brightness(0);
 }
 .ledger-proof__label {
