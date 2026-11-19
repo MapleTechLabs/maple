@@ -591,7 +591,8 @@ no built-in role, grants it `maple_ingest` as a short-lived admin login
 (`IngestRoleMembership`, `@maple/infra/ingest-role-membership`), and only then rolls the
 gateway onto it; the all-tables login is deleted at the end of that deploy. Unset or `0` restores
 the all-tables login on the next deploy. A table the gateway starts using needs a grant
-migration and an `INGEST_GATEWAY_GRANTS` entry, or `roles.test.ts` fails. The US prd Hyperdrive configs are dashboard-managed, so their
+migration, an `INGEST_GATEWAY_GRANTS` entry and a new statement in `roles.test.ts`'s gateway
+fixtures; the test checks the grants and runs those fixed statements, not the gateway's own queries. The US prd Hyperdrive configs are dashboard-managed, so their
 credentials are outside the deploy.
 
 ## Hyperdrive: why api and alerting have separate configs

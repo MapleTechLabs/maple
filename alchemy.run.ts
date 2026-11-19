@@ -166,8 +166,10 @@ const scopedIngestLogin = (database: string, schema: Planetscale.PostgresBranch)
 			branch: schema.name,
 			loginId: login.id,
 			login: login.username,
+			url: login.connectionUrlPooled,
 		})
-		return { id: membership.loginId, url: login.connectionUrlPooled }
+		// The URL comes back from the grant, so a failed grant never reaches the task secret.
+		return { id: membership.loginId, url: membership.url }
 	})
 
 /**

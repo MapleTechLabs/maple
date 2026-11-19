@@ -33,12 +33,15 @@ export interface IngestRoleMembershipProps {
 	loginId: string
 	/** The login's Postgres role name. */
 	login: string
+	/** The login's connection URL; echoed so the gateway's secret is written only after the grant. */
+	url: Redacted.Redacted
 }
 
 export interface IngestRoleMembershipAttributes {
 	loginId: string
 	login: string
 	groupRole: string
+	url: Redacted.Redacted
 }
 
 export type IngestRoleMembership = Resource<
@@ -102,7 +105,12 @@ const grant = (props: IngestRoleMembershipProps) =>
 			{ organization, database: props.database, branch: props.branch },
 			(executor) => executor.query(ingestRoleMembershipSql(props.login)),
 		)
-		return { loginId: props.loginId, login: props.login, groupRole: INGEST_GATEWAY_ROLE }
+		return {
+			loginId: props.loginId,
+			login: props.login,
+			groupRole: INGEST_GATEWAY_ROLE,
+			url: props.url,
+		}
 	}).pipe(
 		Effect.mapError(
 			(cause) =>
@@ -121,7 +129,8 @@ export const IngestRoleMembershipProvider = Provider.succeed(IngestRoleMembershi
 			news.login === olds.login &&
 			news.loginId === olds.loginId &&
 			news.branch === olds.branch &&
-			news.database === olds.database
+			news.database === olds.database &&
+			Redacted.value(news.url) === Redacted.value(olds.url)
 		return same ? undefined : ({ action: "update" } as const)
 	}),
 	read: Effect.fn(function* ({ output }) {
