@@ -41,7 +41,7 @@ import {
 
 export interface AuditEvaluation {
 	readonly status: "pass" | "fail"
-	/** Human sentence describing the finding. Omitted on pass. */
+	/** Human sentence describing the finding. On pass, omitted or an informational note. */
 	readonly detail?: string
 	readonly affected?: ReadonlyArray<AuditAffectedEntity>
 	/** Total affected before capping; defaults to `affected.length`. */
