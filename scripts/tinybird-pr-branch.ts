@@ -22,7 +22,7 @@
  * cleanup-preview-orphans workflow runs `sweep` as the safety net.
  *
  * Auth: `create`, `down` and `sweep` take the PARENT workspace host+token from
- * TINYBIRD_HOST / TINYBIRD_TOKEN. Every `tb` call is `--cloud --host --token`,
+ * TINYBIRD_HOST / TINYBIRD_TOKEN. Every `tb` call is `--cloud --host` with the token in TB_TOKEN,
  * never `--branch=`: the CLI resolves that flag through the user-workspaces
  * endpoint, which lists branches only for a human login token, so under a
  * workspace token every branch is "not found". Branch-scoped work runs `--cloud`
