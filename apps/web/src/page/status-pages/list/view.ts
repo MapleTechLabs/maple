@@ -260,7 +260,8 @@ const cardHeader = (
 			justify: "between",
 			className: stripClass(
 				"header",
-				"group/header relative hover:bg-surface-sunken active:bg-surface-sunken",
+				// Tinted only while the header link itself is hovered, not the address or the menu above it.
+				"relative has-[[data-header-link]:hover]:bg-surface-sunken has-[[data-header-link]:active]:bg-surface-sunken",
 			),
 		},
 		[
@@ -270,7 +271,11 @@ const cardHeader = (
 					heading(h, { level: 2, variant: "section", className: "truncate" }, [
 						rowLink(
 							h,
-							{ href: statusPageHref(page.id), className: "group-hover/header:underline" },
+							{
+								href: statusPageHref(page.id),
+								className: "hover:underline active:underline",
+								attributes: [h.DataAttribute("header-link", "")],
+							},
 							[page.name],
 						),
 					]),
