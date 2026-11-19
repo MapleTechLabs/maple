@@ -16,6 +16,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import * as VendorHttp from "../../../integrations/vendor-http"
 
 const INVOICES_PER_PAGE = 50
 const LINE_ITEMS_PER_PAGE = 100
@@ -181,7 +182,13 @@ const getPage =
 			]),
 			// A redirect is not PlanetScale answering: the token is never followed to another host.
 			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-			Effect.annotateSpans("peer.service", "planetscale"),
+			// Only an answer Maple cannot read fails the span; a refusal is the caller's to judge.
+			VendorHttp.vendorSdkRequestSpan(
+				"PlanetScaleInvoices.request",
+				"planetscale",
+				(error: PlanetScaleInvoiceApiError) =>
+					error.reason === "invalid_response" ? undefined : error.reason,
+			),
 		)
 
 // Pages from the first on, until the API names no next page or `enough` of them are read.

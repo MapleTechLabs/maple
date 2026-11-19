@@ -4,6 +4,7 @@
 import * as Anthropic from "@distilled.cloud/anthropic"
 import { Duration, Effect, Layer, Redacted, Schema, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import * as VendorHttp from "../../../integrations/vendor-http"
 import type { CostPullWindow } from "../../CostProvider"
 import { addDays } from "../../sync-plan"
 
@@ -112,7 +113,12 @@ const call = <A, E extends { readonly _tag: string }, S extends Schema.Top>(
 		]),
 		// A redirect is not Anthropic answering, so the key is never followed to another host.
 		Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-		Effect.annotateSpans("peer.service", "anthropic"),
+		// Only an answer Maple cannot read fails the span; a refusal is the caller's to judge.
+		VendorHttp.vendorSdkRequestSpan(
+			"AnthropicCost.request",
+			"anthropic",
+			(error: AnthropicCostApiError) => (error.kind === "invalid_response" ? undefined : error.kind),
+		),
 	)
 }
 
