@@ -21,62 +21,97 @@ export const replayPrefix = (orgId: OrgId): string => `v1/${orgId}/`
 
 const INSERT_CHUNK = 500
 
-/**
- * Queue every erasure an org's deletion needs. Call before the purge: the session ids come from
- * investigations and pull request reviews and replies. Re-queuing a target is a no-op.
- */
+const insertErasures = (
+	db: MapleDb,
+	orgId: OrgId,
+	now: number,
+	targets: ReadonlyArray<readonly [OrgErasureKind, string]>,
+) =>
+	Effect.forEach(
+		Arr.chunksOf(targets, INSERT_CHUNK),
+		(chunk) =>
+			db.run(
+				PG.insertInto(OrgErasures)
+					.values(
+						Arr.map(chunk, ([kind, target]) => ({
+							id: randomUUID(),
+							orgId,
+							kind,
+							target,
+							attempts: 0,
+							lastError: null,
+							nextAttemptAt: now,
+							createdAt: now,
+						})),
+					)
+					.onConflictDoNothing(),
+			),
+		{ discard: true },
+	)
+
+/** Queue the erasures that need no rows read: the org's replay prefix. Re-queuing is a no-op. */
 export const queueOrgErasures = (db: MapleDb, orgId: OrgId, now: number) =>
 	Effect.gen(function* () {
-		// Undecoded: a malformed id must still be erased, never fail the deletion.
-		const [investigations, reviews, replies] = yield* Effect.all([
-			db.run(
-				PG.from(Investigations)
-					.select(($) => ({ id: PG.undecoded($.id) }))
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-			db.run(
-				PG.from(PrReviews)
-					.select(($) => ({ id: PG.undecoded($.id) }))
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-			db.run(
-				PG.from(PrReviewReplies)
-					.select(($) => ({ id: PG.undecoded($.id) }))
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-		])
-		const sessions = [
-			...Arr.map(investigations, (row) => `${orgId}:inv-${row.id}`),
-			...Arr.map(reviews, (row) => prReviewSessionId(orgId, row.id)),
-			...Arr.map(replies, (row) => prReplySessionId(orgId, row.id)),
-		]
 		const targets: ReadonlyArray<readonly [OrgErasureKind, string]> = [
-			...Arr.map(sessions, (session) => ["chat_session", session] as const),
 			["replay_blobs", replayPrefix(orgId)],
 		]
-		yield* Effect.forEach(
-			Arr.chunksOf(targets, INSERT_CHUNK),
-			(chunk) =>
-				db.run(
-					PG.insertInto(OrgErasures)
-						.values(
-							Arr.map(chunk, ([kind, target]) => ({
-								id: randomUUID(),
-								orgId,
-								kind,
-								target,
-								attempts: 0,
-								lastError: null,
-								nextAttemptAt: now,
-								createdAt: now,
-							})),
-						)
-						.onConflictDoNothing(),
-				),
-			{ discard: true },
-		)
+		yield* insertErasures(db, orgId, now, targets)
 		return targets.length
 	})
+
+/** The tables whose rows name a conversation, and the session id each row names. */
+const CONVERSATION_TABLES = [
+	[Investigations, (orgId: OrgId, id: string) => `${orgId}:inv-${id}`],
+	[PrReviews, prReviewSessionId],
+	[PrReviewReplies, prReplySessionId],
+] as const
+
+/** Whether the purge deletes `table` through {@link purgeConversationRows}. */
+export const namesConversations = (table: unknown): boolean =>
+	Arr.some(CONVERSATION_TABLES, ([named]) => named === table)
+
+/**
+ * Delete the org's rows that name a conversation, queuing each one's erasure in the same
+ * transaction: a conversation started while the deletion runs is erased too.
+ */
+export const purgeConversationRows = (db: MapleDb, table: unknown, orgId: OrgId, now: number) =>
+	db.transaction(
+		Effect.gen(function* () {
+			// Undecoded: a malformed id must still be erased, never fail the deletion.
+			const ids =
+				table === Investigations
+					? yield* db.run(
+							PG.deleteFrom(Investigations)
+								.where(($) => [$.orgId.eq(orgId)])
+								.returning(($) => ({ id: PG.undecoded($.id) })),
+						)
+					: table === PrReviews
+						? yield* db.run(
+								PG.deleteFrom(PrReviews)
+									.where(($) => [$.orgId.eq(orgId)])
+									.returning(($) => ({ id: PG.undecoded($.id) })),
+							)
+						: yield* db.run(
+								PG.deleteFrom(PrReviewReplies)
+									.where(($) => [$.orgId.eq(orgId)])
+									.returning(($) => ({ id: PG.undecoded($.id) })),
+							)
+			const sessionOf = Option.getOrElse(
+				Option.map(
+					Arr.findFirst(CONVERSATION_TABLES, ([named]) => named === table),
+					([, session]) => session,
+				),
+				() => prReplySessionId,
+			)
+			yield* insertErasures(
+				db,
+				orgId,
+				now,
+				Arr.map(ids, (row) => ["chat_session", sessionOf(orgId, row.id)] as const),
+			)
+			return ids.length
+		}),
+	)
 
 export class OrgErasureError extends Schema.TaggedError<OrgErasureError>()(
 	"@maple/backend/org/OrgErasureError",

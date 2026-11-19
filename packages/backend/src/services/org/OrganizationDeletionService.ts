@@ -26,7 +26,11 @@ import {
 	requireOrganizationAdmin,
 } from "@maple/backend/services/org/OrganizationService"
 import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
-import { queueOrgErasures } from "@maple/backend/services/org/org-erasure"
+import {
+	namesConversations,
+	purgeConversationRows,
+	queueOrgErasures,
+} from "@maple/backend/services/org/org-erasure"
 import { clerkModeClient } from "@maple/auth"
 
 const toPersistenceError = (error: unknown) =>
@@ -75,17 +79,24 @@ export class OrganizationDeletionService extends Context.Service<
 		) {
 			// Public pages live on at the edge until the publisher drains these.
 			yield* dbExecute((db) => queueOrgPageRemovals(db, orgId))
-			// Before the purge drops the rows that name them: conversations and replays outside
-			// Postgres, erased by the api's hourly cron, so a slow store never holds up the delete.
+			// What the org holds outside Postgres is erased later by a cron, so a slow store never
+			// holds up the delete. Conversations are queued as the rows naming them are deleted.
 			const now = yield* Clock.currentTimeMillis
-			const queued = yield* dbExecute((db) => queueOrgErasures(db, orgId, now))
-			yield* Effect.annotateCurrentSpan("maple.org_erasure.queued", queued)
+			yield* dbExecute((db) => queueOrgErasures(db, orgId, now))
 			const purge = (column: "org_id" | "approved_org_id", tables: ReadonlyArray<PurgedTable>) =>
 				Effect.forEach(
 					tables,
 					(table) =>
 						dbExecute((db) =>
-							db.run(PG.deleteFrom(table).where(() => [PG.dynamicColumn(column).eq(orgId)])),
+							column === "org_id" && namesConversations(table)
+								? Effect.asVoid(purgeConversationRows(db, table, orgId, now))
+								: Effect.asVoid(
+										db.run(
+											PG.deleteFrom(table).where(() => [
+												PG.dynamicColumn(column).eq(orgId),
+											]),
+										),
+									),
 						),
 					{ discard: true },
 				)
