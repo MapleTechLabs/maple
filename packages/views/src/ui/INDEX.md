@@ -212,7 +212,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/chain-connector.ts` `chainConnector`: The line between two cards of a vertical chain, with a + on it that adds a card there.
 - `apps/web/src/page/kit/chart-card.ts` `chartCard`, `chartCardMessage`: The card a chart sits in: an optional header (title, legend, scope) over the plot area.
 - `apps/web/src/page/kit/chart-zoom.ts` `zoomSearchPatch`: A span dragged across a chart as the URL's absolute window: whole seconds, at least a minute, no preset.
-- `apps/web/src/page/kit/checkout-return.ts` `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
+- `apps/web/src/page/kit/checkout-return.ts` `arrivedConfirmed`, `confirmed` (stateful: Model, init, update): Back from Stripe (`?checkout=complete`), a page waits on the Autumn sync.
 - `apps/web/src/page/kit/clipboard.ts` `copyToast`: The toast for a finished copy (no label: the generic titles).
 - `apps/web/src/page/kit/code-block.ts` `codeBlock`: A code block: language eyebrow, copy button, highlighted markup.
 - `apps/web/src/page/kit/collection-load.ts` `collectionLoadFailed`: Whether a collection a page is still waiting on failed to load.

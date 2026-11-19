@@ -165,6 +165,62 @@ describe("quick start", () => {
 		expect(names(updateWith(settled, Message.SettledPlan(), true))).toEqual([])
 	})
 
+	test("back from Stripe, the return is recorded as confirmed once the plan shows, and only once", () => {
+		const returning = init("maple-onboarding-v6-org_1", true).model
+		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
+		// Autumn has not synced yet: the plan step opens and waits.
+		const waiting = updateWith(returning, load, false)
+		expect(waiting.model.pricing.checkoutReturn).toBe("Confirming")
+		const seen = updateWith(waiting.model, Message.SettledPlan(), true)
+		expect(names(seen)).toContain("TrackCheckoutReturned")
+		expect(seen.model.pricing.checkoutReturn).toBe("Idle")
+		expect(seen.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
+		expect(names(updateWith(seen.model, Message.SettledPlan(), true))).not.toContain(
+			"TrackCheckoutReturned",
+		)
+	})
+
+	test("back from Stripe with the plan already synced, the return is still recorded", () => {
+		const returning = init("maple-onboarding-v6-org_1", true).model
+		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
+		const early = updateWith(returning, load, null)
+		const seen = updateWith(early.model, Message.SettledPlan(), true)
+		expect(names(seen)).toContain("TrackCheckoutReturned")
+		expect(names(updateWith(seen.model, Message.SettledPlan(), true))).not.toContain(
+			"TrackCheckoutReturned",
+		)
+	})
+
+	test("a plan that shows up after the wait gave up is not recorded a second time", () => {
+		const returning = init("maple-onboarding-v6-org_1", true).model
+		const waiting = updateWith(
+			returning,
+			Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE }),
+			false,
+		).model
+		const timedOut = updateWith(
+			waiting,
+			Message.GotPricingMessage({
+				message: PricingCards.Message.GotCheckoutReturnMessage({
+					message: CheckoutReturn.Message.ElapsedTimeout(),
+				}),
+			}),
+			false,
+		)
+		expect(names(timedOut)).toContain("TrackCheckoutReturned")
+		expect(names(updateWith(timedOut.model, Message.SettledPlan(), true))).not.toContain(
+			"TrackCheckoutReturned",
+		)
+	})
+
+	test("a visit that did not come back from Stripe records no return", () => {
+		const load = Message.LoadedQuickStartState({ state: DEFAULT_QUICK_START_STATE })
+		const early = updateWith(init("maple-onboarding-v6-org_1").model, load, null)
+		expect(names(updateWith(early.model, Message.SettledPlan(), true))).not.toContain(
+			"TrackCheckoutReturned",
+		)
+	})
+
 	test("a finished save with no plan behind it goes back to the plan step instead of bouncing off the gate", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,

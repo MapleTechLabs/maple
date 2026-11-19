@@ -93,6 +93,10 @@ export const toClerkSignIn = (message: ClerkSignIn.Message) => Message.GotClerkS
 export const toQuickStart = (message: QuickStart.Message) => Message.GotQuickStartMessage({ message })
 /** Sent by the root once the customer read settles (`QuickStart.SettledPlan`). */
 export const settledPlanMessage = toQuickStart(QuickStart.Message.SettledPlan())
+/** The same for `/select-plan`, whose wait on a Stripe return ends once the plan shows. */
+export const settledSelectPlanMessage = Message.GotSelectPlanMessage({
+	message: SelectPlan.Message.SettledPlan(),
+})
 export const toCreateOrg = (message: CreateOrg.Message) => Message.GotCreateOrgMessage({ message })
 export const toSelectPlan = (message: SelectPlan.Message) => Message.GotSelectPlanMessage({ message })
 export const toUserMenu = (message: Menu.Message) => Message.GotUserMenuMessage({ message })
@@ -359,7 +363,7 @@ export const update = (model: Model, message: Message, inputs: Inputs): Step => 
 		},
 		GotSelectPlanMessage: ({ message: child }) => {
 			if (screen._tag !== "SelectPlan") return unchanged(model)
-			const next = SelectPlan.update(screen, child)
+			const next = SelectPlan.update(screen, child, planOf(inputs.customer))
 			const step = withScreen(model, next, toSelectPlan)
 			return next.outMessage === undefined ? step : { ...step, outMessage: next.outMessage }
 		},
