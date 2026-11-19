@@ -12,7 +12,7 @@ import { MAX_PROMQL_READ_WINDOW_SECONDS } from "../limits"
 const PROMQL_VAR_REF =
 	/\$\{([A-Za-z][A-Za-z0-9_]*)(?::([A-Za-z]+))?\}|\[\[([A-Za-z][A-Za-z0-9_]*)\]\]|\$([A-Za-z][A-Za-z0-9_]*)/g
 
-const REGEX_SPECIALS = /[.*+?^${}()|[\]\\]/g
+const REGEX_SPECIALS = /[.*+?^${}()|[\]\\-]/g
 
 /** A value escaped for a RE2 regex: what `=~` and `!~` matchers take. */
 export const promqlRegexEscape = (value: string): string =>

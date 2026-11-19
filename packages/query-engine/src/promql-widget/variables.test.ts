@@ -28,13 +28,13 @@ describe("interpolatePromqlVariables", () => {
 
 	it("regex-escapes a single value under :regex or inside a regex matcher, not under :raw", () => {
 		expect(interpolatePromqlVariables('up{instance=~"${host:regex}"}', values)).toBe(
-			'up{instance=~"db-1\\\\.internal"}',
+			'up{instance=~"db\\\\-1\\\\.internal"}',
 		)
 		expect(interpolatePromqlVariables('up{instance="$host"}', values)).toBe(
 			'up{instance="db-1.internal"}',
 		)
 		expect(interpolatePromqlVariables('up{instance=~"$host"}', values)).toBe(
-			'up{instance=~"db-1\\\\.internal"}',
+			'up{instance=~"db\\\\-1\\\\.internal"}',
 		)
 		expect(interpolatePromqlVariables('up{instance=~"${host:raw}"}', values)).toBe(
 			'up{instance=~"db-1.internal"}',
@@ -49,6 +49,8 @@ describe("interpolatePromqlVariables", () => {
 		expect(interpolatePromqlVariables('up{job=~ # pick one\n"$v"}', wide)).toBe(
 			'up{job=~ # pick one\n"\\\\.\\\\*"}',
 		)
+		// A hyphen stays literal, even inside the author's character class.
+		expect(interpolatePromqlVariables('up{job=~"[a$v]"}', { v: one("-") })).toBe('up{job=~"[a\\\\-]"}')
 		// An operator inside a comment does not make an equality matcher a regex one.
 		expect(interpolatePromqlVariables('up{job= # =~\n"$v"}', wide)).toBe('up{job= # =~\n".*"}')
 		// Equality matchers read the value literally already.
