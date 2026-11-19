@@ -14,7 +14,7 @@ import {
 	String as Str,
 } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 
 // Every Clerk call the SSO settings make, as `@distilled.cloud/clerk` operations.
 
@@ -103,7 +103,6 @@ const scanConnections = <C, S>(
 				if (result.data.length === 0 || page + 1 >= maxPages) {
 					return Effect.fail(
 						new ClerkRequestError({
-							operation: "Clerk.enterpriseConnections.list",
 							message: `Could not read all ${result.totalCount} enterprise connections`,
 							status: null,
 							cause: null,
@@ -356,27 +355,22 @@ export const updateParams = (
 /** The gateway over one Clerk Backend API; `undefined` outside Clerk mode. */
 export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayApi => {
 	const call = <A, E>(
-		operation: string,
-		attributes: Readonly<Record<string, string | number | boolean>>,
 		request: Effect.Effect<A, E, ClerkApiServices>,
 	): Effect.Effect<A, ClerkRequestError> =>
 		api === undefined
 			? Effect.fail(
 					new ClerkRequestError({
-						operation,
 						message: "Clerk is not configured",
 						status: null,
 						cause: null,
 					}),
 				)
-			: clerkRequest(api, operation, attributes, request)
+			: api.run(request)
 
 	const listConnectionsPage = (offset: number) =>
-		call(
-			"Clerk.enterpriseConnections.list",
-			{ offset },
-			Clerk.listEnterpriseConnections({ limit: CONNECTION_PAGE_SIZE, offset }),
-		).pipe(Effect.map((page) => ({ data: page.data, totalCount: page.total_count })))
+		call(Clerk.listEnterpriseConnections({ limit: CONNECTION_PAGE_SIZE, offset })).pipe(
+			Effect.map((page) => ({ data: page.data, totalCount: page.total_count })),
+		)
 
 	/** On a 422, retries under the disambiguated name only when another connection holds `name`. */
 	const retryIfNameTaken =
@@ -396,8 +390,6 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 			acc: ReadonlyArray<Clerk.OrganizationDomain>,
 		): Effect.Effect<ReadonlyArray<Clerk.OrganizationDomain>, ClerkRequestError> =>
 			call(
-				"Clerk.organizations.getOrganizationDomainList",
-				{ orgId },
 				Clerk.listOrganizationDomains({ organization_id: orgId, limit: DOMAIN_PAGE_SIZE, offset }),
 			).pipe(
 				Effect.flatMap((result) => {
@@ -413,13 +405,11 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 
 	const gateway: ClerkSsoGatewayApi = {
 		available: api !== undefined,
-		listRoles: call("Clerk.organizationRoles.list", {}, Clerk.listOrganizationRoles({ limit: 100 })).pipe(
+		listRoles: call(Clerk.listOrganizationRoles({ limit: 100 })).pipe(
 			Effect.map((page) => Arr.map(page.data, (role) => ({ id: role.id, key: role.key }))),
 		),
 		ensureOrgDomain: (orgId, domain) =>
 			call(
-				"Clerk.organizations.createOrganizationDomain",
-				{ orgId },
 				Clerk.createOrganizationDomain({
 					organization_id: orgId,
 					name: domain,
@@ -444,29 +434,19 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 			),
 		verifyOrgDomainOwnership: (orgId, domainId) =>
 			call(
-				"Clerk.organizationDomains.verifyOwnership",
-				{ "http.request.method": "POST" },
 				Clerk.verifyOrganizationDomainOwnership({ organization_id: orgId, domain_id: domainId }),
 			).pipe(Effect.asVoid),
 		deleteOrgDomain: (orgId, domainId) =>
-			call(
-				"Clerk.organizations.deleteOrganizationDomain",
-				{ orgId },
-				Clerk.deleteOrganizationDomain({ organization_id: orgId, domain_id: domainId }),
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteOrganizationDomain({ organization_id: orgId, domain_id: domainId })).pipe(
+				Effect.asVoid,
+			),
 		getConnection: (id) =>
-			call(
-				"Clerk.enterpriseConnections.get",
-				{ "http.request.method": "GET" },
-				Clerk.getEnterpriseConnection({ enterprise_connection_id: id }),
-			).pipe(Effect.map(toConnection)),
+			call(Clerk.getEnterpriseConnection({ enterprise_connection_id: id })).pipe(
+				Effect.map(toConnection),
+			),
 		createConnection: (orgId, provider, input) => {
 			const create = (name: string) =>
-				call(
-					"Clerk.enterpriseConnections.create",
-					{ orgId, provider },
-					Clerk.createEnterpriseConnection(createParams(orgId, provider, { ...input, name })),
-				)
+				call(Clerk.createEnterpriseConnection(createParams(orgId, provider, { ...input, name })))
 			return create(input.name).pipe(
 				Effect.catch(
 					retryIfNameTaken(null, input.name, create(disambiguatedName(input.name, input.domains))),
@@ -477,8 +457,6 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 		updateConnection: (id, input) => {
 			const update = (patch: typeof input) =>
 				call(
-					"Clerk.enterpriseConnections.update",
-					{},
 					Clerk.updateEnterpriseConnection({
 						enterprise_connection_id: id,
 						...updateParams(patch),
@@ -499,55 +477,27 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 			)
 		},
 		deleteConnection: (id) =>
-			call(
-				"Clerk.enterpriseConnections.delete",
-				{},
-				Clerk.deleteEnterpriseConnection({ enterprise_connection_id: id }),
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteEnterpriseConnection({ enterprise_connection_id: id })).pipe(Effect.asVoid),
 		createDirectory: (connectionId, provider) =>
 			call(
-				"Clerk.directories.create",
-				{ "http.request.method": "POST" },
 				Clerk.createDirectory({
 					enterprise_connection_id: connectionId,
 					provider,
 					name: "Maple SCIM",
 				}),
 			).pipe(Effect.map(toDirectory)),
-		getDirectory: (id) =>
-			call(
-				"Clerk.directories.get",
-				{ "http.request.method": "GET" },
-				Clerk.getDirectory({ directory_id: id }),
-			).pipe(Effect.map(toDirectory)),
+		getDirectory: (id) => call(Clerk.getDirectory({ directory_id: id })).pipe(Effect.map(toDirectory)),
 		updateDirectory: (id, patch) =>
-			call(
-				"Clerk.directories.update",
-				{ "http.request.method": "PATCH" },
-				Clerk.updateDirectory({ directory_id: id, ...patch }),
-			).pipe(Effect.map(toDirectory)),
+			call(Clerk.updateDirectory({ directory_id: id, ...patch })).pipe(Effect.map(toDirectory)),
 		rotateDirectoryKey: (id) =>
-			call(
-				"Clerk.directories.rotateApiKey",
-				{ "http.request.method": "POST" },
-				Clerk.rotateDirectoryAPIKey({ directory_id: id }),
-			).pipe(Effect.map(toDirectory)),
-		deleteDirectory: (id) =>
-			call(
-				"Clerk.directories.delete",
-				{ "http.request.method": "DELETE" },
-				Clerk.deleteDirectory({ directory_id: id }),
-			).pipe(Effect.asVoid),
+			call(Clerk.rotateDirectoryAPIKey({ directory_id: id })).pipe(Effect.map(toDirectory)),
+		deleteDirectory: (id) => call(Clerk.deleteDirectory({ directory_id: id })).pipe(Effect.asVoid),
 		domainsClaimedElsewhere: (connectionId, domains) =>
 			domains.length === 0
 				? Effect.succeed([])
 				: scanClaimedDomains(listConnectionsPage, connectionId, domains),
 		isDeprovisioned: (userId) =>
-			call(
-				"Clerk.users.get",
-				{ "http.request.method": "GET" },
-				Clerk.getUser({ user_id: userId }),
-			).pipe(
+			call(Clerk.getUser({ user_id: userId })).pipe(
 				Effect.map((user) => user.deprovisioned === true),
 				Effect.catchIf(
 					(e) => e.status === 404,
@@ -556,12 +506,10 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 			),
 		isMember: (orgId, userId) =>
 			call(
-				"Clerk.organizations.getOrganizationMembershipList",
-				{ orgId },
 				Clerk.listOrganizationMemberships({ organization_id: orgId, user_id: [userId], limit: 1 }),
 			).pipe(Effect.map((page) => page.data.length > 0)),
 		verifiedEmailDomains: (userId) =>
-			call("Clerk.users.getUser", {}, Clerk.getUser({ user_id: userId })).pipe(
+			call(Clerk.getUser({ user_id: userId })).pipe(
 				Effect.map((user) =>
 					Arr.flatMap(user.email_addresses, (e) =>
 						e.verification?.status === "verified"
@@ -573,11 +521,7 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 				),
 			),
 		listRoleMappings: (directoryId) =>
-			call(
-				"Clerk.directories.listGroupRoleMappings",
-				{ "http.request.method": "GET" },
-				Clerk.listDirectoryGroupRoleMappings({ directory_id: directoryId }),
-			).pipe(
+			call(Clerk.listDirectoryGroupRoleMappings({ directory_id: directoryId })).pipe(
 				Effect.map((list) =>
 					Arr.flatMap(Arr.sort(list.data, byPrecedence), (m: Clerk.DirectoryGroupRoleMapping) =>
 						m.role === undefined
@@ -594,8 +538,6 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 			),
 		replaceRoleMappings: (directoryId, mappings) =>
 			call(
-				"Clerk.directories.replaceGroupRoleMappings",
-				{ "http.request.method": "PUT" },
 				Clerk.replaceDirectoryGroupRoleMappings({
 					directory_id: directoryId,
 					mappings: Arr.map(mappings, (m) => ({
@@ -605,11 +547,7 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 				}),
 			).pipe(Effect.asVoid),
 		listBypassUsers: (connectionId) =>
-			call(
-				"Clerk.ssoBypassAllowlist.list",
-				{ "http.request.method": "GET" },
-				Clerk.listSSOBypassAllowlistUsers({ enterprise_connection_id: connectionId }),
-			).pipe(
+			call(Clerk.listSSOBypassAllowlistUsers({ enterprise_connection_id: connectionId })).pipe(
 				Effect.map((list) =>
 					Arr.map(list, (u) => ({
 						userId: u.user_id,
@@ -618,17 +556,9 @@ export const makeClerkSsoGateway = (api: ClerkApi | undefined): ClerkSsoGatewayA
 				),
 			),
 		addBypassUser: (userId) =>
-			call(
-				"Clerk.ssoBypassAllowlist.create",
-				{ "http.request.method": "POST" },
-				Clerk.createSSOBypassAllowlistUser({ user_id: userId }),
-			).pipe(Effect.asVoid),
+			call(Clerk.createSSOBypassAllowlistUser({ user_id: userId })).pipe(Effect.asVoid),
 		removeBypassUser: (userId) =>
-			call(
-				"Clerk.ssoBypassAllowlist.delete",
-				{ "http.request.method": "DELETE" },
-				Clerk.deleteSSOBypassAllowlistUser({ userID: userId }),
-			).pipe(Effect.asVoid),
+			call(Clerk.deleteSSOBypassAllowlistUser({ userID: userId })).pipe(Effect.asVoid),
 	}
 	return gateway
 }

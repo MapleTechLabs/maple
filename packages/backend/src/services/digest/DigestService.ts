@@ -45,7 +45,6 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { EdgeCacheService } from "@maple/cache"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
@@ -882,7 +881,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			errorMessage: string,
 		) =>
 			Stream.paginate(0, (offset: number) =>
-				clerkRequest(api, spanName, attributes, fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
+				api.run(fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
 					Effect.mapBoth({
 						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
 						onSuccess: (page) => {

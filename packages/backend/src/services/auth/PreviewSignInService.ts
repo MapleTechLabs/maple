@@ -10,7 +10,7 @@ import {
 import { Context, Effect, Layer, Option, Redacted, Array as Arr, String as Str } from "effect"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { PreviewSigninKey } from "@maple/infra/secrets"
-import { clerkRequest, ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import { ClerkRequestError } from "@maple/auth"
 import { secretsEqual } from "./secret-equal"
 
 /**
@@ -110,50 +110,32 @@ export const makePreviewSignIn = (
 
 const clerkPort = (api: ClerkApi): PreviewClerk => ({
 	findUserIdByEmail: (email) =>
-		clerkRequest(
-			api,
-			"Clerk.users.getUserList",
-			{},
-			Clerk.getUserList({ email_address: [email], limit: 1 }),
-		).pipe(Effect.map((users) => Option.fromNullishOr(users[0]?.id))),
+		api
+			.run(Clerk.getUserList({ email_address: [email], limit: 1 }))
+			.pipe(Effect.map((users) => Option.fromNullishOr(users[0]?.id))),
 	createUser: (email) =>
-		clerkRequest(
-			api,
-			"Clerk.users.createUser",
-			{},
-			Clerk.createUser({
-				email_address: [email],
-				first_name: "Preview",
-				last_name: "Reviewer",
-				skip_password_requirement: true,
-			}),
-		).pipe(Effect.map((user) => user.id)),
+		api
+			.run(
+				Clerk.createUser({
+					email_address: [email],
+					first_name: "Preview",
+					last_name: "Reviewer",
+					skip_password_requirement: true,
+				}),
+			)
+			.pipe(Effect.map((user) => user.id)),
 	isMemberOf: (userId, name) =>
-		clerkRequest(
-			api,
-			"Clerk.users.getOrganizationMembershipList",
-			{ "tenant.userId": userId },
-			Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: MEMBERSHIP_PAGE_LIMIT }),
-		).pipe(Effect.map((response) => Arr.some(response.data, (m) => m.organization.name === name))),
+		api
+			.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: MEMBERSHIP_PAGE_LIMIT }))
+			.pipe(Effect.map((response) => Arr.some(response.data, (m) => m.organization.name === name))),
 	createOrganization: (userId, name) =>
-		clerkRequest(
-			api,
-			"Clerk.organizations.createOrganization",
-			{ "tenant.userId": userId },
-			Clerk.createOrganization({ name, created_by: userId }),
-		).pipe(Effect.asVoid),
+		api.run(Clerk.createOrganization({ name, created_by: userId })).pipe(Effect.asVoid),
 	createSignInToken: (userId, ttlSeconds) =>
-		clerkRequest(
-			api,
-			"Clerk.signInTokens.createSignInToken",
-			{ "tenant.userId": userId },
-			Clerk.createSignInToken({ user_id: userId, expires_in_seconds: ttlSeconds }),
-		).pipe(
+		api.run(Clerk.createSignInToken({ user_id: userId, expires_in_seconds: ttlSeconds })).pipe(
 			Effect.flatMap((token) =>
 				token.token === undefined
 					? Effect.fail(
 							new ClerkRequestError({
-								operation: "Clerk.signInTokens.createSignInToken",
 								message: "Clerk sent no sign-in token",
 								status: null,
 								cause: null,

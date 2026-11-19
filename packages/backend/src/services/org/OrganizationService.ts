@@ -22,7 +22,6 @@ import * as Tables from "@maple/db/tables"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
@@ -351,12 +350,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			/** The Clerk Backend API, or `None` when not running in Clerk auth mode. */
 			const clerkClient = () => Option.fromUndefinedOr(clerkModeApi(env))
 			const getOrganization = (api: ClerkApi, orgId: OrgId) =>
-				clerkRequest(
-					api,
-					"Clerk.organizations.getOrganization",
-					{ orgId },
-					Clerk.getOrganization({ organization_id: orgId }),
-				)
+				api.run(Clerk.getOrganization({ organization_id: orgId }))
 
 			/**
 			 * The caller's org identity. In Clerk mode it is read from Clerk; in
@@ -397,16 +391,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						message: "Organizations can only be created in Clerk auth mode",
 					})
 				}
-				const org = yield* clerkRequest(
-					clerk.value,
-					"Clerk.organizations.createOrganization",
-					{ userId },
-					Clerk.createOrganization({
-						name,
-						created_by: userId,
-						public_metadata: organizationRegionMetadata(region),
-					}),
-				).pipe(Effect.mapError(toProviderError))
+				const org = yield* clerk.value
+					.run(
+						Clerk.createOrganization({
+							name,
+							created_by: userId,
+							public_metadata: organizationRegionMetadata(region),
+						}),
+					)
+					.pipe(Effect.mapError(toProviderError))
 				const orgId = yield* Schema.decodeEffect(OrgId)(org.id).pipe(
 					Effect.mapError(
 						() =>
@@ -463,15 +456,14 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				// Clerk merges public metadata by key, so rollout flags stay as they are.
-				const written = yield* clerkRequest(
-					clerk.value,
-					"Clerk.organizations.updateOrganizationMetadata",
-					{ orgId },
-					Clerk.mergeOrganizationMetadata({
-						organization_id: orgId,
-						public_metadata: organizationRegionMetadata(region),
-					}),
-				).pipe(Effect.mapError(toProviderError))
+				const written = yield* clerk.value
+					.run(
+						Clerk.mergeOrganizationMetadata({
+							organization_id: orgId,
+							public_metadata: organizationRegionMetadata(region),
+						}),
+					)
+					.pipe(Effect.mapError(toProviderError))
 				// A yes this instance cached before the write may now be wrong.
 				yield* regions.forget(orgId)
 				// Clerk has no conditional write, so two admins choosing at once both succeed and the

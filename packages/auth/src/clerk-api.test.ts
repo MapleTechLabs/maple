@@ -1,10 +1,9 @@
 import * as Clerk from "@distilled.cloud/clerk"
 import { assert, describe, it } from "@effect/vitest"
-import { makeClerkApi } from "@maple/auth"
 import { Effect, Fiber, Layer, Option, Redacted, Tracer, Array as Arr } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
-import { CLERK_REQUEST_TIMEOUT, ClerkRequestError, clerkRequest } from "./clerk-request"
+import { CLERK_REQUEST_TIMEOUT, ClerkRequestError, makeClerkApi } from "./clerk-api"
 
 const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []
@@ -49,28 +48,26 @@ const organization = {
 	updated_at: 0,
 }
 
-describe("clerkRequest", () => {
-	it.effect("runs the operation with the secret key under a Client-kind Clerk span", () =>
+describe("ClerkApi.run", () => {
+	it.effect("runs the operation with the secret key, under the client span the service map reads", () =>
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
 			const { api, authorizations } = fakeClerk(() => json(200, organization))
 
-			const org = yield* clerkRequest(
-				api,
-				"Clerk.organizations.getOrganization",
-				{ orgId: "org_test" },
-				Clerk.getOrganization({ organization_id: "org_test" }),
-			).pipe(Effect.withTracer(tracer))
+			const org = yield* api
+				.run(Clerk.getOrganization({ organization_id: "org_test" }))
+				.pipe(Effect.withTracer(tracer))
 
 			assert.strictEqual(org.name, "Maple")
 			assert.deepStrictEqual(authorizations, ["Bearer sk_test_fake"])
 			const span = Option.getOrUndefined(
-				Arr.findFirst(spans, (candidate) => candidate.name === "Clerk.organizations.getOrganization"),
+				Arr.findFirst(
+					spans,
+					(candidate) => candidate.attributes.get("server.address") === "api.clerk.com",
+				),
 			)
 			assert.isDefined(span)
 			assert.strictEqual(span.kind, "client")
-			assert.strictEqual(span.attributes.get("peer.service"), "clerk")
-			assert.strictEqual(span.attributes.get("orgId"), "org_test")
 		}),
 	)
 
@@ -80,12 +77,9 @@ describe("clerkRequest", () => {
 				json(404, { errors: [{ code: "resource_not_found", message: "not found" }] }),
 			)
 
-			const error = yield* Effect.flip(
-				clerkRequest(api, "Clerk.users.getUser", {}, Clerk.getUser({ user_id: "user_gone" })),
-			)
+			const error = yield* Effect.flip(api.run(Clerk.getUser({ user_id: "user_gone" })))
 
 			assert.instanceOf(error, ClerkRequestError)
-			assert.strictEqual(error.operation, "Clerk.users.getUser")
 			assert.strictEqual(error.status, 404)
 			assert.strictEqual(error.message, "not found")
 		}),
@@ -97,14 +91,7 @@ describe("clerkRequest", () => {
 				json(503, { errors: [{ code: "unavailable", message: "try later" }] }),
 			)
 
-			const error = yield* Effect.flip(
-				clerkRequest(
-					api,
-					"Clerk.organizations.createOrganization",
-					{},
-					Clerk.createOrganization({ name: "Acme" }),
-				),
-			)
+			const error = yield* Effect.flip(api.run(Clerk.createOrganization({ name: "Acme" })))
 
 			assert.strictEqual(error.status, 503)
 			assert.strictEqual(authorizations.length, 1)
@@ -115,14 +102,7 @@ describe("clerkRequest", () => {
 		Effect.gen(function* () {
 			const { api } = fakeClerk(() => new Promise<Response>(() => {}))
 			const fiber = yield* Effect.forkChild(
-				Effect.flip(
-					clerkRequest(
-						api,
-						"Clerk.organizations.getOrganization",
-						{},
-						Clerk.getOrganization({ organization_id: "org_test" }),
-					),
-				),
+				Effect.flip(api.run(Clerk.getOrganization({ organization_id: "org_test" }))),
 			)
 			yield* TestClock.adjust(CLERK_REQUEST_TIMEOUT)
 			const error = yield* Fiber.join(fiber)

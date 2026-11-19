@@ -50,7 +50,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Hex from "effect/encoding/Hex"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import type { ClerkRequestError } from "@maple/backend/services/auth/clerk-request"
+import type { ClerkRequestError } from "@maple/auth"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import { ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -115,7 +115,7 @@ const undo = (what: string, effect: Effect.Effect<void, ClerkRequestError>) =>
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.logError(`Could not undo the Clerk ${what} Maple failed to record`).pipe(
-				Effect.annotateLogs({ operation: error.operation, error: error.message }),
+				Effect.annotateLogs({ error: error.message }),
 			),
 		),
 		Effect.ignore,
@@ -142,12 +142,12 @@ const fromClerk = (error: ClerkRequestError): SsoWriteError => {
 		case 404:
 			return new EnterpriseSsoNotFoundError({ message: error.message })
 		default:
-			return new EnterpriseSsoUnavailableError({ message: `${error.operation}: ${error.message}` })
+			return new EnterpriseSsoUnavailableError({ message: `Clerk: ${error.message}` })
 	}
 }
 
 const unavailable = (error: ClerkRequestError) =>
-	new EnterpriseSsoUnavailableError({ message: `${error.operation}: ${error.message}` })
+	new EnterpriseSsoUnavailableError({ message: `Clerk: ${error.message}` })
 
 /** Okta and Entra get Clerk's guided SCIM flavour; everything else pushes as a custom SCIM 2.0 client. */
 const directoryProviderFor = (provider: string): "okta" | "entra" | "custom" =>
@@ -491,7 +491,7 @@ export class EnterpriseSsoService extends Context.Service<EnterpriseSsoService, 
 								],
 								{ concurrency: "unbounded" },
 							).pipe(
-								Effect.catchTag("@maple/backend/services/auth/ClerkRequestError", (e) =>
+								Effect.catchTag("@maple/auth/ClerkRequestError", (e) =>
 									Effect.fail(unavailable(e)),
 								),
 							)

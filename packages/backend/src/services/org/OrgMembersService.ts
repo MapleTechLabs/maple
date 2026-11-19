@@ -8,7 +8,6 @@ import {
 } from "@maple/domain/http"
 import { Array as Arr, Context, Effect, Layer, Option, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { type ClerkApi, clerkModeApi } from "@maple/auth"
 
 export interface OrgMember {
@@ -92,25 +91,22 @@ const make = Effect.gen(function* () {
 	const listMemberships = (clerk: ClerkApi, orgId: OrgId) => {
 		const PAGE_SIZE = 100
 		return Stream.paginate(0, (offset: number) =>
-			clerkRequest(
-				clerk,
-				"Clerk.organizations.getOrganizationMembershipList",
-				{ orgId },
-				Clerk.listOrganizationMemberships({ organization_id: orgId, limit: PAGE_SIZE, offset }),
-			).pipe(
-				Effect.mapBoth({
-					onFailure: (cause) =>
-						new AlertMemberDirectoryUnavailableError({
-							message: `Failed to list workspace members for ${orgId}`,
-							cause,
-						}),
-					onSuccess: (page) => {
-						const next = offset + page.data.length
-						const done = next >= page.total_count || page.data.length === 0
-						return [page.data, done ? Option.none<number>() : Option.some(next)] as const
-					},
-				}),
-			),
+			clerk
+				.run(Clerk.listOrganizationMemberships({ organization_id: orgId, limit: PAGE_SIZE, offset }))
+				.pipe(
+					Effect.mapBoth({
+						onFailure: (cause) =>
+							new AlertMemberDirectoryUnavailableError({
+								message: `Failed to list workspace members for ${orgId}`,
+								cause,
+							}),
+						onSuccess: (page) => {
+							const next = offset + page.data.length
+							const done = next >= page.total_count || page.data.length === 0
+							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
+						},
+					}),
+				),
 		).pipe(Stream.runCollect)
 	}
 
@@ -153,12 +149,7 @@ const make = Effect.gen(function* () {
 		const users = yield* Effect.forEach(
 			Arr.chunksOf(userIds, 100),
 			(chunk) =>
-				clerkRequest(
-					clerk,
-					"Clerk.users.getUserList",
-					{ "maple.organization.member.requested_count": chunk.length },
-					Clerk.getUserList({ user_id: [...chunk], limit: chunk.length }),
-				).pipe(
+				clerk.run(Clerk.getUserList({ user_id: [...chunk], limit: chunk.length })).pipe(
 					Effect.mapError(
 						(cause) =>
 							new AlertMemberDirectoryUnavailableError({
@@ -190,20 +181,17 @@ const make = Effect.gen(function* () {
 				message: "Organization lookup requires Clerk authentication",
 			})
 		}
-		const page = yield* clerkRequest(
-			clerk,
-			"Clerk.users.getOrganizationMembershipList",
-			{ "tenant.userId": userId },
-			Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: 100 }),
-		).pipe(
-			Effect.mapError(
-				(cause) =>
-					new AlertMemberDirectoryUnavailableError({
-						message: `Failed to list the organizations of ${userId}`,
-						cause,
-					}),
-			),
-		)
+		const page = yield* clerk
+			.run(Clerk.usersGetOrganizationMemberships({ user_id: userId, limit: 100 }))
+			.pipe(
+				Effect.mapError(
+					(cause) =>
+						new AlertMemberDirectoryUnavailableError({
+							message: `Failed to list the organizations of ${userId}`,
+							cause,
+						}),
+				),
+			)
 		return Arr.map(page.data, (membership): UserOrganization => ({
 			orgId: membership.organization.id,
 			name: membership.organization.name,

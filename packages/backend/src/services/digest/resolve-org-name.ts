@@ -1,7 +1,6 @@
 import type { OrgId } from "@maple/domain/http"
 import * as Clerk from "@distilled.cloud/clerk"
 import { Effect } from "effect"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { type AuthEnv, clerkModeApi } from "@maple/auth"
 
 /**
@@ -17,12 +16,7 @@ export const resolveOrgName = Effect.fn("Digest.resolveOrgName")(function* (
 	const api = clerkModeApi(env)
 	if (api === undefined) return String(orgId)
 
-	return yield* clerkRequest(
-		api,
-		"Clerk.organizations.getOrganization",
-		{ orgId },
-		Clerk.getOrganization({ organization_id: orgId }),
-	).pipe(
+	return yield* api.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
 		Effect.map((org) => org.name || String(orgId)),
 		Effect.orElseSucceed(() => String(orgId)),
 	)

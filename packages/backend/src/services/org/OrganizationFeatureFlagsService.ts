@@ -19,7 +19,6 @@ import {
 import type { OrgId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { clerkApiFor } from "@maple/auth"
 
 /**
@@ -49,12 +48,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "no_clerk_secret")
 				return DISABLED_ORGANIZATION_FEATURE_FLAGS
 			}
-			return yield* clerkRequest(
-				clerk,
-				"Clerk.organizations.getOrganization",
-				{ orgId },
-				Clerk.getOrganization({ organization_id: orgId }),
-			).pipe(
+			return yield* clerk.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
 				Effect.map((organization) => organizationFeatureFlagsFrom(organization.public_metadata)),
 				Effect.catch((error) =>
 					Effect.logWarning(

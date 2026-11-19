@@ -19,7 +19,6 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { IntegrationOffboardingService } from "@maple/backend/services/integrations/IntegrationOffboardingService"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
@@ -107,12 +106,11 @@ export class OrganizationDeletionService extends Context.Service<
 				const clerk = Option.fromUndefinedOr(clerkModeApi(env))
 				if (Option.isNone(clerk)) return
 
-				yield* clerkRequest(
-					clerk.value,
-					"Clerk.organizations.deleteOrganization",
-					{ orgId },
-					Clerk.deleteOrganization({ organization_id: orgId }),
-				).pipe(Effect.mapError((error) => new OrganizationProviderError({ message: error.message })))
+				yield* clerk.value
+					.run(Clerk.deleteOrganization({ organization_id: orgId }))
+					.pipe(
+						Effect.mapError((error) => new OrganizationProviderError({ message: error.message })),
+					)
 			},
 		)
 

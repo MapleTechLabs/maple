@@ -41,7 +41,7 @@ describe("scanClaimedDomains", () => {
 			const error = yield* scanClaimedDomains(connections(250), "ent_0", ["partner.io"], 2).pipe(
 				Effect.flip,
 			)
-			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
+			assert.strictEqual(error._tag, "@maple/auth/ClerkRequestError")
 		}),
 	)
 
@@ -50,7 +50,7 @@ describe("scanClaimedDomains", () => {
 			const short = (offset: number) =>
 				offset === 0 ? connections(250)(0) : Effect.succeed({ totalCount: 250, data: [] })
 			const error = yield* scanClaimedDomains(short, "ent_0", ["partner.io"]).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
+			assert.strictEqual(error._tag, "@maple/auth/ClerkRequestError")
 		}),
 	)
 
@@ -86,7 +86,7 @@ describe("scanClaimedDomains", () => {
 						: { totalCount: 100, data: [] },
 				)
 			const error = yield* scanClaimedDomains(pages, "ent_0", ["partner.io"]).pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/backend/services/auth/ClerkRequestError")
+			assert.strictEqual(error._tag, "@maple/auth/ClerkRequestError")
 		}),
 	)
 })

@@ -21,7 +21,7 @@ import {
 } from "@maple/domain/organization-regions"
 import { Clock, Context, Effect, Fiber, HashMap, Layer, Option, Ref, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { type ClerkRequestError, clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import type { ClerkRequestError } from "@maple/auth"
 import { clerkModeApi } from "@maple/auth"
 
 /**
@@ -440,12 +440,7 @@ export class OrganizationRegionService extends Context.Service<
 				clerk,
 				(api): ReadDirectoryOrganization =>
 					(orgId) =>
-						clerkRequest(
-							api,
-							"Clerk.organizations.getOrganization",
-							{ orgId },
-							Clerk.getOrganization({ organization_id: orgId }),
-						).pipe(
+						api.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
 							Effect.map((org) =>
 								Option.some({
 									publicMetadata: org.public_metadata,

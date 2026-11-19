@@ -4,7 +4,6 @@ import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { clerkModeApi } from "@maple/auth"
 
 export interface OrgMembershipServiceApi {
@@ -165,16 +164,15 @@ const make = Effect.gen(function* () {
 	const listFromClerk = (userId: UserId) =>
 		collectMemberships((offset) => {
 			if (clerk === null) return Effect.fail(unavailable("Clerk is not configured"))
-			return clerkRequest(
-				clerk,
-				"Clerk.users.getOrganizationMembershipList",
-				{ "tenant.userId": userId },
-				Clerk.usersGetOrganizationMemberships({
-					user_id: userId,
-					limit: MEMBERSHIP_PAGE_SIZE,
-					offset,
-				}),
-			).pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
+			return clerk
+				.run(
+					Clerk.usersGetOrganizationMemberships({
+						user_id: userId,
+						limit: MEMBERSHIP_PAGE_SIZE,
+						offset,
+					}),
+				)
+				.pipe(Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: unavailable }))
 		})
 
 	const readShared = (userId: UserId) =>
@@ -213,12 +211,9 @@ const make = Effect.gen(function* () {
 	 */
 	const verifyPair = Effect.fn("OrgMembershipService.verifyPair")(function* (userId: UserId, orgId: OrgId) {
 		if (clerk === null) return yield* unavailable("Clerk is not configured")
-		const response = yield* clerkRequest(
-			clerk,
-			"Clerk.organizations.getOrganizationMembershipList",
-			{ "tenant.userId": userId, orgId },
-			Clerk.listOrganizationMemberships({ organization_id: orgId, user_id: [userId], limit: 1 }),
-		).pipe(Effect.mapError(unavailable))
+		const response = yield* clerk
+			.run(Clerk.listOrganizationMemberships({ organization_id: orgId, user_id: [userId], limit: 1 }))
+			.pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
 		if (membership === undefined) return Option.none<VerifiedOrgMembership>()

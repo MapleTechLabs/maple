@@ -26,7 +26,6 @@ import {
 } from "@maple/domain/http"
 import {
 	Clock,
-	Duration,
 	Effect,
 	Option,
 	Redacted,
@@ -36,7 +35,7 @@ import {
 	Record as Rec,
 	String as Str,
 } from "effect"
-import { type ClerkApi, type ClerkApiServices, clerkApiFor } from "./clerk-api"
+import { type ClerkApi, clerkApiFor } from "./clerk-api"
 
 /**
  * A self-hosted session is bounded by TWO clocks, because the HMAC key IS the
@@ -969,35 +968,6 @@ export const makeResolveMcpTenant = (
 
 type ClerkUser = Clerk.User
 
-class ClerkLookupError extends Schema.TaggedError<ClerkLookupError>()("@maple/auth/ClerkLookupError", {
-	operation: Schema.String,
-	cause: Schema.Defect(),
-}) {}
-
-const CLERK_LOOKUP_TIMEOUT = Duration.seconds(10)
-
-const clerkLookup = <A, E>(
-	api: ClerkApi,
-	spanName: string,
-	attributes: Readonly<Record<string, string>>,
-	request: Effect.Effect<A, E, ClerkApiServices>,
-): Effect.Effect<A, ClerkLookupError> =>
-	request.pipe(
-		// The api is credentials and the fetch client, built without a scope: safe per call.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(api),
-		Effect.mapError((cause) => new ClerkLookupError({ operation: spanName, cause })),
-		// Callers fall back to null; a stalled lookup must not hold the request.
-		Effect.timeoutOrElse({
-			duration: CLERK_LOOKUP_TIMEOUT,
-			orElse: () => Effect.fail(new ClerkLookupError({ operation: spanName, cause: "timed out" })),
-		}),
-		Effect.withSpan(spanName, {
-			kind: "client",
-			attributes: { "peer.service": "clerk", ...attributes },
-		}),
-	)
-
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
 	const primary = Arr.findFirst(u.email_addresses, (e) => e.id === u.primary_email_address_id)
 	return Option.getOrElse(
@@ -1037,12 +1007,7 @@ const makeUserEmailLookup =
 
 		return Effect.fn(spanName)(function* (userId: string) {
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-			const user = yield* clerkLookup(
-				api,
-				"Clerk.users.getUser",
-				{ "tenant.userId": userId },
-				Clerk.getUser({ user_id: userId }),
-			).pipe(Effect.option)
+			const user = yield* api.run(Clerk.getUser({ user_id: userId })).pipe(Effect.option)
 
 			return Option.match(user, {
 				onNone: () => null as string | null,
@@ -1070,18 +1035,8 @@ export const makeGetCustomerData = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLER
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "tenant.userId": tenant.userId })
 		const [user, org] = yield* Effect.all(
 			[
-				clerkLookup(
-					api,
-					"Clerk.users.getUser",
-					{ orgId: tenant.orgId, "tenant.userId": tenant.userId },
-					Clerk.getUser({ user_id: tenant.userId }),
-				).pipe(Effect.option),
-				clerkLookup(
-					api,
-					"Clerk.organizations.getOrganization",
-					{ orgId: tenant.orgId },
-					Clerk.getOrganization({ organization_id: tenant.orgId }),
-				).pipe(Effect.option),
+				api.run(Clerk.getUser({ user_id: tenant.userId })).pipe(Effect.option),
+				api.run(Clerk.getOrganization({ organization_id: tenant.orgId })).pipe(Effect.option),
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -1096,4 +1051,11 @@ export const makeGetCustomerData = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLER
 	})
 }
 
-export { type ClerkApi, type ClerkApiServices, clerkApiFor, makeClerkApi } from "./clerk-api"
+export {
+	type ClerkApi,
+	type ClerkApiServices,
+	CLERK_REQUEST_TIMEOUT,
+	clerkApiFor,
+	ClerkRequestError,
+	makeClerkApi,
+} from "./clerk-api"
