@@ -12,6 +12,9 @@
 	const CAPTURES = ".ledger .shot-crop, .ledger .media-crop";
 	const CELL = 14;
 	const RESOLVE_MS = 620;
+	// The rise's duration and per-line delay, as home-ledger.css sets them.
+	const RISE_MS = 760;
+	const RISE_STAGGER_MS = 85;
 
 	const belowFold = (el: Element) => el.getBoundingClientRect().top >= innerHeight;
 	/** Mostly past the right edge: a frame waiting in a phone's swipe strip. */
@@ -43,8 +46,13 @@
 
 	const rise = (headline: HTMLElement) => {
 		const node = headline.firstChild;
+		// Reduced motion turned on since the page loaded: the headline is simply drawn.
+		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+		if (still || !(node instanceof Text) || headline.childNodes.length !== 1) {
+			delete headline.dataset.rise;
+			return;
+		}
 		headline.dataset.rise = "play";
-		if (!(node instanceof Text) || headline.childNodes.length !== 1) return;
 		const text = node.data;
 		const lines = wrappedLines(node).map((line, i) => {
 			const mask = document.createElement("span");
@@ -55,17 +63,22 @@
 			mask.append(inner);
 			return mask;
 		});
-		if (lines.length === 0) return;
+		if (lines.length === 0) {
+			delete headline.dataset.rise;
+			return;
+		}
 		headline.replaceChildren(...lines);
-		// Back to plain text once drawn, so the headline wraps for itself on resize.
-		lines.at(-1)?.firstElementChild?.addEventListener(
-			"animationend",
-			() => {
-				headline.textContent = text;
-				delete headline.dataset.rise;
-			},
-			{ once: true },
-		);
+		// Back to plain text once drawn, so the headline wraps for itself on resize. A rise that is
+		// cancelled (reduced motion turned on, a print) never ends, so that and a timer restore it too.
+		const restore = () => {
+			if (headline.dataset.rise !== "play") return;
+			headline.textContent = text;
+			delete headline.dataset.rise;
+		};
+		const last = lines.at(-1)?.firstElementChild;
+		last?.addEventListener("animationend", restore, { once: true });
+		last?.addEventListener("animationcancel", restore, { once: true });
+		setTimeout(restore, RISE_MS + lines.length * RISE_STAGGER_MS + 400);
 	};
 
 	/** The page colour behind a frame: what the blocks are drawn in. */
