@@ -219,8 +219,8 @@ export const awsModuleGranted = (attached: ReadonlyArray<string> | null, module:
  * covered by another's policy counts), and no module policy is left attached that is not asked for.
  */
 export const awsGrantsMatch = (modules: ReadonlyArray<string>, attached: ReadonlyArray<string>): boolean =>
-	modules.every((module) => isAwsModule(module) && awsModuleGranted(attached, module)) &&
-	attached.every((module) => isAwsModule(module) && modules.includes(module))
+	Arr.every(modules, (module) => isAwsModule(module) && awsModuleGranted(attached, module)) &&
+	Arr.every(attached, (module) => isAwsModule(module) && modules.includes(module))
 
 export interface AwsSetupPlanInput {
 	readonly connectionId: AwsConnectionId
