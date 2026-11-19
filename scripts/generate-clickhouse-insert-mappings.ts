@@ -6,6 +6,10 @@ import { format } from "oxfmt"
 import { emitJsonPathSpec } from "../packages/domain/src/clickhouse/ddl-emitter"
 import { clickHouseSchemaVersion } from "../packages/domain/src/clickhouse/migrations"
 import { projectRevision as clickHouseProjectRevision } from "../packages/domain/src/generated/clickhouse-schema"
+import {
+	INGEST_INSERT_DATASOURCES,
+	INGEST_WRITTEN_DATASOURCES,
+} from "../packages/domain/src/tinybird/ingest-token"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
 
 const encodeJsonPretty = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -28,7 +32,8 @@ const SESSION_DATASOURCES = ["session_replays", "session_replay_events", "sessio
 
 const LOCAL_DATASOURCES = [...OTLP_DATASOURCES, ...SESSION_DATASOURCES] as const
 
-const INGEST_DATASOURCES = [...LOCAL_DATASOURCES, "product_events"] as const
+// The hosted gateway's list lives beside its warehouse token (`@maple/domain/tinybird/ingest-token`).
+const INGEST_DATASOURCES = INGEST_INSERT_DATASOURCES
 
 // Replaced by the Rust binary with the pinned, escaped org-id string literal.
 const ORG_PLACEHOLDER = "__ORG__"
@@ -221,6 +226,11 @@ function renderRustMappings(revision: string, datasources: Record<string, Dataso
 		lines.push("    },")
 	}
 	lines.push("];")
+	lines.push("")
+	lines.push("// Datasources the gateway's append-only warehouse token covers.")
+	lines.push(
+		`pub const APPEND_TOKEN_DATASOURCES: &[&str] = ${rustStringArray([...INGEST_WRITTEN_DATASOURCES])};`,
+	)
 	lines.push("")
 	lines.push("pub fn mapping_for(datasource: &str) -> Option<&'static InsertMapping> {")
 	lines.push("    match datasource {")

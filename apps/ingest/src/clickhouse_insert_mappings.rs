@@ -98,6 +98,9 @@ pub const DATASOURCES: &[InsertMapping] = &[
     },
 ];
 
+// Datasources the gateway's append-only warehouse token covers.
+pub const APPEND_TOKEN_DATASOURCES: &[&str] = &["traces", "logs", "metrics_sum", "metrics_gauge", "metrics_histogram", "metrics_exponential_histogram", "profiles", "session_replays", "session_replay_events", "session_events", "product_events", "audit_trail_events"];
+
 pub fn mapping_for(datasource: &str) -> Option<&'static InsertMapping> {
     match datasource {
         "traces" => Some(&DATASOURCES[0]),

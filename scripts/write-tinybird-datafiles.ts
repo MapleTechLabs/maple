@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { withIngestAppendToken } from "../packages/domain/src/tinybird/ingest-token"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
 
 // `tb` deploys the datafiles under `tinybird.json`'s `folder`, in the layout its
@@ -17,7 +18,11 @@ export const writeTinybirdDatafiles = (): string => {
 	] as const) {
 		mkdirSync(join(TINYBIRD_PROJECT_DIR, folder), { recursive: true })
 		for (const resource of resources) {
-			writeFileSync(join(TINYBIRD_PROJECT_DIR, folder, `${resource.name}${suffix}`), resource.content)
+			const content =
+				folder === "datasources"
+					? withIngestAppendToken(resource.name, resource.content)
+					: resource.content
+			writeFileSync(join(TINYBIRD_PROJECT_DIR, folder, `${resource.name}${suffix}`), content)
 		}
 	}
 	return manifest.projectRevision
