@@ -46,13 +46,13 @@ import {
 	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveAnthropicCostKey,
-	RequestCostSource,
 	SaveCloudflareCostToken,
 	SaveOpenAiCostKey,
 	SaveOpenRouterCostKey,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
+import * as FeatureRequest from "../page/kit/feature-request"
 import { Message as CostMessage } from "../page/cost/message"
 import { Model as CostModel, type Search } from "../page/cost/model"
 import { CredentialProvider } from "../page/cost/providers"
@@ -235,7 +235,11 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 				CostMessage.ClickedAddSource(),
 				CostMessage.ChangedProviderSearch({ value: "Hetzner" }),
 				CostMessage.ClickedRequestProvider(),
-				CostMessage.ChangedRequestNote({ value: "Cost per server and per project." }),
+				CostMessage.GotRequestMessage({
+					message: FeatureRequest.Message.ChangedNote({
+						value: "Cost per server and per project.",
+					}),
+				}),
 			]
 		case "add-openrouter":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openrouter" })]
@@ -609,8 +613,12 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: state === "openai-no-spend" ? Result.fail(noSpendKey) : Result.succeed(undefined),
 				}),
 			)
-		case RequestCostSource.name:
-			return Option.some(CostMessage.CompletedRequestSource({ result: Result.succeed(undefined) }))
+		case FeatureRequest.SendFeatureRequest.name:
+			return Option.some(
+				CostMessage.GotRequestMessage({
+					message: FeatureRequest.Message.CompletedSend({ result: Result.succeed(undefined) }),
+				}),
+			)
 		case RemoveAnthropicCostKey.name:
 			return Option.some(removedAnswer("anthropic"))
 		case RemoveOpenAiCostKey.name:

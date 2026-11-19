@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "a308e4acb44ff0b91956a55b56b4e40cf2f96c72fbb7fe49e94ddbca76ecb49d",
+	"id": "6b14d3c2952a19b40276767f565b4ed44138387b2defefc912bdb61c6f1716d8",
 	"prevIds": [
 		"568eab7b294477e2b44e78dd796b82944a55efdb18ca2c0e3bcd665e312d1f81"
 	],
@@ -339,16 +339,6 @@
 		},
 		{
 			"kind": "table",
-			"name": "cost_source_requests",
-			"primaryKey": {
-				"name": "cost_source_requests_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
 			"name": "cost_sources",
 			"primaryKey": {
 				"name": "cost_sources_pkey",
@@ -594,6 +584,16 @@
 			"name": "external_data_sources",
 			"primaryKey": {
 				"name": "external_data_sources_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "feature_requests",
+			"primaryKey": {
+				"name": "feature_requests_pkey",
 				"columns": [
 					"id"
 				]
@@ -6445,66 +6445,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "user_id",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "provider",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "note",
-			"position": 4,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "cost_source_requests",
-			"name": "created_at",
-			"position": 5,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "cost_sources",
 			"name": "id",
 			"position": 0,
@@ -9849,6 +9789,76 @@
 			"name": "updated_by",
 			"position": 23,
 			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "user_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "area",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "subject",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "note",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "feature_requests",
+			"name": "created_at",
+			"position": 6,
+			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
 			"identity": null
@@ -21511,17 +21521,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "cost_source_requests",
-			"name": "cost_source_requests_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "cost_sources",
 			"name": "cost_sources_org_provider_ref_idx",
 			"unique": true,
@@ -22150,6 +22149,29 @@
 			"columns": [
 				"\"org_id\"",
 				"\"name\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "feature_requests",
+			"name": "feature_requests_area_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"area\"",
+				"\"created_at\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "feature_requests",
+			"name": "feature_requests_org_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\""
 			],
 			"where": null
 		},

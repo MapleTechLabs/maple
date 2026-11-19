@@ -3,6 +3,7 @@ import { CostProvider } from "@maple/domain/cost"
 import { Array as Arr, String as Str, Struct } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { icon } from "@maple/views/ui/icon"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { badge } from "@maple/views/ui/display"
@@ -186,12 +187,8 @@ const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>
 						actions: [
 							button(
 								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedRequestProvider())],
-								},
-								[`Request ${Str.trim(model.providerSearch)}`],
+								{ size: "sm", attributes: [h.OnClick(Message.ClickedRequestProvider())] },
+								[icon(h, "PlusIcon"), `Request ${Str.trim(model.providerSearch)}`],
 							),
 						],
 						className: "py-8",
@@ -212,6 +209,21 @@ const providers = (h: H, model: Model, sources: ReadonlyArray<CostSourceSummary>
 								]),
 							]
 				})),
+		// After the cards, where someone who did not find theirs is still looking.
+		...(shown.length === 0
+			? []
+			: [
+					button(
+						h,
+						{
+							variant: "dashed",
+							size: "lg",
+							className: "w-full",
+							attributes: [h.OnClick(Message.ClickedRequestProvider())],
+						},
+						[icon(h, "PlusIcon"), "Don't see your provider? Request it"],
+					),
+				]),
 		typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 			`AWS bills USD\u00a00.01 for each request Maple makes, a few dollars a month per account. ${FREE_REQUESTS} requests are free. `,
 			textLink(h, { href: AWS_INTEGRATION_HREF, tone: "inherit", className: "underline" }, [
@@ -501,18 +513,6 @@ export const addSourceDialog = (h: H, model: Model, sources: ReadonlyArray<CostS
 													providers(h, model, sources),
 												]),
 												DialogView.dialogFooter(h, "dialog", [
-													// Left, apart from Close: the way on when the provider is not listed.
-													button(
-														h,
-														{
-															variant: "ghost",
-															className: "sm:mr-auto",
-															attributes: [
-																h.OnClick(Message.ClickedRequestProvider()),
-															],
-														},
-														["Request a provider"],
-													),
 													button(
 														h,
 														{ variant: "outline", attributes: [...close] },

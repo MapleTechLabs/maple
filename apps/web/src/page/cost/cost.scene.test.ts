@@ -48,6 +48,7 @@ import {
 	seriesLabels,
 	withFilter,
 } from "./derive"
+import * as FeatureRequest from "../kit/feature-request"
 import { Message } from "./message"
 import { type Model, type Search, sourcesOf } from "./model"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
@@ -2955,20 +2956,22 @@ describe("the provider search", () => {
 })
 
 describe("requesting a provider", () => {
+	const request = (model: Model, message: FeatureRequest.Message) =>
+		pageUpdate(model, Message.GotRequestMessage({ message }))
 	const typedProvider = (model: Model, value: string) =>
-		pageUpdate(
+		request(
 			model,
-			Message.GotRequestProviderMessage({ message: Field.Message.ChangedValue({ value }) }),
+			FeatureRequest.Message.GotSubjectMessage({ message: Field.Message.ChangedValue({ value }) }),
 		).model
 
-	test("a search that matches nothing offers to request it, with the search as the provider", () => {
+	test("the providers end with a request button; a search that matches nothing offers its own", () => {
 		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
 		scene(
 			{ update: pageUpdate, view },
 			given(opened),
 			resolveTheme,
 			dialogMounted,
-			expectView(role("button", { name: "Request a provider" })).toExist(),
+			expectView(role("button", { name: "Don't see your provider? Request it" })).toExist(),
 		)
 		const none = pageUpdate(opened, Message.ChangedProviderSearch({ value: " Hetzner " })).model
 		scene(
@@ -2987,42 +2990,46 @@ describe("requesting a provider", () => {
 		expect([back.addStep, back.providerSearch]).toEqual(["pick", " Hetzner "])
 	})
 
-	test("sends the provider and note trimmed, then closes with a thanks; a failure stays in the step", () => {
+	test("sends the provider and note trimmed as a cost source request, then closes with a thanks", () => {
 		const form = pageUpdate(
 			pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model,
 			Message.ClickedRequestProvider(),
 		).model
 		// Nothing typed sends nothing.
-		expect(names(pageUpdate(form, Message.SubmittedRequest()).commands)).toEqual([])
+		expect(names(request(form, FeatureRequest.Message.Submitted()).commands)).toEqual([])
 
-		const withNote = pageUpdate(
+		const withNote = request(
 			typedProvider(form, "  Datadog "),
-			Message.ChangedRequestNote({ value: "  per monitor  " }),
+			FeatureRequest.Message.ChangedNote({ value: "  per monitor  " }),
 		).model
-		const sending = pageUpdate(withNote, Message.SubmittedRequest())
+		const sending = request(withNote, FeatureRequest.Message.Submitted())
 		expect(sending.commands).toMatchObject([
-			{ name: "RequestCostSource", args: { provider: "Datadog", note: "per monitor" } },
+			{
+				name: "SendFeatureRequest",
+				args: { area: "cost_source", subject: "Datadog", note: "per monitor" },
+			},
 		])
-		// A second submit while the first is in flight sends nothing more.
-		expect(names(pageUpdate(sending.model, Message.SubmittedRequest()).commands)).toEqual([])
+		// A second submit while the first is in flight sends nothing more, and the dialog stays.
+		expect(names(request(sending.model, FeatureRequest.Message.Submitted()).commands)).toEqual([])
+		expect(pageUpdate(sending.model, Message.ClickedBackToProviders()).model.addStep).toBe("request")
 
 		// A name the request would refuse is never sent.
-		const tooLong = pageUpdate(typedProvider(form, Str.repeat(81)("a")), Message.SubmittedRequest())
+		const tooLong = request(typedProvider(form, Str.repeat(81)("a")), FeatureRequest.Message.Submitted())
 		expect(names(tooLong.commands)).toEqual([])
-		expect(tooLong.model.requestError).toBe("Use a shorter name for the provider.")
+		expect(tooLong.model.request.error).toBe("Use a shorter name.")
 
-		const failed = pageUpdate(
+		const failed = request(
 			sending.model,
-			Message.CompletedRequestSource({
+			FeatureRequest.Message.CompletedSend({
 				result: Result.fail({
 					...toLoadFailure("unavailable"),
 					message: "Try again in a few seconds.",
 				}),
 			}),
 		).model
-		expect([failed.addDialog.isOpen, failed.sourceWrite, failed.requestProviderDraft.value]).toEqual([
+		expect([failed.addDialog.isOpen, failed.request.isSending, failed.request.subject.value]).toEqual([
 			true,
-			"Idle",
+			false,
 			"  Datadog ",
 		])
 		scene(
@@ -3033,12 +3040,12 @@ describe("requesting a provider", () => {
 			expectView(role("alert")).toHaveText("Try again in a few seconds."),
 		)
 
-		const sent = pageUpdate(
+		const sent = request(
 			sending.model,
-			Message.CompletedRequestSource({ result: Result.succeed(undefined) }),
+			FeatureRequest.Message.CompletedSend({ result: Result.succeed(undefined) }),
 		)
 		expect(sent.model.addDialog.isOpen).toBe(false)
-		expect([sent.model.requestProviderDraft.value, sent.model.requestNote]).toEqual(["", ""])
+		expect([sent.model.request.subject.value, sent.model.request.note]).toEqual(["", ""])
 		expect(sent.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",

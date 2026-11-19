@@ -1,6 +1,4 @@
 import {
-	COST_SOURCE_REQUEST_NOTE_MAX_LENGTH,
-	COST_SOURCE_REQUEST_PROVIDER_MAX_LENGTH,
 	type CostSourceSummary,
 	CostSourcesResponse,
 	PLANETSCALE_COST_RECONNECT_CODE,
@@ -29,6 +27,7 @@ import { applySteps, chain, keyed } from "../kit/keyed-step"
 import { pickerStep } from "../kit/page-time"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
+import * as FeatureRequest from "../kit/feature-request"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	AddGcpCostSource,
@@ -52,7 +51,6 @@ import {
 	RemoveGithubCostSource,
 	RemovePlanetScaleCostSource,
 	RemoveVercelCostSource,
-	RequestCostSource,
 	ResolveWindow,
 	type TimeseriesInput,
 	type WindowInput,
@@ -223,9 +221,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpTableDraft: Field.init(),
 		gcpError: null,
 		gcpCommandCopy: CopyButton.init(),
-		requestProviderDraft: Field.init(),
-		requestNote: "",
-		requestError: null,
+		request: FeatureRequest.init("cost_source"),
 		githubInstallations: AsyncData.Idle(),
 		githubRead: 0,
 		githubAdding: null,
@@ -277,9 +273,7 @@ const clearedDialog = (model: Model): Model => ({
 	planetscaleError: null,
 	gcpTableDraft: Field.init(),
 	gcpError: null,
-	requestProviderDraft: Field.init(),
-	requestNote: "",
-	requestError: null,
+	request: FeatureRequest.init("cost_source"),
 })
 
 /**
@@ -624,7 +618,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddSource: () => openAdd(model, "pick"),
 		PickedProvider: ({ provider }) => ({ model: { ...clearedDialog(model), addStep: provider } }),
 		ClickedBackToProviders: () =>
-			model.sourceWrite === "Idle"
+			model.sourceWrite === "Idle" && !model.request.isSending
 				? { model: { ...clearedDialog(model), addStep: "pick" } }
 				: { model },
 		ClickedReplaceCredential: ({ provider }) => openAdd(model, provider),
@@ -636,62 +630,33 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: {
 							...clearedDialog(model),
 							addStep: "request",
-							requestProviderDraft: Field.init(Str.trim(model.providerSearch)),
+							request: FeatureRequest.init("cost_source", model.providerSearch),
 						},
 					},
-		GotRequestProviderMessage: ({ message: inner }) =>
-			model.sourceWrite === "Saving"
-				? { model }
-				: {
-						model: {
-							...model,
-							requestProviderDraft: Field.update(model.requestProviderDraft, inner).model,
-							requestError: inner._tag === "ChangedValue" ? null : model.requestError,
-						},
-					},
-		ChangedRequestNote: ({ value }) =>
-			model.sourceWrite === "Saving" ? { model } : { model: { ...model, requestNote: value } },
-		SubmittedRequest: () => {
-			const provider = Str.trim(model.requestProviderDraft.value)
-			const note = Str.trim(model.requestNote)
-			if (provider === "" || model.sourceWrite !== "Idle") return { model }
-			// The request refuses longer text before it is sent, which would leave it unanswered.
-			if (provider.length > COST_SOURCE_REQUEST_PROVIDER_MAX_LENGTH) {
-				return { model: { ...model, requestError: "Use a shorter name for the provider." } }
+		GotRequestMessage: ({ message: inner }) => {
+			const step = FeatureRequest.update(model.request, inner)
+			const next: Return = {
+				model: { ...model, request: step.model },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotRequestMessage({ message }),
+				),
 			}
-			if (note.length > COST_SOURCE_REQUEST_NOTE_MAX_LENGTH) {
-				return {
-					model: {
-						...model,
-						requestError: `Keep the note under ${COST_SOURCE_REQUEST_NOTE_MAX_LENGTH} characters.`,
-					},
-				}
-			}
+			if (step.outMessage === undefined) return next
+			// Sent: the dialog closes and thanks them.
+			const closed = liftAddDialog(clearedDialog(next.model), Dialog.close(model.addDialog))
 			return {
-				model: { ...model, sourceWrite: "Saving", requestError: null },
-				commands: [RequestCostSource({ provider, note })],
+				...closed,
+				commands: [...(closed.commands ?? []), ...(next.commands ?? [])],
+				outMessage: toast(
+					"success",
+					"Request sent",
+					"Thanks. Requests decide which source Maple reads next.",
+				),
 			}
 		},
-		CompletedRequestSource: ({ result }) =>
-			Result.match(result, {
-				onFailure: (failure): Return => ({
-					model: { ...model, sourceWrite: "Idle", requestError: failureMessage(failure) },
-				}),
-				onSuccess: (): Return => ({
-					...liftAddDialog(
-						clearedDialog({ ...model, sourceWrite: "Idle" }),
-						Dialog.close(model.addDialog),
-					),
-					outMessage: toast(
-						"success",
-						"Request sent",
-						"Thanks. Requests decide which source Maple reads next.",
-					),
-				}),
-			}),
 		// A save in flight keeps the dialog: its answer decides whether it closes.
 		GotAddDialogMessage: ({ message: inner }) => {
-			if (model.sourceWrite === "Saving") return { model }
+			if (model.sourceWrite === "Saving" || model.request.isSending) return { model }
 			const step = Dialog.update(model.addDialog, inner)
 			const lifted = liftAddDialog(model, step)
 			return step.outMessage?._tag === "Closed"
