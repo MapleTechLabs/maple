@@ -185,7 +185,7 @@ In the [REST API](/docs/reference/api), pages live under `/v2/status_pages` (sco
 | `GET`, `PATCH`, `DELETE /v2/status_page_incidents/{id}`    | Read, edit or delete one                                                         |
 | `POST /v2/status_page_incidents/{id}/updates`              | Post an update; `resolved` or `completed` closes it                              |
 
-Writes to a page need the engineer role; the password and break-glass endpoints, and any change to `visibility`, need an admin. The custom domain is not part of the config document. There is no Terraform or Pulumi resource for status pages.
+Writes to a page need the engineer role; the password and break-glass endpoints, and any change to `visibility`, need an admin. The custom domain is not part of the config document. To declare a page in code, use [`Maple.StatusPage`](/docs/iac/alchemy-resources#maplestatuspage) in Alchemy or [`maple_status_page`](/docs/iac/terraform-resources#maple_status_page) in Terraform; there is no Pulumi resource.
 
 ## Limits
 

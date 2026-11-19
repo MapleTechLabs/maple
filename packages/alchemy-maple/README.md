@@ -19,7 +19,10 @@ import { Effect, Layer } from "effect"
 
 export default Alchemy.Stack(
 	"my-app",
-	{ providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()) },
+	{
+		providers: Layer.mergeAll(Cloudflare.providers(), Maple.providers()),
+		state: Cloudflare.state(),
+	},
 	Effect.gen(function* () {
 		// A notification channel…
 		const oncall = yield* Maple.AlertDestination("oncall", {
