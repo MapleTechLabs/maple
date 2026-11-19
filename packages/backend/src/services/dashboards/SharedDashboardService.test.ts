@@ -444,6 +444,26 @@ describe("SharedDashboardService isolation", () => {
 		}
 	})
 
+	it("replaces an expired link with one that resolves, and keeps a future expiry on replace", async () => {
+		const { runtime } = makeRuntime("maple-test-share-secret")
+		try {
+			const dashboardId = await createDashboard(runtime, ORG_A, USER_A)
+			const scope = { dashboardId, widgetId: null }
+			await runtime.runPromise(shares((s) => s.upsert(ORG_A, USER_A, scope, "public", Date.now() - 1000)))
+			const replaced = await runtime.runPromise(shares((s) => s.rotate(ORG_A, USER_A, scope)))
+			expect(replaced.expiresAt).toBeUndefined()
+			const live = await runtime.runPromise(shares((s) => s.resolveByToken(replaced.token)))
+			expect(live.share.id).toBe(replaced.id)
+
+			const later = Date.now() + 60 * 60 * 1000
+			await runtime.runPromise(shares((s) => s.upsert(ORG_A, USER_A, scope, "public", later)))
+			const kept = await runtime.runPromise(shares((s) => s.rotate(ORG_A, USER_A, scope)))
+			expect(kept.expiresAt).toBe(new Date(later).toISOString())
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
 	it("ends a chart link when its board link expires", async () => {
 		const { runtime, testDb } = makeRuntime("maple-test-share-secret")
 		try {

@@ -479,13 +479,16 @@ export class SharedDashboardService extends Context.Service<
 				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
-			// A new token for the same link: the expiry carries over with the mode.
+			// A new token for the same link: the mode carries over, and the expiry while it is
+			// still ahead. An expired link comes back with no expiry; the dialog shows it.
+			const carriedExpiry =
+				existing.expiresAt !== null && existing.expiresAt > now ? existing.expiresAt : null
 			const { rawToken, values } = yield* mintRow(
 				orgId,
 				userId,
 				scope,
 				existing.mode,
-				existing.expiresAt,
+				carriedExpiry,
 				hmacKey,
 				now,
 			)
