@@ -4,6 +4,7 @@ import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import { isUnlabelledError, spanErrorLabel } from "./fingerprint-labels"
+import { withKeyLogAttributes } from "./search-logs"
 import type { TimeRange } from "./types"
 
 const LOG_WINDOW_HALF_WIDTH_MS = 60 * 60 * 1000
@@ -41,7 +42,13 @@ export interface ErrorDetailTrace {
 	readonly startTime: string
 	readonly errorMessage: string
 	readonly errorSpan: ErrorDetailSpan | undefined
-	readonly logs: ReadonlyArray<{ timestamp: string; severityText: string; body: string }>
+	readonly logs: ReadonlyArray<{
+		timestamp: string
+		severityText: string
+		body: string
+		/** Cause-bearing attributes (`log.error`, `exception.*`, ...), when the log has any. */
+		keyAttributes?: Readonly<Record<string, string>>
+	}>
 }
 
 const errorSpanOf = (t: ErrorDetailTracesRow): ErrorDetailSpan | undefined => {
@@ -331,6 +338,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 							timestamp: l.timestamp,
 							severityText: l.severityText || "INFO",
 							body: l.body,
+							...withKeyLogAttributes(l),
 						})),
 					),
 					Arr.take(5),

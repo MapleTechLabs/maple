@@ -22,7 +22,17 @@ import type { PrReviewServiceApi } from "@maple/backend/services/pr-review/PrRev
 import type { OrgId } from "@maple/primitives"
 import { CodeLoader } from "@maple/backend/platform/bindings"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
-import { Effect, Layer, ManagedRuntime, Match, Option, Redacted, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Match,
+	Option,
+	Redacted,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { WorkersAiBinding } from "../platform/WorkersAiHttpClient"
 import { ReturnedToolFailuresOkLive } from "../platform/genai-spans"
@@ -35,10 +45,14 @@ import {
 	releaseChatRuntime,
 } from "./do-runtime"
 import { INVESTIGATION_PROGRESS_HEARTBEAT, makeProgressFeed, parseToolInput, stepLabel } from "./progress"
-import { makeChildFindings } from "./review/child-findings"
-import { makeReviewCoverage } from "./review/coverage"
+import {
+	checkpointedReviewState,
+	decodeReviewCheckpoint,
+	encodeReviewCheckpoint,
+	fileAbandonedReview,
+	type ReviewCheckpoint,
+} from "./review/checkpoint"
 import { reviewFailureError } from "./review/failure"
-import { makeReviewLedger } from "./review/ledger"
 import { diagnosisCompletion } from "./investigation"
 import { replyCompletion } from "./reply"
 import {
@@ -82,8 +96,13 @@ export interface RunChatSessionTurnInput extends ChatRuntimeInput {
 	 * `userMessageId`, followed by the dead attempt; the run reads from the kickoff, not the tail.
 	 */
 	readonly resume?: { readonly userMessageId: string; readonly text: string; readonly attempt: number }
-	/** The turn was evicted too often to start again: record that it failed, and run nothing. */
-	readonly abandoned?: true
+	/** The message the turn answers, and when it was recorded; a restart shares both. */
+	readonly kickoff: { readonly userMessageId: string; readonly startedAt?: number }
+	/**
+	 * The turn was evicted too often to start again: settle it, and run nothing. `attempts` is how
+	 * many ran; `fileFindings` files what they saved as a partial before failing the review.
+	 */
+	readonly abandoned?: { readonly attempts: number; readonly fileFindings: boolean }
 	/** Aborted, with a `ChatAbortReason`, when the session aborts this turn: the run is interrupted. */
 	readonly signal?: AbortSignal
 }
@@ -305,6 +324,57 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const prReviewId = row?.kind === "pr-review" ? row.id : undefined
 	const prReplyId = row?.kind === "pr-reply" ? row.id : undefined
 
+	const kickoffId = input.kickoff.userMessageId
+	/** Every checkpoint write is best effort: losing one costs only what a reset would lose. */
+	const checkpointWrite = (message: string, write: () => void) =>
+		Effect.try({
+			try: write,
+			catch: (cause) => new ChatRuntimeStepError({ message, cause }),
+		}).pipe(
+			Effect.catchCause((cause) =>
+				Effect.logWarning(message, cause).pipe(
+					Effect.annotateLogs({ sessionId: input.sessionId, messageId: input.messageId }),
+				),
+			),
+		)
+	const readCheckpoint = Effect.try({
+		try: () => decodeReviewCheckpoint(input.session.reviewCheckpoint(kickoffId)),
+		catch: (cause) =>
+			new ChatRuntimeStepError({ message: "Failed to read the review checkpoint", cause }),
+	}).pipe(
+		Effect.catchCause((cause) =>
+			Effect.logWarning("Failed to read the review checkpoint", cause).pipe(
+				Effect.as(Option.none<ReviewCheckpoint>()),
+			),
+		),
+	)
+	// Called from tool handlers' synchronous callbacks, so it runs where it is called.
+	const saveCheckpoint = (checkpoint: ReviewCheckpoint) =>
+		Effect.runSync(
+			checkpointWrite("Failed to save the review checkpoint", () =>
+				input.session.saveReviewCheckpoint(kickoffId, encodeReviewCheckpoint(checkpoint)),
+			),
+		)
+	/** Once the review is filed or given up, nothing reads it again. */
+	const clearCheckpoint = checkpointWrite("Failed to clear the review checkpoint", () =>
+		input.session.clearReviewCheckpoint(kickoffId),
+	)
+	/**
+	 * Which attempt of the review this is (1 is the first) and how long since the first one started,
+	 * so a review that keeps being reset shows how far each attempt got.
+	 */
+	const annotateReviewAttempt = (attempt: number) =>
+		Effect.gen(function* () {
+			if (prReviewId === undefined) return
+			const now = yield* Clock.currentTimeMillis
+			const startedAt = input.kickoff.startedAt
+			yield* Effect.annotateCurrentSpan({
+				"maple.pr_review.attempt": attempt,
+				...(attempt > 1 ? { "maple.pr_review.resume_attempt": attempt - 1 } : undefined),
+				...(startedAt === undefined ? undefined : { "maple.pr_review.elapsed_ms": now - startedAt }),
+			})
+		})
+
 	const turnBody = (orgKey: Option.Option<Redacted.Redacted>) =>
 		Effect.gen(function* () {
 			const investigations = yield* InvestigationService
@@ -330,23 +400,65 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				),
 			)
 			if (runTenant === undefined) return yield* annotateTurn()
-			if (input.abandoned === true) {
+			if (input.abandoned !== undefined) {
 				observability.outcome = "abandoned"
-				yield* settleAbandonedTurn({
-					orgId: tenant.orgId,
-					prReviewId,
-					prReplyId,
-					reviewInterrupted: reviewFailureError("interrupted"),
-					failReview: (orgId, id, error) => reviews.failReview(orgId, id, error),
-					failReply: (orgId, id, error) => conversations.failReply(orgId, id, error),
-				})
+				const abandoned = input.abandoned
+				yield* annotateReviewAttempt(abandoned.attempts)
+				// Uninterruptible: a stop mid-filing would otherwise leave the row `running` for good.
+				yield* Effect.uninterruptible(
+					Effect.gen(function* () {
+						// A review the last attempt filed before the reset needs only its checkpoint dropped.
+						const active =
+							prReviewId === undefined
+								? false
+								: yield* reviews.getReview(tenant.orgId, prReviewId).pipe(
+										Effect.map(
+											Option.match({
+												onNone: () => false,
+												onSome: (review) =>
+													review.status === "queued" || review.status === "running",
+											}),
+										),
+										Effect.catchCause(() => Effect.succeed(true)),
+									)
+						// What the dead attempts found is filed as a partial; a review with nothing saved, or
+						// whose filing was itself reset, is failed as interrupted.
+						const filedPartial =
+							prReviewId !== undefined && active && abandoned.fileFindings
+								? yield* fileAbandonedReview({
+										checkpoint: yield* readCheckpoint,
+										submit: (request) =>
+											reviews.submitReview(tenant.orgId, prReviewId, request),
+									})
+								: false
+						if (prReviewId !== undefined) {
+							yield* Effect.annotateCurrentSpan(
+								"maple.pr_review.filed_abandoned_partial",
+								filedPartial,
+							)
+						}
+						yield* clearCheckpoint
+						yield* settleAbandonedTurn({
+							orgId: tenant.orgId,
+							prReviewId: filedPartial || !active ? undefined : prReviewId,
+							prReplyId,
+							reviewInterrupted: reviewFailureError("interrupted"),
+							failReview: (orgId, id, error) => reviews.failReview(orgId, id, error),
+							failReply: (orgId, id, error) => conversations.failReply(orgId, id, error),
+						})
+						// The settle run ends on what it posted, not on the session's generic failure.
+						if (filedPartial) input.session.endTurn(input.messageId, { reason: "stop" })
+					}),
+				)
 				yield* annotateTurn()
 				return
 			}
 			// The dead attempt may have filed its report, or a newer head superseded it, before the
 			// object went down: then there is nothing left to run.
+			if (prReviewId !== undefined && autonomous) {
+				yield* annotateReviewAttempt((input.resume?.attempt ?? 0) + 1)
+			}
 			if (prReviewId !== undefined && input.resume !== undefined) {
-				yield* Effect.annotateCurrentSpan("maple.pr_review.resume_attempt", input.resume.attempt)
 				// An unreadable row reviews anyway: the row's own guards still refuse a second report.
 				const current = yield* reviews
 					.getReview(tenant.orgId, prReviewId)
@@ -562,13 +674,15 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						? spoken.slice(0, -1)
 						: spoken
 			// One per review turn: the close-out sees what the pass read and keeps what it saved.
+			// Seeded from, and saved to, the turn's checkpoint, so its findings outlive a reset.
 			const review: ReviewTurnState | undefined =
 				prReviewId !== undefined && autonomous
-					? {
-							coverage: makeReviewCoverage(text),
-							ledger: makeReviewLedger(),
-							childFindings: makeChildFindings(),
-						}
+					? checkpointedReviewState({
+							kickoff: text,
+							model: model.name,
+							prior: yield* readCheckpoint,
+							save: saveCheckpoint,
+						})
 					: undefined
 			// The autonomous pass's tool calls show on the investigation row until its report is on its way. A failed write is logged and dropped: it is only a feed.
 			const investigationFeed =
@@ -619,7 +733,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 										prReviewId,
 										withPartialReason(request, outcome.failure()),
 									),
-								),
+								).pipe(Effect.tap(() => clearCheckpoint)),
 							)
 						: prReplyId !== undefined
 							? replyCompletion(origin, {
@@ -710,7 +824,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						review,
 						modelName: model.name,
 						usage,
-						submit: (request) => reviews.submitReview(tenant.orgId, prReviewId, request),
+						submit: (request) =>
+							reviews
+								.submitReview(tenant.orgId, prReviewId, request)
+								.pipe(Effect.tap(() => clearCheckpoint)),
 					})
 				}
 				yield* failUnfinished(outcome.failure() ?? "no_report", NO_DIAGNOSIS_ERROR)

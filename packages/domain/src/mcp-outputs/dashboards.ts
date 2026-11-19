@@ -232,6 +232,8 @@ export const InspectChartDataOutput = Schema.Struct({
 		hasUnsupportedTransform: Schema.Boolean,
 	}),
 	timeRange: InspectionTimeRange,
+	/** The dashboard variables the widget references and the value each ran with (`$__all` for All). */
+	variables: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	queries: Schema.Array(InspectChartQueryResult),
 	verdict: InspectChartVerdict,
 	flags: Schema.Array(InspectChartFlag),

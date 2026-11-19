@@ -67,6 +67,7 @@ import {
 	WITHDRAWAL_FAILURE_MARKER,
 	withReviewStatus,
 } from "./PrReviewService"
+import { FEEDBACK_EXAMPLE_PAGE } from "./feedback"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
 import {
 	PrReviewTelemetryService,
@@ -1673,6 +1674,32 @@ describe("PrReviewService.submitReview feedback filter", () => {
 				),
 				[NOISE, NOISE, OTHER],
 			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("reads votes past the first page of examples, which share one timestamp", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			// Every vote is created at once, so the page order falls to the id: `vote-…-0`, `-1` and
+			// `-10` sort last, after a full page of votes about something else.
+			const late = new Set([0, 1, 10])
+			yield* seedVotes(
+				repositoryId,
+				Array.from({ length: FEEDBACK_EXAMPLE_PAGE + 50 }, (_, i) => ({
+					status: "dismissed" as const,
+					embedding: late.has(i) ? NOISE : OTHER,
+				})),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0].comments.length, 0)
 		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
 	})
 

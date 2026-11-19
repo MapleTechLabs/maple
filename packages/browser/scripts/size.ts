@@ -79,8 +79,10 @@ const BUDGET = {
 	 * 20: the OTLP exporter moved from an external dependency into first-party code; eager fell 43.67 → 41.28 kB.
 	 * 25.5 since 2026-11: CORS-safe trace propagation (strip the sampling `ot` member on
 	 * cross-origin requests only), prefix CORS URLs and the no-response status cleanup (~0.2 kB).
+	 * 26: requests a reload cancels are not errors (spans and their rejections), and
+	 * `errors.ignoreNetworkFailuresFor`, sampled-out sessions included (~0.55 kB).
 	 */
-	firstParty: 25.5,
+	firstParty: 26,
 }
 
 /** How close to a ceiling counts as worth warning about. */

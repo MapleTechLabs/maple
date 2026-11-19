@@ -412,7 +412,12 @@ describe("runChatTurn review refusals", () => {
 			completion: reviewCompletion(
 				{ kind: "autonomous" },
 				{
-					coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
+					coverage: {
+						observe: () => {},
+						unread: () => ["src/b.ts"],
+						wholeDiff: () => true,
+						progress: () => ({ due: [], read: [] }),
+					},
 					ledger: makeReviewLedger(),
 					childFindings: makeChildFindings(),
 				},

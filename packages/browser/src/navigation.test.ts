@@ -53,6 +53,7 @@ const CONFIG = {
 	captureUserEmail: true,
 	respectDoNotTrack: false,
 	propagateTraceHeaderCorsUrls: [],
+	ignoreNetworkFailuresFor: [],
 	tracingSampleRate: 1,
 	tracingInstrumentXhr: false,
 	errorFilters: {},

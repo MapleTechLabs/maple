@@ -19,6 +19,8 @@ export interface ReviewCoverage {
 	 * not only what changed since. Without a listing nothing is due, so nothing was checked.
 	 */
 	readonly wholeDiff: () => boolean
+	/** The reviewed files due and the ones read so far, for a checkpoint. */
+	readonly progress: () => { readonly due: ReadonlyArray<string>; readonly read: ReadonlyArray<string> }
 }
 
 /**
@@ -44,6 +46,7 @@ export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 		},
 		unread: () => Arr.filter([...due], (path) => !read.has(path)),
 		wholeDiff: () => scope === undefined && listed,
+		progress: () => ({ due: [...due], read: [...read] }),
 	}
 }
 

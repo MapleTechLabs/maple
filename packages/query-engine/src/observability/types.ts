@@ -104,6 +104,8 @@ export interface InspectTraceOutput {
 		readonly serviceName: string
 		readonly body: string
 		readonly spanId: string
+		/** Cause-bearing attributes (`log.error`, `exception.*`, ...), when the log has any. */
+		readonly keyAttributes?: Readonly<Record<string, string>>
 	}>
 }
 
