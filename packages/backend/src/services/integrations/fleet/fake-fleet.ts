@@ -46,6 +46,8 @@ export interface FakeFleet {
 	orgName: string
 	tier: string
 	activities: Array<FakeFleetActivity>
+	/** An older server that pages from the start whatever `after` says. */
+	ignoresAfter: boolean
 	hostCount: number
 	policies: Array<FakeFleetPolicy>
 	/** The devices failing each policy, by policy id. */
@@ -58,7 +60,7 @@ const PREFIX = "/api/v1/fleet"
 
 /** `GET /activities` as Fleet pages it: `order_key=id` with `after` is a keyset cursor. */
 const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
-	const after = search.get("after")
+	const after = world.ignoresAfter ? null : search.get("after")
 	const start = search.get("start_created_at")
 	const perPage = Number(search.get("per_page") ?? "10000")
 	const matching = Arr.sort(
@@ -84,6 +86,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		orgName: "Acme Corp",
 		tier: "free",
 		activities: [],
+		ignoresAfter: false,
 		hostCount: 0,
 		policies: [],
 		failingHosts: {},

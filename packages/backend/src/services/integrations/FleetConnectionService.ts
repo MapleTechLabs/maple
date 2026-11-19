@@ -173,12 +173,7 @@ export class FleetConnectionService extends Context.Service<
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
-			const previous = (yield* selectRow(orgId))[0]
 			const next = {
-				// Another server's activity ids mean nothing here: its feed starts over.
-				...(previous !== undefined && previous.baseUrl !== baseUrl
-					? { activityCursor: null }
-					: undefined),
 				baseUrl,
 				tokenCiphertext: sealed.ciphertext,
 				tokenIv: sealed.iv,
@@ -192,10 +187,21 @@ export class FleetConnectionService extends Context.Service<
 				updatedAt: now,
 			}
 			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(FleetConnections)
-						.values({ id: randomUUID(), orgId, createdAt: now, ...next })
-						.onConflictDoUpdate({ target: ["orgId"], set: next }),
+				db.transaction(
+					Effect.gen(function* () {
+						// Another server is a new connection: nothing read from the old one carries over.
+						yield* db.run(
+							PG.deleteFrom(FleetConnections).where(($) => [
+								$.orgId.eq(orgId),
+								$.baseUrl.neq(baseUrl),
+							]),
+						)
+						yield* db.run(
+							PG.insertInto(FleetConnections)
+								.values({ id: randomUUID(), orgId, createdAt: now, ...next })
+								.onConflictDoUpdate({ target: ["orgId"], set: next }),
+						)
+					}),
 				),
 			)
 			return yield* getStatus(orgId)

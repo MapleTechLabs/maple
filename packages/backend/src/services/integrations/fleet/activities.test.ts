@@ -14,8 +14,10 @@ const activity = (overrides: Partial<FleetActivity>): FleetActivity => ({
 	...overrides,
 })
 
+const SOURCE = { account: "Acme Corp", server: "fleet.example.com" }
+
 const eventOf = (overrides: Partial<FleetActivity>) =>
-	Option.getOrThrow(fleetActivityToEvent(activity(overrides), "Acme Corp"))
+	Option.getOrThrow(fleetActivityToEvent(activity(overrides), SOURCE))
 
 describe("fleetActivityToEvent", () => {
 	it("keeps who wiped which device, under the Fleet account", () => {
@@ -37,7 +39,7 @@ describe("fleetActivityToEvent", () => {
 			},
 			{
 				provider: "fleet",
-				providerEventId: "41",
+				providerEventId: "fleet.example.com:41",
 				account: "Acme Corp",
 				occurredAtMs: Date.parse("2026-11-19T10:00:00Z"),
 				actor: { type: "user", id: "3", name: "Jane Admin", email: "jane@acme.test" },
@@ -69,7 +71,7 @@ describe("fleetActivityToEvent", () => {
 	})
 
 	it("drops an activity whose time does not parse", () => {
-		assert.isTrue(Option.isNone(fleetActivityToEvent(activity({ created_at: "yesterday" }), "Acme Corp")))
+		assert.isTrue(Option.isNone(fleetActivityToEvent(activity({ created_at: "yesterday" }), SOURCE)))
 	})
 })
 
