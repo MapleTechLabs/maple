@@ -1,0 +1,479 @@
+import { assert, describe, it } from "@effect/vitest"
+import {
+	CreateRoleRequest,
+	OrgId,
+	RoleConflictError,
+	RoleMemberNotFoundError,
+	RolesUnavailableError,
+	UpdateRoleRequest,
+	UserId,
+} from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, ConfigProvider, Effect, Layer, Order, Schema, String as Str } from "effect"
+import { Env } from "@maple/backend/platform/Env"
+import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import { ClerkRolesGateway, type RoleMembership } from "./ClerkRolesGateway"
+import { RolesService } from "./RolesService"
+
+const ORG = Schema.decodeSync(OrgId)("org_roles")
+const user = Schema.decodeSync(UserId)
+const ADMIN = user("user_admin")
+const roleId = Policy.CustomRoleId.make
+
+const ON_CALL = roleId("role_oncall000000")
+const VIEWER = roleId("role_viewer000000")
+
+const adminTenant = { orgId: ORG, userId: ADMIN, permissions: Policy.grantsOf(["org:admin"]) }
+
+const stored = (
+	id: Policy.CustomRoleId,
+	name: string,
+	permissions: ReadonlyArray<Policy.Permission>,
+): Policy.StoredCustomRole => ({
+	id,
+	name,
+	description: "",
+	permissions: Policy.encodePermissions(permissions),
+	createdAt: 1,
+	updatedAt: 1,
+})
+
+interface FakeMember {
+	readonly userId: string
+	readonly role: string
+	readonly custom?: Policy.MembershipRoleMetadata
+}
+
+const onCallPermissions: ReadonlyArray<Policy.Permission> = [
+	"telemetry:read",
+	"incidents:respond",
+	"oncall:manage",
+]
+
+/** One Clerk organization in memory, with every write recorded. */
+const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
+	const state = {
+		roles: [...roles],
+		members: new Map(Arr.map(members, (member) => [member.userId, member] as const)),
+		writes: [] as Array<string>,
+	}
+	const toMembership = (member: FakeMember): RoleMembership => ({
+		userId: user(member.userId),
+		role: member.role,
+		metadata: member.custom === undefined ? {} : { [Policy.MEMBERSHIP_ROLE_METADATA_KEY]: member.custom },
+		name: null,
+		identifier: `${member.userId}@acme.test`,
+		imageUrl: null,
+	})
+	const change = (userId: string, edit: (member: FakeMember) => FakeMember) => {
+		const member = state.members.get(userId)
+		if (member !== undefined) state.members.set(userId, edit(member))
+	}
+	const layer = Layer.succeed(ClerkRolesGateway, {
+		organizationMetadata: () =>
+			Effect.sync(() => ({ region: "eu", [Policy.ORG_ROLES_METADATA_KEY]: { roles: state.roles } })),
+		writeCustomRoles: (_orgId, next) =>
+			Effect.sync(() => {
+				state.writes.push("roles")
+				state.roles = [...next]
+			}),
+		memberships: () => Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
+		setMembershipRole: (_orgId, userId, role) =>
+			Effect.sync(() => {
+				state.writes.push(`role:${userId}`)
+				change(userId, (member) => ({ ...member, role }))
+			}),
+		setMembershipCustomRole: (_orgId, userId, custom) =>
+			Effect.sync(() => {
+				state.writes.push(`metadata:${userId}`)
+				change(userId, ({ custom: _dropped, ...member }) =>
+					custom === null ? member : { ...member, custom },
+				)
+			}),
+	})
+	const roleOf = (userId: string) => state.members.get(userId)?.role
+	const customOf = (userId: string) => state.members.get(userId)?.custom
+	return { state, layer, roleOf, customOf }
+}
+
+const recordingRevocation = () => {
+	const demoted: Array<{ readonly userId: string; readonly grants: Policy.Grants }> = []
+	const layer = Layer.succeed(MembershipRevocationService, {
+		revokeMembership: () => Effect.die("unused"),
+		revokeUser: () => Effect.die("unused"),
+		demoteMembership: (_orgId, userId, grants) =>
+			Effect.sync(() => {
+				demoted.push({ userId, grants })
+				return { apiKeysRevoked: 0, mcpFamiliesRevoked: 0, deviceCredentialsRevoked: 0 }
+			}),
+		invalidateMembership: () => Effect.void,
+	})
+	return { demoted, layer }
+}
+
+const setup = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: ReadonlyArray<FakeMember>) => {
+	const clerk = fakeClerk(roles, members)
+	const revocation = recordingRevocation()
+	const layer = Layer.effect(RolesService, RolesService.make).pipe(
+		Layer.provide(Layer.mergeAll(clerk.layer, revocation.layer)),
+	)
+	return { clerk, revocation, layer }
+}
+
+const onCallHolder = (userId: string, permissions = onCallPermissions): FakeMember => ({
+	userId,
+	role: Policy.CUSTOM_ROLE_CLERK_KEY,
+	custom: { id: ON_CALL, permissions: Policy.encodePermissions(permissions) },
+})
+
+const conflictReason = <A, R>(effect: Effect.Effect<A, unknown, R>) =>
+	Effect.flip(effect).pipe(
+		Effect.map((error) =>
+			Schema.is(RoleConflictError)(error) ? error.reason : `not a conflict: ${String(error)}`,
+		),
+	)
+
+describe("RolesService.list", () => {
+	it.effect("counts members per role, custom ones by the role their membership names", () => {
+		const { layer } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions), stored(VIEWER, "Auditor", ["telemetry:read"])],
+			[
+				{ userId: "user_admin", role: "org:admin" },
+				{ userId: "user_ana", role: "org:member" },
+				{ userId: "user_ben", role: "org:member" },
+				onCallHolder("user_cat"),
+				onCallHolder("user_dan"),
+				// Names a role that no longer exists: counted nowhere.
+				{
+					userId: "user_eve",
+					role: Policy.CUSTOM_ROLE_CLERK_KEY,
+					custom: { id: roleId("role_gone00000000"), permissions: [] },
+				},
+			],
+		)
+		return Effect.gen(function* () {
+			const list = yield* (yield* RolesService).list(adminTenant)
+			assert.deepStrictEqual(
+				Arr.map(list.builtIn, (role) => [role.clerkKey, role.memberCount]),
+				[
+					["org:analyst", 0],
+					["org:member", 2],
+					["org:engineer", 0],
+					["org:admin", 1],
+				],
+			)
+			// By name: Auditor before On-call.
+			assert.deepStrictEqual(
+				Arr.map(list.custom, (role) => [role.name, role.memberCount]),
+				[
+					["Auditor", 0],
+					["On-call", 2],
+				],
+			)
+			assert.deepStrictEqual(list.custom[1]?.permissions, [
+				"telemetry:read",
+				"incidents:respond",
+				"oncall:manage",
+			])
+			assert.strictEqual(list.customRoleLimit, Policy.MAX_CUSTOM_ROLES)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lists a custom role's holders and refuses a role that does not exist", () => {
+		const { layer } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[{ userId: "user_admin", role: "org:admin" }, onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			const holders = yield* roles.members(adminTenant, ON_CALL)
+			assert.deepStrictEqual(
+				Arr.map(holders.members, (member) => [member.userId, member.identifier]),
+				[["user_cat", "user_cat@acme.test"]],
+			)
+			const missing = yield* Effect.flip(roles.members(adminTenant, VIEWER))
+			assert.strictEqual(missing._tag, "@maple/http/roles/RoleNotFoundError")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.create", () => {
+	const request = (name: string, permissions: ReadonlyArray<Policy.Permission> = ["telemetry:read"]) =>
+		new CreateRoleRequest({ name, permissions })
+
+	it.effect("stores a new role with a fresh id and the permissions as codes", () => {
+		const { layer, clerk } = setup([], [{ userId: "user_admin", role: "org:admin" }])
+		return Effect.gen(function* () {
+			const created = yield* (yield* RolesService).create(
+				adminTenant,
+				request("On-call", onCallPermissions),
+			)
+			assert.match(created.id, /^role_[a-z0-9]{12}$/)
+			assert.strictEqual(created.memberCount, 0)
+			assert.deepStrictEqual(
+				Arr.map(clerk.state.roles, (role) => [role.id, role.name, role.permissions]),
+				[[created.id, "On-call", Policy.encodePermissions(onCallPermissions)]],
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a taken name, case aside, and a built-in role's name", () => {
+		const { layer, clerk } = setup([stored(ON_CALL, "On-call", onCallPermissions)], [])
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			assert.strictEqual(
+				yield* conflictReason(roles.create(adminTenant, request("on-CALL"))),
+				"name_taken",
+			)
+			assert.strictEqual(
+				yield* conflictReason(roles.create(adminTenant, request("Engineer"))),
+				"name_taken",
+			)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a role past the organization's limit", () => {
+		const full = Arr.makeBy(Policy.MAX_CUSTOM_ROLES, (index) =>
+			stored(roleId(`role_full${Str.padStart(8, "0")(String(index))}`), `Role ${index}`, [
+				"telemetry:read",
+			]),
+		)
+		const { layer, clerk } = setup(full, [])
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			assert.strictEqual(
+				yield* conflictReason(roles.create(adminTenant, request("One more"))),
+				"limit_reached",
+			)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a permission custom roles may not hold, and one the caller lacks", () => {
+		const { layer, clerk } = setup([], [])
+		const engineer = {
+			orgId: ORG,
+			userId: user("user_eng"),
+			permissions: Policy.grantsOf(["org:engineer"]),
+		}
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			assert.strictEqual(
+				yield* conflictReason(roles.create(adminTenant, request("Managers", ["members:manage"]))),
+				"not_grantable",
+			)
+			assert.strictEqual(
+				yield* conflictReason(roles.create(engineer, request("Billing", ["billing:manage"]))),
+				"exceeds_caller",
+			)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.update", () => {
+	it.effect("rewrites every holder's permissions and demotes them to the new grants", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[{ userId: "user_admin", role: "org:admin" }, onCallHolder("user_cat"), onCallHolder("user_dan")],
+		)
+		const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read", "incidents:respond"]
+		return Effect.gen(function* () {
+			const { before, role } = yield* (yield* RolesService).update(
+				adminTenant,
+				ON_CALL,
+				new UpdateRoleRequest({ permissions: narrowed }),
+			)
+			assert.deepStrictEqual(before.permissions, [
+				"telemetry:read",
+				"incidents:respond",
+				"oncall:manage",
+			])
+			assert.deepStrictEqual(role.permissions, narrowed)
+			assert.strictEqual(role.memberCount, 2)
+			assert.deepStrictEqual(
+				clerk.customOf("user_cat")?.permissions,
+				Policy.encodePermissions(narrowed),
+			)
+			assert.deepStrictEqual(
+				clerk.customOf("user_dan")?.permissions,
+				Policy.encodePermissions(narrowed),
+			)
+			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, Policy.encodePermissions(narrowed))
+			assert.deepStrictEqual(
+				Arr.sort(
+					Arr.map(revocation.demoted, (entry) => `${entry.userId} ${Arr.join(entry.grants, ",")}`),
+					Order.String,
+				),
+				[`user_cat ${Arr.join(narrowed, ",")}`, `user_dan ${Arr.join(narrowed, ",")}`],
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("renames without touching holders that already carry the role's permissions", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const { role } = yield* (yield* RolesService).update(
+				adminTenant,
+				ON_CALL,
+				new UpdateRoleRequest({ name: "Responders" }),
+			)
+			assert.strictEqual(role.name, "Responders")
+			assert.deepStrictEqual(clerk.state.writes, ["roles"])
+			assert.deepStrictEqual(revocation.demoted, [])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.delete", () => {
+	it.effect("refuses to delete a role still held when no role is named for its members", () => {
+		const { layer, clerk } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions)],
+			[onCallHolder("user_cat")],
+		)
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			assert.strictEqual(yield* conflictReason(roles.delete(adminTenant, ON_CALL, undefined)), "in_use")
+			assert.strictEqual(
+				yield* conflictReason(roles.delete(adminTenant, ON_CALL, { _tag: "Custom", id: ON_CALL })),
+				"in_use",
+			)
+			assert.strictEqual(clerk.state.roles.length, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("moves the holders to the named role, then removes the definition", () => {
+		const { layer, clerk, revocation } = setup(
+			[stored(ON_CALL, "On-call", onCallPermissions), stored(VIEWER, "Viewer", ["telemetry:read"])],
+			[onCallHolder("user_cat"), { userId: "user_ana", role: "org:member" }],
+		)
+		return Effect.gen(function* () {
+			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, {
+				_tag: "Custom",
+				id: VIEWER,
+			})
+			assert.strictEqual(deleted.moved, 1)
+			assert.deepStrictEqual(
+				Arr.map(clerk.state.roles, (role) => role.id),
+				[VIEWER],
+			)
+			assert.strictEqual(clerk.roleOf("user_cat"), Policy.CUSTOM_ROLE_CLERK_KEY)
+			assert.deepStrictEqual(clerk.customOf("user_cat"), {
+				id: VIEWER,
+				permissions: Policy.encodePermissions(["telemetry:read"]),
+			})
+			assert.deepStrictEqual(revocation.demoted, [{ userId: "user_cat", grants: ["telemetry:read"] }])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService.setMemberRole", () => {
+	const members: ReadonlyArray<FakeMember> = [
+		{ userId: "user_admin", role: "org:admin" },
+		{ userId: "user_ana", role: "org:member" },
+		onCallHolder("user_cat"),
+	]
+
+	it.effect("moves a member onto a custom role: org:custom plus the role on the membership", () => {
+		const { layer, clerk, revocation } = setup([stored(ON_CALL, "On-call", onCallPermissions)], members)
+		return Effect.gen(function* () {
+			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_ana"), {
+				_tag: "Custom",
+				id: ON_CALL,
+			})
+			assert.strictEqual(change.previousRole, "org:member")
+			assert.deepStrictEqual(change.member.permissions, [
+				"telemetry:read",
+				"incidents:respond",
+				"oncall:manage",
+			])
+			assert.strictEqual(clerk.roleOf("user_ana"), Policy.CUSTOM_ROLE_CLERK_KEY)
+			assert.deepStrictEqual(clerk.customOf("user_ana"), {
+				id: ON_CALL,
+				permissions: Policy.encodePermissions(onCallPermissions),
+			})
+			// The permissions land before the role, so Clerk never holds org:custom without them.
+			assert.deepStrictEqual(clerk.state.writes, ["metadata:user_ana", "role:user_ana"])
+			assert.deepStrictEqual(revocation.demoted, [
+				{ userId: "user_ana", grants: change.member.permissions },
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("moves a custom member onto a built-in role and clears the membership's custom role", () => {
+		const { layer, clerk, revocation } = setup([stored(ON_CALL, "On-call", onCallPermissions)], members)
+		return Effect.gen(function* () {
+			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_cat"), {
+				_tag: "BuiltIn",
+				clerkKey: "org:analyst",
+			})
+			assert.strictEqual(change.previousRole, ON_CALL)
+			assert.strictEqual(clerk.roleOf("user_cat"), "org:analyst")
+			assert.strictEqual(clerk.customOf("user_cat"), undefined)
+			assert.deepStrictEqual(revocation.demoted, [
+				{ userId: "user_cat", grants: Policy.grantsOf(["org:analyst"]) },
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses the caller's own role, the last Admin and someone outside the organization", () => {
+		const { layer, clerk } = setup([], members)
+		// Someone holding members:manage without being one of the org's admins in Clerk.
+		const operator = { ...adminTenant, userId: user("user_operator") }
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			const toMember = { _tag: "BuiltIn", clerkKey: "org:member" } as const
+			assert.strictEqual(
+				yield* conflictReason(roles.setMemberRole(adminTenant, ADMIN, toMember)),
+				"self",
+			)
+			assert.strictEqual(
+				yield* conflictReason(roles.setMemberRole(operator, ADMIN, toMember)),
+				"last_admin",
+			)
+			const outsider = yield* Effect.flip(
+				roles.setMemberRole(adminTenant, user("user_nobody"), toMember),
+			)
+			assert.instanceOf(outsider, RoleMemberNotFoundError)
+			assert.deepStrictEqual(clerk.state.writes, [])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("RolesService without Clerk", () => {
+	const selfHosted = ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_APP_BASE_URL: "https://app.example.com",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 3).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+		}),
+	)
+
+	it.effect("answers that roles need Clerk, for reads and writes alike", () => {
+		const layer = Layer.effect(RolesService, RolesService.make).pipe(
+			Layer.provide(Layer.mergeAll(ClerkRolesGateway.layer, recordingRevocation().layer)),
+			Layer.provide(Env.layer.pipe(Layer.provide(selfHosted))),
+		)
+		return Effect.gen(function* () {
+			const roles = yield* RolesService
+			const listed = yield* Effect.flip(roles.list(adminTenant))
+			assert.instanceOf(listed, RolesUnavailableError)
+			const created = yield* Effect.flip(
+				roles.create(
+					adminTenant,
+					new CreateRoleRequest({ name: "On-call", permissions: ["telemetry:read"] }),
+				),
+			)
+			assert.instanceOf(created, RolesUnavailableError)
+		}).pipe(Effect.provide(layer))
+	})
+})

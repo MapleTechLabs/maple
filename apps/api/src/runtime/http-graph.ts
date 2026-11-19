@@ -36,6 +36,7 @@ import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discove
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpSavedViewsLive } from "@/routes/internal/saved-views.http"
 import { HttpRolesLive } from "@/routes/internal/roles.http"
+import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
@@ -187,7 +188,9 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpSavedViewsLive,
-			HttpRolesLive,
+			// Provided here, like the Clerk webhook's revocation sweep: it needs the audit log, which
+			// the auth layers provide below the service graph.
+			HttpRolesLive.pipe(Layer.provide(RolesService.layer)),
 			HttpCloudflareCostLive,
 			HttpAnthropicCostLive,
 			HttpFeatureRequestsLive,
