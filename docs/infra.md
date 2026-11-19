@@ -228,7 +228,12 @@ stored state and cannot see a sibling the same deploy creates.
 
 What each kind of Worker keeps beside the module:
 
-- **Crons** (`alerting`, `api`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
+- **org-eraser** serves no requests. Every ten minutes on production it drains `org_erasures`
+  (a deleted org's conversations, replay objects and warehouse rows). It alone binds the replay
+  bucket read-write and the warehouse delete token (`TINYBIRD_DELETE_TOKEN`), so no request
+  Worker can delete either.
+
+- **Crons** (`alerting`, `api`, `org-eraser`): `Cloudflare.Workers.cron(expression, handler)` in `impl`,
   under `CronEventSourceLive`, attaches the schedule at plan time and the listener at
   runtime. The source reports every fire as successful, so the platform's retry never
   engages. Nothing is lost: the ticks already log and swallow their own failures, the
@@ -481,7 +486,7 @@ list of yields. What it composes lives beside it:
   (`consumeQueueMessages` over the declarations, so no binding is read back off the host),
   `events.ts`, `modules.ts` (the dynamic imports), and `bindings.ts`.
 - **Bindings are alchemy capabilities, read as Maple ports.** The init yields
-  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadWriteBucket(ReplayBlobs)` and the
+  `Queues.WriteQueue(VcsSyncQueue)`, `R2.ReadBucket(ReplayBlobs)` and the
   `Cloudflare.RateLimit(...)`s (`worker/bindings.ts`). Each yield attaches the native
   binding at plan time, under the resource's logical id (so the queue and bucket bindings
   are `vcs-sync`, `replay-blobs`, …), and resolves it from the env in the isolate. The

@@ -3,8 +3,7 @@
  *   every 12h — VCS sync backstop, enqueues a refresh per installation
  *   hourly    — scrape_target_checks retention (was inline on the
  *               scrape-results write path; a busy target writes ~75k
- *               rows/day, so the 10k cap binds within hours), and the
- *               erasure of deleted orgs' chat sessions and replays
+ *               rows/day, so the 10k cap binds within hours)
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
@@ -29,29 +28,21 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 		)
 		yield* Cloudflare.Workers.cron(SCRAPE_RETENTION_CRON, () =>
 			Effect.gen(function* () {
-				const [
-					{ vcsSyncTelemetry },
-					{ runScrapeCheckRetention },
-					{ runPlanetScaleEventRetention },
-					{ runOrgErasures },
-				] = yield* Effect.all([
-					vcsSyncModule,
-					Effect.promise(
-						() => import("@maple/backend/services/integrations/scrape-check-retention"),
-					),
-					Effect.promise(
-						() => import("@maple/backend/services/integrations/planetscale-event-retention"),
-					),
-					Effect.promise(() => import("@maple/backend/services/org/org-erasure")),
-				])
-				// The sweeps ride this one cron, sequentially: they share the tick's one
-				// Postgres socket, so running them concurrently would only queue. A failed
-				// sweep does not skip the next. The erasure also reads the chat and replay ports.
+				const [{ vcsSyncTelemetry }, { runScrapeCheckRetention }, { runPlanetScaleEventRetention }] =
+					yield* Effect.all([
+						vcsSyncModule,
+						Effect.promise(
+							() => import("@maple/backend/services/integrations/scrape-check-retention"),
+						),
+						Effect.promise(
+							() => import("@maple/backend/services/integrations/planetscale-event-retention"),
+						),
+					])
+				// Both sweeps ride this one cron, sequentially: they share the tick's
+				// one Postgres socket, so running them concurrently would only queue.
+				// The jobs talk only to Postgres, so the layer is the database alone.
 				return yield* runEvent(
-					Effect.all([runScrapeCheckRetention, runPlanetScaleEventRetention, runOrgErasures], {
-						mode: "result",
-						discard: true,
-					}),
+					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
 					DatabasePgLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
 				)
 			}).pipe(settleFire(SCRAPE_RETENTION_CRON)),

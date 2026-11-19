@@ -11,6 +11,7 @@ export type SecretConsumer =
 	| "api"
 	| "ai"
 	| "alerting"
+	| "org-eraser"
 	| "chat-bot"
 	| "electric-sync"
 	| "sandbox"

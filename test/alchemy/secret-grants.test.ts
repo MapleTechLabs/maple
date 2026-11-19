@@ -13,6 +13,7 @@ import { resolveAs, resolveDerived } from "@maple/infra/secret-guard"
 import * as Catalog from "@maple/infra/secrets"
 import { aiConfiguredEnv } from "../../apps/ai/src/resources/env.ts"
 import { alertingConfiguredEnv } from "../../apps/alerting/src/resources/env.ts"
+import { orgEraserConfiguredEnv } from "../../apps/org-eraser/src/resources/env.ts"
 import { apiConfiguredEnv } from "../../apps/api/src/resources/env.ts"
 import { chatBotConfiguredEnv } from "../../apps/chat-bot/src/resources/env.ts"
 import { electricSecrets } from "../../apps/electric/alchemy/secrets.ts"
@@ -86,6 +87,7 @@ const DEPLOYABLES = {
 		onEveryStage((stage) => aiConfiguredEnv({ stage, region: "us", domains: {}, sandbox })),
 	),
 	alerting: onEveryStage((stage) => alertingConfiguredEnv(stage, "us", {})),
+	"org-eraser": onEveryStage((stage) => orgEraserConfiguredEnv(stage, "us")),
 	"chat-bot": onEveryStage((stage) =>
 		chatBotConfiguredEnv({ stage, region: "us", webOrigin: "https://app.maple.dev" }),
 	),

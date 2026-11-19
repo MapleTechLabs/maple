@@ -347,9 +347,11 @@ describe("OrganizationDeletionService.delete", () => {
 							.orderBy(($) => [[$.kind, "asc"]]),
 					),
 				)
-				assert.deepStrictEqual(queued, [
-					{ orgId: ORG_A, kind: "chat_session" },
-					{ orgId: ORG_A, kind: "replay_blobs" },
+				assert.isTrue(Arr.every(queued, (row) => row.orgId === ORG_A))
+				assert.deepStrictEqual(Arr.dedupe(Arr.map(queued, (row) => row.kind)), [
+					"chat_session",
+					"replay_blobs",
+					"warehouse",
 				])
 				assert.strictEqual(yield* countOrgRows(testDb, "investigations", "org_id", ORG_A), 0)
 				assert.strictEqual(yield* countOrgRows(testDb, "investigations", "org_id", ORG_B), 1)

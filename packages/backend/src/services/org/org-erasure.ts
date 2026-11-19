@@ -4,16 +4,19 @@ import type { MapleDb } from "@maple/db/client"
 import { Investigations, OrgErasures, PrReviewReplies, PrReviews, type OrgErasureRow } from "@maple/db/tables"
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
 import type { OrgErasureKind } from "@maple/domain/org-erasure"
+import { WAREHOUSE_ERASURE_TARGETS, warehouseErasureRank } from "@maple/domain/tinybird/org-erasure-plan"
 import type { OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
 import { ChatSessions, ReplayBlobEraser } from "@maple/backend/platform/bindings"
-import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { describeCause } from "@maple/backend/platform/describe-cause"
+import { WarehouseDeleteClient } from "@maple/backend/services/warehouse/WarehouseDeleteClient"
 
 /**
  * Erasing what a deleted organization left outside Postgres: its agent conversations (one
- * Durable Object each) and its session-replay objects. The deletion queues one `org_erasures` row
- * per target before its purge drops the rows that name them; the api's hourly cron drains them.
+ * Durable Object each), its session-replay objects and its warehouse rows. The deletion queues one
+ * `org_erasures` row per target before its purge drops the rows that name them; the org-eraser
+ * Worker's cron drains them.
  */
 
 /** Where the ingest gateway writes an org's replay chunks (`replayObjectKey`); the slash keeps `org_a` off `org_ab`. */
@@ -49,11 +52,12 @@ const insertErasures = (
 		{ discard: true },
 	)
 
-/** Queue the erasures that need no rows read: the org's replay prefix. Re-queuing is a no-op. */
+/** Queue the erasures that need no rows read: replay prefix and warehouse datasources. Re-queuing is a no-op. */
 export const queueOrgErasures = (db: MapleDb, orgId: OrgId, now: number) =>
 	Effect.gen(function* () {
 		const targets: ReadonlyArray<readonly [OrgErasureKind, string]> = [
 			["replay_blobs", replayPrefix(orgId)],
+			...Arr.map(WAREHOUSE_ERASURE_TARGETS, (target) => ["warehouse", target.datasource] as const),
 		]
 		yield* insertErasures(db, orgId, now, targets)
 		return targets.length
@@ -126,6 +130,10 @@ const DRAIN_BATCH = 50
 /** Replay listing pages one target may delete per tick; a bigger org finishes over later ticks. */
 const REPLAY_PAGES_PER_TICK = 20
 const SESSION_CONCURRENCY = 4
+/** Warehouse targets one tick looks at; an org has one per OrgId datasource. */
+const WAREHOUSE_BATCH = 500
+/** Delete jobs in flight at once across every org; the warehouse runs them one by one anyway. */
+export const MAX_WAREHOUSE_JOBS = 2
 const MAX_BACKOFF = Duration.hours(24)
 
 /** 5 minutes after the first failure, doubling to a day. */
@@ -137,6 +145,7 @@ export const erasureBackoffMs = (attempts: number): number =>
 
 type Outcome = "done" | "more"
 const DONE: Outcome = "done"
+const MORE: Outcome = "more"
 
 const eraseChatSession = (row: OrgErasureRow): Effect.Effect<Outcome, OrgErasureError> =>
 	Effect.gen(function* () {
@@ -175,8 +184,89 @@ const eraseReplayBlobs = (row: OrgErasureRow): Effect.Effect<Outcome, OrgErasure
 		return yield* loop(REPLAY_PAGES_PER_TICK)
 	})
 
-const eraseTarget = (row: OrgErasureRow) =>
-	row.kind === "chat_session" ? eraseChatSession(row) : eraseReplayBlobs(row)
+const setJob = (database: DatabaseApi, id: string, jobId: string | null) =>
+	database.execute((db) =>
+		db.run(
+			PG.update(OrgErasures)
+				.set({ jobId })
+				.where(($) => [$.id.eq(id)]),
+		),
+	)
+
+/** Starts the datasource's delete job, then polls it on later ticks until it finishes. */
+const eraseWarehouseRows = (row: OrgErasureRow, database: DatabaseApi) =>
+	Effect.gen(function* () {
+		const client = yield* Effect.serviceOption(WarehouseDeleteClient)
+		if (Option.isNone(client)) {
+			return yield* new OrgErasureError({
+				message: "No warehouse delete client on this host",
+				cause: undefined,
+			})
+		}
+		const failed = (error: { readonly message: string; readonly cause: unknown }) =>
+			new OrgErasureError({ message: error.message, cause: error.cause })
+		if (row.jobId === null) {
+			const jobId = yield* client.value.submit(row.target, row.orgId).pipe(Effect.mapError(failed))
+			yield* setJob(database, row.id, jobId)
+			return MORE
+		}
+		const state = yield* client.value.status(row.jobId).pipe(Effect.mapError(failed))
+		if (state._tag === "Pending") return MORE
+		if (state._tag === "Done") return DONE
+		// A failed job is started afresh after the backoff.
+		yield* setJob(database, row.id, null)
+		return yield* new OrgErasureError({ message: state.message, cause: row.jobId })
+	})
+
+const eraseTarget = (row: OrgErasureRow, database: DatabaseApi) => {
+	switch (row.kind) {
+		case "chat_session":
+			return eraseChatSession(row)
+		case "replay_blobs":
+			return eraseReplayBlobs(row)
+		case "warehouse":
+			return eraseWarehouseRows(row, database)
+	}
+}
+
+/**
+ * The due warehouse targets this tick may touch: per org only those of its highest pending rank,
+ * so rollups go before what feeds them; jobs in flight are polled; new ones fill the free slots.
+ */
+const runnableWarehouseRows = (database: DatabaseApi, due: ReadonlyArray<OrgErasureRow>) =>
+	Effect.gen(function* () {
+		if (due.length === 0) return []
+		const orgs = Arr.dedupe(Arr.map(due, (row) => row.orgId))
+		const pending = yield* database.execute((db) =>
+			db.run(
+				PG.from(OrgErasures)
+					.select("orgId", "target", "jobId")
+					.where(($) => [$.kind.eq("warehouse"), PG.inList($.orgId, orgs)]),
+			),
+		)
+		const [inFlight] = yield* database.execute((db) =>
+			db.run(
+				PG.from(OrgErasures)
+					.select(() => ({ count: PG.count() }))
+					.where(($) => [$.kind.eq("warehouse"), $.jobId.isNotNull()]),
+			),
+		)
+		const topRank = (orgId: OrgId) =>
+			Arr.reduce(
+				Arr.filter(pending, (row) => row.orgId === orgId),
+				0,
+				(top, row) => Math.max(top, warehouseErasureRank(row.target)),
+			)
+		const eligible = Arr.filter(due, (row) => warehouseErasureRank(row.target) === topRank(row.orgId))
+		const slots = Math.max(0, MAX_WAREHOUSE_JOBS - Number(inFlight?.count ?? 0))
+		return [
+			...Arr.filter(eligible, (row) => row.jobId !== null),
+			...Arr.take(
+				Arr.filter(eligible, (row) => row.jobId === null),
+				slots,
+			),
+		]
+	})
 
 /**
  * One drain tick: erase every due target. A finished one loses its row; one with more to delete
@@ -185,19 +275,28 @@ const eraseTarget = (row: OrgErasureRow) =>
 export const runOrgErasures = Effect.gen(function* () {
 	const database = yield* Database
 	const now = yield* Clock.currentTimeMillis
-	const due = yield* database.execute((db) =>
-		db.run(
-			PG.from(OrgErasures)
-				.select()
-				.where(($) => [$.nextAttemptAt.lte(now)])
-				.orderBy(($) => [[$.nextAttemptAt, "asc"]])
-				.limit(DRAIN_BATCH),
-		),
-	)
+	// Warehouse targets apart: many wait on their order, and must not crowd the rest out.
+	const dueOf = (warehouse: boolean, limit: number) =>
+		database.execute((db) =>
+			db.run(
+				PG.from(OrgErasures)
+					.select()
+					.where(($) => [
+						$.nextAttemptAt.lte(now),
+						warehouse ? $.kind.eq("warehouse") : $.kind.neq("warehouse"),
+					])
+					.orderBy(($) => [[$.nextAttemptAt, "asc"]])
+					.limit(limit),
+			),
+		)
+	const others = yield* dueOf(false, DRAIN_BATCH)
+	const dueWarehouse = yield* dueOf(true, WAREHOUSE_BATCH)
+	const warehouse = yield* runnableWarehouseRows(database, dueWarehouse)
+	const due = [...others, ...warehouse]
 	const results = yield* Effect.forEach(
 		due,
 		(row) =>
-			eraseTarget(row).pipe(
+			eraseTarget(row, database).pipe(
 				// "more" leaves the row due, so the next tick carries on where this one stopped.
 				Effect.flatMap((outcome) =>
 					outcome === "done"
