@@ -260,25 +260,32 @@ const cardHeader = (
 			justify: "between",
 			className: stripClass(
 				"header",
-				// Tinted only while the header link itself is hovered, not the address or the menu above it.
+				// Tinted while either header link is hovered, not the address or the menu above them.
 				"relative has-[[data-header-link]:hover]:bg-surface-sunken has-[[data-header-link]:active]:bg-surface-sunken",
 			),
 		},
 		[
 			vstack(h, { gap: "1", className: "min-w-0" }, [
-				hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-					...pageIcon(h, page.favicon_url),
-					heading(h, { level: 2, variant: "section", className: "truncate" }, [
-						rowLink(
-							h,
-							{
-								href: statusPageHref(page.id),
-								className: "hover:underline active:underline",
-								attributes: [h.DataAttribute("header-link", "")],
-							},
-							[page.name],
-						),
-					]),
+				// The whole header opens the editor (an overlay link), but only the icon and title
+				// react to the pointer; the overlay stays out of the accessibility tree and tab order.
+				rowLink(h, {
+					href: statusPageHref(page.id),
+					attributes: [h.DataAttribute("header-link", ""), h.AriaHidden(true), h.Tabindex(-1)],
+				}),
+				heading(h, { level: 2, variant: "section", className: "min-w-0" }, [
+					textLink(
+						h,
+						{
+							href: statusPageHref(page.id),
+							tone: "inherit",
+							className: cn("max-w-full gap-2", ROW_LINK_LIFT),
+							attributes: [h.DataAttribute("header-link", "")],
+						},
+						[
+							...pageIcon(h, page.favicon_url),
+							typography(h, { truncate: true, as: "span" }, [page.name]),
+						],
+					),
 				]),
 				pageAddress(h, summary, inputs.orgKey),
 			]),
