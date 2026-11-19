@@ -543,7 +543,16 @@ const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntr
 		account: connection.organizationName ?? new URL(connection.baseUrl).host,
 		connectedAt: connection.createdAt,
 		own,
-		resources: [],
+		resources: [
+			{
+				kind: "audit log",
+				name: "activity feed",
+				status,
+				lastSuccessAt: connection.lastSuccessAt,
+				lastError: failingError(connection, status),
+				note: null,
+			},
+		],
 	})
 }
 

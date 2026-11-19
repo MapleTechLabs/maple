@@ -8,6 +8,7 @@ import { validateExternalUrl } from "@maple/safe-fetch"
 import { Duration, Effect, Redacted, Schema, String as Str } from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
+import { FleetActivitiesPage } from "./activities"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 const API_PREFIX = "/api/v1/fleet"
@@ -169,3 +170,23 @@ export const getVersion = (fleet: FleetClient) =>
 
 export const getConfig = (fleet: FleetClient) =>
 	fleet.json(FleetConfig, { path: "/config", operation: "reading the server settings" })
+
+/**
+ * One page of the activity feed, oldest first. `after` is the last id read (a keyset cursor on
+ * `id`); without it the page starts at `since`, an ISO time.
+ */
+export const listActivities = (
+	fleet: FleetClient,
+	page: { readonly after?: number; readonly since?: string; readonly perPage: number },
+) =>
+	fleet.json(FleetActivitiesPage, {
+		path: "/activities",
+		query: {
+			order_key: "id",
+			order_direction: "asc",
+			per_page: page.perPage,
+			after: page.after,
+			start_created_at: page.after === undefined ? page.since : undefined,
+		},
+		operation: "reading the activity feed",
+	})

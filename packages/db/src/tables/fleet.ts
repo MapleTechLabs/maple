@@ -22,6 +22,8 @@ export const FleetConnections = PG.table("fleet_connections", {
 		serverVersion: PG.column(PG.nullable(PG.text), { name: "server_version" }),
 		/** `free` or `premium`, from the server's license. */
 		licenseTier: PG.column(PG.nullable(PG.text), { name: "license_tier" }),
+		/** The newest activity id stored in the audit log; the next poll reads after it. Null: never read. */
+		activityCursor: PG.column(PG.nullable(PG.int8), { name: "activity_cursor" }),
 		connectedByUserId: PG.column(PG.brand(PG.text, UserId), { name: "connected_by_user_id" }),
 		/** Set when Fleet rejected the token; polling stops until a new token is saved. */
 		authFailedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "auth_failed_at" }),
