@@ -270,7 +270,9 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// Requests to URLs whose network failures the app does not count.
 	const ignoredRequests = new WeakSet<ApiSpan>()
 	const isIgnored = (url: unknown): boolean =>
-		typeof url === "string" && config.ignoreNetworkFailuresFor.some((pattern) => pattern.test(url))
+		// `search`, not `test`: it ignores a `g`/`y` RegExp's `lastIndex`, so none misses every other call.
+		typeof url === "string" &&
+		config.ignoreNetworkFailuresFor.some((pattern) => url.search(pattern) !== -1)
 	// Every request span as it starts, sampled out or not (processors see only recorded
 	// ones), with the URL as requested, before any `sanitizeUrl` rewrite.
 	const noteRequest = (span: ApiSpan, url: unknown): void => {

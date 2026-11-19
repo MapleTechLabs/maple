@@ -466,15 +466,20 @@ describe("setupTracing unload flush", () => {
 		shutdown = setupTracing({
 			...CONFIG,
 			tracingInstrumentFetch: true,
-			ignoreNetworkFailuresFor: [/^https:\/\/beacon\.test\//],
+			// Global, as a host might write it: it must match every request, not every other one.
+			ignoreNetworkFailuresFor: [/^https:\/\/beacon\.test\//g],
 		})
 
-		const requests = [fetch("https://beacon.test/collect"), fetch("https://api.test/things")]
+		const requests = [
+			fetch("https://beacon.test/collect"),
+			fetch("https://beacon.test/collect"),
+			fetch("https://api.test/things"),
+		]
 		pending.reject(new TypeError("Failed to fetch"))
 		await Promise.allSettled(requests)
 		await vi.advanceTimersByTimeAsync(400)
 		window.dispatchEvent(new Event("pagehide"))
-		await vi.waitFor(() => expect(exported).toHaveLength(2), poll)
+		await vi.waitFor(() => expect(exported).toHaveLength(3), poll)
 
 		const byUrl = exported.map((span) => ({
 			url: span.attributes["url.full"],
@@ -482,6 +487,7 @@ describe("setupTracing unload flush", () => {
 			ignored: span.attributes["maple.network_failure_ignored"],
 		}))
 		expect(byUrl).toEqual([
+			{ url: "https://beacon.test/collect", status: 0, ignored: true },
 			{ url: "https://beacon.test/collect", status: 0, ignored: true },
 			{ url: "https://api.test/things", status: 2, ignored: undefined },
 		])

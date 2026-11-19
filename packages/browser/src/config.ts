@@ -245,8 +245,7 @@ export function escapeRegExp(value: string): string {
  * ends on a URL boundary, so it does not also match `https://api.example.com.evil.io`.
  */
 function urlMatcher(entry: string | RegExp): RegExp {
-	// Without `g`/`y`: `test` on those advances `lastIndex`, so every other call would miss.
-	if (typeof entry !== "string") return new RegExp(entry.source, entry.flags.replace(/[gy]/g, ""))
+	if (typeof entry !== "string") return entry
 	// A configured trailing slash is part of the prefix; without one, the prefix ends on a boundary.
 	return new RegExp(`^${escapeRegExp(entry)}${entry.endsWith("/") ? "" : "(?:[/?#]|$)"}`)
 }
