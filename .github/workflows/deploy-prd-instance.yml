@@ -75,6 +75,8 @@ jobs:
               run: bun run alchemy:deploy:prd
               env:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
+                  # Per environment: "1" moves the ingest gateway onto its table-scoped login.
+                  MAPLE_INGEST_DB_SCOPED_ROLE: ${{ vars.MAPLE_INGEST_DB_SCOPED_ROLE }}
                   PLANETSCALE_API_TOKEN_ID: ${{ steps.planetscale.outputs.service-token-id }}
                   PLANETSCALE_API_TOKEN: ${{ steps.planetscale.outputs.service-token }}
 

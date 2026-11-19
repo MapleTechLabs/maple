@@ -39,6 +39,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
+import { IngestRoleMembership, mapleDbProviders } from "@maple/infra/ingest-role-membership"
 import { deployedDomains, type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
@@ -146,6 +147,27 @@ const declarePreviewDb = ({ stage, region }: MapleDeployment, profile: MapleProf
 	})
 
 /**
+ * The gateway's login with no built-in role, granted `maple_ingest` (its tables only) before the
+ * fleet uses it: the task env carries the id the grant echoes. `MAPLE_INGEST_DB_SCOPED_ROLE=1`
+ * switches to it; turning the switch off brings back the all-tables login (docs/infra.md).
+ */
+const scopedIngestLogin = (database: string, schema: Planetscale.PostgresBranch) =>
+	Effect.gen(function* () {
+		const login = yield* Planetscale.PostgresRole("ingest-gateway-scoped", {
+			database,
+			branch: schema,
+			inheritedRoles: [],
+		})
+		const membership = yield* IngestRoleMembership("ingest-gateway-membership", {
+			database,
+			branch: schema.name,
+			loginId: login.id,
+			login: login.username,
+		})
+		return { id: membership.loginId, url: login.connectionUrlPooled }
+	})
+
+/**
  * prd's `main` branch (its deploy applies migrations) and the ECS services' roles. On EU, also a
  * role and a Hyperdrive config per consumer on the role's direct origin; US prd looks up its
  * dashboard configs by id.
@@ -160,11 +182,14 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 		}).pipe(RemovalPolicy.retain())
 		// Runtime logins read and write rows but own nothing; migrations run as the branch owner.
 		// Changing roles is a create-first replace (the ingest role's id is in the task env).
-		const ingestRole = yield* Planetscale.PostgresRole("ingest-gateway", {
-			database,
-			branch: schema,
-			inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
-		})
+		const ingest =
+			(yield* optionalPlain("MAPLE_INGEST_DB_SCOPED_ROLE")).MAPLE_INGEST_DB_SCOPED_ROLE === "1"
+				? yield* scopedIngestLogin(database, schema)
+				: yield* Planetscale.PostgresRole("ingest-gateway", {
+						database,
+						branch: schema,
+						inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
+					}).pipe(Effect.map((role) => ({ id: role.id, url: role.connectionUrlPooled })))
 		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
 		// Stays on `postgres`: PlanetScale grants REPLICATION only alongside it.
 		const electricRole = profile.deploys.electric
@@ -177,7 +202,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 			: undefined
 		const resources = {
 			branch: schema.name,
-			ingest: { id: ingestRole.id, url: ingestRole.connectionUrlPooled },
+			ingest,
 			electric: electricRole && { id: electricRole.id, url: electricRole.connectionUrl },
 		}
 		if (profile.database === "ref")
@@ -287,7 +312,10 @@ const providers =
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
 		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
-		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
+		// The ingest login's membership grant reuses the hosted database's credentials.
+		Layer.provideMerge(
+			isDevServer ? Layer.empty : mapleDbProviders.pipe(Layer.provideMerge(Planetscale.providers())),
+		),
 		// Previews only; prd and dev deploys carry no NEON_API_KEY.
 		Layer.provideMerge(!isDevServer && process.env.NEON_API_KEY ? Neon.providers() : Layer.empty),
 		Layer.provideMerge(Portless.providers()),

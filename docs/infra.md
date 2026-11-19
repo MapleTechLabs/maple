@@ -552,7 +552,17 @@ Runtime roles (ingest gateway, the EU Hyperdrive roles) inherit `DB_ACCESS_ROLES
 (`@maple/db/roles`: `pg_read_all_data` + `pg_write_all_data`): DML on every table, current and
 future, and no DDL, TRUNCATE or ownership. Only migrations, which alchemy runs on a temporary
 `postgres` role, change the schema. Electric stays on `postgres` because PlanetScale grants
-REPLICATION only with it. The US prd Hyperdrive configs are dashboard-managed, so their
+REPLICATION only with it.
+
+The ingest gateway can instead run on a login scoped to its own tables. The
+`ingest_gateway_role` migration creates `maple_ingest` (NOLOGIN) with exactly
+`INGEST_GATEWAY_GRANTS` (`@maple/db/roles`). With `MAPLE_INGEST_DB_SCOPED_ROLE=1` (a GitHub
+environment variable per region, read by the prd deploy) the deploy creates a login that inherits
+no built-in role, grants it `maple_ingest` as a short-lived admin login
+(`IngestRoleMembership`, `@maple/infra/ingest-role-membership`), and only then rolls the
+gateway onto it; the all-tables login is deleted at the end of that deploy. Unset or `0` restores
+the all-tables login on the next deploy. A table the gateway starts using needs a grant
+migration and an `INGEST_GATEWAY_GRANTS` entry, or `roles.test.ts` fails. The US prd Hyperdrive configs are dashboard-managed, so their
 credentials are outside the deploy.
 
 ## Hyperdrive: why api and alerting have separate configs
