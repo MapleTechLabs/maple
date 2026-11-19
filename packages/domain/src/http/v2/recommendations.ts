@@ -152,4 +152,5 @@ export class V2InstrumentationRecommendationsApiGroup extends HttpApiGroup.make(
 			description:
 				"Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

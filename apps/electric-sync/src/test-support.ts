@@ -58,13 +58,13 @@ export const stubFetch =
 		return respond(url)
 	}
 
-/** A resolver that always authenticates, as `orgId`. */
-export const fixedTenantLayer = (orgId: string) => {
+/** A resolver that always authenticates, as `orgId`, holding `permissions` (a member's by default). */
+export const fixedTenantLayer = (orgId: string, permissions: Policy.Grants = Policy.grantsOf([])) => {
 	const tenant: TenantContext = {
 		orgId: Schema.decodeSync(OrgId)(orgId),
 		userId: Schema.decodeSync(UserId)("user_test"),
 		roles: [],
-		permissions: Policy.grantsOf([]),
+		permissions,
 		authMode: "self_hosted",
 	}
 	return Layer.succeed(TenantResolver, {

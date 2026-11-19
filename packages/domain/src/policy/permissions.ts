@@ -348,6 +348,7 @@ export const permissions = {
 		description: "Scoped keys limited to what the creator can do.",
 		action: "create restricted API keys",
 	},
+	// A full-access key is unpinned and acts as root, so only Admin may mint one.
 	"api_keys:manage": {
 		code: 27,
 		group: "keys",
@@ -355,6 +356,7 @@ export const permissions = {
 		description: "Full-access keys, and every member's keys.",
 		action: "manage API keys",
 		sensitive: true,
+		customRoles: false,
 	},
 	"llm_keys:manage": {
 		code: 32,
@@ -373,7 +375,8 @@ export const permissions = {
 	},
 
 	// Organization. Members and roles stay with Admin: Clerk only lets its own admins invite and
-	// remove people, and a role that may edit roles could grant itself everything.
+	// remove people, and a role that may edit roles could grant itself everything. Anything that
+	// reaches the same power another way (full-access keys, SCIM role mappings) stays with Admin too.
 	"organization:manage": {
 		code: 24,
 		group: "organization",
@@ -409,6 +412,7 @@ export const permissions = {
 		action: "manage billing",
 		sensitive: true,
 	},
+	// SCIM maps IdP groups to roles, Admin included, so it stays with Admin like members:manage.
 	"sso:manage": {
 		code: 33,
 		group: "organization",
@@ -416,6 +420,7 @@ export const permissions = {
 		description: "SAML connections and SCIM provisioning.",
 		action: "manage single sign-on and SCIM provisioning",
 		sensitive: true,
+		customRoles: false,
 	},
 	// Only in Maple's own org: feedback from every organization, free text included.
 	"agent_feedback:triage": {

@@ -1409,7 +1409,8 @@ export class V2EnvironmentsApiGroup extends HttpApiGroup.make("environments")
 			title: "Environments",
 			description: "The deployment environments telemetry has been observed in.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
 
 export class V2ServiceMapApiGroup extends HttpApiGroup.make("serviceMap")
 	.add(

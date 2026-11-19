@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { Effect, Layer } from "effect"
 import { ElectricNotConfigured, ElectricUpstreamError, ElectricUpstreamUnreachable } from "../errors"
 import {
@@ -18,6 +19,7 @@ const routes = (options: {
 	readonly ensureConfigured?: Effect.Effect<void, ElectricNotConfigured>
 	readonly orgId?: string
 	readonly authenticated?: boolean
+	readonly permissions?: Policy.Grants
 }) =>
 	ElectricSyncRouter.pipe(
 		Layer.provide(
@@ -28,7 +30,9 @@ const routes = (options: {
 			}),
 		),
 		Layer.provide(
-			options.authenticated === false ? noTenantLayer : fixedTenantLayer(options.orgId ?? "org_live"),
+			options.authenticated === false
+				? noTenantLayer
+				: fixedTenantLayer(options.orgId ?? "org_live", options.permissions),
 		),
 	)
 
@@ -229,6 +233,30 @@ describe("shape route: upstream failures", () => {
 			assert.strictEqual(body, "electric exploded")
 			// An error response is org-scoped too and must not be shared-cached.
 			assert.strictEqual(headers.get("cache-control"), "private, max-age=60")
+		}),
+	)
+})
+
+describe("shape route: permissions", () => {
+	it.effect("refuses a telemetry shape to a role without telemetry:read, without calling Electric", () =>
+		Effect.gen(function* () {
+			const calls: Array<ElectricCall> = []
+			const { status } = yield* syncRequest(
+				routes({ calls, permissions: ["billing:manage"] }),
+				"/api/sync/shape?shape=alert_incidents&offset=-1",
+			)
+			assert.strictEqual(status, 403)
+			assert.lengthOf(calls, 0)
+		}),
+	)
+
+	it.effect("serves a configuration shape to the same role", () =>
+		Effect.gen(function* () {
+			const { status } = yield* syncRequest(
+				routes({ permissions: ["billing:manage"] }),
+				"/api/sync/shape?shape=alert_rules&offset=-1",
+			)
+			assert.strictEqual(status, 200)
 		}),
 	)
 })

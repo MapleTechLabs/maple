@@ -137,6 +137,8 @@ type SelfHostedSessionClaims = Schema.Schema.Type<typeof SelfHostedSessionClaims
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const decodeOrgIdOption = Schema.decodeUnknownOption(OrgId)
+const decodeRoleNameOption = Schema.decodeUnknownOption(RoleName)
 
 const unauthorized = (message: string) =>
 	new UnauthorizedError({
@@ -673,6 +675,52 @@ export type VerifyOrgMembership = (
 	userId: UserId,
 	orgId: OrgId,
 ) => Effect.Effect<Option.Option<VerifiedOrgMembership>, AuthorizationUnavailableError>
+
+/**
+ * A {@link VerifyOrgMembership} that asks Clerk directly, for workers with no membership cache of
+ * their own (electric-sync). Answers are kept per user for a minute in this isolate: that minute is
+ * how long a role change takes to reach them, the same as a session token's lifetime.
+ */
+export const makeClerkMembershipDirectory = (
+	env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">,
+): VerifyOrgMembership | undefined => {
+	const clerk = clerkModeClient(env)
+	if (clerk === undefined) return undefined
+	const memo = new Map<UserId, { readonly until: number; readonly memberships: ReadonlyArray<VerifiedOrgMembership> }>()
+	const load = Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (userId: UserId) {
+		const page = yield* Effect.tryPromise({
+			try: () => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
+			catch: (cause) =>
+				new AuthorizationUnavailableError({
+					message: `Could not verify organization membership: ${cause instanceof Error ? cause.message : String(cause)}`,
+				}),
+		})
+		return Arr.flatMap(page.data, (row): ReadonlyArray<VerifiedOrgMembership> => {
+			const orgId = decodeOrgIdOption(row.organization.id)
+			const role = decodeRoleNameOption(row.role)
+			if (Option.isNone(orgId) || Option.isNone(role)) return []
+			return [
+				{
+					orgId: orgId.value,
+					role: role.value,
+					customPermissions:
+						role.value === Policy.CUSTOM_ROLE_CLERK_KEY
+							? Policy.customPermissionsFromMembershipMetadata(row.publicMetadata)
+							: [],
+				},
+			]
+		})
+	})
+	return (userId, orgId) =>
+		Effect.gen(function* () {
+			const now = yield* Clock.currentTimeMillis
+			const cached = memo.get(userId)
+			const memberships =
+				cached !== undefined && cached.until > now ? cached.memberships : yield* load(userId)
+			if (cached === undefined || cached.until <= now) memo.set(userId, { until: now + 60_000, memberships })
+			return Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
+		})
+}
 
 const ORGANIZATION_ACCESS_DENIED_MESSAGE = "You are not a member of the requested organization."
 

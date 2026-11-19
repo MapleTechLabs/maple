@@ -157,4 +157,5 @@ export class ServiceMapWorldApiGroup extends HttpApiGroup.make("serviceMapWorld"
 		}).annotate(EndpointAccess, requires("service_map:edit")),
 	)
 	.prefix("/internal/service-map/world")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

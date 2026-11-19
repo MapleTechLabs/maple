@@ -1080,7 +1080,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				alertRuleNotFound,
 				...V2ManagedWarehouseErrors,
 			],
-		}).annotateMerge(
+		}).annotate(EndpointAccess, requires("telemetry:read")).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listAlertRuleChecks",
 				summary: "List a rule's checks",
@@ -1095,7 +1095,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 			query: AlertCheckSummaryQuery,
 			success: AlertCheckSummary,
 			error: [alertValidation, alertPersistence, alertRuleNotFound, ...V2ManagedWarehouseErrors],
-		}).annotateMerge(
+		}).annotate(EndpointAccess, requires("telemetry:read")).annotateMerge(
 			OpenApi.annotations({
 				identifier: "summarizeAlertRuleChecks",
 				summary: "Summarize a rule's checks",

@@ -130,6 +130,13 @@ describe("permission codes", () => {
 		expect(new Set(Policy.decodeCustomPermissions(Policy.encodePermissions(list)))).toEqual(new Set(list))
 	})
 
+	it("keeps every way to reach Admin's power out of custom roles", () => {
+		for (const permission of ["members:manage", "roles:manage", "organization:manage", "api_keys:manage", "sso:manage"] as const) {
+			expect(Policy.grantableToCustomRoles(permission)).toBe(false)
+		}
+		expect(Policy.grantableToCustomRoles("billing:manage")).toBe(true)
+	})
+
 	it("drops codes it does not know and permissions a custom role may not hold", () => {
 		const stored = [...Policy.encodePermissions(["members:manage", "roles:manage", "alerts:manage"]), 9999]
 		expect(Policy.decodeCustomPermissions(stored)).toEqual(["alerts:manage"])

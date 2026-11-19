@@ -962,4 +962,5 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 			description:
 				"Create and manage dashboards, browse version history, restore snapshots, and instantiate built-in templates.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

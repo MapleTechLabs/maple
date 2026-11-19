@@ -1,3 +1,4 @@
+import { EndpointAccess, requires } from "../endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { AuthorizationV2 } from "./auth"
@@ -154,4 +155,5 @@ export class V2TelemetrySignalsApiGroup extends HttpApiGroup.make("telemetrySign
 			description:
 				"Which signals are reaching Maple. The input every empty state needs to tell 'nothing is wired up' apart from 'nothing happened'.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}
