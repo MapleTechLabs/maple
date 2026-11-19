@@ -7,6 +7,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { PublicIdPrefixes, encodePublicId } from "@maple/domain/http/v2"
+import { AuthorizationUnavailableError } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { membershipGrants } from "@maple/auth"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
@@ -156,6 +157,8 @@ export interface MobilePushServiceApi {
 }
 
 const SEND_CONCURRENCY = 8
+/** How long a push waits on one device owner's role before sending anyway. */
+const OWNER_LOOKUP_TIMEOUT = Duration.seconds(2)
 const SEND_TIMEOUT = Duration.seconds(8)
 
 /**
@@ -547,6 +550,16 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 							Arr.dedupe(Arr.map(listed, (device) => device.userId)),
 							(userId) =>
 								memberships.verify(userId, orgId).pipe(
+									// A slow Clerk must not eat the push's own deadline.
+									Effect.timeoutOrElse({
+										duration: OWNER_LOOKUP_TIMEOUT,
+										orElse: () =>
+											Effect.fail(
+												new AuthorizationUnavailableError({
+													message: "Device owner lookup timed out",
+												}),
+											),
+									}),
 									Effect.map(
 										Option.exists((membership) =>
 											Policy.can(membershipGrants(membership), "telemetry:read"),

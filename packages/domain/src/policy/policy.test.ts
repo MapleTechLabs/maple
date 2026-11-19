@@ -58,7 +58,7 @@ describe("Policy.grantsOf", () => {
 		expect(
 			Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["alerts:manage", "ingest_keys:roll"]),
 		).toEqual(["telemetry:read", "alerts:manage", "ingest_keys:view", "ingest_keys:roll"])
-		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["oncall:manage"])).toEqual(["oncall:manage"])
+		expect(Policy.grantsOf([Policy.CUSTOM_ROLE_CLERK_KEY], ["billing:manage"])).toEqual(["billing:manage"])
 	})
 
 	it("holds what any of several roles holds", () => {
@@ -152,6 +152,7 @@ describe("permission codes", () => {
 			"organization:manage",
 			"api_keys:manage",
 			"sso:manage",
+			"warehouse:manage",
 		] as const) {
 			expect(Policy.grantableToCustomRoles(permission)).toBe(false)
 		}
@@ -160,10 +161,10 @@ describe("permission codes", () => {
 
 	it("drops codes it does not know and permissions a custom role may not hold", () => {
 		const stored = [
-			...Policy.encodePermissions(["members:manage", "roles:manage", "oncall:manage"]),
+			...Policy.encodePermissions(["members:manage", "roles:manage", "billing:manage"]),
 			9999,
 		]
-		expect(Policy.decodeCustomPermissions(stored)).toEqual(["oncall:manage"])
+		expect(Policy.decodeCustomPermissions(stored)).toEqual(["billing:manage"])
 	})
 
 	it("adds what stored permissions imply, so a role stored before an implication gains it", () => {

@@ -178,6 +178,7 @@ export const permissions = {
 		label: "Manage on-call schedules",
 		description: "Schedules, overrides and escalation chains.",
 		action: "manage on-call schedules",
+		implies: ["telemetry:read"],
 	},
 	"slos:manage": {
 		code: 47,
@@ -200,6 +201,7 @@ export const permissions = {
 		label: "Manage error notifications",
 		description: "Who hears about new errors, and the escalation policy.",
 		action: "manage error notifications and escalation",
+		implies: ["telemetry:read"],
 	},
 	"anomalies:configure": {
 		code: 16,
@@ -309,6 +311,7 @@ export const permissions = {
 		description: "Run queries against connected databases and APIs.",
 		action: "query connected data sources",
 	},
+	// It decides where every org's telemetry is written and read, so it stays with Admin.
 	"warehouse:manage": {
 		code: 29,
 		group: "ingestion",
@@ -316,6 +319,7 @@ export const permissions = {
 		description: "Bring-your-own ClickHouse connection and settings.",
 		action: "manage the data warehouse",
 		sensitive: true,
+		customRoles: false,
 	},
 
 	// Integrations and code.
@@ -377,6 +381,7 @@ export const permissions = {
 		sensitive: true,
 		customRoles: false,
 	},
+	// A key of their own routes prompts that quote telemetry through their provider account.
 	"llm_keys:manage": {
 		code: 32,
 		group: "keys",
@@ -384,6 +389,7 @@ export const permissions = {
 		description: "The organization's own OpenRouter and model provider keys.",
 		action: "manage the organization's model provider keys",
 		sensitive: true,
+		implies: ["telemetry:read"],
 	},
 	"mcp_connections:view_all": {
 		code: 34,

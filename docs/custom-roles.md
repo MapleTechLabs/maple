@@ -24,7 +24,9 @@
   through Maple, which keeps custom role metadata in step.
 - Production needs Clerk's B2B Authentication add-on for custom roles.
 - The `organizationMembership.*` webhook events are enabled (`/webhooks/clerk`): they demote
-  pinned credentials, and clear `maple_role` from a member moved off `org:custom` in Clerk.
+  pinned credentials and evict cached memberships.
+- Change roles in Maple, not in the Clerk dashboard. A member set back to `org:custom` by hand keeps
+  whatever `maple_role` their membership still carries.
 
 ## Known limits
 

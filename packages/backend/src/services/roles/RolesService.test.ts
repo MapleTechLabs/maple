@@ -96,7 +96,6 @@ const fakeClerk = (roles: ReadonlyArray<Policy.StoredCustomRole>, members: Reado
 				state.onRolesWrite.shift()?.()
 			}),
 		memberships: () => Effect.sync(() => Arr.map(Arr.fromIterable(state.members.values()), toMembership)),
-		membership: () => Effect.die("unused"),
 		setMembershipRole: (_orgId, userId, role) =>
 			Effect.sync(() => {
 				state.writes.push(`role:${userId}`)

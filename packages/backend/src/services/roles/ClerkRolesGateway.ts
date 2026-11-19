@@ -34,11 +34,6 @@ export interface ClerkRolesGatewayApi {
 	readonly memberships: (
 		orgId: OrgId,
 	) => Effect.Effect<ReadonlyArray<RoleMembership>, RolesUnavailableError>
-	/** One member's membership as Clerk holds it now; `None` once they left. */
-	readonly membership: (
-		orgId: OrgId,
-		userId: UserId,
-	) => Effect.Effect<Option.Option<RoleMembership>, RolesUnavailableError>
 	readonly setMembershipRole: (
 		orgId: OrgId,
 		userId: UserId,
@@ -137,18 +132,6 @@ const make = Effect.gen(function* () {
 			Effect.map((members) => Arr.getSomes(Arr.map(members, toRoleMembership))),
 		)
 
-	const membership: ClerkRolesGatewayApi["membership"] = (orgId, userId) =>
-		withClerk(
-			"Clerk.organizations.getOrganizationMembershipList",
-			{ orgId, "tenant.userId": userId },
-			(client) =>
-				client.organizations.getOrganizationMembershipList({
-					organizationId: orgId,
-					userId: [userId],
-					limit: 1,
-				}),
-		).pipe(Effect.map((page) => Option.flatMap(Arr.head(page.data), toRoleMembership)))
-
 	const setMembershipRole: ClerkRolesGatewayApi["setMembershipRole"] = (orgId, userId, role) =>
 		withClerk(
 			"Clerk.organizations.updateOrganizationMembership",
@@ -173,7 +156,6 @@ const make = Effect.gen(function* () {
 		customRoles,
 		writeCustomRoles,
 		memberships,
-		membership,
 		setMembershipRole,
 		setMembershipCustomRole,
 	} satisfies ClerkRolesGatewayApi
