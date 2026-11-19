@@ -4,7 +4,7 @@ import * as Policy from "../policy"
 import { MapleAiApi } from "./ai-api"
 import { MapleApi } from "./api"
 import { Authorization, RegionlessSessionAuthorization, SessionAuthorization } from "./current-tenant"
-import { type CalledEndpoint, decideEndpointAccess, endpointAccessOf } from "./endpoint-access"
+import { type CalledEndpoint, decideEndpointAccess, endpointAccessRules } from "./endpoint-access"
 import { MapleInternalApi } from "./internal-api"
 import { AuthorizationV2 } from "./v2/auth"
 import { MapleApiV2 } from "./v2/api"
@@ -55,7 +55,7 @@ describe("EndpointAccess", () => {
 				endpoint.method !== "GET" &&
 				endpoint.method !== "HEAD" &&
 				Arr.some(gated, (middleware) => endpoint.middlewares.has(middleware)) &&
-				endpointAccessOf({ group, endpoint }) === undefined,
+				endpointAccessRules({ group, endpoint }).length === 0,
 		)
 		expect(
 			Arr.map(unmarked, ({ group, endpoint }) => `${group.identifier}.${endpoint.identifier}`),
@@ -80,6 +80,50 @@ describe("EndpointAccess", () => {
 		})
 	})
 
+	it("needs dashboards:edit and the group's telemetry:read to create a dashboard", () => {
+		const create = find(v2.dashboards, "create")
+		expect(decideEndpointAccess(ANALYST, create)._tag).toBe("Allowed")
+		expect(decideEndpointAccess(["dashboards:edit"], create)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
+		expect(decideEndpointAccess(["telemetry:read"], create)).toEqual({
+			_tag: "Denied",
+			permission: "dashboards:edit",
+		})
+	})
+
+	it("needs investigations:run and the group's telemetry:read to start an investigation", () => {
+		const create = find(v2.investigations, "create")
+		expect(decideEndpointAccess(MEMBER, create)._tag).toBe("Allowed")
+		expect(decideEndpointAccess(["investigations:run"], create)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
+		expect(decideEndpointAccess(ANALYST, create)).toEqual({
+			_tag: "Denied",
+			permission: "investigations:run",
+		})
+	})
+
+	it("keeps the group's telemetry:read on an endpoint its handler checks", () => {
+		const upsert = find(internal.errors, "upsertEscalationPolicy")
+		expect(decideEndpointAccess(["error_policy:manage"], upsert)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
+		expect(decideEndpointAccess(["telemetry:read"], upsert)._tag).toBe("Allowed")
+	})
+
+	it("needs telemetry:read to read a Supabase project's query insights", () => {
+		const insights = find(internal.integrations, "supabaseProjectInsights")
+		expect(decideEndpointAccess(["integrations:manage"], insights)).toEqual({
+			_tag: "Denied",
+			permission: "telemetry:read",
+		})
+		expect(decideEndpointAccess(ANALYST, insights)._tag).toBe("Allowed")
+	})
+
 	it("needs dashboards:share to publish a share link", () => {
 		const share = find(v2.dashboards, "upsertShare")
 		expect(decideEndpointAccess(ANALYST, share)._tag).toBe("Allowed")
@@ -100,7 +144,6 @@ describe("EndpointAccess", () => {
 
 	it("leaves a billing write to its handler, which checks billing:manage", () => {
 		const controls = find(internal.billing, "updateBillingControls")
-		expect(endpointAccessOf(controls)).toBe("handler")
 		expect(decideEndpointAccess(ANALYST, controls)._tag).toBe("Allowed")
 	})
 })

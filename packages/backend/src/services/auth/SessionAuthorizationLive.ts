@@ -21,13 +21,9 @@ import { OrgMembershipService } from "./OrgMembershipService"
 const sessionResolver = Effect.gen(function* () {
 	const env = yield* Env
 	const membership = yield* Effect.serviceOption(OrgMembershipService)
-	return makeResolveTenant(
-		env,
-		undefined,
-		undefined,
-		undefined,
-		Option.getOrUndefined(Option.map(membership, (service) => service.verify)),
-	)
+	return makeResolveTenant(env, {
+		customRoleDirectory: Option.getOrUndefined(Option.map(membership, (service) => service.verify)),
+	})
 })
 
 /**

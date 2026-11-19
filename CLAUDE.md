@@ -42,10 +42,12 @@ with `packageManager`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
-- Analysts (`org:analyst`) read everything and build dashboards. The auth middlewares refuse them every
-  other non-GET endpoint unless it is marked `AnalystAccess` (`packages/domain/src/http/analyst-access.ts`):
-  `read` for a POST that only queries, `personal` for the caller's own state, `author` for dashboards. An
-  unmarked read-only POST is a 403 for them.
+- Roles are permission sets (`packages/domain/src/policy`): built-in presets, or custom roles on Clerk
+  metadata (members hold `org:custom`, their permissions sit on the membership). Checks read
+  `tenant.permissions`, never a role. Endpoints carry `EndpointAccess`
+  (`packages/domain/src/http/endpoint-access.ts`): `requires(permission)`, `"personal"` for the caller's own
+  state, `"handler"` when the handler checks. Endpoint and group rules both apply; an unmarked non-GET is
+  refused. Every MCP tool declares its `permission`.
 
 ### Service conventions
 

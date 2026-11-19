@@ -11,7 +11,7 @@ import {
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "./chat.http"
@@ -45,11 +45,14 @@ const authorizationAs = (tenant: CurrentTenant.TenantSchema) =>
 		}),
 	)
 
-/** The transcript after the session recorded `result` as call_9's outcome. */
-const recorded = (result: {
-	readonly output: string
-	readonly isError?: boolean
-}): ReadonlyArray<ChatMessage> => [
+/** The transcript after the session recorded `result` as call_9's outcome, a call of `name`. */
+const recorded = (
+	result: {
+		readonly output: string
+		readonly isError?: boolean
+	},
+	name = "delete_alert_rule",
+): ReadonlyArray<ChatMessage> => [
 	new ChatMessage({
 		id: "a1",
 		role: "assistant",
@@ -59,7 +62,7 @@ const recorded = (result: {
 		toolCalls: [
 			new ChatToolCall({
 				id: "call_9",
-				name: "delete_alert_rule",
+				name,
 				input: {},
 				proposed: true,
 				...result,
@@ -157,7 +160,7 @@ describe("POST /internal/chat/apply", () => {
 		}
 	})
 
-	it("refuses a decision from someone who may not act through Maple AI, without reaching the session", async () => {
+	it("refuses a decision from someone who may not act through Maple AI, without settling it", async () => {
 		const analyst = new CurrentTenant.TenantSchema({
 			...TENANT,
 			roles: ["org:analyst" as CurrentTenant.TenantSchema["roles"][number]],
@@ -171,6 +174,26 @@ describe("POST /internal/chat/apply", () => {
 			expect([approved.status, denied.status]).toEqual([403, 403])
 			expect(JSON.stringify(approved.body)).toContain(Policy.denialFor("ai:act").message)
 			expect(harness.settlements).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets an analyst decide a dashboard change, which needs dashboards:edit", async () => {
+		const analyst = new CurrentTenant.TenantSchema({
+			...TENANT,
+			roles: ["org:analyst" as CurrentTenant.TenantSchema["roles"][number]],
+			permissions: Policy.grantsOf(["org:analyst"]),
+		})
+		const harness = makeHarness({
+			tenant: analyst,
+			history: recorded({ output: "Approved in Maple.\nDashboard created." }, "create_dashboard"),
+		})
+		try {
+			const response = await harness.apply(byReference("approve"))
+
+			expect(response.status).toBe(200)
+			expect(Arr.map(harness.settlements, (settlement) => settlement.decision)).toEqual(["approve"])
 		} finally {
 			await harness.dispose()
 		}

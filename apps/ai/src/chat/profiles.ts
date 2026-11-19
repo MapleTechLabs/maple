@@ -13,7 +13,8 @@ import * as Policy from "@maple/domain/policy"
 import { Array as Arr } from "effect"
 import { holdsToolPermission } from "../mcp/tools/types"
 import type { AgentDefinition } from "./agents"
-import { DASHBOARD_AUTHORING_TOOLS, READ_ONLY_RULESET, READ_TOOL_PERMISSIONS } from "./permissions"
+import { approvalPermission } from "./approval-permission"
+import { READ_ONLY_RULESET, READ_TOOL_PERMISSIONS } from "./permissions"
 import { CONNECTOR_ANONYMOUS_SYSTEM_PROMPT, CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import type { LlmCallTags } from "../platform/Llm"
 
@@ -33,29 +34,20 @@ export interface TurnProfile {
 const deny = (tool: string) => new PermissionRule({ tool, action: "deny" })
 
 /**
- * The ruleset of someone who may not act through Maple AI (no `ai:act`): nothing is proposed to
- * them, except a dashboard change when they may edit dashboards.
- */
-const withoutActions = (ruleset: PermissionRuleset, permissions: Policy.Grants): PermissionRuleset =>
-	Arr.map(ruleset, (rule) =>
-		rule.action === "ask" &&
-		!(DASHBOARD_AUTHORING_TOOLS.has(rule.tool) && Policy.can(permissions, "dashboards:edit"))
-			? deny(rule.tool)
-			: rule,
-	)
-
-/**
- * The profile for the tenant a turn's tools run as. Proposals follow `ai:act`, and a read tool the
- * tenant may not call is not offered: a listed tool invites a call that only fails. A data source
- * query answers for whoever caused an unattended turn, as the data source service judges it.
+ * The profile for the tenant a turn's tools run as. A change is proposed only when the tenant could
+ * approve it (`approvalPermission`), and a read tool the tenant may not call is not offered: a listed
+ * tool invites a call that only fails. A data source query answers for whoever caused an unattended
+ * turn, as the data source service judges it.
  */
 export const profileForTenant = (
 	profile: TurnProfile,
 	tenant: Pick<TenantContext, "permissions" | "turnOrigin" | "turnStarter">,
 ): TurnProfile => {
-	const ruleset = Policy.can(tenant.permissions, "ai:act")
-		? profile.ruleset
-		: withoutActions(profile.ruleset, tenant.permissions)
+	const ruleset = Arr.map(profile.ruleset, (rule) =>
+		rule.action === "ask" && !Policy.can(tenant.permissions, approvalPermission(rule.tool))
+			? deny(rule.tool)
+			: rule,
+	)
 	const unreachable = Arr.filter(
 		READ_TOOL_PERMISSIONS,
 		(tool) => !holdsToolPermission(tenant, tool.permission),

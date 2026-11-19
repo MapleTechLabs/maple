@@ -1965,11 +1965,12 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		// Query insights are the project's query telemetry.
 		HttpApiEndpoint.get("supabaseProjectInsights", "/supabase/projects/:ref/insights", {
 			params: { ref: SupabaseProjectRef },
 			success: SupabaseProjectInsights,
 			error: [IntegrationsNotFoundError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {

@@ -96,12 +96,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 		const regions = yield* Effect.serviceOption(OrganizationRegionService)
 		// Optional for route tests; absent, `Authorization: DPoP` is always a 401.
 		const devices = yield* Effect.serviceOption(DeviceCredentialsService)
-		const resolveTenant = makeResolveTenant(
-			env,
-			undefined,
-			undefined,
-			Option.match(membership, { onNone: () => undefined, onSome: (service) => service.verify }),
-		)
+		const resolveTenant = makeResolveTenant(env, {
+			verifyOrgMembership: Option.match(membership, {
+				onNone: () => undefined,
+				onSome: (service) => service.verify,
+			}),
+		})
 
 		return AuthorizationV2.of({
 			bearer: (httpEffect, options) =>

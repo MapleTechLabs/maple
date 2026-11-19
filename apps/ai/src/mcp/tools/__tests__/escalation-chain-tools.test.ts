@@ -75,7 +75,7 @@ const layer = (seen: Seen) =>
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
 			// The services are mocked; what a role may change is the registry's, tested on its own.
-			permissions: Policy.everyPermission,
+			permissions: Policy.allPermissions,
 			authMode: "self_hosted",
 		}),
 		Layer.mock(EscalationChainsService)({

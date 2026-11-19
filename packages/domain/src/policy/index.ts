@@ -19,8 +19,6 @@ export {
 	builtInRoles,
 	type ClerkRoleKey,
 	CUSTOM_ROLE_CLERK_KEY,
-	everyPermission,
-	Role,
 } from "./roles"
 export {
 	CustomRoleDescription,
@@ -68,8 +66,6 @@ export const grantsOf = (roles: ReadonlyArray<string>, custom?: ReadonlyArray<Pe
 /** Whether the grants hold `permission`. */
 export const can = (grants: Grants, permission: Permission): boolean => Arr.contains(grants, permission)
 
-/** Same as {@link can}, under the name page models use. */
-export const has = can
 
 /** Whether `pinned` holds something `current` does not: a credential pinned to it outlives `current`. */
 export const exceeds = (pinned: Grants, current: Grants): boolean =>
@@ -78,26 +74,28 @@ export const exceeds = (pinned: Grants, current: Grants): boolean =>
 /** Why a check failed, with the message every forbidden error carries. */
 export interface Denial {
 	readonly permission: Permission
-	/** The built-in roles that hold the permission, highest first ("Admin", "Engineer"). */
-	readonly holders: ReadonlyArray<string>
 	/** "You need Manage alerts to manage alerts. Admin and Engineer have it." */
 	readonly message: string
 }
 
 const sentenceList = (items: ReadonlyArray<string>): string =>
-	items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+	items.length <= 1
+		? Arr.join(items, "")
+		: `${Arr.join(items.slice(0, -1), ", ")} and ${items[items.length - 1]}`
 
 export const denialFor = (permission: Permission): Denial => {
 	const { label, action } = permissions[permission]
 	const holders = Arr.map(
-		Arr.reverse(Arr.filter(builtInRoles, (entry) => Arr.contains<Permission>(entry.permissions, permission))),
+		Arr.reverse(
+			Arr.filter(builtInRoles, (entry) => Arr.contains<Permission>(entry.permissions, permission)),
+		),
 		(entry) => entry.label,
 	)
 	const who =
 		holders.length === builtInRoles.length
 			? "Every built-in role has it."
 			: `${sentenceList(holders)} ${holders.length === 1 ? "has" : "have"} it.`
-	return { permission, holders, message: `You need ${label} to ${action}. ${who}` }
+	return { permission, message: `You need ${label} to ${action}. ${who}` }
 }
 
 /**
@@ -112,5 +110,4 @@ export const check = <E>(
 	can(grants, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
 
 /** What a person is told when their role reaches no part of an endpoint at all. */
-export const limitedAccessMessage =
-	"Your role doesn't allow this. Ask an org admin for a role that does."
+export const limitedAccessMessage = "Your role doesn't allow this. Ask an org admin for a role that does."

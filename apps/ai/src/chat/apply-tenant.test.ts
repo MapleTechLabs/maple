@@ -129,7 +129,9 @@ describe("whose authority an approval runs under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] })),
+					memberships(() =>
+						Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] }),
+					),
 					noActors,
 				]),
 			)
@@ -146,7 +148,11 @@ describe("whose authority an approval runs under", () => {
 	)
 
 	/** An app approval as the route encodes it, by a caller holding `permissions` (absent: a record from before them). */
-	const appApproval = (roles: ReadonlyArray<RoleName>, permissions?: Policy.Grants) =>
+	const appApproval = (
+		roles: ReadonlyArray<RoleName>,
+		permissions?: Policy.Grants,
+		tool = "create_alert_rule",
+	) =>
 		resolveTenant(ORG, {
 			env: {},
 			sessionId: `${ORG}:tab-1`,
@@ -158,7 +164,7 @@ describe("whose authority an approval runs under", () => {
 				...(permissions === undefined ? undefined : { permissions }),
 				authMode: "clerk",
 			},
-			tool: "create_alert_rule",
+			tool,
 			input: {},
 		}).pipe(Effect.provide([memberships(die), noActors]))
 
@@ -177,14 +183,33 @@ describe("whose authority an approval runs under", () => {
 		}),
 	)
 
-	it.effect("runs an app approval with the approver's own permissions, and an old record with its roles'", () =>
-		Effect.gen(function* () {
-			const custom = yield* appApproval([CUSTOM], ["ai:act", "alerts:manage"])
-			const recordedBefore = yield* appApproval([MEMBER])
+	it.effect(
+		"lets an analyst approve a dashboard change, which needs dashboards:edit rather than ai:act",
+		() =>
+			Effect.gen(function* () {
+				const analyst = yield* appApproval([ANALYST], undefined, "create_dashboard")
+				const actsWithoutDashboards = yield* appApproval(
+					[CUSTOM],
+					["telemetry:read", "ai:act"],
+					"create_dashboard",
+				).pipe(Effect.flip)
 
-			assert.deepStrictEqual(custom.permissions, ["ai:act", "alerts:manage"])
-			assert.deepStrictEqual(recordedBefore.permissions, Policy.grantsOf([MEMBER]))
-		}),
+				assert.strictEqual(analyst.userId, ADA)
+				assert.strictEqual(actsWithoutDashboards.reason, "not_permitted")
+				assert.strictEqual(actsWithoutDashboards.message, Policy.denialFor("dashboards:edit").message)
+			}),
+	)
+
+	it.effect(
+		"runs an app approval with the approver's own permissions, and an old record with its roles'",
+		() =>
+			Effect.gen(function* () {
+				const custom = yield* appApproval([CUSTOM], ["ai:act", "alerts:manage"])
+				const recordedBefore = yield* appApproval([MEMBER])
+
+				assert.deepStrictEqual(custom.permissions, ["ai:act", "alerts:manage"])
+				assert.deepStrictEqual(recordedBefore.permissions, Policy.grantsOf([MEMBER]))
+			}),
 	)
 
 	it.effect("refuses a linked approver whose custom role cannot act through Maple AI", () =>
@@ -192,7 +217,11 @@ describe("whose authority an approval runs under", () => {
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
 				Effect.provide([
 					memberships(() =>
-						Effect.succeedSome({ orgId: ORG, role: CUSTOM, customPermissions: ["alerts:manage"] }),
+						Effect.succeedSome({
+							orgId: ORG,
+							role: CUSTOM,
+							customPermissions: ["alerts:manage"],
+						}),
 					),
 					noActors,
 				]),
@@ -275,7 +304,9 @@ describe("whose authority a connector turn reads under", () => {
 		Effect.gen(function* () {
 			const tenant: TenantContext = yield* run(asking(ADA)).pipe(
 				Effect.provide([
-					memberships(() => Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] })),
+					memberships(() =>
+						Effect.succeedSome({ orgId: ORG, role: MEMBER, customPermissions: [] }),
+					),
 					noActors,
 				]),
 			)
@@ -291,7 +322,11 @@ describe("whose authority a connector turn reads under", () => {
 			const failure = yield* run(asking(ADA)).pipe(
 				Effect.provide([
 					memberships(() =>
-						Effect.succeedSome({ orgId: ORG, role: CUSTOM, customPermissions: ["telemetry:read"] }),
+						Effect.succeedSome({
+							orgId: ORG,
+							role: CUSTOM,
+							customPermissions: ["telemetry:read"],
+						}),
 					),
 					noActors,
 				]),

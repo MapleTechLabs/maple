@@ -519,6 +519,7 @@ describe("shared widget data parity with the signed-in board", () => {
 						window: WINDOW,
 						variableValues,
 						canRead: (family) => family === "logs",
+						canRunRawSql: true,
 					}),
 				),
 			)

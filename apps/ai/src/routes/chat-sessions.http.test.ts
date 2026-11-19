@@ -362,34 +362,68 @@ describe("ChatSessionsRouter", () => {
 		)
 	})
 
-	it.effect("lets a custom role drive an investigation only when it may ask Maple AI and run investigations", () => {
+	it.effect("refuses a custom role without telemetry:read the thread's history and events", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
-		const driver: Policy.Grants = ["telemetry:read", "ai:ask", "investigations:run"]
-		return Effect.gen(function* () {
-			yield* withHandler(
-				testDb,
-				turns,
-				Effect.fnUntraced(function* (handler) {
-					const sent = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
-					assert.strictEqual(sent.status, 403)
-					assert.include(yield* Effect.promise(() => sent.text()), Policy.denialFor("investigations:run").message)
-				}),
-				signedInAs("org:custom", ["telemetry:read", "ai:ask"]),
-			)
-			assert.strictEqual(turns.length, 0)
-			yield* withHandler(
-				testDb,
-				turns,
-				Effect.fnUntraced(function* (handler) {
-					assert.strictEqual((yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })).status, 202)
-				}),
-				signedInAs("org:custom", driver),
-			)
-			// The turn runs with the caller's own permissions, not with what their role key grants.
-			assert.deepStrictEqual(turns[0]?.tenant.permissions, driver)
-		})
+		return withHandler(
+			testDb,
+			turns,
+			Effect.fnUntraced(function* (handler) {
+				for (const path of ["/history", "/events"]) {
+					const response = yield* call(handler, "GET", path)
+					assert.strictEqual(response.status, 403)
+					assert.include(
+						yield* Effect.promise(() => response.text()),
+						Policy.denialFor("telemetry:read").message,
+					)
+				}
+				assert.strictEqual(
+					(yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })).status,
+					403,
+				)
+				assert.strictEqual(turns.length, 0)
+			}),
+			signedInAs("org:custom", ["ai:ask", "investigations:run"]),
+		)
 	})
+
+	it.effect(
+		"lets a custom role drive an investigation only when it may ask Maple AI and run investigations",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const turns: Array<BeginTurnInput> = []
+			const driver: Policy.Grants = ["telemetry:read", "ai:ask", "investigations:run"]
+			return Effect.gen(function* () {
+				yield* withHandler(
+					testDb,
+					turns,
+					Effect.fnUntraced(function* (handler) {
+						const sent = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+						assert.strictEqual(sent.status, 403)
+						assert.include(
+							yield* Effect.promise(() => sent.text()),
+							Policy.denialFor("investigations:run").message,
+						)
+					}),
+					signedInAs("org:custom", ["telemetry:read", "ai:ask"]),
+				)
+				assert.strictEqual(turns.length, 0)
+				yield* withHandler(
+					testDb,
+					turns,
+					Effect.fnUntraced(function* (handler) {
+						assert.strictEqual(
+							(yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })).status,
+							202,
+						)
+					}),
+					signedInAs("org:custom", driver),
+				)
+				// The turn runs with the caller's own permissions, not with what their role key grants.
+				assert.deepStrictEqual(turns[0]?.tenant.permissions, driver)
+			})
+		},
+	)
 
 	it.effect("hides another org's session as 404", () => {
 		const testDb = createTestDb(trackedDbs)

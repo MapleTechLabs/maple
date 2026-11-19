@@ -1,8 +1,8 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { ChatProposalDecision } from "../chat-session"
-import { SessionAuthorization } from "./current-tenant"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { LimitedRoleError, SessionAuthorization } from "./current-tenant"
+import { EndpointAccess } from "./endpoint-access"
 
 /**
  * Decide an approval-gated AI chat proposal as the signed-in user.
@@ -66,10 +66,16 @@ export class ChatApiGroup extends HttpApiGroup.make("chat")
 		HttpApiEndpoint.post("apply", "/apply", {
 			payload: ChatApplyRequest,
 			success: ChatApplyResponse,
-			error: [ChatToolNotFoundError, ChatToolNotApplicableError, ChatToolExecutionError],
+			error: [
+				ChatToolNotFoundError,
+				ChatToolNotApplicableError,
+				ChatToolExecutionError,
+				LimitedRoleError,
+			],
 		})
-			// Deciding a proposal either way is acting through Maple AI; the change runs as the caller.
-			.annotate(EndpointAccess, requires("ai:act")),
+			// Deciding a proposal needs what approving its tool does (`dashboards:edit` for a dashboard
+			// change, else `ai:act`); the handler reads the tool off the session. The change runs as the caller.
+			.annotate(EndpointAccess, "handler"),
 	)
 	.prefix("/internal/chat")
 	.middleware(SessionAuthorization) {}

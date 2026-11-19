@@ -24,8 +24,11 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import {
+	Cache,
 	Clock,
+	Duration,
 	Effect,
+	Exit,
 	Option,
 	Redacted,
 	Schema,
@@ -679,48 +682,47 @@ export type VerifyOrgMembership = (
 /**
  * A {@link VerifyOrgMembership} that asks Clerk directly, for workers with no membership cache of
  * their own (electric-sync). Answers are kept per user for a minute in this isolate: that minute is
- * how long a role change takes to reach them, the same as a session token's lifetime.
+ * how long a role change takes to reach them, the same as a session token's lifetime. A failed
+ * lookup is not kept, and concurrent misses for one user share one lookup.
  */
-export const makeClerkMembershipDirectory = (
+export const makeClerkMembershipDirectory = Effect.fnUntraced(function* (
 	env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">,
-): VerifyOrgMembership | undefined => {
+) {
 	const clerk = clerkModeClient(env)
 	if (clerk === undefined) return undefined
-	const memo = new Map<UserId, { readonly until: number; readonly memberships: ReadonlyArray<VerifiedOrgMembership> }>()
-	const load = Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (userId: UserId) {
-		const page = yield* Effect.tryPromise({
-			try: () => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
-			catch: (cause) =>
-				new AuthorizationUnavailableError({
-					message: `Could not verify organization membership: ${cause instanceof Error ? cause.message : String(cause)}`,
-				}),
-		})
-		return Arr.flatMap(page.data, (row): ReadonlyArray<VerifiedOrgMembership> => {
-			const orgId = decodeOrgIdOption(row.organization.id)
-			const role = decodeRoleNameOption(row.role)
-			if (Option.isNone(orgId) || Option.isNone(role)) return []
-			return [
-				{
-					orgId: orgId.value,
-					role: role.value,
-					customPermissions:
-						role.value === Policy.CUSTOM_ROLE_CLERK_KEY
-							? Policy.customPermissionsFromMembershipMetadata(row.publicMetadata)
-							: [],
-				},
-			]
-		})
-	})
-	return (userId, orgId) =>
-		Effect.gen(function* () {
-			const now = yield* Clock.currentTimeMillis
-			const cached = memo.get(userId)
-			const memberships =
-				cached !== undefined && cached.until > now ? cached.memberships : yield* load(userId)
-			if (cached === undefined || cached.until <= now) memo.set(userId, { until: now + 60_000, memberships })
-			return Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
-		})
-}
+	const memberships = yield* Cache.makeWith(
+		Effect.fn("AuthService.clerkMembershipDirectory.load")(function* (userId: UserId) {
+			const page = yield* Effect.tryPromise({
+				try: () => clerk.users.getOrganizationMembershipList({ userId, limit: 100 }),
+				catch: (cause) =>
+					new AuthorizationUnavailableError({
+						message: `Could not verify organization membership: ${cause instanceof Error ? cause.message : String(cause)}`,
+					}),
+			})
+			return Arr.flatMap(page.data, (row): ReadonlyArray<VerifiedOrgMembership> => {
+				const orgId = decodeOrgIdOption(row.organization.id)
+				const role = decodeRoleNameOption(row.role)
+				if (Option.isNone(orgId) || Option.isNone(role)) return []
+				return [
+					{
+						orgId: orgId.value,
+						role: role.value,
+						customPermissions:
+							role.value === Policy.CUSTOM_ROLE_CLERK_KEY
+								? Policy.customPermissionsFromMembershipMetadata(row.publicMetadata)
+								: [],
+					},
+				]
+			})
+		}),
+		{ capacity: 1000, timeToLive: (exit) => (Exit.isSuccess(exit) ? "1 minute" : Duration.zero) },
+	)
+	const verify: VerifyOrgMembership = (userId, orgId) =>
+		Effect.map(Cache.get(memberships, userId), (rows) =>
+			Arr.findFirst(rows, (membership) => membership.orgId === orgId),
+		)
+	return verify
+})
 
 const ORGANIZATION_ACCESS_DENIED_MESSAGE = "You are not a member of the requested organization."
 
@@ -884,10 +886,11 @@ export const makeResolveClerkUser = (
 		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
 	})
 
-export const makeResolveTenant = (
-	env: AuthEnv,
-	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-	acceptsToken: ClerkAcceptsToken = "session_token",
+export interface ResolveTenantOptions {
+	/** Defaults to a Clerk client built from `env`. */
+	readonly authenticateClerkRequest?: ClerkAuthenticateRequest | undefined
+	/** Defaults to `"session_token"`. */
+	readonly acceptsToken?: ClerkAcceptsToken | undefined
 	/**
 	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely: the header is then
 	 * rejected rather than ignored. Callers that have no membership directory to
@@ -895,12 +898,22 @@ export const makeResolveTenant = (
 	 * (`makeResolveMcpTenant`, whose credentials include org-bound API keys)
 	 * deliberately pass nothing.
 	 */
-	verifyOrgMembership?: VerifyOrgMembership,
+	readonly verifyOrgMembership?: VerifyOrgMembership | undefined
 	/**
 	 * Where an `org:custom` session's permissions are looked up, without enabling the header.
 	 * Defaults to `verifyOrgMembership`; with neither, `org:custom` holds nothing.
 	 */
-	customRoleDirectory: VerifyOrgMembership | undefined = verifyOrgMembership,
+	readonly customRoleDirectory?: VerifyOrgMembership | undefined
+}
+
+export const makeResolveTenant = (
+	env: AuthEnv,
+	{
+		authenticateClerkRequest = makeClerkAuthenticateRequest(env),
+		acceptsToken = "session_token",
+		verifyOrgMembership,
+		customRoleDirectory = verifyOrgMembership,
+	}: ResolveTenantOptions = {},
 ) =>
 	Effect.fn("AuthService.resolveTenant")(function* (
 		headers: HeaderRecord,
@@ -1051,9 +1064,9 @@ export const makeResolveTenant = (
 
 export const makeResolveMcpTenant = (
 	env: AuthEnv,
-	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-	/** Where an `org:custom` session's permissions are looked up; the header stays refused. */
-	customRoleDirectory?: VerifyOrgMembership,
+	/** `customRoleDirectory` is where an `org:custom` session's permissions are looked up; the header stays refused. */
+	options: Pick<ResolveTenantOptions, "authenticateClerkRequest" | "customRoleDirectory"> = {},
+) =>
 	// Accept both api_key (programmatic agents) and session_token: this is the
 	// "Clerk / self-hosted session auth" fallback in resolveMcpTenantContext, used
 	// by a logged-in browser applying an approved chat proposal via
@@ -1062,14 +1075,7 @@ export const makeResolveMcpTenant = (
 	// before this fallback, so this only widens the
 	// already-last-resort branch; self-hosted HS256 mode already ignored
 	// acceptsToken, so this just brings Clerk mode to parity.
-) =>
-	makeResolveTenant(
-		env,
-		authenticateClerkRequest,
-		["api_key", "session_token"],
-		undefined,
-		customRoleDirectory,
-	)
+	makeResolveTenant(env, { ...options, acceptsToken: ["api_key", "session_token"] })
 
 type ClerkUser = Awaited<ReturnType<ReturnType<typeof createClerkClient>["users"]["getUser"]>>
 

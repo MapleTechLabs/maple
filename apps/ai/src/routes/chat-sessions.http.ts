@@ -149,16 +149,17 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
-	// A follow-up is asking Maple AI, and driving an investigation (`investigations:run`): it can file
-	// a new diagnosis, and a stop ends a running pass. Without both, the thread is read-only.
-	if (request.method !== "GET") {
-		const missing = Arr.findFirst(
-			["ai:ask", "investigations:run"] as const,
-			(permission) => !Policy.can(tenant.permissions, permission),
-		)
-		if (Option.isSome(missing)) {
-			return { ok: false, failure: problem(Policy.denialFor(missing.value).message, 403) } as const
-		}
+	// The transcript quotes telemetry, so every call needs `telemetry:read`. A follow-up is also asking
+	// Maple AI and driving the investigation (`investigations:run`): it can file a new diagnosis, and a
+	// stop ends a running pass. Without those, the thread is read-only.
+	const missing = Arr.findFirst(
+		request.method === "GET"
+			? (["telemetry:read"] as const)
+			: (["telemetry:read", "ai:ask", "investigations:run"] as const),
+		(permission) => !Policy.can(tenant.permissions, permission),
+	)
+	if (Option.isSome(missing)) {
+		return { ok: false, failure: problem(Policy.denialFor(missing.value).message, 403) } as const
 	}
 
 	const stub = (yield* ChatSessions).session(sessionId)

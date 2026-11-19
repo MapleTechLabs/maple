@@ -1,4 +1,4 @@
-import { Array as Arr, Option, Schema } from "effect"
+import { Array as Arr, Option, Record as Rec, Schema } from "effect"
 import { type Permission, permissions } from "./permissions"
 
 /**
@@ -7,13 +7,12 @@ import { type Permission, permissions } from "./permissions"
  * same way. `root` is Maple's own operator access and self-hosted mode; it is never assigned in
  * Clerk and holds everything.
  */
-export const Role = Schema.Literals(["analyst", "member", "engineer", "admin", "root"])
-export type Role = typeof Role.Type
+type Role = "analyst" | "member" | "engineer" | "admin" | "root"
 
 /** The Clerk role a member on a custom role holds; their permissions are on the membership. */
 export const CUSTOM_ROLE_CLERK_KEY = "org:custom"
 
-const allPermissionKeys = Object.keys(permissions) as ReadonlyArray<Permission>
+const allPermissionKeys: ReadonlyArray<Permission> = Rec.keys(permissions)
 
 const readAccess = [
 	"telemetry:read",
@@ -146,5 +145,3 @@ export const permissionsOfRole = (
 
 /** No roles at all reads as a member: a person's Clerk membership always carries one, so only Maple's own agents arrive without. */
 export const NO_ROLE_PERMISSIONS: ReadonlyArray<Permission> = memberRole.permissions
-
-export const everyPermission: ReadonlyArray<Permission> = allPermissionKeys

@@ -316,6 +316,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						// Minting a share already required reading all of its telemetry, and stored
 						// SQL is only written by a caller that can (see the dashboards write routes).
 						canRead: () => true,
+						canRunRawSql: true,
 					})
 					return new ShareWidgetDataResponse({ results, variables })
 				}),

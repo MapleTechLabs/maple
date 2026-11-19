@@ -23,6 +23,7 @@ import * as Policy from "@maple/domain/policy"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
+import { approvalPermission } from "./approval-permission"
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
 import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
 
@@ -71,15 +72,15 @@ const actingUser = (input: Extract<ApplyChatProposalInput, { readonly actingUser
 
 /**
  * Who the change runs as, which the caller decided before the session was ever reached: always a
- * Maple user who may act through Maple AI (`ai:act`). A person in the app acts as themselves, and a
- * connector approver as the user their chat account is linked to (see `ChatConnector.identity`).
+ * Maple user holding what approving the tool needs (`approvalPermission`). A person in the app acts
+ * as themselves, and a connector approver as the user their chat account is linked to (see
+ * `ChatConnector.identity`).
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	const tenant = yield* approverTenant(orgId, input)
-	// Approving is acting through Maple AI, whoever proposed the change.
 	yield* Policy.check(
 		tenant.permissions,
-		"ai:act",
+		approvalPermission(input.tool),
 		(denial) => new LinkedUserNotPermitted({ reason: "not_permitted", message: denial.message }),
 	)
 	return tenant

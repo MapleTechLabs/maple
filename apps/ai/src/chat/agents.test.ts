@@ -19,7 +19,8 @@ import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog, mapleToolCatalogFor } from "../mcp/tools/registry"
-import { DASHBOARD_AUTHORING_TOOLS, MUTATING_TOOL_NAMES } from "./permissions"
+import { DASHBOARD_AUTHORING_TOOLS } from "./approval-permission"
+import { MUTATING_TOOL_NAMES } from "./permissions"
 import type { TenantContext } from "@maple/domain/http"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
@@ -204,6 +205,17 @@ describe("profileForTurn", () => {
 		// Reads it does not hold are not offered either: raw SQL and the Security Center.
 		assert.equal(evaluatePermission(profile.ruleset, "run_sql"), "deny")
 		assert.equal(evaluatePermission(profile.ruleset, "list_security_findings"), "deny")
+	})
+
+	it("proposes no dashboard change to a custom role that acts through Maple AI but may not edit dashboards", () => {
+		const profile = appProfileFor(["telemetry:read", "ai:ask", "ai:act", "alerts:manage"])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(
+				evaluatePermission(profile.ruleset, name),
+				DASHBOARD_AUTHORING_TOOLS.has(name) ? "deny" : "ask",
+				name,
+			)
+		}
 	})
 
 	it("offers query_data_source only to a turn whose query the service would run", () => {

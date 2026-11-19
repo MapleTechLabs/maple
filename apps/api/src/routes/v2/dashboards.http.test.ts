@@ -16,6 +16,7 @@ import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { AlertRuleId } from "@maple/primitives"
+import * as Policy from "@maple/domain/policy"
 import { alertChartId } from "@maple/backend/platform/signed-ids"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
@@ -177,8 +178,13 @@ const makeHarness = () => {
 	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
 	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
-	// `roles` makes it a key minted for a person, which acts with that person's org roles.
-	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
+	// `roles` makes it a key minted for a person, which acts with that person's org roles; `permissions`
+	// is what an `org:custom` person holds.
+	const bootstrapKey = (
+		scopes?: ReadonlyArray<string>,
+		roles?: ReadonlyArray<string>,
+		permissions?: Policy.Grants,
+	) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
@@ -187,7 +193,16 @@ const makeHarness = () => {
 					scopes,
 					...(roles === undefined
 						? undefined
-						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+						: {
+								metadataJson: {
+									source: "maple_cli",
+									roles,
+									deviceName: "laptop",
+									...(permissions === undefined
+										? undefined
+										: { permissions: Policy.encodePermissions(permissions) }),
+								},
+							}),
 				})
 			}),
 		)
@@ -1730,6 +1745,41 @@ describe("v2 raw SQL widgets", () => {
 			Arr.map([unscoped.secret, telemetryReader.secret], (token) => widgetData(harness, id, token)),
 		)
 		expect(Arr.map(admitted, (response) => response.body.results[0].reason)).toEqual(["failed", "failed"])
+		await harness.dispose()
+	})
+
+	it("refuses saving and running raw SQL to a custom role without query:sql", async () => {
+		const harness = makeHarness()
+		const builder = await harness.bootstrapKey(
+			undefined,
+			["org:custom"],
+			["telemetry:read", "dashboards:edit"],
+		)
+		const refused = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			builder.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.message).toBe(Policy.denialFor("query:sql").message)
+
+		const author = await harness.bootstrapKey()
+		const created = await harness.request(
+			"POST",
+			"/v2/dashboards",
+			author.secret,
+			board([rawSqlWidget(SQL)]),
+		)
+		expect(created.status).toBe(200)
+		const ran = await widgetData(harness, created.body.id, builder.secret)
+		expect(ran.status).toBe(200)
+		expect(ran.body.results[0]).toEqual({
+			widget_id: "sql",
+			ok: false,
+			reason: "unsupported",
+			message: Policy.denialFor("query:sql").message,
+		})
 		await harness.dispose()
 	})
 

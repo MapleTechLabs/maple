@@ -32,13 +32,9 @@ export class TenantResolver extends Context.Service<TenantResolver, TenantResolv
 		make: Effect.gen(function* () {
 			const config = yield* SyncConfig
 			return {
-				resolve: makeResolveTenant(
-					config,
-					undefined,
-					undefined,
-					undefined,
-					makeClerkMembershipDirectory(config),
-				),
+				resolve: makeResolveTenant(config, {
+					customRoleDirectory: yield* makeClerkMembershipDirectory(config),
+				}),
 			} satisfies TenantResolverApi
 		}),
 	},

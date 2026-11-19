@@ -40,10 +40,9 @@ const envWith = (extra: Record<string, string>) =>
 
 const resolvePinned = Effect.gen(function* () {
 	const env = yield* Env
-	return yield* makeResolveTenant(
-		env,
-		nonMemberSession,
-	)({ authorization: "Bearer test-token" }).pipe(Effect.exit)
+	return yield* makeResolveTenant(env, { authenticateClerkRequest: nonMemberSession })({
+		authorization: "Bearer test-token",
+	}).pipe(Effect.exit)
 })
 
 describe("MAPLE_ORG_ID_OVERRIDE with the deployment's Env", () => {
