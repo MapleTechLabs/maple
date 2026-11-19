@@ -444,7 +444,7 @@ describe("SLO page", () => {
 			expectView(role("link", { name: "Edit" })).not.toExist(),
 			expectView(role("button", { name: "Edit" })).toBeDisabled(),
 			expectView(role("button", { name: "Delete" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 			expectView(within(alertingPanel, role("switch", { name: "Burn-rate alerting" }))).toHaveAttr(
 				"aria-disabled",
 				"true",

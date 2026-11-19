@@ -177,7 +177,7 @@ describe("linear destination fields", () => {
 				),
 			).toExist(),
 			expectView(role("button", { name: "Connect Linear" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 		expect(update(model, Message.ClickedConnect(), form).commands).toEqual([])
 		expect(names(update(model, Message.ClickedRetry(), form))).toEqual(["FetchAlertLinearStatus"])

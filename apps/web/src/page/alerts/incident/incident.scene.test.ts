@@ -850,7 +850,7 @@ describe("alert incident, silences", () => {
 			given(loaded(["org:member"])),
 			themeResolved(),
 			expectView(role("button", { name: "Silence" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 		// Before rules load a click does nothing, so the group can't be silenced as the whole rule.
 		expect(step(loaded(["org:engineer"], false), Message.ClickedSilence()).commands ?? []).toEqual([])

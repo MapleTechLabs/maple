@@ -192,7 +192,7 @@ describe("error issue for an analyst", () => {
 			expectView(role("button", { name: "Claim" })).toBeDisabled(),
 			expectView(role("button", { name: "Attach" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+				role("group", { name: Policy.denialFor("error_issues:triage").message }),
 			).toExist(),
 			expectView(role("button", { name: "Attach the PR that fixes this" })).toBeAbsent(),
 		)
@@ -221,7 +221,7 @@ describe("error issue for an analyst", () => {
 			expectView(role("button", { name: "Extend" })).toBeDisabled(),
 			expectView(role("button", { name: "Release" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+				role("group", { name: Policy.denialFor("error_issues:triage").message }),
 			).toExist(),
 		)
 	})
@@ -245,7 +245,7 @@ describe("error issue for an analyst", () => {
 			expectView(role("link", { name: "the issue it was merged into" })).toExist(),
 			expectView(role("button", { name: "Unmerge" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+				role("group", { name: Policy.denialFor("error_issues:triage").message }),
 			).toExist(),
 		)
 	})
@@ -267,7 +267,7 @@ describe("error issue for an analyst", () => {
 			expectView(role("link", { name: "acme/payments#412" })).toExist(),
 			expectView(role("button", { name: "Detach acme/payments#412" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins, engineers and members can triage error issues." }),
+				role("group", { name: Policy.denialFor("error_issues:triage").message }),
 			).toExist(),
 		)
 	})

@@ -176,7 +176,7 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(asMember),
 			expectView(role("button", { name: "New silence" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 			expectView(newRule).not.toExist(),
 		)
 	})

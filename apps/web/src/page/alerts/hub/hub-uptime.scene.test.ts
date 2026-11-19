@@ -210,7 +210,7 @@ describe("alerts hub, Uptime tab", () => {
 			expectView(text("No uptime checks yet")).toExist(),
 			expectView(role("link", { name: "New uptime check" })).not.toExist(),
 			expectView(role("button", { name: "New uptime check" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },

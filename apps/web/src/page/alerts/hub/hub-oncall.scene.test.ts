@@ -104,7 +104,7 @@ describe("alerts hub, on-call schedules", () => {
 			expectView(text("Checkout primary")).toExist(),
 			expectView(role("link", { name: "New schedule" })).not.toExist(),
 			expectView(role("button", { name: "New schedule" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 			// The row menu stays, its items disabled with the same reason.
 			expectView(role("button", { name: "Actions for Checkout primary" })).toExist(),
 		)

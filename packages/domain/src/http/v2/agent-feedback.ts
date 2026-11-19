@@ -12,7 +12,7 @@ import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError } from "./public-error"
 import { AgentFeedbackPublicId } from "./resource-ids"
-import { EndpointAccess, requires } from "../endpoint-access"
+import { EndpointAccess } from "../endpoint-access"
 
 const isNotBlank = Schema.makeFilter((value: string) => Str.trim(value).length > 0, {
 	description: "Must contain a non-whitespace character",

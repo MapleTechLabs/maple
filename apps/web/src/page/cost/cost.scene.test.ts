@@ -2121,7 +2121,7 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^Remove/ })).toBeDisabled(),
 			expectView(role("link", { name: /^Manage/ })).not.toExist(),
 			expectView(
-				role("group", { name: "Only org admins and engineers can manage integrations." }),
+				role("group", { name: Policy.denialFor("integrations:manage").message }),
 			).toExist(),
 		)
 		scene(

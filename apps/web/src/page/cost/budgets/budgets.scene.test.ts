@@ -187,7 +187,7 @@ describe("cost budgets", () => {
 			),
 			expectView(role("button", { name: "Edit AWS production" })).toBeDisabled(),
 			expectView(role("button", { name: "Delete AWS production" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 	})
 
@@ -205,7 +205,7 @@ describe("cost budgets", () => {
 			expectView(text("No budgets yet")).toExist(),
 			expectView(role("link", { name: "New budget" })).toBeAbsent(),
 			expectView(role("button", { name: "New budget" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 	})
 

@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SavedViewId, UserId } from "@maple/primitives"
 import { SavedViewName, SavedViewState, SavedViewSurface, SavedViewVisibility } from "../saved-views"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 

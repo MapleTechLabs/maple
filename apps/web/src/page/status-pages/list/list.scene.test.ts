@@ -85,7 +85,7 @@ describe("status pages list", () => {
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 			expectView(role("button", { name: "Create a status page" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins and engineers can edit status pages." }),
+				role("group", { name: Policy.denialFor("status_pages:edit").message }),
 			).toExist(),
 		)
 	})

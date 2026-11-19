@@ -5,7 +5,7 @@ import {
 	FEATURE_REQUEST_SUBJECT_MAX_LENGTH,
 	FeatureRequestArea,
 } from "../feature-requests"
-import { EndpointAccess, requires } from "./endpoint-access"
+import { EndpointAccess } from "./endpoint-access"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 

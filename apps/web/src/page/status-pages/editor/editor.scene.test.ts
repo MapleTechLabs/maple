@@ -3381,7 +3381,7 @@ describe("settings", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(pageUpdate(member, Message.PickedVisibility({ visibility: "password" })).model),
-			expectView(text("Only org admins and engineers can change who can view status pages.")).toExist(),
+			expectView(text(Policy.denialFor("status_pages:access").message)).toExist(),
 			expectView(role("radio", { name: "Password-protected" })).toBeDisabled(),
 			expectView(role("radio", { name: "Public" })).toBeChecked(),
 			expectView(text("Unsaved changes")).not.toExist(),

@@ -124,7 +124,7 @@ describe("investigations list", () => {
 			measured(),
 			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
+				role("group", { name: Policy.denialFor("llm_keys:manage").message }),
 			).toExist(),
 		)
 		// The limit is on the AI settings tab, which an engineer cannot open.
@@ -138,7 +138,7 @@ describe("investigations list", () => {
 			measured(),
 			expectView(role("button", { name: "Raise the limit" })).toBeDisabled(),
 			expectView(
-				role("group", { name: "Only org admins can manage the organization's model provider keys." }),
+				role("group", { name: Policy.denialFor("llm_keys:manage").message }),
 			).toExist(),
 		)
 		const admin = pageUpdate(
