@@ -17,7 +17,12 @@ import type { IconName } from "@maple/views/ui/icons.generated"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { relativeTime } from "../../../kit/relative-time"
-import { type FeatureSwitchRow, featureList } from "../../../kit/feature-list"
+import {
+	type FeatureControlRow,
+	type FeatureRow,
+	type FeatureSwitchRow,
+	featureList,
+} from "../../../kit/feature-list"
 import {
 	type AwsModuleInfo,
 	isMetricsPanelOpen,
@@ -557,6 +562,56 @@ const setupToggle = (
 	)
 }
 
+/** What the metric stream sends: the account's main data, picked by region and service, not a policy. */
+export const METRICS_SPEC: IntegrationFeatureSpec = {
+	id: "metrics",
+	title: "Infrastructure metrics",
+	summary:
+		"CloudWatch metrics of the services you pick (ECS, EC2, RDS, Lambda, load balancers and more), streamed from each region you pick to the Infrastructure pages.",
+	signal: "metrics",
+	defaultEnabled: true,
+	countsTowardIngest: true,
+	apply: "setupUpdate",
+}
+
+/** The metric stream's scope in a few words, or Off. */
+const streamScope = (connection: V2AwsConnection): string => {
+	const stream = connection.metric_stream
+	return stream === null
+		? "Off"
+		: `${countLabel(stream.regions.length, "region")} · ${countLabel(stream.namespaces.length, "service")}`
+}
+
+/** The metric stream as the first row: its scope, and on the card the Edit data panel it opens. */
+const metricsFeature = (
+	h: H,
+	model: Model,
+	connection: V2AwsConnection,
+	place: "card" | "flow",
+): FeatureControlRow => {
+	if (place === "flow")
+		return { spec: METRICS_SPEC, note: { _tag: "Info", text: "Picked on the next step" }, control: [] }
+	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
+	return {
+		spec: METRICS_SPEC,
+		note: { _tag: "Info", text: streamScope(connection) },
+		control:
+			connection.verified_at === null
+				? []
+				: [
+						actionButton(
+							h,
+							"Edit data",
+							isEditing
+								? Message.ClickedAwsMetricsCancel()
+								: Message.ClickedAwsMetrics({ id: connection.id }),
+							{ isExpanded: isEditing },
+						),
+					],
+		children: isEditing ? [h.div([h.Class("mt-3")], [editDataPanel(h, model, connection)])] : [],
+	}
+}
+
 /** A module as the feature list names it. Every module is a policy on the role: it takes a stack update. */
 export const moduleSpec = (module: AwsOptInModule, info: AwsModuleInfo): IntegrationFeatureSpec => ({
 	id: module,
@@ -633,13 +688,15 @@ export const moduleList = (
 	connection: V2AwsConnection,
 	place: "card" | "flow" = "card",
 ): ReadonlyArray<Html> => {
-	const rows = Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
-		Option.match(offeredModule(status, module), {
-			onNone: () => [],
-			onSome: (info) => [moduleFeature(h, model, connection, module, info)],
-		}),
-	)
-	if (rows.length === 0) return []
+	const rows: ReadonlyArray<FeatureRow<Message>> = [
+		metricsFeature(h, model, connection, place),
+		...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+			Option.match(offeredModule(status, module), {
+				onNone: () => [],
+				onSome: (info) => [moduleFeature(h, model, connection, module, info)],
+			}),
+		),
+	]
 	const error = Arr.findFirst(
 		AWS_OPT_IN_MODULES,
 		(module) => moduleErrorOf(model.awsCard.moduleSave, connection.id, module) !== null,
@@ -678,7 +735,6 @@ const connectionRow = (
 	const condition = awsConditionOf(connection, model.nowMs)
 	const isChecking = Arr.some(model.awsCard.checking, (entry) => entry.id === connection.id)
 	const isOpen = model.awsCard.setupId === connection.id
-	const isEditing = isMetricsPanelOpen(model.awsCard.metrics, connection.id)
 	const action = (
 		label: string,
 		message: Message,
@@ -706,17 +762,6 @@ const connectionRow = (
 			connection.verified_at === null
 				? setupToggle(h, model, connection, "Finish setup", "default")
 				: setupToggle(h, model, connection, "Reconnect"),
-			...(connection.verified_at === null
-				? []
-				: [
-						action(
-							"Edit data",
-							isEditing
-								? Message.ClickedAwsMetricsCancel()
-								: Message.ClickedAwsMetrics({ id: connection.id }),
-							{ isExpanded: isEditing },
-						),
-					]),
 			action("Sync now", Message.ClickedAwsCheck({ id: connection.id }), {
 				isLoading: isChecking,
 			}),
@@ -730,10 +775,7 @@ const connectionRow = (
 				],
 			),
 		]),
-		afterActions: [
-			...(isEditing ? [editDataPanel(h, model, connection)] : []),
-			...(isOpen ? [setupPanel(h, model, connection)] : []),
-		],
+		afterActions: isOpen ? [setupPanel(h, model, connection)] : [],
 		contentGap: "gap-3",
 	})
 }

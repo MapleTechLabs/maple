@@ -87,7 +87,7 @@ export const AWS_MODULE_SPECS = {
 	audit: {
 		title: "Audit log",
 		summary:
-			"CloudTrail management events (IAM, access keys, sign-ins, resource changes) in the audit log.",
+			"CloudTrail management write events (IAM, access keys, sign-ins, resource changes) in the audit log.",
 		available: true,
 		managedPolicies: [],
 		actions: ["account:ListRegions", "cloudtrail:LookupEvents"],

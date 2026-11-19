@@ -20,7 +20,7 @@ import {
 	stepCard,
 } from "../../../kit/connect-flow"
 import { relativeTime } from "../../../kit/relative-time"
-import { featureList } from "../../../kit/feature-list"
+import { type FeatureRow, featureList } from "../../../kit/feature-list"
 import {
 	decodeCreateRequest,
 	isSavingMetricsOf,
@@ -38,7 +38,7 @@ import type { FlowStage } from "../../../integrations/flow"
 import { awsFlowConnection, awsStatusOf } from "./flow-aws"
 import { Message } from "../../../integrations/message"
 import { manageLock, type Model } from "../../../integrations/model"
-import { ingestPanel, moduleList, moduleSpec, roleName, setupPanel } from "./view-aws"
+import { ingestPanel, METRICS_SPEC, moduleList, moduleSpec, roleName, setupPanel } from "./view-aws"
 import { dataPicker, NAMESPACE_LABEL } from "./view-aws-choose"
 import { methodSelect, SMALL, setupBody } from "./view-aws-setup"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -110,30 +110,36 @@ const stackRail = (h: H, connection: V2AwsConnection | null, modules: ReadonlyAr
 		docs: docs("Setup docs"),
 	})
 
-/** The opt-in modules, off until the user turns one on, in the same step card as every flow's. */
+/** What the account sends: the metric stream (scoped next), then the opt-in modules, off until turned on. */
 const newModuleCard = (h: H, model: Model): ReadonlyArray<Html> => {
-	const rows = Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
-		Option.match(offeredModule(awsStatusOf(model), module), {
-			onNone: () => [],
-			onSome: (info) => [
-				{
-					spec: moduleSpec(module, info),
-					isChecked: model.awsCard.newModules.includes(module),
-					isDisabled: model.awsCard.isCreating,
-					onToggle: Message.ToggledAwsNewModule({ module }),
-				},
-			],
-		}),
-	)
-	return rows.length === 0
-		? []
-		: [collectCard(h, [featureList(h, { idPrefix: "aws-new", rows, lockReason: manageLock(model) })])]
+	const rows: ReadonlyArray<FeatureRow<Message>> = [
+		{ spec: METRICS_SPEC, note: { _tag: "Info", text: "Picked on the next step" }, control: [] },
+		...Arr.flatMap(AWS_OPT_IN_MODULES, (module) =>
+			Option.match(offeredModule(awsStatusOf(model), module), {
+				onNone: () => [],
+				onSome: (info) => [
+					{
+						spec: moduleSpec(module, info),
+						isChecked: model.awsCard.newModules.includes(module),
+						isDisabled: model.awsCard.isCreating,
+						onToggle: Message.ToggledAwsNewModule({ module }),
+					},
+				],
+			}),
+		),
+	]
+	return [collectCard(h, [featureList(h, { idPrefix: "aws-new", rows, lockReason: manageLock(model) })])]
 }
 
-/** "Choose what to collect": each module is a policy on the role, so it is picked with the role. */
+/** "Choose what to collect": the stream is scoped on Choose data; each module is a policy on the role. */
 const collectCard = (h: H, body: ReadonlyArray<Html>): Html =>
 	stepCard(h, { icon: "ChartBarIcon", title: "Choose what to collect", note: CHANGE_LATER_NOTE }, [
-		h.p([h.Class(SMALL)], ["Each one adds a read-only policy to the role, so the stack carries it."]),
+		h.p(
+			[h.Class(SMALL)],
+			[
+				"Metrics stream from the regions and services you pick on the next step. Each other switch adds a read-only policy to the role, so the stack carries it.",
+			],
+		),
 		...body,
 	])
 

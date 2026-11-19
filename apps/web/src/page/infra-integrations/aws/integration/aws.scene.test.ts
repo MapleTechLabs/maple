@@ -114,6 +114,15 @@ describe("aws card", () => {
 		const verified_at = Schema.decodeSync(Timestamp)("2026-10-21T12:05:00.000Z")
 		const model = withStatus(entered(), [connection({ verified_at })])
 		expect(overviewOf(model.statuses, model.nowMs, "aws")).toMatchObject({ issue: "Metrics off" })
+		// The stream is the first thing the card lists as collected, with its Edit data action.
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Infrastructure metrics")).toExist(),
+			expectView(text("Off")).toExist(),
+			click(role("button", { name: "Edit data" })),
+			expectView(role("button", { name: "Edit data", expanded: true })).toExist(),
+		)
 
 		const opened = pageUpdate(model, Message.ClickedAwsMetrics({ id: connectionId })).model
 		const edited = Arr.reduce(

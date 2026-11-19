@@ -337,6 +337,9 @@ describe("aws connect flow", () => {
 				expectView(costChoice).not.toBeChecked(),
 				expectView(text(COST_MODULE.summary)).toExist(),
 				expectView(text("Cost policy")).not.toExist(),
+				// The metric stream is listed too: it is scoped on the next step, not switched here.
+				expectView(text("Infrastructure metrics")).toExist(),
+				expectView(text("Picked on the next step")).toExist(),
 			)
 			expect(submitted(model)).toEqual([
 				{ name: "CreateAwsConnection", args: { request: { account_id: "123456789012" } } },

@@ -40,7 +40,10 @@ export type FeatureSwitchRow<M> = RowCommon &
 /** A feature set elsewhere (per repository, per project): a link to where it is switched. */
 export type FeatureLinkRow = RowCommon & Readonly<{ link: Readonly<{ href: string; label: string }> }>
 
-export type FeatureRow<M> = FeatureSwitchRow<M> | FeatureLinkRow
+/** A feature set with a form of its own (a picker on the next step, an edit panel): its control, if any. */
+export type FeatureControlRow = RowCommon & Readonly<{ control: ReadonlyArray<Html> }>
+
+export type FeatureRow<M> = FeatureSwitchRow<M> | FeatureLinkRow | FeatureControlRow
 
 const NOTE_VARIANT = { Pending: "warn", Failing: "crit", Info: "meta" } as const
 
@@ -72,6 +75,22 @@ const linkRow = <M>(h: HtmlBuilder<M>, id: string, row: FeatureLinkRow): Html =>
 	)
 }
 
+const controlRow = <M>(h: HtmlBuilder<M>, id: string, row: FeatureControlRow): Html => {
+	const note = status(h, row, true)
+	return settingRow(
+		h,
+		{
+			ids: { control: `${id}-control`, label: `${id}-label`, description: `${id}-description` },
+			className: "p-3",
+			label: row.spec.title,
+			description: row.spec.summary,
+			...(note !== undefined && { status: note }),
+			control: row.control,
+		},
+		row.children ?? [],
+	)
+}
+
 /** `FeatureList`: an integration's features as switches, one row each, with a note for one that is pending or failing. */
 export const featureList = <M>(
 	h: HtmlBuilder<M>,
@@ -95,6 +114,7 @@ export const featureList = <M>(
 		Arr.map(options.rows, (row) => {
 			const id = `${options.idPrefix}-${row.spec.id}`
 			if ("link" in row) return linkRow(h, id, row)
+			if ("control" in row) return controlRow(h, id, row)
 			const note = status(h, row, row.isChecked)
 			return switchRow(
 				h,
