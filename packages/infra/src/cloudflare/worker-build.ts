@@ -23,6 +23,7 @@ export const WORKER_PURE_OPTIONS = {
 		"@alchemy.run/*",
 		"@distilled.cloud/core",
 		"@distilled.cloud/cloudflare",
+		"@distilled.cloud/anthropic",
 		"@distilled.cloud/aws",
 		"@distilled.cloud/planetscale",
 	],

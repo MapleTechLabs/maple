@@ -13,6 +13,7 @@ import {
 	Schedule,
 	Schema,
 	Stream,
+	type Tracer,
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
@@ -170,7 +171,7 @@ const failsAttemptSpan = (error: VendorHttpError) => error.kind === "invalid_res
  * `error.type` instead of failing it; anything else fails the span as usual.
  */
 export const vendorCallSpan =
-	<E>(name: string, expectedKind: (error: E) => string | undefined) =>
+	<E>(name: string, expectedKind: (error: E) => string | undefined, options?: Tracer.SpanOptions) =>
 	<A, E2 extends E, R>(self: Effect.Effect<A, E2, R>): Effect.Effect<A, E2, R> =>
 		self.pipe(
 			Effect.result,
@@ -181,8 +182,20 @@ export const vendorCallSpan =
 					? Effect.fail(result.failure)
 					: Effect.as(Effect.annotateCurrentSpan("error.type", kind), result)
 			}),
-			Effect.withSpan(name),
+			Effect.withSpan(name, options),
 			Effect.flatMap(Effect.fromResult),
+		)
+
+/**
+ * One request to a vendor through a `@distilled.cloud/*` SDK, as a Client span naming the vendor.
+ * The SDK's own span is off: it fails on every refusal with the vendor's message as the cause.
+ * As with {@link vendorCallSpan}, a failure `expectedKind` names does not fail the span.
+ */
+export const vendorSdkRequestSpan =
+	<E>(name: string, peerService: string, expectedKind: (error: E) => string | undefined) =>
+	<A, E2 extends E, R>(self: Effect.Effect<A, E2, R>): Effect.Effect<A, E2, R> =>
+		vendorCallSpan(name, expectedKind, { kind: "client", attributes: { "peer.service": peerService } })(
+			Effect.withTracerEnabled(self, false),
 		)
 
 const decodeJsonText = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))

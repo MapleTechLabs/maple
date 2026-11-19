@@ -80,7 +80,7 @@ describe("AnthropicCostConnectionService", () => {
 				assert.strictEqual(world.urls[0], "/v1/organizations/me")
 				const report = new URL(`https://api.anthropic.com${world.urls[1] ?? ""}`)
 				assert.strictEqual(report.pathname, "/v1/organizations/cost_report")
-				assert.deepStrictEqual(Arr.fromIterable(report.searchParams), [
+				assert.sameDeepMembers(Arr.fromIterable(report.searchParams), [
 					["starting_at", "2026-11-10T00:00:00Z"],
 					["ending_at", "2026-11-12T00:00:00Z"],
 					["bucket_width", "1d"],

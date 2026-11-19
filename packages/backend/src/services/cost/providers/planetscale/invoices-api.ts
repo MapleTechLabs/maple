@@ -1,18 +1,22 @@
 /**
- * PlanetScale's invoice API as the cost source reads it: an organization's invoices and one
- * invoice's line items, with the authorization its caller holds. Plain requests with the status
- * read off the answer: a 401, 403 or 404 is an expected answer for a grant, not a failed call.
+ * PlanetScale's invoice API as the cost source reads it, through `@distilled.cloud/planetscale`:
+ * an organization's invoices and one invoice's line items, with the access token its caller
+ * holds. A 401, 403 or 404 is an expected answer for a grant, not a failed call.
  */
+import * as PlanetScale from "@distilled.cloud/planetscale"
 import {
 	type Duration,
 	Effect,
-	Redacted,
+	Layer,
+	type Redacted,
 	Schema,
 	SchemaTransformation,
 	Array as Arr,
+	Record as Rec,
 	String as Str,
 } from "effect"
-import { FetchHttpClient, type HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import * as VendorHttp from "../../../integrations/vendor-http"
 
 const INVOICES_PER_PAGE = 50
 const LINE_ITEMS_PER_PAGE = 100
@@ -26,8 +30,8 @@ export interface PlanetScaleInvoiceCredentials {
 	readonly apiBaseUrl: string
 	/** The organization's slug, as in `app.planetscale.com/<organization>`. */
 	readonly organization: string
-	/** The whole `Authorization` header: `Bearer <access token>` for the org's OAuth grant. */
-	readonly authorization: Redacted.Redacted
+	/** The org's OAuth access token, sent as `Authorization: Bearer <token>`. */
+	readonly accessToken: Redacted.Redacted
 }
 
 /**
@@ -118,53 +122,74 @@ interface Page<A> {
 	readonly data: ReadonlyArray<A>
 }
 
+const STATUS_BY_TAG: Record<string, number> = Rec.fromEntries(
+	Arr.map(Rec.toEntries(PlanetScale.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
+
+/** The status PlanetScale answered, or `undefined` when the request got no answer. */
+const statusOf = (error: { readonly _tag: string; readonly status?: unknown }): number | undefined =>
+	HttpClientError.isHttpClientError(error) && error.reason._tag === "StatusCodeError"
+		? error.reason.response.status
+		: typeof error.status === "number"
+			? error.status
+			: STATUS_BY_TAG[error._tag]
+
+/** The SDK reads a 3xx body as an answer; a redirect fails here instead, with its status. */
+const refuseRedirects = HttpClient.filterStatus((status) => status < 300 || status >= 400)
+
+/**
+ * One page through the SDK, its answer decoded by `schema`: the SDK does not check the bodies it
+ * returns. Its retries are off, since a read that fails is re-run by the next sync.
+ */
 const getPage =
 	<A, I>(schema: Schema.Codec<Page<A>, I>, what: string) =>
 	(
 		httpClient: HttpClient.HttpClient,
 		credentials: PlanetScaleInvoiceCredentials,
-		path: string,
-		perPage: number,
-		page: number,
+		operation: Effect.Effect<unknown, { readonly _tag: string }, PlanetScale.PlanetScaleOpContext>,
 	): Effect.Effect<Page<A>, PlanetScaleInvoiceApiError> =>
-		httpClient
-			.execute(
-				HttpClientRequest.get(
-					`${Str.replace(/\/$/, "")(credentials.apiBaseUrl)}/v1/organizations/${encodeURIComponent(credentials.organization)}${path}`,
-				).pipe(
-					HttpClientRequest.setUrlParams({ per_page: `${perPage}`, page: `${page}` }),
-					HttpClientRequest.setHeader("Authorization", Redacted.value(credentials.authorization)),
-					HttpClientRequest.acceptJson,
+		operation.pipe(
+			Effect.mapError((error) => {
+				const status = statusOf(error)
+				if (error._tag === "PlanetScaleParseError") {
+					return failed("invalid_response", 200, `PlanetScale's ${what} answer could not be read.`)
+				}
+				// The transport's own message can hold the request; it is never repeated.
+				return status === undefined
+					? failed("upstream", 0, `PlanetScale did not answer the ${what} request.`)
+					: failed(
+							reasonOfStatus(status),
+							status,
+							`PlanetScale answered ${status} to the ${what} request.`,
+						)
+			}),
+			Effect.flatMap((body) =>
+				Schema.decodeUnknownEffect(schema)(body).pipe(
+					Effect.mapError(() =>
+						failed("invalid_response", 200, `PlanetScale's ${what} answer could not be read.`),
+					),
 				),
-			)
-			.pipe(
-				// A redirect is not PlanetScale answering: the token is never followed to another host.
-				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-				Effect.mapError(() =>
-					failed("upstream", 0, `PlanetScale did not answer the ${what} request.`),
-				),
-				Effect.flatMap((response) =>
-					response.status === 200
-						? response.json.pipe(
-								Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-								Effect.mapError(() =>
-									failed(
-										"invalid_response",
-										200,
-										`PlanetScale's ${what} answer could not be read.`,
-									),
-								),
-							)
-						: Effect.fail(
-								failed(
-									reasonOfStatus(response.status),
-									response.status,
-									`PlanetScale answered ${response.status} to the ${what} request.`,
-								),
-							),
-				),
-				Effect.annotateSpans("peer.service", "planetscale"),
-			)
+			),
+			// The token is per org, so this cannot be hoisted into the static service graph.
+			Effect.provide([
+				PlanetScale.fromOAuth({
+					accessToken: credentials.accessToken,
+					organization: credentials.organization,
+					apiBaseUrl: `${Str.replace(/\/$/, "")(credentials.apiBaseUrl)}/v1`,
+				}),
+				Layer.succeed(HttpClient.HttpClient, refuseRedirects(httpClient)),
+				Layer.succeed(PlanetScale.Retry.Retry, { while: () => false }),
+			]),
+			// A redirect is not PlanetScale answering: the token is never followed to another host.
+			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+			// Only an answer Maple cannot read fails the span; a refusal is the caller's to judge.
+			VendorHttp.vendorSdkRequestSpan(
+				"PlanetScaleInvoices.request",
+				"planetscale",
+				(error: PlanetScaleInvoiceApiError) =>
+					error.reason === "invalid_response" ? undefined : error.reason,
+			),
+		)
 
 // Pages from the first on, until the API names no next page or `enough` of them are read.
 const readPages = <A>(
@@ -204,7 +229,16 @@ export const listInvoices = (
 	enough: (page: ReadonlyArray<Invoice>) => boolean = () => false,
 ) =>
 	readPages(
-		(page) => getInvoicePage(httpClient, credentials, "/invoices", INVOICES_PER_PAGE, page),
+		(page) =>
+			getInvoicePage(
+				httpClient,
+				credentials,
+				PlanetScale.listInvoices({
+					organization: credentials.organization,
+					per_page: INVOICES_PER_PAGE,
+					page,
+				}),
+			),
 		MAX_INVOICE_PAGES,
 		"invoices",
 		enough,
@@ -222,9 +256,12 @@ export const listInvoiceLineItems = (
 			getLineItemPage(
 				httpClient,
 				credentials,
-				`/invoices/${encodeURIComponent(invoiceId)}/line-items`,
-				LINE_ITEMS_PER_PAGE,
-				page,
+				PlanetScale.getInvoiceLineItems({
+					organization: credentials.organization,
+					id: invoiceId,
+					per_page: LINE_ITEMS_PER_PAGE,
+					page,
+				}),
 			),
 		MAX_LINE_ITEM_PAGES,
 		"invoice line items",

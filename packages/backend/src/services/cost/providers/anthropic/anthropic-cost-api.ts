@@ -1,12 +1,15 @@
-// The slice of Anthropic's Admin API the cost source uses: the organization a key belongs to, and
-// one page of its daily cost report. Every failure is one `AnthropicCostApiError` whose `kind`
-// says what the caller does next.
-import { Duration, Effect, Redacted, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+// The slice of Anthropic's Admin API the cost source uses, through `@distilled.cloud/anthropic`: the
+// organization a key belongs to, and one page of its daily cost report. Every failure is one
+// `AnthropicCostApiError` whose `kind` says what the caller does next.
+import * as Anthropic from "@distilled.cloud/anthropic"
+import { Duration, Effect, Layer, Redacted, Schema, Array as Arr, Record as Rec } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import * as VendorHttp from "../../../integrations/vendor-http"
 import type { CostPullWindow } from "../../CostProvider"
 import { addDays } from "../../sync-plan"
 
 export const BASE_URL = "https://api.anthropic.com"
+// The SDK defaults to a newer version; the cost report's shape is pinned to this one.
 const API_VERSION = "2023-06-01"
 const REQUEST_TIMEOUT = Duration.seconds(30)
 /** Daily buckets one page holds: the most the cost report serves. */
@@ -29,54 +32,72 @@ export class AnthropicCostApiError extends Schema.TaggedError<AnthropicCostApiEr
 	},
 ) {}
 
-const errorKind = (status: number): AnthropicCostApiError["kind"] =>
-	status === 401
-		? "unauthorized"
-		: status === 403
-			? "forbidden"
-			: status === 400
-				? "bad_request"
-				: status === 429
-					? "rate_limited"
-					: "upstream"
+const STATUS_BY_TAG: Record<string, number> = Rec.fromEntries(
+	Arr.map(Rec.toEntries(Anthropic.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
 
-const call = <S extends Schema.Top>(
+const kindOf = (tag: string): AnthropicCostApiError["kind"] =>
+	tag === "Unauthorized"
+		? "unauthorized"
+		: tag === "Forbidden"
+			? "forbidden"
+			: tag === "BadRequest"
+				? "bad_request"
+				: tag === "TooManyRequests"
+					? "rate_limited"
+					: // A 2xx that is not JSON is an answer Maple cannot read, not a failed request.
+						tag === "AnthropicParseError"
+						? "invalid_response"
+						: "upstream"
+
+/** The status Anthropic answered, or `undefined` when the request got no answer. */
+const statusOf = (error: { readonly _tag: string; readonly status?: unknown }): number | undefined =>
+	HttpClientError.isHttpClientError(error) && error.reason._tag === "StatusCodeError"
+		? error.reason.response.status
+		: typeof error.status === "number"
+			? error.status
+			: STATUS_BY_TAG[error._tag]
+
+/** The SDK reads a 3xx body as an answer; a redirect fails here instead, with its status. */
+const refuseRedirects = HttpClient.filterStatus((status) => status < 300 || status >= 400)
+
+const toApiError = (error: { readonly _tag: string; readonly status?: unknown }) => {
+	const status = statusOf(error)
+	return new AnthropicCostApiError({
+		message:
+			status === undefined
+				? `Anthropic API request failed (${error._tag})`
+				: `Anthropic API answered ${status}`,
+		kind: kindOf(error._tag),
+		...(status === undefined ? undefined : { status }),
+		cause: error,
+	})
+}
+
+/**
+ * One SDK call with the key over `httpClient`, its answer decoded by `schema`: the SDK does not
+ * check the bodies it returns. The SDK's retries are off: the sync re-runs on its next tick.
+ */
+const call = <A, E extends { readonly _tag: string }, S extends Schema.Top>(
 	httpClient: HttpClient.HttpClient,
 	key: Redacted.Redacted,
-	request: HttpClientRequest.HttpClientRequest,
+	operation: Effect.Effect<A, E, Anthropic.AnthropicOpContext>,
 	schema: S,
 ) => {
 	const failed = (kind: AnthropicCostApiError["kind"], what: string) => (cause: unknown) =>
 		Effect.fail(new AnthropicCostApiError({ message: `Anthropic API ${what}`, kind, cause }))
-	return Effect.gen(function* () {
-		const response = yield* httpClient.execute(
-			HttpClientRequest.setHeaders(request, {
-				"x-api-key": Redacted.value(key),
-				"anthropic-version": API_VERSION,
-			}),
-		)
-		if (response.status >= 300) {
-			return yield* new AnthropicCostApiError({
-				message: `Anthropic API answered ${response.status}`,
-				kind: errorKind(response.status),
-				status: response.status,
-			})
-		}
-		// A 2xx that is not JSON is an answer Maple cannot read, not a failed request.
-		const body = yield* response.json.pipe(
-			Effect.catchTag(
-				"HttpClientError",
-				failed("invalid_response", "answered with a body that is not JSON"),
+	return operation.pipe(
+		Effect.mapError(toApiError),
+		Effect.flatMap((body) =>
+			Schema.decodeUnknownEffect(schema)(body).pipe(
+				Effect.catchTag(
+					"SchemaError",
+					failed("invalid_response", "answered with a body Maple cannot read"),
+				),
 			),
-		)
-		return yield* Schema.decodeEffect(schema)(body)
-	}).pipe(
+		),
 		Effect.timeout(REQUEST_TIMEOUT),
-		Effect.catchTags({
-			HttpClientError: failed("upstream", "request failed"),
-			TimeoutError: failed("upstream", "request timed out"),
-			SchemaError: failed("invalid_response", "answered with a body Maple cannot read"),
-		}),
+		Effect.catchTag("TimeoutError", failed("upstream", "request timed out")),
 		// Callers show their own message; which failure it was stays on the span.
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
@@ -84,9 +105,20 @@ const call = <S extends Schema.Top>(
 				"maple.cost.anthropic.status": error.status ?? 0,
 			}),
 		),
+		// The key is per connection, so this cannot be hoisted into the static service graph.
+		Effect.provide([
+			Anthropic.credentials({ apiKey: key, apiBaseUrl: BASE_URL, version: API_VERSION }),
+			Layer.succeed(HttpClient.HttpClient, refuseRedirects(httpClient)),
+			Layer.succeed(Anthropic.Retry.Retry, { while: () => false }),
+		]),
 		// A redirect is not Anthropic answering, so the key is never followed to another host.
 		Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-		Effect.annotateSpans("peer.service", "anthropic"),
+		// Only an answer Maple cannot read fails the span; a refusal is the caller's to judge.
+		VendorHttp.vendorSdkRequestSpan(
+			"AnthropicCost.request",
+			"anthropic",
+			(error: AnthropicCostApiError) => (error.kind === "invalid_response" ? undefined : error.kind),
+		),
 	)
 }
 
@@ -94,7 +126,7 @@ const Organization = Schema.Struct({ id: Schema.String, name: Schema.String })
 
 /** The organization the admin key belongs to. */
 export const getOrganization = (httpClient: HttpClient.HttpClient, key: Redacted.Redacted) =>
-	call(httpClient, key, HttpClientRequest.get(`${BASE_URL}/v1/organizations/me`), Organization)
+	call(httpClient, key, Anthropic.organizations.getCurrentOrganization({}), Organization)
 
 const nullable = Schema.optionalKey(Schema.NullOr(Schema.String))
 
@@ -150,13 +182,13 @@ export const getCostReport = (
 	call(
 		httpClient,
 		key,
-		HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}/v1/organizations/cost_report`), {
+		Anthropic.betaOrganizations.getCostReport({
 			starting_at: `${window.startDay}T00:00:00Z`,
 			ending_at: `${addDays(window.endDay, 1)}T00:00:00Z`,
 			bucket_width: "1d",
-			"group_by[]": ["workspace_id", "description"],
+			group_by__: ["workspace_id", "description"],
 			limit: BUCKETS_PER_PAGE,
-			page,
+			...(page === undefined ? undefined : { page }),
 		}),
 		CostReportPage,
 	)
