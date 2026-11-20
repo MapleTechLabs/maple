@@ -290,6 +290,27 @@ describe("FleetAuditService", () => {
 			}),
 		)
 	})
+	it.effect("reads every id between the cursor and the newest page of a server that ignores it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({
+			activities: Arr.makeBy(1_200, (index) => activityAt(index + 1)),
+			ignoresAfter: true,
+		})
+		const trail: Trail = { written: [], failing: false }
+		return run(
+			testDb,
+			world,
+			trail,
+			Effect.gen(function* () {
+				yield* connect
+				// 1 to 500 first, then 1,200 down to 501 over two newest-first pages: none skipped.
+				assert.strictEqual((yield* pollAll).events, 1_200)
+				const ids = new Set(Arr.map(trail.written, ({ event }) => event.providerEventId))
+				assert.strictEqual(ids.size, 1_200)
+			}),
+		)
+	})
+
 	it.effect("keeps reading a server that ignores the cursor past a full page", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({
@@ -304,7 +325,7 @@ describe("FleetAuditService", () => {
 			Effect.gen(function* () {
 				yield* connect
 				// The first page is the oldest 500; the server then answers from id 1 again, so the
-				// rest comes from its newest page.
+				// rest is read newest first, back to the cursor.
 				assert.strictEqual((yield* pollAll).events, 600)
 				world.activities = Arr.appendAll(world.activities, [activityAt(601), activityAt(602)])
 				assert.strictEqual((yield* pollAll).events, 2)
