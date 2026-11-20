@@ -1,5 +1,5 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
-import { Array as Arr, Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Metric, type Schema, String as Str } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import {
@@ -110,7 +110,9 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				return promql
 					.labelValues(tenant, {
 						name: query.label,
-						matches: query.match === undefined ? [] : [query.match],
+						// A blank selector is no selector, as an absent one: every value of the label.
+						matches:
+							query.match === undefined || Str.trim(query.match) === "" ? [] : [query.match],
 						startMs: parseWarehouseDateTime(request.startTime),
 						endMs: parseWarehouseDateTime(request.endTime),
 					})

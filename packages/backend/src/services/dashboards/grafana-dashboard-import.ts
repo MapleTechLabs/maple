@@ -6,6 +6,7 @@ import {
 	defaultWidgetLayout,
 } from "@maple/domain/http"
 import { MAX_QUERY_RANGE_SECONDS, validateRelativeRange } from "@maple/query-engine"
+import { MAX_IMPORT_REPORT_ITEMS } from "@maple/widgets/dashboard"
 import { Effect, Schema, Array as Arr, Order, String as Str } from "effect"
 import {
 	type DashboardWidget,
@@ -210,15 +211,13 @@ function convertPanels(placed: ReadonlyArray<PlacedPanel>, context: PanelContext
 	}
 }
 
-const MAX_REPORT_ITEMS = 1000
-
-/** The stored report holds at most `MAX_REPORT_ITEMS`; past that, the last item counts the rest. */
+/** The stored report holds at most `MAX_IMPORT_REPORT_ITEMS`; past that, the last item counts the rest. */
 const reportItems = (warnings: ReadonlyArray<string>): ReadonlyArray<string> =>
-	warnings.length <= MAX_REPORT_ITEMS
+	warnings.length <= MAX_IMPORT_REPORT_ITEMS
 		? warnings
 		: [
-				...warnings.slice(0, MAX_REPORT_ITEMS - 1),
-				`${warnings.length - MAX_REPORT_ITEMS + 1} more items are not listed here.`,
+				...warnings.slice(0, MAX_IMPORT_REPORT_ITEMS - 1),
+				`${warnings.length - MAX_IMPORT_REPORT_ITEMS + 1} more items are not listed here.`,
 			]
 
 // Returns the validation error rather than failing; unexpected throws are caught by the caller.

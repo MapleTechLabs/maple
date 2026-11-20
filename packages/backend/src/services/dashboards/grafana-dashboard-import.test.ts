@@ -994,6 +994,30 @@ describe("label_values selectors keep literal filters and drop variable ones", (
 	)
 })
 
+describe("panel option warnings", () => {
+	it.effect("are not said of a panel imported as a placeholder", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Placeholders",
+				schemaVersion: 39,
+				panels: [
+					{
+						type: "timeseries",
+						title: "Error logs",
+						gridPos: { x: 0, y: 0, w: 12, h: 8 },
+						datasource: { type: "loki" },
+						targets: [{ refId: "A", expr: 'count_over_time({app="api"}[5m])' }],
+						transformations: [{ id: "organize" }],
+					},
+				],
+			})
+			expect(converted.warnings).toEqual([
+				'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+			])
+		}),
+	)
+})
+
 describe("the stored import report is bounded", () => {
 	it.effect("keeps a board with more warnings than the report holds, counting the rest", () =>
 		Effect.gen(function* () {

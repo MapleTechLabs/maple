@@ -9,9 +9,12 @@ import { DashboardSchemaVersion } from "../version"
  * What an import from another tool could not carry over, kept with the dashboard so the
  * board can say so until someone dismisses it. Removing the field is the dismissal.
  */
+/** Items a stored report holds; an importer folds the rest into its last item. */
+export const MAX_IMPORT_REPORT_ITEMS = 1000
+
 export const DashboardImportReport = Schema.Struct({
 	source: Schema.Literals(["grafana"]),
-	items: Schema.Array(Schema.String).check(Schema.isMaxLength(1000)),
+	items: Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_IMPORT_REPORT_ITEMS)),
 })
 export type DashboardImportReport = typeof DashboardImportReport.Type
 

@@ -243,7 +243,6 @@ function convertQueryPanel(args: {
 			`Panel "${title}" has ${targets.length} queries; Maple imported ${asString(first.refId) ?? "the first"} only. Not imported: ${Arr.join(Arr.map(rest, targetSummary), "; ")}`,
 		)
 	}
-	panelOptionWarnings(panel, first, target, title, context.warnings)
 	const query = classifyTarget(first, panel, context)
 	const visualization = VISUALIZATION[target]
 	const displayType = DISPLAY_TYPE[target]
@@ -292,6 +291,8 @@ function convertQueryPanel(args: {
 			...(transform === undefined ? undefined : { transform }),
 		})
 	}
+	// Said only of a panel Maple charts; a placeholder has no options to lose.
+	panelOptionWarnings(panel, first, target, title, context.warnings)
 	return {
 		placeholder: false,
 		widget: {

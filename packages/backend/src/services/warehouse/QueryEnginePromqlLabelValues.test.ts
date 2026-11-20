@@ -41,11 +41,16 @@ const layer = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
 	Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ QE_BUCKET_CACHE_ENABLED: "false" }))),
 )
 
-const request = (label: string) =>
+const request = (label: string, match?: string) =>
 	new QueryEngineExecuteRequest({
 		startTime: "2026-01-01 00:00:00",
 		endTime: "2026-01-01 01:00:00",
-		query: { kind: "promqlLabelValues", source: "metrics", label },
+		query: {
+			kind: "promqlLabelValues",
+			source: "metrics",
+			label,
+			...(match === undefined ? undefined : { match }),
+		},
 	})
 
 describe("QueryEngineService.execute on promqlLabelValues", () => {
@@ -54,6 +59,19 @@ describe("QueryEngineService.execute on promqlLabelValues", () => {
 			const qe = yield* QueryEngineService
 			const response = yield* qe.execute(tenant, request("http_route"))
 			assert.equal(response.result.kind, "attributeValues")
+			assert.deepEqual(
+				response.result.kind === "attributeValues"
+					? Arr.map(response.result.data, (row) => row.value)
+					: [],
+				["/api/orders", "/api/users"],
+			)
+		}).pipe(Effect.provide(layer)),
+	)
+
+	it.effect("lists every value for a blank selector, as for none", () =>
+		Effect.gen(function* () {
+			const qe = yield* QueryEngineService
+			const response = yield* qe.execute(tenant, request("http_route", "  "))
 			assert.deepEqual(
 				response.result.kind === "attributeValues"
 					? Arr.map(response.result.data, (row) => row.value)
