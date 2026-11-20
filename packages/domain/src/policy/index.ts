@@ -129,6 +129,11 @@ export interface Actor {
 	readonly permissions: Grants
 }
 
+/**
+ * Request context, not an implementation detail: services that check the caller require it.
+ *
+ * @effect-leakable-service
+ */
 export class CurrentActor extends Context.Service<CurrentActor, Actor>()(
 	"@maple/domain/policy/CurrentActor",
 ) {}

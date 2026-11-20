@@ -63,11 +63,6 @@ export interface AgentFeedbackTriageFilter {
 	readonly limit: number
 }
 
-export interface AgentFeedbackTriageCaller {
-	readonly orgId: OrgId
-	readonly permissions: Policy.Grants
-}
-
 export interface AgentFeedbackServiceApi {
 	readonly submit: (
 		orgId: OrgId,
@@ -84,11 +79,11 @@ export interface AgentFeedbackServiceApi {
 	 * anyone else, or anyone while it is unset, is refused before the database is touched.
 	 */
 	readonly triage: (
-		caller: AgentFeedbackTriageCaller,
 		filter: AgentFeedbackTriageFilter,
 	) => Effect.Effect<
 		ReadonlyArray<AgentFeedback>,
-		AgentFeedbackPersistenceError | AgentFeedbackTriageForbiddenError
+		AgentFeedbackPersistenceError | AgentFeedbackTriageForbiddenError,
+		Policy.CurrentActor
 	>
 }
 
@@ -202,9 +197,9 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 			})
 
 			const triage = Effect.fn("AgentFeedbackService.triage")(function* (
-				caller: AgentFeedbackTriageCaller,
 				filter: AgentFeedbackTriageFilter,
 			) {
+				const caller = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({
 					orgId: caller.orgId,
 					"maple.feedback.limit": filter.limit,
@@ -215,8 +210,7 @@ export class AgentFeedbackService extends Context.Service<AgentFeedbackService, 
 					})
 				}
 				// An admin of the Maple team's own organization.
-				yield* Policy.check(
-					caller.permissions,
+				yield* Policy.authorize(
 					"agent_feedback:triage",
 					(denial) => new AgentFeedbackTriageForbiddenError({ message: denial.message }),
 				)

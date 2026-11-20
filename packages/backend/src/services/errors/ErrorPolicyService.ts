@@ -62,13 +62,11 @@ export interface ErrorPolicyPublicApi {
 	 * from the v1 route, the MCP tool and the chat apply path.
 	 */
 	readonly upsertNotificationPolicy: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: ErrorNotificationPolicyUpsertRequest,
 	) => Effect.Effect<
 		ErrorNotificationPolicyDocument,
-		ErrorForbiddenError | ErrorPersistenceError | ErrorNotificationUnknownDestinationError
+		ErrorForbiddenError | ErrorPersistenceError | ErrorNotificationUnknownDestinationError,
+		Policy.CurrentActor
 	>
 	readonly getEscalationPolicy: (
 		orgId: OrgId,
@@ -189,10 +187,10 @@ const make: Effect.Effect<ErrorPolicyServiceApi, never, Database> = Effect.gen(f
 
 	const upsertNotificationPolicy: ErrorPolicyServiceApi["upsertNotificationPolicy"] = Effect.fn(
 		"ErrorPolicyService.upsertNotificationPolicy",
-	)(function* (orgId, userId, permissions, request) {
+	)(function* (request) {
+		const { orgId, userId } = yield* Policy.CurrentActor
 		yield* Effect.annotateCurrentSpan({ orgId })
-		yield* Policy.check(
-			permissions,
+		yield* Policy.authorize(
 			"error_policy:manage",
 			(denial) =>
 				new ErrorForbiddenError({

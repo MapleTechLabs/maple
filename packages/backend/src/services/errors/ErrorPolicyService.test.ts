@@ -17,6 +17,7 @@ import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 // Compile-time guard: broadening policy persistence to Env, notifications,
 // warehouse, cache, WorkerEnvironment, actors, or workflow makes this fail.
@@ -98,16 +99,15 @@ describe("ErrorPolicyService", () => {
 
 			const destinationId = asDestinationId(randomUUID())
 			yield* insertDestination(destinationId, ORG)
-			const updated = yield* policies.upsertNotificationPolicy(
-				ORG,
-				USER,
-				ADMIN_ROLES,
-				new ErrorNotificationPolicyUpsertRequest({
-					destinationIds: [destinationId],
-					notifyOnResolve: true,
-					minOccurrenceCount: 7,
-				}),
-			)
+			const updated = yield* policies
+				.upsertNotificationPolicy(
+					new ErrorNotificationPolicyUpsertRequest({
+						destinationIds: [destinationId],
+						notifyOnResolve: true,
+						minOccurrenceCount: 7,
+					}),
+				)
+				.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 
 			assert.deepStrictEqual(updated.destinationIds, [destinationId])
 			assert.isTrue(updated.notifyOnFirstSeen)
@@ -130,20 +130,18 @@ describe("ErrorPolicyService", () => {
 			const foreignId = asDestinationId(randomUUID())
 			yield* insertDestination(ownedId, ORG)
 			yield* insertDestination(foreignId, OTHER_ORG)
-			yield* policies.upsertNotificationPolicy(
-				ORG,
-				USER,
-				ADMIN_ROLES,
-				new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId] }),
-			)
+			yield* policies
+				.upsertNotificationPolicy(
+					new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId] }),
+				)
+				.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 
 			const failure = yield* Effect.flip(
-				policies.upsertNotificationPolicy(
-					ORG,
-					USER,
-					ADMIN_ROLES,
-					new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId, foreignId] }),
-				),
+				policies
+					.upsertNotificationPolicy(
+						new ErrorNotificationPolicyUpsertRequest({ destinationIds: [ownedId, foreignId] }),
+					)
+					.pipe(actingAs(ORG, ADMIN_ROLES, USER)),
 			)
 
 			expect(failure).toMatchObject({
@@ -160,7 +158,7 @@ describe("ErrorPolicyService", () => {
 			const destinationId = asDestinationId(randomUUID())
 			yield* insertDestination(destinationId, ORG)
 			const write = (request: ErrorNotificationPolicyUpsertRequest) =>
-				policies.upsertNotificationPolicy(ORG, USER, ADMIN_ROLES, request)
+				policies.upsertNotificationPolicy(request).pipe(actingAs(ORG, ADMIN_ROLES, USER))
 
 			yield* Effect.all(
 				[
@@ -185,12 +183,9 @@ describe("ErrorPolicyService", () => {
 			const policies = yield* ErrorPolicyService
 
 			const failure = yield* Effect.flip(
-				policies.upsertNotificationPolicy(
-					ORG,
-					USER,
-					MEMBER_ROLES,
-					new ErrorNotificationPolicyUpsertRequest({ enabled: false }),
-				),
+				policies
+					.upsertNotificationPolicy(new ErrorNotificationPolicyUpsertRequest({ enabled: false }))
+					.pipe(actingAs(ORG, MEMBER_ROLES, USER)),
 			)
 
 			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorForbiddenError")
