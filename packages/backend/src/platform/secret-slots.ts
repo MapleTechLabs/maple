@@ -71,6 +71,17 @@ export const externalDataSourceSecretSlot: SecretSlot<ExternalDataSourceSecretRe
 	destination: (ref) => [secretDestination(ref.config)],
 }
 
+export interface FleetTokenRef extends OrgRef {
+	readonly baseUrl: string
+}
+
+/** A Fleet API token; it opens only while the row still points at the server it was saved for. */
+export const fleetTokenSlot: SecretSlot<FleetTokenRef> = {
+	name: "fleet_connections.token",
+	binding: orgBinding,
+	destination: (ref) => [ref.baseUrl],
+}
+
 export const gcpConnectorSecretSlot: SecretSlot<OrgRowRef> = {
 	name: "gcp_connectors.secret",
 	binding: orgRowBinding,

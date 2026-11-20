@@ -12,6 +12,7 @@ import {
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
 	PlanetscalePollState,
+	FleetConnections,
 	RailwayConnections,
 	SearchConsoleSites,
 	RailwayEnvironments,
@@ -222,6 +223,23 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							)
 							.where(($) => [$.orgId.eq(orgId), $.removedAt.isNull()]),
 					),
+					fleetConnections: db.run(
+						PG.from(FleetConnections)
+							.select(
+								"organizationName",
+								"baseUrl",
+								"authFailedAt",
+								"lastSuccessAt",
+								"lastErrorAt",
+								"lastError",
+								"createdAt",
+								"findingsSyncedAt",
+								"findingsErrorAt",
+								"findingsError",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
 					railwayConnections: db.run(
 						PG.from(RailwayConnections)
 							.select(
@@ -377,6 +395,17 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					rows.supabaseProjects,
 					(project) => project.connectionId === supabase?.id,
 				),
+				fleetConnection: Option.match(Arr.head(rows.fleetConnections), {
+					onNone: () => null,
+					onSome: ({ findingsSyncedAt, findingsErrorAt, findingsError, ...connection }) => ({
+						...connection,
+						findings: {
+							lastSuccessAt: findingsSyncedAt,
+							lastErrorAt: findingsErrorAt,
+							lastError: findingsError,
+						},
+					}),
+				}),
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: Arr.map(rows.railwayEnvironments, ({ servicesJson, ...env }) => ({
 					...env,

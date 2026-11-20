@@ -86,6 +86,8 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 			return [doc.next("list_metrics", {}, "the CloudWatch metrics the metric stream delivers")]
 		case "supabase":
 			return [doc.next("list_metrics", {}, "the project metrics the managed scrape delivers")]
+		// Fleet feeds the audit log and Security Center, which are admin pages with no tool.
+		case "fleet":
 		case "chat":
 			return []
 	}
@@ -96,7 +98,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Integrations",
 		description:
-			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Google Cloud, AWS, Railway, Vercel, PlanetScale, Supabase, Google Search Console, " +
+			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Google Cloud, AWS, Railway, Fleet, Vercel, PlanetScale, Supabase, Google Search Console, " +
 			"Prometheus scrape targets, chat workspaces), what Maple data each one feeds, and whether it is working: " +
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
@@ -149,7 +151,7 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 						hints: [
 							filter === undefined
 								? "Connect data integrations in Sources, chat and alert connectors in Settings → Integrations. Each feeds:"
-								: filter === "chat"
+								: filter === "chat" || filter === "fleet"
 									? "Connect it in Settings → Integrations. Each feeds:"
 									: "Connect it in Sources. Each feeds:",
 							...Arr.map(available, (a) => `${a.provider}: ${Arr.join(a.feeds, "; ")}`),

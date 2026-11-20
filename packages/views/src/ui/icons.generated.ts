@@ -22991,6 +22991,43 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	LaptopIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 24 24"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "none"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "M3 13V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V13"],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+			[
+				"path",
+				[
+					[
+						"d",
+						"M1 17V19C1 20.1046 1.89543 21 3 21H21C22.1046 21 23 20.1046 23 19V17H16C16 17.5523 15.5523 18 15 18H9C8.44772 18 8 17.5523 8 17H1Z",
+					],
+					["stroke", "currentColor"],
+					["stroke-width", "2"],
+					["stroke-linecap", "square"],
+				],
+				[],
+			],
+		],
+	],
 } as const satisfies Record<string, IconNode>
 
 export type IconName = keyof typeof ICON_TREES

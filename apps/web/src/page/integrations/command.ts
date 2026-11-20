@@ -17,6 +17,7 @@ import { RAILWAY } from "../infra-integrations/railway/integration/railway-provi
 import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-provider"
 import { SEARCH_CONSOLE_STATUS_READ } from "./search-console"
 import { LINEAR_STATUS_READ } from "./linear-provider"
+import { FLEET_STATUS_READ } from "./fleet/fleet"
 import { CHAT_STATUS_READ } from "./chat"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
@@ -81,6 +82,7 @@ export const STATUS_READS = {
 		() => Effect.flatMap(MapleApiV2Client, (client) => client.planetscaleIntegration.databases()),
 	),
 	linear: statusRead(LINEAR_STATUS_READ.name, Message.CompletedLoadLinear, LINEAR_STATUS_READ.read),
+	fleet: statusRead(FLEET_STATUS_READ.name, Message.CompletedLoadFleet, FLEET_STATUS_READ.read),
 	searchConsole: statusRead(
 		SEARCH_CONSOLE_STATUS_READ.name,
 		Message.CompletedLoadSearchConsole,

@@ -1025,6 +1025,7 @@ describe("integration checks", () => {
 					awsConnections: [],
 					supabaseConnection: null,
 					supabaseProjects: [],
+					fleetConnection: null,
 					railwayConnection: null,
 					railwayEnvironments: [],
 					vercelConnection: null,

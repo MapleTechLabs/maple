@@ -141,6 +141,7 @@ describe("auditTrailSources", () => {
 			"gcp",
 			"aws",
 			"github",
+			"fleet",
 		])
 		expect(stateOf(sources, "github")).toBe("receiving")
 	})

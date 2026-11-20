@@ -254,6 +254,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/fleet",
+		title: "Fleet",
+		description:
+			"The Fleet card from the connect form to a rejected token, an admin-role token and the read-only view, over fixtures, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/search-console",
 		title: "Google Search Console",
 		description:
@@ -552,6 +560,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Security Center",
 		description:
 			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, the admins-only states, and the telemetry tabs (exposure, exposure-empty, runtimes). Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/security-devices",
+		title: "Security devices",
+		description:
+			"Security > Devices over Fleet fixtures: a Premium and a Free fleet, not connected, first sync, token rejected, sync error, all clear, forbidden, error and loading. Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},
