@@ -13,6 +13,7 @@ import {
 	type VectorSelector,
 } from "./ast"
 import { functionSignature } from "./functions"
+import { escapeLabelName } from "./label-names"
 import { lookup } from "./lookup"
 import { anchoredRegex, type LabelRegex } from "./regex"
 import { parseDurationMs, parseNumber, roundHalfAway, unquote } from "./literals"
@@ -101,6 +102,30 @@ const children = (node: SyntaxNode): SyntaxNode[] => {
 }
 
 const exprChildren = (node: SyntaxNode): SyntaxNode[] => children(node).filter((c) => EXPR_NODES.has(c.name))
+
+/** Argument positions that name labels, escaped like matcher names; `from` means every one after. */
+const LABEL_ARGS = new Map<string, { readonly at: ReadonlyArray<number>; readonly from?: number }>([
+	["label_replace", { at: [1, 3] }],
+	["label_join", { at: [1], from: 3 }],
+	["sort_by_label", { at: [], from: 1 }],
+	["sort_by_label_desc", { at: [], from: 1 }],
+])
+
+/** A string argument that names a label, escaped through any parentheses around it. */
+const escapeLabelArg = (arg: Expr): Expr => {
+	if (arg.type === "StringLiteral") return { ...arg, value: escapeLabelName(arg.value) }
+	if (arg.type === "Paren") return { ...arg, expr: escapeLabelArg(arg.expr) }
+	return arg
+}
+
+const escapeLabelArgs = (func: string, args: ReadonlyArray<Expr>): Expr[] => {
+	const spec = LABEL_ARGS.get(func)
+	return args.map((arg, i) =>
+		spec !== undefined && (spec.at.includes(i) || (spec.from !== undefined && i >= spec.from))
+			? escapeLabelArg(arg)
+			: arg,
+	)
+}
 
 const matchesEmpty = (m: LabelMatcher, regex: LabelRegex | undefined): boolean => {
 	switch (m.op) {
@@ -196,7 +221,12 @@ class Converter {
 		})
 	}
 
+	/** A label name, escaped to the legacy scheme so `"http.route"` and `http_route` are one label. */
 	labelName(node: SyntaxNode): R<string> {
+		return Result.map(this.rawName(node), escapeLabelName)
+	}
+
+	rawName(node: SyntaxNode): R<string> {
 		if (node.name === "LabelName") return Result.succeed(this.text(node))
 		return Result.flatMap(
 			required(node.getChild("StringLiteral"), node, "missing label name"),
@@ -250,7 +280,7 @@ class Converter {
 			for (const entry of block === null ? [] : children(block)) {
 				if (entry.name === "QuotedLabelName") {
 					if (name !== undefined) return yield* fail(entry, "metric name must not be set twice")
-					name = yield* this.labelName(entry)
+					name = yield* this.rawName(entry)
 				} else if (entry.name === "UnquotedLabelMatcher" || entry.name === "QuotedLabelMatcher") {
 					matchers.push(yield* this.matcher(entry))
 				}
@@ -414,7 +444,7 @@ class Converter {
 				return yield* fail(identifier, `unknown or unsupported function "${func}"`)
 			const body = node.getChild("FunctionCallBody")
 			const args = yield* Result.all(body === null ? [] : exprChildren(body).map((c) => this.expr(c)))
-			const call: Expr = { type: "Call", func, args }
+			const call: Expr = { type: "Call", func, args: escapeLabelArgs(func, args) }
 			return call
 		})
 	}
@@ -431,12 +461,6 @@ class Converter {
 				opNode,
 				`unknown aggregation ${this.text(opNode)}`,
 			)
-			// Prometheus gates these behind --enable-feature=promql-experimental-functions, off by default.
-			if (op === "limitk" || op === "limit_ratio")
-				return yield* fail(
-					node,
-					"limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions",
-				)
 			const body = yield* required(node.getChild("FunctionCallBody"), node, "missing aggregation body")
 			const args = yield* Result.all(exprChildren(body).map((c) => this.expr(c)))
 			const modifier = node.getChild("AggregateModifier")
@@ -451,11 +475,17 @@ class Converter {
 				)
 			}
 			const expr = yield* required(args[args.length - 1], body, "missing aggregation argument")
+			const first = args[0]
 			const aggregate: Expr = {
 				type: "Aggregate",
 				op,
 				expr,
-				param: wantsParam ? args[0] : undefined,
+				param:
+					op === "count_values" && first !== undefined
+						? escapeLabelArg(first)
+						: wantsParam
+							? first
+							: undefined,
 				grouping,
 				without,
 			}

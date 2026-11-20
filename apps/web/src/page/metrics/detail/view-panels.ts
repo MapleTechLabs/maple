@@ -11,6 +11,8 @@ import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import type * as Combobox from "@maple/views/ui/combobox"
 import { view as comboboxView } from "@maple/views/ui/combobox-view"
 import { badge } from "@maple/views/ui/display"
+import { copyableField } from "@maple/views/ui/copyable-field"
+import { examplePromqlFor, promqlNamesFor } from "@maple/query-engine/promql"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
@@ -33,7 +35,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
@@ -234,6 +236,50 @@ const attributesList = (h: H, model: Model): Html =>
 					),
 	})
 
+/** The metric's PromQL names and a query to start from, ready to copy. */
+const promqlSection = (h: H, model: Model, summary: CatalogSummary): Html => {
+	const metric = {
+		metricName: summary.metricName,
+		metricType: summary.metricType,
+		isMonotonic: summary.isMonotonic,
+		unit: summary.unit,
+	}
+	const names = promqlNamesFor(metric)
+	const example = examplePromqlFor(metric)
+	return vstack(h, { gap: "1.5" }, [
+		typography(h, { size: "xs", tone: "muted", as: "p" }, ["PromQL"]),
+		hstack(
+			h,
+			{ gap: "1.5", wrap: true },
+			Arr.map(names, (name) =>
+				badge(
+					h,
+					{
+						variant: "outline",
+						size: "xs",
+						mono: true,
+						className: "max-w-full",
+						attributes: [h.Title(name)],
+					},
+					[typography(h, { truncate: true, className: "min-w-0" }, [name])],
+				),
+			),
+		),
+		...(example === undefined
+			? []
+			: [
+					copyableField(h, {
+						id: "metric-promql-example",
+						label: "Example query",
+						value: example,
+						copyLabel: "Copy query",
+						copy: model.copyPromql,
+						toCopyMessage: (message) => Message.GotCopyPromqlMessage({ message }),
+					}),
+				]),
+	])
+}
+
 export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html =>
 	panel(h, { className: "gap-4 p-3" }, [
 		h.div(
@@ -257,6 +303,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 					: [typography(h, { size: "xs", tone: "muted", as: "p" }, [summary.description])]),
 			],
 		),
+		promqlSection(h, model, summary),
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
 			keyValue(h, { label: "First seen", mono: true }, [

@@ -45,6 +45,18 @@ const lookup = (
 const always = () => true
 const notExcluded = (key: string) => !isExcludedResourceKey(key)
 
+/** The series' service: the declared `service.name`, else the stored service column. */
+const serviceOf = (row: Pick<StoredSeries, "serviceName" | "resourceAttributes">): string => {
+	const declared = row.resourceAttributes["service.name"] ?? ""
+	return declared === "" ? row.serviceName : declared
+}
+
+/**
+ * Matcher-only alias: `service_name` matches the service (the `job` without its namespace) on a
+ * series without its own `service_name` label. It is not a label, so it never groups or shows.
+ */
+export const SERVICE_NAME_ALIAS = "service_name"
+
 /** One label's value; `""` when the series does not have it. */
 export const labelValue = (row: StoredSeries, name: string): string => {
 	if (name === "__name__") return row.promName
@@ -52,8 +64,7 @@ export const labelValue = (row: StoredSeries, name: string): string => {
 	const datapoint = lookup(row.attributes, name, always)
 	if (datapoint !== "") return datapoint
 	if (name === "job") {
-		const declared = row.resourceAttributes["service.name"] ?? ""
-		const service = declared === "" ? row.serviceName : declared
+		const service = serviceOf(row)
 		const namespace = row.resourceAttributes["service.namespace"] ?? ""
 		return namespace === "" ? service : `${namespace}/${service}`
 	}
@@ -92,6 +103,17 @@ export const seriesLabels = (row: StoredSeries): Readonly<Record<string, string>
 	)
 }
 
+/** Whether a stored series satisfies every matcher, with the `service_name` alias. */
+export const seriesMatchesAll = (
+	row: Pick<StoredSeries, "serviceName" | "resourceAttributes">,
+	labels: Readonly<Record<string, string>>,
+	matchers: ReadonlyArray<LabelMatcher>,
+) =>
+	Arr.every(matchers, (m) => {
+		const own = Option.getOrElse(Rec.get(labels, m.name), () => "")
+		return matchesValue(m, own === "" && m.name === SERVICE_NAME_ALIAS ? serviceOf(row) : own)
+	})
+
 /** Whether a series' labels satisfy every matcher (a missing label is `""`). */
 export const matchesAll = (labels: Readonly<Record<string, string>>, matchers: ReadonlyArray<LabelMatcher>) =>
 	Arr.every(matchers, (m) =>
@@ -127,9 +149,9 @@ export const EXCLUDED_KEY = sql.raw(
 
 /** The exact key first; only a missing key pays for normalizing every key of the map. */
 const mapLookupExpr = (map: CH.Expr<Record<string, string>>, name: string, filterExcluded: boolean) => {
-	// Normalizing writes `_` for every change, so a name without one (job, instance) comes only from
-	// that exact key, never an excluded one: skip the per-row regex over every key.
-	if (!Str.includes("_")(name)) return sql(chString)`${map}[${name}]`
+	// A plain alphanumeric name (job, region) normalizes only from that exact key, and every excluded
+	// prefix holds a `.` or `_`, so it is never an excluded key: skip the per-row regex over every key.
+	if (/^[a-zA-Z0-9]+$/.test(name)) return sql(chString)`${map}[${name}]`
 	const fallback = filterExcluded
 		? sql(
 				chString,
@@ -163,9 +185,7 @@ const jobExpr = ($: LabelColumns): CH.Expr<string> => jobFrom($, mapLookupExpr($
 
 const jobFrom = ($: LabelColumns, datapoint: CH.Expr<string>): CH.Expr<string> => {
 	const resource = $.ResourceAttributes
-	const service = sql(
-		chString,
-	)`if(${resource}['service.name'] != '', ${resource}['service.name'], ${$.ServiceName})`
+	const service = serviceExpr($)
 	const namespace = sql(chString)`${resource}['service.namespace']`
 	return sql(
 		chString,
@@ -209,8 +229,18 @@ export const labelSetExpr = ($: LabelColumns, bucket: boolean) => {
 /** A matcher as a WHERE condition, Prometheus semantics; `undefined` when it cannot be pushed down. */
 export const matcherCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Condition | undefined => {
 	const value = labelValueExpr($, matcher.name)
-	return value === undefined ? undefined : valueCondition(value, matcher)
+	if (value === undefined) return undefined
+	return valueCondition(matcher.name === SERVICE_NAME_ALIAS ? serviceAliasExpr($, value) : value, matcher)
 }
+
+/** `seriesMatchesAll`'s `service_name` alias: the label when set, else the service. */
+const serviceAliasExpr = ($: LabelColumns, label: CH.Expr<string>): CH.Expr<string> =>
+	sql(chString)`if(${label} != '', ${label}, ${serviceExpr($)})`
+
+const serviceExpr = ($: LabelColumns): CH.Expr<string> =>
+	sql(
+		chString,
+	)`if(${$.ResourceAttributes}['service.name'] != '', ${$.ResourceAttributes}['service.name'], ${$.ServiceName})`
 
 /** An `le` matcher on a series without a bucket bound, whose `le` is an attribute like any label. */
 export const attributeLeCondition = ($: LabelColumns, matcher: LabelMatcher): CH.Condition =>

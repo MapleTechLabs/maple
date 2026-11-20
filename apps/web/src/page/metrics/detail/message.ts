@@ -58,6 +58,7 @@ export const Message = defineMessageUnion({
 	GotGroupByComboboxMessage: { message: Combobox.Message },
 	GotBreakdownComboboxMessage: { message: Combobox.Message },
 	GotCopyLinkMessage: { message: CopyButton.Message },
+	GotCopyPromqlMessage: { message: CopyButton.Message },
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotSavedViewsMessage: { message: SavedViews.Message },

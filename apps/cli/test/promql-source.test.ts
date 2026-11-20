@@ -200,6 +200,7 @@ interface Request {
 	readonly originMs: number
 	readonly widthMs: number
 	readonly needsValues: boolean
+	readonly accumulateDeltas?: boolean
 }
 
 type Matcher = Request["matchers"][number]
@@ -252,7 +253,12 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 			min: Math.min(...values),
 			max: Math.max(...values),
 			sumSquares: total(Arr.map(values, (v) => v * v)),
-			resetSum: total(Arr.map(Arr.filter(pairs, ([p, v]) => v < p), ([p]) => p)),
+			resetSum: total(
+				Arr.map(
+					Arr.filter(pairs, ([p, v]) => v < p),
+					([p]) => p,
+				),
+			),
 			resets: Arr.filter(pairs, ([p, v]) => v < p).length,
 			changes: Arr.filter(pairs, ([p, v]) => v !== p).length,
 			sumT: total(xs),
@@ -263,12 +269,17 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 	})
 }
 
-/** Running totals of delta samples, from the first one in the range. */
-const accumulate = (samples: ReadonlyArray<Sample>, startMs: number): ReadonlyArray<Sample> => {
-	const inRange = Arr.filter(samples, ([t]) => BASE_MS + t > startMs)
+/** Running totals of delta samples in the range, from the source's baseline of 2 * sum |delta|. */
+const accumulate = (
+	samples: ReadonlyArray<Sample>,
+	startMs: number,
+	endMs: number,
+): ReadonlyArray<Sample> => {
+	const inRange = Arr.filter(samples, ([t]) => BASE_MS + t > startMs && BASE_MS + t <= endMs)
+	const baseline = 2 * total(Arr.map(inRange, ([, v]) => Math.abs(v)))
 	const totals = Arr.scan(
 		Arr.map(inRange, ([, v]) => v),
-		0,
+		baseline,
 		(a, b) => a + b,
 	)
 	return Arr.zipWith(inRange, Arr.drop(totals, 1), ([t], sum) => [t, sum] as const)
@@ -498,19 +509,23 @@ describeWithChdb("PromQL selector source", () => {
 		)
 	})
 
-	test("a delta sum reads as a running counter", () => {
-		const expectedSeries = (req: Request) => [
-			{
-				labels: labels("jobs_processed_total", { queue: "emails" }),
-				samples: accumulate(deltaSum.samples, req.startMs),
-			},
-		]
+	test("a delta sum reads as a running counter for rate functions, else as its deltas", () => {
+		const deltaLabels = labels("jobs_processed_total", { queue: "emails" })
 		for (const req of [
 			request("jobs_processed_total", [], { originMs: BASE_MS + 7 * SECOND_MS }),
 			request("jobs_processed_total", [], { widthMs: 0, needsValues: true }),
 			request("jobs_processed_total", [], { startMs: BASE_MS + 90 * SECOND_MS }),
 		]) {
-			expect(selected(db, ORG_A, req)).toEqual(expected(req, expectedSeries(req)))
+			const counter = { ...req, accumulateDeltas: true }
+			expect(selected(db, ORG_A, counter)).toEqual(
+				expected(counter, [
+					{ labels: deltaLabels, samples: accumulate(deltaSum.samples, req.startMs, req.endMs) },
+				]),
+			)
+			// The deltas as stored, whatever the read's start.
+			expect(selected(db, ORG_A, req)).toEqual(
+				expected(req, [{ labels: deltaLabels, samples: deltaSum.samples }]),
+			)
 		}
 	})
 

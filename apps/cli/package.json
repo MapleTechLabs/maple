@@ -19,12 +19,12 @@
 		"@maple/domain": "workspace:*",
 		"@maple/eventing-core": "workspace:*",
 		"@maple/local-server": "workspace:*",
+		"@maple/promql": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
-		"@maple/promql": "workspace:*",
 		"@types/bun": "^1.4.4",
 		"@types/node": "catalog:tooling",
 		"fast-check": "^4.10.2",

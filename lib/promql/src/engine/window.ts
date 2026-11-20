@@ -266,11 +266,16 @@ export const overTime = (func: OverTimeFunction, w: Window): number | undefined 
 	}
 }
 
-/** The time of the window's last sample; instant selectors report it as the sample timestamp. */
+/**
+ * The window's last sample, which instant selectors report with its own timestamp; none when a
+ * stale marker follows it inside the window, so the series ends there instead of looking back.
+ */
 export const lastSample = (w: Window): { readonly t: number; readonly v: number } | undefined => {
 	if (isEmpty(w)) return undefined
 	const last = at(w, w.to - 1)
-	return last === undefined ? undefined : { t: last.lastT, v: last.lastV }
+	if (last === undefined) return undefined
+	const staleT = last.staleT ?? 0
+	return staleT > 0 && staleT <= w.toMs ? undefined : { t: last.lastT, v: last.lastV }
 }
 
 /**

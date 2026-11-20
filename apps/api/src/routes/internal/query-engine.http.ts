@@ -7,6 +7,7 @@ import {
 	CurrentTenant,
 	MapleInternalApi,
 	RawSqlExecuteResponse,
+	PromqlDiscoverResponse,
 	PromqlExecuteResponse,
 	QueryEngineValidationError,
 	SpanHierarchyResponse,
@@ -165,6 +166,7 @@ import {
 	CH,
 	formatWarehouseDateTime,
 	parseSpanEvents,
+	parseWarehouseDateTime,
 } from "@maple/query-engine"
 import { QueryEngineExecuteBatchResponse } from "@maple/domain/query-engine"
 
@@ -2768,8 +2770,46 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								resultType: result.resultType,
 								seriesCount: result.seriesCount,
 								stepSeconds: result.stepSeconds,
+								...(result.warnings.length === 0 ? undefined : { warnings: result.warnings }),
 							},
 						})
+					}),
+				)
+				// The PromQL editor's autocomplete: label names, or one label's values (`__name__`: metrics).
+				.handle("discoverPromql", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const query = {
+							startMs: parseWarehouseDateTime(payload.startTime),
+							endMs: parseWarehouseDateTime(payload.endTime),
+							matches: payload.match === undefined ? [] : [payload.match],
+							limit: payload.limit ?? 500,
+						}
+						const data = yield* mapExecError(
+							(payload.label === undefined
+								? promql.labelNames(tenant, query)
+								: promql.labelValues(tenant, { ...query, name: payload.label })
+							).pipe(Effect.map((answer) => answer.data)),
+							"promql discovery failed",
+						).pipe(
+							Effect.catchTags({
+								"@maple/backend/promql/PromqlBadQueryError": (error) =>
+									Effect.fail(
+										new QueryEngineValidationError({
+											message: `Invalid PromQL: ${error.message}`,
+											details: [],
+										}),
+									),
+								"@maple/backend/promql/PromqlExecutionError": (error) =>
+									Effect.fail(
+										new QueryEngineValidationError({
+											message: error.message,
+											details: [],
+										}),
+									),
+							}),
+						)
+						return new PromqlDiscoverResponse({ data })
 					}),
 				)
 				.handle("executeRawSql", ({ payload }) =>
