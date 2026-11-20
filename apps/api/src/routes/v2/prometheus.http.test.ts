@@ -246,6 +246,33 @@ describe("v2 Prometheus query API", () => {
 		await harness.dispose()
 	})
 
+	it("names the nearest metric in warnings when a query's metric is unknown", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const answer = await harness.send(key.secret, `/query?query=http_request_total&time=${T}`)
+		expect(answer.body).toEqual({
+			status: "success",
+			data: { resultType: "vector", result: [] },
+			warnings: [
+				'no metric named "http_request_total" in the query window; did you mean "http_requests_total"?',
+			],
+		})
+		await harness.dispose()
+	})
+
+	it("warns when a discovery limit cut the label names", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const cut = await harness.send(key.secret, "/labels?limit=1")
+		expect(cut.body).toEqual({
+			status: "success",
+			data: ["__name__"],
+			warnings: ["results truncated due to limit"],
+		})
+		expect((await harness.send(key.secret, "/labels")).body).not.toHaveProperty("warnings")
+		await harness.dispose()
+	})
+
 	it("answers a range query POSTed as a form with RFC3339 bounds and a duration step", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["metrics:read"])

@@ -281,6 +281,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			selected: [breakdownKeyOf(route.search)],
 		}),
 		copyLink: CopyButton.init(),
+		copyPromql: CopyButton.init(),
 		addToDashboard: AddToDashboard.init(),
 		chart: Chart.init(),
 		timePicker: TimeRangePicker.init("metric-time-range"),
@@ -363,6 +364,16 @@ const liftCopyLink = (model: Model, message: CopyButton.Message): Return => {
 		model: { ...model, copyLink: next.model },
 		commands: Command.mapMessages(next.commands, (inner) =>
 			Message.GotCopyLinkMessage({ message: inner }),
+		),
+	}
+}
+
+const liftCopyPromql = (model: Model, message: CopyButton.Message): Return => {
+	const next = CopyButton.update(model.copyPromql, message)
+	return {
+		model: { ...model, copyPromql: next.model },
+		commands: Command.mapMessages(next.commands, (inner) =>
+			Message.GotCopyPromqlMessage({ message: inner }),
 		),
 	}
 }
@@ -523,6 +534,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(value) => ({ ...model.search, bd: value }),
 			),
 		GotCopyLinkMessage: ({ message: inner }) => liftCopyLink(model, inner),
+		GotCopyPromqlMessage: ({ message: inner }) => liftCopyPromql(model, inner),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {

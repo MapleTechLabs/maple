@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument, RawSqlDisplayType } from "@maple/domain/http"
 import { parseWarehouseDateTime, promqlRowsForDisplay } from "@maple/query-engine"
-import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { PageContext } from "../page/contract"
@@ -11,7 +11,12 @@ import { Model } from "../page/dashboards/widget/model"
 import { update as pageUpdate } from "../page/dashboards/widget/page-update"
 import { init as pageInit } from "../page/dashboards/widget/update"
 import { view as pageView } from "../page/dashboards/widget/view"
-import { promqlLabResult } from "./promql-widget-fixture"
+import { promqlLabDiscovery, promqlLabResult } from "./promql-widget-fixture"
+import {
+	DelayPromqlParse,
+	FetchPromqlDiscovery,
+	ReadPromqlCaret,
+} from "../page/dashboards/widget/promql-step"
 
 // The widget editor over a PromQL line chart. Its preview fetches are answered here with
 // rows from the real `promqlRowsForDisplay`, so the lab needs no API and no session.
@@ -87,6 +92,19 @@ const LabFetchWidget = Command.define("LabFetchPromqlPreview", {
 })
 
 const FetchArgs = Schema.Struct({ key: Schema.String, params: Schema.Record(Schema.String, Schema.Unknown) })
+const DiscoveryArgs = Schema.Struct({ key: Schema.String, label: Schema.optional(Schema.String) })
+
+const discoveryAnswer = (args: typeof DiscoveryArgs.Type) =>
+	Message.CompletedFetchPromqlDiscovery({
+		key: args.key,
+		result: Result.succeed(promqlLabDiscovery(args.label)),
+	})
+
+const LabFetchDiscovery = Command.define("LabFetchPromqlDiscovery", {
+	args: { key: Schema.String, label: Schema.optional(Schema.String) },
+	messages: [Message.CompletedFetchPromqlDiscovery],
+	execute: (args) => Effect.succeed(discoveryAnswer(args)),
+})
 
 type PageCommand = NonNullable<ReturnType<typeof pageUpdate>["commands"]>[number]
 
@@ -99,32 +117,71 @@ const offline = (commands: ReadonlyArray<PageCommand> | undefined): ReadonlyArra
 				onSome: (args) => [LabFetchWidget(args)],
 			})
 		}
+		if (command.name === FetchPromqlDiscovery.name) {
+			return Option.match(Schema.decodeUnknownOption(DiscoveryArgs)(command.args), {
+				onNone: () => [],
+				onSome: (args) => [LabFetchDiscovery(args)],
+			})
+		}
 		return Str.startsWith("Fetch")(command.name) || command.name === "SaveWidget" ? [] : [command]
 	})
 
 const BROKEN_QUERY = "sum by (job) (rate(http_server_request_duration_seconds_count[$__rate_interval])"
 
-/** `?state=error` opens on a query the parser refuses. */
-const wantsError = (): boolean =>
-	typeof window !== "undefined" && new URLSearchParams(window.location.search).get("state") === "error"
+/** `?state=` opens the editor on a state: `error`, `metrics` (completing a metric) or `values`. */
+const STATES = {
+	error: BROKEN_QUERY,
+	metrics: "sum by (job) (rate(http_server",
+	values: 'sum by (job) (rate(http_server_request_duration_seconds_count{job="',
+} satisfies Record<string, string>
+
+const labState = (): string | null =>
+	typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("state")
+
+/** Typing the state's query, its parse and its caret, with no DOM read or delay. */
+const typed = (query: string): ReadonlyArray<Message> => [
+	Message.ChangedPromql({ value: query }),
+	Message.ElapsedPromqlParseDelay({ seq: 1 }),
+	...(labState() === "error" ? [] : [Message.GotPromqlCaret({ caret: query.length, opens: true })]),
+]
+
+type Step = Readonly<{ model: Model; commands: ReadonlyArray<PageCommand> }>
+
+/** A seeding step: discovery answered at once, the caret and parse delay left to the messages. */
+const seed = (step: Step, message: Message): Step => {
+	const next = pageUpdate(step.model, message, context)
+	const discovered = Arr.flatMap(next.commands ?? [], (command) =>
+		command.name === FetchPromqlDiscovery.name
+			? Option.toArray(
+					Option.map(Schema.decodeUnknownOption(DiscoveryArgs)(command.args), discoveryAnswer),
+				)
+			: [],
+	)
+	const kept = Arr.filter(
+		offline(next.commands),
+		(command) =>
+			command.name !== ReadPromqlCaret.name &&
+			command.name !== DelayPromqlParse.name &&
+			command.name !== "LabFetchPromqlDiscovery",
+	)
+	return Arr.reduce(discovered, { model: next.model, commands: [...step.commands, ...kept] }, seed)
+}
 
 export const init = () => {
 	const opened = pageInit({ dashboardId: "dash_lab", widgetId: "rate", search: {} }, context)
-	const seeded = Arr.reduce(
+	const query = Arr.findFirst(Rec.toEntries(STATES), ([name]) => name === labState()).pipe(
+		Option.map(([, text]) => text),
+		Option.getOrUndefined,
+	)
+	return Arr.reduce(
 		[
 			Message.CompletedReadClock({ nowMs: NOW }),
 			Message.UpdatedDashboard({ orgId: context.orgId, maybeDocument: Option.some(document) }),
-			...(wantsError()
-				? [Message.ChangedPromql({ value: BROKEN_QUERY }), Message.ClickedRunPreview()]
-				: []),
+			...(query === undefined ? [] : typed(query)),
 		],
 		{ model: opened.model, commands: offline(opened.commands) },
-		(step, message) => {
-			const next = pageUpdate(step.model, message, context)
-			return { model: next.model, commands: [...step.commands, ...offline(next.commands)] }
-		},
+		seed,
 	)
-	return seeded
 }
 
 export const update = (model: Model, message: Message) => {

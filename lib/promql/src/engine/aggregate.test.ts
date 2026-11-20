@@ -129,10 +129,38 @@ describe("count_values", () => {
 	})
 })
 
-describe("experimental aggregations", () => {
-	it("limitk and limit_ratio are refused", () => {
-		const r = run("limitk", input, [], false, 1)
-		expect(Result.isFailure(r) && r.failure.message).toBe("experimental aggregation not supported")
+describe("limitk and limit_ratio", () => {
+	const ids = (op: AggregateOp, param: number, grouping: ReadonlyArray<string> = []) =>
+		Result.getOrThrow(run(op, input, grouping, false, param)).map(
+			(x) => `${x.labels.i ?? ""}${x.labels.job ?? ""}`,
+		)
+
+	it("limitk keeps the first k series of each group with their labels", () => {
+		expect(ids("limitk", 1)).toEqual(["1a"])
+		expect(ids("limitk", 1, ["job"])).toEqual(["1a", "1b"])
+		expect(ids("limitk", 0)).toEqual([])
+		expect(Result.getOrThrow(run("limitk", input, [], false, 5))).toEqual(
+			input.map((x) => ({ ...x, t: T })),
+		)
+	})
+
+	it("limit_ratio splits the series by label hash: r and r - 1 are complements", () => {
+		const many = Array.from({ length: 200 }, (_, i) => s({ __name__: "m", i: String(i) }, i))
+		const kept = (r: number) =>
+			Result.getOrThrow(run("limit_ratio", many, [], false, r)).map((x) => x.value)
+		const half = kept(0.5)
+		const rest = kept(-0.5)
+		expect(half.length).toBeGreaterThan(70)
+		expect(half.length).toBeLessThan(130)
+		expect([...half, ...rest].sort((a, b) => a - b)).toEqual(many.map((x) => x.value))
+		expect(kept(1)).toHaveLength(200)
+		expect(kept(7)).toHaveLength(200)
+		expect(kept(0)).toEqual([])
+	})
+
+	it("limit_ratio fails on a NaN ratio", () => {
+		const r = run("limit_ratio", input, [], false, Number.NaN)
+		expect(Result.isFailure(r) && r.failure.message).toBe("Ratio value is NaN")
 	})
 })
 

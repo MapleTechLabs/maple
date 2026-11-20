@@ -53,6 +53,8 @@ export const Model = Schema.Struct({
 	groupByCombobox: Combobox.Model,
 	breakdownCombobox: Combobox.Model,
 	copyLink: CopyButton.Model,
+	/** The metadata panel's example PromQL query copy. */
+	copyPromql: CopyButton.Model,
 	addToDashboard: AddToDashboard.Model,
 	chart: Chart.Model,
 	timePicker: TimeRangePicker.Model,

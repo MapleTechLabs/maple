@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { PromqlExecuteRequest, RawSqlDisplayType } from "@maple/domain/http"
+import { PromqlDiscoverRequest, PromqlExecuteRequest, RawSqlDisplayType } from "@maple/domain/http"
 import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
@@ -52,5 +52,34 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 		}),
 	)
 
-	return { data: result.data, meta: result.meta }
+	// `warnings` beside `data`, as the share and v2 widget data envelopes carry them.
+	const warnings = result.meta.warnings ?? []
+	return { data: result.data, meta: result.meta, ...(warnings.length === 0 ? undefined : { warnings }) }
+})
+
+/** What the PromQL editor autocompletes from: label names with no `label`, else that label's values. */
+export type PromqlDiscoverInput = Readonly<{
+	label?: string
+	match?: string
+	limit?: number
+	startTime: string
+	endTime: string
+}>
+
+export const discoverPromql = Effect.fn("QueryEngine.discoverPromql")(function* (input: PromqlDiscoverInput) {
+	const result = yield* runWarehouseQuery("promqlDiscover", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.queryEngine.discoverPromql({
+				payload: new PromqlDiscoverRequest({
+					startTime: input.startTime,
+					endTime: input.endTime,
+					...(input.label === undefined ? undefined : { label: input.label }),
+					...(input.match === undefined ? undefined : { match: input.match }),
+					...(input.limit === undefined ? undefined : { limit: input.limit }),
+				}),
+			})
+		}),
+	)
+	return result.data
 })

@@ -118,6 +118,8 @@ export const ListMetricsMetricRow = Schema.Struct({
 	metricUnit: Schema.String,
 	isMonotonic: Schema.Boolean,
 	dataPointCount: Schema.Number,
+	/** The names query_promql reads it by, one per component (`_bucket`, `_count`, `_sum` for a histogram). */
+	promqlNames: Schema.Array(Schema.String),
 })
 
 export const ListMetricsOutput = Schema.Struct({

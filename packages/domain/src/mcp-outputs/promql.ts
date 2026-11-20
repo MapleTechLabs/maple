@@ -32,4 +32,6 @@ export const QueryPromqlOutput = Schema.Struct({
 	totalSeries: Schema.Number,
 	/** A `string` result's value. */
 	stringValue: Schema.optionalKey(Schema.String),
+	/** Prometheus-style warnings: the nearest metric or label names when a selector matched nothing. */
+	warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 })

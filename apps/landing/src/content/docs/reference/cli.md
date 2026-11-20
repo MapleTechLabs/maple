@@ -25,6 +25,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns) · [`log-diff`](#maple-log-diff)                                                               | Search logs, or cluster them into templates                  |
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
 | [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
+| [`maple promql`](#maple-promql-query) · [`promql metrics`](#maple-promql-metrics-filter)                                                                          | Run PromQL over metrics, list the names it can select        |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
 | [`maple auth …`](#maple-auth-login) · [`whoami`](#maple-whoami) · [`use`](#maple-use-localremoteauto)                                                             | Sign in to a workspace, see the resolved backend, pin one    |
 
@@ -337,6 +338,36 @@ One metric's values over time, per service. Monotonic counters are shown as a pe
 ```bash
 maple metrics show http.server.request.count --since 1h
 ```
+
+### `maple promql '<query>'`
+
+Run a PromQL query over your metrics, in local and remote mode. Metric names are Prometheus-style, translated from OTel: `http.server.request.duration` in seconds is `http_server_request_duration_seconds`, its histogram reads as `_bucket`, `_count` and `_sum`, and `job` is the service name.
+
+- **`<query>`**: the PromQL expression; quote it in single quotes
+- `--since` (default `1h`) / `--start` / `--end`: the window to evaluate over, at most 7 days
+- `--step <duration>`: the range resolution (`30s`, `1m`, `1h` or seconds), default a round step giving 60 to 120 points
+- `--instant`: evaluate once at the window's end instead of over it
+
+`--format table` prints one row per series with its last value, min, average and max, its point count and a sparkline; labels every series shares are printed once above the table. JSON output is the same in both modes. The [Prometheus API](/docs/reference/prometheus) describes the name translation in full. At most 20 series (the highest peaks) and the last 200 points of each are returned; a note says when more matched. A syntax error is reported with its position before anything is sent:
+
+```text
+error: invalid PromQL at position 50: syntax error near ")"
+  rate(http_server_request_duration_seconds_count[5m)
+                                                    ^
+```
+
+```bash
+maple promql 'sum by (job) (rate(http_server_request_duration_seconds_count[5m]))' --format table
+maple promql 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))' --since 6h --step 5m
+maple promql 'topk(5, process_memory_usage_bytes)' --instant
+```
+
+### `maple promql metrics [filter]`
+
+List the Prometheus metric names PromQL can select, sorted.
+
+- **`[filter]`**: keep names containing this text, any case
+- Flags: `--since` / `--start` / `--end`, `--limit` (default 200)
 
 ### `maple query "<sql>"`
 

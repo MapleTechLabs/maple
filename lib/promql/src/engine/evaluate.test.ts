@@ -6,6 +6,7 @@ import { parse } from "../parser"
 import {
 	evaluate,
 	memorySource,
+	planRequests,
 	type QueryParams,
 	type QueryResult,
 	runQuery,
@@ -583,5 +584,56 @@ describe("fourth-review engine regressions", () => {
 		const raw = (request: SelectorRequest) => src({ ...request, widthMs: 0, needsValues: true })
 		const params = { startMs: t0 + week, endMs: t0 + week, stepMs: 0 }
 		expect(first("deriv(d[1w])", params, raw)).toBeCloseTo(1000, 6)
+	})
+})
+
+describe("stale markers", () => {
+	const bucket = (t: number, v: number, staleT?: number) => ({
+		...memorySource([{ labels: { __name__: "up" }, samples: [[t, v]] }])({
+			metricName: "up",
+			matchers: [],
+			startMs: 0,
+			endMs: t,
+			originMs: t,
+			widthMs: 0,
+			needsValues: false,
+		}).series[0]!.buckets[0]!,
+		staleT: staleT ?? 0,
+	})
+	const source = (): SelectorData => ({
+		timeOriginMs: 0,
+		series: [{ labels: { __name__: "up" }, buckets: [bucket(10_000, 1), bucket(20_000, 2, 30_000)] }],
+	})
+	const at = (query: string, t: number) => flatten(run(query, { startMs: t, endMs: t, stepMs: 0 }, source))
+
+	it("end the series at the marker instead of looking back past it", () => {
+		expect(at("up", 25_000)).toEqual([['{"__name__":"up"}', 25_000, 2]])
+		expect(at("up", 30_000)).toEqual([])
+		expect(at("up", 200_000)).toEqual([])
+	})
+
+	it("are ignored by range functions, as Prometheus drops them from range vectors", () => {
+		expect(at("last_over_time(up[1m])", 40_000)).toEqual([['{"__name__":"up"}', 40_000, 2]])
+		expect(at("count_over_time(up[1m])", 40_000)).toEqual([["{}", 40_000, 2]])
+	})
+})
+
+describe("delta-temporality reads", () => {
+	const flags = (query: string) => {
+		const parsed = parse(query)
+		if (Result.isFailure(parsed)) throw new Error(parsed.failure.message)
+		return [...planRequests(parsed.success, { startMs: 0, endMs: 0, stepMs: 0 }).values()].map(
+			(r) => r.accumulateDeltas,
+		)
+	}
+
+	it("accumulate into a counter only under rate, increase and irate", () => {
+		expect(flags("rate(x[5m]) + increase((y[5m])) + irate(z[1m])")).toEqual([true, true, true])
+		expect(flags("x + sum_over_time(y[5m]) + max_over_time(z[1h]) + delta(w[5m])")).toEqual([
+			false,
+			false,
+			false,
+			false,
+		])
 	})
 })

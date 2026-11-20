@@ -48,6 +48,9 @@ const RAW_FUNCTIONS: ReadonlySet<string> = new Set([
 	"double_exponential_smoothing",
 ])
 
+/** Functions whose selector reads delta-temporality samples as a running counter. */
+const COUNTER_RATE_FUNCTIONS: ReadonlySet<string> = new Set(["rate", "increase", "irate"])
+
 /** Default subquery resolution when the query has no step (Prometheus' evaluation interval). */
 const DEFAULT_SUBQUERY_STEP_MS = 60_000
 
@@ -87,6 +90,7 @@ const request = (
 	params: QueryParams,
 	windowMs: number,
 	raw: boolean,
+	accumulateDeltas = false,
 ): SelectorRequest => {
 	const g = pinned(grid, resolveAt(selector.at, params))
 	const last =
@@ -102,6 +106,7 @@ const request = (
 		originMs,
 		widthMs,
 		needsValues: raw,
+		accumulateDeltas,
 	}
 }
 
@@ -113,8 +118,8 @@ export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 	const top: TimeGrid = isInstant(params)
 		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }
 		: { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
-	const matrix = (node: MatrixSelector, grid: TimeGrid, raw: boolean): void => {
-		plan.set(node.vector, request(node.vector, grid, params, node.rangeMs, raw))
+	const matrix = (node: MatrixSelector, grid: TimeGrid, raw: boolean, counter = false): void => {
+		plan.set(node.vector, request(node.vector, grid, params, node.rangeMs, raw, counter))
 	}
 	const walk = (node: Expr, grid: TimeGrid, raw: boolean): void => {
 		switch (node.type) {
@@ -144,7 +149,12 @@ export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 				return
 			case "Call": {
 				const needsRaw = RAW_FUNCTIONS.has(node.func)
-				for (const arg of node.args) walk(arg, grid, needsRaw)
+				for (const arg of node.args) {
+					const inner = unparen(arg)
+					if (COUNTER_RATE_FUNCTIONS.has(node.func) && inner.type === "MatrixSelector")
+						matrix(inner, grid, needsRaw, true)
+					else walk(arg, grid, needsRaw)
+				}
 				return
 			}
 		}

@@ -27,6 +27,7 @@ import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { promqlNamesFor } from "@maple/query-engine/promql"
 import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
@@ -66,6 +67,27 @@ export const loadingTable = (h: H): Html =>
 		tableClassName: "table-fixed",
 	})
 
+/** The names PromQL reads the metric by, under its OTel name. */
+const promqlLine = (h: H, metric: MetricRow): ReadonlyArray<Html> => {
+	const names = promqlNamesFor({ ...metric, unit: metric.metricUnit })
+	const text = Arr.join(names, ", ")
+	return names.length === 0 || text === metric.metricName
+		? []
+		: [
+				typography(
+					h,
+					{
+						size: "3xs",
+						tone: "muted",
+						mono: true,
+						truncate: true,
+						attributes: [h.Title(`PromQL: ${text}`)],
+					},
+					[text],
+				),
+			]
+}
+
 const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string, isFocused: boolean): Html =>
 	tableRow(
 		h,
@@ -86,6 +108,7 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string, isFo
 							}),
 						],
 					),
+					...promqlLine(h, metric),
 					...(metric.metricDescription === ""
 						? []
 						: [

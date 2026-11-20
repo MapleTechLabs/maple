@@ -141,6 +141,7 @@ export const renderPromqlOutput = (output: Output): ToolDoc => {
 	const empty = output.resultType !== "string" && output.series.length === 0
 	const clipped = Arr.some(output.series, (s) => s.totalPoints > s.points.length)
 	const aggregate = aggregateNext(output)
+	const warnings = output.warnings ?? []
 	return {
 		title: "PromQL Result",
 		scope: [
@@ -152,20 +153,25 @@ export const renderPromqlOutput = (output: Output): ToolDoc => {
 			["Step", output.instant ? undefined : stepText(output.stepSeconds)],
 		],
 		blocks: bodyOf(output),
-		...(empty
+		...(empty && warnings.length > 0
 			? {
-					empty: {
-						message: "No series matched this query in the window.",
-						hints: [
-							"Names are Prometheus-style: `http.server.request.duration` (s) is `http_server_request_duration_seconds_bucket`/`_count`/`_sum`, a monotonic sum ends in `_total`.",
-							// An instant query reads only the 5 minutes before end_time; start_time cannot help it.
-							output.instant
-								? "Labels use underscores (`host_name`); `job` is the service name, as `namespace/name` when the service sets `service.namespace`. An instant query reads the 5 minutes before end_time: move end_time, or check names with list_metrics."
-								: "Labels use underscores (`host_name`); `job` is the service name, as `namespace/name` when the service sets `service.namespace`. Widen start_time, or check names with list_metrics.",
-						],
-					},
+					// The engine's own hints name the metrics or labels it nearly matched; lead with them.
+					empty: { message: "No series matched this query in the window.", hints: warnings },
 				}
-			: undefined),
+			: empty
+				? {
+						empty: {
+							message: "No series matched this query in the window.",
+							hints: [
+								"Names are Prometheus-style: `http.server.request.duration` (s) is `http_server_request_duration_seconds_bucket`/`_count`/`_sum`, a monotonic sum ends in `_total`.",
+								// An instant query reads only the 5 minutes before end_time; start_time cannot help it.
+								output.instant
+									? "Labels use underscores (`host_name`); `job` is the service name, as `namespace/name` when the service sets `service.namespace`. An instant query reads the 5 minutes before end_time: move end_time, or check names with list_metrics."
+									: "Labels use underscores (`host_name`); `job` is the service name, as `namespace/name` when the service sets `service.namespace`. Widen start_time, or check names with list_metrics.",
+							],
+						},
+					}
+				: undefined),
 		...(output.totalSeries > output.series.length
 			? {
 					truncation: {
@@ -175,10 +181,15 @@ export const renderPromqlOutput = (output: Output): ToolDoc => {
 					},
 				}
 			: undefined),
-		...(clipped
+		...(clipped || (!empty && warnings.length > 0)
 			? {
 					notices: [
-						`Each series shows its last ${MAX_POINTS} points; a coarser step covers the whole window.`,
+						...(empty ? [] : warnings),
+						...(clipped
+							? [
+									`Each series shows its last ${MAX_POINTS} points; a coarser step covers the whole window.`,
+								]
+							: []),
 					],
 				}
 			: undefined),
@@ -187,7 +198,7 @@ export const renderPromqlOutput = (output: Output): ToolDoc => {
 					doc.next(
 						"list_metrics",
 						{ start_time: output.timeRange.start, end_time: output.timeRange.end },
-						"find the metric's OTel name",
+						"list metric names with their PromQL names",
 					),
 				]
 			: output.totalSeries > output.series.length && aggregate !== undefined

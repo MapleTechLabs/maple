@@ -52,10 +52,15 @@ const promqlTool = (): Invoke => {
 	return invoke
 }
 
+/** A service answer whose `warnings` may be left out (none). */
+type Stubbed<T> = T extends unknown
+	? Omit<T, "warnings"> & { readonly warnings?: ReadonlyArray<string> }
+	: never
+
 /** Runs the tool against a PromQL service that records each query and answers with `answer`. */
 const run = (
 	params: Readonly<Record<string, unknown>>,
-	answer: (input: PromqlQuery) => Effect.Effect<PromqlResult, PromqlBadQueryError>,
+	answer: (input: PromqlQuery) => Effect.Effect<Stubbed<PromqlResult>, PromqlBadQueryError>,
 	calls: Array<PromqlQuery> = [],
 ) =>
 	// it.effect starts its clock at 0; the window must be in the past.
@@ -66,7 +71,7 @@ const run = (
 				Layer.mock(PromqlQueryService)({
 					query: (_tenant, input) => {
 						calls.push(input)
-						return answer(input)
+						return Effect.map(answer(input), (result) => ({ warnings: [], ...result }))
 					},
 				}),
 				Layer.succeed(CurrentMcpTenant, {
@@ -319,6 +324,7 @@ describe("query_promql steps", () => {
 	it("keeps an infinite series when capping, the way a peak ranks", () => {
 		const series = (i: number, v: number) => ({ labels: { id: String(i) }, points: [{ t: 0, v }] })
 		const result: PromqlResult = {
+			warnings: [],
 			resultType: "matrix",
 			result: [
 				series(0, Number.POSITIVE_INFINITY),
@@ -360,6 +366,34 @@ describe("query_promql empty results", () => {
 			)
 			expect(text).toContain("move end_time")
 			expect(text).not.toContain("Widen start_time")
+		}),
+	)
+
+	it.effect("leads with the engine's nearest-name warnings when nothing matched", () =>
+		Effect.gen(function* () {
+			const hint =
+				'no metric named "http_request_total" in the query window; did you mean "http_requests_total"?'
+			const { output, text } = yield* run({ query: "http_request_total", ...WINDOW }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: [], warnings: [hint] }),
+			)
+			expect(output).toMatchObject({ warnings: [hint] })
+			expect(text).toContain(hint)
+			// The engine named the metric; the generic naming advice would only repeat it.
+			expect(text).not.toContain("Labels use underscores")
+		}),
+	)
+
+	it.effect("shows warnings as notes beside series", () =>
+		Effect.gen(function* () {
+			const hint = 'no metric named "x_total" in the query window'
+			const { text } = yield* run({ query: `${QUERY} or x_total`, ...WINDOW }, () =>
+				Effect.succeed({
+					resultType: "matrix" as const,
+					result: [series("api", [1])],
+					warnings: [hint],
+				}),
+			)
+			expect(text).toContain(`Note: ${hint}`)
 		}),
 	)
 })
