@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, MapleInternalApi } from "@maple/domain/http"
+import { MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
@@ -12,21 +12,10 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 			const service = yield* OrgClickHouseSettingsService
 
 			return handlers
-				.handle("get", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* service.get(tenant.orgId, tenant.permissions)
-					}),
-				)
+				.handle("get", () => service.get)
 				.handle("upsert", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const updated = yield* service.upsert(
-							tenant.orgId,
-							tenant.userId,
-							tenant.permissions,
-							payload,
-						)
+						const updated = yield* service.upsert(payload)
 						// URL/user/database identify the connection; the password in the
 						// payload is write-only and never reaches an audit row.
 						yield* recordHttpAudit("warehouse_settings.updated", {
@@ -35,40 +24,19 @@ export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 						return updated
 					}),
 				)
-				.handle("schemaDiff", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* service.schemaDiff(tenant.orgId, tenant.permissions)
-					}),
-				)
+				.handle("schemaDiff", () => service.schemaDiff)
 				.handle("applySchema", () =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const applied = yield* service.applySchema(
-							tenant.orgId,
-							tenant.userId,
-							tenant.permissions,
-						)
+						const applied = yield* service.applySchema
 						yield* recordHttpAudit("warehouse_settings.schema_applied")
 						return applied
 					}),
 				)
-				.handle("applySchemaStatus", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* service.applySchemaStatus(tenant.orgId, tenant.permissions)
-					}),
-				)
-				.handle("collectorConfig", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* service.collectorConfig(tenant.orgId, tenant.permissions)
-					}),
-				)
+				.handle("applySchemaStatus", () => service.applySchemaStatus)
+				.handle("collectorConfig", () => service.collectorConfig)
 				.handle("delete", () =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const deleted = yield* service.delete(tenant.orgId, tenant.permissions)
+						const deleted = yield* service.delete
 						yield* recordHttpAudit("warehouse_settings.deleted")
 						return deleted
 					}),

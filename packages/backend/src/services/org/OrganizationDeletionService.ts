@@ -1,4 +1,4 @@
-import type * as Policy from "@maple/domain/policy"
+import * as Policy from "@maple/domain/policy"
 import * as Clerk from "@distilled.cloud/clerk"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
@@ -41,12 +41,10 @@ const toPersistenceError = (error: unknown) =>
 type PurgedTable = (typeof ORG_DELETE_REGISTRY.orgScoped)[number]
 
 export interface OrganizationDeletionServiceApi {
-	readonly delete: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly delete: Effect.Effect<
 		DeleteOrganizationResponse,
-		OrganizationForbiddenError | OrganizationPersistenceError | OrganizationProviderError
+		OrganizationForbiddenError | OrganizationPersistenceError | OrganizationProviderError,
+		Policy.CurrentActor
 	>
 }
 
@@ -114,12 +112,10 @@ export class OrganizationDeletionService extends Context.Service<
 			},
 		)
 
-		const deleteOrganization = Effect.fn("OrganizationDeletionService.delete")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const deleteOrganization = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireOrganizationAdmin(permissions)
+			yield* requireOrganizationAdmin
 			// Under the link lock, like every link write and monitor create or delete: the member
 			// check, the monitor count and the link's removal see one state. Once the link is gone,
 			// monitors made before the purge bill to the org itself.
@@ -194,7 +190,7 @@ export class OrganizationDeletionService extends Context.Service<
 				deleted: true,
 				...(incompleteTeardowns.length === 0 ? undefined : { incompleteTeardowns }),
 			})
-		})
+		}).pipe(Effect.withSpan("OrganizationDeletionService.delete"))
 
 		return { delete: deleteOrganization } satisfies OrganizationDeletionServiceApi
 	}),

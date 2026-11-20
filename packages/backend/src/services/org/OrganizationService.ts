@@ -317,26 +317,20 @@ export interface OrganizationServiceApi {
 	) => Effect.Effect<CreateOrganizationResponse, OrganizationProviderError>
 	/** Sets the region of an organization created without one, while it is still onboarding. */
 	readonly chooseRegion: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		region: MapleRegion,
 	) => Effect.Effect<
 		ChooseOrganizationRegionResponse,
-		OrganizationForbiddenError | OrganizationRegionLockedError | OrganizationProviderError
+		OrganizationForbiddenError | OrganizationRegionLockedError | OrganizationProviderError,
+		Policy.CurrentActor
 	>
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<OrganizationInfo, OrganizationProviderError>
 }
 
 /** Fails unless the caller may change the organization's settings. */
-export const requireOrganizationAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
-	permissions: Policy.Grants,
-) {
-	return yield* Policy.check(
-		permissions,
-		"organization:manage",
-		(denial) => new OrganizationForbiddenError({ message: denial.message }),
-	)
-})
+export const requireOrganizationAdmin = Policy.authorize(
+	"organization:manage",
+	(denial) => new OrganizationForbiddenError({ message: denial.message }),
+)
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceApi>()(
 	"@maple/backend/services/OrganizationService",
@@ -413,12 +407,11 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			})
 
 			const chooseRegion = Effect.fn("OrganizationService.chooseRegion")(function* (
-				orgId: OrgId,
-				permissions: Policy.Grants,
 				region: MapleRegion,
 			) {
+				const { orgId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.org_region": region })
-				yield* requireOrganizationAdmin(permissions)
+				yield* requireOrganizationAdmin
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({

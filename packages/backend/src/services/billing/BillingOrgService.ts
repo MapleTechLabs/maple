@@ -13,7 +13,6 @@ import {
 	type BillingLinkRejection,
 	BillingLinkRejectedError,
 	type OrgId,
-	type UserId,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
 import { OrgBillingLinks, type OrgBillingLinkRow, UptimeMonitors } from "@maple/db/tables"
@@ -62,38 +61,27 @@ const CANCEL_TIMEOUT = "10 seconds"
 const reject = (reason: BillingLinkRejection) =>
 	Effect.fail(new BillingLinkRejectedError({ reason, message: LINK_REJECTION_MESSAGES[reason] }))
 
-export interface LinkBillingOrgInput {
-	/** The org being linked; the caller's active org. */
-	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly permissions: Policy.Grants
-	readonly billingOrgId: OrgId
-}
-
-export interface UnlinkBillingOrgInput {
-	/** The caller's active org: the member leaving, or the billing org removing it. */
-	readonly orgId: OrgId
-	readonly permissions: Policy.Grants
-	readonly memberOrgId: OrgId
-}
-
 export interface BillingOrgServiceApi {
 	/** The orgs billed through `billingOrgId`, oldest link first. */
 	readonly members: (
 		billingOrgId: OrgId,
 	) => Effect.Effect<ReadonlyArray<OrgBillingLinkRow>, BillingAccountPersistenceError>
 	readonly account: (orgId: OrgId) => Effect.Effect<BillingAccount, BillingAccountPersistenceError>
+	/** Bill the actor's org through `billingOrgId`. */
 	readonly link: (
-		input: LinkBillingOrgInput,
+		billingOrgId: OrgId,
 	) => Effect.Effect<
 		BillingAccount,
-		BillingForbiddenError | BillingLinkRejectedError | BillingAccountPersistenceError | AutumnFailure
+		BillingForbiddenError | BillingLinkRejectedError | BillingAccountPersistenceError | AutumnFailure,
+		Policy.CurrentActor
 	>
+	/** Remove `memberOrgId`'s link: the actor's org leaving, or the billing org removing it. */
 	readonly unlink: (
-		input: UnlinkBillingOrgInput,
+		memberOrgId: OrgId,
 	) => Effect.Effect<
 		BillingAccount,
-		BillingForbiddenError | BillingLinkRejectedError | BillingAccountPersistenceError
+		BillingForbiddenError | BillingLinkRejectedError | BillingAccountPersistenceError,
+		Policy.CurrentActor
 	>
 }
 
@@ -286,10 +274,10 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				).pipe(Effect.provideService(HttpClient.HttpClient, httpClient))
 			})
 
-			const link = Effect.fn("BillingOrgService.link")(function* (input: LinkBillingOrgInput) {
-				const { orgId, billingOrgId: payer } = input
+			const link = Effect.fn("BillingOrgService.link")(function* (payer: OrgId) {
+				const { orgId, userId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing_org_id": payer })
-				if (!Policy.can(input.permissions, "billing:manage")) {
+				if (!(yield* Policy.actorCan("billing:manage"))) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})
@@ -297,7 +285,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 				if (orgId === payer) return yield* reject("same_org")
 
 				// The caller speaks for both sides: admin here (above) and admin of the org that pays.
-				const membership = yield* memberships.verify(input.userId, payer).pipe(
+				const membership = yield* memberships.verify(userId, payer).pipe(
 					Effect.mapError(
 						(error) =>
 							new BillingAccountPersistenceError({
@@ -361,7 +349,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 									.values({
 										orgId,
 										billingOrgId: payer,
-										linkedBy: input.userId,
+										linkedBy: userId,
 										createdAt: now,
 									})
 									.returning(),
@@ -388,15 +376,15 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 					})
 				}
 				yield* Effect.logInfo("Org billing linked").pipe(
-					Effect.annotateLogs({ orgId, billingOrgId: payer, userId: input.userId }),
+					Effect.annotateLogs({ orgId, billingOrgId: payer, userId }),
 				)
 				return yield* account(orgId)
 			})
 
-			const unlink = Effect.fn("BillingOrgService.unlink")(function* (input: UnlinkBillingOrgInput) {
-				const { orgId, memberOrgId } = input
+			const unlink = Effect.fn("BillingOrgService.unlink")(function* (memberOrgId: OrgId) {
+				const { orgId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.member_org_id": memberOrgId })
-				if (!Policy.can(input.permissions, "billing:manage")) {
+				if (!(yield* Policy.actorCan("billing:manage"))) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})

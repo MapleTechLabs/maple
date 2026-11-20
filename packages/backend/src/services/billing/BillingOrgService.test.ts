@@ -13,6 +13,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { ownBillingCustomer } from "./billing-customer"
 import { BillingCustomerResolver } from "./BillingCustomerResolver"
 import { BillingOrgService } from "./BillingOrgService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -174,7 +175,7 @@ const run = <A, E>(
 const linkMember = (to = PAYER) =>
 	Effect.gen(function* () {
 		const service = yield* BillingOrgService
-		return yield* service.link({ orgId: MEMBER, userId: USER, permissions: ADMIN, billingOrgId: to })
+		return yield* service.link(to).pipe(actingAs(MEMBER, ADMIN, USER))
 	})
 
 const rejection = <A, E extends { readonly _tag: string }>(exit: Exit.Exit<A, E>) =>
@@ -325,7 +326,7 @@ describe("BillingOrgService", () => {
 				const service = yield* BillingOrgService
 				yield* linkMember()
 				yield* linkMember()
-				yield* service.unlink({ orgId: MEMBER, permissions: ADMIN, memberOrgId: MEMBER })
+				yield* service.unlink(MEMBER).pipe(actingAs(MEMBER, ADMIN))
 				const monitorMoves = Arr.filter(world.tracked, (track) => track.feature === "uptime_monitors")
 				assert.deepStrictEqual(monitorMoves, [
 					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
@@ -356,7 +357,9 @@ describe("BillingOrgService", () => {
 					world,
 					Effect.gen(function* () {
 						const service = yield* BillingOrgService
-						return yield* service.link({ userId: USER, permissions: ADMIN, ...input })
+						return yield* service
+							.link(input.billingOrgId)
+							.pipe(actingAs(input.orgId, input.permissions ?? ADMIN, USER))
 					}),
 				).pipe(Effect.exit, Effect.map(rejection))
 
@@ -402,11 +405,11 @@ describe("BillingOrgService", () => {
 				// A member cannot pay for others, a payer cannot be billed elsewhere, and a member
 				// cannot move to a second payer without leaving the first.
 				const throughMember = yield* Effect.exit(
-					service.link({ orgId: OTHER, userId: USER, permissions: ADMIN, billingOrgId: MEMBER }),
+					service.link(MEMBER).pipe(actingAs(OTHER, ADMIN, USER)),
 				)
 				assert.strictEqual(rejection(throughMember), "billing_org_is_member")
 				const payerElsewhere = yield* Effect.exit(
-					service.link({ orgId: PAYER, userId: USER, permissions: ADMIN, billingOrgId: OTHER }),
+					service.link(OTHER).pipe(actingAs(PAYER, ADMIN, USER)),
 				)
 				assert.strictEqual(rejection(payerElsewhere), "org_is_billing_org")
 				assert.strictEqual(rejection(yield* Effect.exit(linkMember(OTHER))), "already_linked")
@@ -422,21 +425,17 @@ describe("BillingOrgService", () => {
 				const service = yield* BillingOrgService
 				yield* linkMember()
 
-				const stranger = yield* Effect.exit(
-					service.unlink({ orgId: OTHER, permissions: ADMIN, memberOrgId: MEMBER }),
-				)
+				const stranger = yield* Effect.exit(service.unlink(MEMBER).pipe(actingAs(OTHER, ADMIN)))
 				assert.strictEqual(rejection(stranger), "not_a_member")
-				const nonAdmin = yield* Effect.exit(
-					service.unlink({ orgId: PAYER, permissions: MEMBER_ROLE, memberOrgId: MEMBER }),
-				)
+				const nonAdmin = yield* Effect.exit(service.unlink(MEMBER).pipe(actingAs(PAYER, MEMBER_ROLE)))
 				assert.strictEqual(rejection(nonAdmin), "@maple/http/errors/BillingForbiddenError")
 
-				const payer = yield* service.unlink({ orgId: PAYER, permissions: ADMIN, memberOrgId: MEMBER })
+				const payer = yield* service.unlink(MEMBER).pipe(actingAs(PAYER, ADMIN))
 				assert.strictEqual(payer.role, "standalone")
 				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 
 				yield* linkMember()
-				const left = yield* service.unlink({ orgId: MEMBER, permissions: ADMIN, memberOrgId: MEMBER })
+				const left = yield* service.unlink(MEMBER).pipe(actingAs(MEMBER, ADMIN))
 				assert.strictEqual(left.role, "standalone")
 				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 			}),
