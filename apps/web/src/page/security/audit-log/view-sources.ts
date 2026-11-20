@@ -10,6 +10,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
+import { isDataIntegration } from "../../../route/data-integrations"
 import { type IntegrationBrand, integrationIconPlate } from "../../kit/integration-empty"
 import { relativeTime } from "../../kit/relative-time"
 import { providerBrand } from "../kit/audit-brands"
@@ -65,6 +66,12 @@ const COPY = {
 		turnOn: "Turn on Audit log on the GitHub source in Sources.",
 		connect: "Install the Maple GitHub App on your organization.",
 	},
+	fleet: {
+		brand: providerBrand("fleet"),
+		sends: "Fleet admin activity: users, policies, queries, scripts and settings",
+		turnOn: "",
+		connect: "Connect your Fleet server with a read-only API token.",
+	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
 
 /** A platform a newer writer added: its events still show, with nothing to set up. */
@@ -84,7 +91,11 @@ const STATE = {
 	not_connected: { label: "Not connected", tone: "neutral" },
 } as const satisfies Record<AuditTrailSourceState, { label: string; tone: string }>
 
-const setupHref = (provider: string) => hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
+/** Data integrations connect in Sources; the rest (Fleet) on their integrations page. */
+const setupHref = (provider: string) =>
+	isDataIntegration(provider)
+		? hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
+		: hrefOf(AppRoute.Integrations({ search: { integration: provider } }))
 
 const eventCount = (events: number) => `${events.toLocaleString("en-US")} event${events === 1 ? "" : "s"}`
 

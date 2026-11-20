@@ -155,6 +155,9 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"PlanetscaleIssueReceipts",
 	// The encrypted Fleet token would keep the poller reading a device server for a deleted org.
 	"FleetConnections",
+	// What the org's device sources reported about its devices.
+	"DevicePolicyFindings",
+	"DeviceVulnerabilityFindings",
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	"RailwayConnections",
 	"RailwayEnvironments",

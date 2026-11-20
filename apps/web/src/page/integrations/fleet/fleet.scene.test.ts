@@ -5,6 +5,7 @@ import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
+import { AppRoute, hrefOf } from "../../../route"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { cardStatusOf } from "../derive"
 import { Message } from "../message"
@@ -130,6 +131,15 @@ describe("fleet card", () => {
 			expectView(text("Premium")).toExist(),
 			expectView(role("button", { name: "Update token" })).toExist(),
 			expectView(role("button", { name: "Disconnect" })).toExist(),
+			// What Fleet feeds: device findings in Security and admin activity in the audit log.
+			expectView(role("link", { name: "Security, Devices" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityDevices()),
+			),
+			expectView(role("link", { name: "audit log" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.SecurityAuditLog({ search: { provider: "fleet" } })),
+			),
 		)
 		expect(cardStatusOf(model.statuses, "fleet", NOW)).toEqual({ label: "Connected", variant: "ok" })
 	})

@@ -562,6 +562,7 @@ describe("GET /internal/audit-trail/sources", () => {
 					["gcp", "not_connected", 0],
 					["aws", "not_connected", 0],
 					["github", "not_connected", 0],
+					["fleet", "not_connected", 0],
 				],
 			)
 			expect(body.sources[1]?.account).toBe("Acme (2 projects)")
@@ -578,6 +579,7 @@ describe("GET /internal/audit-trail/sources", () => {
 			expect(Arr.map(asSources(response.body).sources, (source) => source.state)).toEqual([
 				"built_in",
 				"receiving",
+				"waiting",
 				"waiting",
 				"waiting",
 				"waiting",

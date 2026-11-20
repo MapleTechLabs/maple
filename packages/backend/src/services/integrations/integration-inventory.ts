@@ -38,6 +38,8 @@ export const worstStatus = worstSourceStatus
 
 /** The alerting pollers tick every 5 minutes; six missed ticks is no longer a blip. */
 const POLLER_STALE_MS = 30 * 60 * 1000
+/** Fleet's device findings sync hourly; three hours without one is no longer a blip. */
+const FLEET_FINDINGS_STALE_MS = 3 * 60 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
 /** The per-database poll-state rows the events switch stops (`PlanetScaleService`). */
@@ -117,6 +119,8 @@ export interface IntegrationInventoryInputs {
 				readonly baseUrl: string
 				readonly authFailedAt: number | null
 				readonly createdAt: number
+				/** The hourly device findings sync, apart from the activity poll. */
+				readonly findings: PollState
 		  })
 		| null
 	readonly railwayEnvironments: ReadonlyArray<
@@ -531,6 +535,7 @@ const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntr
 	const connection = inputs.fleetConnection
 	if (connection === null) return null
 	const status = pollStatus(connection, now, POLLER_STALE_MS)
+	const devicesStatus = pollStatus(connection.findings, now, FLEET_FINDINGS_STALE_MS)
 	const own =
 		connection.authFailedAt !== null
 			? {
@@ -552,7 +557,24 @@ const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntr
 		account: fleetServerName(connection),
 		connectedAt: connection.createdAt,
 		own,
-		resources: [],
+		resources: [
+			{
+				kind: "audit log",
+				name: "activity feed",
+				status,
+				lastSuccessAt: connection.lastSuccessAt,
+				lastError: failingError(connection, status),
+				note: null,
+			},
+			{
+				kind: "devices",
+				name: "failing policies and vulnerable software",
+				status: devicesStatus,
+				lastSuccessAt: connection.findings.lastSuccessAt,
+				lastError: failingError(connection.findings, devicesStatus),
+				note: null,
+			},
+		],
 	})
 }
 

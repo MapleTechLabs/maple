@@ -45,7 +45,12 @@ export const ALERTING_SCHEDULE = {
 	// until done. Every five minutes so a new source has cost within minutes; a tick with nothing
 	// due costs a few queries.
 	// `aws_security` pulls AWS security findings changed since each region's cursor.
-	"2-59/5 * * * *": { lanes: ["vercel", "cost_sync", "aws_security"], deadline: "270 seconds" },
+	// `fleet` reads each Fleet server's activity feed after its cursor into the audit log.
+	// `fleet_findings` syncs a server's policies and vulnerable software once its last sync is an hour old.
+	"2-59/5 * * * *": {
+		lanes: ["vercel", "cost_sync", "aws_security", "fleet", "fleet_findings"],
+		deadline: "270 seconds",
+	},
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours

@@ -556,6 +556,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/security-devices",
+		title: "Security devices",
+		description:
+			"Security > Devices over Fleet fixtures: a Premium and a Free fleet, not connected, first sync, token rejected, sync error, all clear, forbidden, error and loading. Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/product-analytics",
 		title: "Product analytics",
 		description:
