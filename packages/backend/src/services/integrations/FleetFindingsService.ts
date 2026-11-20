@@ -272,11 +272,18 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 							return yield* fail(failure.message)
 					}
 				}
-				const stored = yield* Effect.result(store(claimed, now, snapshot.success))
+				// Its own span, so a failed write ends that span in Error with the exception on it.
+				const stored = yield* Effect.result(
+					store(claimed, now, snapshot.success).pipe(Effect.withSpan("FleetFindingsService.store")),
+				)
 				if (stored._tag === "Failure") {
 					yield* Effect.annotateCurrentSpan("maple.fleet.error_kind", "store")
 					yield* Effect.logWarning("Fleet findings could not be stored").pipe(
-						Effect.annotateLogs({ connectionId: claimed.id, error: stored.failure.message }),
+						Effect.annotateLogs({
+							connectionId: claimed.id,
+							error: stored.failure.message,
+							cause: stored.failure.cause ?? null,
+						}),
 					)
 					return yield* fail(
 						"Findings were read from Fleet but could not be saved. Maple retries next tick.",
