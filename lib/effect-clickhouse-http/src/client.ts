@@ -32,6 +32,11 @@ export interface ClientConfig {
 	readonly username?: string
 	readonly password?: Redacted.Redacted
 	readonly settings?: Readonly<Record<string, string | number>>
+	/**
+	 * Extra request headers, such as a zero-trust proxy's service token in front of the server.
+	 * They cannot replace the client's own (`authorization`, content and framing headers).
+	 */
+	readonly headers?: Readonly<Record<string, Redacted.Redacted>>
 }
 export interface QueryOptions {
 	/** SQL without a terminal FORMAT or semicolon. Values must already be safely bound. */
@@ -69,6 +74,24 @@ const validSettings = (settings: ClientConfig["settings"]) =>
 			!reserved.has(key) &&
 			(typeof value === "string" || Number.isFinite(value)),
 	)
+const reservedHeaders = new Set([
+	"authorization",
+	"connection",
+	"content-length",
+	"content-type",
+	"host",
+	"transfer-encoding",
+])
+const validHeaders = (headers: ClientConfig["headers"]) =>
+	Arr.every(Rec.toEntries(headers ?? {}), ([name, value]) => {
+		const lower = Str.toLowerCase(name)
+		return (
+			/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) &&
+			!reservedHeaders.has(lower) &&
+			!Str.startsWith("x-clickhouse-")(lower) &&
+			!/[\r\n\0]/.test(Redacted.value(value))
+		)
+	})
 const validLimits = (limits: Limits | undefined) =>
 	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 	Arr.every(Object.values(limits ?? {}), (n) => n === undefined || (Number.isSafeInteger(n) && n >= 0))
@@ -122,6 +145,7 @@ export const make = (
 			endpoint.hash ||
 			Arr.some([...endpoint.searchParams.keys()], (key) => reserved.has(key)) ||
 			!validSettings(config.settings) ||
+			!validHeaders(config.headers) ||
 			Str.includes(":")(config.username ?? "default")
 		) {
 			return yield* new ClickHouseConfigError({
@@ -134,6 +158,7 @@ export const make = (
 		const authorization = `Basic ${Base64.encode(
 			`${config.username ?? "default"}:${config.password ? Redacted.value(config.password) : ""}`,
 		)}`
+		const extraHeaders = Rec.map(config.headers ?? {}, Redacted.value)
 
 		const open = (
 			options: QueryOptions,
@@ -157,6 +182,7 @@ export const make = (
 				for (const [key, value] of Rec.toEntries({ ...config.settings, ...options.settings }))
 					url.searchParams.set(key, String(value))
 				const request = HttpClientRequest.post(url).pipe(
+					HttpClientRequest.setHeaders(extraHeaders),
 					HttpClientRequest.setHeader("authorization", authorization),
 					HttpClientRequest.bodyText(
 						`${options.sql}\nFORMAT ${options.format ?? "JSONEachRow"}`,
