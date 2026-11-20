@@ -26,13 +26,13 @@ import type { PageViewInputs } from "../../contract"
 import { expandChevron } from "../../kit/expand-chevron"
 import { linkButton } from "@maple/views/ui/button"
 import {
+	type IntegrationBrand,
 	integrationEmpty,
 	integrationEmptyCard,
 	integrationEmptyFeatures,
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../../kit/integration-empty"
-import { providerBrand } from "../../kit/providers"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem } from "../../kit/stat-rail"
@@ -74,10 +74,17 @@ const connectButton = (h: H, brand: DeviceSourceBrand): Html =>
 		icon(h, "ArrowRightIcon", { size: 14 }),
 	])
 
-/** One card for every device source: the first source's mark, then a connect button per source. */
+/** Not any one source's mark: the card offers every device source Maple reads. */
+const DEVICES_MEDIA: IntegrationBrand = {
+	icon: "LaptopIcon",
+	accent: "var(--muted-foreground)",
+	iconClassName: "text-foreground",
+}
+
+/** One card for every device source: a generic device mark, then a connect button per source. */
 const connectCard = (h: H): Html =>
 	integrationEmptyCard(h, [
-		integrationEmptyMedia(h, providerBrand(DEVICE_SOURCE_BRANDS.fleet.provider)),
+		integrationEmptyMedia(h, DEVICES_MEDIA),
 		integrationEmptyHint(h, [
 			"Connect the tool that manages your devices. Maple reads it with a read-only token, and devices show here within a few minutes.",
 		]),
