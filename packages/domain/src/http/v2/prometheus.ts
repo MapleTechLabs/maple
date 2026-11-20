@@ -24,7 +24,7 @@ export const PrometheusParams = Schema.Struct({
 	end: optionalString("Range end: RFC3339 or Unix seconds."),
 	step: optionalString("Resolution: a duration like `30s` or float seconds."),
 	timeout: optionalString(
-		"Evaluation timeout for `query` and `query_range`: a duration like `30s`. Capped by the metric store's own 30s limit.",
+		"Evaluation timeout for `query` and `query_range`: a duration like `30s`, applied to the whole evaluation. Each metric store read also stops at 30s.",
 	),
 	limit: optionalString("Maximum number of returned items."),
 	metric: optionalString("Metric name to return metadata for."),

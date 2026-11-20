@@ -18,7 +18,7 @@ import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQuerySe
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
-import { HttpV2PrometheusLive } from "./prometheus.http"
+import { clampRangeStart, HttpV2PrometheusLive } from "./prometheus.http"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -563,6 +563,9 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 		expect((await harness.sendAs(basic("", traces.secret), query)).status).toBe(403)
 		expect((await harness.sendAs(basic("grafana", "not-a-key"), query)).status).toBe(401)
 		expect((await harness.sendAs("Basic !!!not-base64", query)).status).toBe(401)
+		// RFC 9110 allows a run of spaces after the scheme.
+		const spaced = Str.replace(" ", "   ")(basic("grafana", metrics.secret))
+		expect((await harness.sendAs(spaced, query)).status).toBe(200)
 		expect(
 			(await harness.sendAs(`Basic ${Buffer.from("no-colon").toString("base64")}`, query)).status,
 		).toBe(401)
@@ -570,5 +573,23 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 		expect((await harness.sendAs(basic("grafana", metrics.secret), "/v2/metrics/probe")).status).toBe(401)
 		expect((await harness.sendAs(`Bearer ${metrics.secret}`, "/v2/metrics/probe")).status).toBe(200)
 		await harness.dispose()
+	})
+})
+
+describe("clampRangeStart", () => {
+	const DAY = 86_400_000
+	const end = T * 1000
+
+	it("counts retention back from now when end is in the future", () => {
+		// 60 days back to 60 days ahead: every retained day stays.
+		expect(clampRangeStart("up", end - 60 * DAY, end + 60 * DAY, DAY, end)).toBe(end - 60 * DAY)
+		expect(clampRangeStart("up", end - 120 * DAY, end + 60 * DAY, DAY, end)).toBe(end - 90 * DAY)
+	})
+
+	it("keeps the requested start when the query pins a selector to start()", () => {
+		const start = end - 120 * DAY
+		expect(clampRangeStart("memory_bytes @ start() offset -60d", start, end, DAY, end)).toBe(start)
+		expect(clampRangeStart("max_over_time(up[1h:5m] @start( ))", start, end, DAY, end)).toBe(start)
+		expect(clampRangeStart("memory_bytes @ end()", start, end, DAY, end)).toBe(end - 90 * DAY)
 	})
 })

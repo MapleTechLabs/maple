@@ -6,7 +6,7 @@ import * as Base64 from "effect/encoding/Base64"
 export const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const header = headers["authorization"] ?? headers["Authorization"]
 	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
+	const [scheme, token] = Str.split(/ +/)(header)
 	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
 	return token
 }
@@ -20,7 +20,7 @@ export const getBasicPassword = (
 ): Result.Result<string, "malformed"> | undefined => {
 	const header = headers["authorization"] ?? headers["Authorization"]
 	if (!header) return undefined
-	const [scheme, encoded] = Str.split(" ")(header)
+	const [scheme, encoded] = Str.split(/ +/)(header)
 	if (!scheme || Str.toLowerCase(scheme) !== "basic") return undefined
 	const decoded = encoded === undefined ? Result.fail(undefined) : Base64.decodeString(encoded)
 	if (Result.isFailure(decoded)) return Result.fail("malformed")
