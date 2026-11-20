@@ -1,4 +1,5 @@
-import type { LabelMatcher } from "@maple/promql"
+import { type LabelMatcher, parse } from "@maple/promql"
+import { Result } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	editDistance,
@@ -101,7 +102,7 @@ describe("labels", () => {
 
 	it("suggests job for service_name", () => {
 		expect(unknownLabelWarning("up", "service_name", ["__name__", "job", "instance"])).toBe(
-			'no series of "up" has a label "service_name"; did you mean "job"?',
+			'no sampled series of "up" in the query window has a label "service_name"; did you mean "job"?',
 		)
 	})
 
@@ -124,6 +125,11 @@ describe("promqlNamesFor and examplePromqlFor", () => {
 		expect(promqlNamesFor({ ...listed(memory), metricType: "summary" })).toEqual([])
 	})
 
+	it("selects a reserved name instead of reading it as a number", () => {
+		const nan = { metricName: "NaN", metricType: "gauge", isMonotonic: false, unit: "" }
+		expect(examplePromqlFor(nan)).toBe('avg by (job) ({"NaN"})')
+	})
+
 	it("starts from a rate, a quantile or the value by type", () => {
 		expect(examplePromqlFor(listed(requests))).toBe("sum by (job) (rate(http_server_requests_total[5m]))")
 		expect(examplePromqlFor(listed(duration))).toBe(
@@ -133,5 +139,18 @@ describe("promqlNamesFor and examplePromqlFor", () => {
 		expect(examplePromqlFor(listed(rpc))).toBe(
 			"sum(rate(rpc_duration_milliseconds_sum[5m])) / sum(rate(rpc_duration_milliseconds_count[5m]))",
 		)
+	})
+})
+
+describe("example queries parse", () => {
+	it("are valid PromQL for reserved and ordinary names", () => {
+		const metrics = [
+			{ metricName: "NaN", metricType: "gauge", isMonotonic: false, unit: "" },
+			{ metricName: "Inf", metricType: "sum", isMonotonic: false, unit: "" },
+			{ metricName: "http.server.requests", metricType: "sum", isMonotonic: true, unit: "" },
+		]
+		for (const metric of metrics) {
+			expect(Result.isSuccess(parse(examplePromqlFor(metric) ?? ""))).toBe(true)
+		}
 	})
 })

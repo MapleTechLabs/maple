@@ -278,6 +278,24 @@ const nameMatchersOf = (selector: VectorSelector): ReadonlyArray<LabelMatcher> =
 const isEmptyResult = (result: QueryResult): boolean =>
 	(result.resultType === "matrix" || result.resultType === "vector") && result.result.length === 0
 
+/**
+ * Whether a discovery selector keeps more stored metrics in a table than its name-filtered reads
+ * cover; the planner leaves the rest out. A selector keeping every metric of a table reads it unfiltered.
+ */
+const namesOmitted = (matchers: ReadonlyArray<LabelMatcher>, catalog: ReadonlyArray<CatalogMetric>) => {
+	const kept = resolveSelectorName(
+		Arr.filter(matchers, (m) => m.name === "__name__"),
+		catalog,
+	)
+	const everything = resolveSelectorName([], catalog)
+	return Arr.some(Arr.dedupe(Arr.map(kept, (t) => t.table)), (table) => {
+		const inTable = Arr.filter(kept, (t) => t.table === table)
+		if (inTable.length === Arr.filter(everything, (t) => t.table === table).length) return false
+		const metrics = Arr.dedupe(Arr.map(inTable, (t) => `${t.metricName}\u0000${t.unit}`))
+		return metrics.length > DISCOVERY_NAME_FILTER_LIMIT * DISCOVERY_NAME_READS
+	})
+}
+
 const discovered = <A>(data: A, truncated: boolean): Discovered<A> => ({
 	data,
 	warnings: truncated ? [TRUNCATED_WARNING] : [],
@@ -589,7 +607,9 @@ const make = Effect.gen(function* () {
 		})
 		return discovered(
 			Arr.take([...unique.values()], limit),
-			unique.size > limit || Arr.some(read, ({ cut }) => cut),
+			unique.size > limit ||
+				Arr.some(read, ({ cut }) => cut) ||
+				Arr.some(selectors, (selector) => namesOmitted(selector.matchers, catalog)),
 		)
 	})
 
@@ -676,7 +696,12 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: 2 },
 		)
-		return { values: Arr.flatten(perRead), cut: Arr.some(perRead, (v) => v.length >= DISCOVERY_LIMIT) }
+		// A full key list may have left the label's raw key out, as a full value read leaves values out.
+		const keysFull = Arr.some([metricKeys, resourceKeys], (keys) => keys.length >= ATTRIBUTE_KEY_LIMIT)
+		return {
+			values: Arr.flatten(perRead),
+			cut: keysFull || Arr.some(perRead, (v) => v.length >= DISCOVERY_LIMIT),
+		}
 	})
 
 	/** `job` or `instance` values as series carry them: one bounded read per metric table. */

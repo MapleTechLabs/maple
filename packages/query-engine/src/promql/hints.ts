@@ -159,7 +159,7 @@ export const missingLabelMatchers = (
 		(matcher) => matcher.name !== "__name__" && !present.has(matcher.name) && !matchesValue(matcher, ""),
 	)
 
-/** The warning for a label matcher no series of `metric` can satisfy, with the nearest label names. */
+/** The warning for a label matcher no sampled series of `metric` can satisfy, with the nearest label names. */
 export const unknownLabelWarning = (
 	metric: string,
 	label: string,
@@ -175,5 +175,5 @@ export const unknownLabelWarning = (
 		SUGGESTIONS,
 	)
 	const mean = suggestions.length === 0 ? "" : `; did you mean ${quoted(suggestions)}?`
-	return `no series of "${metric}" has a label "${label}"${mean}`
+	return `no sampled series of "${metric}" in the query window has a label "${label}"${mean}`
 }

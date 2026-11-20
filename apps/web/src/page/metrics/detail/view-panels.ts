@@ -270,6 +270,7 @@ const promqlSection = (h: H, model: Model, summary: CatalogSummary): Html => {
 			: [
 					copyableField(h, {
 						id: "metric-promql-example",
+						label: "Example query",
 						value: example,
 						copyLabel: "Copy query",
 						copy: model.copyPromql,

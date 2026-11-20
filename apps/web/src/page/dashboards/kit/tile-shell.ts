@@ -198,8 +198,8 @@ export const widgetEmptyState = <M>(h: HtmlBuilder<M>, hints: ReadonlyArray<stri
 			: Arr.map(hints, (hint) =>
 					h.span(
 						[
-							h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3 break-words"),
-							h.Title(hint),
+							// Unclamped: the suggested name is the point, and a title hides it from touch and keyboard.
+							h.Class("text-3xs text-foreground-subtle max-w-full break-words"),
 						],
 						[hint],
 					),

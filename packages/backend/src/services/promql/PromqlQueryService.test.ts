@@ -723,7 +723,7 @@ describe("PromqlQueryService warnings", () => {
 				...at,
 			})
 			expect(answer.warnings).toEqual([
-				'no series of "http_requests_total" has a label "service_name"; did you mean "job"?',
+				'no sampled series of "http_requests_total" in the query window has a label "service_name"; did you mean "job"?',
 			])
 			expect(Arr.every(contexts, (context) => context !== "")).toBe(true)
 		}).pipe(Effect.provide(layer))
@@ -736,6 +736,27 @@ describe("PromqlQueryService warnings", () => {
 			const answer = yield* service.query(tenant, { query: 'http_requests_total{job="api"}', ...at })
 			expect(answer.warnings).toEqual([])
 			expect(Arr.some(statements, (sql) => Str.includes("AS labelKey")(sql))).toBe(false)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("warns when a selector keeps more metrics than its name-filtered reads cover", () => {
+		const catalog = Arr.makeBy(2_101, (i) => ({
+			metricName: `m_${i}`,
+			metricType: "gauge",
+			unit: "",
+			isMonotonic: 0,
+		}))
+		const { layer } = recordingWarehouse(catalog)
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const omitted = yield* service.series(tenant, {
+				...window,
+				matches: ['{__name__=~"m_.*", __name__!="m_0"}'],
+			})
+			expect(omitted.warnings).toEqual(["results truncated due to limit"])
+			// Every metric of the table reads unfiltered, so nothing is left out.
+			const all = yield* service.series(tenant, { ...window, matches: ['{__name__=~"m_.*"}'] })
+			expect(all.warnings).toEqual([])
 		}).pipe(Effect.provide(layer))
 	})
 

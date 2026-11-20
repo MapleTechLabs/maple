@@ -1,5 +1,6 @@
 // A stored metric's PromQL names and a starter query, for pages and tools that list metrics. Pure.
 
+import { print } from "@maple/promql"
 import { Array as Arr, Option, String as Str } from "effect"
 import { type CatalogMetric, type OtelMetricType, promNamesOf } from "./names"
 
@@ -35,9 +36,19 @@ export const promqlNamesFor = (metric: ListedMetric): ReadonlyArray<string> =>
 			),
 	})
 
+/** A selector for `name` as the printer spells it: `{"NaN"}` where a bare name would parse as a number. */
+const selectorOf = (name: string): string =>
+	print({
+		type: "VectorSelector",
+		name,
+		matchers: [{ name: "__name__", op: "=", value: name }],
+		offsetMs: 0,
+		at: undefined,
+	})
+
 /** A query to start from: a rate for counters, the p95 for histograms, the value for gauges. */
 export const examplePromqlFor = (metric: ListedMetric): string | undefined => {
-	const names = promqlNamesFor(metric)
+	const names = Arr.map(promqlNamesFor(metric), selectorOf)
 	const [first] = names
 	if (first === undefined) return undefined
 	switch (metric.metricType) {
