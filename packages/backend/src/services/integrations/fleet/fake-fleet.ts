@@ -137,7 +137,8 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 				},
 				{
 					path: new RegExp(`${PREFIX}/global/policies$`),
-					respond: () => VendorFake.json({ policies: world.policies }),
+					respond: () =>
+						VendorFake.json(world.policies.length === 0 ? {} : { policies: world.policies }),
 				},
 				{
 					path: new RegExp(`${PREFIX}/hosts$`),
@@ -151,8 +152,9 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 					respond: (request) => {
 						const page = Number(request.search.get("page") ?? "0")
 						const perPage = Number(request.search.get("per_page") ?? "100")
+						const software = world.software.slice(page * perPage, (page + 1) * perPage)
 						return VendorFake.json({
-							software: world.software.slice(page * perPage, (page + 1) * perPage),
+							...(software.length === 0 ? undefined : { software }),
 							meta: { has_next_results: (page + 1) * perPage < world.software.length },
 						})
 					},

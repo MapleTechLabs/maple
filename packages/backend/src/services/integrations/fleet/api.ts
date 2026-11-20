@@ -234,11 +234,12 @@ export const FleetSoftwareVersion = Schema.Struct({
 })
 export type FleetSoftwareVersion = typeof FleetSoftwareVersion.Type
 
-const PoliciesPage = Schema.Struct({ policies: Schema.NullOr(Schema.Array(FleetPolicy)) })
-const HostsPage = Schema.Struct({ hosts: Schema.NullOr(Schema.Array(FleetHost)) })
+// Fleet leaves an empty list out of its JSON, so every list here may be missing.
+const PoliciesPage = Schema.Struct({ policies: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetPolicy))) })
+const HostsPage = Schema.Struct({ hosts: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetHost))) })
 const HostsCount = Schema.Struct({ count: Schema.Number })
 const SoftwareVersionsPage = Schema.Struct({
-	software: Schema.NullOr(Schema.Array(FleetSoftwareVersion)),
+	software: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetSoftwareVersion))),
 	meta: Schema.optionalKey(
 		Schema.NullOr(Schema.Struct({ has_next_results: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })),
 	),
