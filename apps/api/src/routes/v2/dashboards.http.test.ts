@@ -353,6 +353,28 @@ describe("v2 dashboards over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("keeps a Grafana import's report across edits until a PATCH dismisses it", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const imported = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: nodeExporterDashboard,
+		})
+		const path = `/v2/dashboards/${imported.body.dashboard.id}`
+		const report = { source: "grafana", items: imported.body.warnings }
+		expect((await harness.request("GET", path, key.secret)).body.import_report).toEqual(report)
+
+		const renamed = await harness.request("PATCH", path, key.secret, { name: "Renamed" })
+		expect(renamed.status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).body.import_report).toEqual(report)
+
+		const dismissed = await harness.request("PATCH", path, key.secret, { import_report: null })
+		expect(dismissed.status).toBe(200)
+		const after = await harness.request("GET", path, key.secret)
+		expect(after.body.import_report).toBeUndefined()
+		expect(after.body.name).toBe("Renamed")
+		await harness.dispose()
+	})
+
 	it("refuses a PATCH based on a stale expected_version, and keeps last-write-wins without one", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])

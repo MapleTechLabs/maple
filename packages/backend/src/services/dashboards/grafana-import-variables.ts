@@ -71,6 +71,9 @@ export const PROMQL_DATASOURCE_TYPES: ReadonlySet<string> = new Set([
 const MATCHER =
 	/\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=~|!~|!=|=)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)\s*(?:,|$)/gsu
 
+/** A `$name`, `${name}` or `[[name]]` reference; a regex's `$` end anchor is not one. */
+const VARIABLE_REF = /\$(?:\{|[A-Za-z_])|\[\[[A-Za-z_]/u
+
 /**
  * A `label_values` selector as a `match[]` selector: label filters that name a dashboard variable
  * are dropped (variables do not narrow each other yet), the literal ones kept.
@@ -89,7 +92,7 @@ function matchSelector(selector: string, name: string, warnings: string[]): stri
 	)
 	if (Str.replace(/[\s,]/gu, "")(body).length !== Str.replace(/[\s,]/gu, "")(parsed).length)
 		return undefined
-	const kept = Arr.filter(matchers, (m) => !Str.includes("$")(m.value))
+	const kept = Arr.filter(matchers, (m) => !VARIABLE_REF.test(m.value))
 	if (kept.length < matchers.length) {
 		warnings.push(
 			`Variable "${name}" lists values without the filters in "${selector}" that use other variables; Maple variables do not narrow each other yet.`,

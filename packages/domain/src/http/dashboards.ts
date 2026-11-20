@@ -19,6 +19,7 @@ export {
 	DASHBOARD_MAX_SECTIONS,
 	DASHBOARD_MAX_TABS_PER_SECTION,
 	DashboardDocument,
+	DashboardImportReport,
 	DashboardQueryVariableFacet,
 	type DashboardQueryVariableSource,
 	DashboardQueryVariableSourceSchema,

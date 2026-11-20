@@ -920,3 +920,76 @@ describe("PromQL datasources, discovery variables and what does not carry over",
 		}),
 	)
 })
+
+const boardWithVariable = (query: string) => ({
+	title: "Selectors",
+	schemaVersion: 39,
+	templating: { list: [{ name: "instance", type: "query", datasource: { type: "prometheus" }, query }] },
+	panels: [
+		{
+			type: "timeseries",
+			title: "Up",
+			datasource: { type: "prometheus" },
+			targets: [{ refId: "A", expr: "up" }],
+		},
+	],
+})
+
+const firstSource = (converted: Converted) => {
+	const [variable] = converted.dashboard.variables ?? []
+	return variable?.type === "query" ? variable.source : undefined
+}
+
+describe("label_values selectors keep literal filters and drop variable ones", () => {
+	it.effect("drops filters that reference variables in every syntax", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable(
+					'label_values(up{job="[[job]]", env="${env}", region="$region", team="core"}, instance)',
+				),
+			)
+			expect(firstSource(converted)).toEqual({
+				kind: "promql",
+				label: "instance",
+				match: 'up{team="core"}',
+			})
+		}),
+	)
+
+	it.effect("keeps a regex whose $ is an end anchor", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values(up{instance=~"^api-[0-9]+$"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({
+				kind: "promql",
+				label: "instance",
+				match: 'up{instance=~"^api-[0-9]+$"}',
+			})
+		}),
+	)
+})
+
+describe("the stored import report is bounded", () => {
+	it.effect("keeps a board with more warnings than the report holds, counting the rest", () =>
+		Effect.gen(function* () {
+			const panels = Arr.map(Arr.range(1, 1100), (i) => ({
+				type: "timeseries",
+				title: `Panel ${i}`,
+				gridPos: { x: 0, y: i * 2, w: 12, h: 2 },
+				datasource: { type: "prometheus" },
+				targets: [{ refId: "A", expr: "up" }],
+				transformations: [{ id: "organize" }],
+			}))
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Big",
+				schemaVersion: 39,
+				panels,
+			})
+			expect(converted.warnings.length).toBeGreaterThan(1000)
+			const items = converted.dashboard.importReport?.items ?? []
+			expect(items).toHaveLength(1000)
+			expect(items[999]).toBe(`${converted.warnings.length - 999} more items are not listed here.`)
+		}),
+	)
+})

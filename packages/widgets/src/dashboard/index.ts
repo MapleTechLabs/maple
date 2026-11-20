@@ -85,6 +85,7 @@ export { type DashboardParseOutcome, parseStoredDashboard, stampCurrentVersion }
 export { CURRENT_DASHBOARD_SCHEMA_VERSION, DashboardSchemaVersion } from "./version"
 export { makeWidgetDisplayConfigSchema } from "./shared/display"
 export { WidgetLayoutSchema } from "./shared/layout"
+export { DashboardImportReport } from "./shared/document"
 export {
 	DASHBOARD_MAX_SECTIONS,
 	DASHBOARD_MAX_TABS_PER_SECTION,

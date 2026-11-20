@@ -210,6 +210,17 @@ function convertPanels(placed: ReadonlyArray<PlacedPanel>, context: PanelContext
 	}
 }
 
+const MAX_REPORT_ITEMS = 1000
+
+/** The stored report holds at most `MAX_REPORT_ITEMS`; past that, the last item counts the rest. */
+const reportItems = (warnings: ReadonlyArray<string>): ReadonlyArray<string> =>
+	warnings.length <= MAX_REPORT_ITEMS
+		? warnings
+		: [
+				...warnings.slice(0, MAX_REPORT_ITEMS - 1),
+				`${warnings.length - MAX_REPORT_ITEMS + 1} more items are not listed here.`,
+			]
+
 // Returns the validation error rather than failing; unexpected throws are caught by the caller.
 function convertSync(input: unknown): GrafanaImportConversion | DashboardValidationError {
 	const dashboard = unwrapGrafanaDashboard(input)
@@ -242,7 +253,9 @@ function convertSync(input: unknown): GrafanaImportConversion | DashboardValidat
 			...(sections.length > 0 ? { sections } : undefined),
 			widgets,
 			// Kept with the board, so what did not import stays visible after this response.
-			...(warnings.length > 0 ? { importReport: { source: "grafana", items: warnings } } : undefined),
+			...(warnings.length > 0
+				? { importReport: { source: "grafana", items: reportItems(warnings) } }
+				: undefined),
 		}),
 		warnings,
 		stats,
