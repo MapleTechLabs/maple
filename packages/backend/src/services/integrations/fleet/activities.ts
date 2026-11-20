@@ -18,7 +18,8 @@ export const FleetActivity = Schema.Struct({
 export type FleetActivity = typeof FleetActivity.Type
 
 export const FleetActivitiesPage = Schema.Struct({
-	activities: Schema.NullOr(Schema.Array(FleetActivity)),
+	// Fleet leaves an empty list out of its JSON.
+	activities: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetActivity))),
 	meta: Schema.optionalKey(
 		Schema.NullOr(Schema.Struct({ has_next_results: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })),
 	),
