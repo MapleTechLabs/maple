@@ -969,6 +969,17 @@ describe("label_values selectors keep literal filters and drop variable ones", (
 		}),
 	)
 
+	it.effect("lists every value when every filter names a variable, without calling it unreadable", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values({env="$env", region="$region"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/do not narrow each other/))
+			expect(converted.warnings).not.toContainEqual(expect.stringMatching(/could not be read/))
+		}),
+	)
+
 	it.effect("lists every value, with a warning, when the kept filters would match every series", () =>
 		Effect.gen(function* () {
 			const converted = yield* convertGrafanaDashboardToPortable(
@@ -1013,6 +1024,27 @@ describe("panel option warnings", () => {
 			})
 			expect(converted.warnings).toEqual([
 				'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+			])
+		}),
+	)
+
+	it.effect("do not say a placeholder's query was imported as PromQL", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Heatmap",
+				schemaVersion: 39,
+				panels: [
+					{
+						type: "heatmap",
+						title: "Latency",
+						gridPos: { x: 0, y: 0, w: 12, h: 8 },
+						datasource: { type: "grafana-amazonprometheus-datasource" },
+						targets: [{ refId: "A", expr: "sum by (le) (rate(latency_bucket[5m]))" }],
+					},
+				],
+			})
+			expect(converted.warnings).toEqual([
+				'Heatmap "Latency" was imported as a placeholder: Maple\'s PromQL widgets cannot draw buckets over time yet.',
 			])
 		}),
 	)

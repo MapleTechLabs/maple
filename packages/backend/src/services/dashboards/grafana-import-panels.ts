@@ -20,6 +20,8 @@ import {
 	datasourceType,
 	type GrafanaVariableConversion,
 	rewriteVariableRefs,
+	noteOnce,
+	promqlPluginNote,
 	speaksPromql,
 } from "./grafana-import-variables"
 
@@ -52,8 +54,9 @@ const DATASOURCE_NAMES: ReadonlyMap<string, string> = new Map([
 ])
 
 type Query =
-	| { readonly kind: "promql"; readonly expr: string }
-	| { readonly kind: "clickhouse"; readonly sql: string }
+	// `note` is what to say about how the query was read, once the panel is imported.
+	| { readonly kind: "promql"; readonly expr: string; readonly note?: string }
+	| { readonly kind: "clickhouse"; readonly sql: string; readonly note?: string }
 	| { readonly kind: "unsupported"; readonly datasource: string }
 
 const ASSUMED_PROMQL =
@@ -67,20 +70,18 @@ function classifyTarget(target: UnknownRecord, panel: UnknownRecord, context: Pa
 	const type = datasourceType(target.datasource ?? panel.datasource, context.variables.datasourceTypes)
 	const expr = asString(target.expr)
 	const sql = asString(target.rawSql) ?? asString(target.query)
-	if (expr !== undefined && speaksPromql(type, context.warnings)) return { kind: "promql", expr }
-	if (type === undefined && expr !== undefined) {
-		// An unresolvable datasource (the default, or a bare uid) is read as Prometheus; said once.
-		if (!Arr.contains(context.warnings, ASSUMED_PROMQL)) context.warnings.push(ASSUMED_PROMQL)
-		return { kind: "promql", expr }
+	if (expr !== undefined && speaksPromql(type)) {
+		const note = promqlPluginNote(type)
+		return note === undefined ? { kind: "promql", expr } : { kind: "promql", expr, note }
 	}
+	// An unresolvable datasource (the default, or a bare uid) is read as Prometheus.
+	if (type === undefined && expr !== undefined) return { kind: "promql", expr, note: ASSUMED_PROMQL }
 	if (type !== undefined && CLICKHOUSE_TYPES.has(type) && sql !== undefined)
 		return { kind: "clickhouse", sql }
 	const rawSql = asString(target.rawSql)
-	if (type === undefined && rawSql !== undefined) {
-		// Read as ClickHouse, the only SQL Maple runs; said once, like the PromQL guess.
-		if (!Arr.contains(context.warnings, ASSUMED_CLICKHOUSE)) context.warnings.push(ASSUMED_CLICKHOUSE)
-		return { kind: "clickhouse", sql: rawSql }
-	}
+	// Read as ClickHouse, the only SQL Maple runs, like the PromQL guess.
+	if (type === undefined && rawSql !== undefined)
+		return { kind: "clickhouse", sql: rawSql, note: ASSUMED_CLICKHOUSE }
 	return {
 		kind: "unsupported",
 		datasource: DATASOURCE_NAMES.get(type ?? "") ?? type ?? "an unknown datasource",
@@ -291,7 +292,8 @@ function convertQueryPanel(args: {
 			...(transform === undefined ? undefined : { transform }),
 		})
 	}
-	// Said only of a panel Maple charts; a placeholder has no options to lose.
+	// Said only of a panel Maple charts; a placeholder has no options to lose and ran no query.
+	noteOnce(query.note, context.warnings)
 	panelOptionWarnings(panel, first, target, title, context.warnings)
 	return {
 		placeholder: false,

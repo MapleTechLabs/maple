@@ -77,7 +77,8 @@ const VARIABLE_REF = /\$(?:\{|[A-Za-z_])|\[\[[A-Za-z_]/u
 
 /**
  * A `label_values` selector as a `match[]` selector: label filters that name a dashboard variable
- * are dropped (variables do not narrow each other yet), the literal ones kept.
+ * are dropped (variables do not narrow each other yet), the literal ones kept. `""` when nothing
+ * literal is left, `undefined` when the selector cannot be read.
  */
 function matchSelector(selector: string, name: string, warnings: string[]): string | undefined {
 	const parts = /^\s*([A-Za-z_:][A-Za-z0-9_:]*)?\s*(?:\{(.*)\})?\s*$/su.exec(selector)
@@ -103,7 +104,6 @@ function matchSelector(selector: string, name: string, warnings: string[]): stri
 		Arr.map(kept, (m) => m.text),
 		",",
 	)
-	if (metric === "" && filters === "") return undefined
 	return filters === "" ? metric : `${metric}{${filters}}`
 }
 
@@ -132,6 +132,8 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 		)
 		return { kind: "promql", label }
 	}
+	// Every filter named a variable; matchSelector already said they were dropped.
+	if (selectorMatch === "") return { kind: "promql", label }
 	if (!isDiscoverySelector(selectorMatch)) {
 		warnings.push(
 			`Variable "${name}" lists every ${label}; Maple cannot narrow it by "${selectorMatch}", which is too long or matches every series.`,
@@ -151,12 +153,19 @@ const isDiscoverySelector = (selector: string): boolean => {
 	return Result.isSuccess(parsed) && parsed.success.type === "VectorSelector"
 }
 
-/** True for a PromQL datasource; one other than Prometheus itself is said once per plugin. */
-export function speaksPromql(type: string | undefined, warnings: string[]): boolean {
-	if (type === undefined || !PROMQL_DATASOURCE_TYPES.has(type)) return false
-	const warning = `Queries on the ${type} datasource were imported as PromQL over Maple's metrics; check that they read the same series.`
-	if (type !== "prometheus" && !Arr.contains(warnings, warning)) warnings.push(warning)
-	return true
+/** True for a PromQL datasource. */
+export const speaksPromql = (type: string | undefined): type is string =>
+	type !== undefined && PROMQL_DATASOURCE_TYPES.has(type)
+
+/** What to say once a query on a PromQL datasource other than Prometheus itself is imported. */
+export const promqlPluginNote = (type: string): string | undefined =>
+	type === "prometheus"
+		? undefined
+		: `Queries on the ${type} datasource were imported as PromQL over Maple's metrics; check that they read the same series.`
+
+/** Says a note once, when the query it describes was imported. */
+export function noteOnce(note: string | undefined, warnings: string[]): void {
+	if (note !== undefined && !Arr.contains(warnings, note)) warnings.push(note)
 }
 
 /** Grafana's variable `regex` and `sort` have no Maple equivalent; say so instead of dropping them. */
@@ -224,10 +233,11 @@ function convertOne(
 			const query = queryText(variable) ?? ""
 			const plugin = datasourceType(variable.datasource, datasourceTypes)
 			const source =
-				plugin === undefined || speaksPromql(plugin, warnings)
+				plugin === undefined || speaksPromql(plugin)
 					? labelValuesSource(query, name, warnings)
 					: undefined
 			if (source !== undefined) {
+				if (plugin !== undefined) noteOnce(promqlPluginNote(plugin), warnings)
 				unsupportedOptionWarnings(variable, name, warnings)
 				return {
 					...base,
