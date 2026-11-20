@@ -1186,6 +1186,19 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 }) {}
 
 /** Connection state of the Fleet integration (one server per org, read with an API token). */
+/**
+ * How Maple names a Fleet server everywhere (card, inventory, audit log): the organization it
+ * reports, trimmed, else its host.
+ */
+export const fleetServerName = (server: {
+	readonly organizationName: string | null
+	readonly baseUrl: string
+}): string => {
+	const name = server.organizationName === null ? "" : Str.trim(server.organizationName)
+	if (!Str.isEmpty(name)) return name
+	return URL.canParse(server.baseUrl) ? new URL(server.baseUrl).host : server.baseUrl
+}
+
 export class FleetIntegrationStatus extends Schema.Class<FleetIntegrationStatus>("FleetIntegrationStatus")({
 	connected: Schema.Boolean,
 	/** The server's base URL as stored. */
