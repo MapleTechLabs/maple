@@ -549,9 +549,9 @@ jobs:
                   done
 
             # The PromQL reference suite runs every corpus query on chDB in five grids, with and without
-            # pushdown (about 2.5 minutes locally), so it has its own budget instead of the shared one.
+            # pushdown (6 to 7.5 minutes on CI runners, more on slow ones), so it has its own budget.
             - name: Run PromQL chDB suites
-              timeout-minutes: 8
+              timeout-minutes: 12
               working-directory: apps/cli
               env:
                   MAPLE_LIBCHDB: ${{ github.workspace }}/dist/libchdb.so
