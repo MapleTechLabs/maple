@@ -414,3 +414,15 @@ export const rawQuery = (mcp: MapleMcpClient, p: { sql: string; range: Range }) 
 		rows: out.rows,
 		...(out.truncated ? { truncatedFrom: out.rowCount } : undefined),
 	}))
+
+/** The hosted `query_promql` tool; its output is already the shape local mode builds. */
+export const queryPromql = (
+	mcp: MapleMcpClient,
+	p: { query: string; range: Range; step?: string; instant: boolean },
+) =>
+	mcp.call("query_promql", {
+		query: p.query,
+		...window(p.range),
+		step: p.step,
+		instant: p.instant ? true : undefined,
+	})
