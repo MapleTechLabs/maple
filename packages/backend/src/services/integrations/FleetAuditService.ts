@@ -7,7 +7,17 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { FleetConnections, type FleetConnectionRow } from "@maple/db/tables"
 import { AuditTrailPersistenceError, IntegrationsPersistenceError } from "@maple/domain/http"
-import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Option, Redacted } from "effect"
+import {
+	Array as Arr,
+	String as Str,
+	Clock,
+	Context,
+	DateTime,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -60,15 +70,14 @@ export interface FleetAuditServiceApi {
 export const gapsAfter = (
 	gaps: ReadonlySet<number>,
 	written: ReadonlyArray<{ readonly id: number }>,
-	fresh: ReadonlyArray<{ readonly id: number }>,
 	cursor: number | null,
 	next: number | null,
 ): ReadonlySet<number> => {
 	if (next === null) return new Set()
 	const seen = new Set(Arr.map(written, (activity) => activity.id))
-	const lowest = cursor ?? Math.min(...Arr.map(fresh, (activity) => activity.id))
-	// Only ids a later read can still reach are worth remembering.
-	const from = Math.max(lowest + 1, next - OVERLAP_IDS + 1)
+	// Only ids a later read can still reach are worth remembering. A first read has no cursor:
+	// an id below its lowest may still commit, so the whole reach counts.
+	const from = cursor === null ? next - OVERLAP_IDS + 1 : Math.max(cursor + 1, next - OVERLAP_IDS + 1)
 	const skipped = from < next ? Arr.range(from, next - 1) : []
 	return new Set(
 		Arr.filter(
@@ -157,7 +166,11 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 			/** Pages after the cursor until the feed is read or the page cap; stores each page before moving on. */
 			const readFeed = Effect.fnUntraced(function* (lease: FleetLease, fleet: FleetApi.FleetClient) {
 				const { row, now } = lease
-				const source = { account: accountOf(row), server: new URL(row.baseUrl).host }
+				// Host and path: two servers on one host under different paths keep apart.
+				const source = {
+					account: accountOf(row),
+					server: Str.replace(/^https:\/\//, "")(row.baseUrl),
+				}
 				const since = DateTime.formatIso(DateTime.makeUnsafe(now - FIRST_READ_MS))
 				const step = (
 					cursor: number | null,
@@ -194,7 +207,7 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 							fresh.length === 0
 								? cursor
 								: Math.max(...Arr.map(fresh, (activity) => activity.id))
-						const nextGaps = gapsAfter(gaps, toWrite, fresh, cursor, next)
+						const nextGaps = gapsAfter(gaps, toWrite, cursor, next)
 						const ours = yield* lease.write({
 							activityCursor: next,
 							activityGaps: Arr.fromIterable(nextGaps),

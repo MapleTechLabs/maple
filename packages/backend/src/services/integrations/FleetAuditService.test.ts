@@ -247,6 +247,32 @@ describe("FleetAuditService", () => {
 		)
 	})
 
+	it.effect("catches an id below the very first read's lowest, and names path-hosted servers apart", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({ activities: [activityAt(12)] })
+		const trail: Trail = { written: [], failing: false }
+		return run(
+			testDb,
+			world,
+			trail,
+			Effect.gen(function* () {
+				yield* FleetConnectionService.use((service) =>
+					service.connect(ORG, USER, {
+						url: "https://tools.example.com/fleet",
+						token: "fleet-api-token-0123456789",
+					}),
+				)
+				yield* pollAll
+				world.activities.push(activityAt(11, "wiped_host"))
+				yield* pollAll
+				assert.deepStrictEqual(
+					Arr.map(trail.written, ({ event }) => event.providerEventId),
+					["tools.example.com/fleet:12", "tools.example.com/fleet:11"],
+				)
+			}),
+		)
+	})
+
 	it.effect("stops paging a server that ignores the cursor once nothing is new", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({ activities: [activityAt(1), activityAt(2)], ignoresAfter: true })
@@ -294,14 +320,20 @@ describe("FleetAuditService", () => {
 		const ids = (...values: ReadonlyArray<number>) => Arr.map(values, (id) => ({ id }))
 
 		it("remembers ids skipped below the new cursor, and forgets them once filled", () => {
-			const open = gapsAfter(new Set(), ids(10, 12, 15), ids(10, 12, 15), 9, 15)
+			const open = gapsAfter(new Set(), ids(10, 12, 15), 9, 15)
 			assert.deepStrictEqual(Arr.fromIterable(open).sort(), [11, 13, 14])
-			const after = gapsAfter(open, ids(13, 16), ids(16), 15, 16)
+			const after = gapsAfter(open, ids(13, 16), 15, 16)
 			assert.deepStrictEqual(Arr.fromIterable(after).sort(), [11, 14])
 		})
 
+		it("on a first read, remembers the reach below its lowest id too", () => {
+			const open = gapsAfter(new Set(), ids(12), null, 12)
+			assert.isTrue(open.has(11))
+			assert.isFalse(open.has(12))
+		})
+
 		it("drops gaps a read can no longer reach", () => {
-			const open = gapsAfter(new Set([3]), ids(40), ids(40), 30, 40)
+			const open = gapsAfter(new Set([3]), ids(40), 30, 40)
 			assert.isFalse(open.has(3))
 		})
 	})
