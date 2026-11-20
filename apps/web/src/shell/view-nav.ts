@@ -153,7 +153,9 @@ const subList = (
 						],
 					),
 					...(count === undefined
-						? []
+						? sub.badge === undefined
+							? []
+							: [navBadge(h, sub.badge, "top-1/2 -translate-y-1/2")]
 						: [
 								sidebarMenuBadge(
 									h,
