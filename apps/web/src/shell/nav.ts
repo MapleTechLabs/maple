@@ -40,6 +40,8 @@ export interface NavSubItem {
 	readonly alsoActive?: ReadonlyArray<string>
 	/** A live count beside the title, read by the shell (the Inbox's unacknowledged incidents). */
 	readonly count?: "alertsInbox"
+	/** A tag beside the title ("New"); a live count wins when both are set. */
+	readonly badge?: NavBadge
 	/** Starts a group of rows: a small gap above it, no heading. */
 	readonly startsGroup?: boolean
 }
@@ -49,7 +51,7 @@ export interface NavItem {
 	readonly href: string
 	readonly icon: IconName
 	readonly subItems?: ReadonlyArray<NavSubItem>
-	readonly badge?: string
+	readonly badge?: NavBadge
 	/** Routes with no row of their own that this row stands in for (`/anomalies` under Alerts). */
 	readonly alsoActive?: ReadonlyArray<string>
 	/** Sets the row apart from the ones above it with a small gap, no heading. */
@@ -61,6 +63,9 @@ export interface NavGroup {
 	readonly label?: string
 	readonly items: ReadonlyArray<NavItem>
 }
+
+/** "New" marks a page shipped in the last few weeks; drop it once the page has settled in. */
+export type NavBadge = "Beta" | "New"
 
 type InfraProvider = "cloudflare" | "planetscale" | "railway" | "vercel" | "supabase" | "gcp" | "aws"
 
@@ -120,7 +125,13 @@ const costItem: NavItem = {
 	subItems: [
 		// Not "Explorer": the palette finds the Explore pages by that word.
 		{ title: "Spend", href: "/cost", icon: "ChartBarHorizontalIcon", paletteTitle: "Cloud cost" },
-		{ title: "Budgets", href: "/cost/budgets", icon: "GaugeIcon", paletteTitle: "Cloud cost budgets" },
+		{
+			title: "Budgets",
+			href: "/cost/budgets",
+			icon: "GaugeIcon",
+			paletteTitle: "Cloud cost budgets",
+			badge: "New",
+		},
 	],
 }
 
@@ -150,6 +161,7 @@ const exploreItem = (productAnalytics: boolean): NavItem => ({
 						title: "Product analytics",
 						href: "/product-analytics",
 						icon: "ChartBarTrendUpIcon",
+						badge: "New",
 					} as const,
 				]
 			: []),
@@ -181,7 +193,7 @@ const alertsItem: NavItem = {
 			startsGroup: true,
 		},
 		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
-		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
+		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon", badge: "New" },
 		{ title: "Silences", href: "/alerts/silences", icon: "BellSlashIcon", startsGroup: true },
 		{
 			title: "Maintenance",
@@ -195,6 +207,7 @@ const alertsItem: NavItem = {
 			icon: "UsersIcon",
 			alsoActive: ["/alerts/schedules"],
 			startsGroup: true,
+			badge: "New",
 		},
 		{
 			title: "Routing",
@@ -202,6 +215,7 @@ const alertsItem: NavItem = {
 			icon: "BranchForkIcon",
 			paletteTitle: "Alert routing",
 			alsoActive: ["/alerts/escalation-chains"],
+			badge: "New",
 		},
 	],
 }
@@ -249,7 +263,7 @@ const analystNavGroups = (): ReadonlyArray<NavGroup> => [
 		items: [
 			analystIncidentsItem,
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon", badge: "New" },
 		],
 	},
 	{
@@ -297,7 +311,13 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			...(flags.securityAudit || flags.cloudSecurity
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
-			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon", startsGroup: true },
+			{
+				title: "Status pages",
+				href: "/status-pages",
+				icon: "WindowChartLineIcon",
+				startsGroup: true,
+				badge: "New",
+			},
 		],
 	},
 ]
