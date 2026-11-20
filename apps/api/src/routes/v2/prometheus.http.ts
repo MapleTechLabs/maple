@@ -104,19 +104,27 @@ const toErrorResponse = <E extends { readonly _tag: string; readonly message: st
 				error.message,
 			)
 		default:
-			// A query over the store's time or memory budget is the query's fault: say how to shrink it.
+			// A query over one of the store's budgets is the query's fault: say how to shrink it.
 			if (isQuotaExceeded(error)) {
-				return error.setting === "max_execution_time"
-					? recorded503(
+				switch (error.setting) {
+					case "max_execution_time":
+						return recorded503(
 							error,
 							"Prometheus API query over the metric store's time budget",
 							"timeout",
 							"query timed out in the metric store; narrow the selector, shorten the range or use a larger step",
 						)
-					: errorResponse(
+					case "max_memory_usage":
+						return errorResponse(
 							"execution",
 							"query needs more memory than the metric store allows; narrow the selector, aggregate with sum by (...) or use a larger step",
 						)
+					case "max_threads":
+						return errorResponse(
+							"execution",
+							"query scans more than the metric store allows at once; narrow the selector or shorten the range",
+						)
+				}
 			}
 			// The client sees a generic 503; the span and log carry the diagnosis.
 			return recorded503(

@@ -87,7 +87,7 @@ const failingWarehouse = makeWarehouseServiceStub({
 		Effect.fail(new WarehouseQueryError({ message: "SECRET_DIAGNOSTIC", pipeName: "stub" })),
 })
 
-const quotaWarehouse = (setting: "max_execution_time" | "max_memory_usage") =>
+const quotaWarehouse = (setting: "max_execution_time" | "max_memory_usage" | "max_threads") =>
 	makeWarehouseServiceStub({
 		compiledQuery: () =>
 			Effect.fail(
@@ -515,7 +515,7 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 		await harness.dispose()
 	})
 
-	it("reports a store time budget as timeout and a memory budget as execution, with advice", async () => {
+	it("reports a store time budget as timeout, and memory and thread budgets as execution, each with its own advice", async () => {
 		const slow = makeHarness(quotaWarehouse("max_execution_time"))
 		const key = await slow.bootstrapKey(["metrics:read"])
 		const timedOut = await slow.send(key.secret, `/query?query=up&time=${T}`)
@@ -532,6 +532,16 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 		expect(tooBig.body).toMatchObject({ errorType: "execution", error: expect.stringMatching(/narrow/) })
 		expect(JSON.stringify(tooBig.body)).not.toContain("SECRET_QUOTA")
 		await big.dispose()
+		const wide = makeHarness(quotaWarehouse("max_threads"))
+		const wideKey = await wide.bootstrapKey(["metrics:read"])
+		const tooWide = await wide.send(wideKey.secret, `/query?query=up&time=${T}`)
+		expect(tooWide.status).toBe(422)
+		expect(tooWide.body).toMatchObject({
+			errorType: "execution",
+			error: expect.stringMatching(/scans more/),
+		})
+		expect(JSON.stringify(tooWide.body)).not.toMatch(/memory|SECRET_QUOTA/)
+		await wide.dispose()
 	})
 
 	it("stops a query at the timeout parameter and refuses an unparseable one", async () => {
