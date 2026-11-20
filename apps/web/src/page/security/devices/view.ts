@@ -68,14 +68,24 @@ const external = (h: H) => [h.Target("_blank"), h.Rel("noopener noreferrer")]
 
 const SCORE_TONE = { crit: "error", warn: "warning", neutral: "foreground" } as const
 
-const connectCard = (h: H, brand: DeviceSourceBrand): Html =>
+const connectButton = (h: H, brand: DeviceSourceBrand): Html =>
+	linkButton(h, { href: brand.connectHref }, [
+		`Connect ${brand.name}`,
+		icon(h, "ArrowRightIcon", { size: 14 }),
+	])
+
+/** One card for every device source: the first source's mark, then a connect button per source. */
+const connectCard = (h: H): Html =>
 	integrationEmptyCard(h, [
-		integrationEmptyMedia(h, providerBrand(brand.provider)),
-		integrationEmptyHint(h, [brand.connectHint]),
-		linkButton(h, { href: brand.connectHref }, [
-			`Connect ${brand.name}`,
-			icon(h, "ArrowRightIcon", { size: 14 }),
+		integrationEmptyMedia(h, providerBrand(DEVICE_SOURCE_BRANDS.fleet.provider)),
+		integrationEmptyHint(h, [
+			"Connect the tool that manages your devices. Maple reads it with a read-only token, and devices show here within a few minutes.",
 		]),
+		hstack(
+			h,
+			{ gap: "2", wrap: true, justify: "center" },
+			Arr.map(Rec.values(DEVICE_SOURCE_BRANDS), (brand) => connectButton(h, brand)),
+		),
 	])
 
 /** The on-ramp: what the page shows, then one connect card per device source Maple reads. */
@@ -99,7 +109,7 @@ const notConnected = (h: H): Html =>
 				description: "Who changed what in your device management tool, beside Maple's own audit log.",
 			},
 		]),
-		...Arr.map(Rec.values(DEVICE_SOURCE_BRANDS), (brand) => connectCard(h, brand)),
+		connectCard(h),
 	])
 
 const forbidden = (h: H): Html =>

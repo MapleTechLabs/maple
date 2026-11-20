@@ -127,13 +127,12 @@ export const PROVIDERS = {
 		icon: "GoogleIcon",
 		accent: "#4285F4",
 	},
-	/** Fleet has no mark in the icon set, so it shows a generic device glyph. */
 	fleet: {
 		id: "fleet",
 		name: "Fleet",
-		icon: "LaptopIcon",
+		icon: "FleetIcon",
+		backerIcon: "FleetMonoIcon",
 		accent: "#192147",
-		iconClassName: "text-foreground",
 	},
 } as const satisfies { readonly [K in ProviderId]: Provider & { readonly id: K } }
 
