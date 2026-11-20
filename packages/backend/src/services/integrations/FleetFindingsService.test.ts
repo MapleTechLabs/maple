@@ -324,6 +324,26 @@ describe("FleetFindingsService", () => {
 		)
 	})
 
+	it.effect("reads every global policy across pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({
+			policies: Arr.makeBy(1_050, (index) => ({
+				id: index + 1,
+				name: `policy-${index + 1}`,
+				failing_host_count: 1,
+				passing_host_count: 0,
+			})),
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).policies, 1_050)
+			}),
+		)
+	})
+
 	it.effect("reads vulnerable software in pages, up to ten", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({

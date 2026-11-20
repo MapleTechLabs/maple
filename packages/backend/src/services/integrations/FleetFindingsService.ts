@@ -35,6 +35,8 @@ const HOSTS_PER_POLICY = 20
 const SAMPLED_POLICIES = 100
 const SOFTWARE_PAGE_SIZE = 100
 const MAX_SOFTWARE_PAGES = 10
+const POLICY_PAGE_SIZE = 500
+const MAX_POLICY_PAGES = 10
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -147,13 +149,33 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					}),
 				)
 
+			/**
+			 * Every global policy. Fleet's docs give no default page size and no `meta` here, so pages are
+			 * asked for explicitly until a short one, or one with nothing new (a server ignoring paging).
+			 */
+			const readPolicies = (
+				fleet: FleetApi.FleetClient,
+				page: number,
+				acc: ReadonlyArray<FleetApi.FleetPolicy>,
+			): Effect.Effect<ReadonlyArray<FleetApi.FleetPolicy>, FleetApi.FleetApiError> =>
+				FleetApi.listGlobalPolicies(fleet, page, POLICY_PAGE_SIZE).pipe(
+					Effect.flatMap((answer) => {
+						const seen = new Set(Arr.map(acc, (policy) => policy.id))
+						const added = Arr.filter(answer.policies ?? [], (policy) => !seen.has(policy.id))
+						const all = Arr.appendAll(acc, added)
+						return added.length < POLICY_PAGE_SIZE || page + 1 >= MAX_POLICY_PAGES
+							? Effect.succeed(all)
+							: readPolicies(fleet, page + 1, all)
+					}),
+				)
+
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
 			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient, baseUrl: string) {
 				const [hosts, policies] = yield* Effect.all(
-					[FleetApi.countHosts(fleet), FleetApi.listGlobalPolicies(fleet)],
+					[FleetApi.countHosts(fleet), readPolicies(fleet, 0, [])],
 					{ concurrency: 2 },
 				)
-				const failing = failingPolicies(policies.policies ?? [], baseUrl)
+				const failing = failingPolicies(policies, baseUrl)
 				const samples = yield* Effect.forEach(
 					Arr.take(failing, SAMPLED_POLICIES),
 					(policy) =>

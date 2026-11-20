@@ -256,8 +256,12 @@ const SoftwareVersionsPage = Schema.Struct({
 })
 
 /** Every global policy with its passing and failing device counts. */
-export const listGlobalPolicies = (fleet: FleetClient) =>
-	fleet.json(PoliciesPage, { path: "/global/policies", operation: "reading policies" })
+export const listGlobalPolicies = (fleet: FleetClient, page: number, perPage: number) =>
+	fleet.json(PoliciesPage, {
+		path: "/global/policies",
+		query: { order_key: "id", page, per_page: perPage },
+		operation: "reading policies",
+	})
 
 /** A sample of the devices failing one policy. */
 export const listFailingHosts = (fleet: FleetClient, policyId: number, perPage: number) =>
