@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr } from "effect"
-import { failingPolicies, findingDevice, vulnerabilitiesBySoftware } from "./findings"
+import { failingPolicies, findingDevice, vulnerabilitiesByCve, vulnerabilitiesBySoftware } from "./findings"
 
 const BASE = "https://fleet.example.com"
 
@@ -127,5 +127,74 @@ describe("vulnerabilitiesBySoftware", () => {
 				)[0]?.detailsLink,
 		)
 		assert.deepStrictEqual(links, ["https://nvd.nist.gov/vuln/detail/CVE-A", null, null, null])
+	})
+})
+
+describe("vulnerabilitiesByCve", () => {
+	const software = [
+		{
+			id: 1,
+			name: "openssl",
+			version: "3.0.1",
+			hosts_count: 5,
+			vulnerabilities: [
+				{
+					cve: "CVE-A",
+					cvss_score: 5,
+					cisa_known_exploit: false,
+					details_link: "https://software.example/CVE-A",
+					resolved_in_version: "3.0.2",
+				},
+			],
+		},
+		{
+			id: 2,
+			name: "openssl-libs",
+			version: "3.0.1",
+			hosts_count: 5,
+			vulnerabilities: [{ cve: "CVE-A", cvss_score: 6 }],
+		},
+	]
+
+	it("takes Fleet's device count, score, exploit flag and link over the software's", () => {
+		const [finding] = vulnerabilitiesByCve(
+			[
+				{
+					cve: "CVE-A",
+					hosts_count: 5,
+					cvss_score: 9.1,
+					cisa_known_exploit: true,
+					details_link: "https://nvd.nist.gov/vuln/detail/CVE-A",
+				},
+			],
+			software,
+			BASE,
+		)
+		assert.deepStrictEqual(
+			[
+				finding?.deviceCount,
+				finding?.cvssScore,
+				finding?.knownExploited,
+				finding?.detailsLink,
+				finding?.software.length,
+			],
+			[5, 9.1, true, "https://nvd.nist.gov/vuln/detail/CVE-A", 2],
+		)
+	})
+
+	it("falls back to the software for what Fleet's row leaves out (Fleet Free has no scores)", () => {
+		const [finding] = vulnerabilitiesByCve([{ cve: "CVE-A", hosts_count: 5 }], software, BASE)
+		assert.deepStrictEqual(
+			[finding?.deviceCount, finding?.cvssScore, finding?.knownExploited, finding?.detailsLink],
+			[5, 6, false, "https://software.example/CVE-A"],
+		)
+	})
+
+	it("keeps a CVE the software read did not reach, with no software listed", () => {
+		const [finding] = vulnerabilitiesByCve([{ cve: "CVE-Z", hosts_count: 2 }], software, BASE)
+		assert.deepStrictEqual(
+			[finding?.cve, finding?.deviceCount, finding?.software, finding?.cvssScore],
+			["CVE-Z", 2, [], null],
+		)
 	})
 })
