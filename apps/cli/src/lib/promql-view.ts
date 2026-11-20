@@ -16,6 +16,10 @@ export const formatSample = (value: Sample | undefined): string =>
 	value === undefined ? "-" : typeof value === "number" ? formatDecimal(value) : value
 
 /** `__name__{a="1", b="2"}`, Prometheus' own spelling; `{}` for a series with no labels. */
+/** Prometheus' escaping, so distinct label sets never print alike. */
+const escapeLabelValue = (value: string): string =>
+	Str.replaceAll("\n", "\\n")(Str.replaceAll('"', '\\"')(Str.replaceAll("\\", "\\\\")(value)))
+
 export const formatLabels = (labels: Readonly<Record<string, string>>): string => {
 	const name = labels.__name__ ?? ""
 	const pairs = Arr.map(
@@ -23,7 +27,7 @@ export const formatLabels = (labels: Readonly<Record<string, string>>): string =
 			Arr.filter(Rec.keys(labels), (k) => k !== "__name__"),
 			Order.String,
 		),
-		(k) => `${k}="${labels[k] ?? ""}"`,
+		(k) => `${k}="${escapeLabelValue(labels[k] ?? "")}"`,
 	)
 	return pairs.length === 0 && name !== "" ? name : `${name}{${Arr.join(pairs, ", ")}}`
 }
@@ -70,7 +74,7 @@ export const commonLabels = (series: ReadonlyArray<Series>): Readonly<Record<str
 }
 
 const without = (labels: Readonly<Record<string, string>>, common: Readonly<Record<string, string>>) =>
-	Rec.filter(labels, (_, key) => !(key in common))
+	Rec.filter(labels, (_, key) => !Rec.has(common, key))
 
 const columnsFor = (d: PromqlOutput, common: Readonly<Record<string, string>>) => {
 	const label = {

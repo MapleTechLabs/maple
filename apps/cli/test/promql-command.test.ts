@@ -70,6 +70,15 @@ describe("evaluationWindow", () => {
 		expect(Exit.isSuccess(seconds) && seconds.value.stepMs).toBe(15_000)
 	})
 
+	test("refuses a range longer than seven days, which an instant query may still look back over", () => {
+		const range = { startTime: "2026-11-06 00:00:00", endTime: "2026-11-20 00:00:00" }
+		const error = failureMessage(run(evaluationWindow({ range, instant: false })))
+		expect(error?.message).toBe("a PromQL range covers at most 7d")
+		expect(Exit.isSuccess(run(evaluationWindow({ range, instant: true })))).toBe(true)
+		const week = { startTime: "2026-11-13 00:00:00", endTime: "2026-11-20 00:00:00" }
+		expect(Exit.isSuccess(run(evaluationWindow({ range: week, instant: false })))).toBe(true)
+	})
+
 	test("reads numeric steps as decimal seconds, as the hosted tool does", () => {
 		expect(parseStepMs("060")).toBe(60_000)
 		expect(parseStepMs("1.5")).toBe(1_500)
@@ -193,7 +202,14 @@ describe("table", () => {
 	test("labels print in Prometheus' spelling; one series hoists nothing", () => {
 		expect(formatLabels({ b: "2", __name__: "m", a: "1" })).toBe('m{a="1", b="2"}')
 		expect(formatLabels({})).toBe("{}")
+		expect(formatLabels({ a: 'x", b="y' })).toBe('{a="x\\", b=\\"y"}')
+		expect(formatLabels({ path: "C:\\tmp\nnext" })).toBe('{path="C:\\\\tmp\\nnext"}')
 		expect(commonLabels(toPromqlOutput("up", WINDOW, matrix(1, 2)).series)).toEqual({})
+		const own = toPromqlOutput("x", INSTANT, {
+			resultType: "vector",
+			result: [{ labels: { constructor: "c" }, t: END_MS, value: 1 }],
+		})
+		expect(table(own)).toContain('{constructor="c"}')
 	})
 
 	test("sparkline averages into the width and leaves gaps for NaN", () => {

@@ -21,6 +21,9 @@ export type PromqlOutput = typeof QueryPromqlOutput.Type
 export const MAX_SERIES = 20
 export const MAX_POINTS = 200
 
+/** The longest range evaluation, `query_promql`'s window cap. */
+export const MAX_RANGE_DAYS = 7
+
 export const EXAMPLE_QUERY = "sum by (job) (rate(http_server_request_duration_seconds_count[5m]))"
 
 /** The query with a caret under `position`, on the line that holds it. */
@@ -149,6 +152,15 @@ export const evaluationWindow = (p: {
 	if (p.instant) return Effect.succeed({ range: p.range, startMs: endMs, endMs, stepMs: 0, stepSeconds: 0 })
 	const startMs = parseTimestampMs(p.range.startTime) ?? Number.NaN
 	const rangeSeconds = (endMs - startMs) / 1000
+	// The hosted tool narrows a longer window without saying so; refuse it in both modes instead.
+	if (rangeSeconds > MAX_RANGE_DAYS * 86_400) {
+		return Effect.fail(
+			new CliUsageError({
+				message: `a PromQL range covers at most ${MAX_RANGE_DAYS}d`,
+				hint: `use --since ${MAX_RANGE_DAYS}d or a shorter --start/--end, or --instant with a range function such as max_over_time(x[30d])`,
+			}),
+		)
+	}
 	const requested = p.step === undefined ? undefined : parseStepMs(p.step)
 	if (p.step !== undefined && requested === undefined) {
 		return Effect.fail(

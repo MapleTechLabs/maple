@@ -344,7 +344,7 @@ maple metrics show http.server.request.count --since 1h
 Run a PromQL query over your metrics, in local and remote mode. Metric names are Prometheus-style, translated from OTel: `http.server.request.duration` in seconds is `http_server_request_duration_seconds`, its histogram reads as `_bucket`, `_count` and `_sum`, and `job` is the service name.
 
 - **`<query>`**: the PromQL expression; quote it in single quotes
-- `--since` (default `1h`) / `--start` / `--end`: the window to evaluate over
+- `--since` (default `1h`) / `--start` / `--end`: the window to evaluate over, at most 7 days
 - `--step <duration>`: the range resolution (`30s`, `1m`, `1h` or seconds), default a round step giving 60 to 120 points
 - `--instant`: evaluate once at the window's end instead of over it
 
