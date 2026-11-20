@@ -23,7 +23,7 @@ import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import { type SourceHealthResult, worstSourceStatus } from "@maple/domain/source-health"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
-import { fleetServerName } from "./fleet/naming"
+import { fleetServerName } from "@maple/domain/http"
 
 const STATUS_RANK = {
 	disconnected: 0,

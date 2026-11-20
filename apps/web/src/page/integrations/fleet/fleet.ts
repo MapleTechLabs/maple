@@ -1,4 +1,4 @@
-import { FleetConnectRequest, type FleetIntegrationStatus } from "@maple/domain/http"
+import { FleetConnectRequest, type FleetIntegrationStatus, fleetServerName } from "@maple/domain/http"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Option, Schema, String as Str } from "effect"
 import { Command } from "foldkit"
@@ -67,19 +67,11 @@ const decodeConnectRequest = Schema.decodeUnknownOption(FleetConnectRequest)
 export const connectRequestOf = (form: FleetCardModel["form"]): Option.Option<FleetConnectRequest> =>
 	decodeConnectRequest({ url: Str.trim(form.url.value), token: Str.trim(form.token.value) })
 
-/** `fleet.example.com` from `https://fleet.example.com/`, for a server with no organization name. */
-export const hostOf = (url: string): string => {
-	const withoutScheme = Str.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")(Str.trim(url))
-	return Str.split("/")(withoutScheme)[0]
-}
-
 /** The connection's name: Fleet's organization, else the server's host. */
 export const fleetNameOf = (status: FleetIntegrationStatus): string | null =>
-	status.organizationName !== null && status.organizationName !== ""
-		? status.organizationName
-		: status.baseUrl !== null
-			? hostOf(status.baseUrl)
-			: null
+	status.baseUrl === null
+		? null
+		: fleetServerName({ organizationName: status.organizationName, baseUrl: status.baseUrl })
 
 export const licenseLabel = (tier: string): string =>
 	tier === "premium" ? "Premium" : tier === "free" ? "Free" : Str.capitalize(tier)
