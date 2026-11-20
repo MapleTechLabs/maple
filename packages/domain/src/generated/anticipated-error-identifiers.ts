@@ -158,7 +158,6 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/StatusPageNotFoundError",
 	"@maple/http/errors/StatusPageSlugTakenError",
 	"@maple/http/errors/StatusPageValidationError",
-	"@maple/http/errors/StatusPagesDisabledError",
 	"@maple/http/errors/UnauthorizedError",
 	"@maple/http/errors/UnknownVcsProviderError",
 	"@maple/http/errors/UptimeMonitorLimitReachedError",

@@ -6,7 +6,6 @@ const OFF: NavFlags = {
 	cloudSecurity: false,
 	productAnalytics: false,
 	securityAudit: false,
-	statusPages: false,
 }
 
 const infrastructure = Option.getOrUndefined(
@@ -51,7 +50,6 @@ describe("isNavItemActive", () => {
 	test("pages without a row of their own highlight their parent row", () => {
 		expect(activeTitles("/anomalies", OFF)).toEqual(["Alerts"])
 		expect(activeTitles("/security/code/findings", OFF)).toEqual(["Review & CI"])
-		expect(activeTitles("/status-pages/stp_abc", OFF)).toEqual(["Services"])
 	})
 
 	test("a flagged page with its own row highlights only that row", () => {
@@ -59,7 +57,6 @@ describe("isNavItemActive", () => {
 			cloudSecurity: false,
 			productAnalytics: true,
 			securityAudit: true,
-			statusPages: true,
 		}
 		expect(activeTitles("/security", on)).toEqual(["Security"])
 		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
@@ -87,6 +84,7 @@ describe("navGroups for an analyst", () => {
 			"/alerts/uptime",
 			"/alerts/slos",
 			"/errors",
+			"/status-pages",
 			"/analytics",
 			"/users",
 			"/replays",
@@ -96,9 +94,8 @@ describe("navGroups for an analyst", () => {
 		])
 	})
 
-	test("adds Status pages only for an org in its rollout", () => {
-		expect(hrefs({ ...OFF, statusPages: true })).toContain("/status-pages")
-		// Security is an engineer's page, whatever the flag says.
+	test("leaves out Security, whatever the flag says", () => {
+		// Security is an engineer's page.
 		expect(hrefs({ ...OFF, securityAudit: true })).not.toContain("/security")
 	})
 
@@ -117,11 +114,6 @@ describe("navGroups", () => {
 		expect(titles(OFF)).not.toContain("Security")
 		expect(titles({ ...OFF, cloudSecurity: true })).toContain("Security")
 		expect(titles({ ...OFF, securityAudit: true })).toContain("Security")
-	})
-
-	test("the Status pages row shows only for an org in the statusPages rollout", () => {
-		expect(titles(OFF)).not.toContain("Status pages")
-		expect(titles({ ...OFF, statusPages: true })).toContain("Status pages")
 	})
 
 	test("Product analytics sits under Explore only for an org in the productAnalytics rollout", () => {
