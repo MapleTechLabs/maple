@@ -9,7 +9,7 @@ import {
 	V2SourceUsageSummary,
 	V2SourceWithSecret,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, String as Str, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "@maple/views/ui/button"
@@ -57,7 +57,7 @@ const context: PageContext = {
 }
 
 const encoded = (index: number, fields: Readonly<Record<string, unknown>>): typeof V2Source.Encoded => ({
-	id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-${String(index).padStart(12, "0")}`),
+	id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`),
 	object: "source",
 	name: `Source ${index}`,
 	description: null,
