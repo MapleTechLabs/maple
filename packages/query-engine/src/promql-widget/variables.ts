@@ -183,8 +183,8 @@ export function interpolatePromqlVariables(query: string, values: VariableValues
 	)
 }
 
-/** Grafana's assumed scrape interval for `$__rate_interval` when the source names none. */
-export const PROMQL_SCRAPE_INTERVAL_MS = 15_000
+/** The scrape interval `$__rate_interval` assumes: OTel SDKs export every 60s by default. */
+export const PROMQL_SCRAPE_INTERVAL_MS = 60_000
 
 /** A duration as PromQL writes it: whole seconds as `Ns`, anything finer as `Nms`. */
 export const formatPromqlDuration = (ms: number): string =>
@@ -198,14 +198,23 @@ export interface PromqlBuiltinContext {
 
 // Longer names first in the alternation, so `$__interval_ms` never reads as `$__interval`.
 const BUILTIN_REF =
-	/\$\{__(rate_interval|interval_ms|interval|range_ms|range_s|range)\}|\$__(rate_interval|interval_ms|interval|range_ms|range_s|range)(?![A-Za-z0-9_])/g
+	/\$\{__(rate_interval|interval_ms|interval|range_ms|range_s|range|from|to)(?::(date(?::(?:seconds|iso))?))?\}|\$__(rate_interval|interval_ms|interval|range_ms|range_s|range|from|to)(?![A-Za-z0-9_])/g
+
+/** `$__from` / `$__to` in Grafana's formats: epoch ms by default, `:date:seconds`, `:date` / `:date:iso`. */
+const formatTimeMacro = (ms: number, format: string | undefined): string => {
+	if (format === "date:seconds") return String(Math.floor(ms / 1000))
+	if (format === "date" || format === "date:iso") return new Date(ms).toISOString()
+	return String(Math.round(ms))
+}
 
 /**
  * The time built-ins: `$__interval` (the step), `$__rate_interval` (Grafana's
- * max(4 * scrape interval, interval + scrape interval)), `$__range`, plus their `_ms` / `_s` forms.
+ * max(4 * scrape interval, interval + scrape interval)), `$__range`, plus their `_ms` / `_s` forms,
+ * and `$__from` / `$__to` (with Grafana's `:date` formats, for `@` modifiers).
  */
 export function interpolatePromqlBuiltins(query: string, context: PromqlBuiltinContext): string {
 	if (!Str.includes("$")(query)) return query
+	const { startMs, endMs } = context
 	const rangeMs = Math.max(0, context.endMs - context.startMs)
 	const values = new Map([
 		["interval", formatPromqlDuration(context.stepMs)],
@@ -228,8 +237,18 @@ export function interpolatePromqlBuiltins(query: string, context: PromqlBuiltinC
 				: replaceWith(
 						text,
 						BUILTIN_REF,
-						(match, braced: string | undefined, bare: string | undefined) =>
-							values.get(braced ?? bare ?? "") ?? match,
+						(
+							match,
+							braced: string | undefined,
+							format: string | undefined,
+							bare: string | undefined,
+						) => {
+							const name = braced ?? bare ?? ""
+							if (name === "from") return formatTimeMacro(startMs, format)
+							if (name === "to") return formatTimeMacro(endMs, format)
+							// A date format only applies to the time macros; anything else stays as written.
+							return format === undefined ? (values.get(name) ?? match) : match
+						},
 					),
 		),
 		"",
