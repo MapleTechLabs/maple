@@ -259,20 +259,26 @@ const connectedView = (h: H, model: Model, status: FleetIntegrationStatus, timeZ
 		],
 		actions: !isManager
 			? null
-			: card.isReplacing || status.authFailed
-				? fleetForm(h, card.form, { mode: "replace", canCancel: !status.authFailed })
-				: integrationActions(h, [
-						button(
-							h,
-							{
-								size: "sm",
-								variant: "outline",
-								attributes: [h.OnClick(toHub(FleetMessage.ClickedReplaceToken()))],
-							},
-							["Update token"],
-						),
-						disconnectButton(h, model),
-					]),
+			: status.authFailed
+				? // A server that can no longer issue a token must still be removable.
+					vstack(h, { gap: "3" }, [
+						fleetForm(h, card.form, { mode: "replace", canCancel: false }),
+						integrationActions(h, [disconnectButton(h, model)]),
+					])
+				: card.isReplacing
+					? fleetForm(h, card.form, { mode: "replace", canCancel: true })
+					: integrationActions(h, [
+							button(
+								h,
+								{
+									size: "sm",
+									variant: "outline",
+									attributes: [h.OnClick(toHub(FleetMessage.ClickedReplaceToken()))],
+								},
+								["Update token"],
+							),
+							disconnectButton(h, model),
+						]),
 		contentGap: "gap-3",
 	})
 }

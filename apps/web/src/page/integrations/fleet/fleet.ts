@@ -84,9 +84,9 @@ export const fleetNameOf = (status: FleetIntegrationStatus): string | null =>
 export const licenseLabel = (tier: string): string =>
 	tier === "premium" ? "Premium" : tier === "free" ? "Free" : Str.capitalize(tier)
 
-/** Maple only reads, so any role above Observer holds more than it needs. */
+/** Maple only reads, so any role above Observer (Observer+ runs live queries) holds more than it needs. */
 export const hasExtraRole = (status: FleetIntegrationStatus): boolean =>
-	status.apiUserRole !== null && status.apiUserRole !== "observer" && status.apiUserRole !== "observer_plus"
+	status.apiUserRole !== null && status.apiUserRole !== "observer"
 
 export const ConnectFleet = Command.define("ConnectFleetFromIntegrations", {
 	args: { url: Schema.String, token: Schema.String, mode: Schema.Literals(["connect", "replace"]) },

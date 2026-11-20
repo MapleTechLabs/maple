@@ -154,6 +154,11 @@ describe("fleet card", () => {
 				),
 			).toExist(),
 		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withFleet(statusOf({ apiUserRole: "observer_plus" }))),
+			expectView(text("This token's user has the observer_plus role.", { exact: false })).toExist(),
+		)
 	})
 
 	test("a rejected token shows the form with the saved URL", () => {
@@ -164,6 +169,8 @@ describe("fleet card", () => {
 			given(model),
 			expectView(role("button", { name: "Update token" })).toExist(),
 			expectView(role("textbox", { name: "Fleet URL" })).toHaveValue("https://fleet.acme.dev"),
+			// A server that can no longer issue a token must still be removable.
+			expectView(role("button", { name: "Disconnect" })).toExist(),
 		)
 		expect(cardStatusOf(model.statuses, "fleet", NOW)).toEqual({
 			label: "Token rejected",
