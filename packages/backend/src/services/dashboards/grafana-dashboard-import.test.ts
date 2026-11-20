@@ -178,13 +178,8 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 					label: "Host",
 					includeAll: true,
 					type: "query",
-					source: {
-						kind: "metric",
-						metricType: "gauge",
-						metricNames: ["node_uname_info"],
-						scope: "metric",
-						attributeKey: "instance",
-					},
+					// Read by PromQL label discovery; the `$job` filter is dropped, the metric kept.
+					source: { kind: "promql", label: "instance", match: "node_uname_info" },
 				},
 				{
 					name: "mountpoint",
@@ -199,7 +194,7 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 			expect(converted.warnings).toEqual(
 				expect.arrayContaining([
 					'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
-					'Variable "node" lists every instance of node_uname_info; the label filters in "node_uname_info{job="$job"}" were not imported.',
+					'Variable "node" lists values without the filters in "node_uname_info{job="$job"}" that use other variables; Maple variables do not narrow each other yet.',
 				]),
 			)
 		}),
@@ -765,6 +760,126 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 			expect(sql).toBe(
 				"SELECT toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS t, count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY t",
 			)
+		}),
+	)
+})
+
+/** A board on Amazon Managed Prometheus, with node-exporter-full style variables. */
+const ampDashboard = {
+	title: "API on AMP",
+	schemaVersion: 39,
+	templating: {
+		list: [
+			{
+				name: "handler",
+				type: "query",
+				datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+				query: { query: "label_values(http_request_duration_seconds_bucket, handler)" },
+			},
+			{
+				name: "route",
+				type: "query",
+				datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+				definition: 'label_values(http_server_requests_total{env="prod", job=~"$job"}, http_route)',
+				query: 'label_values(http_server_requests_total{env="prod", job=~"$job"}, http_route)',
+				regex: "/api/.*/",
+				sort: 3,
+			},
+			{
+				name: "namespace",
+				type: "query",
+				datasource: { type: "prometheus", uid: "prom" },
+				query: "label_values(namespace)",
+				sort: 1,
+			},
+		],
+	},
+	panels: [
+		{
+			type: "barchart",
+			title: "Requests by route",
+			gridPos: { x: 0, y: 0, w: 12, h: 8 },
+			datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+			targets: [{ refId: "A", expr: "sum by (http_route) (rate(http_server_requests_total[5m]))" }],
+			transformations: [{ id: "organize", options: {} }, { id: "reduce", disabled: true }],
+		},
+		{
+			type: "table",
+			title: "Top handlers",
+			gridPos: { x: 12, y: 0, w: 12, h: 8 },
+			datasource: { type: "victoriametrics-metrics-datasource", uid: "vm" },
+			targets: [
+				{ refId: "A", expr: "topk(5, sum by (handler) (rate(http_requests_total[1h])))", instant: true, format: "table" },
+			],
+			fieldConfig: { defaults: {}, overrides: [{ matcher: { id: "byName", options: "Value" }, properties: [] }] },
+		},
+		{
+			type: "timeseries",
+			title: "Instant line",
+			gridPos: { x: 0, y: 8, w: 12, h: 8 },
+			datasource: { type: "prometheus", uid: "prom" },
+			targets: [{ refId: "A", expr: "up", instant: true, range: false }],
+		},
+	],
+}
+
+describe("PromQL datasources, discovery variables and what does not carry over", () => {
+	it.effect("backs label_values with PromQL label discovery, keeping literal filters", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(Arr.map(converted.dashboard.variables ?? [], (v) => (v.type === "query" ? v.source : v.type))).toEqual([
+				{ kind: "promql", label: "handler", match: "http_request_duration_seconds_bucket" },
+				{ kind: "promql", label: "http_route", match: 'http_server_requests_total{env="prod"}' },
+				{ kind: "promql", label: "namespace" },
+			])
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([
+					'Variable "route" filters its values with the regex /api/.*/ in Grafana; Maple lists every value.',
+					'Variable "route" has a custom sort order in Grafana; Maple lists its values alphabetically.',
+				]),
+			)
+			// Alphabetical sort is Maple's own order, so it is not reported.
+			expect(Arr.filter(converted.warnings, (w) => Str.includes('"namespace"')(w))).toEqual([])
+		}),
+	)
+
+	it.effect("imports PromQL-speaking datasources as PromQL and says so once per plugin", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(converted.stats).toEqual({ panels: 3, converted: 3, placeholders: 0 })
+			expect(dataSourcePromql(widgetNamed(converted, "Top handlers").dataSource)?.query).toBe(
+				"topk(5, sum by (handler) (rate(http_requests_total[1h])))",
+			)
+			const datasourceNotes = Arr.filter(converted.warnings, (w) => Str.includes("were imported as PromQL")(w))
+			expect(datasourceNotes).toEqual([
+				"Queries on the grafana-amazonprometheus-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",
+				"Queries on the victoriametrics-metrics-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",
+			])
+		}),
+	)
+
+	it.effect("draws a barchart as bars and names transformations, overrides and instant charts", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			const bars = widgetNamed(converted, "Requests by route")
+			expect(bars.visualization).toBe("chart")
+			expect(dataSourcePromql(bars.dataSource)?.displayType).toBe("bar")
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([
+					'Panel "Requests by route" applies Grafana transformations (organize); Maple shows the query result untransformed.',
+					'Panel "Top handlers" has 1 field override in Grafana; Maple applies the panel\'s defaults to every series.',
+					'Panel "Instant line" runs an instant query in Grafana; Maple charts it over the time range.',
+				]),
+			)
+			// An instant table already shows each series' latest value.
+			expect(Arr.filter(converted.warnings, (w) => Str.includes('"Top handlers" runs')(w))).toEqual([])
+		}),
+	)
+
+	it.effect("keeps the warnings with the dashboard as its import report", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(converted.dashboard.importReport).toEqual({ source: "grafana", items: converted.warnings })
 		}),
 	)
 })

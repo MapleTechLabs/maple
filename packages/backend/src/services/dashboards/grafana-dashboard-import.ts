@@ -229,16 +229,20 @@ function convertSync(input: unknown): GrafanaImportConversion | DashboardValidat
 	const { widgets, stats } = convertPanels(placed, { variables, widgetIds: new Set(), warnings })
 	const description = asString(dashboard.description)
 	const refresh = refreshInterval(dashboard)
+	// Read before the report, since an unmappable range adds a warning.
+	const range = timeRange(dashboard, warnings)
 	return {
 		dashboard: decodePortableDashboard({
 			name: Str.trim(asString(dashboard.title) ?? "") || "Imported Grafana dashboard",
 			...(description === undefined ? undefined : { description }),
 			tags: tags(dashboard),
-			timeRange: timeRange(dashboard, warnings),
+			timeRange: range,
 			...(refresh === undefined ? undefined : { refreshIntervalSeconds: refresh }),
 			...(variables.variables.length > 0 ? { variables: variables.variables } : undefined),
 			...(sections.length > 0 ? { sections } : undefined),
 			widgets,
+			// Kept with the board, so what did not import stays visible after this response.
+			...(warnings.length > 0 ? { importReport: { source: "grafana", items: warnings } } : undefined),
 		}),
 		warnings,
 		stats,
