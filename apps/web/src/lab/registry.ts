@@ -695,7 +695,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/promql-widget",
 		title: "PromQL widget",
 		description:
-			"The widget editor over a PromQL line chart with fixture series; ?state=error shows the parser's message.",
+			"The widget editor over a PromQL line chart with fixture series and discovery; ?state=error shows a parse error, ?state=metrics and ?state=values the autocomplete.",
 		kind: "lab",
 		session: "none",
 	},

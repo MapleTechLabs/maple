@@ -1,0 +1,206 @@
+import { parser } from "@prometheus-io/lezer-promql"
+import { Array as Arr, Option, String as Str } from "effect"
+import {
+	lexPromql,
+	PROMQL_AGGREGATIONS,
+	PROMQL_KEYWORDS,
+	type PromqlToken,
+} from "@maple/views/lib/promql-highlight"
+
+// The PromQL editor's language smarts, pure: a light lexer, where the caret sits (what it can
+// complete), and the grammar's verdict with dashboard variables standing in as valid tokens.
+
+const GROUPING = new Set(["by", "without", "on", "ignoring", "group_left", "group_right"])
+const NOT_METRIC = new Set([...PROMQL_KEYWORDS, ...PROMQL_AGGREGATIONS, "inf", "nan"])
+const MATCH_OPS = new Set(["=", "!=", "=~", "!~"])
+
+/** What the caret can complete, and the span `[from, caret)` a pick replaces. */
+export type PromqlCompletionContext =
+	| Readonly<{ kind: "expression"; from: number; prefix: string }>
+	| Readonly<{ kind: "operator"; from: number; prefix: string }>
+	| Readonly<{ kind: "labelName"; from: number; prefix: string; metric: string | null }>
+	| Readonly<{
+			kind: "labelValue"
+			from: number
+			prefix: string
+			metric: string | null
+			label: string
+			/** The value is typed inside quotes already; else a pick adds them. */
+			isQuoted: boolean
+	  }>
+	| Readonly<{ kind: "duration"; from: number; prefix: string }>
+	| Readonly<{ kind: "variable"; from: number; prefix: string }>
+
+type Frame =
+	| Readonly<{ kind: "brace"; metric: string | null; label: string | null }>
+	| Readonly<{ kind: "paren"; isGrouping: boolean }>
+	| Readonly<{ kind: "bracket" }>
+
+const significant = (tokens: ReadonlyArray<PromqlToken>) =>
+	Arr.filter(tokens, (token) => token.kind !== "space" && token.kind !== "comment")
+
+/** The open brackets around the end of `tokens`, innermost last, braces tracking their label. */
+const framesOf = (tokens: ReadonlyArray<PromqlToken>): ReadonlyArray<Frame> => {
+	const all = significant(tokens)
+	return Arr.reduce(all, [] as ReadonlyArray<Frame>, (stack, token, index) => {
+		const previous = index === 0 ? undefined : all[index - 1]
+		const top = Arr.last(stack).pipe(Option.getOrUndefined)
+		if (token.kind === "open") {
+			const before = previous?.kind === "ident" ? previous.text : null
+			const frame: Frame =
+				token.text === "{"
+					? {
+							kind: "brace",
+							metric: before !== null && !NOT_METRIC.has(before) ? before : null,
+							label: null,
+						}
+					: token.text === "("
+						? { kind: "paren", isGrouping: before !== null && GROUPING.has(before) }
+						: { kind: "bracket" }
+			return [...stack, frame]
+		}
+		if (token.kind === "close") return stack.slice(0, -1)
+		if (top?.kind === "brace" && token.kind === "ident") {
+			return [...stack.slice(0, -1), { ...top, label: token.text }]
+		}
+		return stack
+	})
+}
+
+/** The first metric the query selects: a name outside braces, brackets and label lists, not a call. */
+export const firstMetricOf = (query: string): string | null => {
+	const tokens = significant(lexPromql(query))
+	return Arr.findFirst(tokens, (token, index) => {
+		if (token.kind !== "ident" || NOT_METRIC.has(token.text)) return false
+		if (tokens[index + 1]?.text === "(") return false
+		const top = Arr.last(framesOf(tokens.slice(0, index)))
+		return Option.match(top, {
+			onNone: () => true,
+			onSome: (frame) => frame.kind === "paren" && !frame.isGrouping,
+		})
+	}).pipe(
+		Option.map((token) => token.text),
+		Option.getOrNull,
+	)
+}
+
+const isOperand = (token: PromqlToken | undefined): boolean =>
+	token !== undefined &&
+	(token.kind === "close" ||
+		token.kind === "number" ||
+		token.kind === "string" ||
+		token.kind === "variable" ||
+		(token.kind === "ident" && !NOT_METRIC.has(token.text)))
+
+/** What the caret at `caret` can complete, or null where nothing fits (a comment, a number). */
+export const completionContextAt = (query: string, caret: number): PromqlCompletionContext | null => {
+	const tokens = lexPromql(Str.slice(0, caret)(query))
+	const last = Arr.last(tokens).pipe(Option.getOrUndefined)
+	const current =
+		last !== undefined && (last.kind === "ident" || last.kind === "variable" || last.kind === "string")
+			? last
+			: undefined
+	const before = current === undefined ? tokens : tokens.slice(0, -1)
+	const previous = Arr.last(significant(before)).pipe(Option.getOrUndefined)
+	const top = Arr.last(framesOf(before)).pipe(Option.getOrUndefined)
+	const from = current?.start ?? caret
+	const prefix = current?.text ?? ""
+	if (last?.kind === "comment" || last?.kind === "number") return null
+	if (current?.kind === "variable") return { kind: "variable", from, prefix }
+	if (top?.kind === "brace") {
+		if (current?.kind === "string") {
+			const quote = current.text[0] ?? '"'
+			const isClosed = current.text.length > 1 && Str.endsWith(quote)(current.text)
+			if (isClosed || top.label === null || previous === undefined || !MATCH_OPS.has(previous.text))
+				return null
+			return {
+				kind: "labelValue",
+				from: from + 1,
+				prefix: Str.slice(1)(current.text),
+				metric: top.metric,
+				label: top.label,
+				isQuoted: true,
+			}
+		}
+		if (previous !== undefined && MATCH_OPS.has(previous.text) && top.label !== null) {
+			return { kind: "labelValue", from, prefix, metric: top.metric, label: top.label, isQuoted: false }
+		}
+		return previous?.text === "{" || previous?.text === ","
+			? { kind: "labelName", from, prefix, metric: top.metric }
+			: null
+	}
+	if (current?.kind === "string") return null
+	if (top?.kind === "paren" && top.isGrouping) {
+		return { kind: "labelName", from, prefix, metric: firstMetricOf(query) }
+	}
+	if (top?.kind === "bracket") return { kind: "duration", from, prefix }
+	if (isOperand(previous) && (current === undefined ? last?.kind === "space" : true)) {
+		return { kind: "operator", from, prefix }
+	}
+	if (current === undefined && isOperand(previous)) return null
+	return { kind: "expression", from, prefix }
+}
+
+/** A parse failure as the editor marks it: the message, and the span `[from, to)` it points at. */
+export type PromqlParseError = Readonly<{ message: string; from: number; to: number }>
+
+/** A same-length stand-in for a variable: a duration where one goes, else a name. */
+const placeholderFor = (token: PromqlToken, previous: PromqlToken | undefined): string => {
+	const isDuration = previous?.text === "[" || previous?.text === ":" || previous?.text === "offset"
+	const size = token.text.length
+	return isDuration ? `${Str.repeat(size - 2)("0")}1m` : `x${Str.repeat(size - 1)("_")}`
+}
+
+/** Where the grammar first gave up, as Prometheus reports it, or null when the text parses. */
+const syntaxErrorOf = (source: string): Readonly<{ from: number; to: number }> | null => {
+	const found: Array<Readonly<{ from: number; to: number }>> = []
+	parser.parse(source).iterate({
+		enter: (node) => {
+			if (found.length > 0) return false
+			if (node.type.isError) found.push({ from: node.from, to: node.to })
+			return undefined
+		},
+	})
+	return found[0] ?? null
+}
+
+/**
+ * The grammar's verdict on the query, or null when it parses (or is empty). A variable becomes a
+ * same-length valid token first, and an error inside one is left to the server, which knows its
+ * value. Type errors (`rate()` of an instant vector) come from the server on Run preview: the full
+ * checker would put its regex engine in the dashboard bundle.
+ */
+export const promqlParseError = (query: string): PromqlParseError | null => {
+	if (Str.trim(query) === "") return null
+	const tokens = lexPromql(query)
+	const variables = Arr.filter(tokens, (token) => token.kind === "variable")
+	const substituted = Arr.join(
+		Arr.map(tokens, (token, index) => {
+			const previous = tokens[index - 1]
+			if (token.kind === "variable") {
+				return placeholderFor(
+					token,
+					Arr.last(significant(tokens.slice(0, index))).pipe(Option.getOrUndefined),
+				)
+			}
+			// Prometheus reads `1.` as a number; the grammar wants a digit after the dot.
+			return token.text === "." && previous?.kind === "number" ? " " : token.text
+		}),
+		"",
+	)
+	const error = syntaxErrorOf(substituted)
+	if (error === null) return null
+	const at = Math.min(error.from, query.length)
+	if (Arr.some(variables, (token) => at >= token.start && at < token.start + token.text.length)) return null
+	const near = Str.trim(Str.slice(at, Math.max(error.to, at + 1))(query))
+	const token = Arr.findFirst(
+		tokens,
+		(t) => at >= t.start && at < t.start + t.text.length && t.kind !== "space",
+	)
+	const to = Option.match(token, { onNone: () => at, onSome: (t) => t.start + t.text.length })
+	return {
+		message: near === "" ? "unexpected end of input" : `syntax error near "${near}"`,
+		from: at,
+		to,
+	}
+}

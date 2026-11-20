@@ -15,6 +15,7 @@ import {
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { FetchWidget, MeasurePreview, SaveWidget } from "./command"
+import { FetchPromqlDiscovery, FocusPromqlCaret } from "./promql-step"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { update } from "./page-update"
@@ -197,6 +198,76 @@ describe("widget editor over a PromQL widget", () => {
 		const empty = pageUpdate(opened().model, Message.ChangedPromql({ value: "  " })).model
 		expect(pageUpdate(empty, Message.ClickedRunPreview()).commands ?? []).toEqual([])
 		expect(pageUpdate(empty, Message.ClickedApply()).commands ?? []).toEqual([])
+	})
+
+	test("a parse error shows under the query after the typing pause and blocks Run preview", () => {
+		const typed = runAll(opened().model, [Message.ChangedPromql({ value: "sum(rate(up[5m])) +* 2" })])
+		expect(typed.model.promql?.parseError).toBeNull()
+		const seq = typed.model.promql?.parseSeq ?? 0
+		// A delay from an older keystroke parses nothing.
+		expect(
+			pageUpdate(typed.model, Message.ElapsedPromqlParseDelay({ seq: seq - 1 })).model.promql
+				?.parseError,
+		).toBeNull()
+		const parsed = pageUpdate(typed.model, Message.ElapsedPromqlParseDelay({ seq })).model
+		expect(parsed.promql?.parseError).toMatchObject({ from: 19 })
+		expect(pageUpdate(parsed, Message.ClickedRunPreview()).commands ?? []).toEqual([])
+		expect(pageUpdate(parsed, Message.ClickedApply()).commands ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			...mounted(parsed),
+			expectView(text('Line 1, column 20: syntax error near "*"')).toExist(),
+		)
+	})
+
+	test("typing a metric name lists the org's metrics, and Enter writes the highlighted one", () => {
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: "http_" }),
+			Message.GotPromqlCaret({ caret: 5, opens: true }),
+		])
+		const asked = Arr.filter(typed.commands, ({ name }) => name === FetchPromqlDiscovery.name)
+		expect(Arr.map(asked, ({ args }) => args)).toEqual([{ key: "__name__|", label: "__name__" }])
+		const listed = runAll(typed.model, [
+			Message.CompletedFetchPromqlDiscovery({
+				key: "__name__|",
+				result: Result.succeed(["http_requests_total", "process_cpu_seconds_total"]),
+			}),
+			// The same context asks for nothing new.
+			Message.GotPromqlCaret({ caret: 5, opens: true }),
+		])
+		expect(Arr.filter(listed.commands, ({ name }) => name === FetchPromqlDiscovery.name)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			...mounted(listed.model),
+			expectView(text("http_requests_total")).toExist(),
+			expectView(text("process_cpu_seconds_total")).not.toExist(),
+		)
+		const picked = pageUpdate(listed.model, Message.PressedPromqlKey({ key: "Enter" }))
+		expect(picked.model.promql?.draft.query).toBe("http_requests_total")
+		expect(picked.model.promql?.completion).toBeNull()
+		expect(Arr.map(picked.commands ?? [], ({ name }) => name)).toContain(FocusPromqlCaret.name)
+	})
+
+	test("inside a matcher's quotes it asks for that label's values on that metric", () => {
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: 'up{job="' }),
+			Message.GotPromqlCaret({ caret: 8, opens: true }),
+		])
+		const asked = Arr.filter(typed.commands, ({ name }) => name === FetchPromqlDiscovery.name)
+		expect(asked[0]?.args).toEqual({ key: 'job|{__name__="up"}', label: "job", match: '{__name__="up"}' })
+		const listed = pageUpdate(
+			typed.model,
+			Message.CompletedFetchPromqlDiscovery({
+				key: 'job|{__name__="up"}',
+				result: Result.succeed(["api", "worker"]),
+			}),
+		).model
+		const down = pageUpdate(listed, Message.PressedPromqlKey({ key: "ArrowDown" })).model
+		const picked = pageUpdate(down, Message.PressedPromqlKey({ key: "Tab" })).model
+		expect(picked.promql?.draft.query).toBe('up{job="worker')
+		expect(
+			pageUpdate(listed, Message.PressedPromqlKey({ key: "Escape" })).model.promql?.completion,
+		).toBeNull()
 	})
 
 	test("the Builder tab previews a query set again", () => {
