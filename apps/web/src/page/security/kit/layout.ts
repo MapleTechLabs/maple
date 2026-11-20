@@ -185,8 +185,7 @@ const DESCRIPTION = {
 	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	cloud: "GuardDuty, Security Hub, Inspector and Access Analyzer findings from your AWS accounts, matched to the services they affect.",
-	devices:
-		"Failing policies and vulnerable software on the devices your Fleet server manages, synced every hour.",
+	devices: "Failing policies and vulnerable software from your device management tools, synced every hour.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 	dependencies:
