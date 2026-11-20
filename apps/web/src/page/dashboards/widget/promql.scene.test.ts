@@ -270,6 +270,20 @@ describe("widget editor over a PromQL widget", () => {
 		).toBeNull()
 	})
 
+	test("a pick mid-word replaces the rest of the word, not just what precedes the caret", () => {
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: "rate(http_requests_total[5m])" }),
+			Message.GotPromqlCaret({ caret: 10, opens: true }),
+			Message.CompletedFetchPromqlDiscovery({
+				key: "__name__|",
+				result: Result.succeed(["http_requests_total", "http_server_errors_total"]),
+			}),
+			Message.PressedPromqlKey({ key: "ArrowDown" }),
+			Message.PressedPromqlKey({ key: "Enter" }),
+		])
+		expect(typed.model.promql?.draft.query).toBe("rate(http_server_errors_total[5m])")
+	})
+
 	test("the Builder tab previews a query set again", () => {
 		const builder = pageUpdate(
 			opened().model,

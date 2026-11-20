@@ -1,7 +1,13 @@
 import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { completionContextAt, firstMetricOf, promqlParseError } from "./promql-complete"
-import { EMPTY_DISCOVERY, discoveryKey, discoveryRequestFor, suggestionsFor } from "./promql-suggest"
+import { completionContextAt, onlyMetricOf, promqlParseError } from "./promql-complete"
+import {
+	DISCOVERY_PAGE,
+	EMPTY_DISCOVERY,
+	discoveryKey,
+	discoveryRequestsFor,
+	suggestionsFor,
+} from "./promql-suggest"
 
 /** The context with the caret where `|` sits. */
 const at = (marked: string) => {
@@ -33,9 +39,18 @@ describe("completionContextAt", () => {
 			prefix: "ap",
 			metric: "up",
 			label: "job",
-			isQuoted: true,
+			quote: '"',
 		})
-		expect(at("up{job=~|")).toMatchObject({ kind: "labelValue", label: "job", isQuoted: false })
+		expect(at("up{job=~|")).toMatchObject({ kind: "labelValue", label: "job", quote: null })
+		expect(at('{"service.name"="ap|')).toMatchObject({
+			kind: "labelValue",
+			label: "service.name",
+			metric: null,
+		})
+		expect(at('{"http.server.duration", |')).toMatchObject({
+			kind: "labelName",
+			metric: "http.server.duration",
+		})
 		expect(at('up{job="api"|')).toBeNull()
 	})
 
@@ -61,11 +76,15 @@ describe("completionContextAt", () => {
 	})
 })
 
-describe("firstMetricOf", () => {
-	it("skips functions, aggregations and grouping labels", () => {
-		expect(firstMetricOf("sum by (job) (rate(http_requests_total[5m]))")).toBe("http_requests_total")
-		expect(firstMetricOf("sum(rate(x[1m]))")).toBe("x")
-		expect(firstMetricOf('{job="a"}')).toBeNull()
+describe("onlyMetricOf", () => {
+	it("names the one metric a query selects, skipping functions, aggregations and grouping labels", () => {
+		expect(onlyMetricOf("sum by (job) (rate(http_requests_total[5m]))")).toBe("http_requests_total")
+		expect(onlyMetricOf('sum(rate({"http.server.duration"}[1m]))')).toBe("http.server.duration")
+	})
+
+	it("names none when the query selects several metrics or none", () => {
+		expect(onlyMetricOf("up or sum by (job) (http_requests_total)")).toBeNull()
+		expect(onlyMetricOf('{job="a"}')).toBeNull()
 	})
 })
 
@@ -85,6 +104,11 @@ describe("promqlParseError", () => {
 	it("leaves type errors to the server and reads Prometheus' trailing-dot numbers", () => {
 		expect(promqlParseError("rate(up)")).toBeNull()
 		expect(promqlParseError("up * 1.")).toBeNull()
+		expect(promqlParseError("up * 1.e2 + 1.e-2")).toBeNull()
+	})
+
+	it("reads a variable followed by a unit as a number", () => {
+		expect(promqlParseError("rate(up[${__interval_ms}ms])")).toBeNull()
 	})
 
 	it("reports an unclosed matcher at the end of the input", () => {
@@ -105,13 +129,56 @@ describe("suggestionsFor", () => {
 		expect(labels).not.toContain("up")
 	})
 
-	it("quotes a picked label value unless the caret is inside quotes", () => {
+	it("keeps an exact function name, since the pick adds its parenthesis", () => {
+		const labels = Arr.map(
+			suggestionsFor({ kind: "expression", from: 0, prefix: "rate" }, EMPTY_DISCOVERY, []),
+			(s) => s.insert,
+		)
+		expect(labels[0]).toBe("rate(")
+	})
+
+	it("quotes a picked label value, or escapes it for the quotes the caret is inside", () => {
 		const base = { kind: "labelValue", from: 0, prefix: "", metric: "up", label: "job" } as const
-		const request = discoveryRequestFor({ ...base, isQuoted: false })
+		const [request] = discoveryRequestsFor({ ...base, quote: null }, EMPTY_DISCOVERY)
 		expect(request).toEqual({ label: "job", match: '{__name__="up"}' })
-		const discovery = { entries: { [discoveryKey(request ?? {})]: ['a"b'] }, requested: [] }
-		expect(suggestionsFor({ ...base, isQuoted: false }, discovery, [])[0]?.insert).toBe('"a\\"b"')
-		expect(suggestionsFor({ ...base, isQuoted: true }, discovery, [])[0]?.insert).toBe('a"b')
+		const discovery = { entries: { [discoveryKey(request ?? {})]: ['a"b\\c'] }, requested: [] }
+		const insertFor = (quote: string | null) =>
+			suggestionsFor({ ...base, quote }, discovery, [])[0]?.insert
+		expect(insertFor(null)).toBe('"a\\"b\\\\c"')
+		expect(insertFor('"')).toBe('a\\"b\\\\c')
+		expect(insertFor("'")).toBe('a"b\\\\c')
+	})
+
+	it("writes UTF-8 metric and label names quoted", () => {
+		const metrics = {
+			entries: { [discoveryKey({ label: "__name__" })]: ["http.server.duration"] },
+			requested: [],
+		}
+		const metric = suggestionsFor({ kind: "expression", from: 0, prefix: "http" }, metrics, [])[0]
+		expect(metric?.insert).toBe('{"http.server.duration"}')
+		const labels = { entries: { [discoveryKey({})]: ["service.name", "job"] }, requested: [] }
+		const inserts = Arr.map(
+			suggestionsFor({ kind: "labelName", from: 0, prefix: "", metric: null }, labels, []),
+			(s) => s.insert,
+		)
+		expect(inserts).toEqual(['"service.name"', "job"])
+	})
+
+	it("asks the server for the typed prefix once a full page of metrics leaves names out", () => {
+		const context = { kind: "expression", from: 0, prefix: "zebra_r" } as const
+		const page = { label: "__name__" }
+		expect(discoveryRequestsFor(context, EMPTY_DISCOVERY)).toEqual([page])
+		const full = {
+			entries: { [discoveryKey(page)]: Arr.makeBy(DISCOVERY_PAGE, (i) => `metric_${i}`) },
+			requested: [],
+		}
+		const requests = discoveryRequestsFor(context, full)
+		expect(requests).toEqual([page, { label: "__name__", match: '{__name__=~"zebra_r.*"}' }])
+		const found = {
+			...full,
+			entries: { ...full.entries, [discoveryKey(requests[1] ?? {})]: ["zebra_requests_total"] },
+		}
+		expect(suggestionsFor(context, found, [])[0]?.label).toBe("zebra_requests_total")
 	})
 
 	it("offers built-in and dashboard variables in a range", () => {

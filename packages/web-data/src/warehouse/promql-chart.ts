@@ -59,6 +59,7 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 export type PromqlDiscoverInput = Readonly<{
 	label?: string
 	match?: string
+	limit?: number
 	startTime: string
 	endTime: string
 }>
@@ -73,6 +74,7 @@ export const discoverPromql = Effect.fn("QueryEngine.discoverPromql")(function* 
 					endTime: input.endTime,
 					...(input.label === undefined ? undefined : { label: input.label }),
 					...(input.match === undefined ? undefined : { match: input.match }),
+					...(input.limit === undefined ? undefined : { limit: input.limit }),
 				}),
 			})
 		}),

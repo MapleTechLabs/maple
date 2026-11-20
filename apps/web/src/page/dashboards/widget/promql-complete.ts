@@ -1,4 +1,5 @@
 import { parser } from "@prometheus-io/lezer-promql"
+import { replaceWith } from "@maple/strings"
 import { Array as Arr, Option, String as Str } from "effect"
 import {
 	lexPromql,
@@ -25,8 +26,8 @@ export type PromqlCompletionContext =
 			prefix: string
 			metric: string | null
 			label: string
-			/** The value is typed inside quotes already; else a pick adds them. */
-			isQuoted: boolean
+			/** The quote the value is typed inside; null when a pick must add them. */
+			quote: string | null
 	  }>
 	| Readonly<{ kind: "duration"; from: number; prefix: string }>
 	| Readonly<{ kind: "variable"; from: number; prefix: string }>
@@ -63,14 +64,40 @@ const framesOf = (tokens: ReadonlyArray<PromqlToken>): ReadonlyArray<Frame> => {
 		if (top?.kind === "brace" && token.kind === "ident") {
 			return [...stack.slice(0, -1), { ...top, label: token.text }]
 		}
+		// A quoted UTF-8 name: a label before a matcher, else the metric (`{"http.server.duration"}`).
+		const isNamePosition = previous?.text === "{" || previous?.text === ","
+		if (
+			top?.kind === "brace" &&
+			token.kind === "string" &&
+			isNamePosition &&
+			isClosedString(token.text)
+		) {
+			const name = unquote(token.text)
+			const next = all[index + 1]
+			return [
+				...stack.slice(0, -1),
+				next !== undefined && MATCH_OPS.has(next.text)
+					? { ...top, label: name }
+					: { ...top, metric: name },
+			]
+		}
 		return stack
 	})
 }
 
-/** The first metric the query selects: a name outside braces, brackets and label lists, not a call. */
-export const firstMetricOf = (query: string): string | null => {
+const isClosedString = (text: string): boolean =>
+	text.length > 1 && Str.endsWith(text[0] ?? '"')(text) && !Str.endsWith(`\\${text[0] ?? ""}`)(text)
+
+/** A closed string's text without its quotes and escapes. */
+const unquote = (text: string): string => Str.replace(/\\(.)/g, "$1")(Str.slice(1, -1)(text))
+
+/**
+ * The one metric the query selects, or null when it selects none or several: a `by (...)` list is
+ * then completed from every label rather than one metric's, which may be the wrong one.
+ */
+export const onlyMetricOf = (query: string): string | null => {
 	const tokens = significant(lexPromql(query))
-	return Arr.findFirst(tokens, (token, index) => {
+	const bare = Arr.filter(tokens, (token, index) => {
 		if (token.kind !== "ident" || NOT_METRIC.has(token.text)) return false
 		if (tokens[index + 1]?.text === "(") return false
 		const top = Arr.last(framesOf(tokens.slice(0, index)))
@@ -78,10 +105,14 @@ export const firstMetricOf = (query: string): string | null => {
 			onNone: () => true,
 			onSome: (frame) => frame.kind === "paren" && !frame.isGrouping,
 		})
-	}).pipe(
-		Option.map((token) => token.text),
-		Option.getOrNull,
-	)
+	})
+	const braced = Arr.flatMap(tokens, (token, index) => {
+		if (token.text !== "}") return []
+		const frame = Arr.last(framesOf(tokens.slice(0, index))).pipe(Option.getOrUndefined)
+		return frame?.kind === "brace" && frame.metric !== null ? [frame.metric] : []
+	})
+	const metrics = Arr.dedupe([...Arr.map(bare, (token) => token.text), ...braced])
+	return metrics.length === 1 ? (metrics[0] ?? null) : null
 }
 
 const isOperand = (token: PromqlToken | undefined): boolean =>
@@ -110,8 +141,12 @@ export const completionContextAt = (query: string, caret: number): PromqlComplet
 	if (top?.kind === "brace") {
 		if (current?.kind === "string") {
 			const quote = current.text[0] ?? '"'
-			const isClosed = current.text.length > 1 && Str.endsWith(quote)(current.text)
-			if (isClosed || top.label === null || previous === undefined || !MATCH_OPS.has(previous.text))
+			if (
+				isClosedString(current.text) ||
+				top.label === null ||
+				previous === undefined ||
+				!MATCH_OPS.has(previous.text)
+			)
 				return null
 			return {
 				kind: "labelValue",
@@ -119,11 +154,11 @@ export const completionContextAt = (query: string, caret: number): PromqlComplet
 				prefix: Str.slice(1)(current.text),
 				metric: top.metric,
 				label: top.label,
-				isQuoted: true,
+				quote,
 			}
 		}
 		if (previous !== undefined && MATCH_OPS.has(previous.text) && top.label !== null) {
-			return { kind: "labelValue", from, prefix, metric: top.metric, label: top.label, isQuoted: false }
+			return { kind: "labelValue", from, prefix, metric: top.metric, label: top.label, quote: null }
 		}
 		return previous?.text === "{" || previous?.text === ","
 			? { kind: "labelName", from, prefix, metric: top.metric }
@@ -131,7 +166,7 @@ export const completionContextAt = (query: string, caret: number): PromqlComplet
 	}
 	if (current?.kind === "string") return null
 	if (top?.kind === "paren" && top.isGrouping) {
-		return { kind: "labelName", from, prefix, metric: firstMetricOf(query) }
+		return { kind: "labelName", from, prefix, metric: onlyMetricOf(query) }
 	}
 	if (top?.kind === "bracket") return { kind: "duration", from, prefix }
 	if (isOperand(previous) && (current === undefined ? last?.kind === "space" : true)) {
@@ -144,12 +179,27 @@ export const completionContextAt = (query: string, caret: number): PromqlComplet
 /** A parse failure as the editor marks it: the message, and the span `[from, to)` it points at. */
 export type PromqlParseError = Readonly<{ message: string; from: number; to: number }>
 
-/** A same-length stand-in for a variable: a duration where one goes, else a name. */
-const placeholderFor = (token: PromqlToken, previous: PromqlToken | undefined): string => {
-	const isDuration = previous?.text === "[" || previous?.text === ":" || previous?.text === "offset"
+/**
+ * A same-length stand-in for a variable: digits when a unit follows it (`${__interval_ms}ms`), a
+ * duration where one goes, else a name.
+ */
+const placeholderFor = (
+	token: PromqlToken,
+	previous: PromqlToken | undefined,
+	next: PromqlToken | undefined,
+): string => {
 	const size = token.text.length
+	if (next?.kind === "ident" && next.start === token.start + size) return `${Str.repeat(size - 1)("0")}1`
+	const isDuration = previous?.text === "[" || previous?.text === ":" || previous?.text === "offset"
 	return isDuration ? `${Str.repeat(size - 2)("0")}1m` : `x${Str.repeat(size - 1)("_")}`
 }
+
+// Prometheus reads `1.` and `1.e2` as numbers; the grammar wants a digit after the dot.
+const TRAILING_DOT = /(?<![\w:.])(\d[\d_]*)\.(?![\d_.])([eE][+-]?\d[\d_]*)?/g
+
+/** The trailing dot dropped and the number padded, so every offset stays where it was. */
+const withoutTrailingDots = (source: string): string =>
+	replaceWith(source, TRAILING_DOT, (_match, integer, exponent) => `${integer ?? ""}${exponent ?? ""} `)
 
 /** Where the grammar first gave up, as Prometheus reports it, or null when the text parses. */
 const syntaxErrorOf = (source: string): Readonly<{ from: number; to: number }> | null => {
@@ -175,20 +225,18 @@ export const promqlParseError = (query: string): PromqlParseError | null => {
 	const tokens = lexPromql(query)
 	const variables = Arr.filter(tokens, (token) => token.kind === "variable")
 	const substituted = Arr.join(
-		Arr.map(tokens, (token, index) => {
-			const previous = tokens[index - 1]
-			if (token.kind === "variable") {
-				return placeholderFor(
-					token,
-					Arr.last(significant(tokens.slice(0, index))).pipe(Option.getOrUndefined),
-				)
-			}
-			// Prometheus reads `1.` as a number; the grammar wants a digit after the dot.
-			return token.text === "." && previous?.kind === "number" ? " " : token.text
-		}),
+		Arr.map(tokens, (token, index) =>
+			token.kind === "variable"
+				? placeholderFor(
+						token,
+						Arr.last(significant(tokens.slice(0, index))).pipe(Option.getOrUndefined),
+						tokens[index + 1],
+					)
+				: token.text,
+		),
 		"",
 	)
-	const error = syntaxErrorOf(substituted)
+	const error = syntaxErrorOf(withoutTrailingDots(substituted))
 	if (error === null) return null
 	const at = Math.min(error.from, query.length)
 	if (Arr.some(variables, (token) => at >= token.start && at < token.start + token.text.length)) return null

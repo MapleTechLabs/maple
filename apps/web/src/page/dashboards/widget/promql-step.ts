@@ -1,7 +1,17 @@
 import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { discoverPromql } from "@maple/web-data/warehouse/promql-chart"
-import { Array as Arr, Clock, Duration, Effect, Record as Rec, Result, Schema, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Duration,
+	Effect,
+	Option,
+	Record as Rec,
+	Result,
+	Schema,
+	String as Str,
+} from "effect"
 import { Command } from "foldkit"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
@@ -13,8 +23,8 @@ import {
 	type PromqlDraft,
 	type PromqlState,
 } from "./promql"
-import { promqlParseError } from "./promql-complete"
-import { type DiscoveryRequest, discoveryKey, discoveryRequestFor } from "./promql-suggest"
+import { type PromqlCompletionContext, promqlParseError } from "./promql-complete"
+import { DISCOVERY_PAGE, discoveryKey, discoveryRequestsFor } from "./promql-suggest"
 import { planPreview, type Return } from "./update"
 
 export const PROMQL_TEXTAREA_ID = "widget-editor-promql"
@@ -73,6 +83,7 @@ export const FetchPromqlDiscovery = Command.define("FetchWidgetPromqlDiscovery",
 				endTime: formatWarehouseDateTime(now),
 				...(label === undefined ? undefined : { label }),
 				...(match === undefined ? undefined : { match }),
+				limit: DISCOVERY_PAGE,
 			})
 		}).pipe(
 			Effect.mapError(toLoadFailure),
@@ -123,17 +134,42 @@ const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", 
 /** The discovery read the open list needs, asked once per editor session. */
 const askDiscovery = (promql: PromqlState): Readonly<{ promql: PromqlState; commands: Commands }> => {
 	const context = promqlContextOf(promql)
-	const request: DiscoveryRequest | null = context === null ? null : discoveryRequestFor(context)
-	if (request === null) return { promql, commands: [] }
-	const key = discoveryKey(request)
-	if (Arr.contains(promql.discovery.requested, key)) return { promql, commands: [] }
+	const requests = context === null ? [] : discoveryRequestsFor(context, promql.discovery)
+	const missing = Arr.filter(
+		requests,
+		(request) => !Arr.contains(promql.discovery.requested, discoveryKey(request)),
+	)
 	return {
 		promql: {
 			...promql,
-			discovery: { ...promql.discovery, requested: [...promql.discovery.requested, key] },
+			discovery: {
+				...promql.discovery,
+				requested: [...promql.discovery.requested, ...Arr.map(missing, discoveryKey)],
+			},
 		},
-		commands: [FetchPromqlDiscovery({ key, ...request })],
+		commands: Arr.map(missing, (request) =>
+			FetchPromqlDiscovery({ key: discoveryKey(request), ...request }),
+		),
 	}
+}
+
+const NAME_TAIL = /^[A-Za-z0-9_:.]*/
+
+/** Where a pick's replacement ends: through the rest of the word (or quoted value) under the caret. */
+const replaceEnd = (query: string, caret: number, context: PromqlCompletionContext): number => {
+	const after = Str.slice(caret)(query)
+	if (context.kind === "labelValue" && context.quote !== null) {
+		const close = Str.indexOf(context.quote)(after)
+		const newline = Str.indexOf("\n")(after)
+		return (
+			caret +
+			Math.min(
+				Option.getOrElse(close, () => after.length),
+				Option.getOrElse(newline, () => after.length),
+			)
+		)
+	}
+	return caret + (NAME_TAIL.exec(after)?.[0].length ?? 0)
 }
 
 const withPromql = (model: Model, promql: PromqlState, commands: Commands = []): Return => {
@@ -148,7 +184,10 @@ const accept = (model: Model, promql: PromqlState, index: number): Return => {
 	if (context === null || suggestion === undefined)
 		return { model: { ...model, promql: { ...promql, completion: null } } }
 	const query = promql.draft.query
-	const next = Str.slice(0, context.from)(query) + suggestion.insert + Str.slice(promql.caret)(query)
+	const next =
+		Str.slice(0, context.from)(query) +
+		suggestion.insert +
+		Str.slice(replaceEnd(query, promql.caret, context))(query)
 	const caret = context.from + suggestion.insert.length
 	const seq = promql.parseSeq + 1
 	return withPromql(
@@ -232,18 +271,14 @@ const promqlEditorStep = (model: Model, promql: PromqlState, message: PromqlMess
 		case "CompletedFetchPromqlDiscovery": {
 			// A failed read completes nothing rather than retrying on every keystroke.
 			const values = Result.isSuccess(message.result) ? message.result.success : []
-			return {
-				model: {
-					...model,
-					promql: {
-						...promql,
-						discovery: {
-							...promql.discovery,
-							entries: Rec.set(promql.discovery.entries, message.key, values),
-						},
-					},
+			// A full page of metrics may send the typed prefix for the names past it.
+			return withPromql(model, {
+				...promql,
+				discovery: {
+					...promql.discovery,
+					entries: Rec.set(promql.discovery.entries, message.key, values),
 				},
-			}
+			})
 		}
 		default:
 			return { model }

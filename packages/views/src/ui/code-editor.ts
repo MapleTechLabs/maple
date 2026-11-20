@@ -25,7 +25,7 @@ export type CodeEditorOptions<M> = Readonly<{
 	value: string
 	tokens: ReadonlyArray<CodeToken>
 	placeholder?: string
-	/** `tall` is the SQL editor's 200px, resizable; `auto` grows with the text from 8rem. */
+	/** Both grow with the text, so the layers never scroll apart: `tall` from 200px, scrolling as one past 60vh; `auto` from 8rem. */
 	size?: "tall" | "auto"
 	describedBy?: string
 	/** The span `[from, to)` a parse error points at, underlined; `isInvalid` without one. */
@@ -226,13 +226,12 @@ export const codeEditor = <M>(h: HtmlBuilder<M>, options: CodeEditorOptions<M>):
 			cn(
 				"relative block w-full bg-transparent text-transparent caret-foreground placeholder:text-foreground-subtle border-border outline-none focus:ring-1 focus:ring-foreground/20 aria-invalid:border-destructive",
 				SURFACE,
-				options.size === "auto"
-					? "min-h-32 resize-none field-sizing-content"
-					: "min-h-[200px] resize-y",
+				"resize-none field-sizing-content",
+				options.size === "auto" ? "min-h-32" : "min-h-[200px]",
 			),
 		),
 	]
-	return h.div(
+	const editor = h.div(
 		[h.Class("relative w-full text-xs font-mono leading-5"), h.DataAttribute("slot", "code-editor")],
 		[
 			highlighted(h, options),
@@ -242,4 +241,8 @@ export const codeEditor = <M>(h: HtmlBuilder<M>, options: CodeEditorOptions<M>):
 				: [suggestionLayer(h, options, completion)]),
 		],
 	)
+	// One scrolling surface for both layers; the auto editor never needs one, so its list is not clipped.
+	return options.size === "auto"
+		? editor
+		: h.div([h.Class("max-h-[60vh] w-full overflow-y-auto")], [editor])
 }

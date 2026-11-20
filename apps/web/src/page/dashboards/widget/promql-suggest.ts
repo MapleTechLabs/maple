@@ -1,3 +1,4 @@
+import { replaceWith } from "@maple/strings"
 import { Array as Arr, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import { AGGREGATIONS, FUNCTION_ENTRIES, KEYWORDS } from "./promql-docs"
 import type { PromqlCompletionContext } from "./promql-complete"
@@ -16,9 +17,24 @@ export type PromqlDiscovery = typeof PromqlDiscovery.Type
 
 export const EMPTY_DISCOVERY: PromqlDiscovery = { entries: {}, requested: [] }
 
+/** How many names one read returns; a full page means there may be more past it. */
+export const DISCOVERY_PAGE = 500
+
+/** A value as it goes inside a string with that quote, or null when a raw string cannot hold it. */
+const escapedFor = (value: string, quote: string): string | null =>
+	quote === "`"
+		? Str.includes("`")(value)
+			? null
+			: value
+		: replaceWith(value, quote === "'" ? /[\\'\n]/g : /[\\"\n]/g, (match) =>
+				match === "\n" ? "\\n" : `\\${match}`,
+			)
+
 /** A value as a double-quoted PromQL string. */
-const quoted = (value: string): string =>
-	`"${Str.replaceAll('"', '\\"')(Str.replaceAll("\\", "\\\\")(value))}"`
+const quoted = (value: string): string => `"${escapedFor(value, '"') ?? value}"`
+
+const METRIC_NAME = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/
+const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
 export const discoveryKey = (request: DiscoveryRequest): string =>
 	`${request.label ?? ""}|${request.match ?? ""}`
@@ -26,21 +42,40 @@ export const discoveryKey = (request: DiscoveryRequest): string =>
 const selectorOf = (metric: string | null): string | undefined =>
 	metric === null ? undefined : `{__name__=${quoted(metric)}}`
 
-/** The read a context completes from, or null when the language alone answers it. */
-export const discoveryRequestFor = (context: PromqlCompletionContext): DiscoveryRequest | null => {
-	const metricMatch = (metric: string | null) => {
-		const match = selectorOf(metric)
-		return match === undefined ? {} : { match }
-	}
+const metricMatch = (metric: string | null): DiscoveryRequest => {
+	const match = selectorOf(metric)
+	return match === undefined ? {} : { match }
+}
+
+/**
+ * The reads a context completes from (none when the language alone answers it). Metric names come
+ * as one page; when that page is full, the typed prefix asks the server for the names it narrows to.
+ */
+export const discoveryRequestsFor = (
+	context: PromqlCompletionContext,
+	discovery: PromqlDiscovery,
+): ReadonlyArray<DiscoveryRequest> => {
 	switch (context.kind) {
-		case "expression":
-			return { label: "__name__" }
+		case "expression": {
+			const page: DiscoveryRequest = { label: "__name__" }
+			const listed = Option.getOrElse(Rec.get(discovery.entries, discoveryKey(page)), () => [])
+			const prefix = context.prefix
+			return listed.length < DISCOVERY_PAGE || prefix.length < 2 || !METRIC_NAME.test(prefix)
+				? [page]
+				: [
+						page,
+						{
+							label: "__name__",
+							match: `{__name__=~${quoted(`${Str.replaceAll(".", "\\.")(prefix)}.*`)}}`,
+						},
+					]
+		}
 		case "labelName":
-			return metricMatch(context.metric)
+			return [metricMatch(context.metric)]
 		case "labelValue":
-			return { label: context.label, ...metricMatch(context.metric) }
+			return [{ label: context.label, ...metricMatch(context.metric) }]
 		default:
-			return null
+			return []
 	}
 }
 
@@ -79,7 +114,8 @@ const ranked = (items: ReadonlyArray<Suggestion>, prefix: string): ReadonlyArray
 	const needle = Str.toLowerCase(prefix)
 	const scored = Arr.flatMap(items, (item) => {
 		const name = Str.toLowerCase(item.label)
-		if (name === needle) return []
+		// What is typed already offers nothing, unless the pick adds to it (`rate` gives `rate(`).
+		if (item.insert === prefix) return []
 		const rank = Str.startsWith(needle)(name) ? 0 : Str.includes(needle)(name) ? 1 : -1
 		return rank === -1 ? [] : [[rank, item] as const]
 	})
@@ -97,6 +133,10 @@ const ranked = (items: ReadonlyArray<Suggestion>, prefix: string): ReadonlyArray
 
 const named = (kind: SuggestionKind, names: ReadonlyArray<string>): ReadonlyArray<Suggestion> =>
 	Arr.map(names, (name) => ({ label: name, insert: name, kind }))
+
+/** A discovered name as PromQL writes it: bare when it is an identifier, else quoted (UTF-8 names). */
+const metricInsert = (name: string): string => (METRIC_NAME.test(name) ? name : `{${quoted(name)}}`)
+const labelInsert = (name: string): string => (LABEL_NAME.test(name) ? name : quoted(name))
 
 const variablesOf = (variables: ReadonlyArray<string>): ReadonlyArray<Suggestion> => [
 	...Arr.map(BUILTIN_VARIABLES, ([name, doc]) => ({
@@ -119,14 +159,23 @@ export const suggestionsFor = (
 	discovery: PromqlDiscovery,
 	variables: ReadonlyArray<string>,
 ): ReadonlyArray<Suggestion> => {
-	const request = discoveryRequestFor(context)
-	const found =
-		request === null ? [] : Option.getOrElse(Rec.get(discovery.entries, discoveryKey(request)), () => [])
+	const found = Arr.dedupe(
+		Arr.flatMap(discoveryRequestsFor(context, discovery), (request) =>
+			Option.getOrElse(
+				Rec.get(discovery.entries, discoveryKey(request)),
+				(): ReadonlyArray<string> => [],
+			),
+		),
+	)
 	switch (context.kind) {
 		case "expression":
 			return ranked(
 				[
-					...named("metric", found),
+					...Arr.map(found, (name) => ({
+						label: name,
+						insert: metricInsert(name),
+						kind: "metric" as const,
+					})),
 					...Arr.map(AGGREGATIONS, ([name, detail, doc]) => ({
 						label: name,
 						insert: name,
@@ -156,19 +205,18 @@ export const suggestionsFor = (
 			)
 		case "labelName":
 			return ranked(
-				named(
-					"label",
+				Arr.map(
 					Arr.filter(found, (name) => name !== "__name__"),
+					(name) => ({ label: name, insert: labelInsert(name), kind: "label" as const }),
 				),
 				context.prefix,
 			)
 		case "labelValue":
 			return ranked(
-				Arr.map(found, (value) => ({
-					label: value,
-					insert: context.isQuoted ? value : quoted(value),
-					kind: "value" as const,
-				})),
+				Arr.flatMap(found, (value) => {
+					const insert = context.quote === null ? quoted(value) : escapedFor(value, context.quote)
+					return insert === null ? [] : [{ label: value, insert, kind: "value" as const }]
+				}),
 				context.prefix,
 			)
 		case "duration":
