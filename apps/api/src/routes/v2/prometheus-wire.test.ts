@@ -1,6 +1,22 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, String as Str } from "effect"
-import { formatValue, parseStep, parseTime } from "./prometheus-wire"
+import type { QueryResult } from "@maple/promql"
+import {
+	checkResultSize,
+	formatValue,
+	MAX_RESPONSE_SAMPLES,
+	parseStep,
+	parseTime,
+	parseTimeout,
+} from "./prometheus-wire"
+
+const matrix = (series: number, points: number): QueryResult => ({
+	resultType: "matrix",
+	result: Array.from({ length: series }, (_, i) => ({
+		labels: { i: String(i) },
+		points: Array.from({ length: points }, (_, t) => ({ t: t * 1000, v: 1 })),
+	})),
+})
 
 describe("Prometheus wire format", () => {
 	it("formats floats as Go's FormatFloat(v, 'f', -1, 64)", () => {
@@ -42,6 +58,25 @@ describe("Prometheus wire format", () => {
 			expect((yield* Effect.flip(parseTime("time", "1900-02-29T00:00:00Z"))).message).toMatch(
 				/cannot parse/,
 			)
+		}),
+	)
+
+	it.effect("refuses a result past the sample cap before encoding it, counting points across series", () =>
+		Effect.gen(function* () {
+			const fits = matrix(50, MAX_RESPONSE_SAMPLES / 50)
+			expect(yield* checkResultSize(fits)).toBe(fits)
+			const over = yield* Effect.flip(checkResultSize(matrix(51, MAX_RESPONSE_SAMPLES / 50)))
+			expect(over._tag).toBe("@maple/backend/promql/PromqlExecutionError")
+			expect(over.message).toMatch(/result too large.*larger step/)
+		}),
+	)
+
+	it.effect("parses a timeout as a positive duration or float seconds", () =>
+		Effect.gen(function* () {
+			expect(yield* parseTimeout("30s")).toBe(30_000)
+			expect(yield* parseTimeout("1.5")).toBe(1500)
+			expect((yield* Effect.flip(parseTimeout("0"))).message).toMatch(/"timeout"/)
+			expect((yield* Effect.flip(parseTimeout("soon"))).message).toMatch(/"timeout"/)
 		}),
 	)
 })
