@@ -284,6 +284,50 @@ describe("widget editor over a PromQL widget", () => {
 		expect(typed.model.promql?.draft.query).toBe("rate(http_server_errors_total[5m])")
 	})
 
+	test("a pick stops at a quoted value's unescaped quote and at a subquery's step", () => {
+		const value = runAll(opened().model, [
+			Message.ChangedPromql({ value: 'up{job="ap\\"old"}' }),
+			Message.GotPromqlCaret({ caret: 10, opens: true }),
+			Message.CompletedFetchPromqlDiscovery({
+				key: 'job|{__name__="up"}',
+				result: Result.succeed(["api"]),
+			}),
+			Message.PressedPromqlKey({ key: "Enter" }),
+		])
+		expect(value.model.promql?.draft.query).toBe('up{job="api"}')
+		const duration = runAll(opened().model, [
+			Message.ChangedPromql({ value: "max_over_time(up[5m:1m])" }),
+			Message.GotPromqlCaret({ caret: 17, opens: true }),
+			Message.PressedPromqlKey({ key: "ArrowDown" }),
+			Message.PressedPromqlKey({ key: "Enter" }),
+		])
+		expect(duration.model.promql?.draft.query).toBe("max_over_time(up[$__interval:1m])")
+	})
+
+	test("with a full page of metrics, the typed prefix is asked only once typing pauses", () => {
+		const fetches = (step: Step) =>
+			Arr.map(
+				Arr.filter(step.commands, ({ name }) => name === FetchPromqlDiscovery.name),
+				({ args }) => args,
+			)
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: "zeb" }),
+			Message.GotPromqlCaret({ caret: 3, opens: true }),
+			Message.CompletedFetchPromqlDiscovery({
+				key: "__name__|",
+				result: Result.succeed(Arr.makeBy(500, (i) => `metric_${i}`)),
+			}),
+			Message.ChangedPromql({ value: "zebr" }),
+			Message.GotPromqlCaret({ caret: 4, opens: true }),
+		])
+		expect(fetches(typed)).toEqual([{ key: "__name__|", label: "__name__" }])
+		const seq = typed.model.promql?.parseSeq ?? 0
+		const paused = runAll(typed.model, [Message.ElapsedPromqlParseDelay({ seq })])
+		expect(fetches(paused)).toEqual([
+			{ key: '__name__|{__name__=~"zebr.*"}', label: "__name__", match: '{__name__=~"zebr.*"}' },
+		])
+	})
+
 	test("the Builder tab previews a query set again", () => {
 		const builder = pageUpdate(
 			opened().model,

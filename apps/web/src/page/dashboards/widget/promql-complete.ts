@@ -88,8 +88,30 @@ const framesOf = (tokens: ReadonlyArray<PromqlToken>): ReadonlyArray<Frame> => {
 const isClosedString = (text: string): boolean =>
 	text.length > 1 && Str.endsWith(text[0] ?? '"')(text) && !Str.endsWith(`\\${text[0] ?? ""}`)(text)
 
-/** A closed string's text without its quotes and escapes. */
-const unquote = (text: string): string => Str.replace(/\\(.)/g, "$1")(Str.slice(1, -1)(text))
+const ESCAPES = new Map([
+	["n", "\n"],
+	["t", "\t"],
+	["r", "\r"],
+	["a", "\u0007"],
+	["b", "\b"],
+	["f", "\f"],
+	["v", "\v"],
+])
+const ESCAPE = /\\(?:u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|x([0-9a-fA-F]{2})|([0-7]{3})|(.))/g
+
+/** A closed string's text without its quotes, its escapes decoded as PromQL reads them; raw in backticks. */
+const unquote = (text: string): string => {
+	const inner = Str.slice(1, -1)(text)
+	return text[0] === "`"
+		? inner
+		: replaceWith(inner, ESCAPE, (_match, u4, u8, hex, octal, char) => {
+				const code = u4 ?? u8 ?? hex
+				if (code !== undefined) return String.fromCodePoint(Number.parseInt(code, 16))
+				if (octal !== undefined) return String.fromCodePoint(Number.parseInt(octal, 8))
+				const literal = char ?? ""
+				return ESCAPES.get(literal) ?? literal
+			})
+}
 
 /**
  * The one metric the query selects, or null when it selects none or several: a `by (...)` list is

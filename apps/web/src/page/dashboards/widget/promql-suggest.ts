@@ -49,18 +49,23 @@ const metricMatch = (metric: string | null): DiscoveryRequest => {
 
 /**
  * The reads a context completes from (none when the language alone answers it). Metric names come
- * as one page; when that page is full, the typed prefix asks the server for the names it narrows to.
+ * as one page; when that page is full, the typed prefix asks the server for the names it narrows to,
+ * but only once typing has paused (`isSettled`), so a long name is not one read per keystroke.
  */
 export const discoveryRequestsFor = (
 	context: PromqlCompletionContext,
 	discovery: PromqlDiscovery,
+	isSettled = true,
 ): ReadonlyArray<DiscoveryRequest> => {
 	switch (context.kind) {
 		case "expression": {
 			const page: DiscoveryRequest = { label: "__name__" }
 			const listed = Option.getOrElse(Rec.get(discovery.entries, discoveryKey(page)), () => [])
 			const prefix = context.prefix
-			return listed.length < DISCOVERY_PAGE || prefix.length < 2 || !METRIC_NAME.test(prefix)
+			return !isSettled ||
+				listed.length < DISCOVERY_PAGE ||
+				prefix.length < 2 ||
+				!METRIC_NAME.test(prefix)
 				? [page]
 				: [
 						page,
@@ -73,7 +78,10 @@ export const discoveryRequestsFor = (
 		case "labelName":
 			return [metricMatch(context.metric)]
 		case "labelValue":
-			return [{ label: context.label, ...metricMatch(context.metric) }]
+			// The server reads values of identifier labels only; a quoted UTF-8 label completes nothing.
+			return LABEL_NAME.test(context.label)
+				? [{ label: context.label, ...metricMatch(context.metric) }]
+				: []
 		default:
 			return []
 	}

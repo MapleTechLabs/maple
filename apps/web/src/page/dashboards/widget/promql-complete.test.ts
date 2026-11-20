@@ -47,6 +47,7 @@ describe("completionContextAt", () => {
 			label: "service.name",
 			metric: null,
 		})
+		expect(at('{"http\\u002eserver", |')).toMatchObject({ kind: "labelName", metric: "http.server" })
 		expect(at('{"http.server.duration", |')).toMatchObject({
 			kind: "labelName",
 			metric: "http.server.duration",

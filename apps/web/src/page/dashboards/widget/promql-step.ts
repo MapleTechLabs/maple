@@ -132,9 +132,12 @@ export const promqlVariablesOf = (model: Model): ReadonlyArray<string> =>
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"])
 
 /** The discovery read the open list needs, asked once per editor session. */
-const askDiscovery = (promql: PromqlState): Readonly<{ promql: PromqlState; commands: Commands }> => {
+const askDiscovery = (
+	promql: PromqlState,
+	isSettled: boolean,
+): Readonly<{ promql: PromqlState; commands: Commands }> => {
 	const context = promqlContextOf(promql)
-	const requests = context === null ? [] : discoveryRequestsFor(context, promql.discovery)
+	const requests = context === null ? [] : discoveryRequestsFor(context, promql.discovery, isSettled)
 	const missing = Arr.filter(
 		requests,
 		(request) => !Arr.contains(promql.discovery.requested, discoveryKey(request)),
@@ -154,26 +157,35 @@ const askDiscovery = (promql: PromqlState): Readonly<{ promql: PromqlState; comm
 }
 
 const NAME_TAIL = /^[A-Za-z0-9_:.]*/
+// A duration stops before a subquery's `:` step.
+const DURATION_TAIL = /^[A-Za-z0-9_]*/
+const QUOTED_TAIL = { '"': /^(?:\\.|[^\\"\n])*/, "'": /^(?:\\.|[^\\'\n])*/, "`": /^[^`]*/ }
 
 /** Where a pick's replacement ends: through the rest of the word (or quoted value) under the caret. */
 const replaceEnd = (query: string, caret: number, context: PromqlCompletionContext): number => {
 	const after = Str.slice(caret)(query)
-	if (context.kind === "labelValue" && context.quote !== null) {
-		const close = Str.indexOf(context.quote)(after)
-		const newline = Str.indexOf("\n")(after)
-		return (
-			caret +
-			Math.min(
-				Option.getOrElse(close, () => after.length),
-				Option.getOrElse(newline, () => after.length),
-			)
-		)
-	}
-	return caret + (NAME_TAIL.exec(after)?.[0].length ?? 0)
+	// A quoted value runs to its first unescaped quote; an escaped one is part of the value.
+	const tail =
+		context.kind === "labelValue" && context.quote !== null
+			? context.quote === "'"
+				? QUOTED_TAIL["'"]
+				: context.quote === "`"
+					? QUOTED_TAIL["`"]
+					: QUOTED_TAIL['"']
+			: context.kind === "duration"
+				? DURATION_TAIL
+				: NAME_TAIL
+	return caret + Option.match(Str.match(tail)(after), { onNone: () => 0, onSome: ([text]) => text.length })
 }
 
-const withPromql = (model: Model, promql: PromqlState, commands: Commands = []): Return => {
-	const asked = askDiscovery(promql)
+/** The reads the open list needs; `isSettled` (typing paused) adds the narrowed metric prefix. */
+const withPromql = (
+	model: Model,
+	promql: PromqlState,
+	commands: Commands = [],
+	isSettled = false,
+): Return => {
+	const asked = askDiscovery(promql, isSettled)
 	return { model: { ...model, promql: asked.promql }, commands: [...commands, ...asked.commands] }
 }
 
@@ -242,12 +254,7 @@ const promqlEditorStep = (model: Model, promql: PromqlState, message: PromqlMess
 		case "ElapsedPromqlParseDelay":
 			return message.seq !== promql.parseSeq
 				? { model }
-				: {
-						model: {
-							...model,
-							promql: { ...promql, parseError: promqlParseError(promql.draft.query) },
-						},
-					}
+				: withPromql(model, { ...promql, parseError: promqlParseError(promql.draft.query) }, [], true)
 		case "GotPromqlCaret": {
 			const isOpen = message.opens || promql.completion !== null
 			return withPromql(model, {
