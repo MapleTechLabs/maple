@@ -72,10 +72,11 @@ const toFleetError = (error: VendorHttp.VendorHttpError): FleetApiError => {
 				...status,
 			})
 		default:
-			// No status: the request never got an answer (DNS, TLS, refused connection).
-			return error.status === undefined
+			// No status: the request never got an answer (DNS, TLS, refused connection). Cloudflare
+			// answers 52x/530 itself when the host does not resolve or its origin does not respond.
+			return error.status === undefined || (error.status >= 520 && error.status <= 530)
 				? new FleetApiError({
-						message: "Maple could not reach the Fleet server.",
+						message: "Maple could not reach this address. Check the Fleet URL.",
 						kind: "unreachable",
 					})
 				: new FleetApiError({

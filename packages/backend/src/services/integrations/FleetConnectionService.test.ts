@@ -3,6 +3,7 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { Array as Arr, Effect, Layer, Order, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { FleetConnectionService } from "./FleetConnectionService"
 import { FAKE_FLEET_TOKEN, type FakeFleet, fakeFleetDeps, makeFakeFleet } from "./fleet/fake-fleet"
 
@@ -106,6 +107,29 @@ describe("FleetConnectionService", () => {
 			}),
 		)
 	})
+
+	it.effect(
+		"says the address could not be reached when Cloudflare answers for a host that does not resolve",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = makeFakeFleet({ status: 530 })
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					// 5xx answers are retried with back-off first.
+					const unreachable = yield* VendorFake.elapsing(
+						Effect.flip(connect("https://fleet.invalid")),
+					)
+					assert.strictEqual(
+						unreachable.message,
+						"Maple could not reach this address. Check the Fleet URL.",
+					)
+					assert.isUndefined(yield* stored(testDb))
+				}),
+			)
+		},
+	)
 
 	it.effect("refuses plain http and internal addresses before sending the token anywhere", () => {
 		const testDb = createTestDb(trackedDbs)
