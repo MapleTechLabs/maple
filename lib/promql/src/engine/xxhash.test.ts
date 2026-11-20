@@ -21,4 +21,12 @@ describe("xxhash64", () => {
 		const wide = new Uint8Array([1, 0x6b, 255, 44, 1, 0, ...new TextEncoder().encode(longer)])
 		expect(labelsHash({ k: longer })).toBe(xxhash64(wide))
 	})
+
+	it("orders names by code point, as Go compares UTF-8 strings", () => {
+		const bmp = "\uE000"
+		const astral = "\u{10000}"
+		const encode = (text: string) => [...new TextEncoder().encode(text)]
+		const bytes = new Uint8Array([3, ...encode(bmp), 1, 0x31, 4, ...encode(astral), 1, 0x32])
+		expect(labelsHash({ [astral]: "2", [bmp]: "1" })).toBe(xxhash64(bytes))
+	})
 })

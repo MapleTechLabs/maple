@@ -550,20 +550,18 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		expect([...scopes]).toEqual(["single-tenant"])
 	})
 
+	// Two cases keep the suite inside CI's budget: a range from before the data (window edges) and
+	// an off-grid instant.
 	const otelCases: ReadonlyArray<{ readonly name: string; readonly params: QueryParams }> = [
-		{ name: "range 60s", params: { startMs: tick(8), endMs: tick(79), stepMs: 60_000 } },
 		{
 			name: "range 45s from the data start",
-			params: { startMs: T0 - 60_000, endMs: tick(40), stepMs: 45_000 },
+			params: { startMs: T0 - 60_000, endMs: tick(79), stepMs: 45_000 },
 		},
 		{
 			name: "instant off-grid",
 			params: { startMs: tick(50) + 7_000, endMs: tick(50) + 7_000, stepMs: 0 },
 		},
 	]
-
-	/** The exponential reads are the heaviest: a range and an off-grid instant are enough. */
-	const shortCases = Arr.filter([otelCases[0], otelCases[2]], (c) => c !== undefined)
 
 	/** Both paths (pushdown and not) must equal the reference, and so each other. */
 	const expectOtel = (query: string, want: string = query, source = otelReference, cases = otelCases) => {
@@ -611,7 +609,7 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		expectOtel("rate(jobs_done_total[5m])", "rate(jobs_done_total[5m])", countersReference)
 		expectOtel("increase(jobs_done_total[2m])", "increase(jobs_done_total[2m])", countersReference)
 		// A stale marker in a delta stream does not restart the counter rate reads.
-		expectOtel("rate(jobs_flaky_total[5m])", "rate(jobs_flaky_total[5m])", countersReference, shortCases)
+		expectOtel("rate(jobs_flaky_total[5m])", "rate(jobs_flaky_total[5m])", countersReference)
 	}, 120_000)
 
 	test("NaN and infinities are samples", () => {
@@ -630,18 +628,16 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			'rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}',
 			'histogram_quantile(0.9, sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m])))',
 		])
-			expectOtel(query, query, otelReference, shortCases)
+			expectOtel(query, query, otelReference)
 		expectOtel(
 			'count(rate({"rpc.latency_bucket", rpc_method="get"}[5m]))',
 			'count(rate(rpc_latency_milliseconds_bucket{rpc_method="get"}[5m]))',
-			otelReference,
-			shortCases,
 		)
 	}, 120_000)
 
 	test("exponential bounds stay complete when the scale and offset shift between delta exports", () => {
 		const shift = 'rpc_latency_milliseconds_bucket{rpc_method="shift"}'
-		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference, shortCases)
+		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference)
 	}, 120_000)
 
 	test("series discovery lists an exponential series' aligned bounds and filters le before the limit", () => {

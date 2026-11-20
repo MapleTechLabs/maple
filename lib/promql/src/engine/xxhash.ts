@@ -64,11 +64,22 @@ const sized = (text: string): ReadonlyArray<number> => {
 	return [...size, ...bytes]
 }
 
+const compareCodePoints = (a: string, b: string): number => {
+	const x = [...a]
+	const y = [...b]
+	for (let i = 0; i < Math.min(x.length, y.length); i++) {
+		const d = (x[i]?.codePointAt(0) ?? 0) - (y[i]?.codePointAt(0) ?? 0)
+		if (d !== 0) return d
+	}
+	return x.length - y.length
+}
+
 /**
  * Prometheus' labels.Hash in its default (stringlabels) build: XXH64 of the labels sorted by name,
  * each name and value written as its length then its bytes.
  */
 export const labelsHash = (labels: Readonly<Record<string, string>>): bigint => {
-	const names = Object.keys(labels).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+	// Go compares strings as UTF-8 bytes, which is code point order; JS `<` compares UTF-16 units.
+	const names = Object.keys(labels).sort((a, b) => compareCodePoints(a, b))
 	return xxhash64(new Uint8Array(names.flatMap((name) => [...sized(name), ...sized(labels[name] ?? "")])))
 }
