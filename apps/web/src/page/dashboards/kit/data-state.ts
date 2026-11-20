@@ -5,6 +5,7 @@ import {
 	dataSourceTransform,
 	isEmptyEnvelope,
 	type ReadyData,
+	warningsOf,
 	toReadyData,
 	type WidgetFailure,
 	type WidgetGate,
@@ -16,11 +17,18 @@ export type WidgetError = Readonly<{
 	title: string | null
 	message: string | null
 	kind: "decode" | "runtime" | "range" | "empty" | "config" | null
+	/** Why an empty answer is empty (a PromQL tile's nearest-name hints). */
+	warnings?: ReadonlyArray<string>
 }>
 
 export type WidgetDataState =
 	| { readonly _tag: "Loading" }
-	| { readonly _tag: "Ready"; readonly data: ReadyData | null }
+	| {
+			readonly _tag: "Ready"
+			readonly data: ReadyData | null
+			/** What the answer warned about beside its data, drawn as a header indicator. */
+			readonly warnings?: ReadonlyArray<string>
+	  }
 	| ({ readonly _tag: "Error" } & WidgetError)
 
 const LOADING: WidgetDataState = { _tag: "Loading" }
@@ -72,10 +80,13 @@ export const dataStateOf = (
 	}
 }
 
-const readyOf = (raw: unknown, widget: Widget): WidgetDataState =>
-	isEmptyEnvelope(raw)
-		? { _tag: "Error", title: null, message: NO_DATA, kind: "empty" }
-		: { _tag: "Ready", data: toReadyData(raw, dataSourceTransform(widget.dataSource)) }
+const readyOf = (raw: unknown, widget: Widget): WidgetDataState => {
+	const warnings = warningsOf(raw)
+	const warned = warnings.length === 0 ? undefined : { warnings }
+	return isEmptyEnvelope(raw)
+		? { _tag: "Error", title: null, message: NO_DATA, kind: "empty", ...warned }
+		: { _tag: "Ready", data: toReadyData(raw, dataSourceTransform(widget.dataSource)), ...warned }
+}
 
 /** States by answer and data source, so a re-render over the same answer reuses its rows. */
 const readyCache = new WeakMap<object, WeakMap<object, WidgetDataState>>()

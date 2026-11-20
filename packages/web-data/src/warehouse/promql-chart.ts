@@ -52,5 +52,7 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 		}),
 	)
 
-	return { data: result.data, meta: result.meta }
+	// `warnings` beside `data`, as the share and v2 widget data envelopes carry them.
+	const warnings = result.meta.warnings ?? []
+	return { data: result.data, meta: result.meta, ...(warnings.length === 0 ? undefined : { warnings }) }
 })

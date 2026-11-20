@@ -292,6 +292,12 @@ const isRow = (value: unknown): value is Row => typeof value === "object" && val
 const rowsOf = (value: unknown): ReadonlyArray<Row> | null =>
 	Arr.isArray(value) ? Arr.filter(value, isRow) : null
 
+/** The answer's Prometheus-style `warnings` (PromQL tiles): why it is empty, or what it left out. */
+export const warningsOf = (raw: unknown): ReadonlyArray<string> =>
+	isRow(raw) && Arr.isArray(raw.warnings)
+		? Arr.filter(raw.warnings, (warning): warning is string => typeof warning === "string")
+		: []
+
 /** A successful answer that carried no rows. */
 export const isEmptyEnvelope = (raw: unknown): boolean =>
 	isRow(raw) && "data" in raw && Arr.isArray(raw.data) && raw.data.length === 0
