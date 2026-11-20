@@ -87,21 +87,21 @@ To find a metric's name, open Grafana's **Metrics browser**, or list them all wi
 
 All paths are under `/v2/metrics/prometheus/api/v1/` and follow Prometheus' parameters and response format. POST takes an `application/x-www-form-urlencoded` body, as Grafana sends it.
 
-| Endpoint              | Methods   | Notes                                                               |
-| --------------------- | --------- | ------------------------------------------------------------------- |
-| `query`               | GET, POST | Instant query.                                                      |
-| `query_range`         | GET, POST | Range query.                                                        |
-| `series`              | GET, POST | Needs at least one `match[]`.                                       |
-| `labels`              | GET, POST |                                                                     |
-| `label/<name>/values` | GET       | `__name__` lists metric names.                                      |
-| `metadata`            | GET       | Type, help and unit from the metric catalog.                        |
-| `format_query`        | GET, POST | Pretty-prints a PromQL expression.                                  |
-| `query_exemplars`     | GET, POST | Always an empty list.                                               |
-| `rules`               | GET       | Always an empty list: Maple evaluates no Prometheus rules.          |
-| `alerts`              | GET       | Always an empty list. Use [Maple alerts](/docs/alerting/alert-rules) instead.   |
-| `status/buildinfo`    | GET       | Reports Prometheus 3.5.0, so Grafana enables the matching features. |
-| `status/config`       | GET       | An empty configuration.                                             |
-| `status/flags`        | GET       | No flags.                                                           |
+| Endpoint              | Methods   | Notes                                                                         |
+| --------------------- | --------- | ----------------------------------------------------------------------------- |
+| `query`               | GET, POST | Instant query.                                                                |
+| `query_range`         | GET, POST | Range query.                                                                  |
+| `series`              | GET, POST | Needs at least one `match[]`.                                                 |
+| `labels`              | GET, POST |                                                                               |
+| `label/<name>/values` | GET       | `__name__` lists metric names.                                                |
+| `metadata`            | GET       | Type, help and unit from the metric catalog.                                  |
+| `format_query`        | GET, POST | Pretty-prints a PromQL expression.                                            |
+| `query_exemplars`     | GET, POST | Always an empty list.                                                         |
+| `rules`               | GET       | Always an empty list: Maple evaluates no Prometheus rules.                    |
+| `alerts`              | GET       | Always an empty list. Use [Maple alerts](/docs/alerting/alert-rules) instead. |
+| `status/buildinfo`    | GET       | Reports Prometheus 3.5.0, so Grafana enables the matching features.           |
+| `status/config`       | GET       | An empty configuration.                                                       |
+| `status/flags`        | GET       | No flags.                                                                     |
 
 ```bash
 curl -H "Authorization: Bearer $MAPLE_API_KEY" \
@@ -111,20 +111,20 @@ curl -H "Authorization: Bearer $MAPLE_API_KEY" \
 
 ## Limits
 
-| Limit                                   | Value                                                                                                        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Metric retention                        | 90 days. A `query_range` starting earlier is moved forward, in whole steps, to 90 days before `end`.         |
-| Points per series in `query_range`      | 11,000, as in Prometheus. Use a larger `step` for long ranges.                                               |
-| Series per query                        | 10,000                                                                                                       |
-| Samples a query may load                | 5,000,000                                                                                                    |
-| Samples in one response                 | 500,000                                                                                                      |
-| How far back a query may read           | 400 days, counting range selectors, `offset`, `@` and subqueries                                             |
-| Query length                            | 10,000 characters                                                                                            |
-| Selectors per query, `match[]` per call | 20                                                                                                           |
-| Metrics one selector may match          | 100                                                                                                          |
-| Discovery window                        | The last 32 days of the requested range. Without `start` and `end`, the last hour (24 hours for `metadata`). |
-| Discovery results                       | 10,000 names, values or series per call                                                                      |
-| Query time                              | 30 seconds in the metric store, or less with the `timeout` parameter                                         |
+| Limit                                   | Value                                                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Metric retention                        | 90 days. A `query_range` over a longer range is evaluated as asked; steps before the retention have no samples. |
+| Points per series in `query_range`      | 11,000, as in Prometheus. Use a larger `step` for long ranges.                                                  |
+| Series per query                        | 10,000                                                                                                          |
+| Samples a query may load                | 5,000,000                                                                                                       |
+| Samples in one response                 | 500,000                                                                                                         |
+| How far back a query may read           | 400 days, counting range selectors, `offset`, `@` and subqueries                                                |
+| Query length                            | 10,000 characters                                                                                               |
+| Selectors per query, `match[]` per call | 20                                                                                                              |
+| Metrics one selector may match          | 100                                                                                                             |
+| Discovery window                        | The last 32 days of the requested range. Without `start` and `end`, the last hour (24 hours for `metadata`).    |
+| Discovery results                       | 10,000 names, values or series per call                                                                         |
+| Query time                              | 30 seconds in the metric store, or less with the `timeout` parameter                                            |
 
 `labels`, `label/<name>/values` and `series` never fail on a long range: a dashboard set to the last 90 days fills its template variables from the most recent 32 days.
 

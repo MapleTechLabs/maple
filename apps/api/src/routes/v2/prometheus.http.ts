@@ -31,13 +31,9 @@ type Params = typeof PrometheusParams.Type
 export const PROMETHEUS_COMPAT_VERSION = "3.5.0"
 
 const HOUR_MS = 3_600_000
-const DAY_MS = 24 * HOUR_MS
 
 /** Discovery reads at most this far back; a wider dashboard range is narrowed, never refused. */
 const MAX_DISCOVERY_MS = MAX_QUERY_RANGE_SECONDS * 1000
-
-/** The raw metric tables' TTL (`metrics_*` in datasources.ts); a range query reads no further back. */
-const METRIC_RETENTION_MS = 90 * DAY_MS
 
 /** The `timeout` parameter ran out before the query answered. Prometheus' `timeout`. */
 class PrometheusTimeoutError extends Schema.TaggedError<PrometheusTimeoutError>()(
@@ -152,28 +148,6 @@ const parseQuery = (text: string | undefined) =>
 			)
 		: Effect.succeed(text ?? "")
 
-/** `@ start()` resolves against the requested start, so moving the start would change its value. */
-const START_PIN = /@\s*start\s*\(\s*\)/
-
-/**
- * A range start no older than the metric retention, moved forward by whole steps so the answer's
- * timestamps stay on the requested grid. Older samples do not exist, so nothing is lost.
- */
-export const clampRangeStart = (
-	query: string,
-	startMs: number,
-	endMs: number,
-	stepMs: number,
-	nowMs: number,
-): number => {
-	// Retention counts back from now; a future end holds no samples to count from.
-	const earliest = Math.min(endMs, nowMs) - METRIC_RETENTION_MS
-	if (startMs >= earliest || stepMs <= 0 || stepMs >= METRIC_RETENTION_MS || START_PIN.test(query)) {
-		return startMs
-	}
-	return startMs + Math.ceil((earliest - startMs) / stepMs) * stepMs
-}
-
 /** Caps a query at the `timeout` parameter when one is given; Prometheus answers `timeout`. */
 const withTimeout = <A, E, R>(effect: Effect.Effect<A, E, R>, text: string | undefined) =>
 	Effect.gen(function* () {
@@ -237,12 +211,9 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 			const endMs = yield* parseTime("end", params.end ?? "")
 			const stepMs = yield* parseStep(params.step ?? "")
 			const limit = yield* parseLimit(params.limit)
-			const now = yield* Clock.currentTimeMillis
-			const readFromMs = clampRangeStart(query, startMs, endMs, stepMs, now)
-			yield* Effect.annotateCurrentSpan("maple.promql.range_clamped", readFromMs !== startMs)
 			// Range mode even when start equals end: Prometheus answers a one-point matrix.
 			const answer = yield* withTimeout(
-				promql.query(tenant, { query, startMs: readFromMs, endMs, stepMs, instant: false }),
+				promql.query(tenant, { query, startMs, endMs, stepMs, instant: false }),
 				present(params.timeout),
 			)
 			yield* Effect.annotateCurrentSpan({

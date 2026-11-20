@@ -18,7 +18,7 @@ import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQuerySe
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
-import { clampRangeStart, HttpV2PrometheusLive } from "./prometheus.http"
+import { HttpV2PrometheusLive } from "./prometheus.http"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -463,7 +463,7 @@ describe("v2 Prometheus discovery API", () => {
 })
 
 describe("v2 Prometheus API with Grafana's settings", () => {
-	it("narrows a long discovery range and clamps a long range query to retention on its step grid", async () => {
+	it("narrows a long discovery range and evaluates a long range query on its full grid", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["metrics:read"])
 		const ninety = `start=${T - 90 * 86_400}&end=${T}`
@@ -476,15 +476,15 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 			expect(answered.status).toBe(200)
 			expect(answered.body).toMatchObject({ status: "success" })
 		}
+		// Past the 32-day cap of the other v2 endpoints, every requested step is answered.
 		const range = await harness.send(
 			key.secret,
-			`/query_range?query=vector(1)&start=${T - 120 * 86_400 - 3600}&end=${T}&step=1d`,
+			`/query_range?query=vector(1)&start=${T - 120 * 86_400}&end=${T}&step=1d`,
 		)
 		expect(range.status).toBe(200)
 		const values: ReadonlyArray<readonly [number, string]> = range.body.data.result[0].values
-		// 120d + 1h back, stepped by whole days: the first kept point is 89d 23h before the end.
-		expect(values[0]).toEqual([T - 90 * 86_400 + 82_800, "1"])
-		expect(values.length).toBe(90)
+		expect(values[0]).toEqual([T - 120 * 86_400, "1"])
+		expect(values.length).toBe(121)
 		await harness.dispose()
 	})
 
@@ -573,23 +573,5 @@ describe("v2 Prometheus API with Grafana's settings", () => {
 		expect((await harness.sendAs(basic("grafana", metrics.secret), "/v2/metrics/probe")).status).toBe(401)
 		expect((await harness.sendAs(`Bearer ${metrics.secret}`, "/v2/metrics/probe")).status).toBe(200)
 		await harness.dispose()
-	})
-})
-
-describe("clampRangeStart", () => {
-	const DAY = 86_400_000
-	const end = T * 1000
-
-	it("counts retention back from now when end is in the future", () => {
-		// 60 days back to 60 days ahead: every retained day stays.
-		expect(clampRangeStart("up", end - 60 * DAY, end + 60 * DAY, DAY, end)).toBe(end - 60 * DAY)
-		expect(clampRangeStart("up", end - 120 * DAY, end + 60 * DAY, DAY, end)).toBe(end - 90 * DAY)
-	})
-
-	it("keeps the requested start when the query pins a selector to start()", () => {
-		const start = end - 120 * DAY
-		expect(clampRangeStart("memory_bytes @ start() offset -60d", start, end, DAY, end)).toBe(start)
-		expect(clampRangeStart("max_over_time(up[1h:5m] @start( ))", start, end, DAY, end)).toBe(start)
-		expect(clampRangeStart("memory_bytes @ end()", start, end, DAY, end)).toBe(end - 90 * DAY)
 	})
 })
