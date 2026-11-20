@@ -84,6 +84,9 @@ import {
 	unsupportedInRemote,
 } from "./v2-client"
 import { parseTimestampMs, type Range } from "./time"
+import type { Expr } from "@maple/promql"
+import { type PromqlWindow, toPromqlOutput } from "./promql"
+import { localPromqlMetricNames, runLocalPromql } from "./promql-local"
 
 type AttrSource = "traces" | "metrics" | "services"
 type AttrScope = "span" | "resource"
@@ -1020,3 +1023,28 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 
 export const metricSeries = (p: MetricSeriesInput) =>
 	dispatch(localMetricSeries(p), ({ v2 }) => remoteMetricSeries(v2, p), "metrics_timeseries")
+
+/** A parsed PromQL query over its evaluation grid (see `core/promql.ts`). */
+export const promqlQuery = (p: { query: string; expr: Expr; window: PromqlWindow; step?: string }) =>
+	dispatch(
+		Effect.map(runLocalPromql(p.expr, p.window), (result) => toPromqlOutput(p.query, p.window, result)),
+		({ mcp }) =>
+			RemoteMcp.queryPromql(mcp, {
+				query: p.query,
+				range: p.window.range,
+				...(p.step === undefined ? undefined : { step: p.step }),
+				instant: p.window.stepMs === 0,
+			}),
+		"query_promql",
+	)
+
+/** Prometheus metric names with data in the window, sorted. */
+export const promqlMetricNames = (p: { range: Range }) =>
+	dispatch(
+		localPromqlMetricNames({
+			startMs: parseTimestampMs(p.range.startTime) ?? 0,
+			endMs: parseTimestampMs(p.range.endTime) ?? 0,
+		}),
+		({ v2 }) => Remote.promqlMetricNames(v2, p),
+		"promql_metric_names",
+	)

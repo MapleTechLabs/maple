@@ -618,3 +618,15 @@ export const metricTimeseries = (
 				})),
 			),
 	)
+
+/** Prometheus metric names, from the workspace's Prometheus API (`label/__name__/values`). */
+export const promqlMetricNames = (client: MapleV2Client, p: { range: Range }) => {
+	const window = toV2Window(p.range)
+	return Effect.map(
+		client.prometheus.labelValues({
+			params: { name: "__name__" },
+			query: { start: window.start_time, end: window.end_time },
+		}),
+		(response) => response.data,
+	)
+}

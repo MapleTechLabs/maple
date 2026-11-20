@@ -6,6 +6,7 @@ import { errors, error } from "./commands/errors"
 import { logs, logPatterns } from "./commands/logs"
 import { attributes } from "./commands/attributes"
 import { metrics, query } from "./commands/data"
+import { promql } from "./commands/promql"
 import { timeseries, breakdown, compare, logDiff } from "./commands/analytics"
 import { auth, login, logout, whoami } from "./commands/auth"
 import { use } from "./commands/config"
@@ -68,6 +69,7 @@ export const cli = Command.make("maple").pipe(
 		logDiff,
 		attributes,
 		metrics,
+		promql,
 		timeseries,
 		breakdown,
 		compare,
