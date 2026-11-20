@@ -248,6 +248,33 @@ describe("widget editor over a PromQL widget", () => {
 		expect(Arr.map(picked.commands ?? [], ({ name }) => name)).toContain(FocusPromqlCaret.name)
 	})
 
+	test("an open suggestion list hides the half-typed query's parse error, which still blocks Apply", () => {
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: "rate(http_" }),
+			Message.GotPromqlCaret({ caret: 10, opens: true }),
+			Message.CompletedFetchPromqlDiscovery({
+				key: "__name__|",
+				result: Result.succeed(["http_requests_total"]),
+			}),
+		])
+		const seq = typed.model.promql?.parseSeq ?? 0
+		const parsed = pageUpdate(typed.model, Message.ElapsedPromqlParseDelay({ seq })).model
+		expect(parsed.promql?.parseError).not.toBeNull()
+		expect(pageUpdate(parsed, Message.ClickedApply()).commands ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			...mounted(parsed),
+			expectView(text("http_requests_total")).toExist(),
+			expectView(text(/unexpected end of input/)).not.toExist(),
+		)
+		const closed = pageUpdate(parsed, Message.PressedPromqlKey({ key: "Escape" })).model
+		scene(
+			{ update: pageUpdate, view },
+			...mounted(closed),
+			expectView(text(/unexpected end of input/)).toExist(),
+		)
+	})
+
 	test("inside a matcher's quotes it asks for that label's values on that metric", () => {
 		const typed = runAll(opened().model, [
 			Message.ChangedPromql({ value: 'up{job="' }),

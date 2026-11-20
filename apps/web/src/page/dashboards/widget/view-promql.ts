@@ -55,8 +55,9 @@ const editorKey = (isOpen: boolean) => (key: string, modifiers: KeyboardModifier
 const LIST_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"])
 
 const queryField = (h: H, model: Model, promql: PromqlState, serverError: string | null): Html => {
-	const parseError = promql.parseError
 	const suggestions = promqlSuggestionsOf(promql, promqlVariablesOf(model))
+	// Mid-word with suggestions open, the half-typed query is expected to be incomplete; Apply still checks it.
+	const parseError = promql.completion !== null && suggestions.length > 0 ? null : promql.parseError
 	const isInvalid = parseError !== null || serverError !== null
 	return field(h, { state: { ...IDLE, isInvalid } }, [
 		fieldLabel(h, { ids: QUERY_IDS, state: IDLE }, "PromQL query"),
