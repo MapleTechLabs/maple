@@ -6,7 +6,6 @@ import {
 	type Expr,
 	MAX_POINTS_PER_SERIES,
 	parse,
-	parseDurationMs,
 	type PromqlSyntaxError,
 	type QueryParams,
 	type QueryResult,
@@ -77,10 +76,50 @@ export const parseQuery = (query: string, instant: boolean): Effect.Effect<Expr,
 	return Effect.succeed(parsed.success)
 }
 
-/** A Prometheus duration (`30s`, `1m30s`) or seconds, as a positive whole number of milliseconds. */
+const unitMs = (unit: string | undefined): number => {
+	switch (unit) {
+		case "ms":
+			return 1
+		case "m":
+			return 60_000
+		case "h":
+			return 3_600_000
+		case "d":
+			return 86_400_000
+		case "w":
+			return 604_800_000
+		case "y":
+			return 31_536_000_000
+		default:
+			return 1000
+	}
+}
+const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
+const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
+
+/** Decimal seconds as whole milliseconds, up to float rounding; a real fraction of one is refused. */
+const secondsToMs = (seconds: number): number => {
+	const exact = seconds * 1000
+	const ms = Math.round(exact)
+	return Math.abs(exact - ms) <= 8 * Number.EPSILON * Math.max(1, Math.abs(exact)) ? ms : Number.NaN
+}
+
+/**
+ * A Prometheus duration (`30s`, `1m30s`) or decimal seconds, as a positive whole number of
+ * milliseconds. The hosted `query_promql` reads `step` with these rules, so both modes agree.
+ */
 export const parseStepMs = (raw: string): number | undefined => {
-	const ms = parseDurationMs(Str.trim(raw))
-	return ms !== undefined && Number.isSafeInteger(ms) && ms > 0 ? ms : undefined
+	const text = Str.trim(raw)
+	const ms = DURATION.test(text)
+		? Arr.reduce(
+				Arr.fromIterable(Str.matchAll(DURATION_PART)(text)),
+				0,
+				(total, part) => total + Number(part[1]) * unitMs(part[2]),
+			)
+		: text === ""
+			? Number.NaN
+			: secondsToMs(Number(text))
+	return Number.isSafeInteger(ms) && ms > 0 ? ms : undefined
 }
 
 // Short windows step in seconds too, so a 2-minute spike still gets 60 to 120 points.

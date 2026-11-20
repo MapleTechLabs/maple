@@ -115,6 +115,8 @@ export const promqlNotes = (d: PromqlOutput): ReadonlyArray<string> => [
 
 export const promqlView = (empty: string): View<PromqlOutput> => ({
 	empty,
+	// Labels are data: the timestamp replacer would respell a label named like a time field.
+	raw: true,
 	isEmpty: (d) => d.series.length === 0 && d.stringValue === undefined,
 	notes: promqlNotes,
 	table: (d) => {

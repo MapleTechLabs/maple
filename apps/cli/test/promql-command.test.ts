@@ -11,6 +11,7 @@ import {
 	caretLines,
 	evaluationWindow,
 	parseQuery,
+	parseStepMs,
 	toPromqlOutput,
 	type PromqlOutput,
 } from "../src/core/promql"
@@ -67,6 +68,14 @@ describe("evaluationWindow", () => {
 		const seconds = run(evaluationWindow({ range: RANGE, instant: false, step: "15" }))
 		expect(Exit.isSuccess(duration) && duration.value.stepMs).toBe(90_000)
 		expect(Exit.isSuccess(seconds) && seconds.value.stepMs).toBe(15_000)
+	})
+
+	test("reads numeric steps as decimal seconds, as the hosted tool does", () => {
+		expect(parseStepMs("060")).toBe(60_000)
+		expect(parseStepMs("1.5")).toBe(1_500)
+		expect(parseStepMs("0.0005")).toBeUndefined()
+		expect(parseStepMs("1h30m")).toBe(5_400_000)
+		expect(parseStepMs("0s")).toBeUndefined()
 	})
 
 	test("evaluates once at the end with --instant", () => {
@@ -206,7 +215,7 @@ const TOOL_OUTPUT: PromqlOutput = {
 	stepSeconds: 60,
 	series: [
 		{
-			labels: { job: "checkout" },
+			labels: { job: "checkout", timestamp: "2026-11-20 00:00:00" },
 			points: [
 				{ t: START_MS, v: 1 },
 				{ t: START_MS + 60_000, v: 3 },
@@ -315,7 +324,9 @@ describe("maple promql against a workspace", () => {
 			"table",
 		])
 		expect(out.code).toBe(0)
-		expect(out.stdout).toContain('{job="checkout"}     3    1    2    3       2  ▁█')
+		expect(out.stdout).toContain(
+			'{job="checkout", timestamp="2026-11-20 00:00:00"}     3    1    2    3       2  ▁█',
+		)
 		expect(lastCall("/mcp")).toMatchObject({
 			method: "tools/call",
 			params: {
