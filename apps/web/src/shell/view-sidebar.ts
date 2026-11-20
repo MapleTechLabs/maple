@@ -445,15 +445,19 @@ export const shellSidebarFooter = (
 		),
 	])
 
-/** `Code Review`'s "Beta" tag. */
-export const navBadge = (h: HtmlBuilder<Message>, label: string): Html =>
-	sidebarMenuBadge(h, [
-		badge(
-			h,
-			{
-				className: "border border-border bg-transparent font-medium text-muted-foreground",
-				variant: "tag",
-			},
-			[label],
-		),
-	])
+/** A nav row's "Beta" or "New" tag; `className` places it (a sub-row centres it). */
+export const navBadge = (h: HtmlBuilder<Message>, label: string, className?: string): Html =>
+	sidebarMenuBadge(
+		h,
+		[
+			badge(
+				h,
+				{
+					className: "border border-border bg-transparent font-medium text-muted-foreground",
+					variant: "tag",
+				},
+				[label],
+			),
+		],
+		className,
+	)
