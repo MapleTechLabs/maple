@@ -43,6 +43,15 @@ export class ClickhousePassword extends Secret<ClickhousePassword>()("CLICKHOUSE
 	consumers: ["api", "ai", "alerting"],
 }) {}
 
+/** The Cloudflare Access service token secret in front of an env-level ClickHouse. */
+export class ClickhouseAccessClientSecret extends Secret<ClickhouseAccessClientSecret>()(
+	"CLICKHOUSE_ACCESS_CLIENT_SECRET",
+	{
+		issuer: "cloudflare-access",
+		consumers: ["api", "ai", "alerting"],
+	},
+) {}
+
 // Session auth
 
 export class MapleRootPassword extends Secret<MapleRootPassword>()("MAPLE_ROOT_PASSWORD", {
