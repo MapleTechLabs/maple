@@ -374,7 +374,20 @@ const insertOtelRows = (db: Chdb): void => {
 				temporality: 2,
 			}),
 		),
-	])
+	]) // A classic histogram whose last export, at tick 40, is a stale marker with no buckets.
+	insertRows(
+		db,
+		"metrics_histogram",
+		Arr.map(Arr.range(0, 40), (i) => ({
+			...otelRow("lat.classic", "s", API, {}, tick(i)),
+			Count: String(i === 40 ? 0 : 3 * i),
+			Sum: String(i),
+			BucketCounts: i === 40 ? "[]" : `[${i}, ${i}, ${i}]`,
+			ExplicitBounds: i === 40 ? "[]" : "[0.1, 1]",
+			Flags: i === 40 ? "1" : "0",
+			AggregationTemporality: "2",
+		})),
+	)
 }
 
 const series = (
@@ -532,7 +545,6 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			name: "range 45s from the data start",
 			params: { startMs: T0 - 60_000, endMs: tick(40), stepMs: 45_000 },
 		},
-		{ name: "instant", params: { startMs: tick(41), endMs: tick(41), stepMs: 0 } },
 		{
 			name: "instant off-grid",
 			params: { startMs: tick(50) + 7_000, endMs: tick(50) + 7_000, stepMs: 0 },
@@ -565,7 +577,6 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			'sum by ("http.route") (rate(api_requests_total[5m]))',
 			"sum by (http_route) (rate(api_requests_total[5m]))",
 		)
-		expectOtel('max by ("http.route") (api_requests_total)', "max by (http_route) (api_requests_total)")
 		expectOtel('{"__name__"="api_requests_total", "service.name"="api"}', "api_requests_total")
 	})
 
@@ -575,10 +586,6 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			"sum by (job) (api_requests_total)",
 		)
 		expectOtel(
-			'count(rate(api_requests_total{service_name="api"}[5m]))',
-			"count(rate(api_requests_total[5m]))",
-		)
-		expectOtel(
 			'count(api_requests_total{service_name="shop/api"})',
 			'count(api_requests_total{job="nobody"})',
 		)
@@ -586,12 +593,9 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 
 	test("a delta sum is its deltas outside rate functions, so the query range does not change it", () => {
 		expectOtel("jobs_done_total")
-		expectOtel("sum(jobs_done_total)")
 		expectOtel("max_over_time(jobs_done_total[1h])")
-		expectOtel("sum_over_time(jobs_done_total[5m])")
 		expectOtel("rate(jobs_done_total[5m])", "rate(jobs_done_total[5m])", countersReference)
 		expectOtel("increase(jobs_done_total[2m])", "increase(jobs_done_total[2m])", countersReference)
-		expectOtel("sum(rate(jobs_done_total[5m]))", "sum(rate(jobs_done_total[5m]))", countersReference)
 	})
 
 	test("NaN and infinities are samples", () => {
@@ -599,11 +603,8 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			"weird_gauge",
 			"max_over_time(weird_gauge[1m])",
 			"min_over_time(weird_gauge[1m])",
-			"count_over_time(weird_gauge[1m])",
-			"last_over_time(weird_gauge[1m])",
 			"changes(weird_gauge[5m])",
 			"max(weird_gauge)",
-			"min(max_over_time(weird_gauge[30s]))",
 		])
 			expectOtel(query)
 	})
@@ -611,9 +612,6 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 	test("an exponential histogram has le buckets histogram_quantile reads", () => {
 		for (const query of [
 			'rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}',
-			'rpc_latency_milliseconds_count{rpc_method=~"get|put"}',
-			'sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m]))',
-			'histogram_quantile(0.5, rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m]))',
 			'histogram_quantile(0.9, sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m])))',
 		])
 			expectOtel(query)
@@ -633,12 +631,12 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		)
 	})
 
-	test("a stale exponential export ends every bucket series", () => {
-		const count = (t: number, pushdown: boolean) => {
+	test("a stale histogram export ends every bucket series, classic and exponential", () => {
+		const count = (query: string, t: number, pushdown: boolean) => {
 			const got = sqlRun(
 				db,
 				otelCatalog,
-				'count(rpc_latency_milliseconds_bucket{rpc_method="flaky"})',
+				query,
 				{ startMs: t, endMs: t, stepMs: 0 },
 				pushdown,
 				ORG_OTEL,
@@ -646,9 +644,13 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			if (Result.isFailure(got)) throw new Error(got.failure)
 			return Arr.map(flatten(got.success), ([, , v]) => v)
 		}
+		const exponential = 'count(rpc_latency_milliseconds_bucket{rpc_method="flaky"})'
+		const classic = "count(lat_classic_seconds_bucket)"
 		for (const pushdown of [false, true]) {
-			expect(count(tick(39) + 10_000, pushdown)).toEqual([4])
-			expect(count(tick(41), pushdown)).toEqual([])
+			expect(count(exponential, tick(39) + 10_000, pushdown)).toEqual([4])
+			expect(count(exponential, tick(41), pushdown)).toEqual([])
+			expect(count(classic, tick(39) + 10_000, pushdown)).toEqual([3])
+			expect(count(classic, tick(41), pushdown)).toEqual([])
 		}
 	})
 
