@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -367,6 +367,36 @@ describe("FleetFindingsService", () => {
 					Str.endsWith("/global/policies")(call.path),
 				)
 				assert.lengthOf(policyReads, 2)
+			}),
+		)
+	})
+
+	it.effect("counts each device once per CVE, from Fleet's own CVE list, and its total", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		// One device carries both openssl versions: Fleet counts it once, the versions sum to 7.
+		world.cves = [
+			{ cve: "CVE-2026-0001", hosts_count: 6, cvss_score: 7.5 },
+			{ cve: "CVE-2026-0002", hosts_count: 9, cvss_score: 9.8 },
+			...Arr.makeBy(1_200, (index) => ({ cve: `CVE-2025-${index}`, hosts_count: 1 })),
+		]
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				const page = yield* devices()
+				const openssl = Arr.findFirst(
+					page.vulnerabilities,
+					(finding) => finding.cve === "CVE-2026-0001",
+				)
+				assert.deepStrictEqual(
+					Option.map(openssl, (finding) => [finding.deviceCount, finding.software.length]),
+					Option.some([6, 2]),
+				)
+				// Ten pages of 100 are stored; the rest past the 500 listed comes from Fleet's total.
+				assert.strictEqual(page.moreVulnerabilities, 1_202 - 500)
 			}),
 		)
 	})

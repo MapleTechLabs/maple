@@ -95,7 +95,12 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 					Effect.map(([scored, unscored, counted]) => ({
 						source,
 						rows: Arr.take(Arr.appendAll(scored, unscored), LISTED_VULNERABILITIES),
-						more: Math.max(0, Number(counted[0]?.count ?? 0) - LISTED_VULNERABILITIES),
+						// The source's own total when it gives one: it reads past what it stores.
+						more: Math.max(
+							0,
+							Math.max(Number(counted[0]?.count ?? 0), source.reportedVulnerabilities ?? 0) -
+								LISTED_VULNERABILITIES,
+						),
 						knownExploited: Number(counted[0]?.knownExploited ?? 0),
 					})),
 				)
@@ -137,7 +142,7 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 				const listed = Arr.flatMap(perSource, ({ rows }) => rows)
 				const withCounts = Arr.map(
 					perSource,
-					({ source, more, knownExploited }) =>
+					({ source: { reportedVulnerabilities: _reported, ...source }, more, knownExploited }) =>
 						new DeviceSource({
 							...source,
 							moreVulnerabilities: more,

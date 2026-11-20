@@ -233,6 +233,7 @@ export const FleetVulnerability = Schema.Struct({
 	cisa_known_exploit: NullableBoolean,
 	resolved_in_version: NullableString,
 })
+export type FleetVulnerability = typeof FleetVulnerability.Type
 
 export const FleetSoftwareVersion = Schema.Struct({
 	id: Schema.Number,
@@ -244,12 +245,32 @@ export const FleetSoftwareVersion = Schema.Struct({
 })
 export type FleetSoftwareVersion = typeof FleetSoftwareVersion.Type
 
+/** A CVE as Fleet counts it across devices (`GET /vulnerabilities`). Scores come with Premium. */
+export const FleetCve = Schema.Struct({
+	cve: Schema.String,
+	details_link: NullableString,
+	hosts_count: NullableNumber,
+	cvss_score: NullableNumber,
+	epss_probability: NullableNumber,
+	cisa_known_exploit: NullableBoolean,
+})
+export type FleetCve = typeof FleetCve.Type
+
 // Fleet leaves an empty list out of its JSON, so every list here may be missing.
 const PoliciesPage = Schema.Struct({ policies: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetPolicy))) })
 const HostsPage = Schema.Struct({ hosts: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetHost))) })
 const HostsCount = Schema.Struct({ count: Schema.Number })
 const SoftwareVersionsPage = Schema.Struct({
 	software: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetSoftwareVersion))),
+	meta: Schema.optionalKey(
+		Schema.NullOr(Schema.Struct({ has_next_results: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })),
+	),
+})
+
+const VulnerabilitiesPage = Schema.Struct({
+	vulnerabilities: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetCve))),
+	/** Every CVE on the server's devices, past this page too. */
+	count: NullableNumber,
 	meta: Schema.optionalKey(
 		Schema.NullOr(Schema.Struct({ has_next_results: Schema.optionalKey(Schema.NullOr(Schema.Boolean)) })),
 	),
@@ -286,4 +307,15 @@ export const listVulnerableSoftware = (fleet: FleetClient, page: number, perPage
 			per_page: perPage,
 		},
 		operation: "reading vulnerable software",
+	})
+
+/**
+ * One page of CVEs, on the most devices first, each with Fleet's own device count (a device with
+ * two affected packages counts once). A 404 from a server older than this endpoint.
+ */
+export const listVulnerabilities = (fleet: FleetClient, page: number, perPage: number) =>
+	fleet.json(VulnerabilitiesPage, {
+		path: "/vulnerabilities",
+		query: { order_key: "hosts_count", order_direction: "desc", page, per_page: perPage },
+		operation: "reading vulnerabilities",
 	})

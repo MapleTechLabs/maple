@@ -49,6 +49,8 @@ export const FleetConnections = PG.table("fleet_connections", {
 		findingsErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "findings_error_at" }),
 		/** Enrolled devices at the last findings sync. */
 		deviceCount: PG.column(PG.nullable(PG.int4), { name: "device_count" }),
+		/** Every CVE Fleet counts on the server's devices at the last sync, past those stored too. */
+		vulnerabilityCount: PG.column(PG.nullable(PG.int4), { name: "vulnerability_count" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},

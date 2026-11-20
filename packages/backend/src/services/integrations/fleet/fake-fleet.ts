@@ -58,6 +58,13 @@ export interface FakeFleet {
 	 * docs do not rule out), or every policy whatever is asked.
 	 */
 	policyPaging: "default-100" | "ignored"
+	/** Fleet's own CVE rows (`/vulnerabilities`), each counting a device once; null answers 404, as older servers do. */
+	cves: Array<{
+		readonly cve: string
+		readonly hosts_count: number
+		readonly cvss_score?: number
+		readonly details_link?: string
+	}> | null
 	readonly fake: VendorFake.VendorFake
 }
 
@@ -106,6 +113,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		failingHosts: {},
 		software: [],
 		policyPaging: "default-100",
+		cves: null,
 		...overrides,
 		fake: VendorFake.make({
 			routes: [
@@ -175,6 +183,27 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 						return VendorFake.json({
 							...(software.length === 0 ? undefined : { software }),
 							meta: { has_next_results: (page + 1) * perPage < world.software.length },
+						})
+					},
+				},
+				{
+					path: new RegExp(`${PREFIX}/vulnerabilities$`),
+					respond: (request) => {
+						if (world.cves === null) return VendorFake.json({ message: "not found" }, 404)
+						const page = Number(request.search.get("page") ?? "0")
+						const perPage = Number(request.search.get("per_page") ?? "20")
+						const sorted = Arr.sort(
+							world.cves,
+							Order.mapInput(
+								Order.flip(Order.Number),
+								(row: { readonly hosts_count: number }) => row.hosts_count,
+							),
+						)
+						const rows = sorted.slice(page * perPage, (page + 1) * perPage)
+						return VendorFake.json({
+							...(rows.length === 0 ? undefined : { vulnerabilities: rows }),
+							count: world.cves.length,
+							meta: { has_next_results: (page + 1) * perPage < world.cves.length },
 						})
 					},
 				},

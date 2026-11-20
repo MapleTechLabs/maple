@@ -7,7 +7,7 @@ import {
 	type VulnerabilityFindingInput,
 	vulnerabilityOrder,
 } from "@maple/backend/services/device-security/device-findings-store"
-import type { FleetHost, FleetPolicy, FleetSoftwareVersion } from "./api"
+import type { FleetCve, FleetHost, FleetPolicy, FleetSoftwareVersion, FleetVulnerability } from "./api"
 
 // Fleet's policies and vulnerable software as device findings: a failing policy per row, and one
 // row per CVE with the software versions that carry it. Links go to the server's own pages.
@@ -74,39 +74,88 @@ const maxOf = (values: ReadonlyArray<number | null>): number | null => {
 	return Arr.isReadonlyArrayNonEmpty(present) ? Arr.max(present, Order.Number) : null
 }
 
-/** One finding per CVE across the software versions that carry it, highest score first. */
+type Hit = { readonly version: FleetSoftwareVersion; readonly vulnerability: FleetVulnerability }
+
+/** Each CVE's hits: the software versions that carry it, with what they say about it. */
+const hitsByCve = (versions: ReadonlyArray<FleetSoftwareVersion>) =>
+	Arr.groupBy(
+		Arr.flatMap(versions, (version) =>
+			Arr.map(version.vulnerabilities ?? [], (vulnerability): Hit => ({ version, vulnerability })),
+		),
+		(hit) => hit.vulnerability.cve,
+	)
+
+const anyOf = (values: ReadonlyArray<boolean | null>): boolean | null =>
+	Arr.some(values, (value) => value === true)
+		? true
+		: Arr.some(values, (value) => value === false)
+			? false
+			: null
+
+/**
+ * A CVE's finding from the software that carries it. `counted` is Fleet's own row for the CVE:
+ * its device count (a device with two affected packages counts once) and scores win.
+ */
+const findingOf = (
+	cve: string,
+	hits: ReadonlyArray<Hit>,
+	baseUrl: string,
+	counted?: FleetCve,
+): VulnerabilityFindingInput => {
+	const said = <A>(read: (vulnerability: FleetVulnerability) => A | null | undefined) =>
+		Arr.map(hits, (hit) => read(hit.vulnerability) ?? null)
+	return {
+		cve,
+		cvssScore: counted?.cvss_score ?? maxOf(said((vulnerability) => vulnerability.cvss_score)),
+		epssProbability:
+			counted?.epss_probability ?? maxOf(said((vulnerability) => vulnerability.epss_probability)),
+		knownExploited:
+			counted?.cisa_known_exploit ?? anyOf(said((vulnerability) => vulnerability.cisa_known_exploit)),
+		detailsLink: httpsOnly(
+			counted?.details_link ??
+				Arr.findFirst(
+					said((vulnerability) => vulnerability.details_link),
+					(link) => link !== null,
+				).pipe(Option.getOrNull),
+		),
+		deviceCount:
+			counted?.hosts_count ?? Arr.reduce(hits, 0, (sum, hit) => sum + (hit.version.hosts_count ?? 0)),
+		software: Arr.map(hits, (hit) => ({
+			name: hit.version.name,
+			version: hit.version.version,
+			packageSource: emptyToNull(hit.version.source),
+			deviceCount: hit.version.hosts_count ?? 0,
+			resolvedInVersion: emptyToNull(hit.vulnerability.resolved_in_version),
+		})),
+		url: `${baseUrl}/software/vulnerabilities/${encodeURIComponent(cve)}`,
+	}
+}
+
+/**
+ * One finding per CVE from software versions alone, for a server without `/vulnerabilities`: the
+ * device count sums the versions, so a device with two affected packages counts twice.
+ */
 export const vulnerabilitiesBySoftware = (
 	versions: ReadonlyArray<FleetSoftwareVersion>,
 	baseUrl: string,
-): ReadonlyArray<VulnerabilityFindingInput> => {
-	const hits = Arr.flatMap(versions, (version) =>
-		Arr.map(version.vulnerabilities ?? [], (vulnerability) => ({ version, vulnerability })),
+): ReadonlyArray<VulnerabilityFindingInput> =>
+	Arr.sort(
+		Arr.map(Rec.toEntries(hitsByCve(versions)), ([cve, hits]) => findingOf(cve, hits, baseUrl)),
+		vulnerabilityOrder,
 	)
-	const byCve = Arr.groupBy(hits, (hit) => hit.vulnerability.cve)
-	const findings = Arr.map(Rec.values(byCve), (group): VulnerabilityFindingInput => {
-		const first = Arr.headNonEmpty(group).vulnerability
-		const scores = Arr.map(group, (hit) => hit.vulnerability.cvss_score ?? null)
-		const exploited = Arr.map(group, (hit) => hit.vulnerability.cisa_known_exploit ?? null)
-		return {
-			cve: first.cve,
-			cvssScore: maxOf(scores),
-			epssProbability: maxOf(Arr.map(group, (hit) => hit.vulnerability.epss_probability ?? null)),
-			knownExploited: Arr.some(exploited, (value) => value === true)
-				? true
-				: Arr.some(exploited, (value) => value === false)
-					? false
-					: null,
-			detailsLink: httpsOnly(first.details_link),
-			deviceCount: Arr.reduce(group, 0, (sum, hit) => sum + (hit.version.hosts_count ?? 0)),
-			software: Arr.map(group, (hit) => ({
-				name: hit.version.name,
-				version: hit.version.version,
-				packageSource: emptyToNull(hit.version.source),
-				deviceCount: hit.version.hosts_count ?? 0,
-				resolvedInVersion: emptyToNull(hit.vulnerability.resolved_in_version),
-			})),
-			url: `${baseUrl}/software/vulnerabilities/${encodeURIComponent(first.cve)}`,
-		}
-	})
-	return Arr.sort(findings, vulnerabilityOrder)
+
+/** One finding per CVE Fleet counted, with the software read for it where that read reached it. */
+export const vulnerabilitiesByCve = (
+	cves: ReadonlyArray<FleetCve>,
+	versions: ReadonlyArray<FleetSoftwareVersion>,
+	baseUrl: string,
+): ReadonlyArray<VulnerabilityFindingInput> => {
+	const byCve = hitsByCve(versions)
+	return Arr.sort(
+		Arr.map(
+			Arr.dedupeWith(cves, (a, b) => a.cve === b.cve),
+			(counted) => findingOf(counted.cve, byCve[counted.cve] ?? [], baseUrl, counted),
+		),
+		vulnerabilityOrder,
+	)
 }

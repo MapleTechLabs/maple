@@ -22,7 +22,12 @@ import {
 import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import * as FleetApi from "./fleet/api"
-import { failingPolicies, findingDevice, vulnerabilitiesBySoftware } from "./fleet/findings"
+import {
+	failingPolicies,
+	findingDevice,
+	vulnerabilitiesByCve,
+	vulnerabilitiesBySoftware,
+} from "./fleet/findings"
 
 const SYNC_EVERY_MS = 60 * 60_000
 /** A failed sync (the server down, an error, a refused read) waits this long, not the next tick. */
@@ -35,6 +40,8 @@ const HOSTS_PER_POLICY = 20
 const SAMPLED_POLICIES = 100
 const SOFTWARE_PAGE_SIZE = 100
 const MAX_SOFTWARE_PAGES = 10
+const CVE_PAGE_SIZE = 100
+const MAX_CVE_PAGES = 10
 const POLICY_PAGE_SIZE = 500
 const MAX_POLICY_PAGES = 10
 
@@ -169,6 +176,40 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					}),
 				)
 
+			/**
+			 * Fleet's CVEs, on the most devices first, and its total. None from a server older than
+			 * `/vulnerabilities` (a 404), which falls back to reading CVEs off the software.
+			 */
+			const readCves = (
+				fleet: FleetApi.FleetClient,
+				page: number,
+				acc: ReadonlyArray<FleetApi.FleetCve>,
+			): Effect.Effect<
+				Option.Option<{
+					readonly cves: ReadonlyArray<FleetApi.FleetCve>
+					readonly complete: boolean
+					readonly total: number | null
+				}>,
+				FleetApi.FleetApiError
+			> =>
+				FleetApi.listVulnerabilities(fleet, page, CVE_PAGE_SIZE).pipe(
+					Effect.flatMap((answer) => {
+						const all = Arr.appendAll(acc, answer.vulnerabilities ?? [])
+						const hasNext = answer.meta?.has_next_results
+						return hasNext === true && page + 1 < MAX_CVE_PAGES
+							? readCves(fleet, page + 1, all)
+							: Effect.succeedSome({
+									cves: all,
+									complete: hasNext === false,
+									total: answer.count ?? null,
+								})
+					}),
+					Effect.catchIf(
+						(error) => page === 0 && error.status === 404,
+						() => Effect.succeedNone,
+					),
+				)
+
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
 			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient, baseUrl: string) {
 				const [hosts, policies] = yield* Effect.all(
@@ -191,15 +232,24 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					{ concurrency: 2 },
 				)
 				const sampled = new Map<number, ReadonlyArray<DeviceRef>>(samples)
-				const { software, complete } = yield* readSoftware(fleet, 0, [])
+				const [read, counted] = yield* Effect.all(
+					[readSoftware(fleet, 0, []), readCves(fleet, 0, [])],
+					{ concurrency: 2 },
+				)
+				const fromFleet = Option.isSome(counted)
 				return {
 					deviceCount: hosts.count,
 					policies: Arr.map(failing, (policy) => ({
 						...policy.finding,
 						failingDevices: sampled.get(policy.fleetId) ?? [],
 					})),
-					vulnerabilities: vulnerabilitiesBySoftware(software, baseUrl),
-					vulnerabilitiesComplete: complete,
+					// Fleet's own CVE rows count each device once; software alone is the fallback.
+					vulnerabilities: Option.match(counted, {
+						onNone: () => vulnerabilitiesBySoftware(read.software, baseUrl),
+						onSome: ({ cves }) => vulnerabilitiesByCve(cves, read.software, baseUrl),
+					}),
+					vulnerabilitiesComplete: fromFleet ? counted.value.complete : read.complete,
+					vulnerabilityCount: fromFleet ? counted.value.total : null,
 				}
 			})
 
@@ -222,6 +272,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 										findingsError: null,
 										findingsErrorAt: null,
 										deviceCount: snapshot.deviceCount,
+										vulnerabilityCount: snapshot.vulnerabilityCount,
 									})
 									.where(stillOurs(claimed))
 									.returning("id"),
@@ -380,6 +431,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 								"findingsSyncedAt",
 								"findingsError",
 								"authFailedAt",
+								"vulnerabilityCount",
 							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
@@ -394,6 +446,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					error: row.findingsError,
 					authFailed: row.authFailedAt !== null,
 					vulnerabilitiesUrl: `${row.baseUrl}/software/vulnerabilities`,
+					reportedVulnerabilities: row.vulnerabilityCount,
 				}))
 			})
 

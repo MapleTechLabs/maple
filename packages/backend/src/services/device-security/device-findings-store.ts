@@ -149,7 +149,13 @@ export const clearDeviceFindings = (db: MapleDb, scope: DeviceFindingsScope) =>
 	})
 
 /** A connection as its source reports it; the read service adds what it counts from the findings. */
-export type DeviceSourceStatus = Omit<DeviceSource, "moreVulnerabilities" | "knownExploitedVulnerabilities">
+export type DeviceSourceStatus = Omit<
+	DeviceSource,
+	"moreVulnerabilities" | "knownExploitedVulnerabilities"
+> & {
+	/** Every CVE the source counts, past those it stored; null when it gives no total. */
+	readonly reportedVulnerabilities: number | null
+}
 
 /** What a device source tells the Devices page about the org's connections to it. */
 export interface DeviceSourceStatusReader {
