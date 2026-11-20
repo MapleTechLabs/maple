@@ -85,14 +85,14 @@ const openIncident = (
 const loaded = (
 	rows: ReadonlyArray<HealthSnapshot>,
 	incidents: ReadonlyArray<HealthIncident> = [openIncident(CHECKOUT_RULE)],
-	enabled: ReadonlyArray<boolean> = [true, false],
+	enabledRuleIds: ReadonlyArray<string> = [CHECKOUT_RULE, EVALUATE_RULE, LATENCY_RULE],
 ): Model => {
 	const facets = withFacets(entered().model, ["production"]).model
 	const steps: ReadonlyArray<Message> = [
 		Message.CompletedFetchSnapshot({ key: facets.snapshot.key ?? "", result: Result.succeed(rows) }),
 		Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
 		Message.UpdatedIncidents({ orgId, incidents }),
-		Message.UpdatedRules({ orgId, enabled }),
+		Message.UpdatedRules({ orgId, enabledRuleIds }),
 	]
 	return Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)
 }
@@ -364,7 +364,7 @@ describe("overview", () => {
 				`/alerts/rules/${CHECKOUT_RULE}`,
 			),
 			expectView(text("critical")).toExist(),
-			expectView(role("link", { name: "1 of 1 enabled rule firing →" })).toHaveAttr("href", "/alerts"),
+			expectView(role("link", { name: "1 of 3 enabled rules firing →" })).toHaveAttr("href", "/alerts"),
 			expectView(role("link", { name: "View healthy services" })).toExist(),
 			expectView(role("link", { name: /checkout/ })).toExist(),
 		)
@@ -411,11 +411,11 @@ describe("overview", () => {
 			),
 			expectView(text("warning")).toExist(),
 			expectView(text(" · 3 groups")).toExist(),
-			expectView(role("link", { name: "1 of 1 enabled rule firing →" })).toExist(),
+			expectView(role("link", { name: "1 of 3 enabled rules firing →" })).toExist(),
 		)
 	})
 
-	test("several rules firing name a critical rule before warnings with more groups, and link the rest", () => {
+	test("several rules firing name a critical rule first, link the rest, and count only enabled rules", () => {
 		// The critical rule has the fewest groups and the last name, so only severity puts it first.
 		const incidents = [
 			openIncident(EVALUATE_RULE, { groupKey: "us", severity: "warning" }),
@@ -427,31 +427,40 @@ describe("overview", () => {
 		]
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded([snapshotRow("checkout")], incidents, Arr.replicate(true, 5))),
+			// The latency rule was disabled; its incidents have not synced resolved yet.
+			given(
+				loaded([snapshotRow("checkout")], incidents, [
+					CHECKOUT_RULE,
+					EVALUATE_RULE,
+					"rule-4",
+					"rule-5",
+					"rule-6",
+				]),
+			),
 			themeResolved(),
 			cursorMounted(),
 			expectView(role("link", { name: "Checkout errors" })).toExist(),
 			expectView(role("link", { name: "Rule cannot evaluate" })).toExist(),
 			expectView(role("link", { name: "API latency" })).not.toExist(),
 			expectView(role("link", { name: "+1 more" })).toHaveAttr("href", "/alerts"),
-			expectView(role("link", { name: "3 of 5 enabled rules firing →" })).toHaveAttr("href", "/alerts"),
+			expectView(role("link", { name: "2 of 5 enabled rules firing →" })).toHaveAttr("href", "/alerts"),
 		)
 	})
 
-	test("a rule with a critical group reads critical, and the share falls back to a count past the enabled rules", () => {
+	test("a rule with a critical group reads critical, and a strip with no enabled rule firing links to alerts", () => {
 		const incidents = [
 			openIncident(CHECKOUT_RULE, { groupKey: "us", severity: "warning" }),
 			openIncident(CHECKOUT_RULE, { groupKey: "eu", severity: "critical" }),
 		]
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded([snapshotRow("checkout")], incidents, [])),
+			given(loaded([snapshotRow("checkout")], incidents, [EVALUATE_RULE])),
 			themeResolved(),
 			cursorMounted(),
 			expectView(text("critical")).toExist(),
 			expectView(text("warning")).not.toExist(),
 			expectView(text(" · 2 groups")).toExist(),
-			expectView(role("link", { name: "1 rule firing →" })).toExist(),
+			expectView(role("link", { name: "View alerts →" })).toExist(),
 		)
 	})
 

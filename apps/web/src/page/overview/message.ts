@@ -35,7 +35,7 @@ export const Message = defineMessageUnion({
 	CompletedSaveFacetsHint: {},
 	...HealthMessages,
 	FailedLoadRules: { orgId: Schema.String },
-	UpdatedRules: { orgId: Schema.String, enabled: Schema.Array(Schema.Boolean) },
+	UpdatedRules: { orgId: Schema.String, enabledRuleIds: Schema.Array(Schema.String) },
 	UpdatedRuleStates: { orgId: Schema.String },
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	...ChartEnvMessages,

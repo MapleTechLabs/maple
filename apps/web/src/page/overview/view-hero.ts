@@ -26,6 +26,8 @@ export type HeroSummary = Readonly<{
 	/** Open incidents of anomaly rules. */
 	anomalyCount: number
 	rulesEnabled: number
+	/** Firing rules that are enabled; a disabled rule's incident lingers until its resolve syncs. */
+	enabledFiring: number
 }>
 
 /** Rules the strip names before "+N more". */
@@ -37,10 +39,10 @@ const byUrgency = Order.combineAll<FiringRule>([
 	Order.mapInput(Order.String, (rule) => rule.ruleName),
 ])
 
-/** The strip's rules from the alert incidents and each rule's `enabled`. Anomaly rules' incidents are open anomalies. */
+/** The strip's rules from the alert incidents and the enabled rules' ids. Anomaly rules' incidents are open anomalies. */
 export const heroSummaryOf = (
 	incidents: ReadonlyArray<HealthIncident>,
-	rules: ReadonlyArray<boolean>,
+	enabledRuleIds: ReadonlyArray<string>,
 ): HeroSummary => {
 	const openAll = Arr.filter(incidents, (incident) => incident.status === "open")
 	const open = Arr.filter(openAll, (incident) => incident.signalType !== "anomaly")
@@ -58,10 +60,12 @@ export const heroSummaryOf = (
 			}
 		},
 	)
+	const enabled = new Set(enabledRuleIds)
 	return {
 		firing: Arr.sort(firing, byUrgency),
 		anomalyCount: openAll.length - open.length,
-		rulesEnabled: Arr.filter(rules, (enabled) => enabled).length,
+		rulesEnabled: enabled.size,
+		enabledFiring: Arr.filter(firing, (rule) => enabled.has(rule.ruleId)).length,
 	}
 }
 
@@ -87,11 +91,11 @@ const ruleItem = <M>(h: HtmlBuilder<M>, rule: FiringRule): Html =>
 		]),
 	])
 
-/** "2 of 19 enabled rules firing"; just the count while a disabled rule's incident has not synced resolved yet. */
-const firingShare = (firing: number, enabled: number): string =>
-	enabled >= firing
-		? `${firing} of ${enabled} enabled ${pluralize(enabled, "rule")} firing`
-		: `${firing} ${pluralize(firing, "rule")} firing`
+/** "2 of 19 enabled rules firing", counting only enabled rules; "View alerts" when none of them fire. */
+const firingShare = (summary: HeroSummary): string =>
+	summary.enabledFiring > 0
+		? `${summary.enabledFiring} of ${summary.rulesEnabled} enabled ${pluralize(summary.rulesEnabled, "rule")} firing`
+		: "View alerts"
 
 const firingStrip = <M>(
 	h: HtmlBuilder<M>,
@@ -129,7 +133,7 @@ const firingStrip = <M>(
 					hstack(h, { gap: "4", className: "ml-auto" }, [
 						...(summary.anomalyCount > 0 ? [anomalyLink(h, summary.anomalyCount)] : []),
 						textLink(h, { href: inbox, tone: "muted", className: "shrink-0 text-xs" }, [
-							`${firingShare(firing.length, summary.rulesEnabled)} →`,
+							`${firingShare(summary)} →`,
 						]),
 					]),
 				],

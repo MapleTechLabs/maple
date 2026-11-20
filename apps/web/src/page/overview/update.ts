@@ -556,9 +556,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId && AsyncData.isLoading(model.rules)
 				? { model: { ...model, rules: RulesData.Failure({ error: "Unavailable" }) } }
 				: { model },
-		UpdatedRules: ({ orgId, enabled }) =>
+		UpdatedRules: ({ orgId, enabledRuleIds }) =>
 			orgId === context.orgId
-				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }
+				? { model: { ...model, rules: RulesData.Success({ data: enabledRuleIds }) } }
 				: { model },
 		UpdatedRuleStates: () => ({ model }),
 		CompletedLoadSignalPresence: ({ result }) => {

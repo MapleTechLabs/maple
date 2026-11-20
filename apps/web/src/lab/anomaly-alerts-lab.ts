@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -452,7 +452,8 @@ const openIncident = (
 	severity,
 	signalType,
 })
-const BANNER_RULES = [...Arr.replicate(true, 19), false]
+// The four rules above are enabled, among 19 in all.
+const BANNER_RULES = [...Rec.values(RULE_IDS), ...Arr.makeBy(15, (n) => `enabled-${n}`)]
 
 // The Overview's alert strip in each case it draws (all clear draws none), each one captioned.
 const BANNER_CASES: ReadonlyArray<readonly [string, ReadonlyArray<Incident>]> = [

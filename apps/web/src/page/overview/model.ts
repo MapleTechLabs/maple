@@ -51,8 +51,8 @@ export type UsageTotals = typeof UsageTotals.Type
 export const Usage = Schema.Struct({ totals: UsageTotals, previous: Schema.NullOr(UsageTotals) })
 export type Usage = typeof Usage.Type
 
-/** Each alert rule's `enabled`; `Unavailable` when the live rules sync failed or stalled (no banner). */
-export const RulesData = AsyncData.Schema(Schema.Array(Schema.Boolean), Schema.Literal("Unavailable"))
+/** The enabled alert rules' ids; `Unavailable` when the live rules sync failed or stalled (no banner). */
+export const RulesData = AsyncData.Schema(Schema.Array(Schema.String), Schema.Literal("Unavailable"))
 
 /** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services): one overview bucket. */
 export const OverviewPoint = Schema.Struct({

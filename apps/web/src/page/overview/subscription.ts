@@ -25,12 +25,19 @@ const withSet = (
 const incidents = (orgId: string) =>
 	incidentsStream(orgId, (list) => Message.UpdatedIncidents({ orgId, incidents: list }))
 
-/** The alert rules, reduced to `enabled` (the banner counts them). */
+/** The enabled alert rules' ids (the banner counts which of them fire). */
 const rules = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
 			(q) => q.from({ r: set.alertRules }).orderBy(({ r }) => r.updated_at, "desc"),
-			(rows) => Message.UpdatedRules({ orgId, enabled: Arr.map(rows, (row) => row.enabled) }),
+			(rows) =>
+				Message.UpdatedRules({
+					orgId,
+					enabledRuleIds: Arr.map(
+						Arr.filter(rows, (row) => row.enabled),
+						(row) => row.id,
+					),
+				}),
 		),
 	)
 
