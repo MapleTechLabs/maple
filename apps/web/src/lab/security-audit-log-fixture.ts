@@ -216,7 +216,7 @@ export const auditEventsOf = (nowMs: number, hasMore = true): AuditTrailListResp
 
 export const noAuditEvents: AuditTrailListResponse = { events: [], nextCursor: null }
 
-/** Maple, a Vercel team, an AWS account and a GitHub organization sending, Google Cloud connected with its log forwarding off. */
+/** Maple, a Vercel team, an AWS account, a GitHub organization and a Fleet server sending, Google Cloud connected with its log forwarding off. */
 export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
 	windowDays: 30,
 	sources: [
@@ -259,6 +259,14 @@ export const auditSourcesOf = (nowMs: number): AuditTrailSourcesResponse => ({
 			problem: null,
 			events: 9,
 			lastEventAt: nowMs - 18 * MINUTE,
+		},
+		{
+			provider: "fleet",
+			state: "receiving",
+			account: "Acme (fleet.acme.dev)",
+			problem: null,
+			events: 12,
+			lastEventAt: nowMs - 9 * MINUTE,
 		},
 	],
 })
