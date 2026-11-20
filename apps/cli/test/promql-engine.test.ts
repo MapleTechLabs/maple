@@ -17,14 +17,17 @@ import * as CH from "@maple/query-engine/ch"
 import {
 	buildPushdownQuery,
 	buildSelectorQueries,
+	buildSeriesLabelsQueries,
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
 	promqlPushdownRowSchema,
 	promqlSelectorRowSchema,
+	promqlSeriesLabelsRowSchema,
 	toPushdownData,
 	formatLe,
 	toSelectorData,
+	toSeriesLabels,
 	type CatalogMetric,
 } from "@maple/query-engine/promql"
 import {
@@ -640,6 +643,26 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		const shift = 'rpc_latency_milliseconds_bucket{rpc_method="shift"}'
 		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference, shortCases)
 	}, 120_000)
+
+	test("series discovery lists an exponential series' aligned bounds and filters le before the limit", () => {
+		const matchers = [
+			{ name: "__name__", op: "=" as const, value: "rpc_latency_milliseconds_bucket" },
+			{ name: "rpc_method", op: "=" as const, value: "shift" },
+			{ name: "le", op: "=" as const, value: "8.0" },
+		]
+		const window = { startMs: T0, endMs: tick(79) }
+		const options = { orgId: OrgId.make(ORG_OTEL), limit: 1, maxNameFilter: 10, maxNameReads: 10 }
+		const plans = buildSeriesLabelsQueries(matchers, window, otelCatalog, options)
+		const decode = decodeJsonEachRow(promqlSeriesLabelsRowSchema)
+		const found = toSeriesLabels(
+			matchers,
+			Arr.map(plans, (plan) => ({
+				plan,
+				rows: decode(db.query(sqlOf(Effect.runSync(plan.compiled)))),
+			})),
+		)
+		expect(Arr.map(found, (labels) => labels.le)).toEqual(["8.0"])
+	})
 
 	test("a stale histogram export ends every bucket series, classic and exponential", () => {
 		const count = (query: string, t: number, pushdown: boolean) => {

@@ -226,17 +226,15 @@ const exponentialGrid = (scale: CH.Expr<number>, lowExp: CH.Expr<number>, highEx
 	}
 }
 
-/** The grid's bounds for series discovery, from the series' exports aggregated in the read. */
-const exponentialDiscoveryBounds = () => {
+/** The grid's bounds (`+Inf` last) for series discovery, from the series' exports aggregated in the read. */
+const exponentialDiscoveryGrid = () => {
 	const occupied = sql.raw("length(PositiveBucketCounts) > 0")
 	const { m, ks } = exponentialGrid(
 		sql(T.int64)`toInt64(minIf(Scale, ${occupied}))`,
 		sql(T.float64)`minIf(PositiveOffset * exp2(-Scale), ${occupied})`,
 		sql(T.float64)`maxIf((PositiveOffset + length(PositiveBucketCounts)) * exp2(-Scale), ${occupied})`,
 	)
-	return sql(
-		T.array(T.string),
-	)`arrayMap(b -> toString(b), arrayPushBack(arrayMap(k -> exp2(k * exp2(-${m})), ${ks}), inf))`
+	return sql(T.array(T.float64))`arrayPushBack(arrayMap(k -> exp2(k * exp2(-${m})), ${ks}), inf)`
 }
 
 /** One export's cumulative counts at the bounds 2^(k*2^-m) from below its lowest edge to above its highest. */
@@ -347,10 +345,10 @@ const windowedQuery = (opts: PromqlSelectorOpts) =>
 			orderBy: [[$.t, "desc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
-		// From a baseline above twice the deltas' total, as a counter that started long ago, so
-		// extrapolation never stops at zero and the result does not depend on where the read starts.
+		// A counter from twice the deltas' total, as if started long ago: extrapolation never stops at
+		// zero, the result does not depend on the read start, and tiny deltas keep their precision.
 		const delta = sql(T.float64)`if(${$.stale} = 1, 0, ${$.raw})`
-		const baseline = sql(T.float64)`2 * sum(abs(${delta})) OVER (PARTITION BY ${$.sk}) + 1`
+		const baseline = sql(T.float64)`2 * sum(abs(${delta})) OVER (PARTITION BY ${$.sk})`
 		const cumulative = sql(T.float64)`${CH.over(CH.sum(delta), running)} + ${baseline}`
 		const accumulate = opts.accumulateDeltas ? $.isDelta : sql(T.uint8)`0`
 		const nextStale = CH.over(CH.lagInFrame($.stale, 1, $.stale), next)
@@ -1124,6 +1122,20 @@ const leFilterCondition = (
 	return CH.or(...Arr.map(present, (side) => side.cond))
 }
 
+/**
+ * An exponential series' `le` bounds exist once its exports are aggregated, so an `le` matcher
+ * filters them here, before the limit; only for a read of `_bucket` series alone.
+ */
+const exponentialLeHaving = (opts: PromqlSeriesLabelsOpts): CH.Condition | undefined => {
+	const le = opts.le
+	if (opts.table !== "metrics_exponential_histogram" || le === undefined) return undefined
+	if (le.buckets === undefined || le.others !== undefined) return undefined
+	const bounds = CH.and(...le.boundConditions(sql(T.float64)`_b`))
+	return bounds === undefined
+		? undefined
+		: sql.cond`arrayExists(_b -> ${bounds}, ${exponentialDiscoveryGrid()})`
+}
+
 export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 	return from(metricTable(opts.table))
 		.select(($) => ({
@@ -1134,7 +1146,7 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 			resourceAttributes: CH.any_($.ResourceAttributes),
 			bounds:
 				opts.table === "metrics_exponential_histogram"
-					? exponentialDiscoveryBounds()
+					? sql(T.array(T.string))`arrayMap(b -> toString(b), ${exponentialDiscoveryGrid()})`
 					: opts.table !== "metrics_histogram"
 						? sql(T.array(T.string))`emptyArrayString()`
 						: sql(
@@ -1151,6 +1163,7 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 			opts.le === undefined ? undefined : leFilterCondition(opts.table, $, opts.le),
 		])
 		.groupBy("metricName", "labelKey")
+		.having(() => [exponentialLeHaving(opts)])
 		.orderBy(["metricName", "asc"], ["labelKey", "asc"])
 		.limit(opts.limit)
 		.format("JSON")

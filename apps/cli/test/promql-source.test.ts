@@ -269,14 +269,14 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 	})
 }
 
-/** Running totals of delta samples in the range, from the source's baseline of 2 * sum |delta| + 1. */
+/** Running totals of delta samples in the range, from the source's baseline of 2 * sum |delta|. */
 const accumulate = (
 	samples: ReadonlyArray<Sample>,
 	startMs: number,
 	endMs: number,
 ): ReadonlyArray<Sample> => {
 	const inRange = Arr.filter(samples, ([t]) => BASE_MS + t > startMs && BASE_MS + t <= endMs)
-	const baseline = 2 * total(Arr.map(inRange, ([, v]) => Math.abs(v))) + 1
+	const baseline = 2 * total(Arr.map(inRange, ([, v]) => Math.abs(v)))
 	const totals = Arr.scan(
 		Arr.map(inRange, ([, v]) => v),
 		baseline,

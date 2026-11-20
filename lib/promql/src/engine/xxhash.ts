@@ -56,22 +56,17 @@ export const xxhash64 = (b: Uint8Array): bigint => {
 
 const encoder = new TextEncoder()
 
-/** A string as Prometheus' stringlabels stores it: its UTF-8 length as a uvarint, then the bytes. */
+/** A string as Prometheus' stringlabels stores it: its UTF-8 length (one byte, or 255 and three little-endian bytes), then the bytes. */
 const sized = (text: string): ReadonlyArray<number> => {
 	const bytes = [...encoder.encode(text)]
-	const size: number[] = []
-	let n = bytes.length
-	while (n >= 0x80) {
-		size.push((n & 0x7f) | 0x80)
-		n >>>= 7
-	}
-	size.push(n)
+	const n = bytes.length
+	const size = n < 255 ? [n] : [255, n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff]
 	return [...size, ...bytes]
 }
 
 /**
  * Prometheus' labels.Hash in its default (stringlabels) build: XXH64 of the labels sorted by name,
- * each name and value written as `uvarint(length) bytes`.
+ * each name and value written as its length then its bytes.
  */
 export const labelsHash = (labels: Readonly<Record<string, string>>): bigint => {
 	const names = Object.keys(labels).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
