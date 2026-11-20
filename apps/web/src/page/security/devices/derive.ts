@@ -22,6 +22,8 @@ export type DeviceSourceBrand = Readonly<{
 	connectHint: string
 	/** Why its CVEs carry no CVSS score or known exploited flag, when they don't. */
 	noScoresNote: string
+	/** The all-clear for policies, saying which ones the source reads. */
+	noFailingPolicies: string
 }>
 
 export const DEVICE_SOURCE_BRANDS = {
@@ -33,6 +35,8 @@ export const DEVICE_SOURCE_BRANDS = {
 		connectHint:
 			"Read-only. Connect your Fleet server with an API-only Observer token; devices show here within a few minutes.",
 		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
+		noFailingPolicies:
+			"Every enrolled device passes every global policy on your Fleet server. Team policies are not read yet.",
 	},
 } satisfies Readonly<Record<DeviceSourceKind, DeviceSourceBrand>>
 
@@ -105,7 +109,6 @@ export const unscoredKinds = (
 			),
 	)
 
-/** The one source-wide CVE list past the 500 listed, when exactly one source has one. */
 /** Each source with CVEs past those listed: how many, named and linked to its own list. */
 export const moreVulnerabilitiesBySource = (
 	sources: ReadonlyArray<DeviceSource>,
@@ -166,3 +169,12 @@ export const softwareLabel = (software: VulnerableSoftware): string => `${softwa
 /** CVSS reads as a severity: 9 and up critical, 7 high, 4 medium, else low. */
 export const cvssTone = (score: number): "crit" | "warn" | "neutral" =>
 	score >= 9 ? "crit" : score >= 7 ? "warn" : "neutral"
+
+/** The all-clear for policies: the source's own words when every source is one kind. */
+export const noFailingPoliciesText = (sources: ReadonlyArray<DeviceSource>): string => {
+	const kinds = Arr.dedupe(Arr.map(sources, (source) => source.kind))
+	const only = kinds.length === 1 ? kinds[0] : undefined
+	return only === undefined
+		? "Every enrolled device passes every policy your device sources report."
+		: brandOf(only).noFailingPolicies
+}

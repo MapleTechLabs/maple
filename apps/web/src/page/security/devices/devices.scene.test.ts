@@ -18,6 +18,7 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MountNetworkAutoRetry } from "@maple/views/ui/error-state"
 import {
+	allClearDevices,
 	authFailedDevices,
 	firstSyncDevices,
 	freeDevices,
@@ -209,6 +210,26 @@ describe("security devices", () => {
 			expectView(text("The last sync failed")).toExist(),
 			expectView(text("Fleet did not answer within 30 seconds.", { exact: false })).toExist(),
 			expectView(role("table", { name: "Vulnerabilities" })).toExist(),
+		)
+	})
+
+	test("an all-clear says which policies the source reads", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(allClearDevices(NOW))),
+			expectView(text("No failing policies")).toExist(),
+			expectView(text("Team policies are not read yet.", { exact: false })).toExist(),
+		)
+	})
+
+	test("a CVE links to its details page beside its page in the source", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(premiumDevices(NOW))),
+			expectView(role("link", { name: "Details of CVE-2024-38063" })).toHaveAttr(
+				"href",
+				"https://nvd.nist.gov/vuln/detail/CVE-2024-38063",
+			),
 		)
 	})
 

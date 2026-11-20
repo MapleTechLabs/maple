@@ -50,7 +50,7 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 				yield* Effect.annotateCurrentSpan("maple.device_security.sources", sources.length)
 				if (sources.length === 0)
 					return new DevicesResponse({
-						sources,
+						sources: [],
 						policies: [],
 						vulnerabilities: [],
 						moreVulnerabilities: 0,

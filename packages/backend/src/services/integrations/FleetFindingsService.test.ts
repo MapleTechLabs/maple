@@ -187,6 +187,17 @@ describe("FleetFindingsService", () => {
 				const page = yield* devices()
 				assert.lengthOf(page.policies, 2)
 				assert.include(page.sources[0]?.error ?? "", "500")
+
+				// A failed sync waits 15 minutes rather than hitting the server every tick.
+				world.status = null
+				const calls = world.fake.calls.length
+				yield* TestClock.adjust(10 * 60_000)
+				assert.strictEqual((yield* syncDue).connections, 0)
+				assert.strictEqual(world.fake.calls.length, calls)
+
+				// A new token clears the failure the page shows.
+				yield* connect
+				assert.isNull((yield* devices()).sources[0]?.error)
 			}),
 		)
 	})
@@ -262,6 +273,45 @@ describe("FleetFindingsService", () => {
 				assert.strictEqual((yield* syncDue).connections, 0)
 				yield* TestClock.adjust(5 * 60_000)
 				assert.strictEqual((yield* syncDue).policies, 2)
+			}),
+		)
+	})
+
+	it.effect("stores thousands of CVEs, and keeps those a cut-off read did not reach", () => {
+		const testDb = createTestDb(trackedDbs)
+		const versions = (from: number) =>
+			Arr.makeBy(1_050 - from, (offset) => {
+				const index = from + offset
+				return {
+					id: index,
+					name: `pkg-${index}`,
+					version: "1.0",
+					hosts_count: 2_000 - index,
+					vulnerabilities: Arr.makeBy(6, (n) => ({ cve: `CVE-2026-${index}-${n}` })),
+				}
+			})
+		const world = makeFakeFleet({ software: versions(0) })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				// 1,000 versions read, six CVEs each: more values than one INSERT may bind.
+				assert.strictEqual((yield* syncDue).vulnerabilities, 6_000)
+				assert.deepStrictEqual(yield* storedFindings(testDb), { policies: 0, vulnerabilities: 6_000 })
+
+				// The most installed version is gone, but the read stops at ten pages again, so the
+				// CVEs it did not reach are not taken as fixed.
+				world.software = versions(1)
+				yield* TestClock.adjust(HOUR_MS)
+				yield* syncDue
+				assert.strictEqual((yield* storedFindings(testDb))?.vulnerabilities, 6_006)
+
+				// A read that reaches the end drops what is gone.
+				world.software = Arr.take(versions(0), 3)
+				yield* TestClock.adjust(HOUR_MS)
+				yield* syncDue
+				assert.strictEqual((yield* storedFindings(testDb))?.vulnerabilities, 18)
 			}),
 		)
 	})

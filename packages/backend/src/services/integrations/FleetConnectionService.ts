@@ -185,6 +185,10 @@ export class FleetConnectionService extends Context.Service<
 				holdUntil: null,
 				lastError: null,
 				lastErrorAt: null,
+				// A new token clears the device sync's failure too, or the page keeps showing it.
+				findingsHoldUntil: null,
+				findingsError: null,
+				findingsErrorAt: null,
 				updatedAt: now,
 			}
 			yield* dbExecute((db) =>

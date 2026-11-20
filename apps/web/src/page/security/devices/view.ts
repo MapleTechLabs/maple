@@ -50,6 +50,7 @@ import {
 	hasScores,
 	knownExploitedCount,
 	moreVulnerabilitiesBySource,
+	noFailingPoliciesText,
 	platformLabel,
 	policyKeyOf,
 	screenOf,
@@ -168,8 +169,8 @@ const syncErrorNotice = (h: H, source: DeviceSource, error: string, many: boolea
 		]),
 		alertDescription(h, [
 			hasSynced
-				? `${error} Showing what the last good sync found; Maple tries again within five minutes.`
-				: `${error} Maple tries again within five minutes.`,
+				? `${error} Showing what the last good sync found; Maple retries on its own.`
+				: `${error} Maple retries on its own.`,
 		]),
 	])
 }
@@ -441,11 +442,7 @@ const policiesSection = (h: H, model: Model, devices: Devices): Html => {
 		sectionHeading(h, { title: "Failing policies", count: formatNumber(policies.length) }),
 		panel(h, { className: "overflow-hidden" }, [
 			policies.length === 0
-				? quietEmpty(
-						h,
-						"No failing policies",
-						"Every enrolled device passes every policy your device sources check.",
-					)
+				? quietEmpty(h, "No failing policies", noFailingPoliciesText(sources))
 				: table(h, { ariaLabel: "Failing policies" }, [
 						tableHeader(h, [
 							tableRow(h, [
@@ -518,6 +515,24 @@ const vulnerabilityRow = (
 								? [badge(h, { variant: "crit", size: "sm" }, ["Known exploited"])]
 								: []),
 							...sourceTag(h, tag),
+							...(vulnerability.detailsLink === null
+								? []
+								: [
+										typography(h, { size: "xs", tone: "muted" }, [
+											textLink(
+												h,
+												{
+													href: vulnerability.detailsLink,
+													tone: "inherit",
+													attributes: [
+														...external(h),
+														h.AriaLabel(`Details of ${vulnerability.cve}`),
+													],
+												},
+												["Details"],
+											),
+										]),
+									]),
 						]),
 						// A phone has no Devices or Software column: the software rides under the CVE.
 						h.div([h.Class("sm:hidden")], [softwareLines(h, vulnerability)]),

@@ -6,7 +6,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type FleetConnectionRow, FleetConnections } from "@maple/db/tables"
 import type { DeviceRef } from "@maple/domain/device-security"
-import { DeviceSource, IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
+import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -15,6 +15,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { openSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
 import {
+	type DeviceSourceStatus,
 	type DeviceSourceStatusReader,
 	replaceDeviceFindings,
 } from "@maple/backend/services/device-security/device-findings-store"
@@ -24,6 +25,8 @@ import * as FleetApi from "./fleet/api"
 import { failingPolicies, findingDevice, vulnerabilitiesBySoftware } from "./fleet/findings"
 
 const SYNC_EVERY_MS = 60 * 60_000
+/** A failed sync (the server down, an error, a refused read) waits this long, not the next tick. */
+const FAILED_SYNC_HOLD_MS = 15 * 60_000
 const LEASE_MS = 4 * 60_000
 /** After this long in a lane, no new server starts: the lane ends at 270 seconds. */
 const START_BY_MS = 150_000
@@ -52,13 +55,10 @@ interface ServerOutcome {
 	readonly vulnerabilities: number
 }
 
+/** The org's Fleet server as a device source, for the Devices page; empty when none is connected. */
 export interface FleetFindingsServiceApi extends DeviceSourceStatusReader {
 	/** Syncs every server whose findings are an hour old, or never synced. */
 	readonly syncDue: Effect.Effect<FleetFindingsSyncResult, IntegrationsPersistenceError>
-	/** The org's Fleet server as a device source, for the Devices page; empty when none is connected. */
-	readonly sources: (
-		orgId: OrgId,
-	) => Effect.Effect<ReadonlyArray<DeviceSource>, IntegrationsPersistenceError>
 }
 
 export class FleetFindingsService extends Context.Service<FleetFindingsService, FleetFindingsServiceApi>()(
@@ -124,17 +124,25 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					).pipe(Effect.map((rows) => rows.length > 0)),
 			})
 
+			/** The most installed vulnerable versions, and whether that was all of them. */
 			const readSoftware = (
 				fleet: FleetApi.FleetClient,
 				page: number,
 				acc: ReadonlyArray<FleetApi.FleetSoftwareVersion>,
-			): Effect.Effect<ReadonlyArray<FleetApi.FleetSoftwareVersion>, FleetApi.FleetApiError> =>
+			): Effect.Effect<
+				{
+					readonly software: ReadonlyArray<FleetApi.FleetSoftwareVersion>
+					readonly complete: boolean
+				},
+				FleetApi.FleetApiError
+			> =>
 				FleetApi.listVulnerableSoftware(fleet, page, SOFTWARE_PAGE_SIZE).pipe(
 					Effect.flatMap((answer) => {
 						const all = Arr.appendAll(acc, answer.software ?? [])
-						return answer.meta?.has_next_results === true && page + 1 < MAX_SOFTWARE_PAGES
+						const hasMore = answer.meta?.has_next_results === true
+						return hasMore && page + 1 < MAX_SOFTWARE_PAGES
 							? readSoftware(fleet, page + 1, all)
-							: Effect.succeed(all)
+							: Effect.succeed({ software: all, complete: !hasMore })
 					}),
 				)
 
@@ -160,7 +168,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					{ concurrency: 2 },
 				)
 				const sampled = new Map<number, ReadonlyArray<DeviceRef>>(samples)
-				const software = yield* readSoftware(fleet, 0, [])
+				const { software, complete } = yield* readSoftware(fleet, 0, [])
 				return {
 					deviceCount: hosts.count,
 					policies: Arr.map(failing, (policy) => ({
@@ -168,6 +176,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 						failingDevices: sampled.get(policy.fleetId) ?? [],
 					})),
 					vulnerabilities: vulnerabilitiesBySoftware(software, baseUrl),
+					vulnerabilitiesComplete: complete,
 				}
 			})
 
@@ -258,6 +267,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 							})
 							return yield* fail(failure.message)
 						default:
+							yield* lease.hold(now + FAILED_SYNC_HOLD_MS)
 							return yield* fail(failure.message)
 					}
 				}
@@ -325,26 +335,29 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(FleetConnections)
-							.select()
+							.select(
+								"id",
+								"organizationName",
+								"baseUrl",
+								"deviceCount",
+								"findingsSyncedAt",
+								"findingsError",
+								"authFailedAt",
+							)
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				return Arr.map(
-					rows,
-					(row) =>
-						new DeviceSource({
-							kind: "fleet",
-							connectionId: row.id,
-							label: row.organizationName,
-							url: row.baseUrl,
-							deviceCount: row.deviceCount,
-							syncedAt: row.findingsSyncedAt,
-							error: row.findingsError,
-							authFailed: row.authFailedAt !== null,
-							vulnerabilitiesUrl: `${row.baseUrl}/software/vulnerabilities`,
-							moreVulnerabilities: 0,
-						}),
-				)
+				return Arr.map(rows, (row): DeviceSourceStatus => ({
+					kind: "fleet",
+					connectionId: row.id,
+					label: row.organizationName,
+					url: row.baseUrl,
+					deviceCount: row.deviceCount,
+					syncedAt: row.findingsSyncedAt,
+					error: row.findingsError,
+					authFailed: row.authFailedAt !== null,
+					vulnerabilitiesUrl: `${row.baseUrl}/software/vulnerabilities`,
+				}))
 			})
 
 			return { syncDue, sources } satisfies FleetFindingsServiceApi

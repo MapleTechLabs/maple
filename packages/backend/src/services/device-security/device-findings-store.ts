@@ -27,7 +27,15 @@ export type VulnerabilityFindingInput = Omit<DeviceVulnerabilityFindingRow, Kept
 export interface DeviceFindingsSnapshot {
 	readonly policies: ReadonlyArray<PolicyFindingInput>
 	readonly vulnerabilities: ReadonlyArray<VulnerabilityFindingInput>
+	/**
+	 * False when the source had more than it read: a CVE it did not reach is not resolved, so the
+	 * ones stored before stay.
+	 */
+	readonly vulnerabilitiesComplete: boolean
 }
+
+/** Rows per INSERT: Postgres binds at most 65535 values a statement, and effect-orm never splits. */
+const ROWS_PER_INSERT = 1_000
 
 type PolicyRank = { readonly critical: boolean; readonly failingDeviceCount: number }
 type VulnerabilityRank = { readonly cvssScore: number | null; readonly deviceCount: number }
@@ -56,10 +64,10 @@ export const replaceDeviceFindings = (
 ) =>
 	Effect.gen(function* () {
 		const seen = { ...scope, firstSeenAt: now, lastSeenAt: now }
-		if (snapshot.policies.length > 0)
-			yield* db.run(
+		yield* Effect.forEach(Arr.chunksOf(snapshot.policies, ROWS_PER_INSERT), (policies) =>
+			db.run(
 				PG.insertInto(DevicePolicyFindings)
-					.values(Arr.map(snapshot.policies, (policy) => ({ ...policy, ...seen })))
+					.values(Arr.map(policies, (policy) => ({ ...policy, ...seen })))
 					.onConflictDoUpdate({
 						target: ["orgId", "source", "connectionId", "policyId"],
 						set: (_, excluded) => ({
@@ -76,11 +84,12 @@ export const replaceDeviceFindings = (
 							lastSeenAt: excluded.lastSeenAt,
 						}),
 					}),
-			)
-		if (snapshot.vulnerabilities.length > 0)
-			yield* db.run(
+			),
+		)
+		yield* Effect.forEach(Arr.chunksOf(snapshot.vulnerabilities, ROWS_PER_INSERT), (vulnerabilities) =>
+			db.run(
 				PG.insertInto(DeviceVulnerabilityFindings)
-					.values(Arr.map(snapshot.vulnerabilities, (finding) => ({ ...finding, ...seen })))
+					.values(Arr.map(vulnerabilities, (finding) => ({ ...finding, ...seen })))
 					.onConflictDoUpdate({
 						target: ["orgId", "source", "connectionId", "cve"],
 						set: (_, excluded) => ({
@@ -94,7 +103,8 @@ export const replaceDeviceFindings = (
 							lastSeenAt: excluded.lastSeenAt,
 						}),
 					}),
-			)
+			),
+		)
 		yield* db.run(
 			PG.deleteFrom(DevicePolicyFindings).where(($) => [
 				$.orgId.eq(scope.orgId),
@@ -103,14 +113,15 @@ export const replaceDeviceFindings = (
 				$.lastSeenAt.lt(now),
 			]),
 		)
-		yield* db.run(
-			PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [
-				$.orgId.eq(scope.orgId),
-				$.source.eq(scope.source),
-				$.connectionId.eq(scope.connectionId),
-				$.lastSeenAt.lt(now),
-			]),
-		)
+		if (snapshot.vulnerabilitiesComplete)
+			yield* db.run(
+				PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [
+					$.orgId.eq(scope.orgId),
+					$.source.eq(scope.source),
+					$.connectionId.eq(scope.connectionId),
+					$.lastSeenAt.lt(now),
+				]),
+			)
 	})
 
 /**
@@ -135,9 +146,12 @@ export const clearDeviceFindings = (db: MapleDb, scope: DeviceFindingsScope) =>
 		)
 	})
 
+/** A connection as its source reports it; the read service adds what it counts from the findings. */
+export type DeviceSourceStatus = Omit<DeviceSource, "moreVulnerabilities">
+
 /** What a device source tells the Devices page about the org's connections to it. */
 export interface DeviceSourceStatusReader {
 	readonly sources: (
 		orgId: OrgId,
-	) => Effect.Effect<ReadonlyArray<DeviceSource>, IntegrationsPersistenceError>
+	) => Effect.Effect<ReadonlyArray<DeviceSourceStatus>, IntegrationsPersistenceError>
 }
