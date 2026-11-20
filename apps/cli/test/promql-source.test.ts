@@ -269,12 +269,17 @@ const reference = (samples: ReadonlyArray<Sample>, req: Request): ReadonlyArray<
 	})
 }
 
-/** Running totals of delta samples, from the first one in the range. */
-const accumulate = (samples: ReadonlyArray<Sample>, startMs: number): ReadonlyArray<Sample> => {
-	const inRange = Arr.filter(samples, ([t]) => BASE_MS + t > startMs)
+/** Running totals of delta samples in the range, from the source's baseline of 2 * sum |delta| + 1. */
+const accumulate = (
+	samples: ReadonlyArray<Sample>,
+	startMs: number,
+	endMs: number,
+): ReadonlyArray<Sample> => {
+	const inRange = Arr.filter(samples, ([t]) => BASE_MS + t > startMs && BASE_MS + t <= endMs)
+	const baseline = 2 * total(Arr.map(inRange, ([, v]) => Math.abs(v))) + 1
 	const totals = Arr.scan(
 		Arr.map(inRange, ([, v]) => v),
-		0,
+		baseline,
 		(a, b) => a + b,
 	)
 	return Arr.zipWith(inRange, Arr.drop(totals, 1), ([t], sum) => [t, sum] as const)
@@ -514,7 +519,7 @@ describeWithChdb("PromQL selector source", () => {
 			const counter = { ...req, accumulateDeltas: true }
 			expect(selected(db, ORG_A, counter)).toEqual(
 				expected(counter, [
-					{ labels: deltaLabels, samples: accumulate(deltaSum.samples, req.startMs) },
+					{ labels: deltaLabels, samples: accumulate(deltaSum.samples, req.startMs, req.endMs) },
 				]),
 			)
 			// The deltas as stored, whatever the read's start.

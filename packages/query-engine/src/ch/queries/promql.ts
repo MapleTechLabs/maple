@@ -173,7 +173,7 @@ const exponentialColumns = (
 			lowExp: sql(T.float64)`toFloat64(0)`,
 			highExp: sql(T.float64)`toFloat64(0)`,
 		}
-	const series = sql`PARTITION BY cityHash64(${$.MetricName}, ${$.MetricUnit}, ${labelSetExpr($, true)})`
+	const series = sql`cityHash64(${$.MetricName}, ${$.MetricUnit}, ${labelSetExpr($, true)})`
 	const occupied = sql.raw("length(PositiveBucketCounts) > 0")
 	return {
 		scale: sql(T.int64)`toInt64(Scale)`,
@@ -181,11 +181,13 @@ const exponentialColumns = (
 		counts: sql(T.array(T.float64))`arrayMap(c -> toFloat64(c), PositiveBucketCounts)`,
 		// Negative values and the zero bucket lie below every positive bound.
 		below: sql(T.float64)`toFloat64(arraySum(NegativeBucketCounts) + ZeroCount)`,
-		m: sql(T.int64)`toInt64(min(Scale) OVER (${series}))`,
-		lowExp: sql(T.float64)`minIf(PositiveOffset * exp2(-Scale), ${occupied}) OVER (${series})`,
+		m: sql(T.int64)`toInt64(min(Scale) OVER (PARTITION BY ${series}))`,
+		lowExp: sql(
+			T.float64,
+		)`minIf(PositiveOffset * exp2(-Scale), ${occupied}) OVER (PARTITION BY ${series})`,
 		highExp: sql(
 			T.float64,
-		)`maxIf((PositiveOffset + length(PositiveBucketCounts)) * exp2(-Scale), ${occupied}) OVER (${series})`,
+		)`maxIf((PositiveOffset + length(PositiveBucketCounts)) * exp2(-Scale), ${occupied}) OVER (PARTITION BY ${series})`,
 	}
 }
 
@@ -305,7 +307,10 @@ const windowedQuery = (opts: PromqlSelectorOpts) =>
 			orderBy: [[$.t, "desc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
-		const cumulative = CH.over(CH.sum($.raw), running)
+		// From a baseline above twice the deltas' total, as a counter that started long ago, so
+		// extrapolation never stops at zero and the result does not depend on where the read starts.
+		const baseline = sql(T.float64)`2 * sum(abs(${$.raw})) OVER (PARTITION BY ${$.sk}, ${$.stale}) + 1`
+		const cumulative = sql(T.float64)`${CH.over(CH.sum($.raw), running)} + ${baseline}`
 		const accumulate = opts.accumulateDeltas ? $.isDelta : sql(T.uint8)`0`
 		const nextStale = CH.over(CH.lagInFrame($.stale, 1, $.stale), next)
 		return {
