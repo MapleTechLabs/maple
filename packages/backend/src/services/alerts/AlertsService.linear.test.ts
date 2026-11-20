@@ -19,6 +19,7 @@ import {
 	alertServices,
 } from "./alerts-service-test-support"
 import { LinearAlertDestinationConfig, LinearFeatureSettingsRequest } from "@maple/domain/http"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const GraphqlRequest = Schema.fromJsonString(
 	Schema.Struct({
@@ -197,26 +198,22 @@ describe("AlertsService with a Linear destination", () => {
 		return Effect.gen(function* () {
 			yield* connectLinear(testDb, linear.fetch, orgId)
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				asUserId("user_linear"),
-				adminGrants,
-				new LinearAlertDestinationConfig({
-					type: "linear",
-					name: "Engineering triage",
-					teamId: "team_1",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new LinearAlertDestinationConfig({
+						type: "linear",
+						name: "Engineering triage",
+						teamId: "team_1",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, asUserId("user_linear")))
 			assert.strictEqual(destination.summary, "Linear · Engineering")
 			assert.strictEqual(destination.channelLabel, "ENG")
 			assert.strictEqual(destination.linearTeamId, "team_1")
 
-			const tested = yield* alerts.testDestination(
-				orgId,
-				asUserId("user_linear"),
-				adminGrants,
-				destination.id,
-			)
+			const tested = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, asUserId("user_linear")))
 			assert.strictEqual(tested.message, "Linear team Engineering (ENG) is reachable")
 			assert.notInclude(
 				Arr.map(linear.operations, (operation) => operation.name),
@@ -225,16 +222,13 @@ describe("AlertsService with a Linear destination", () => {
 
 			const error = yield* alerts
 				.createDestination(
-					orgId,
-					asUserId("user_linear"),
-					adminGrants,
 					new LinearAlertDestinationConfig({
 						type: "linear",
 						name: "Elsewhere",
 						teamId: "team_unknown",
 					}),
 				)
-				.pipe(Effect.flip)
+				.pipe(actingAs(orgId, adminGrants, asUserId("user_linear")), Effect.flip)
 			assert.include(error.message, "not in the connected Linear workspace")
 		}).pipe(
 			Effect.provide(
@@ -253,16 +247,15 @@ describe("AlertsService with a Linear destination", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			yield* connectLinear(testDb, linear.fetch, orgId)
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new LinearAlertDestinationConfig({
-					type: "linear",
-					name: "Engineering triage",
-					teamId: "team_1",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new LinearAlertDestinationConfig({
+						type: "linear",
+						name: "Engineering triage",
+						teamId: "team_1",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* alerts.runSchedulerTick()
@@ -321,16 +314,15 @@ describe("AlertsService with a Linear destination", () => {
 				),
 			).pipe(Effect.provide(linearLayers(testDb, linear.fetch)))
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new LinearAlertDestinationConfig({
-					type: "linear",
-					name: "Engineering triage",
-					teamId: "team_1",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new LinearAlertDestinationConfig({
+						type: "linear",
+						name: "Engineering triage",
+						teamId: "team_1",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* alerts.runSchedulerTick()

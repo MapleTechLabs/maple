@@ -47,9 +47,7 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			}).pipe(Effect.mapError(invalidChainRequest))
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
-			const chain = yield* chains
-				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
-				.pipe(Effect.catchTags(createChainErrors))
+			const chain = yield* chains.create(request).pipe(Effect.catchTags(createChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }
 		}),

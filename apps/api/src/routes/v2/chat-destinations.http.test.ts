@@ -121,12 +121,12 @@ const destinationsLayer = (recorded: Recorded) =>
 		deleteDestination: die,
 		listTelegramChats: die,
 		testDestination: die,
-		createDestination: (_orgId, _userId, _roles, request) =>
+		createDestination: (request) =>
 			Effect.sync(() => {
 				recorded.create = request
 				return destinationDocument("#incidents")
 			}),
-		updateDestination: (_orgId, _userId, _roles, _id, request) =>
+		updateDestination: (_id, request) =>
 			Effect.sync(() => {
 				recorded.update = request
 				return destinationDocument("#oncall")

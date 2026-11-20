@@ -12,6 +12,7 @@ import {
 	makeWarehouseStub,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -29,16 +30,15 @@ describe("AlertsService: Google Chat destinations", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
-				alerts.createDestination(
-					asOrgId("org_gchat"),
-					asUserId("user_gchat"),
-					adminGrants,
-					new GoogleChatAlertDestinationConfig({
-						type: "google-chat",
-						name: "Ops",
-						webhookUrl: "https://chat.google.com/room/AAAAops",
-					}),
-				),
+				alerts
+					.createDestination(
+						new GoogleChatAlertDestinationConfig({
+							type: "google-chat",
+							name: "Ops",
+							webhookUrl: "https://chat.google.com/room/AAAAops",
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_gchat"), adminGrants, asUserId("user_gchat"))),
 			)
 			const error = getError(exit)
 			assert.instanceOf(error, AlertValidationError)
@@ -63,20 +63,21 @@ describe("AlertsService: Google Chat destinations", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_gchat")
 			const userId = asUserId("user_gchat")
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new GoogleChatAlertDestinationConfig({
-					type: "google-chat",
-					name: "Ops",
-					webhookUrl: WEBHOOK_URL,
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new GoogleChatAlertDestinationConfig({
+						type: "google-chat",
+						name: "Ops",
+						webhookUrl: WEBHOOK_URL,
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(destination.summary, "Space AAAAops")
 			assert.notInclude(JSON.stringify(destination), "secret-token")
 
-			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			const response = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isTrue(response.success)
 			assert.lengthOf(requests, 1)
 			const url = new URL(requests[0]?.url ?? "")

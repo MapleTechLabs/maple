@@ -50,6 +50,7 @@ import {
 	okFetch,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -70,32 +71,31 @@ describe("AlertsService", () => {
 				const userId = asUserId("user_logs_test")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-				return yield* alerts.testRule(
-					orgId,
-					userId,
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: "Checkout error logs",
-						severity: "critical",
-						enabled: true,
-						signalType: "builder_query",
-						queryBuilderDraft: {
-							id: "q",
-							name: "A",
-							dataSource: "logs",
-							aggregation: "count",
-							whereClause: 'service.name = "checkout" AND severity = "error"',
-						},
-						comparator: "gt",
-						threshold: 10,
-						windowMinutes: 5,
-						minimumSampleCount: 1,
-						consecutiveBreachesRequired: 2,
-						consecutiveHealthyRequired: 2,
-						renotifyIntervalMinutes: 30,
-						destinationIds: [destination.id],
-					}),
-				)
+				return yield* alerts
+					.testRule(
+						new AlertRuleUpsertRequest({
+							name: "Checkout error logs",
+							severity: "critical",
+							enabled: true,
+							signalType: "builder_query",
+							queryBuilderDraft: {
+								id: "q",
+								name: "A",
+								dataSource: "logs",
+								aggregation: "count",
+								whereClause: 'service.name = "checkout" AND severity = "error"',
+							},
+							comparator: "gt",
+							threshold: 10,
+							windowMinutes: 5,
+							minimumSampleCount: 1,
+							consecutiveBreachesRequired: 2,
+							consecutiveHealthyRequired: 2,
+							renotifyIntervalMinutes: 30,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 			}).pipe(
 				Effect.provide(
 					makeLayer(
@@ -161,12 +161,9 @@ describe("AlertsService", () => {
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
 			// The draft owns the scope, so a write drops the service fields.
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				request(["checkout", "payments"], destination.id),
-			)
+			const rule = yield* alerts
+				.createRule(request(["checkout", "payments"], destination.id))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual([...rule.serviceNames], [])
 
 			// A row stored with them anyway evaluates once: one incident per breach,
@@ -219,28 +216,27 @@ describe("AlertsService", () => {
 				const userId = asUserId("user_raw_sql_test")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-				return yield* alerts.testRule(
-					orgId,
-					userId,
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: "Raw SQL alert",
-						severity: "critical",
-						enabled: true,
-						signalType: "raw_query",
-						rawQuerySql:
-							"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
-						rawQueryReducer: "max",
-						comparator: "gt",
-						threshold: 100,
-						windowMinutes: 5,
-						minimumSampleCount: 0,
-						consecutiveBreachesRequired: 2,
-						consecutiveHealthyRequired: 2,
-						renotifyIntervalMinutes: 30,
-						destinationIds: [destination.id],
-					}),
-				)
+				return yield* alerts
+					.testRule(
+						new AlertRuleUpsertRequest({
+							name: "Raw SQL alert",
+							severity: "critical",
+							enabled: true,
+							signalType: "raw_query",
+							rawQuerySql:
+								"SELECT count() AS value FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+							rawQueryReducer: "max",
+							comparator: "gt",
+							threshold: 100,
+							windowMinutes: 5,
+							minimumSampleCount: 0,
+							consecutiveBreachesRequired: 2,
+							consecutiveHealthyRequired: 2,
+							renotifyIntervalMinutes: 30,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 			}).pipe(
 				Effect.provide(
 					makeLayer(
@@ -284,42 +280,41 @@ describe("AlertsService", () => {
 			const builderRule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			const refusals = yield* Effect.all([
-				alerts.createRule(orgId, userId, alertsOnly, rawRule).pipe(Effect.flip),
-				alerts.updateRule(orgId, userId, alertsOnly, builderRule.id, rawRule).pipe(Effect.flip),
-				alerts.testRule(orgId, userId, alertsOnly, rawRule).pipe(Effect.flip),
+				alerts.createRule(rawRule).pipe(actingAs(orgId, alertsOnly, userId), Effect.flip),
+				alerts
+					.updateRule(builderRule.id, rawRule)
+					.pipe(actingAs(orgId, alertsOnly, userId), Effect.flip),
+				alerts.testRule(rawRule).pipe(actingAs(orgId, alertsOnly, userId), Effect.flip),
 				alerts
 					.previewRule(
-						orgId,
-						alertsOnly,
 						Schema.decodeSync(AlertRulePreviewRequest)({
 							rule: rawRule,
 							startTime: "2026-01-01T00:00:00.000Z",
 							endTime: "2026-01-01T00:30:00.000Z",
 						}),
 					)
-					.pipe(Effect.flip),
+					.pipe(actingAs(orgId, alertsOnly), Effect.flip),
 			])
 			for (const refusal of refusals) {
 				assert.instanceOf(refusal, AlertForbiddenError)
 				assert.strictEqual(refusal.message, Policy.denialFor("query:sql").message)
 			}
 			// The same person still writes a builder rule; only raw SQL takes `query:sql`.
-			const renamed = yield* alerts.updateRule(
-				orgId,
-				userId,
-				alertsOnly,
-				builderRule.id,
-				new AlertRuleUpsertRequest({
-					name: "Renamed error rate",
-					severity: "critical",
-					serviceNames: ["checkout"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					destinationIds: [destination.id],
-				}),
-			)
+			const renamed = yield* alerts
+				.updateRule(
+					builderRule.id,
+					new AlertRuleUpsertRequest({
+						name: "Renamed error rate",
+						severity: "critical",
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, alertsOnly, userId))
 			assert.deepStrictEqual([renamed.name, renamed.signalType], ["Renamed error rate", "error_rate"])
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
@@ -335,37 +330,36 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_builder_warning")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Grouped metrics alert",
-					severity: "warning",
-					signalType: "builder_query",
-					queryBuilderDraft: {
-						id: "alert-query",
-						name: "A",
-						dataSource: "metrics",
-						aggregation: "avg",
-						metricName: "http.server.request.duration",
-						metricType: "histogram",
-						whereClause: "",
-						addOns: {
-							groupBy: true,
-							having: false,
-							orderBy: false,
-							limit: false,
-							legend: false,
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Grouped metrics alert",
+						severity: "warning",
+						signalType: "builder_query",
+						queryBuilderDraft: {
+							id: "alert-query",
+							name: "A",
+							dataSource: "metrics",
+							aggregation: "avg",
+							metricName: "http.server.request.duration",
+							metricType: "histogram",
+							whereClause: "",
+							addOns: {
+								groupBy: true,
+								having: false,
+								orderBy: false,
+								limit: false,
+								legend: false,
+							},
+							groupBy: ["attr.http.method", "attr.http.route"],
 						},
-						groupBy: ["attr.http.method", "attr.http.route"],
-					},
-					comparator: "gt",
-					threshold: 100,
-					windowMinutes: 5,
-					destinationIds: [destination.id],
-				}),
-			)
+						comparator: "gt",
+						threshold: 100,
+						windowMinutes: 5,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			assert.strictEqual(rule.signalType, "builder_query")
 			assert.deepStrictEqual(rule.queryBuilderDraft?.groupBy, ["attr.http.method", "attr.http.route"])
@@ -390,17 +384,16 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* alertServices
-				return yield* alerts.createDestination(
-					asOrgId("org_pd_shape"),
-					asUserId("user_pd_shape"),
-					adminGrants,
-					new PagerDutyAlertDestinationConfig({
-						type: "pagerduty",
-						name: "Paging",
-						enabled: true,
-						integrationKey: REST_API_TOKEN,
-					}),
-				)
+				return yield* alerts
+					.createDestination(
+						new PagerDutyAlertDestinationConfig({
+							type: "pagerduty",
+							name: "Paging",
+							enabled: true,
+							integrationKey: REST_API_TOKEN,
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_pd_shape"), adminGrants, asUserId("user_pd_shape")))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -440,17 +433,16 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* alertServices
-				return yield* alerts.createDestination(
-					asOrgId("org_pd_invalid"),
-					asUserId("user_pd_invalid"),
-					adminGrants,
-					new PagerDutyAlertDestinationConfig({
-						type: "pagerduty",
-						name: "Paging",
-						enabled: true,
-						integrationKey: VALID_PD_KEY,
-					}),
-				)
+				return yield* alerts
+					.createDestination(
+						new PagerDutyAlertDestinationConfig({
+							type: "pagerduty",
+							name: "Paging",
+							enabled: true,
+							integrationKey: VALID_PD_KEY,
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_pd_invalid"), adminGrants, asUserId("user_pd_invalid")))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -476,17 +468,16 @@ describe("AlertsService", () => {
 		const fetchImpl = (async () => new Response("", { status: 202 })) as typeof fetch
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				asOrgId("org_pd_ok"),
-				asUserId("user_pd_ok"),
-				adminGrants,
-				new PagerDutyAlertDestinationConfig({
-					type: "pagerduty",
-					name: "Paging",
-					enabled: true,
-					integrationKey: VALID_PD_KEY,
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "Paging",
+						enabled: true,
+						integrationKey: VALID_PD_KEY,
+					}),
+				)
+				.pipe(actingAs(asOrgId("org_pd_ok"), adminGrants, asUserId("user_pd_ok")))
 			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
 			Effect.provide(
@@ -504,17 +495,16 @@ describe("AlertsService", () => {
 		}) as typeof fetch
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				asOrgId("org_pd_open"),
-				asUserId("user_pd_open"),
-				adminGrants,
-				new PagerDutyAlertDestinationConfig({
-					type: "pagerduty",
-					name: "Paging",
-					enabled: true,
-					integrationKey: VALID_PD_KEY,
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "Paging",
+						enabled: true,
+						integrationKey: VALID_PD_KEY,
+					}),
+				)
+				.pipe(actingAs(asOrgId("org_pd_open"), adminGrants, asUserId("user_pd_open")))
 			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
 			Effect.provide(
@@ -557,16 +547,13 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
 			const foreign = yield* alerts
-				.createDestination(
-					orgId,
-					userId,
-					adminGrants,
-					new ChatAlertDestinationConfig({ ...request, channelId: "their-channel" }),
-				)
-				.pipe(Effect.flip)
+				.createDestination(new ChatAlertDestinationConfig({ ...request, channelId: "their-channel" }))
+				.pipe(actingAs(orgId, adminGrants, userId), Effect.flip)
 			assert.instanceOf(foreign, AlertValidationError)
 
-			const destination = yield* alerts.createDestination(orgId, userId, adminGrants, request)
+			const destination = yield* alerts
+				.createDestination(request)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			// Connector and channel name come from the lookup, never the request.
 			assert.strictEqual(destination.chatConnector, "testchat")
 			assert.strictEqual(destination.chatWorkspaceId, workspaceId)
@@ -574,23 +561,27 @@ describe("AlertsService", () => {
 			assert.strictEqual(destination.channelLabel, "#incidents")
 
 			const refused = yield* alerts
-				.updateDestination(orgId, userId, adminGrants, destination.id, {
+				.updateDestination(destination.id, {
 					type: "chat",
 					channelId: "their-channel",
 				})
-				.pipe(Effect.flip)
+				.pipe(actingAs(orgId, adminGrants, userId), Effect.flip)
 			assert.instanceOf(refused, AlertValidationError)
 
-			const renamed = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
-				type: "chat",
-				name: "Renamed",
-			})
+			const renamed = yield* alerts
+				.updateDestination(destination.id, {
+					type: "chat",
+					name: "Renamed",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(renamed.channelLabel, "#incidents")
 
-			const moved = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
-				type: "chat",
-				channelId: "channel-2",
-			})
+			const moved = yield* alerts
+				.updateDestination(destination.id, {
+					type: "chat",
+					channelId: "channel-2",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(moved.channelLabel, "#oncall")
 			assert.strictEqual(moved.chatWorkspaceId, workspaceId)
 			// A rename checks nothing; every channel that would be stored was checked.
@@ -619,23 +610,24 @@ describe("AlertsService", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_pd_update")
 			const userId = asUserId("user_pd_update")
-			const created = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new PagerDutyAlertDestinationConfig({
-					type: "pagerduty",
-					name: "Paging",
-					enabled: true,
-					integrationKey: VALID_PD_KEY,
-				}),
-			)
+			const created = yield* alerts
+				.createDestination(
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "Paging",
+						enabled: true,
+						integrationKey: VALID_PD_KEY,
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(calls, 1) // create validated once
 
-			const updated = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
-				type: "pagerduty",
-				name: "Paging renamed",
-			})
+			const updated = yield* alerts
+				.updateDestination(created.id, {
+					type: "pagerduty",
+					name: "Paging renamed",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(updated.name, "Paging renamed")
 			assert.strictEqual(calls, 1) // no re-validation when the key is omitted
 		}).pipe(
@@ -654,24 +646,25 @@ describe("AlertsService", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_email_dest")
 			const userId = asUserId("user_email_dest")
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new EmailAlertDestinationConfig({
-					type: "email",
-					name: "On-call inbox",
-					enabled: true,
-					memberUserIds: ["user_ops", "user_oncall"],
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new EmailAlertDestinationConfig({
+						type: "email",
+						name: "On-call inbox",
+						enabled: true,
+						memberUserIds: ["user_ops", "user_oncall"],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(destination.type, "email")
 			// Summary uses the member's display name; channelLabel the email.
 			assert.strictEqual(destination.summary, "Ops Team +1 more")
 			assert.strictEqual(destination.channelLabel, "ops@acme.test")
 			assert.deepStrictEqual(destination.memberUserIds, ["user_ops", "user_oncall"])
 
-			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			const response = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isTrue(response.success)
 			assert.deepStrictEqual(
 				Arr.map(sent, (s) => s.to),
@@ -698,17 +691,16 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* alertServices
-				return yield* alerts.createDestination(
-					asOrgId("org_email_invalid"),
-					asUserId("user_email_invalid"),
-					adminGrants,
-					new EmailAlertDestinationConfig({
-						type: "email",
-						name: "Bad",
-						enabled: true,
-						memberUserIds: ["user_stranger"],
-					}),
-				)
+				return yield* alerts
+					.createDestination(
+						new EmailAlertDestinationConfig({
+							type: "email",
+							name: "Bad",
+							enabled: true,
+							memberUserIds: ["user_stranger"],
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_email_invalid"), adminGrants, asUserId("user_email_invalid")))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
@@ -731,36 +723,39 @@ describe("AlertsService", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_email_update")
 			const userId = asUserId("user_email_update")
-			const created = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new EmailAlertDestinationConfig({
-					type: "email",
-					name: "On-call inbox",
-					enabled: true,
-					memberUserIds: ["user_ops"],
-				}),
-			)
+			const created = yield* alerts
+				.createDestination(
+					new EmailAlertDestinationConfig({
+						type: "email",
+						name: "On-call inbox",
+						enabled: true,
+						memberUserIds: ["user_ops"],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			// Omitted member ids → recipients unchanged.
-			const renamed = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
-				type: "email",
-				name: "Renamed inbox",
-			})
+			const renamed = yield* alerts
+				.updateDestination(created.id, {
+					type: "email",
+					name: "Renamed inbox",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(renamed.name, "Renamed inbox")
 			assert.strictEqual(renamed.summary, "Ops Team")
 
 			// Supplied member ids → replaced wholesale.
-			const replaced = yield* alerts.updateDestination(orgId, userId, adminGrants, created.id, {
-				type: "email",
-				memberUserIds: ["user_oncall", "user_lead"],
-			})
+			const replaced = yield* alerts
+				.updateDestination(created.id, {
+					type: "email",
+					memberUserIds: ["user_oncall", "user_lead"],
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(replaced.summary, "oncall@acme.test +1 more")
 			assert.strictEqual(replaced.channelLabel, "oncall@acme.test")
 			assert.deepStrictEqual(replaced.memberUserIds, ["user_oncall", "user_lead"])
 
-			yield* alerts.testDestination(orgId, userId, adminGrants, created.id)
+			yield* alerts.testDestination(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(
 				Arr.map(sent, (s) => s.to),
 				["oncall@acme.test", "lead@acme.test"],
@@ -787,41 +782,40 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_logs_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "All services error logs",
-					severity: "critical",
-					enabled: true,
-					signalType: "builder_query",
-					queryBuilderDraft: {
-						id: "q",
-						name: "A",
-						dataSource: "logs",
-						aggregation: "count",
-						whereClause: 'severity = "error"',
-						groupBy: ["service.name"],
-						addOns: {
-							groupBy: true,
-							having: false,
-							orderBy: false,
-							limit: false,
-							legend: false,
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "All services error logs",
+						severity: "critical",
+						enabled: true,
+						signalType: "builder_query",
+						queryBuilderDraft: {
+							id: "q",
+							name: "A",
+							dataSource: "logs",
+							aggregation: "count",
+							whereClause: 'severity = "error"',
+							groupBy: ["service.name"],
+							addOns: {
+								groupBy: true,
+								having: false,
+								orderBy: false,
+								limit: false,
+								legend: false,
+							},
 						},
-					},
-					groupBy: ["service.name"],
-					comparator: "gt",
-					threshold: 10,
-					windowMinutes: 5,
-					minimumSampleCount: 1,
-					consecutiveBreachesRequired: 2,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+						groupBy: ["service.name"],
+						comparator: "gt",
+						threshold: 10,
+						windowMinutes: 5,
+						minimumSampleCount: 1,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -871,27 +865,26 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_draft_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Error logs by service (draft grouping)",
-					severity: "critical",
-					enabled: true,
-					signalType: "builder_query",
-					queryBuilderDraft: groupedLogsDraft(["service.name"]),
-					// Deliberately NO rule-level groupBy — matches what the web form sends.
-					comparator: "gt",
-					threshold: 10,
-					windowMinutes: 5,
-					minimumSampleCount: 1,
-					consecutiveBreachesRequired: 2,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Error logs by service (draft grouping)",
+						severity: "critical",
+						enabled: true,
+						signalType: "builder_query",
+						queryBuilderDraft: groupedLogsDraft(["service.name"]),
+						// Deliberately NO rule-level groupBy — matches what the web form sends.
+						comparator: "gt",
+						threshold: 10,
+						windowMinutes: 5,
+						minimumSampleCount: 1,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			// Simulate the prod failure mode: a stale "__total__" state row left
 			// behind from when this rule evaluated ungrouped.
@@ -1037,7 +1030,9 @@ describe("AlertsService", () => {
 			const withDestination = (overrides: Partial<{ threshold: number; groupBy: string[] }>) =>
 				new AlertRuleUpsertRequest({ ...request(overrides), destinationIds: [destination.id] })
 
-			const rule = yield* alerts.createRule(orgId, userId, adminGrants, withDestination({}))
+			const rule = yield* alerts
+				.createRule(withDestination({}))
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -1047,19 +1042,17 @@ describe("AlertsService", () => {
 			assert.strictEqual(open.incidents[0]?.status, "open")
 
 			// A non-structural edit (threshold) keeps the incident open.
-			yield* alerts.updateRule(orgId, userId, adminGrants, rule.id, withDestination({ threshold: 12 }))
+			yield* alerts
+				.updateRule(rule.id, withDestination({ threshold: 12 }))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const afterThreshold = yield* alerts.listIncidents(orgId)
 			assert.strictEqual(afterThreshold.incidents[0]?.status, "open")
 
 			// Changing only the draft's grouping is structural: incidents resolve
 			// and all state rows reset.
-			yield* alerts.updateRule(
-				orgId,
-				userId,
-				adminGrants,
-				rule.id,
-				withDestination({ threshold: 12, groupBy: ["severity"] }),
-			)
+			yield* alerts
+				.updateRule(rule.id, withDestination({ threshold: 12, groupBy: ["severity"] }))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const afterGrouping = yield* alerts.listIncidents(orgId)
 			assert.strictEqual(afterGrouping.incidents[0]?.status, "resolved")
 			const stateCount = yield* Effect.promise(() =>
@@ -1095,40 +1088,39 @@ describe("AlertsService", () => {
 				const userId = asUserId("user_test_draft_grouped")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-				return yield* alerts.testRule(
-					orgId,
-					userId,
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: "Grouped test rule",
-						severity: "critical",
-						enabled: true,
-						signalType: "builder_query",
-						queryBuilderDraft: {
-							id: "q",
-							name: "A",
-							dataSource: "logs",
-							aggregation: "count",
-							whereClause: 'severity = "error"',
-							groupBy: ["service.name"],
-							addOns: {
-								groupBy: true,
-								having: false,
-								orderBy: false,
-								limit: false,
-								legend: false,
+				return yield* alerts
+					.testRule(
+						new AlertRuleUpsertRequest({
+							name: "Grouped test rule",
+							severity: "critical",
+							enabled: true,
+							signalType: "builder_query",
+							queryBuilderDraft: {
+								id: "q",
+								name: "A",
+								dataSource: "logs",
+								aggregation: "count",
+								whereClause: 'severity = "error"',
+								groupBy: ["service.name"],
+								addOns: {
+									groupBy: true,
+									having: false,
+									orderBy: false,
+									limit: false,
+									legend: false,
+								},
 							},
-						},
-						comparator: "gt",
-						threshold: 10,
-						windowMinutes: 5,
-						minimumSampleCount: 1,
-						consecutiveBreachesRequired: 2,
-						consecutiveHealthyRequired: 2,
-						renotifyIntervalMinutes: 30,
-						destinationIds: [destination.id],
-					}),
-				)
+							comparator: "gt",
+							threshold: 10,
+							windowMinutes: 5,
+							minimumSampleCount: 1,
+							consecutiveBreachesRequired: 2,
+							consecutiveHealthyRequired: 2,
+							renotifyIntervalMinutes: 30,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 			}).pipe(
 				Effect.provide(
 					makeLayer(
@@ -1158,7 +1150,7 @@ describe("AlertsService", () => {
 				const userId = asUserId("user_delete_guard")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 				yield* createErrorRateRule(alerts, orgId, userId, destination.id)
-				return yield* alerts.deleteDestination(orgId, adminGrants, destination.id)
+				return yield* alerts.deleteDestination(destination.id).pipe(actingAs(orgId, adminGrants))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
@@ -1182,17 +1174,16 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* alertServices
-				return yield* alerts.createDestination(
-					asOrgId("org_forbidden"),
-					asUserId("user_forbidden"),
-					memberGrants,
-					new WebhookAlertDestinationConfig({
-						type: "webhook",
-						name: "Member webhook",
-						enabled: true,
-						url: "https://example.com/member",
-					}),
-				)
+				return yield* alerts
+					.createDestination(
+						new WebhookAlertDestinationConfig({
+							type: "webhook",
+							name: "Member webhook",
+							enabled: true,
+							url: "https://example.com/member",
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_forbidden"), memberGrants, asUserId("user_forbidden")))
 			}).pipe(
 				Effect.provide(
 					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
@@ -1216,18 +1207,17 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_dedupe_destinations")
 
 			const primary = yield* createWebhookDestination(alerts, orgId, userId)
-			const secondary = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new WebhookAlertDestinationConfig({
-					type: "webhook",
-					name: "Secondary webhook",
-					enabled: true,
-					url: "https://example.com/secondary",
-					signingSecret: "webhook-secret-2",
-				}),
-			)
+			const secondary = yield* alerts
+				.createDestination(
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Secondary webhook",
+						enabled: true,
+						url: "https://example.com/secondary",
+						signingSecret: "webhook-secret-2",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			const baseRule = {
 				name: "Duplicate destination rule",
@@ -1246,28 +1236,26 @@ describe("AlertsService", () => {
 
 			// Create with the same id repeated, interleaved with a distinct id — the
 			// duplicates collapse but the first-seen order survives.
-			const created = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					...baseRule,
-					destinationIds: [primary.id, secondary.id, primary.id],
-				}),
-			)
+			const created = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						...baseRule,
+						destinationIds: [primary.id, secondary.id, primary.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(created.destinationIds, [primary.id, secondary.id])
 
 			// Updating with duplicates is deduped on the write path too.
-			const updated = yield* alerts.updateRule(
-				orgId,
-				userId,
-				adminGrants,
-				created.id,
-				new AlertRuleUpsertRequest({
-					...baseRule,
-					destinationIds: [secondary.id, secondary.id],
-				}),
-			)
+			const updated = yield* alerts
+				.updateRule(
+					created.id,
+					new AlertRuleUpsertRequest({
+						...baseRule,
+						destinationIds: [secondary.id, secondary.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(updated.destinationIds, [secondary.id])
 
 			// The persisted row read back is deduped, not just the returned document.
@@ -1306,12 +1294,11 @@ describe("AlertsService", () => {
 
 			// Tags are trimmed, lowercased, and deduped (so "Prod" and " prod "
 			// collapse to one group key) while preserving first-seen order.
-			const created = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({ ...baseRule, tags: ["Prod", " payments ", "prod", ""] }),
-			)
+			const created = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({ ...baseRule, tags: ["Prod", " payments ", "prod", ""] }),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(created.tags, ["prod", "payments"])
 
 			// The normalized tags survive a round-trip through the persisted row.
@@ -1319,13 +1306,9 @@ describe("AlertsService", () => {
 			assert.deepStrictEqual(afterCreate.rules[0]?.tags, ["prod", "payments"])
 
 			// Clearing tags on update persists an empty list, not the prior value.
-			const updated = yield* alerts.updateRule(
-				orgId,
-				userId,
-				adminGrants,
-				created.id,
-				new AlertRuleUpsertRequest({ ...baseRule, tags: [] }),
-			)
+			const updated = yield* alerts
+				.updateRule(created.id, new AlertRuleUpsertRequest({ ...baseRule, tags: [] }))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(updated.tags, [])
 
 			const afterClear = yield* alerts.listRules(orgId)
@@ -1360,26 +1343,25 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_multi_svc")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Multi-service error rate",
-					severity: "critical",
-					enabled: true,
-					serviceNames: ["svc-a", "svc-b"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 2,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Multi-service error rate",
+						severity: "critical",
+						enabled: true,
+						serviceNames: ["svc-a", "svc-b"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -1447,26 +1429,25 @@ describe("AlertsService", () => {
 			const userId = asUserId("user_grouped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "All services error rate",
-					severity: "critical",
-					enabled: true,
-					groupBy: ["service.name"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 2,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "All services error rate",
+						severity: "critical",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			yield* TestClock.adjust(Duration.minutes(1))

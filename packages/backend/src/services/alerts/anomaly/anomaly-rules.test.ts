@@ -23,6 +23,7 @@ import {
 	DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE,
 	defaultAnomalyRuleFields,
 } from "./anomaly-rule"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -259,7 +260,11 @@ describe("default anomaly rule", () => {
 		return Effect.gen(function* () {
 			const rules = yield* makePersistence
 			const unscoped = (name: string, enabled = true) =>
-				Effect.flip(rules.createRule(ORG, USER, ADMIN_ROLES, anomalyRequest({ name, enabled })))
+				Effect.flip(
+					rules
+						.createRule(anomalyRequest({ name, enabled }))
+						.pipe(actingAs(ORG, ADMIN_ROLES, USER)),
+				)
 			assert.strictEqual((yield* unscoped("Mine")).message, DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE)
 			assert.strictEqual(
 				(yield* unscoped("Paused", false)).message,
@@ -277,12 +282,11 @@ describe("default anomaly rule", () => {
 		return Effect.gen(function* () {
 			yield* seedDestination(testDb)
 			const rules = yield* makePersistence
-			const scoped = yield* rules.createRule(
-				ORG,
-				USER,
-				ADMIN_ROLES,
-				anomalyRequest({ name: "Latency only", anomalySignals: ["latency_p95"], ...routed }),
-			)
+			const scoped = yield* rules
+				.createRule(
+					anomalyRequest({ name: "Latency only", anomalySignals: ["latency_p95"], ...routed }),
+				)
+				.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 			assert.deepStrictEqual(scoped.anomalySignals, ["latency_p95"])
 			const widened = yield* Effect.flip(
 				rules.upsertRuleRow(
@@ -312,7 +316,9 @@ describe("default anomaly rule", () => {
 			yield* seedDestination(testDb)
 			const rules = yield* makePersistence
 			yield* seedDefaultRule
-			const template = yield* rules.createRule(ORG, USER, ADMIN_ROLES, errorRateRule("r0"))
+			const template = yield* rules
+				.createRule(errorRateRule("r0"))
+				.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 			// 98 more copies of it: 99 counted rules beside the default.
 			yield* Effect.promise(() =>
 				executeSql(
@@ -324,9 +330,13 @@ describe("default anomaly rule", () => {
 				),
 			)
 
-			const hundredth = yield* rules.createRule(ORG, USER, ADMIN_ROLES, errorRateRule("r99"))
+			const hundredth = yield* rules
+				.createRule(errorRateRule("r99"))
+				.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 			assert.strictEqual(hundredth.name, "r99")
-			const over = yield* Effect.flip(rules.createRule(ORG, USER, ADMIN_ROLES, errorRateRule("r100")))
+			const over = yield* Effect.flip(
+				rules.createRule(errorRateRule("r100")).pipe(actingAs(ORG, ADMIN_ROLES, USER)),
+			)
 			assert.include(over.message, "at most 100 active alert rules")
 		}).pipe(Effect.provide(testDb.layer))
 	})
@@ -347,7 +357,9 @@ describe("default anomaly rule", () => {
 						anomalyRequest({ name: "Default", ...fields }),
 					)
 
-				const deleted = yield* Effect.flip(rules.deleteRule(ORG, ADMIN_ROLES, DEFAULT_RULE_ID))
+				const deleted = yield* Effect.flip(
+					rules.deleteRule(DEFAULT_RULE_ID).pipe(actingAs(ORG, ADMIN_ROLES)),
+				)
 				assert.strictEqual(deleted.message, DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
 				assert.strictEqual(
 					(yield* Effect.flip(edit({ enabled: false }))).message,
@@ -383,12 +395,9 @@ describe("default anomaly rule", () => {
 				assert.deepStrictEqual(renamed.destinationIds, [DESTINATION_ID])
 
 				// A scoped anomaly rule is an ordinary rule: it can be disabled and deleted.
-				const scopedRule = yield* rules.createRule(
-					ORG,
-					USER,
-					ADMIN_ROLES,
-					anomalyRequest({ name: "Checkout", serviceNames: ["checkout"], ...routed }),
-				)
+				const scopedRule = yield* rules
+					.createRule(anomalyRequest({ name: "Checkout", serviceNames: ["checkout"], ...routed }))
+					.pipe(actingAs(ORG, ADMIN_ROLES, USER))
 				const paused = yield* rules.upsertRuleRow(
 					ORG,
 					USER,
@@ -396,7 +405,7 @@ describe("default anomaly rule", () => {
 					anomalyRequest({ name: "Checkout", serviceNames: ["checkout"], enabled: false }),
 				)
 				assert.isFalse(paused.enabled)
-				const gone = yield* rules.deleteRule(ORG, ADMIN_ROLES, scopedRule.id)
+				const gone = yield* rules.deleteRule(scopedRule.id).pipe(actingAs(ORG, ADMIN_ROLES))
 				assert.strictEqual(gone.id, scopedRule.id)
 			}).pipe(Effect.provide(testDb.layer))
 		},

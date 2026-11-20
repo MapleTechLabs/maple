@@ -72,24 +72,24 @@ export interface OnCallSchedulesServiceApi {
 		scheduleId: OnCallScheduleId,
 	) => Effect.Effect<OnCallScheduleDocument, ScheduleReadError>
 	readonly create: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: OnCallScheduleCreateRequest,
-	) => Effect.Effect<OnCallScheduleDocument, ScheduleWriteError>
+	) => Effect.Effect<OnCallScheduleDocument, ScheduleWriteError, Policy.CurrentActor>
 	readonly update: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		request: OnCallScheduleUpdateRequest,
-	) => Effect.Effect<OnCallScheduleDocument, ScheduleWriteError | OnCallScheduleNotFoundError>
+	) => Effect.Effect<
+		OnCallScheduleDocument,
+		ScheduleWriteError | OnCallScheduleNotFoundError,
+		Policy.CurrentActor
+	>
 	/** Deletes the schedule's overrides with it. */
 	readonly delete: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
-	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError | OnCallScheduleInUseError>
+	) => Effect.Effect<
+		void,
+		AlertForbiddenError | ScheduleReadError | OnCallScheduleInUseError,
+		Policy.CurrentActor
+	>
 	/** Overrides that end after `fromMs` (default now), by start. */
 	readonly listOverrides: (
 		orgId: OrgId,
@@ -97,18 +97,21 @@ export interface OnCallSchedulesServiceApi {
 		fromMs?: number,
 	) => Effect.Effect<OnCallOverridesListResponse, ScheduleReadError>
 	readonly createOverride: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		request: OnCallOverrideCreateRequest,
-	) => Effect.Effect<OnCallOverrideDocument, ScheduleWriteError | OnCallScheduleNotFoundError>
+	) => Effect.Effect<
+		OnCallOverrideDocument,
+		ScheduleWriteError | OnCallScheduleNotFoundError,
+		Policy.CurrentActor
+	>
 	readonly deleteOverride: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		scheduleId: OnCallScheduleId,
 		overrideId: OnCallOverrideId,
-	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError | OnCallOverrideNotFoundError>
+	) => Effect.Effect<
+		void,
+		AlertForbiddenError | ScheduleReadError | OnCallOverrideNotFoundError,
+		Policy.CurrentActor
+	>
 	readonly onCallAt: (
 		orgId: OrgId,
 		scheduleId: OnCallScheduleId,
@@ -228,15 +231,13 @@ export class OnCallSchedulesService extends Context.Service<
 		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "OnCallSchedulesService", makePersistenceError)
 
-		const requireManage = (permissions: Policy.Grants) =>
-			Policy.check(
-				permissions,
-				"oncall:manage",
-				(denial) =>
-					new AlertForbiddenError({
-						message: denial.message,
-					}),
-			)
+		const requireManage = Policy.authorize(
+			"oncall:manage",
+			(denial) =>
+				new AlertForbiddenError({
+					message: denial.message,
+				}),
+		)
 
 		/** Every id must be a current member of the org; unchecked on a deployment with no directory. */
 		const requireMembers = (orgId: OrgId, userIds: ReadonlyArray<UserId>) =>
@@ -367,12 +368,10 @@ export class OnCallSchedulesService extends Context.Service<
 		})
 
 		const create = Effect.fn("OnCallSchedulesService.create")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			request: OnCallScheduleCreateRequest,
 		) {
-			yield* requireManage(permissions)
+			const { orgId, userId } = yield* Policy.CurrentActor
+			yield* requireManage
 			yield* requireMembers(orgId, participantsOf(request.layers))
 			const nowMs = yield* runtime.now
 			const id = decodeScheduleIdSync(runtime.makeUuid())
@@ -419,14 +418,12 @@ export class OnCallSchedulesService extends Context.Service<
 		})
 
 		const update = Effect.fn("OnCallSchedulesService.update")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			request: OnCallScheduleUpdateRequest,
 		) {
+			const { orgId, userId } = yield* Policy.CurrentActor
 			yield* annotate(scheduleId)
-			yield* requireManage(permissions)
+			yield* requireManage
 			if (request.layers !== undefined) yield* requireMembers(orgId, participantsOf(request.layers))
 			const nowMs = yield* runtime.now
 			return yield* dbExecute((db) =>
@@ -457,13 +454,10 @@ export class OnCallSchedulesService extends Context.Service<
 			)
 		})
 
-		const remove = Effect.fn("OnCallSchedulesService.delete")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-			scheduleId: OnCallScheduleId,
-		) {
+		const remove = Effect.fn("OnCallSchedulesService.delete")(function* (scheduleId: OnCallScheduleId) {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* annotate(scheduleId)
-			yield* requireManage(permissions)
+			yield* requireManage
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -521,14 +515,12 @@ export class OnCallSchedulesService extends Context.Service<
 		})
 
 		const createOverride = Effect.fn("OnCallSchedulesService.createOverride")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			request: OnCallOverrideCreateRequest,
 		) {
+			const { orgId, userId } = yield* Policy.CurrentActor
 			yield* annotate(scheduleId)
-			yield* requireManage(permissions)
+			yield* requireManage
 			const nowMs = yield* runtime.now
 			if (request.endsAt <= request.startsAt) {
 				return yield* validationError("An override must end after it starts")
@@ -586,13 +578,12 @@ export class OnCallSchedulesService extends Context.Service<
 		})
 
 		const deleteOverride = Effect.fn("OnCallSchedulesService.deleteOverride")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
 			scheduleId: OnCallScheduleId,
 			overrideId: OnCallOverrideId,
 		) {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* annotate(scheduleId)
-			yield* requireManage(permissions)
+			yield* requireManage
 			yield* dbExecute((db) =>
 				Effect.gen(function* () {
 					yield* findRow(db, orgId, scheduleId)

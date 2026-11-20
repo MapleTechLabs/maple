@@ -346,9 +346,6 @@ export interface AlertDestinationsServiceApi {
 		AlertPersistenceError | AlertDestinationStoredConfigInvalidError
 	>
 	readonly createDestination: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: AlertDestinationCreateRequest,
 	) => Effect.Effect<
 		AlertDestinationDocument,
@@ -356,12 +353,10 @@ export interface AlertDestinationsServiceApi {
 		| AlertValidationError
 		| AlertPersistenceError
 		| AlertDestinationEncryptionError
-		| AlertDestinationDependencyError
+		| AlertDestinationDependencyError,
+		Policy.CurrentActor
 	>
 	readonly updateDestination: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 		request: AlertDestinationUpdateRequest,
 	) => Effect.Effect<
@@ -373,11 +368,10 @@ export interface AlertDestinationsServiceApi {
 		| AlertDestinationEncryptionError
 		| AlertDestinationDecryptionError
 		| AlertDestinationStoredConfigInvalidError
-		| AlertDestinationDependencyError
+		| AlertDestinationDependencyError,
+		Policy.CurrentActor
 	>
 	readonly deleteDestination: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 	) => Effect.Effect<
 		AlertDestinationDeleteResponse,
@@ -385,16 +379,17 @@ export interface AlertDestinationsServiceApi {
 		| AlertPersistenceError
 		| AlertDestinationNotFoundError
 		| AlertDestinationInUseError
-		| AlertRuleStoredConfigInvalidError
+		| AlertRuleStoredConfigInvalidError,
+		Policy.CurrentActor
 	>
 	readonly listTelegramChats: (
-		permissions: Policy.Grants,
 		botToken: string,
-	) => Effect.Effect<ReadonlyArray<TelegramChat>, AlertForbiddenError | AlertValidationError>
+	) => Effect.Effect<
+		ReadonlyArray<TelegramChat>,
+		AlertForbiddenError | AlertValidationError,
+		Policy.CurrentActor
+	>
 	readonly testDestination: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 	) => Effect.Effect<
 		AlertDestinationTestResponse,
@@ -403,7 +398,8 @@ export interface AlertDestinationsServiceApi {
 		| AlertDestinationNotFoundError
 		| AlertDeliveryFailure
 		| AlertDestinationDecryptionError
-		| AlertDestinationStoredConfigInvalidError
+		| AlertDestinationStoredConfigInvalidError,
+		Policy.CurrentActor
 	>
 }
 
@@ -433,17 +429,9 @@ export class AlertDestinationsService extends Context.Service<
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
-		const requireAlertsPermission = Effect.fn("AlertDestinationsService.requireAlertsPermission")(
-			function* (permissions: Policy.Grants) {
-				return yield* Policy.check(
-					permissions,
-					"alerts:manage",
-					(denial) =>
-						new AlertForbiddenError({
-							message: denial.message,
-						}),
-				)
-			},
+		const requireAlertsPermission = Policy.authorize(
+			"alerts:manage",
+			(denial) => new AlertForbiddenError({ message: denial.message }),
 		)
 
 		const requireDestinationRow = Effect.fn("AlertDestinationsService.requireDestinationRow")(function* (
@@ -564,11 +552,11 @@ export class AlertDestinationsService extends Context.Service<
 
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertDestinationsService.listTelegramChats",
-		)(function* (permissions, botToken) {
+		)(function* (botToken) {
 			// Gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
-			yield* requireAlertsPermission(permissions)
+			yield* requireAlertsPermission
 			const trimmed = Str.trim(botToken)
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
@@ -582,8 +570,9 @@ export class AlertDestinationsService extends Context.Service<
 
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
 			"AlertDestinationsService.createDestination",
-		)(function* (orgId, userId, permissions, request) {
-			yield* requireAlertsPermission(permissions)
+		)(function* (request) {
+			const { orgId, userId } = yield* Policy.CurrentActor
+			yield* requireAlertsPermission
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
@@ -660,8 +649,9 @@ export class AlertDestinationsService extends Context.Service<
 
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
 			"AlertDestinationsService.updateDestination",
-		)(function* (orgId, userId, permissions, destinationId, request) {
-			yield* requireAlertsPermission(permissions)
+		)(function* (destinationId, request) {
+			const { orgId, userId } = yield* Policy.CurrentActor
+			yield* requireAlertsPermission
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
 				return yield* makeValidationError("Destination type cannot be changed")
@@ -1005,8 +995,9 @@ export class AlertDestinationsService extends Context.Service<
 
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
 			"AlertDestinationsService.deleteDestination",
-		)(function* (orgId, permissions, destinationId) {
-			yield* requireAlertsPermission(permissions)
+		)(function* (destinationId) {
+			const { orgId } = yield* Policy.CurrentActor
+			yield* requireAlertsPermission
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
 				db.run(
@@ -1127,8 +1118,9 @@ export class AlertDestinationsService extends Context.Service<
 
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
 			"AlertDestinationsService.testDestination",
-		)(function* (orgId, _userId, permissions, destinationId) {
-			yield* requireAlertsPermission(permissions)
+		)(function* (destinationId) {
+			const { orgId } = yield* Policy.CurrentActor
+			yield* requireAlertsPermission
 			const row = yield* requireDestinationRow(orgId, destinationId)
 			const sent = yield* delivery
 				.sendImmediateNotification(row, {

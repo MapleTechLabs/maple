@@ -17,7 +17,6 @@ import {
 	type EscalationChainUpdateRequest,
 	type EscalationSteps,
 	type OrgId,
-	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -53,21 +52,16 @@ export interface EscalationChainsServiceApi {
 		chainId: EscalationChainId,
 	) => Effect.Effect<EscalationChainDocument, AlertPersistenceError | EscalationChainNotFoundError>
 	readonly create: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: EscalationChainCreateRequest,
 	) => Effect.Effect<
 		EscalationChainDocument,
 		| AlertForbiddenError
 		| AlertValidationError
 		| AlertPersistenceError
-		| AlertMemberDirectoryUnavailableError
+		| AlertMemberDirectoryUnavailableError,
+		Policy.CurrentActor
 	>
 	readonly update: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		chainId: EscalationChainId,
 		request: EscalationChainUpdateRequest,
 	) => Effect.Effect<
@@ -76,16 +70,19 @@ export interface EscalationChainsServiceApi {
 		| AlertValidationError
 		| AlertPersistenceError
 		| AlertMemberDirectoryUnavailableError
-		| EscalationChainNotFoundError
+		| EscalationChainNotFoundError,
+		Policy.CurrentActor
 	>
 	/** Refused while a rule's tier names the chain; escalations already running finish from their snapshot. */
 	readonly delete: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		chainId: EscalationChainId,
 	) => Effect.Effect<
 		void,
-		AlertForbiddenError | AlertPersistenceError | EscalationChainNotFoundError | EscalationChainInUseError
+		| AlertForbiddenError
+		| AlertPersistenceError
+		| EscalationChainNotFoundError
+		| EscalationChainInUseError,
+		Policy.CurrentActor
 	>
 }
 
@@ -155,15 +152,13 @@ export class EscalationChainsService extends Context.Service<
 		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "EscalationChainsService", makePersistenceError)
 
-		const requireManage = (permissions: Policy.Grants) =>
-			Policy.check(
-				permissions,
-				"oncall:manage",
-				(denial) =>
-					new AlertForbiddenError({
-						message: denial.message,
-					}),
-			)
+		const requireManage = Policy.authorize(
+			"oncall:manage",
+			(denial) =>
+				new AlertForbiddenError({
+					message: denial.message,
+				}),
+		)
 
 		const findRow = (db: MapleDb, orgId: OrgId, chainId: EscalationChainId) =>
 			db
@@ -271,12 +266,10 @@ export class EscalationChainsService extends Context.Service<
 		})
 
 		const create = Effect.fn("EscalationChainsService.create")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			request: EscalationChainCreateRequest,
 		) {
-			yield* requireManage(permissions)
+			const { orgId, userId } = yield* Policy.CurrentActor
+			yield* requireManage
 			yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const id = decodeChainIdSync(runtime.makeUuid())
@@ -323,13 +316,11 @@ export class EscalationChainsService extends Context.Service<
 		})
 
 		const update = Effect.fn("EscalationChainsService.update")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			chainId: EscalationChainId,
 			request: EscalationChainUpdateRequest,
 		) {
-			yield* requireManage(permissions)
+			const { orgId, userId } = yield* Policy.CurrentActor
+			yield* requireManage
 			if (request.steps !== undefined) yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const [row, refs] = yield* dbExecute((db) =>
@@ -370,12 +361,9 @@ export class EscalationChainsService extends Context.Service<
 			return toDocument(row, refs.get(row.id) ?? [])
 		})
 
-		const remove = Effect.fn("EscalationChainsService.delete")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-			chainId: EscalationChainId,
-		) {
-			yield* requireManage(permissions)
+		const remove = Effect.fn("EscalationChainsService.delete")(function* (chainId: EscalationChainId) {
+			const { orgId } = yield* Policy.CurrentActor
+			yield* requireManage
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {

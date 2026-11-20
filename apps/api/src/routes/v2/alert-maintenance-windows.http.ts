@@ -119,13 +119,9 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 				)
 				.handle("create", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
 						yield* requireMatcher(payload.matchers)
 						const schedule = yield* toSchedule(payload.schedule)
 						const created = yield* windows.create(
-							tenant.orgId,
-							tenant.userId,
-							tenant.permissions,
 							new AlertMaintenanceWindowCreateRequest({
 								name: payload.name,
 								...(payload.reason === undefined ? undefined : { reason: payload.reason }),
@@ -152,9 +148,6 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 							payload.schedule === undefined ? undefined : yield* toSchedule(payload.schedule)
 						const current = yield* windows.get(tenant.orgId, params.id)
 						const updated = yield* windows.update(
-							tenant.orgId,
-							tenant.userId,
-							tenant.permissions,
 							params.id,
 							new AlertMaintenanceWindowUpdateRequest({
 								...(payload.name === undefined ? undefined : { name: payload.name }),
@@ -183,13 +176,7 @@ export const HttpV2AlertMaintenanceWindowsLive = HttpApiBuilder.group(
 				)
 				.handle("delete", ({ params }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const deleted = yield* windows.delete(
-							tenant.orgId,
-							tenant.userId,
-							tenant.permissions,
-							params.id,
-						)
+						const deleted = yield* windows.delete(params.id)
 						yield* recordHttpAudit("alert_maintenance_window.deleted", {
 							resourceId: deleted.id,
 							metadata: { name: deleted.name },

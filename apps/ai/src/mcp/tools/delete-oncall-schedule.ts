@@ -30,9 +30,7 @@ export function registerDeleteOnCallScheduleTool(server: McpToolRegistrar) {
 						deleteScheduleErrors["@maple/http/errors/AlertPersistenceError"],
 				}),
 			)
-			yield* schedules
-				.delete(tenant.orgId, tenant.permissions, scheduleId)
-				.pipe(Effect.catchTags(deleteScheduleErrors))
+			yield* schedules.delete(scheduleId).pipe(Effect.catchTags(deleteScheduleErrors))
 			return { id: schedule.id, name: schedule.name }
 		}),
 		render: (output) => ({

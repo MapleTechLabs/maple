@@ -33,7 +33,7 @@ export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
 				}),
 			)
 			yield* schedules
-				.deleteOverride(tenant.orgId, tenant.permissions, scheduleId, overrideId)
+				.deleteOverride(scheduleId, overrideId)
 				.pipe(Effect.catchTags(deleteOverrideErrors))
 			return { id: overrideId, scheduleId, scheduleName: schedule.name }
 		}),

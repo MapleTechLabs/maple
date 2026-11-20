@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
-import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { parseRuleId, ruleNotFoundFromError } from "../lib/alert-rules"
 import * as P from "../lib/params"
@@ -30,10 +29,9 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			}
 
 			const ruleId = yield* parseRuleId(params.rule_id)
-			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
-			const result = yield* alerts.deleteRule(tenant.orgId, tenant.permissions, ruleId).pipe(
+			const result = yield* alerts.deleteRule(ruleId).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
 					"@maple/http/errors/AlertValidationError": (error) =>

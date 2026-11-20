@@ -18,6 +18,7 @@ import {
 	tracesRow,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -76,22 +77,21 @@ describe("maintenance windows hold back alerts", () => {
 			const windows = yield* AlertMaintenanceWindowsService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
-			const window = yield* windows.create(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertMaintenanceWindowCreateRequest({
-					name: "Nightly deploy",
-					matchers: { services: ["checkout"] },
-					schedule: {
-						_tag: "weekly",
-						timeZone: "UTC",
-						days: ["tue"],
-						startTime: "22:00",
-						durationMinutes: 30,
-					},
-				}),
-			)
+			const window = yield* windows
+				.create(
+					new AlertMaintenanceWindowCreateRequest({
+						name: "Nightly deploy",
+						matchers: { services: ["checkout"] },
+						schedule: {
+							_tag: "weekly",
+							timeZone: "UTC",
+							days: ["tue"],
+							startTime: "22:00",
+							durationMinutes: 30,
+						},
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* ticks(alerts, 2)
 			const [held] = (yield* alerts.listIncidents(orgId)).incidents
@@ -123,33 +123,28 @@ describe("maintenance windows hold back alerts", () => {
 			const windows = yield* AlertMaintenanceWindowsService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
-			const window = yield* windows.create(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertMaintenanceWindowCreateRequest({
-					name: "Nightly deploy",
-					matchers: { services: ["checkout"] },
-					schedule: {
-						_tag: "weekly",
-						timeZone: "UTC",
-						days: ["tue"],
-						startTime: "22:00",
-						durationMinutes: 30,
-					},
-				}),
-			)
+			const window = yield* windows
+				.create(
+					new AlertMaintenanceWindowCreateRequest({
+						name: "Nightly deploy",
+						matchers: { services: ["checkout"] },
+						schedule: {
+							_tag: "weekly",
+							timeZone: "UTC",
+							days: ["tue"],
+							startTime: "22:00",
+							durationMinutes: 30,
+						},
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 2)
 
 			// Off and on again between two checks: the occurrence's silence ends, then reopens.
 			const toggle = (enabled: boolean) =>
-				windows.update(
-					orgId,
-					userId,
-					adminGrants,
-					window.id,
-					new AlertMaintenanceWindowUpdateRequest({ enabled }),
-				)
+				windows
+					.update(window.id, new AlertMaintenanceWindowUpdateRequest({ enabled }))
+					.pipe(actingAs(orgId, adminGrants, userId))
 			yield* toggle(false)
 			yield* toggle(true)
 			yield* ticks(alerts, 5)

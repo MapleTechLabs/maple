@@ -126,16 +126,16 @@ const layer = (seen: Seen) =>
 			list: () => Effect.succeed(new OnCallSchedulesListResponse({ schedules: [scheduleDoc()] })),
 			get: (_org, id) =>
 				id === SCHEDULE_ID ? Effect.succeed(scheduleDoc()) : Effect.fail(notFound(id)),
-			create: (_org, _user, _roles, request) => {
+			create: (request) => {
 				seen.created = request
 				if (seen.rejectMember === true) return rejectMember()
 				return Effect.succeed(scheduleDoc({ name: request.name, timeZone: request.timeZone }))
 			},
-			update: (_org, _user, _roles, id, request) => {
+			update: (id, request) => {
 				seen.updated = request
 				return id === SCHEDULE_ID ? Effect.succeed(scheduleDoc()) : Effect.fail(notFound(id))
 			},
-			delete: (_org, _roles, id) => {
+			delete: (id) => {
 				seen.deletedSchedule = id
 				return seen.inUse === true
 					? Effect.fail(
@@ -175,7 +175,7 @@ const layer = (seen: Seen) =>
 						),
 					}),
 				),
-			createOverride: (_org, _user, _roles, id, request) => {
+			createOverride: (id, request) => {
 				seen.overrideCreated = request
 				if (seen.rejectMember === true) return rejectMember()
 				return Effect.succeed(
@@ -190,7 +190,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			deleteOverride: (_org, _roles, _id, overrideId) => {
+			deleteOverride: (_id, overrideId) => {
 				seen.deletedOverride = overrideId
 				return overrideId === OVERRIDE_ID
 					? Effect.void

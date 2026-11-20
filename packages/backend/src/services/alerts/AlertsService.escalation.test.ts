@@ -36,6 +36,7 @@ import {
 	alertServices,
 } from "./alerts-service-test-support"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const decodeChainId = Schema.decodeUnknownSync(EscalationChainId)
 const decodeIso = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -91,18 +92,17 @@ const ticks = (alerts: AlertsServiceApi, minutes: number) =>
 	Effect.forEach(Arr.range(1, minutes), () => tick(alerts), { discard: true })
 
 const webhook = (alerts: AlertsServiceApi, orgId: OrgId, userId: UserId, name: string) =>
-	alerts.createDestination(
-		orgId,
-		userId,
-		adminGrants,
-		new WebhookAlertDestinationConfig({
-			type: "webhook",
-			name,
-			enabled: true,
-			url: `https://example.com/${name}`,
-			signingSecret: `${name}-secret`,
-		}),
-	)
+	alerts
+		.createDestination(
+			new WebhookAlertDestinationConfig({
+				type: "webhook",
+				name,
+				enabled: true,
+				url: `https://example.com/${name}`,
+				signingSecret: `${name}-secret`,
+			}),
+		)
+		.pipe(actingAs(orgId, adminGrants, userId))
 
 const ruleRequest = (thresholds: Arr.NonEmptyReadonlyArray<AlertThreshold>) =>
 	new AlertRuleUpsertRequest({
@@ -143,25 +143,21 @@ const setup = (orgName: string, options: { readonly repeatCount?: number } = {})
 		const team = yield* webhook(alerts, orgId, userId, "team")
 		const slack = yield* webhook(alerts, orgId, userId, "slack")
 		const pager = yield* webhook(alerts, orgId, userId, "pager")
-		const chain = yield* chains.create(
-			orgId,
-			userId,
-			adminGrants,
-			new EscalationChainCreateRequest({
-				name: "API escalation",
-				steps: [
-					{ targets: [{ type: "destination", destinationId: slack.id }], waitMinutes: 10 },
-					{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 15 },
-				],
-				...(options.repeatCount === undefined ? undefined : { repeatCount: options.repeatCount }),
-			}),
-		)
-		const rule = yield* alerts.createRule(
-			orgId,
-			userId,
-			adminGrants,
-			ruleRequest([tier("critical", 5, [team.id], chain.id)]),
-		)
+		const chain = yield* chains
+			.create(
+				new EscalationChainCreateRequest({
+					name: "API escalation",
+					steps: [
+						{ targets: [{ type: "destination", destinationId: slack.id }], waitMinutes: 10 },
+						{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 15 },
+					],
+					...(options.repeatCount === undefined ? undefined : { repeatCount: options.repeatCount }),
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
+		const rule = yield* alerts
+			.createRule(ruleRequest([tier("critical", 5, [team.id], chain.id)]))
+			.pipe(actingAs(orgId, adminGrants, userId))
 		return { alerts, chains, orgId, userId, team, slack, pager, chain, rule }
 	})
 
@@ -189,17 +185,16 @@ const silenceCheckout = (orgId: OrgId, userId: UserId, minutes = 60) =>
 	Effect.gen(function* () {
 		const silences = yield* AlertSilencesService
 		const nowMs = yield* Clock.currentTimeMillis
-		const silence = yield* silences.create(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertSilenceCreateRequest({
-				reason: "checkout deploy",
-				matchers: { services: ["checkout"] },
-				endsAt: decodeIso(new Date(nowMs + minutes * 60_000).toISOString()),
-			}),
-		)
-		return { end: silences.end(orgId, userId, adminGrants, silence.id) }
+		const silence = yield* silences
+			.create(
+				new AlertSilenceCreateRequest({
+					reason: "checkout deploy",
+					matchers: { services: ["checkout"] },
+					endsAt: decodeIso(new Date(nowMs + minutes * 60_000).toISOString()),
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
+		return { end: silences.end(silence.id).pipe(actingAs(orgId, adminGrants, userId)) }
 	})
 
 describe("escalation chains", () => {
@@ -415,22 +410,22 @@ describe("escalation chains", () => {
 			const userId = asUserId("user_esc_deescalate")
 			const team = yield* webhook(alerts, orgId, userId, "team")
 			const pager = yield* webhook(alerts, orgId, userId, "pager")
-			const chain = yield* chains.create(
-				orgId,
-				userId,
-				adminGrants,
-				new EscalationChainCreateRequest({
-					name: "Page chain",
-					steps: [{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 }],
-					repeatCount: 3,
-				}),
-			)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				ruleRequest([tier("critical", 20, [], chain.id), tier("warning", 5, [team.id], null)]),
-			)
+			const chain = yield* chains
+				.create(
+					new EscalationChainCreateRequest({
+						name: "Page chain",
+						steps: [
+							{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 },
+						],
+						repeatCount: 3,
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+			yield* alerts
+				.createRule(
+					ruleRequest([tier("critical", 20, [], chain.id), tier("warning", 5, [team.id], null)]),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			assert.include(requests, "trigger pager")
@@ -455,21 +450,19 @@ describe("escalation chains", () => {
 			const orgId = asOrgId("org_esc_dedupe")
 			const userId = asUserId("user_esc_dedupe")
 			const team = yield* webhook(alerts, orgId, userId, "team")
-			const chain = yield* chains.create(
-				orgId,
-				userId,
-				adminGrants,
-				new EscalationChainCreateRequest({
-					name: "Team first",
-					steps: [{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 }],
-				}),
-			)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
-			)
+			const chain = yield* chains
+				.create(
+					new EscalationChainCreateRequest({
+						name: "Team first",
+						steps: [
+							{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 },
+						],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+			yield* alerts
+				.createRule(ruleRequest([tier("critical", 5, [team.id], chain.id)]))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			assert.deepStrictEqual(requests, ["trigger team"])
@@ -538,21 +531,19 @@ describe("escalation chains", () => {
 			const orgId = asOrgId("org_esc_silenced_dedupe")
 			const userId = asUserId("user_esc_silenced_dedupe")
 			const team = yield* webhook(alerts, orgId, userId, "team")
-			const chain = yield* chains.create(
-				orgId,
-				userId,
-				adminGrants,
-				new EscalationChainCreateRequest({
-					name: "Team first",
-					steps: [{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 }],
-				}),
-			)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
-			)
+			const chain = yield* chains
+				.create(
+					new EscalationChainCreateRequest({
+						name: "Team first",
+						steps: [
+							{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 5 },
+						],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+			yield* alerts
+				.createRule(ruleRequest([tier("critical", 5, [team.id], chain.id)]))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const silence = yield* silenceCheckout(orgId, userId)
 			yield* alerts.runSchedulerTick()
 			yield* ticks(alerts, 3)
@@ -579,18 +570,12 @@ describe("escalation chains", () => {
 				targets: [{ type: "destination" as const, destinationId: team.id }],
 				waitMinutes: 5,
 			}
-			const chain = yield* chains.create(
-				orgId,
-				userId,
-				adminGrants,
-				new EscalationChainCreateRequest({ name: "Team twice", steps: [step, step] }),
-			)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				ruleRequest([tier("critical", 5, [team.id], chain.id)]),
-			)
+			const chain = yield* chains
+				.create(new EscalationChainCreateRequest({ name: "Team twice", steps: [step, step] }))
+				.pipe(actingAs(orgId, adminGrants, userId))
+			yield* alerts
+				.createRule(ruleRequest([tier("critical", 5, [team.id], chain.id)]))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			assert.deepStrictEqual(requests, ["trigger team"])
@@ -618,25 +603,26 @@ describe("escalation chains", () => {
 			const slack = yield* webhook(alerts, orgId, userId, "slack")
 			const pager = yield* webhook(alerts, orgId, userId, "pager")
 			const create = (name: string, destinationId: AlertDestinationId, repeatCount: number) =>
-				chains.create(
-					orgId,
-					userId,
-					adminGrants,
-					new EscalationChainCreateRequest({
-						name,
-						steps: [{ targets: [{ type: "destination", destinationId }], waitMinutes: 30 }],
-						repeatCount,
-					}),
-				)
+				chains
+					.create(
+						new EscalationChainCreateRequest({
+							name,
+							steps: [{ targets: [{ type: "destination", destinationId }], waitMinutes: 30 }],
+							repeatCount,
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 			// The warning chain is still waiting to repeat when the incident escalates.
 			const warnChain = yield* create("Warn chain", slack.id, 1)
 			const pageChain = yield* create("Page chain", pager.id, 0)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				ruleRequest([tier("critical", 20, [], pageChain.id), tier("warning", 5, [], warnChain.id)]),
-			)
+			yield* alerts
+				.createRule(
+					ruleRequest([
+						tier("critical", 20, [], pageChain.id),
+						tier("warning", 5, [], warnChain.id),
+					]),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			assert.deepStrictEqual(requests, ["trigger slack"])
@@ -664,17 +650,18 @@ describe("escalation chains", () => {
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			// The chain stops naming slack, but the open incident's run still has it in its snapshot.
-			yield* chains.update(
-				orgId,
-				userId,
-				adminGrants,
-				chain.id,
-				new EscalationChainUpdateRequest({
-					steps: [{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 }],
-				}),
-			)
+			yield* chains
+				.update(
+					chain.id,
+					new EscalationChainUpdateRequest({
+						steps: [
+							{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 10 },
+						],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const refused = getError(
-				yield* Effect.exit(alerts.deleteDestination(orgId, adminGrants, slack.id)),
+				yield* Effect.exit(alerts.deleteDestination(slack.id).pipe(actingAs(orgId, adminGrants))),
 			)
 			if (!Schema.is(AlertDestinationInUseError)(refused)) return assert.fail("expected in use")
 			assert.include(refused.message, "escalating an open incident")
@@ -689,30 +676,36 @@ describe("escalation chains", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const { alerts, chains, orgId, userId, team, slack, chain, rule } = yield* setup("org_esc_guards")
 			const unknown = yield* Effect.exit(
-				alerts.createRule(
-					orgId,
-					userId,
-					adminGrants,
-					ruleRequest([
-						tier("critical", 5, [team.id], decodeChainId("00000000-0000-4000-8000-0000000000ff")),
-					]),
-				),
+				alerts
+					.createRule(
+						ruleRequest([
+							tier(
+								"critical",
+								5,
+								[team.id],
+								decodeChainId("00000000-0000-4000-8000-0000000000ff"),
+							),
+						]),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			assert.instanceOf(getError(unknown), AlertValidationError)
 
-			const inUse = getError(yield* Effect.exit(chains.delete(orgId, adminGrants, chain.id)))
+			const inUse = getError(
+				yield* Effect.exit(chains.delete(chain.id).pipe(actingAs(orgId, adminGrants))),
+			)
 			assert.instanceOf(inUse, EscalationChainInUseError)
 			assert.deepStrictEqual((yield* chains.get(orgId, chain.id)).ruleIds, [rule.id])
 
 			const destinationInUse = getError(
-				yield* Effect.exit(alerts.deleteDestination(orgId, adminGrants, slack.id)),
+				yield* Effect.exit(alerts.deleteDestination(slack.id).pipe(actingAs(orgId, adminGrants))),
 			)
 			if (!Schema.is(AlertDestinationInUseError)(destinationInUse))
 				return assert.fail("expected in use")
 			assert.include(destinationInUse.message, "API escalation")
 
-			yield* alerts.deleteRule(orgId, adminGrants, rule.id)
-			yield* chains.delete(orgId, adminGrants, chain.id)
+			yield* alerts.deleteRule(rule.id).pipe(actingAs(orgId, adminGrants))
+			yield* chains.delete(chain.id).pipe(actingAs(orgId, adminGrants))
 			assert.lengthOf((yield* chains.list(orgId)).chains, 0)
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})

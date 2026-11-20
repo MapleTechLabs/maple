@@ -81,7 +81,7 @@ const layer = (seen: Seen) =>
 		Layer.mock(EscalationChainsService)({
 			list: () => Effect.succeed(new EscalationChainsListResponse({ chains: [chainDoc()] })),
 			get: (_org, id) => (id === CHAIN_ID ? Effect.succeed(chainDoc()) : Effect.fail(notFound(id))),
-			create: (_org, _user, _roles, request) => {
+			create: (request) => {
 				seen.created = request
 				if (seen.rejectCreate === true) {
 					const message = "An escalation step names a destination that does not exist"
@@ -96,13 +96,13 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			update: (_org, _user, _roles, id, request) => {
+			update: (id, request) => {
 				seen.updated = request
 				return id === CHAIN_ID
 					? Effect.succeed(chainDoc(request.name === undefined ? {} : { name: request.name }))
 					: Effect.fail(notFound(id))
 			},
-			delete: (_org, _roles, id) => {
+			delete: (id) => {
 				seen.deleted = id
 				return seen.inUse === true
 					? Effect.fail(

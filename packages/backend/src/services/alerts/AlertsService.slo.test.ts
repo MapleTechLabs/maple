@@ -26,6 +26,7 @@ import {
 	alertServices,
 } from "./alerts-service-test-support"
 import { SloReadService } from "@maple/backend/services/slos/SloReadService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -98,18 +99,17 @@ const createSlo = Effect.fn(function* (destinationId: AlertDestinationId | undef
 
 /** A webhook destination of its own, so a test can tell which tier notified whom. */
 const createNamedWebhook = (alerts: AlertsServiceApi, name: string) =>
-	alerts.createDestination(
-		orgId,
-		userId,
-		adminGrants,
-		new WebhookAlertDestinationConfig({
-			type: "webhook",
-			name,
-			enabled: true,
-			url: `https://example.com/${name}`,
-			signingSecret: "webhook-secret",
-		}),
-	)
+	alerts
+		.createDestination(
+			new WebhookAlertDestinationConfig({
+				type: "webhook",
+				name,
+				enabled: true,
+				url: `https://example.com/${name}`,
+				signingSecret: "webhook-secret",
+			}),
+		)
+		.pipe(actingAs(orgId, adminGrants, userId))
 
 /** Opens an incident at `badPerMille` and returns which destinations it notified. */
 const notifiedBy = (badPerMille: number) => {
@@ -262,7 +262,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 			const ruleId = Option.getOrThrow(Option.fromNullOr(slo.alertRuleId))
 
 			assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
-			const refused = yield* alerts.deleteRule(orgId, adminGrants, ruleId).pipe(Effect.flip)
+			const refused = yield* alerts.deleteRule(ruleId).pipe(actingAs(orgId, adminGrants), Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/AlertRuleNotFoundError")
 
 			// Switching alerting off disables the rule; the SLO keeps it.

@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import { CurrentMcpTenant } from "../tenant"
 import { silenceFields, endSilenceErrors, toAlertSilenceRow } from "../lib/alert-silences"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -20,11 +19,8 @@ export function registerEndAlertSilenceTool(server: McpToolRegistrar) {
 		phrases: ["Ending an alert silence"],
 		handler: Effect.fn("McpTool.endAlertSilence")(function* (params) {
 			const silenceId = yield* P.decodeResourceId("alertSilence", "silence_id")(params.silence_id)
-			const tenant = yield* CurrentMcpTenant
 			const silences = yield* AlertSilencesService
-			const silence = yield* silences
-				.end(tenant.orgId, tenant.userId, tenant.permissions, silenceId)
-				.pipe(Effect.catchTags(endSilenceErrors))
+			const silence = yield* silences.end(silenceId).pipe(Effect.catchTags(endSilenceErrors))
 			return { silence: toAlertSilenceRow(silence) }
 		}),
 		render: (output) => ({

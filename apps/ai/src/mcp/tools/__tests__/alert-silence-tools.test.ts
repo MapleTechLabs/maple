@@ -90,7 +90,7 @@ const layer = (seen: Seen) =>
 							new AlertSilenceNotFoundError({ message: "not found", silenceId: id as never }),
 						)
 			},
-			create: (_org: unknown, _user: unknown, _roles: unknown, request: AlertSilenceCreateRequest) => {
+			create: (request: AlertSilenceCreateRequest) => {
 				if (seen.createFails !== undefined) return Effect.fail(seen.createFails)
 				seen.created = request
 				return Effect.succeed(
@@ -102,7 +102,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			end: (_org: unknown, _user: unknown, _roles: unknown, id: string) => {
+			end: (id: string) => {
 				seen.ended = id
 				return id === ACTIVE_ID
 					? Effect.succeed(silence(ACTIVE_ID, "ended", "Checkout deploy"))

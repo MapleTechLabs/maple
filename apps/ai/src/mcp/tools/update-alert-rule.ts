@@ -379,7 +379,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			)
 
 			const saved = yield* Effect.forEach(requests, ({ current, request }) =>
-				alerts.updateRule(tenant.orgId, tenant.userId, tenant.permissions, current.id, request).pipe(
+				alerts.updateRule(current.id, request).pipe(
 					Effect.catchTags(ruleWriteInputErrors),
 					Effect.catchTags({
 						"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,

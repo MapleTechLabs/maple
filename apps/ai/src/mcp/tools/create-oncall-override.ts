@@ -62,7 +62,7 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 				}),
 			)
 			const override = yield* schedules
-				.createOverride(tenant.orgId, tenant.userId, tenant.permissions, scheduleId, request)
+				.createOverride(scheduleId, request)
 				.pipe(Effect.catchTags(createOverrideErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { scheduleName: schedule.name, override: toOverrideRow(override, names) }

@@ -191,7 +191,7 @@ const layer = (seen: Seen) =>
 		Layer.succeed(AlertRulesService, {
 			listRules: () =>
 				Effect.succeed(new AlertRulesListResponse({ rules: seen.rules ?? [rule, ...extraRules] })),
-			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
+			createRule: (request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
 				return Effect.succeed(
@@ -211,7 +211,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
+			deleteRule: (id: string) =>
 				id === RULE_ID
 					? Effect.succeed({ id })
 					: Effect.fail(
@@ -222,7 +222,7 @@ const layer = (seen: Seen) =>
 						),
 		} as never),
 		Layer.succeed(AlertsService, {
-			previewRule: (_o: unknown, _r: unknown, request: AlertRulePreviewRequest) => {
+			previewRule: (request: AlertRulePreviewRequest) => {
 				seen.previewed = request
 				const point = (bucket: string) => ({
 					bucket,
@@ -268,13 +268,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			updateRule: (
-				_o: unknown,
-				_u: unknown,
-				_r: unknown,
-				id: string,
-				request: AlertRuleUpsertRequest,
-			) => {
+			updateRule: (id: string, request: AlertRuleUpsertRequest) => {
 				seen.updated = request
 				seen.updatedIds = [...(seen.updatedIds ?? []), id]
 				return Effect.succeed(
