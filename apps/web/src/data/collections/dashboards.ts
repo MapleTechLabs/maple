@@ -29,6 +29,7 @@ const toUpdateRequest = (document: DashboardDocument): V2DashboardUpdateParams =
 	sections: document.sections ?? [],
 	variables: document.variables ?? [],
 	refreshIntervalSeconds: document.refreshIntervalSeconds ?? null,
+	importReport: document.importReport ?? null,
 })
 
 /** The write landed but carried no txid to confirm it on the shape stream (`requireTxid`). */

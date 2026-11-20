@@ -2071,6 +2071,29 @@
           "id": {
             "$ref": "#/components/schemas/_maple_DashboardId"
           },
+          "import_report": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              "source": {
+                "enum": [
+                  "grafana"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "items"
+            ],
+            "type": "object"
+          },
           "name": {
             "type": "string"
           },
@@ -2218,6 +2241,31 @@
                             "metric_names",
                             "scope",
                             "attribute_key"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "promql"
+                              ],
+                              "type": "string"
+                            },
+                            "label": {
+                              "maxLength": 256,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                              "type": "string"
+                            },
+                            "match": {
+                              "maxLength": 4096,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label"
                           ],
                           "type": "object"
                         }

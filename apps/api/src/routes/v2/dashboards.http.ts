@@ -113,6 +113,7 @@ const toV2DashboardSnapshot = (dashboard: DashboardDocument): V2DashboardVersion
 	sections: dashboard.sections ?? [],
 	variables: dashboard.variables ?? [],
 	refreshIntervalSeconds: dashboard.refreshIntervalSeconds ?? null,
+	...(dashboard.importReport === undefined ? undefined : { importReport: dashboard.importReport }),
 	createdAt: dashboard.createdAt,
 	updatedAt: dashboard.updatedAt,
 })
@@ -246,6 +247,9 @@ const applyUpdate = (
 		payload.refreshIntervalSeconds === undefined
 			? current.refreshIntervalSeconds
 			: (payload.refreshIntervalSeconds ?? undefined)
+	// Kept across unrelated edits; only an explicit `null` (the board's Dismiss) removes it.
+	const importReport =
+		payload.importReport === undefined ? current.importReport : (payload.importReport ?? undefined)
 
 	return new DashboardDocument({
 		id: current.id,
@@ -258,13 +262,17 @@ const applyUpdate = (
 		...(sections !== undefined ? { sections } : undefined),
 		...(variables !== undefined ? { variables } : undefined),
 		...(refreshIntervalSeconds !== undefined ? { refreshIntervalSeconds } : undefined),
+		...(importReport !== undefined ? { importReport } : undefined),
 		createdAt: current.createdAt,
 		updatedAt,
 	})
 }
 
 /** Update-payload fields diffable through the wire shape; layout blobs get summarized. */
-const dashboardAuditDiff = auditDiff<keyof V2DashboardUpdateParams & keyof V2Dashboard>({
+// The import report is not audited: dismissing it is not a configuration change.
+const dashboardAuditDiff = auditDiff<
+	Exclude<keyof V2DashboardUpdateParams & keyof V2Dashboard, "importReport">
+>({
 	fields: [
 		"name",
 		"description",

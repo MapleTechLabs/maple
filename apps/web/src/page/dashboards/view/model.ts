@@ -180,6 +180,8 @@ export const Model = Schema.Struct({
 	widgetMenuId: Schema.NullOr(Schema.String),
 	widgetMenu: Menu.Model,
 	titleDraft: Schema.NullOr(Schema.String),
+	/** The "Imported from Grafana" notice shows its list. */
+	isImportReportOpen: Schema.Boolean,
 	pickerDialog: Dialog.Model,
 	tagEditor: TagEditor.Model,
 	variablesManager: VariablesManager.Model,

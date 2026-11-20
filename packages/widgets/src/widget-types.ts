@@ -194,7 +194,7 @@ const breakdownPanel = (
 
 export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 	line: chartPanel("line", "Line", ["TimeSeriesChart"], ["timeseries", "graph"]),
-	bar: chartPanel("bar", "Bar", ["BarChart"]),
+	bar: chartPanel("bar", "Bar", ["BarChart"], ["barchart"]),
 	area: chartPanel("area", "Area", []),
 
 	stat: {

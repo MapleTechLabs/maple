@@ -520,6 +520,19 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 		),
 })
 
+/** Removes the import report, which is what dismissing its notice means. */
+export const DismissImportReport = Command.define("DismissDashboardImportReport", {
+	args: Target,
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => {
+				const { importReport: _, ...rest } = document
+				return { ...rest, updatedAt: nowIso }
+			}),
+		),
+})
+
 /** How many fresh ids an edit mints: a new group and its tab, or a new tab. */
 const idsNeeded = (edit: SectionEdit): number =>
 	edit._tag === "AddSection" ? 2 : edit._tag === "AddTab" ? 1 : 0

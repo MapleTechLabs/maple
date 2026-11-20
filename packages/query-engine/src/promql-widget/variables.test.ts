@@ -114,10 +114,26 @@ describe("interpolatePromqlBuiltins", () => {
 		)
 	})
 
-	it("follows Grafana's rate interval rule", () => {
-		// max(4 * 15s, step + 15s): a short step floors at 60s, a long one adds a scrape.
-		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 15_000 })).toBe("[60s]")
-		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 120_000 })).toBe("[135s]")
+	it("follows Grafana's rate interval rule over a 60s export interval", () => {
+		// max(4 * 60s, step + 60s): a short step floors at 4m, a long one adds an export.
+		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 15_000 })).toBe("[240s]")
+		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 300_000 })).toBe("[360s]")
+	})
+
+	it("fills $__from and $__to in Grafana's formats", () => {
+		const window = { startMs: 1_767_225_600_500, endMs: 1_767_229_200_000, stepMs: 30_000 }
+		expect(interpolatePromqlBuiltins("x @ ${__to:date:seconds}", window)).toBe("x @ 1767229200")
+		expect(interpolatePromqlBuiltins("$__from ${__to}", window)).toBe("1767225600500 1767229200000")
+		expect(interpolatePromqlBuiltins("${__from:date:seconds}", window)).toBe("1767225600")
+		expect(interpolatePromqlBuiltins("${__from:date} ${__to:date:iso}", window)).toBe(
+			"2026-01-01T00:00:00.500Z 2026-01-01T01:00:00.000Z",
+		)
+	})
+
+	it("leaves a date format on a non-time built-in as written", () => {
+		expect(interpolatePromqlBuiltins("${__range:date}", { ...hour, stepMs: 15_000 })).toBe(
+			"${__range:date}",
+		)
 	})
 
 	it("leaves an unknown built-in alone", () => {

@@ -178,13 +178,8 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 					label: "Host",
 					includeAll: true,
 					type: "query",
-					source: {
-						kind: "metric",
-						metricType: "gauge",
-						metricNames: ["node_uname_info"],
-						scope: "metric",
-						attributeKey: "instance",
-					},
+					// Read by PromQL label discovery; the `$job` filter is dropped, the metric kept.
+					source: { kind: "promql", label: "instance", match: "node_uname_info" },
 				},
 				{
 					name: "mountpoint",
@@ -199,7 +194,7 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 			expect(converted.warnings).toEqual(
 				expect.arrayContaining([
 					'Interval variable "resolution" was not imported; its references now use $__interval in PromQL and $__interval_s (seconds) in ClickHouse SQL.',
-					'Variable "node" lists every instance of node_uname_info; the label filters in "node_uname_info{job="$job"}" were not imported.',
+					'Variable "node" lists values without the filters in "node_uname_info{job="$job"}" that use other variables; Maple variables do not narrow each other yet.',
 				]),
 			)
 		}),
@@ -619,7 +614,9 @@ describe("guesses the importer says out loud", () => {
 			const { warnings } = yield* convertGrafanaDashboardToPortable(
 				board([note], [{ name: "job", type: "query", query: 'label_values(up{env="prod"}, job)' }]),
 			)
-			expect(Arr.some(warnings, Str.includes('its selector "up{env="prod"}" was not imported'))).toBe(true)
+			expect(Arr.some(warnings, Str.includes('its selector "up{env="prod"}" was not imported'))).toBe(
+				true,
+			)
 			const bare = yield* convertGrafanaDashboardToPortable(
 				board([note], [{ name: "job", type: "query", query: "label_values(job)" }]),
 			)
@@ -673,7 +670,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 	it.effect("does not take $__orgFilter in a comment or a literal as the scope", () =>
 		Effect.gen(function* () {
 			expect(
-				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) -- add $__orgFilter"),
+				yield* importSql(
+					"SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) -- add $__orgFilter",
+				),
 			).toBeNull()
 			expect(
 				yield* importSql(
@@ -682,7 +681,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 			).toBeNull()
 			// An OrgId in a comment does not count as the predicate either.
 			expect(
-				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) /* OrgId */"),
+				yield* importSql(
+					"SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) /* OrgId */",
+				),
 			).toBeNull()
 		}),
 	)
@@ -690,7 +691,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 	it.effect("needs $__orgFilter in every SELECT of a UNION, not just one", () =>
 		Effect.gen(function* () {
 			const scoped = "SELECT count() FROM a WHERE $__timeFilter(ts) AND $__orgFilter"
-			expect(yield* importSql(`${scoped} UNION ALL SELECT count() FROM b WHERE $__timeFilter(ts)`)).toBeNull()
+			expect(
+				yield* importSql(`${scoped} UNION ALL SELECT count() FROM b WHERE $__timeFilter(ts)`),
+			).toBeNull()
 			expect(yield* importSql(`${scoped} UNION ALL ${scoped}`)).toBe(`${scoped} UNION ALL ${scoped}`)
 		}),
 	)
@@ -699,13 +702,21 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 		Effect.gen(function* () {
 			const scoped = "SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 			const open = "SELECT 1 FROM logs WHERE $__timeFilter(Timestamp)"
-			for (const op of ["EXCEPT /*c*/ ", "EXCEPT -- c\n", "EXCEPT(", "EXCEPT ALL(", "INTERSECT DISTINCT /* x */ ("]) {
+			for (const op of [
+				"EXCEPT /*c*/ ",
+				"EXCEPT -- c\n",
+				"EXCEPT(",
+				"EXCEPT ALL(",
+				"INTERSECT DISTINCT /* x */ (",
+			]) {
 				const close = Str.endsWith("(")(op) ? ")" : ""
 				expect(yield* importSql(`${scoped} ${op}${open}${close}`), op).toBeNull()
 			}
 			// Column exclusion is not a set operation.
 			expect(
-				yield* importSql("SELECT * EXCEPT (Body) FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+				yield* importSql(
+					"SELECT * EXCEPT (Body) FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				),
 			).not.toBeNull()
 		}),
 	)
@@ -722,15 +733,21 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 				yield* importSql(
 					"SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE OrgId = 'a' AND $__timeFilter(Timestamp)",
 				),
-			).toBe("SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter")
+			).toBe(
+				"SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 		}),
 	)
 
 	it.effect("does not read a column named like a clause as that clause", () =>
 		Effect.gen(function* () {
 			expect(
-				yield* importSql("SELECT format, count() FROM logs WHERE OrgId = 1 AND $__timeFilter(Timestamp)"),
-			).toBe("SELECT format, count() FROM logs WHERE (OrgId = 1 AND $__timeFilter(Timestamp)) AND $__orgFilter")
+				yield* importSql(
+					"SELECT format, count() FROM logs WHERE OrgId = 1 AND $__timeFilter(Timestamp)",
+				),
+			).toBe(
+				"SELECT format, count() FROM logs WHERE (OrgId = 1 AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 			expect(
 				yield* importSql(
 					"SELECT count() FROM logs WHERE OrgId = 1 AND limit IN (1, 2) AND $__timeFilter(Timestamp) LIMIT 5",
@@ -765,6 +782,294 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 			expect(sql).toBe(
 				"SELECT toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS t, count() AS value FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY t",
 			)
+		}),
+	)
+})
+
+/** A board on Amazon Managed Prometheus, with node-exporter-full style variables. */
+const ampDashboard = {
+	title: "API on AMP",
+	schemaVersion: 39,
+	templating: {
+		list: [
+			{
+				name: "handler",
+				type: "query",
+				datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+				query: { query: "label_values(http_request_duration_seconds_bucket, handler)" },
+			},
+			{
+				name: "route",
+				type: "query",
+				datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+				definition: 'label_values(http_server_requests_total{env="prod", job=~"$job"}, http_route)',
+				query: 'label_values(http_server_requests_total{env="prod", job=~"$job"}, http_route)',
+				regex: "/api/.*/",
+				sort: 3,
+			},
+			{
+				name: "namespace",
+				type: "query",
+				datasource: { type: "prometheus", uid: "prom" },
+				query: "label_values(namespace)",
+				sort: 1,
+			},
+		],
+	},
+	panels: [
+		{
+			type: "barchart",
+			title: "Requests by route",
+			gridPos: { x: 0, y: 0, w: 12, h: 8 },
+			datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
+			targets: [{ refId: "A", expr: "sum by (http_route) (rate(http_server_requests_total[5m]))" }],
+			transformations: [
+				{ id: "organize", options: {} },
+				{ id: "reduce", disabled: true },
+			],
+		},
+		{
+			type: "table",
+			title: "Top handlers",
+			gridPos: { x: 12, y: 0, w: 12, h: 8 },
+			datasource: { type: "victoriametrics-metrics-datasource", uid: "vm" },
+			targets: [
+				{
+					refId: "A",
+					expr: "topk(5, sum by (handler) (rate(http_requests_total[1h])))",
+					instant: true,
+					format: "table",
+				},
+			],
+			fieldConfig: {
+				defaults: {},
+				overrides: [{ matcher: { id: "byName", options: "Value" }, properties: [] }],
+			},
+		},
+		{
+			type: "timeseries",
+			title: "Instant line",
+			gridPos: { x: 0, y: 8, w: 12, h: 8 },
+			datasource: { type: "prometheus", uid: "prom" },
+			targets: [{ refId: "A", expr: "up", instant: true, range: false }],
+		},
+	],
+}
+
+describe("PromQL datasources, discovery variables and what does not carry over", () => {
+	it.effect("backs label_values with PromQL label discovery, keeping literal filters", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(
+				Arr.map(converted.dashboard.variables ?? [], (v) => (v.type === "query" ? v.source : v.type)),
+			).toEqual([
+				{ kind: "promql", label: "handler", match: "http_request_duration_seconds_bucket" },
+				{ kind: "promql", label: "http_route", match: 'http_server_requests_total{env="prod"}' },
+				{ kind: "promql", label: "namespace" },
+			])
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([
+					'Variable "route" filters its values with the regex /api/.*/ in Grafana; Maple lists every value.',
+					'Variable "route" has a custom sort order in Grafana; Maple lists its values alphabetically.',
+				]),
+			)
+			// Alphabetical sort is Maple's own order, so it is not reported.
+			expect(Arr.filter(converted.warnings, (w) => Str.includes('"namespace"')(w))).toEqual([])
+		}),
+	)
+
+	it.effect("imports PromQL-speaking datasources as PromQL and says so once per plugin", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(converted.stats).toEqual({ panels: 3, converted: 3, placeholders: 0 })
+			expect(dataSourcePromql(widgetNamed(converted, "Top handlers").dataSource)?.query).toBe(
+				"topk(5, sum by (handler) (rate(http_requests_total[1h])))",
+			)
+			const datasourceNotes = Arr.filter(converted.warnings, (w) =>
+				Str.includes("were imported as PromQL")(w),
+			)
+			expect(datasourceNotes).toEqual([
+				"Queries on the grafana-amazonprometheus-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",
+				"Queries on the victoriametrics-metrics-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",
+			])
+		}),
+	)
+
+	it.effect("draws a barchart as bars and names transformations, overrides and instant charts", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			const bars = widgetNamed(converted, "Requests by route")
+			expect(bars.visualization).toBe("chart")
+			expect(dataSourcePromql(bars.dataSource)?.displayType).toBe("bar")
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([
+					'Panel "Requests by route" applies Grafana transformations (organize); Maple shows the query result untransformed.',
+					'Panel "Top handlers" has 1 field override in Grafana; Maple applies the panel\'s defaults to every series.',
+					'Panel "Instant line" runs an instant query in Grafana; Maple charts it over the time range.',
+				]),
+			)
+			// An instant table already shows each series' latest value.
+			expect(Arr.filter(converted.warnings, (w) => Str.includes('"Top handlers" runs')(w))).toEqual([])
+		}),
+	)
+
+	it.effect("keeps the warnings with the dashboard as its import report", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
+			expect(converted.dashboard.importReport).toEqual({ source: "grafana", items: converted.warnings })
+		}),
+	)
+})
+
+const boardWithVariable = (query: string) => ({
+	title: "Selectors",
+	schemaVersion: 39,
+	templating: { list: [{ name: "instance", type: "query", datasource: { type: "prometheus" }, query }] },
+	panels: [
+		{
+			type: "timeseries",
+			title: "Up",
+			datasource: { type: "prometheus" },
+			targets: [{ refId: "A", expr: "up" }],
+		},
+	],
+})
+
+const firstSource = (converted: Converted) => {
+	const [variable] = converted.dashboard.variables ?? []
+	return variable?.type === "query" ? variable.source : undefined
+}
+
+describe("label_values selectors keep literal filters and drop variable ones", () => {
+	it.effect("drops filters that reference variables in every syntax", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable(
+					'label_values(up{job="[[job]]", env="${env}", region="$region", team="core"}, instance)',
+				),
+			)
+			expect(firstSource(converted)).toEqual({
+				kind: "promql",
+				label: "instance",
+				match: 'up{team="core"}',
+			})
+		}),
+	)
+
+	it.effect("keeps a regex whose $ is an end anchor", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values(up{instance=~"^api-[0-9]+$"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({
+				kind: "promql",
+				label: "instance",
+				match: 'up{instance=~"^api-[0-9]+$"}',
+			})
+		}),
+	)
+
+	it.effect("lists every value when every filter names a variable, without calling it unreadable", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values({env="$env", region="$region"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/do not narrow each other/))
+			expect(converted.warnings).not.toContainEqual(expect.stringMatching(/could not be read/))
+		}),
+	)
+
+	it.effect("lists every value, with a warning, when the kept filters would match every series", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values({env="$env", instance=~".*"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/matches every series/))
+		}),
+	)
+
+	it.effect("lists every value, with a warning, when the kept selector is over the stored limit", () =>
+		Effect.gen(function* () {
+			const hosts = Arr.join(
+				Arr.makeBy(600, (i) => `host${i}`),
+				"|",
+			)
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable(`label_values(up{instance=~"${hosts}"}, instance)`),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/too long/))
+		}),
+	)
+})
+
+describe("panel option warnings", () => {
+	it.effect("are not said of a panel imported as a placeholder", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Placeholders",
+				schemaVersion: 39,
+				panels: [
+					{
+						type: "timeseries",
+						title: "Error logs",
+						gridPos: { x: 0, y: 0, w: 12, h: 8 },
+						datasource: { type: "loki" },
+						targets: [{ refId: "A", expr: 'count_over_time({app="api"}[5m])' }],
+						transformations: [{ id: "organize" }],
+					},
+				],
+			})
+			expect(converted.warnings).toEqual([
+				'Panel "Error logs" queries Loki, which Maple cannot run; it was imported as a placeholder.',
+			])
+		}),
+	)
+
+	it.effect("do not say a placeholder's query was imported as PromQL", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Heatmap",
+				schemaVersion: 39,
+				panels: [
+					{
+						type: "heatmap",
+						title: "Latency",
+						gridPos: { x: 0, y: 0, w: 12, h: 8 },
+						datasource: { type: "grafana-amazonprometheus-datasource" },
+						targets: [{ refId: "A", expr: "sum by (le) (rate(latency_bucket[5m]))" }],
+					},
+				],
+			})
+			expect(converted.warnings).toEqual([
+				'Heatmap "Latency" was imported as a placeholder: Maple\'s PromQL widgets cannot draw buckets over time yet.',
+			])
+		}),
+	)
+})
+
+describe("the stored import report is bounded", () => {
+	it.effect("keeps a board with more warnings than the report holds, counting the rest", () =>
+		Effect.gen(function* () {
+			const panels = Arr.map(Arr.range(1, 1100), (i) => ({
+				type: "timeseries",
+				title: `Panel ${i}`,
+				gridPos: { x: 0, y: i * 2, w: 12, h: 2 },
+				datasource: { type: "prometheus" },
+				targets: [{ refId: "A", expr: "up" }],
+				transformations: [{ id: "organize" }],
+			}))
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Big",
+				schemaVersion: 39,
+				panels,
+			})
+			expect(converted.warnings.length).toBeGreaterThan(1000)
+			const items = converted.dashboard.importReport?.items ?? []
+			expect(items).toHaveLength(1000)
+			expect(items[999]).toBe(`${converted.warnings.length - 999} more items are not listed here.`)
 		}),
 	)
 })
