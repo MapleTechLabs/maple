@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import { AuditTrailPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Option, Order, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
@@ -363,6 +363,14 @@ describe("FleetAuditService", () => {
 
 	describe("gapsAfter", () => {
 		const ids = (...values: ReadonlyArray<number>) => Arr.map(values, (id) => ({ id }))
+
+		it("never records an id below 1 on an early feed's first read", () => {
+			assert.deepStrictEqual(Arr.fromIterable(gapsAfter(new Set(), ids(1), null, 1)), [])
+			assert.deepStrictEqual(
+				Arr.sort(Arr.fromIterable(gapsAfter(new Set(), ids(3), null, 3)), Order.Number),
+				[1, 2],
+			)
+		})
 
 		it("remembers ids skipped below the new cursor, and forgets them once filled", () => {
 			const open = gapsAfter(new Set(), ids(10, 12, 15), 9, 15)
