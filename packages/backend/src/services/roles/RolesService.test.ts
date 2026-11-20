@@ -204,6 +204,23 @@ describe("RolesService.list", () => {
 				"oncall:manage",
 			])
 			assert.strictEqual(list.customRoleLimit, Policy.MAX_CUSTOM_ROLES)
+			const holderIds = (key: string) => Arr.map(list.holders[key] ?? [], (holder) => holder.userId)
+			assert.deepStrictEqual(holderIds("member"), ["user_ana", "user_ben"])
+			assert.deepStrictEqual(holderIds(ON_CALL), ["user_cat", "user_dan"])
+			assert.deepStrictEqual(holderIds(VIEWER), [])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("previews at most five holders per role while counting all of them", () => {
+		const people = Arr.map(Arr.range(1, 7), (index) => ({ userId: `user_${index}`, role: "org:member" }))
+		const { layer } = setup([], people)
+		return Effect.gen(function* () {
+			const list = yield* (yield* RolesService).list(adminTenant)
+			assert.strictEqual(list.builtIn[1]?.memberCount, 7)
+			assert.deepStrictEqual(
+				Arr.map(list.holders.member ?? [], (holder) => holder.userId),
+				["user_1", "user_2", "user_3", "user_4", "user_5"],
+			)
 		}).pipe(Effect.provide(layer))
 	})
 

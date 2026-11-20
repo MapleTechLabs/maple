@@ -3,6 +3,7 @@ import {
 	DeleteRoleRequest,
 	type RoleKey,
 	type RoleListResponse,
+	type RoleMemberResponse,
 	type RoleRef,
 	SetMemberRoleRequest,
 	UpdateRoleRequest,
@@ -25,6 +26,8 @@ export type RoleEntry = Readonly<{
 	description: string
 	permissions: ReadonlyArray<Policy.Permission>
 	memberCount: number
+	/** The first few holders, for the list's avatars; `memberCount` counts them all. */
+	holders: ReadonlyArray<RoleMemberResponse>
 	isBuiltIn: boolean
 }>
 
@@ -43,19 +46,24 @@ export const roleHref = (key: string): string => hrefOf(AppRoute.RoleEditor({ ro
 /** `/settings/members`. */
 export const membersHref = (): string => hrefOf(AppRoute.Settings({ search: { tab: "members" } }))
 
-const builtInEntry = (role: Policy.BuiltInRole, memberCount: number): RoleEntry => ({
+const builtInEntry = (
+	role: Policy.BuiltInRole,
+	memberCount: number,
+	holders: ReadonlyArray<RoleMemberResponse>,
+): RoleEntry => ({
 	key: role.role,
 	ref: { _tag: "BuiltIn", clerkKey: role.clerkKey },
 	name: role.label,
 	description: role.summary,
 	permissions: role.permissions,
 	memberCount,
+	holders,
 	isBuiltIn: true,
 })
 
 /** The four built-in roles before the list answers (no member counts yet). */
 export const builtInEntries: ReadonlyArray<RoleEntry> = Arr.map(Policy.builtInRoles, (role) =>
-	builtInEntry(role, 0),
+	builtInEntry(role, 0, []),
 )
 
 /** The list's roles: the four built-in ones, then the organization's own (the API sends them by name). */
@@ -67,6 +75,7 @@ export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> =>
 				Arr.findFirst(list.builtIn, (entry) => entry.clerkKey === role.clerkKey),
 				{ onNone: () => 0, onSome: (entry) => entry.memberCount },
 			),
+			list.holders[role.role] ?? [],
 		),
 	),
 	...Arr.map(list.custom, (role): RoleEntry => ({
@@ -76,6 +85,7 @@ export const roleEntries = (list: RoleListResponse): ReadonlyArray<RoleEntry> =>
 		description: role.description,
 		permissions: role.permissions,
 		memberCount: role.memberCount,
+		holders: list.holders[role.id] ?? [],
 		isBuiltIn: false,
 	})),
 ]

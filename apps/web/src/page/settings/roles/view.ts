@@ -2,6 +2,7 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, Option } from "effect"
 import { button } from "@maple/views/ui/button"
+import { conceptFlow } from "@maple/views/ui/concept-flow"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { dividedList } from "@maple/views/ui/rule"
 import { errorState } from "@maple/views/ui/error-state"
@@ -9,6 +10,7 @@ import { fieldGroupLabel } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry, MenuItemEntry } from "@maple/views/ui/menu-view"
+import { personAvatarStack } from "@maple/views/ui/person-avatar"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
@@ -24,12 +26,14 @@ import {
 	tableRow,
 	truncatedTableCell,
 } from "@maple/views/ui/table"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
+import { docsUrl } from "../../kit/docs"
 import { denialTooltipContent, gatedControl } from "../../kit/session-grants"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialog from "./create-dialog"
 import { canManageRoles, Message, type Model } from "./model"
-import { findRole, memberCountLabel, type RoleEntry, roleHref } from "./roles"
+import { findRole, memberCountLabel, membersHref, type RoleEntry, roleHref } from "./roles"
 import { entriesOf } from "./update"
 import { holderLabel, permissionMeter, roleTypeBadge } from "./view-parts"
 
@@ -42,7 +46,7 @@ export const description = "A role is a set of permissions. Each member holds on
 // Below `sm` the type and permissions columns give their width to the role's name.
 const COLUMN = {
 	type: "w-28 max-sm:hidden",
-	members: "w-24",
+	members: "w-32",
 	permissions: "w-40 max-sm:hidden",
 	actions: "w-12",
 } as const
@@ -88,6 +92,25 @@ const rowEntries = (h: H, model: Model, role: RoleEntry): ReadonlyArray<MenuEntr
 			]
 }
 
+/** Who holds the role: their avatars, each naming them on hover, then "+N"; a dash when nobody does. */
+const holdersCell = (h: H, role: RoleEntry): Html =>
+	role.memberCount === 0
+		? typography(h, { size: "xs", tone: "muted" }, ["None"])
+		: h.span(
+				[h.Class(ROW_LINK_LIFT)],
+				[
+					personAvatarStack(h, {
+						label: `${memberCountLabel(role.memberCount)} hold ${role.name}`,
+						total: role.memberCount,
+						people: Arr.map(role.holders, (holder) => ({
+							name: holder.name ?? holder.identifier,
+							imageUrl: holder.imageUrl ?? undefined,
+							detail: holder.identifier,
+						})),
+					}),
+				],
+			)
+
 const roleRow = (h: H, model: Model, role: RoleEntry): Html => {
 	const menuId = `role-actions-${role.key}`
 	return tableRow(
@@ -100,7 +123,7 @@ const roleRow = (h: H, model: Model, role: RoleEntry): Html => {
 				]),
 			]),
 			tableCell(h, [roleTypeBadge(h, role.isBuiltIn)], COLUMN.type),
-			tableCell(h, [typography(h, { size: "xs", numeric: true }, [String(role.memberCount)])]),
+			tableCell(h, [holdersCell(h, role)], COLUMN.members),
 			tableCell(h, [permissionMeter(h, role.permissions.length, role.isBuiltIn)], COLUMN.permissions),
 			tableCell(h, [
 				h.span(
@@ -155,6 +178,45 @@ const rolesRows = (h: H, model: Model): ReadonlyArray<Html> =>
 	AsyncData.hasData(model.list)
 		? Arr.map(entriesOf(model), (role) => roleRow(h, model, role))
 		: Arr.map([0, 1, 2, 3], (index) => skeletonRow(h, index))
+
+/** The primer above the list: what permissions, roles and members are to each other. */
+const howRolesWork = (h: H): Html =>
+	conceptFlow(h, {
+		id: "settings-roles-primer",
+		title: "How roles work",
+		lead: ["Roles decide what each person in your organization can see and change."],
+		steps: [
+			{
+				icon: "KeyIcon",
+				title: "Permissions",
+				body: ["One thing someone can do, like reading telemetry or managing alert rules."],
+			},
+			{
+				icon: "ShieldCheckIcon",
+				title: "Roles",
+				body: ["A named set of permissions. Start from the four built-in roles or create your own."],
+			},
+			{
+				icon: "UsersIcon",
+				title: "Members",
+				body: [
+					"Each member holds one role. Change it on the ",
+					textLink(h, { href: membersHref(), tone: "inherit", className: "underline" }, ["Members"]),
+					" page.",
+				],
+			},
+		],
+		footer: [
+			textLink(
+				h,
+				{
+					href: docsUrl("roles"),
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
+				["Learn more about roles", icon(h, "ExternalLinkIcon", { size: 12 })],
+			),
+		],
+	})
 
 const rolesSection = (h: H, model: Model): Html =>
 	settingsSection(
@@ -255,6 +317,7 @@ const deleteDialog = (h: H, model: Model): Html => {
 
 export const view = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
 	settingsSections(h, [
+		howRolesWork(h),
 		rolesSection(h, model),
 		h.submodel({
 			slotId: "role-create-form",

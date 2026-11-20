@@ -27,6 +27,7 @@ import {
 	Option,
 	Order,
 	Random,
+	Record as Rec,
 	Schema,
 	String as Str,
 } from "effect"
@@ -192,6 +193,19 @@ const holdersOf = (memberships: ReadonlyArray<RoleMembership>, roleId: Policy.Cu
 	Arr.filter(memberships, (membership) =>
 		Option.exists(heldCustomRole(membership), (held) => held.id === roleId),
 	)
+
+const toMember = (holder: RoleMembership) =>
+	new RoleMemberResponse({
+		userId: holder.userId,
+		name: holder.name,
+		identifier: holder.identifier,
+		imageUrl: holder.imageUrl,
+	})
+
+/** How many holders a role's row shows as avatars before "+N". */
+const HOLDER_PREVIEW = 5
+
+const previewOf = (holders: ReadonlyArray<RoleMembership>) => Arr.map(Arr.take(holders, HOLDER_PREVIEW), toMember)
 
 const sameCodes = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean =>
 	a.length === b.length && Arr.every(a, (code, index) => code === b[index])
@@ -416,6 +430,15 @@ const make = Effect.gen(function* () {
 				toCustomRole(role, holdersOf(memberships, role.id).length),
 			),
 			customRoleLimit: Policy.MAX_CUSTOM_ROLES,
+			holders: {
+				...Rec.fromEntries(
+					Arr.map(Policy.builtInRoles, (role) => [
+						role.role,
+						previewOf(Arr.filter(memberships, (membership) => membership.role === role.clerkKey)),
+					]),
+				),
+				...Rec.fromEntries(Arr.map(roles, (role) => [role.id, previewOf(holdersOf(memberships, role.id))])),
+			},
 		})
 	})
 
@@ -427,18 +450,7 @@ const make = Effect.gen(function* () {
 			: Arr.filter(memberships, (membership) =>
 					Option.exists(Policy.builtInRoleOf(membership.role), (role) => role.role === roleKey),
 				)
-		return new RoleMembersResponse({
-			members: Arr.map(
-				holders,
-				(holder) =>
-					new RoleMemberResponse({
-						userId: holder.userId,
-						name: holder.name,
-						identifier: holder.identifier,
-						imageUrl: holder.imageUrl,
-					}),
-			),
-		})
+		return new RoleMembersResponse({ members: Arr.map(holders, toMember) })
 	})
 
 	const create = Effect.fn("RolesService.create")(function* (

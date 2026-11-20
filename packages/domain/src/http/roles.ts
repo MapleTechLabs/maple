@@ -30,6 +30,13 @@ export type RoleRef = typeof RoleRef.Type
 export const RoleKey = Schema.Union([CustomRoleId, BuiltInRoleName])
 export type RoleKey = typeof RoleKey.Type
 
+export class RoleMemberResponse extends Schema.Class<RoleMemberResponse>("RoleMemberResponse")({
+	userId: UserId,
+	name: Schema.NullOr(Schema.String),
+	identifier: Schema.String,
+	imageUrl: Schema.NullOr(Schema.String),
+}) {}
+
 export class BuiltInRoleResponse extends Schema.Class<BuiltInRoleResponse>("BuiltInRoleResponse")({
 	clerkKey: AssignableClerkRole,
 	label: Schema.String,
@@ -54,13 +61,8 @@ export class RoleListResponse extends Schema.Class<RoleListResponse>("RoleListRe
 	custom: Schema.Array(CustomRoleResponse),
 	/** How many custom roles the organization may define. */
 	customRoleLimit: Schema.Number,
-}) {}
-
-export class RoleMemberResponse extends Schema.Class<RoleMemberResponse>("RoleMemberResponse")({
-	userId: UserId,
-	name: Schema.NullOr(Schema.String),
-	identifier: Schema.String,
-	imageUrl: Schema.NullOr(Schema.String),
+	/** The first few holders of each role, by role key, for the list's avatars; `memberCount` counts them all. */
+	holders: Schema.Record(Schema.String, Schema.Array(RoleMemberResponse)),
 }) {}
 
 export class RoleMembersResponse extends Schema.Class<RoleMembersResponse>("RoleMembersResponse")({

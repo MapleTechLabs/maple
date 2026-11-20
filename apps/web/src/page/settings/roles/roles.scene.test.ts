@@ -61,6 +61,27 @@ describe("roles list", () => {
 		)
 	})
 
+	test("a role's holders show as avatars, with the rest counted and nobody shown as None", () => {
+		scene(
+			{ update, view },
+			given(loaded()),
+			// Member: eight holders, four avatars then +4.
+			expectView(role("group", { name: "8 members hold Member" })).toExist(),
+			expectView(text("+4")).toExist(),
+			expectView(role("group", { name: "3 members hold On-call responder" })).toExist(),
+			expectView(text("None")).toExist(),
+		)
+	})
+
+	test("the primer above the list links to the roles docs", () => {
+		scene(
+			{ update, view },
+			given(loaded()),
+			expectView(role("heading", { name: "How roles work" })).toExist(),
+			expectView(role("link", { name: "Learn more about roles" })).toExist(),
+		)
+	})
+
 	test("a failed load offers Try again, which reads the list again", () => {
 		const failed = run(init(ADMIN).model, [
 			Message.CompletedFetchRoles({ result: Result.fail(toLoadFailure(new Error("down"))) }),

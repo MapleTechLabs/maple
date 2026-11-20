@@ -135,6 +135,7 @@ const replaceSaved = (list: RoleListResponse, saved: CustomRoleResponse): RoleLi
 		builtIn: list.builtIn,
 		custom: Arr.map(list.custom, (role) => (role.id === saved.id ? saved : role)),
 		customRoleLimit: list.customRoleLimit,
+		holders: list.holders,
 	})
 
 const toast = (type: "success" | "error", title: string, description = "") =>
