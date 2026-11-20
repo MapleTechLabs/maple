@@ -27,7 +27,7 @@ import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
-import { fleetActivityToEvent } from "./fleet/activities"
+import { type FleetActivity, fleetActivityToEvent } from "./fleet/activities"
 import * as FleetApi from "./fleet/api"
 import { fleetServerName } from "@maple/domain/http"
 
@@ -161,6 +161,28 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 					(message) => new IntegrationsPersistenceError({ message }),
 				)
 
+			/** Newest-first pages until one reaches `after`, or the page cap: the ids above it, oldest first. */
+			const newestBackTo = (
+				fleet: FleetApi.FleetClient,
+				after: number,
+				page: number,
+				acc: ReadonlyArray<FleetActivity>,
+			): Effect.Effect<ReadonlyArray<FleetActivity>, FleetApi.FleetApiError> =>
+				FleetApi.listActivities(fleet, { perPage: PAGE_SIZE, newestFirst: true, page }).pipe(
+					Effect.flatMap((answer) => {
+						const found = answer.activities ?? []
+						const all = Arr.appendAll(
+							acc,
+							Arr.filter(found, (activity) => activity.id > after),
+						)
+						const reached =
+							found.length < PAGE_SIZE || Arr.some(found, (activity) => activity.id <= after)
+						return reached || page + 1 >= MAX_PAGES
+							? Effect.succeed(Arr.reverse(all))
+							: newestBackTo(fleet, after, page + 1, all)
+					}),
+				)
+
 			/** Pages after the cursor until the feed is read or the page cap; stores each page before moving on. */
 			const readFeed = Effect.fnUntraced(function* (lease: FleetLease, fleet: FleetApi.FleetClient) {
 				const { row, now } = lease
@@ -189,17 +211,12 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 						})
 						const asked = page.activities ?? []
 						// A server that ignores `after` answers from its oldest id again: past a full page
-						// that never reaches the cursor, so read its newest page instead.
+						// that never reaches the cursor, read newest first back to the cursor instead.
 						const ignoresCursor =
 							after !== null &&
 							asked.length === PAGE_SIZE &&
 							Arr.some(asked, (activity) => activity.id <= after)
-						const activities = ignoresCursor
-							? ((yield* FleetApi.listActivities(fleet, {
-									perPage: PAGE_SIZE,
-									newestFirst: true,
-								})).activities ?? [])
-							: asked
+						const activities = ignoresCursor ? yield* newestBackTo(fleet, after, 0, []) : asked
 						// Each event is written once: new ids, and gaps that have now appeared.
 						const fresh = Arr.filter(
 							activities,

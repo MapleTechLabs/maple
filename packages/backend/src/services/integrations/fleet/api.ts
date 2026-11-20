@@ -184,6 +184,8 @@ export const listActivities = (
 		readonly perPage: number
 		/** Newest first: for a server that ignores `after`. */
 		readonly newestFirst?: boolean
+		/** Offset paging, with `newestFirst`. */
+		readonly page?: number
 	},
 ) =>
 	fleet.json(FleetActivitiesPage, {
@@ -192,6 +194,7 @@ export const listActivities = (
 			order_key: "id",
 			order_direction: page.newestFirst === true ? "desc" : "asc",
 			per_page: page.perPage,
+			page: page.page,
 			after: page.after,
 			start_created_at: page.after === undefined ? page.since : undefined,
 		},

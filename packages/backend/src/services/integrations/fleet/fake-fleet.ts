@@ -75,11 +75,15 @@ const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
 			? Order.mapInput(Order.flip(Order.Number), (activity: FakeFleetActivity) => activity.id)
 			: Order.mapInput(Order.Number, (activity: FakeFleetActivity) => activity.id),
 	)
-	const page = matching.slice(0, perPage)
+	const offset = Number(search.get("page") ?? "0") * perPage
+	const page = matching.slice(offset, offset + perPage)
 	return {
 		// Fleet leaves an empty list out, as Go's omitempty does.
 		...(page.length === 0 ? undefined : { activities: page }),
-		meta: { has_next_results: matching.length > perPage, has_previous_results: after !== null },
+		meta: {
+			has_next_results: matching.length > offset + perPage,
+			has_previous_results: after !== null || offset > 0,
+		},
 	}
 }
 
