@@ -116,7 +116,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 					})
 					.pipe(
 						Effect.map(
-							(values) =>
+							({ data: values }) =>
 								new QueryEngineExecuteResponse({
 									result: {
 										kind: "attributeValues",
