@@ -70,6 +70,29 @@ describe("fleetActivityToEvent", () => {
 		assert.deepStrictEqual(event.actor, { type: "system", name: "Fleet" })
 	})
 
+	// Shapes as a Fleet 4.95 server sends them.
+	it("names Fleet as the actor of a device enrolling itself, as a resource event", () => {
+		const event = eventOf({
+			type: "fleet_enrolled",
+			actor_full_name: null,
+			actor_email: "",
+			actor_id: null,
+			details: { host_id: 1, host_serial: "C02XX0000", host_display_name: "Studio Mac" },
+		})
+		assert.deepStrictEqual(
+			[event.actor, event.category, event.target],
+			[{ type: "system", name: "Fleet" }, "resource", { type: "host", id: "1", name: "Studio Mac" }],
+		)
+	})
+
+	it("names the label a label activity is about", () => {
+		const event = eventOf({
+			type: "created_label",
+			details: { label_id: 21, label_name: "Debian-based Linux hosts" },
+		})
+		assert.deepStrictEqual(event.target, { type: "label", id: "21", name: "Debian-based Linux hosts" })
+	})
+
 	it("drops an activity whose time does not parse", () => {
 		assert.isTrue(Option.isNone(fleetActivityToEvent(activity({ created_at: "yesterday" }), SOURCE)))
 	})
