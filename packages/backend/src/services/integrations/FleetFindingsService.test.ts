@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Array as Arr, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -339,7 +339,34 @@ describe("FleetFindingsService", () => {
 			world,
 			Effect.gen(function* () {
 				yield* connect
+				// The fake answers 100 to a request without per_page, so only paging reads them all.
 				assert.strictEqual((yield* syncDue).policies, 1_050)
+			}),
+		)
+	})
+
+	it.effect("stops paging policies on a server that ignores paging", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({
+			policyPaging: "ignored",
+			policies: Arr.makeBy(700, (index) => ({
+				id: index + 1,
+				name: `policy-${index + 1}`,
+				failing_host_count: 1,
+				passing_host_count: 0,
+			})),
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).policies, 700)
+				// Page two repeats page one: nothing new, so no third request.
+				const policyReads = Arr.filter(world.fake.calls, (call) =>
+					Str.endsWith("/global/policies")(call.path),
+				)
+				assert.lengthOf(policyReads, 2)
 			}),
 		)
 	})

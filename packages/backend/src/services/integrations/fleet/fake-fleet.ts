@@ -53,6 +53,11 @@ export interface FakeFleet {
 	/** The devices failing each policy, by policy id. */
 	failingHosts: Record<number, ReadonlyArray<{ readonly id: number; readonly hostname: string }>>
 	software: Array<FakeFleetSoftware>
+	/**
+	 * How the policies list pages: a first page of 100 when no `per_page` is sent (a default the
+	 * docs do not rule out), or every policy whatever is asked.
+	 */
+	policyPaging: "default-100" | "ignored"
 	readonly fake: VendorFake.VendorFake
 }
 
@@ -100,6 +105,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		policies: [],
 		failingHosts: {},
 		software: [],
+		policyPaging: "default-100",
 		...overrides,
 		fake: VendorFake.make({
 			routes: [
@@ -144,10 +150,10 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 				{
 					path: new RegExp(`${PREFIX}/global/policies$`),
 					respond: (request) => {
-						const perPage = Number(request.search.get("per_page") ?? "0")
+						const perPage = Number(request.search.get("per_page") ?? "100")
 						const page = Number(request.search.get("page") ?? "0")
 						const policies =
-							perPage === 0
+							world.policyPaging === "ignored"
 								? world.policies
 								: world.policies.slice(page * perPage, (page + 1) * perPage)
 						return VendorFake.json(policies.length === 0 ? {} : { policies })
