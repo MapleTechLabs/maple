@@ -5,6 +5,7 @@ import {
 	ApiUnexpectedErrors,
 	CurrentTenant,
 	SecurityAuditApiGroup,
+	SecurityAuditReadsApiGroup,
 } from "@maple/domain/http"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
@@ -34,6 +35,8 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { SecurityAuditAccess } from "@maple/backend/services/security-audit/SecurityAuditAccess"
+import { HttpSecurityAuditReadsLive } from "@maple/backend/http/security-audit-reads"
 import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
@@ -41,6 +44,12 @@ import { HttpSecurityAuditLive } from "./security-audit.http"
 
 class SecurityAuditOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(SecurityAuditApiGroup)
+	.middleware(ApiSchemaErrors)
+	.middleware(ApiUnexpectedErrors) {}
+
+/** The reads, which the api Worker serves on the same paths; one harness covers both Workers. */
+class SecurityAuditReadsOnlyApi extends HttpApi.make("MapleInternalApi")
+	.add(SecurityAuditReadsApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors) {}
 
@@ -131,8 +140,11 @@ const makeHarness = (
 		 VALUES ($1, $2, 'github', $3, '1001', 'acme', 'api', 'acme/api', 'main', 'https://github.com/acme/api', now(), now())`,
 		[crypto.randomUUID(), ORG_A, crypto.randomUUID()],
 	)
-	const routes = HttpApiBuilder.layer(SecurityAuditOnlyApi).pipe(
-		Layer.provide(HttpSecurityAuditLive),
+	const routes = Layer.mergeAll(
+		HttpApiBuilder.layer(SecurityAuditOnlyApi).pipe(Layer.provide(HttpSecurityAuditLive)),
+		HttpApiBuilder.layer(SecurityAuditReadsOnlyApi).pipe(Layer.provide(HttpSecurityAuditReadsLive)),
+	).pipe(
+		Layer.provide(SecurityAuditAccess.layerWithoutDependencies),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provide(WorkerPlatformLive),
 		Layer.provideMerge(AuthorizationStubLayer),

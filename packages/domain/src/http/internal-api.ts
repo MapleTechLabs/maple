@@ -31,6 +31,7 @@ import {
 } from "./organizations"
 import { QueryEngineApiGroup } from "./query-engine"
 import { SavedViewsApiGroup } from "./saved-views"
+import { SecurityAuditReadsApiGroup } from "./security-audit"
 import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
@@ -94,6 +95,8 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OrganizationRegionApiGroup)
 	.add(QueryEngineApiGroup)
 	.add(SavedViewsApiGroup)
+	// The security audit's reads; its writes stay on the ai Worker (`MapleAiApi`).
+	.add(SecurityAuditReadsApiGroup)
 	.add(ServiceMapWorldApiGroup)
 	.add(SessionReplaysInternalApiGroup)
 	.add(UsersInternalApiGroup)

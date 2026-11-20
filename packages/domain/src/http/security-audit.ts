@@ -548,7 +548,12 @@ const gatedErrors = [
 	SecurityAuditForbiddenError,
 ] as const
 
-/** The scheduled security audit, served by the ai Worker. Dashboard only, behind `securityAudit`. */
+/**
+ * The scheduled security audit's writes and settings, served by the ai Worker that hosts the
+ * Workflow (settings read the deployment's model defaults there). Dashboard only, behind `securityAudit`.
+ * api keeps every other GET under this prefix, so a new GET here also needs an exception in
+ * `forwardsToAi` (apps/api/src/worker/ai-forward.ts).
+ */
 export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 	.add(
 		HttpApiEndpoint.post("createTarget", "/targets", {
@@ -577,12 +582,6 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		}),
 	)
 	.add(
-		HttpApiEndpoint.get("listTargets", "/targets", {
-			success: SecurityAuditTargetsResponse,
-			error: gatedErrors,
-		}),
-	)
-	.add(
 		HttpApiEndpoint.post("startRun", "/targets/:targetId/runs", {
 			params: { targetId: SecurityAuditTargetId },
 			payload: SecurityAuditStartRunRequest,
@@ -601,6 +600,36 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.post("cancelRun", "/runs/:runId/cancel", {
+			params: { runId: SecurityAuditRunId },
+			success: SecurityAuditRun,
+			error: [...gatedErrors, SecurityAuditRunNotFoundError, SecurityAuditRunNotInProgressError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.patch("updateFindingStatus", "/targets/:targetId/findings/:fingerprint", {
+			params: { targetId: SecurityAuditTargetId, fingerprint: Fingerprint },
+			payload: SecurityAuditUpdateFindingRequest,
+			success: SecurityAuditFindingTriageResult,
+			error: [...gatedErrors, SecurityAuditFindingNotFoundError],
+		}),
+	)
+	.prefix("/api/security-audit")
+	.middleware(SessionAuthorization) {}
+
+/**
+ * The scheduled security audit's reads, served by the api Worker, which stays warm: answered
+ * from ai they paid its cold start on most page loads. Same `/api/security-audit` paths; api
+ * forwards the rest (`forwardsToAi`). Dashboard only, behind `securityAudit`.
+ */
+export class SecurityAuditReadsApiGroup extends HttpApiGroup.make("securityAuditReads")
+	.add(
+		HttpApiEndpoint.get("listTargets", "/targets", {
+			success: SecurityAuditTargetsResponse,
+			error: gatedErrors,
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("listRuns", "/runs", {
 			query: SecurityAuditListRunsQuery,
 			success: SecurityAuditRunsResponse,
@@ -612,13 +641,6 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			params: { runId: SecurityAuditRunId },
 			success: SecurityAuditRunDetail,
 			error: [...gatedErrors, SecurityAuditRunNotFoundError],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("cancelRun", "/runs/:runId/cancel", {
-			params: { runId: SecurityAuditRunId },
-			success: SecurityAuditRun,
-			error: [...gatedErrors, SecurityAuditRunNotFoundError, SecurityAuditRunNotInProgressError],
 		}),
 	)
 	.add(
@@ -649,14 +671,6 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 			query: SecurityAuditListFindingsQuery,
 			success: SecurityAuditFindingsResponse,
 			error: [...gatedErrors, SecurityAuditTargetNotFoundError],
-		}),
-	)
-	.add(
-		HttpApiEndpoint.patch("updateFindingStatus", "/targets/:targetId/findings/:fingerprint", {
-			params: { targetId: SecurityAuditTargetId, fingerprint: Fingerprint },
-			payload: SecurityAuditUpdateFindingRequest,
-			success: SecurityAuditFindingTriageResult,
-			error: [...gatedErrors, SecurityAuditFindingNotFoundError],
 		}),
 	)
 	.prefix("/api/security-audit")

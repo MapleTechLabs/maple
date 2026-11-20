@@ -256,7 +256,7 @@ export const makeFetch = <E>(
 			// split, so a `/mcp` call no longer builds `AllRoutes` and `ApiAuthLive`.
 			// What the forward preserves, and the one header it replaces, is spelled
 			// out in `ai-forward.ts`.
-			if (forwardsToAi(path)) {
+			if (forwardsToAi(request.method, path)) {
 				const aiWorker = yield* AiWorkerFetcher
 				if (Option.isNone(aiWorker)) {
 					yield* Effect.logError("AI worker binding is missing").pipe(
