@@ -67,6 +67,27 @@ export interface PromqlSelectorParams {
 
 const stringMap = T.map(T.string, T.string)
 
+const parseFloatText = (text: string): number => {
+	if (text === "inf" || text === "+inf") return Infinity
+	if (text === "-inf") return -Infinity
+	if (text === "nan" || text === "-nan") return Number.NaN
+	return Number(text)
+}
+
+/** A Float64 sent as text so NaN and the infinities survive JSON (`inf`, `-inf`, `nan`); a plain number too. */
+export const CHFloatText = Schema.Union([
+	Schema.Number,
+	Schema.String.pipe(
+		Schema.decodeTo(Schema.Number, {
+			decode: SchemaGetter.transform(parseFloatText),
+			encode: SchemaGetter.transform((value: number) => String(value)),
+		}),
+	),
+])
+
+/** A Float64 column ClickHouse writes as text; it decodes to a number, NaN and infinities included. */
+const floatText = T.custom("String", CHFloatText)
+
 const metricTable = (name: PromqlMetricTable) =>
 	table(name, {
 		external: true,
@@ -355,7 +376,7 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 			const column = (field: PromqlBucketField) =>
 				VALUE_FIELDS.has(field)
 					? sql(
-							T.array(T.string),
+							T.array(floatText),
 						)`arraySort((x, e) -> e, groupArray(toString(toFloat64(${$[field]}))), ${ends})`
 					: sql(
 							T.array(T.float64),
@@ -387,7 +408,7 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 				sumTV: column("sumTV"),
 				staleT: column("staleT"),
 				values: sql(
-					T.array(T.array(T.string)),
+					T.array(T.array(floatText)),
 				)`arraySort((x, e) -> e, groupArray(arrayMap(x -> toString(x), ${$.values})), ${ends})`,
 			}
 		})
@@ -397,21 +418,6 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 }
 
 const numbers = Schema.Array(CHNumber)
-
-const parseFloatText = (text: string): number => {
-	if (text === "inf" || text === "+inf") return Infinity
-	if (text === "-inf") return -Infinity
-	if (text === "nan" || text === "-nan") return Number.NaN
-	return Number(text)
-}
-
-/** A Float64 sent as text so NaN and the infinities survive JSON (`inf`, `-inf`, `nan`). */
-export const CHFloatText = Schema.String.pipe(
-	Schema.decodeTo(Schema.Number, {
-		decode: SchemaGetter.transform(parseFloatText),
-		encode: SchemaGetter.transform((value: number) => String(value)),
-	}),
-)
 
 const floats = Schema.Array(CHFloatText)
 
@@ -810,7 +816,7 @@ const pushdownSeriesQuery = (opts: PromqlPushdownOpts) =>
 			le: sql(T.string)`toString(any(${$.le}))`,
 			groups: sql(T.array(T.string))`emptyArrayString()`,
 			steps: sql(T.array(T.float64))`groupArrayIf(toFloat64(${$.j}), ${$.valid} = 1)`,
-			values: sql(T.array(T.string))`groupArrayIf(toString(${$.value}), ${$.valid} = 1)`,
+			values: sql(T.array(floatText))`groupArrayIf(toString(${$.value}), ${$.valid} = 1)`,
 		}))
 		.groupBy("series")
 		.having(($) => [sql.cond`countIf(${$.valid} = 1) > 0`])
@@ -868,7 +874,7 @@ const pushdownGroupQuery = (opts: PromqlPushdownOpts, aggregation: PromqlPushdow
 			le: sql(T.string)`toString(${$.gle})`,
 			groups: $.groups,
 			steps: sql(T.array(T.float64))`groupArray(toFloat64(${$.j}))`,
-			values: sql(T.array(T.string))`groupArray(toString(${$.value}))`,
+			values: sql(T.array(floatText))`groupArray(toString(${$.value}))`,
 		}))
 		.groupBy("groups", "le")
 		.limit(opts.limit)
