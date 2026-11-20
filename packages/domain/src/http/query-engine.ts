@@ -4097,7 +4097,29 @@ export class PromqlExecuteResponse extends Schema.Class<PromqlExecuteResponse>("
 		resultType: Schema.Literals(["matrix", "vector", "scalar", "string"]),
 		seriesCount: Schema.Number,
 		stepSeconds: Schema.Number,
+		/** Prometheus-style warnings: the nearest names when a selector matched nothing. */
+		warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 	}),
+}) {}
+
+/**
+ * PromQL editor discovery over a window: label names with no `label`, else that label's values
+ * (`__name__` lists metric names), narrowed to the series `match` selects.
+ */
+export class PromqlDiscoverRequest extends Schema.Class<PromqlDiscoverRequest>("PromqlDiscoverRequest")({
+	label: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-zA-Z_][a-zA-Z0-9_]*$/))),
+	match: Schema.optionalKey(
+		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
+	),
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	limit: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 1000 })),
+	),
+}) {}
+
+export class PromqlDiscoverResponse extends Schema.Class<PromqlDiscoverResponse>("PromqlDiscoverResponse")({
+	data: Schema.Array(Schema.String),
 }) {}
 
 export class RawSqlValidationError extends Schema.TaggedError<RawSqlValidationError>()(
@@ -5144,6 +5166,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("executePromql", "/execute-promql", {
 			payload: PromqlExecuteRequest,
 			success: PromqlExecuteResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("discoverPromql", "/discover-promql", {
+			payload: PromqlDiscoverRequest,
+			success: PromqlDiscoverResponse,
 			error: validatedQueryEndpointErrors,
 		}),
 	)

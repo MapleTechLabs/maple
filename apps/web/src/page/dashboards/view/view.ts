@@ -42,6 +42,7 @@ import { sectionDialogs } from "./view-sections"
 import { historyPanel, previewBanner } from "./view-history"
 import { shareDialog } from "./view-share"
 import { embedDialog } from "./view-embed"
+import { importReportNotice } from "./view-import-report"
 import { errorState } from "@maple/views/ui/error-state"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -273,6 +274,10 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	}
 	return [
 		...banner,
+		...importReportNotice(h, document, {
+			isOpen: model.isImportReportOpen,
+			canDismiss: !isWriteBlocked(model),
+		}),
 		isBlank
 			? blankDashboard(h, model, isWriteBlocked(model))
 			: dashboardSections(

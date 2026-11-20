@@ -66,6 +66,7 @@ export const STATUS_NAMES: ReadonlyArray<keyof Statuses> = [
 	"linear",
 	"github",
 	"searchConsole",
+	"fleet",
 	"chat",
 	"scrapeTargets",
 ]

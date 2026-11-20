@@ -1185,6 +1185,50 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
+/** Connection state of the Fleet integration (one server per org, read with an API token). */
+/**
+ * How Maple names a Fleet server everywhere (card, inventory, audit log): the organization it
+ * reports, trimmed, else its host.
+ */
+export const fleetServerName = (server: {
+	readonly organizationName: string | null
+	readonly baseUrl: string
+}): string => {
+	const name = server.organizationName === null ? "" : Str.trim(server.organizationName)
+	if (!Str.isEmpty(name)) return name
+	return URL.canParse(server.baseUrl) ? new URL(server.baseUrl).host : server.baseUrl
+}
+
+export class FleetIntegrationStatus extends Schema.Class<FleetIntegrationStatus>("FleetIntegrationStatus")({
+	connected: Schema.Boolean,
+	/** The server's base URL as stored. */
+	baseUrl: Schema.NullOr(Schema.String),
+	organizationName: Schema.NullOr(Schema.String),
+	apiUserName: Schema.NullOr(Schema.String),
+	/** The token user's global role in Fleet (`observer`, `admin`, ...). */
+	apiUserRole: Schema.NullOr(Schema.String),
+	serverVersion: Schema.NullOr(Schema.String),
+	/** `free` or `premium`. */
+	licenseTier: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	connectedAt: Schema.NullOr(Schema.Number),
+	/** True when Fleet rejected the stored token; polling is paused until a new one is saved. */
+	authFailed: Schema.Boolean,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+export class FleetConnectRequest extends Schema.Class<FleetConnectRequest>("FleetConnectRequest")({
+	url: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(4), Schema.isMaxLength(2048)),
+	token: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(8), Schema.isMaxLength(2048)),
+}) {}
+
+export class FleetDisconnectResponse extends Schema.Class<FleetDisconnectResponse>("FleetDisconnectResponse")(
+	{
+		disconnected: Schema.Boolean,
+	},
+) {}
+
 export const VercelProjectScope = Schema.Literals(["all", "some"])
 export type VercelProjectScope = Schema.Schema.Type<typeof VercelProjectScope>
 
@@ -1922,6 +1966,26 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("railwayDisconnect", "/railway", {
 			success: RailwayDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("fleetStatus", "/fleet/status", {
+			success: FleetIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Checks the token against the server (its user, version and settings) before storing it.
+		HttpApiEndpoint.put("fleetConnect", "/fleet", {
+			payload: FleetConnectRequest,
+			success: FleetIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("fleetDisconnect", "/fleet", {
+			success: FleetDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

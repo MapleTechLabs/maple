@@ -27,6 +27,8 @@ const FEED_OF = {
 	aws: (resource: IntegrationResource) => resource.kind === "audit log",
 	// Each active installation's webhooks.
 	github: (resource: IntegrationResource) => resource.kind === "audit log",
+	// The connection's activity feed, read by the Fleet audit poller.
+	fleet: (resource: IntegrationResource) => resource.kind === "audit log",
 } as const satisfies Record<Exclude<AuditTrailProvider, "maple">, (resource: IntegrationResource) => boolean>
 
 type ConnectableProvider = keyof typeof FEED_OF

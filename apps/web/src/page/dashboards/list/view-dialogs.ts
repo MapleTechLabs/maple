@@ -66,6 +66,9 @@ export const importReportDialog = (h: H, model: Model): Html => {
 								),
 							),
 						),
+						typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-3" }, [
+							"This list stays on the dashboard until someone dismisses it.",
+						]),
 					],
 		cancelLabel: "Close",
 		confirmLabel: "Open dashboard",

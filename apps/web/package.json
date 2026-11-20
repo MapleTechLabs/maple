@@ -37,6 +37,7 @@
 		"@maple/views": "workspace:*",
 		"@maple/web-data": "workspace:*",
 		"@maple/widgets": "workspace:*",
+		"@prometheus-io/lezer-promql": "0.315.1",
 		"@rrweb/replay": "^2.2.2",
 		"@rrweb/types": "^2.2.2",
 		"@takumi-rs/helpers": "2.20.0",
@@ -56,6 +57,7 @@
 	"devDependencies": {
 		"@e2e-dev/web": "0.15.5",
 		"@foldkit/vite-plugin": "0.29.1",
+		"@maple/promql": "workspace:*",
 		"@tailwindcss/vite": "catalog:tailwind",
 		"@types/d3-scale": "^4.0.9",
 		"@types/node": "catalog:tooling",

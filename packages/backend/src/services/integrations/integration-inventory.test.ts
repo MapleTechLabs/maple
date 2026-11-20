@@ -23,6 +23,7 @@ const empty: IntegrationInventoryInputs = {
 	awsConnections: [],
 	supabaseConnection: null,
 	supabaseProjects: [],
+	fleetConnection: null,
 	railwayConnection: null,
 	railwayEnvironments: [],
 	vercelConnection: null,
@@ -193,6 +194,40 @@ describe("buildIntegrationInventory", () => {
 		expect(railway?.problem).toBe(
 			"1 of 1 stale, e.g. environment shop / production: no successful update for 2 h (3 services)",
 		)
+	})
+
+	const fleetConnection = (lastSuccessAt: number | null, findingsError: string | null = null) => ({
+		organizationName: "Acme",
+		baseUrl: "https://fleet.example.com",
+		authFailedAt: null,
+		lastSuccessAt,
+		lastErrorAt: null,
+		lastError: null,
+		createdAt: NOW - MINUTE,
+		findings: {
+			lastSuccessAt: findingsError === null ? lastSuccessAt : NOW - 2 * MINUTE,
+			lastErrorAt: findingsError === null ? null : NOW - MINUTE,
+			lastError: findingsError,
+		},
+	})
+
+	it("reads a Fleet server as pending until its first read, then healthy", () => {
+		const fleet = (lastSuccessAt: number | null) =>
+			providerOf({ fleetConnection: fleetConnection(lastSuccessAt) }, "fleet")
+		expect([fleet(null)?.status, fleet(null)?.problem]).toEqual([
+			"pending",
+			"Connected; waiting for the first read of Fleet.",
+		])
+		expect([fleet(NOW - MINUTE)?.status, fleet(NOW - MINUTE)?.account]).toEqual(["healthy", "Acme"])
+	})
+
+	it("shows a failing device sync even while the activity feed reads fine", () => {
+		const fleet = providerOf(
+			{ fleetConnection: fleetConnection(NOW - MINUTE, "Fleet answered 403") },
+			"fleet",
+		)
+		expect(fleet?.status).toBe("failing")
+		expect(fleet?.problem).toContain("Fleet answered 403")
 	})
 
 	describe("vercel", () => {

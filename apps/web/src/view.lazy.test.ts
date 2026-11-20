@@ -100,6 +100,7 @@ const SAMPLE_PATHS = [
 	"/security/dependencies",
 	"/security/audit-log",
 	"/security/cloud",
+	"/security/devices",
 	"/security/detections",
 	"/security/detections/new",
 	"/security/code/runs/run_1",

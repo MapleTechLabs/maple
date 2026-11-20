@@ -37,6 +37,7 @@ import {
 	prReviewConfigNeedsAutoApprove,
 	prReviewDefaultsNeedAutoApprove,
 	RailwayDisconnectResponse,
+	FleetDisconnectResponse,
 	SearchConsoleAvailableSitesResponse,
 	SearchConsoleDisconnectResponse,
 	SearchConsoleIntegrationStatus,
@@ -76,6 +77,7 @@ import { PlanetScaleConnectionService } from "@maple/backend/services/integratio
 import { makeQueryRunners } from "@maple/backend/queries/query-runner"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { FleetConnectionService } from "@maple/backend/services/integrations/FleetConnectionService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
@@ -178,6 +180,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const railway = yield* RailwayMetricsService
+		const fleet = yield* FleetConnectionService
 		const vercel = yield* VercelIntegrationService
 		const supabaseOAuth = yield* SupabaseOAuthService
 		const supabase = yield* SupabaseConnectionService
@@ -678,6 +681,28 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						yield* requirePermission(tenant.permissions, "integrations:manage")
 						const disconnected = yield* railway.disconnect(tenant.orgId)
 						return new RailwayDisconnectResponse(disconnected)
+					}),
+				)
+				.handle("fleetStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						return yield* fleet.getStatus(tenant.orgId)
+					}),
+				)
+				.handle("fleetConnect", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.permissions, "integrations:manage")
+						return yield* fleet.connect(tenant.orgId, tenant.userId, payload)
+					}),
+				)
+				.handle("fleetDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.permissions, "integrations:manage")
+						return new FleetDisconnectResponse({
+							disconnected: yield* fleet.disconnect(tenant.orgId),
+						})
 					}),
 				)
 				// Any member may read the status; every change needs integrations:manage, as for Railway.

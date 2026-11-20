@@ -262,7 +262,6 @@ export const ClerkOrganization = Schema.Struct({
 		productAnalytics: Schema.Boolean,
 		profiling: Schema.Boolean,
 		securityAudit: Schema.Boolean,
-		statusPages: Schema.Boolean,
 	}),
 })
 export type ClerkOrganization = typeof ClerkOrganization.Type

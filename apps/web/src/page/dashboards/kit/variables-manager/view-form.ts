@@ -28,10 +28,19 @@ const querySourceFields = (h: H, model: Model, variable: Extract<Variable, { typ
 			: [
 					textField(h, model, {
 						field: "attributeKey",
-						label: "Attribute key",
-						placeholder: "http.route",
+						label: source.kind === "promql" ? "Label" : "Attribute key",
+						placeholder: source.kind === "promql" ? "handler" : "http.route",
 					}),
 				]),
+		...(source.kind === "promql"
+			? [
+					textField(h, model, {
+						field: "metricNames",
+						label: "Series selector",
+						placeholder: 'http_requests_total{job="api"}',
+					}),
+				]
+			: []),
 		...(source.kind === "metric"
 			? [
 					textField(h, model, {

@@ -29,6 +29,7 @@ import {
 } from "@maple/primitives"
 import {
 	DashboardConcurrencyError,
+	DashboardImportReport,
 	DashboardNotFoundError,
 	DashboardPersistenceError,
 	DashboardStoredConfigInvalidError,
@@ -85,6 +86,8 @@ const dashboardFields = {
 	variables: Schema.Array(V2DashboardVariable),
 	// `null` is off, matching `description`'s absence convention on this resource.
 	refreshIntervalSeconds: Schema.NullOr(DashboardRefreshIntervalSeconds),
+	// What an import could not carry over, until dismissed; absent when there is nothing to report.
+	importReport: optional(DashboardImportReport),
 	createdAt: Timestamp,
 	updatedAt: Timestamp,
 }
@@ -103,6 +106,7 @@ const DashboardSnapshot = Schema.Struct(dashboardFields)
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			importReport: "import_report",
 			createdAt: "created_at",
 			updatedAt: "updated_at",
 		}),
@@ -118,6 +122,7 @@ export const V2Dashboard = Schema.Struct(liveDashboardFields)
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			importReport: "import_report",
 			createdAt: "created_at",
 			updatedAt: "updated_at",
 		}),
@@ -137,6 +142,7 @@ export const V2DashboardMutation = Schema.Struct({
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			importReport: "import_report",
 			createdAt: "created_at",
 			updatedAt: "updated_at",
 		}),
@@ -158,6 +164,12 @@ export const V2DashboardUpdateParams = Schema.Struct({
 	sections: optional(Schema.Array(V2DashboardSection)),
 	variables: optional(Schema.Array(V2DashboardVariable)),
 	refreshIntervalSeconds: optional(Schema.NullOr(DashboardRefreshIntervalSeconds)),
+	importReport: optional(
+		Schema.NullOr(DashboardImportReport).annotate({
+			description:
+				"What an import could not carry over, shown on the dashboard. `null` dismisses it; omitted keeps it.",
+		}),
+	),
 	expectedVersion: optional(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)).annotate({
 			description:
@@ -169,6 +181,7 @@ export const V2DashboardUpdateParams = Schema.Struct({
 		Schema.encodeKeys({
 			timeRange: "time_range",
 			refreshIntervalSeconds: "refresh_interval_seconds",
+			importReport: "import_report",
 			expectedVersion: "expected_version",
 		}),
 	)

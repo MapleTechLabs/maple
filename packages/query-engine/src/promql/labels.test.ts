@@ -6,6 +6,7 @@ import {
 	matchesAll,
 	normalizeLabelName,
 	seriesLabels,
+	seriesMatchesAll,
 	type StoredSeries,
 } from "./labels"
 
@@ -109,5 +110,25 @@ describe("prototype-named labels", () => {
 		const labels = seriesLabels(row())
 		expect(matchesAll(labels, [{ name: "constructor", op: "=", value: "" }])).toBe(true)
 		expect(matchesAll(labels, [{ name: "toString", op: "!=", value: "" }])).toBe(false)
+	})
+})
+
+describe("the service_name matcher alias", () => {
+	const eq = (value: string) => [{ name: "service_name", op: "=" as const, value }]
+
+	it("matches the service, without the namespace job carries, and never becomes a label", () => {
+		const series = row()
+		const labels = seriesLabels(series)
+		expect(labels.service_name).toBeUndefined()
+		expect(seriesMatchesAll(series, labels, eq("checkout"))).toBe(true)
+		expect(seriesMatchesAll(series, labels, eq("shop/checkout"))).toBe(false)
+	})
+
+	it("falls back to the ServiceName column, and a real service_name attribute wins", () => {
+		const bare = row({ resourceAttributes: {} })
+		expect(seriesMatchesAll(bare, seriesLabels(bare), eq("checkout"))).toBe(true)
+		const own = row({ attributes: { service_name: "billing" } })
+		expect(seriesMatchesAll(own, seriesLabels(own), eq("billing"))).toBe(true)
+		expect(seriesMatchesAll(own, seriesLabels(own), eq("checkout"))).toBe(false)
 	})
 })

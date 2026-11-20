@@ -166,4 +166,5 @@ export const toOutput = (input: {
 	series: capSeries(input.result),
 	totalSeries: rawSeries(input.result).length,
 	...(input.result.resultType === "string" ? { stringValue: input.result.result.v } : undefined),
+	...(input.result.warnings.length === 0 ? undefined : { warnings: input.result.warnings }),
 })

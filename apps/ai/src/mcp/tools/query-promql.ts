@@ -15,9 +15,9 @@ const EXAMPLE = "sum by (job) (rate(http_server_request_duration_seconds_count[5
 
 const DESCRIPTION = [
 	"Run a PromQL query over the org's metrics, Prometheus-exact. Range evaluation over start_time..end_time by default; instant=true evaluates once at end_time.",
-	"Metric names are Prometheus-style, translated from OTel: dots become underscores and the unit is a suffix (`http.server.request.duration` in s is `http_server_request_duration_seconds`), monotonic sums end in `_total`, histograms read as `_bucket` (with `le`), `_count` and `_sum`. Labels are attribute keys with underscores (`host.name` is `host_name`); `job` is the service name, prefixed by its `service.namespace` when it sets one (`shop/checkout`), and `instance` the service instance id.",
+	"Metric names are the Prometheus names list_metrics returns in its PromQL column (histograms read as `_bucket` with `le`, `_count` and `_sum`); copy them rather than translating OTel names. Labels are attribute keys with underscores (`host.name` is `host_name`); `job` is the service name, prefixed by its `service.namespace` when it sets one (`shop/checkout`), and `instance` the service instance id. An unknown metric or label comes back as a warning naming the nearest ones.",
 	`Examples: \`${EXAMPLE}\`; \`histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))\`; \`sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])) / sum by (job) (rate(http_server_request_duration_seconds_count[5m]))\`.`,
-	"Use list_metrics to find the OTel names. Returns at most 20 series (highest peaks) and the last 200 points of each.",
+	"Returns at most 20 series (highest peaks) and the last 200 points of each.",
 ].join(" ")
 
 export function registerQueryPromqlTool(server: McpToolRegistrar) {

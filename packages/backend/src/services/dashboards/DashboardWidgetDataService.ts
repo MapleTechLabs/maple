@@ -504,7 +504,7 @@ export class DashboardWidgetDataService extends Context.Service<
 			if (path._tag === "Promql") {
 				// The author's PromQL, variables already filled by the planner. A query that does
 				// not parse or cannot run says why, so the tile shows the parser's message.
-				const rows = yield* Effect.gen(function* () {
+				const { rows, warnings } = yield* Effect.gen(function* () {
 					const params = yield* decodePlannedPromql(executed.params)
 					const result = yield* promql.widget(tenant, {
 						query: params.promql,
@@ -523,7 +523,7 @@ export class DashboardWidgetDataService extends Context.Service<
 							? undefined
 							: { displayType: params.displayType }),
 					})
-					return result.rows
+					return { rows: result.rows, warnings: result.warnings }
 				}).pipe(
 					Effect.catchTags({
 						"@maple/backend/promql/PromqlBadQueryError": (error) =>
@@ -547,7 +547,8 @@ export class DashboardWidgetDataService extends Context.Service<
 					),
 					Effect.catchDefect(executionFailed(request.widgetId, "promql")),
 				)
-				return outcome({ data: rows })
+				// The tile shows these hints in its empty state, or as a header warning beside data.
+				return outcome(warnings.length === 0 ? { data: rows } : { data: rows, warnings })
 			}
 
 			const context: RouteEndpointContext = {

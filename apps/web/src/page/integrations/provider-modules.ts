@@ -14,6 +14,7 @@ import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider
 import { PLANETSCALE } from "../infra-integrations/planetscale/integration/planetscale-provider"
 import { CLOUDFLARE } from "../infra-integrations/cloudflare/integration/cloudflare-provider"
 import { CHAT } from "./chat-provider"
+import { FLEET } from "./fleet/fleet-provider"
 import { ReadClock, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
 import { Message } from "./message"
@@ -294,6 +295,15 @@ export const CLOUDFLARE_PROVIDER = mount({
 	toHub: (message) => Message.GotCloudflareMessage({ message }),
 })
 
+export const FLEET_PROVIDER = mount({
+	module: FLEET,
+	statusName: "fleet",
+	slot: (statuses) => statuses.fleet,
+	get: (model) => model.fleetCard,
+	set: (model, fleetCard) => ({ ...model, fleetCard }),
+	toHub: (message) => Message.GotFleetMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -304,6 +314,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	VERCEL_PROVIDER,
 	PLANETSCALE_PROVIDER,
 	CLOUDFLARE_PROVIDER,
+	FLEET_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

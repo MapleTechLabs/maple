@@ -40,6 +40,7 @@ import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
+import { HttpDeviceSecurityLive } from "@/routes/internal/device-security.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
 import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
@@ -185,6 +186,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDemoLive,
 			HttpAuditTrailLive,
 			HttpCloudSecurityLive,
+			HttpDeviceSecurityLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
 			HttpSavedViewsLive,

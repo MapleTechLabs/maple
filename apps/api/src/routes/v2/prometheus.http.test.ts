@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
-import { MapleApiV2 } from "@maple/domain/http/v2"
+import { OrgId, UserId, WarehouseQueryError, WarehouseQuotaExceededError } from "@maple/domain/http"
+import { AuthorizationV2, MapleApiV2 } from "@maple/domain/http/v2"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApi, HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
@@ -87,14 +87,40 @@ const failingWarehouse = makeWarehouseServiceStub({
 		Effect.fail(new WarehouseQueryError({ message: "SECRET_DIAGNOSTIC", pipeName: "stub" })),
 })
 
+const quotaWarehouse = (setting: "max_execution_time" | "max_memory_usage" | "max_threads") =>
+	makeWarehouseServiceStub({
+		compiledQuery: () =>
+			Effect.fail(
+				new WarehouseQuotaExceededError({ message: "SECRET_QUOTA", pipeName: "stub", setting }),
+			),
+	})
+
+const hangingWarehouse = makeWarehouseServiceStub({ compiledQuery: () => Effect.never })
+
+/** Another v2 group behind the same middleware, to check what only the Prometheus group accepts. */
+class ProbeGroup extends HttpApiGroup.make("probe")
+	.add(HttpApiEndpoint.get("probe", "/probe", { success: Schema.String }))
+	.prefix("/v2/metrics")
+	.middleware(AuthorizationV2) {}
+
+const TestApi = HttpApi.make("MapleApiV2").add(MapleApiV2.groups.prometheus).add(ProbeGroup)
+
+const ProbeLive = HttpApiBuilder.group(TestApi, "probe", (handlers) =>
+	Effect.succeed(handlers.handle("probe", () => Effect.succeed("ok"))),
+)
+
+const basic = (user: string, password: string) =>
+	`Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`
+
 const makeHarness = (warehouse: WarehouseQueryServiceApi = catalogWarehouse) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(ApiKeysService.layer, AuthService.layer).pipe(
 		Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)),
 	)
-	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.prometheus)).pipe(
+	const routes = HttpApiBuilder.layer(TestApi).pipe(
 		Layer.provide(HttpV2PrometheusLive),
+		Layer.provide(ProbeLive),
 		Layer.provide(
 			Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
 				Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
@@ -123,12 +149,13 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = catalogWarehouse) => 
 				})
 			}),
 		)
-	const send = async (token: string, path: string, form?: URLSearchParams) => {
+	/** A request with any `Authorization` header to any path. */
+	const sendAs = async (authorization: string, url: string, form?: URLSearchParams) => {
 		const response = await handler(
-			new Request(`http://maple.test${BASE}${path}`, {
+			new Request(`http://maple.test${url}`, {
 				method: form === undefined ? "GET" : "POST",
 				headers: {
-					authorization: `Bearer ${token}`,
+					authorization,
 					...(form === undefined
 						? undefined
 						: { "content-type": "application/x-www-form-urlencoded" }),
@@ -139,9 +166,12 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = catalogWarehouse) => 
 		)
 		return { status: response.status, body: await response.json() }
 	}
+	const send = (token: string, path: string, form?: URLSearchParams) =>
+		sendAs(`Bearer ${token}`, `${BASE}${path}`, form)
 	return {
 		bootstrapKey,
 		send,
+		sendAs,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -213,6 +243,33 @@ describe("v2 Prometheus query API", () => {
 		})
 		const unlimited = await harness.send(key.secret, `/query?query=${two}&time=${T}&limit=0`)
 		expect(unlimited.body).toMatchObject({ data: { result: [{}, {}] } })
+		await harness.dispose()
+	})
+
+	it("names the nearest metric in warnings when a query's metric is unknown", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const answer = await harness.send(key.secret, `/query?query=http_request_total&time=${T}`)
+		expect(answer.body).toEqual({
+			status: "success",
+			data: { resultType: "vector", result: [] },
+			warnings: [
+				'no metric named "http_request_total" in the query window; did you mean "http_requests_total"?',
+			],
+		})
+		await harness.dispose()
+	})
+
+	it("warns when a discovery limit cut the label names", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const cut = await harness.send(key.secret, "/labels?limit=1")
+		expect(cut.body).toEqual({
+			status: "success",
+			data: ["__name__"],
+			warnings: ["results truncated due to limit"],
+		})
+		expect((await harness.send(key.secret, "/labels")).body).not.toHaveProperty("warnings")
 		await harness.dispose()
 	})
 
@@ -296,7 +353,7 @@ describe("v2 Prometheus query API", () => {
 		await harness.dispose()
 	})
 
-	it("refuses a range vector in a range query, an over-long query and an over-wide range as bad_data", async () => {
+	it("refuses a range vector in a range query, an over-long query and an over-wide read as bad_data", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["metrics:read"])
 		const matrix = await harness.send(
@@ -312,21 +369,6 @@ describe("v2 Prometheus query API", () => {
 		)
 		expect(long.status).toBe(400)
 		expect(long.body).toMatchObject({ errorType: "bad_data", error: expect.stringMatching(/"query"/) })
-		const wide = `start=${T - 40 * 86_400}&end=${T}`
-		for (const path of [
-			`/query_range?query=1&${wide}&step=1h`,
-			`/series?match[]=up&${wide}`,
-			`/labels?${wide}`,
-			`/label/job/values?${wide}`,
-			`/metadata?${wide}`,
-		]) {
-			const refused = await harness.send(key.secret, path)
-			expect(refused.status).toBe(400)
-			expect(refused.body).toMatchObject({
-				errorType: "bad_data",
-				error: "the time range exceeds the maximum of 32 days",
-			})
-		}
 		// A narrow request whose selectors read years back is refused the same way.
 		const reach = await harness.send(
 			key.secret,
@@ -443,6 +485,130 @@ describe("v2 Prometheus discovery API", () => {
 		const answered = await harness.send(analyst.secret, "/query", form)
 		expect(answered.status).toBe(200)
 		expect(answered.body).toEqual({ status: "success", data: { resultType: "scalar", result: [T, "1"] } })
+		await harness.dispose()
+	})
+})
+
+describe("v2 Prometheus API with Grafana's settings", () => {
+	it("narrows a long discovery range and evaluates a long range query on its full grid", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const ninety = `start=${T - 90 * 86_400}&end=${T}`
+		for (const path of [
+			`/labels?${ninety}`,
+			`/label/__name__/values?${ninety}`,
+			`/series?match[]=up&${ninety}`,
+		]) {
+			const answered = await harness.send(key.secret, path)
+			expect(answered.status).toBe(200)
+			expect(answered.body).toMatchObject({ status: "success" })
+		}
+		// Past the 32-day cap of the other v2 endpoints, every requested step is answered.
+		const range = await harness.send(
+			key.secret,
+			`/query_range?query=vector(1)&start=${T - 120 * 86_400}&end=${T}&step=1d`,
+		)
+		expect(range.status).toBe(200)
+		const values: ReadonlyArray<readonly [number, string]> = range.body.data.result[0].values
+		expect(values[0]).toEqual([T - 120 * 86_400, "1"])
+		expect(values.length).toBe(121)
+		await harness.dispose()
+	})
+
+	it("reports a store time budget as timeout, and memory and thread budgets as execution, each with its own advice", async () => {
+		const slow = makeHarness(quotaWarehouse("max_execution_time"))
+		const key = await slow.bootstrapKey(["metrics:read"])
+		const timedOut = await slow.send(key.secret, `/query?query=up&time=${T}`)
+		expect(timedOut.status).toBe(503)
+		expect(timedOut.body).toMatchObject({
+			errorType: "timeout",
+			error: expect.stringMatching(/larger step/),
+		})
+		await slow.dispose()
+		const big = makeHarness(quotaWarehouse("max_memory_usage"))
+		const bigKey = await big.bootstrapKey(["metrics:read"])
+		const tooBig = await big.send(bigKey.secret, `/query?query=up&time=${T}`)
+		expect(tooBig.status).toBe(422)
+		expect(tooBig.body).toMatchObject({ errorType: "execution", error: expect.stringMatching(/narrow/) })
+		expect(JSON.stringify(tooBig.body)).not.toContain("SECRET_QUOTA")
+		await big.dispose()
+		const wide = makeHarness(quotaWarehouse("max_threads"))
+		const wideKey = await wide.bootstrapKey(["metrics:read"])
+		const tooWide = await wide.send(wideKey.secret, `/query?query=up&time=${T}`)
+		expect(tooWide.status).toBe(422)
+		expect(tooWide.body).toMatchObject({
+			errorType: "execution",
+			error: expect.stringMatching(/scans more/),
+		})
+		expect(JSON.stringify(tooWide.body)).not.toMatch(/memory|SECRET_QUOTA/)
+		await wide.dispose()
+	})
+
+	it("stops a query at the timeout parameter and refuses an unparseable one", async () => {
+		const harness = makeHarness(hangingWarehouse)
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const timedOut = await harness.send(key.secret, `/query?query=up&time=${T}&timeout=50ms`)
+		expect(timedOut.status).toBe(503)
+		expect(timedOut.body).toMatchObject({ errorType: "timeout", error: expect.stringMatching(/50ms/) })
+		const bad = await harness.send(key.secret, `/query?query=up&time=${T}&timeout=soon`)
+		expect(bad.status).toBe(400)
+		expect(bad.body).toMatchObject({ errorType: "bad_data", error: expect.stringMatching(/"timeout"/) })
+		await harness.dispose()
+	})
+
+	it("answers the rules, alerts, config, flags and format_query calls Grafana makes", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		expect((await harness.send(key.secret, "/rules")).body).toEqual({
+			status: "success",
+			data: { groups: [] },
+		})
+		expect((await harness.send(key.secret, "/alerts")).body).toEqual({
+			status: "success",
+			data: { alerts: [] },
+		})
+		expect((await harness.send(key.secret, "/status/config")).body).toEqual({
+			status: "success",
+			data: { yaml: "" },
+		})
+		expect((await harness.send(key.secret, "/status/flags")).body).toEqual({
+			status: "success",
+			data: {},
+		})
+		const query = 'sum   by(job)(rate(http_requests_total{job="api"}[5m]))'
+		const formatted = await harness.send(key.secret, `/format_query?query=${encodeURIComponent(query)}`)
+		expect(formatted.body).toEqual({
+			status: "success",
+			data: 'sum by (job) (rate(http_requests_total{job="api"}[5m]))',
+		})
+		const posted = await harness.send(key.secret, "/format_query", new URLSearchParams({ query }))
+		expect(posted.body).toEqual(formatted.body)
+		const broken = await harness.send(key.secret, `/format_query?query=${encodeURIComponent("sum(")}`)
+		expect(broken.status).toBe(400)
+		expect(broken.body).toMatchObject({ status: "error", errorType: "bad_data" })
+		await harness.dispose()
+	})
+
+	it("takes an API key as a Basic password on Prometheus routes only", async () => {
+		const harness = makeHarness()
+		const metrics = await harness.bootstrapKey(["metrics:read"])
+		const query = `${BASE}/query?query=1&time=${T}`
+		const answered = await harness.sendAs(basic("grafana", metrics.secret), query)
+		expect(answered.status).toBe(200)
+		expect(answered.body).toEqual({ status: "success", data: { resultType: "scalar", result: [T, "1"] } })
+		const traces = await harness.bootstrapKey(["traces:read"])
+		expect((await harness.sendAs(basic("", traces.secret), query)).status).toBe(403)
+		expect((await harness.sendAs(basic("grafana", "not-a-key"), query)).status).toBe(401)
+		expect((await harness.sendAs("Basic !!!not-base64", query)).status).toBe(401)
+		// RFC 9110 allows a run of spaces after the scheme.
+		const spaced = Str.replace(" ", "   ")(basic("grafana", metrics.secret))
+		expect((await harness.sendAs(spaced, query)).status).toBe(200)
+		expect(
+			(await harness.sendAs(`Basic ${Buffer.from("no-colon").toString("base64")}`, query)).status,
+		).toBe(401)
+		// The same credentials on any other v2 route are not accepted; Bearer still is.
+		expect((await harness.sendAs(basic("grafana", metrics.secret), "/v2/metrics/probe")).status).toBe(401)
+		expect((await harness.sendAs(`Bearer ${metrics.secret}`, "/v2/metrics/probe")).status).toBe(200)
 		await harness.dispose()
 	})
 })

@@ -3,6 +3,8 @@ import { dataSourcePromql, dataSourceTransform, makePromqlDataSource } from "@ma
 import { Record as Rec, Schema, String as Str } from "effect"
 import type { EditorState } from "./editor-state"
 import { parseRowLimit, type Widget } from "./lowering"
+import { completionContextAt, type PromqlCompletionContext, promqlParseError } from "./promql-complete"
+import { EMPTY_DISCOVERY, PromqlDiscovery, type Suggestion, suggestionsFor } from "./promql-suggest"
 
 // The PromQL draft, the staged copy the preview runs, and the `promql` data source Apply writes.
 
@@ -13,11 +15,27 @@ export const PromqlDraft = Schema.Struct({
 })
 export type PromqlDraft = typeof PromqlDraft.Type
 
+export const PromqlParseErrorSchema = Schema.Struct({
+	message: Schema.String,
+	from: Schema.Number,
+	to: Schema.Number,
+})
+
 export const PromqlState = Schema.Struct({
 	draft: PromqlDraft,
 	/** Run preview stages the draft: typing does not refire the query. */
 	staged: PromqlDraft,
 	initial: PromqlDraft,
+	/** The parser's verdict on the draft, refreshed a beat after the last keystroke. */
+	parseError: Schema.NullOr(PromqlParseErrorSchema),
+	/** The latest edit, so only the newest parse delay applies. */
+	parseSeq: Schema.Number,
+	/** Typing has paused since the last edit (its parse delay ran out). */
+	isSettled: Schema.Boolean,
+	caret: Schema.Number,
+	/** The open completion list's highlighted item; null is closed. */
+	completion: Schema.NullOr(Schema.Struct({ activeIndex: Schema.Number })),
+	discovery: PromqlDiscovery,
 })
 export type PromqlState = typeof PromqlState.Type
 
@@ -39,11 +57,35 @@ export const promqlDraftOf = (widget: Widget): PromqlDraft => {
 
 export const initPromql = (widget: Widget): PromqlState => {
 	const draft = promqlDraftOf(widget)
-	return { draft, staged: draft, initial: draft }
+	return {
+		draft,
+		staged: draft,
+		initial: draft,
+		parseError: promqlParseError(draft.query),
+		parseSeq: 0,
+		isSettled: true,
+		caret: draft.query.length,
+		completion: null,
+		discovery: EMPTY_DISCOVERY,
+	}
 }
 
-/** What blocks Run preview and Apply: an empty query. The parser's verdict comes from the preview. */
-export const isRunnablePromql = (promql: PromqlState): boolean => Str.trim(promql.draft.query) !== ""
+/** What blocks Run preview and Apply: an empty query, or one the parser refuses (read now, not debounced). */
+export const isRunnablePromql = (promql: PromqlState): boolean =>
+	Str.trim(promql.draft.query) !== "" && promqlParseError(promql.draft.query) === null
+
+/** What the caret completes, when the list is open. */
+export const promqlContextOf = (promql: PromqlState): PromqlCompletionContext | null =>
+	promql.completion === null ? null : completionContextAt(promql.draft.query, promql.caret)
+
+/** The open list's suggestions; empty when closed or nothing fits the caret. */
+export const promqlSuggestionsOf = (
+	promql: PromqlState,
+	variables: ReadonlyArray<string>,
+): ReadonlyArray<Suggestion> => {
+	const context = promqlContextOf(promql)
+	return context === null ? [] : suggestionsFor(context, promql.discovery, variables)
+}
 
 /** A stat or gauge reduces `value`, newest point first, with the picked aggregate. */
 export const promqlDataSourceOf = (

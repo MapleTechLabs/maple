@@ -248,6 +248,7 @@ const routers = {
 		search(Search.SecurityCloudSearch),
 		Route.mapTo(AppRoute.SecurityCloud),
 	),
+	SecurityDevices: pipe(path("security", "devices"), Route.mapTo(AppRoute.SecurityDevices)),
 	SecurityAuditLog: pipe(
 		path("security", "audit-log"),
 		search(Search.SecurityAuditLogSearch),

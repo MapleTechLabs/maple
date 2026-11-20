@@ -41,7 +41,7 @@ export const copyableField = <M>(h: HtmlBuilder<M>, options: CopyableFieldOption
 		[
 			...(options.label === undefined
 				? []
-				: [h.label([h.Class(copyableFieldLabelStyles)], [options.label])]),
+				: [h.label([h.Class(copyableFieldLabelStyles), h.For(options.id)], [options.label])]),
 			inputGroup(h, {}, [
 				inputGroupInput(h, {
 					id: options.id,

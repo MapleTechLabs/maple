@@ -23,7 +23,9 @@ export const PrometheusParams = Schema.Struct({
 	start: optionalString("Range start: RFC3339 or Unix seconds."),
 	end: optionalString("Range end: RFC3339 or Unix seconds."),
 	step: optionalString("Resolution: a duration like `30s` or float seconds."),
-	timeout: optionalString("Accepted and ignored."),
+	timeout: optionalString(
+		"Evaluation timeout for `query` and `query_range`: a duration like `30s`, applied to the whole evaluation. Each metric store read also stops at 30s.",
+	),
 	limit: optionalString("Maximum number of returned items."),
 	metric: optionalString("Metric name to return metadata for."),
 	"match[]": matchParam,
@@ -34,8 +36,12 @@ export const PrometheusForm = PrometheusParams.pipe(HttpApiSchema.asFormUrlEncod
 
 const status = Schema.Literal("success")
 
+/** Prometheus' `warnings`: why a query matched nothing (with the nearest names), or that a limit cut it. */
+const warnings = Schema.optionalKey(Schema.Array(Schema.String))
+
 export const PrometheusQueryResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Struct({
 		resultType: Schema.Literals(["matrix", "vector", "scalar", "string"]),
 		result: Schema.Unknown,
@@ -48,11 +54,13 @@ export const PrometheusQueryResponse = Schema.Struct({
 
 export const PrometheusStringListResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Array(Schema.String),
 }).annotate({ identifier: "PrometheusStringListResponse", title: "Prometheus string list" })
 
 export const PrometheusSeriesResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Array(Schema.Record(Schema.String, Schema.String)),
 }).annotate({ identifier: "PrometheusSeriesResponse", title: "Prometheus series" })
 
@@ -88,6 +96,31 @@ export const PrometheusExemplarsResponse = Schema.Struct({
 	data: Schema.Array(Schema.Unknown),
 }).annotate({ identifier: "PrometheusExemplarsResponse", title: "Prometheus exemplars" })
 
+export const PrometheusFormatQueryResponse = Schema.Struct({
+	status,
+	data: Schema.String,
+}).annotate({ identifier: "PrometheusFormatQueryResponse", title: "Prometheus formatted query" })
+
+export const PrometheusRulesResponse = Schema.Struct({
+	status,
+	data: Schema.Struct({ groups: Schema.Array(Schema.Unknown) }),
+}).annotate({ identifier: "PrometheusRulesResponse", title: "Prometheus rules" })
+
+export const PrometheusAlertsResponse = Schema.Struct({
+	status,
+	data: Schema.Struct({ alerts: Schema.Array(Schema.Unknown) }),
+}).annotate({ identifier: "PrometheusAlertsResponse", title: "Prometheus alerts" })
+
+export const PrometheusConfigResponse = Schema.Struct({
+	status,
+	data: Schema.Struct({ yaml: Schema.String }),
+}).annotate({ identifier: "PrometheusConfigResponse", title: "Prometheus config" })
+
+export const PrometheusFlagsResponse = Schema.Struct({
+	status,
+	data: Schema.Record(Schema.String, Schema.String),
+}).annotate({ identifier: "PrometheusFlagsResponse", title: "Prometheus flags" })
+
 const docs = (identifier: string, summary: string, description: string) =>
 	OpenApi.annotations({ identifier, summary, description: `${description} Requires \`metrics:read\`.` })
 
@@ -113,6 +146,8 @@ const RANGE = "Evaluates a PromQL query over `[start, end]` every `step`."
 const SERIES = "Lists the label sets of the series the `match[]` selectors select in `[start, end]`."
 const LABELS = "Lists label names, of the `match[]` series when given."
 const EXEMPLARS = "Exemplar queries; Maple returns none."
+const FORMAT = "Pretty-prints a PromQL expression the way Prometheus formats it."
+const NONE = "Maple evaluates no recording or alerting rules, so the list is always empty."
 
 export class V2PrometheusApiGroup extends HttpApiGroup.make("prometheus")
 	.add(
@@ -196,6 +231,44 @@ export class V2PrometheusApiGroup extends HttpApiGroup.make("prometheus")
 	.add(
 		readPost("exemplarsPost", "/query_exemplars", PrometheusExemplarsResponse).annotateMerge(
 			docs("prometheusExemplarsPost", "Query exemplars (form POST)", EXEMPLARS),
+		),
+	)
+	.add(
+		readGet("formatQuery", "/format_query", PrometheusFormatQueryResponse).annotateMerge(
+			docs("prometheusFormatQuery", "Format a query", FORMAT),
+		),
+	)
+	.add(
+		readPost("formatQueryPost", "/format_query", PrometheusFormatQueryResponse).annotateMerge(
+			docs("prometheusFormatQueryPost", "Format a query (form POST)", FORMAT),
+		),
+	)
+	.add(
+		readGet("rules", "/rules", PrometheusRulesResponse).annotateMerge(
+			docs("prometheusRules", "List rules", NONE),
+		),
+	)
+	.add(
+		readGet("alerts", "/alerts", PrometheusAlertsResponse).annotateMerge(
+			docs("prometheusAlerts", "List active alerts", NONE),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("config", "/status/config", { success: PrometheusConfigResponse }).annotateMerge(
+			docs(
+				"prometheusConfig",
+				"Configuration",
+				"Maple has no Prometheus configuration; `yaml` is empty.",
+			),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("flags", "/status/flags", { success: PrometheusFlagsResponse }).annotateMerge(
+			docs(
+				"prometheusFlags",
+				"Flags",
+				"Maple has no Prometheus command-line flags; the object is empty.",
+			),
 		),
 	)
 	.prefix("/v2/metrics/prometheus/api/v1")
