@@ -522,7 +522,8 @@ const make = Effect.gen(function* () {
 			return yield* new PromqlExecutionError({ message: result.failure.message })
 		const selectors = Arr.map(entries, ([selector]) => selector)
 		const warnings = yield* hints(tenant, selectors, catalog, window, isEmptyResult(result.success))
-		return { ...result.success, warnings } satisfies PromqlAnswer
+		const answer: PromqlAnswer = { ...result.success, warnings }
+		return answer
 	})
 
 	const windowParams = (tenant: TenantContext, window: DiscoveryWindow) => ({

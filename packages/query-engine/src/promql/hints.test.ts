@@ -7,6 +7,7 @@ import {
 	unknownLabelWarning,
 	unknownMetricWarning,
 } from "./hints"
+import { examplePromqlFor, promqlNamesFor } from "./display"
 import type { CatalogMetric } from "./names"
 
 const metric = (overrides: Partial<CatalogMetric> & Pick<CatalogMetric, "metricName">): CatalogMetric => ({
@@ -107,6 +108,30 @@ describe("labels", () => {
 	it("suggests near label names", () => {
 		expect(unknownLabelWarning("up", "http_status", ["job", "http_response_status_code"])).toContain(
 			'"http_response_status_code"',
+		)
+	})
+})
+
+describe("promqlNamesFor and examplePromqlFor", () => {
+	const listed = (m: CatalogMetric) => ({ ...m, unit: m.unit })
+
+	it("lists one name per component", () => {
+		expect(promqlNamesFor(listed(duration))).toEqual([
+			"http_server_request_duration_seconds_bucket",
+			"http_server_request_duration_seconds_count",
+			"http_server_request_duration_seconds_sum",
+		])
+		expect(promqlNamesFor({ ...listed(memory), metricType: "summary" })).toEqual([])
+	})
+
+	it("starts from a rate, a quantile or the value by type", () => {
+		expect(examplePromqlFor(listed(requests))).toBe("sum by (job) (rate(http_server_requests_total[5m]))")
+		expect(examplePromqlFor(listed(duration))).toBe(
+			"histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))",
+		)
+		expect(examplePromqlFor(listed(memory))).toBe("avg by (job) (jvm_memory_used_bytes)")
+		expect(examplePromqlFor(listed(rpc))).toBe(
+			"sum(rate(rpc_duration_milliseconds_sum[5m])) / sum(rate(rpc_duration_milliseconds_count[5m]))",
 		)
 	})
 })

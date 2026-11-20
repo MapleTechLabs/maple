@@ -1,4 +1,5 @@
 export * from "./discovery"
+export * from "./display"
 export * from "./hints"
 export * from "./labels"
 export * from "./names"

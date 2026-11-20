@@ -106,9 +106,9 @@ const slipOf = (name: string, related: ReadonlyArray<CatalogMetric>): string | u
 	if (Str.includes(".")(name)) return "PromQL names use underscores and the unit as a suffix"
 	if (Arr.some(related, (m) => m.metricType === "histogram") && !/_(bucket|count|sum)$/.test(name))
 		return "a histogram reads as _bucket, _count and _sum"
-	if (/_bucket$/.test(name) && Arr.some(related, (m) => m.metricType === "exponential_histogram"))
+	if (Str.endsWith("_bucket")(name) && Arr.some(related, (m) => m.metricType === "exponential_histogram"))
 		return "an exponential histogram has no _bucket series; use _count and _sum"
-	if (/_total$/.test(name) && related.length > 0 && !Arr.some(related, isCounter))
+	if (Str.endsWith("_total")(name) && related.length > 0 && !Arr.some(related, isCounter))
 		return "only monotonic sums end in _total"
 	return undefined
 }
@@ -142,12 +142,12 @@ export const unknownMetricWarning = (name: string, catalog: ReadonlyArray<Catalo
 }
 
 /** Labels Maple derives from OTel attributes, under the name a user often types instead. */
-const LABEL_ALIASES: Readonly<Record<string, string>> = {
-	service: "job",
-	service_name: "job",
-	service_namespace: "job",
-	service_instance_id: "instance",
-}
+const LABEL_ALIASES = new Map([
+	["service", "job"],
+	["service_name", "job"],
+	["service_namespace", "job"],
+	["service_instance_id", "instance"],
+])
 
 /** Matchers that need a label present (they reject ""), whose label no matching series has. */
 export const missingLabelMatchers = (
@@ -165,7 +165,7 @@ export const unknownLabelWarning = (
 	label: string,
 	present: ReadonlyArray<string>,
 ): string => {
-	const alias = LABEL_ALIASES[label]
+	const alias = LABEL_ALIASES.get(label)
 	const names = Arr.filter(present, (name) => name !== "__name__")
 	const suggestions = Arr.take(
 		Arr.dedupe([

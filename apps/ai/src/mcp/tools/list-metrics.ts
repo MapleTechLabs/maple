@@ -7,6 +7,7 @@ import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
 import { MetricType } from "@maple/domain/query-engine"
+import { examplePromqlFor, promqlNamesFor } from "@maple/query-engine/promql"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_DISCOVERY_MAX_HOURS })
 
@@ -30,7 +31,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 		name: "list_metrics",
 		title: "List Metrics",
 		description:
-			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
+			"Discover custom metrics with their type, unit, monotonicity, data volume and PromQL names. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics, or a PromQL name to query_promql.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -97,6 +98,12 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 					metricUnit: m.metricUnit || "",
 					isMonotonic: Boolean(m.isMonotonic),
 					dataPointCount: Number(m.dataPointCount),
+					promqlNames: promqlNamesFor({
+						metricName: m.metricName,
+						metricType: m.metricType,
+						isMonotonic: Boolean(m.isMonotonic),
+						unit: m.metricUnit,
+					}),
 				})),
 				filters: {
 					...(params.service === undefined ? undefined : { service: params.service }),
@@ -160,9 +167,12 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 						? []
 						: [
 								doc.table(
-									["Name", "Type", "Monotonic", "Service", "Unit", "Data Points"],
+									["Name", "PromQL", "Type", "Monotonic", "Service", "Unit", "Data Points"],
 									Arr.map(output.metrics, (m) => [
 										truncate(m.metricName, 40),
+										m.promqlNames.length === 0
+											? "-"
+											: truncate(Arr.join(m.promqlNames, ", "), 90),
 										m.metricType,
 										m.isMonotonic ? "yes" : "-",
 										m.serviceName,
@@ -193,19 +203,37 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: Arr.map(output.metrics.slice(0, 3), (m) =>
-					doc.next(
-						"query_data",
-						{
-							source: "metrics",
-							kind: "timeseries",
-							metric_name: m.metricName,
-							metric_type: m.metricType,
-							metric: m.metricType === "sum" && m.isMonotonic ? "rate" : "avg",
-						},
-						"chart this metric",
+				next: [
+					...Arr.flatMap(output.metrics.slice(0, 1), (m) => {
+						const query = examplePromqlFor({ ...m, unit: m.metricUnit })
+						return query === undefined
+							? []
+							: [
+									doc.next(
+										"query_promql",
+										{
+											query,
+											start_time: output.timeRange.start,
+											end_time: output.timeRange.end,
+										},
+										"query it with PromQL",
+									),
+								]
+					}),
+					...Arr.map(output.metrics.slice(0, 3), (m) =>
+						doc.next(
+							"query_data",
+							{
+								source: "metrics",
+								kind: "timeseries",
+								metric_name: m.metricName,
+								metric_type: m.metricType,
+								metric: m.metricType === "sum" && m.isMonotonic ? "rate" : "avg",
+							},
+							"chart this metric",
+						),
 					),
-				),
+				],
 			}
 		},
 	})
