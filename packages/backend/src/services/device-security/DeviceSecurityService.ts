@@ -13,11 +13,16 @@ import {
 	IntegrationsPersistenceError,
 	type OrgId,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Record as Rec } from "effect"
+import { Array as Arr, Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { FleetFindingsService } from "@maple/backend/services/integrations/FleetFindingsService"
-import { type DeviceSourceStatusReader, policyOrder, vulnerabilityOrder } from "./device-findings-store"
+import {
+	type DeviceSourceStatus,
+	type DeviceSourceStatusReader,
+	policyOrder,
+	vulnerabilityOrder,
+} from "./device-findings-store"
 
 /** CVEs listed per source: one with scores never pushes an unscored one off the page. */
 const LISTED_VULNERABILITIES = 500
@@ -41,6 +46,56 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 			// Every device source, in the order the page lists them.
 			const readers: ReadonlyArray<DeviceSourceStatusReader> = [fleet]
 
+			const scopeOf =
+				(orgId: OrgId, source: DeviceSourceStatus) =>
+				($: PG.ColumnAccessor<typeof DeviceVulnerabilityFindings.columns>) => [
+					$.orgId.eq(orgId),
+					$.source.eq(source.kind),
+					$.connectionId.eq(source.connectionId),
+				]
+
+			/**
+			 * A connection's top CVEs and how many more it has, capped in the query: scored ones by
+			 * score first, then unscored ones by devices, since SQL orders nulls first when descending.
+			 */
+			const listedFor = (orgId: OrgId, source: DeviceSourceStatus) =>
+				Effect.all(
+					[
+						dbExecute((db) =>
+							db.run(
+								PG.from(DeviceVulnerabilityFindings)
+									.select()
+									.where(($) => [...scopeOf(orgId, source)($), $.cvssScore.isNotNull()])
+									.orderBy(["cvssScore", "desc"], ["deviceCount", "desc"], ["cve", "asc"])
+									.limit(LISTED_VULNERABILITIES),
+							),
+						),
+						dbExecute((db) =>
+							db.run(
+								PG.from(DeviceVulnerabilityFindings)
+									.select()
+									.where(($) => [...scopeOf(orgId, source)($), $.cvssScore.isNull()])
+									.orderBy(["deviceCount", "desc"], ["cve", "asc"])
+									.limit(LISTED_VULNERABILITIES),
+							),
+						),
+						dbExecute((db) =>
+							db.run(
+								PG.from(DeviceVulnerabilityFindings)
+									.select(() => ({ count: PG.count() }))
+									.where(scopeOf(orgId, source)),
+							),
+						),
+					],
+					{ concurrency: 3 },
+				).pipe(
+					Effect.map(([scored, unscored, counted]) => ({
+						source,
+						rows: Arr.take(Arr.appendAll(scored, unscored), LISTED_VULNERABILITIES),
+						more: Math.max(0, Number(counted[0]?.count ?? 0) - LISTED_VULNERABILITIES),
+					})),
+				)
+
 			const devices = Effect.fn("DeviceSecurityService.devices")(function* (orgId: OrgId) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const perReader = yield* Effect.forEach(readers, (reader) => reader.sources(orgId), {
@@ -55,24 +110,12 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 						vulnerabilities: [],
 						moreVulnerabilities: 0,
 					})
-				const [policies, vulnerabilities] = yield* Effect.all(
-					[
-						dbExecute((db) =>
-							db.run(
-								PG.from(DevicePolicyFindings)
-									.select()
-									.where(($) => [$.orgId.eq(orgId)]),
-							),
-						),
-						dbExecute((db) =>
-							db.run(
-								PG.from(DeviceVulnerabilityFindings)
-									.select()
-									.where(($) => [$.orgId.eq(orgId)]),
-							),
-						),
-					],
-					{ concurrency: 2 },
+				const policies = yield* dbExecute((db) =>
+					db.run(
+						PG.from(DevicePolicyFindings)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 				)
 				// Only what a connected source reported: rows outliving their connection never show.
 				const connected = new Set(
@@ -80,22 +123,13 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 				)
 				const isConnected = (row: { readonly source: string; readonly connectionId: string }) =>
 					connected.has(`${row.source}:${row.connectionId}`)
-				const perConnection = Arr.groupBy(
-					Arr.filter(vulnerabilities, isConnected),
-					(row): string => `${row.source}:${row.connectionId}`,
-				)
-				const moreOf = (key: string) =>
-					Math.max(0, (perConnection[key]?.length ?? 0) - LISTED_VULNERABILITIES)
-				const listed = Arr.flatMap(Rec.values(perConnection), (rows) =>
-					Arr.take(Arr.sort(rows, vulnerabilityOrder), LISTED_VULNERABILITIES),
-				)
+				const perSource = yield* Effect.forEach(sources, (source) => listedFor(orgId, source), {
+					concurrency: 2,
+				})
+				const listed = Arr.flatMap(perSource, ({ rows }) => rows)
 				const withCounts = Arr.map(
-					sources,
-					(source) =>
-						new DeviceSource({
-							...source,
-							moreVulnerabilities: moreOf(`${source.kind}:${source.connectionId}`),
-						}),
+					perSource,
+					({ source, more }) => new DeviceSource({ ...source, moreVulnerabilities: more }),
 				)
 				return new DevicesResponse({
 					sources: withCounts,

@@ -139,10 +139,11 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				FleetApi.listVulnerableSoftware(fleet, page, SOFTWARE_PAGE_SIZE).pipe(
 					Effect.flatMap((answer) => {
 						const all = Arr.appendAll(acc, answer.software ?? [])
-						const hasMore = answer.meta?.has_next_results === true
-						return hasMore && page + 1 < MAX_SOFTWARE_PAGES
+						// Only an explicit last page is complete: a page without `meta` may have more after it.
+						const hasNext = answer.meta?.has_next_results
+						return hasNext === true && page + 1 < MAX_SOFTWARE_PAGES
 							? readSoftware(fleet, page + 1, all)
-							: Effect.succeed({ software: all, complete: !hasMore })
+							: Effect.succeed({ software: all, complete: hasNext === false })
 					}),
 				)
 
@@ -272,10 +273,15 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					}
 				}
 				const stored = yield* Effect.result(store(claimed, now, snapshot.success))
-				if (stored._tag === "Failure")
+				if (stored._tag === "Failure") {
+					yield* Effect.annotateCurrentSpan("maple.fleet.error_kind", "store")
+					yield* Effect.logWarning("Fleet findings could not be stored").pipe(
+						Effect.annotateLogs({ connectionId: claimed.id, error: stored.failure.message }),
+					)
 					return yield* fail(
 						"Findings were read from Fleet but could not be saved. Maple retries next tick.",
 					)
+				}
 				if (!stored.success) return NOTHING
 				yield* Effect.annotateCurrentSpan({
 					"maple.fleet.policies": snapshot.success.policies.length,

@@ -42,7 +42,8 @@ export const failingPolicies = (
 						critical: policy.critical === true,
 						platform: emptyToNull(policy.platform),
 						failingDeviceCount: failing,
-						passingDeviceCount: policy.passing_host_count ?? 0,
+						// Null when Fleet has not counted the passing devices yet.
+						passingDeviceCount: policy.passing_host_count ?? null,
 						countedAt: counted === null || Number.isNaN(counted) ? null : counted,
 						url: `${baseUrl}/policies/${policy.id}`,
 					},

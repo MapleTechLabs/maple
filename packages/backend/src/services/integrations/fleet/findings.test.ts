@@ -38,6 +38,22 @@ describe("failingPolicies", () => {
 	})
 })
 
+describe("failingPolicies passing counts", () => {
+	it("keeps a passing count Fleet has not computed as unknown, not zero", () => {
+		const [counted, uncounted] = failingPolicies(
+			[
+				{ id: 1, name: "Firewall", failing_host_count: 5, passing_host_count: 20 },
+				{ id: 2, name: "Encryption", failing_host_count: 3, passing_host_count: null },
+			],
+			BASE,
+		)
+		assert.deepStrictEqual(
+			[counted?.finding.passingDeviceCount, uncounted?.finding.passingDeviceCount],
+			[20, null],
+		)
+	})
+})
+
 describe("findingDevice", () => {
 	it("names a device by its display name, its hostname, or its id, and links to it", () => {
 		assert.deepStrictEqual(

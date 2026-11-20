@@ -62,10 +62,14 @@ const answeredWith = (result: Result.Result<Devices, ReturnType<typeof toLoadFai
 const loaded = (devices: Devices) => answeredWith(Result.succeed(devices))
 
 describe("security devices", () => {
-	test("the page reads the device findings once, with the clock", () => {
-		expect(Arr.map(init(route, context).commands ?? [], ({ name }) => name)).toEqual(
-			expect.arrayContaining(["SecurityApiDevices", "ReadSecurityDevicesClock"]),
-		)
+	test("opening the page reads the clock, then the findings once, under the key it waits on", () => {
+		const opened = init(route, context)
+		const key = opened.model.devices.key ?? ""
+		expect(key).not.toBe("")
+		// Compared by name and arguments, taken from the commands themselves rather than spelled out.
+		const requests = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }>) =>
+			Arr.map(commands, ({ name, args }) => ({ name, args }))
+		expect(requests(opened.commands ?? [])).toEqual(requests([ReadDevicesClock(), FetchDevices({ key })]))
 	})
 
 	test("an org with no device source is pointed at the Fleet integration card", () => {
