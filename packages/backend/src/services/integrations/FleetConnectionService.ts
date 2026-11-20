@@ -20,6 +20,7 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
+import { clearDeviceFindings } from "@maple/backend/services/device-security/device-findings-store"
 import * as FleetApi from "./fleet/api"
 
 const VALIDATE_TIMEOUT = Duration.seconds(30)
@@ -47,6 +48,14 @@ const DISCONNECTED = new FleetIntegrationStatus({
 	lastError: null,
 })
 
+/** The device findings sync's error while it is the latest outcome; the activity feed's comes first. */
+const devicesSyncError = (row: FleetConnectionRow): string | null =>
+	row.findingsError !== null &&
+	row.findingsErrorAt !== null &&
+	(row.findingsSyncedAt === null || row.findingsErrorAt > row.findingsSyncedAt)
+		? `Devices sync: ${row.findingsError}`
+		: null
+
 export const fleetStatusOf = (row: FleetConnectionRow | undefined): FleetIntegrationStatus =>
 	row === undefined
 		? DISCONNECTED
@@ -62,7 +71,7 @@ export const fleetStatusOf = (row: FleetConnectionRow | undefined): FleetIntegra
 				connectedAt: row.createdAt,
 				authFailed: row.authFailedAt !== null,
 				lastSyncedAt: row.lastSuccessAt,
-				lastError: row.lastError,
+				lastError: row.lastError ?? devicesSyncError(row),
 			})
 
 /** What the connect form shows for a failed check; every Fleet failure is about the entered server or token. */
@@ -184,17 +193,23 @@ export class FleetConnectionService extends Context.Service<
 				holdUntil: null,
 				lastError: null,
 				lastErrorAt: null,
+				// A new token clears the device sync's failure too, or the page keeps showing it.
+				findingsHoldUntil: null,
+				findingsError: null,
+				findingsErrorAt: null,
 				updatedAt: now,
 			}
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
 						// Another server is a new connection: nothing read from the old one carries over.
-						yield* db.run(
-							PG.deleteFrom(FleetConnections).where(($) => [
-								$.orgId.eq(orgId),
-								$.baseUrl.neq(baseUrl),
-							]),
+						const replaced = yield* db.run(
+							PG.deleteFrom(FleetConnections)
+								.where(($) => [$.orgId.eq(orgId), $.baseUrl.neq(baseUrl)])
+								.returning("id"),
+						)
+						yield* Effect.forEach(replaced, (row) =>
+							clearDeviceFindings(db, { orgId, source: "fleet", connectionId: row.id }),
 						)
 						yield* db.run(
 							PG.insertInto(FleetConnections)
@@ -210,10 +225,19 @@ export class FleetConnectionService extends Context.Service<
 		const disconnect = Effect.fn("FleetConnectionService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(FleetConnections)
-						.where(($) => [$.orgId.eq(orgId)])
-						.returning(($) => ({ id: $.id })),
+				db.transaction(
+					Effect.gen(function* () {
+						// The row first: a sync holding it commits before the findings are cleared.
+						const removed = yield* db.run(
+							PG.deleteFrom(FleetConnections)
+								.where(($) => [$.orgId.eq(orgId)])
+								.returning("id"),
+						)
+						yield* Effect.forEach(removed, (row) =>
+							clearDeviceFindings(db, { orgId, source: "fleet", connectionId: row.id }),
+						)
+						return removed
+					}),
 				),
 			)
 			return rows.length > 0

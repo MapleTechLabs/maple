@@ -41,6 +41,16 @@ export const FleetConnections = PG.table("fleet_connections", {
 		lastSuccessAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_success_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		lastErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_error_at" }),
+		/** The device findings sync's own lease, hold and state: it runs apart from the activity poll. */
+		findingsLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "findings_lease_until" }),
+		findingsHoldUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "findings_hold_until" }),
+		findingsSyncedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "findings_synced_at" }),
+		findingsError: PG.column(PG.nullable(PG.text), { name: "findings_error" }),
+		findingsErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "findings_error_at" }),
+		/** Enrolled devices at the last findings sync. */
+		deviceCount: PG.column(PG.nullable(PG.int4), { name: "device_count" }),
+		/** Every CVE Fleet counts on the server's devices at the last sync, past those stored too. */
+		vulnerabilityCount: PG.column(PG.nullable(PG.int4), { name: "vulnerability_count" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
