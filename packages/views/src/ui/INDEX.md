@@ -34,6 +34,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/checkbox.ts` `labelId`, `view` (stateful: Model, init, update): Base UI `Checkbox`: the checked state is the Submodel; `indeterminate` stays a view input, as it is a controlled prop in @maple/ui (it overrides how the box reads, not what a cl...
 - `packages/views/src/ui/choice-card.ts` `choiceCheckClass`, `choiceCard`: `ChoiceCard`: a whole card that picks an option, over a visually hidden native radio or checkbox (the onboarding and connect pickers).
 - `packages/views/src/ui/choice.ts` `labelIdOf`, `toggleKey`, `hiddenInput`: Shared by checkbox, radio, switch, select and combobox: the parts Base UI renders the same way.
+- `packages/views/src/ui/code-editor.ts` `suggestionListId`, `suggestionId`, `codeEditor`: A coloured run of an editor's text: `start` is its offset, `className` its colour (none is plain).
 - `packages/views/src/ui/collapsible.ts` `collapsible`, `collapsibleTrigger`: `Collapsible` whose open state lives in the owner's Model: the trigger button and, while open, its panel (closed, Base UI renders no panel).
 - `packages/views/src/ui/color-hsv.ts` `normalizeHex`, `hsvToHex`, `hexToHsv`: HSV and `#rrggbb` for the colour picker: hue in degrees 0 to 360, saturation and value 0 to 1.
 - `packages/views/src/ui/color-picker.ts` `colorPicker`: `ColorPicker`: a swatch that opens a picker for a `#rrggbb` colour.

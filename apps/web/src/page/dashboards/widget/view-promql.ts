@@ -1,16 +1,18 @@
-import type { Html, HtmlBuilder } from "foldkit/html"
+import type { Html, HtmlBuilder, KeyboardModifiers } from "foldkit/html"
+import { Array as Arr, Option, String as Str } from "effect"
+import { codeEditor } from "@maple/views/ui/code-editor"
+import { tokenizePromql } from "@maple/views/lib/promql-highlight"
 import { button } from "@maple/views/ui/button"
 import { field, fieldDescription, fieldErrorText, fieldLabel, type FieldState } from "@maple/views/ui/field"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { input } from "@maple/views/ui/input"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { textarea } from "@maple/views/ui/textarea"
 import { typography } from "@maple/views/ui/typography"
 import { dataStateOf } from "../kit/data-state"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { isRunnablePromql, promqlParseErrorOf, type PromqlState } from "./promql"
-import { PROMQL_TEXTAREA_ID } from "./promql-step"
+import { isRunnablePromql, promqlParseErrorOf, promqlSuggestionsOf, type PromqlState } from "./promql"
+import { PROMQL_TEXTAREA_ID, promqlVariablesOf } from "./promql-step"
 import { previewWidgetOf, widgetOf } from "./update"
 
 type H = HtmlBuilder<Message>
@@ -36,33 +38,77 @@ const parseErrorOf = (model: Model): string | null => {
 	return state._tag === "Error" ? promqlParseErrorOf(state.message) : null
 }
 
-const queryField = (h: H, promql: PromqlState, error: string | null): Html =>
-	field(h, { state: { ...IDLE, isInvalid: error !== null } }, [
+/** `Line 2, column 7` for an offset, as the error under the field names it. */
+const positionOf = (query: string, offset: number): string => {
+	const lines = Str.split(Str.slice(0, offset)(query), "\n")
+	return `Line ${lines.length}, column ${Arr.last(lines).pipe(Option.getOrElse(() => "")).length + 1}`
+}
+
+/** The editor's keys: the open list's arrows, Enter, Tab and Esc, and Ctrl+Space to open it. */
+const editorKey = (isOpen: boolean) => (key: string, modifiers: KeyboardModifiers) =>
+	key === " " && modifiers.ctrlKey
+		? Option.some(Message.PressedPromqlKey({ key }))
+		: isOpen && LIST_KEYS.has(key)
+			? Option.some(Message.PressedPromqlKey({ key }))
+			: Option.none()
+
+const LIST_KEYS = new Set(["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"])
+
+const queryField = (h: H, model: Model, promql: PromqlState, serverError: string | null): Html => {
+	const suggestions = promqlSuggestionsOf(promql, promqlVariablesOf(model))
+	// Mid-word with suggestions open, the half-typed query is expected to be incomplete; Apply still checks it.
+	const parseError = promql.completion !== null && suggestions.length > 0 ? null : promql.parseError
+	const isInvalid = parseError !== null || serverError !== null
+	return field(h, { state: { ...IDLE, isInvalid } }, [
 		fieldLabel(h, { ids: QUERY_IDS, state: IDLE }, "PromQL query"),
-		textarea(h, {
+		codeEditor(h, {
 			id: QUERY_IDS.control,
-			controlClassName: "min-h-32 font-mono text-xs leading-5",
-			defaultValue: promql.draft.query,
-			attributes: [
-				h.Spellcheck(false),
-				h.Placeholder("sum by (job) (rate(http_requests_total[$__rate_interval]))"),
-				h.OnInput((value) => Message.ChangedPromql({ value })),
-			],
+			label: "PromQL query",
+			value: promql.draft.query,
+			tokens: tokenizePromql(promql.draft.query),
+			size: "auto",
+			placeholder: "sum by (job) (rate(http_requests_total[$__rate_interval]))",
+			describedBy: isInvalid ? QUERY_IDS.error : QUERY_IDS.description,
+			error: parseError,
+			completion:
+				promql.completion === null
+					? null
+					: {
+							caret: promql.caret,
+							items: suggestions,
+							activeIndex: Math.min(
+								promql.completion.activeIndex,
+								Math.max(0, suggestions.length - 1),
+							),
+							onPick: (index) => Message.PickedPromqlSuggestion({ index }),
+						},
+			onInput: (value) => Message.ChangedPromql({ value }),
+			onKeyDown: editorKey(promql.completion !== null && suggestions.length > 0),
+			onKeyUp: (key) => Message.ReleasedPromqlKey({ key }),
+			onClick: Message.ClickedPromqlEditor(),
+			onBlur: Message.BlurredPromqlEditor(),
 		}),
-		error === null
-			? fieldDescription(h, { ids: QUERY_IDS, state: IDLE }, [
-					"Dashboard variables work as ",
-					inlineCode(h, {}, ["$name"]),
-					", plus ",
-					inlineCode(h, {}, ["$__interval"]),
-					", ",
-					inlineCode(h, {}, ["$__rate_interval"]),
-					" and ",
-					inlineCode(h, {}, ["$__range"]),
-					".",
-				])
-			: fieldErrorText(h, {}, error),
+		parseError !== null
+			? fieldErrorText(
+					h,
+					{ attributes: [h.Id(QUERY_IDS.error)] },
+					`${positionOf(promql.draft.query, parseError.from)}: ${parseError.message}`,
+				)
+			: serverError !== null
+				? fieldErrorText(h, { attributes: [h.Id(QUERY_IDS.error)] }, serverError)
+				: fieldDescription(h, { ids: QUERY_IDS, state: IDLE }, [
+						"Dashboard variables work as ",
+						inlineCode(h, {}, ["$name"]),
+						", plus ",
+						inlineCode(h, {}, ["$__interval"]),
+						", ",
+						inlineCode(h, {}, ["$__rate_interval"]),
+						" and ",
+						inlineCode(h, {}, ["$__range"]),
+						". Ctrl+Space suggests names.",
+					]),
 	])
+}
 
 const legendField = (h: H, promql: PromqlState): Html =>
 	field(h, { className: "grow", state: IDLE }, [
@@ -101,7 +147,7 @@ const stepField = (h: H, promql: PromqlState): Html => {
 /** The PromQL tab's body: the query, its legend and step, and Run preview. */
 export const promqlEditor = (h: H, model: Model, promql: PromqlState): ReadonlyArray<Html> => [
 	vstack(h, { gap: "4" }, [
-		queryField(h, promql, parseErrorOf(model)),
+		queryField(h, model, promql, parseErrorOf(model)),
 		hstack(h, { gap: "3", align: "start" }, [legendField(h, promql), stepField(h, promql)]),
 		hstack(h, { gap: "3" }, [
 			button(
