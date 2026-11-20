@@ -2,10 +2,10 @@
 // per series, its samples in `(startMs, endMs]` aggregated into evaluation buckets.
 //
 // Stages: scan with pushed-down label matchers; series key and sample value (delta sums
-// accumulated into counters); previous sample per series; per (series, bucket) statistics;
-// one row per series with the bucket statistics as parallel arrays.
+// accumulated into counters for rate functions only); previous sample and next stale marker per
+// series; per (series, bucket) statistics; one row per series with them as parallel arrays.
 
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Schema, SchemaGetter } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, param, sql, table } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -42,6 +42,12 @@ export interface PromqlSelectorOpts {
 	readonly widthMs: number
 	/** Also return each bucket's values in time order (raw mode). */
 	readonly needsValues: boolean
+	/**
+	 * Read delta-temporality samples as a running counter from the read's start (rate, increase,
+	 * irate: their differences do not depend on it). Otherwise each delta is a sample as it is, so
+	 * a bare selector or `*_over_time` does not change with the query range (Prometheus 3 deltas).
+	 */
+	readonly accumulateDeltas: boolean
 	/** Rows returned at most; pass the series cap plus one to detect overflow. */
 	readonly limit: number
 	/** Label matchers as WHERE conditions, built from the table's columns. */
@@ -77,13 +83,39 @@ const metricTable = (name: PromqlMetricTable) =>
 		},
 	})
 
+/**
+ * An exponential histogram's buckets as classic cumulative `le` bounds: positive bucket i ends at
+ * base^(offset + i + 1), base = 2^(2^-scale). The zero bucket (and any negative values) sits at the
+ * first positive bucket's lower edge, which bounds the zero threshold the table does not store.
+ */
+const EXPONENTIAL_BOUNDS =
+	"arrayPushBack(arrayMap(i -> exp2((PositiveOffset + i) * exp2(-Scale)), range(length(PositiveBucketCounts) + 1)), inf)"
+const EXPONENTIAL_COUNTS =
+	"arrayPushBack(arrayCumSum(arrayConcat([arraySum(NegativeBucketCounts) + ZeroCount], PositiveBucketCounts)), arraySum(NegativeBucketCounts) + ZeroCount + arraySum(PositiveBucketCounts))"
+
+/** Every bucket bound of a histogram row, `+Inf` last; `undefined` for tables without buckets. */
+export const bucketBoundsSql = (tableName: PromqlMetricTable): string | undefined => {
+	if (tableName === "metrics_histogram") return "arrayPushBack(ExplicitBounds, inf)"
+	if (tableName === "metrics_exponential_histogram") return EXPONENTIAL_BOUNDS
+	return undefined
+}
+
+/** Whether a histogram row's buckets line up with its bounds. */
+export const bucketsValidSql = (tableName: PromqlMetricTable): string =>
+	tableName === "metrics_histogram" ? "length(BucketCounts) = length(ExplicitBounds) + 1" : "1"
+
 /** The sample of one stored row as `[le, value]`; histogram buckets expand into one row per bound. */
-const samplePair = (component: PromqlComponent) => {
+const samplePair = (tableName: PromqlMetricTable, component: PromqlComponent) => {
 	switch (component) {
-		case "bucket":
-			return sql(
-				T.array(T.float64),
-			)`arrayJoin(arrayMap((b, c) -> [b, toFloat64(c)], arrayPushBack(ExplicitBounds, inf), arrayCumSum(BucketCounts)))`
+		case "bucket": {
+			const counts =
+				tableName === "metrics_exponential_histogram"
+					? EXPONENTIAL_COUNTS
+					: "arrayCumSum(BucketCounts)"
+			return sql(T.array(T.float64))`arrayJoin(arrayMap((b, c) -> [b, toFloat64(c)], ${sql.raw(
+				bucketBoundsSql(tableName) ?? "[inf]",
+			)}, ${sql.raw(counts)}))`
+		}
 		case "count":
 			return sql(T.array(T.float64))`[0, toFloat64(Count)]`
 		case "sum":
@@ -97,18 +129,9 @@ const samplePair = (component: PromqlComponent) => {
 const isDeltaExpr = (tableName: PromqlMetricTable) =>
 	tableName === "metrics_gauge" ? sql(T.uint8)`0` : sql(T.uint8)`AggregationTemporality = 1`
 
-const finiteSampleCond = (component: PromqlComponent) => {
-	switch (component) {
-		case "bucket":
-			return sql.cond`length(BucketCounts) = length(ExplicitBounds) + 1`
-		case "count":
-			return undefined
-		case "sum":
-			return sql.cond`isFinite(Sum)`
-		case "value":
-			return sql.cond`isFinite(Value)`
-	}
-}
+/** NaN and infinities are samples, as in Prometheus; only bucket arrays that do not line up drop. */
+const validSampleCond = (tableName: PromqlMetricTable, component: PromqlComponent) =>
+	component === "bucket" ? sql.cond`${sql.raw(bucketsValidSql(tableName))}` : undefined
 
 const scanQuery = (opts: PromqlSelectorOpts) =>
 	from(metricTable(opts.table))
@@ -120,7 +143,9 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 			ResourceAttributes: $.ResourceAttributes,
 			t: sql(T.int64)`toUnixTimestamp64Milli(${$.TimeUnix})`,
 			isDelta: isDeltaExpr(opts.table),
-			pair: samplePair(opts.component),
+			// A no-recorded-value point (a failed scrape) is a stale marker, not a sample.
+			stale: sql(T.uint8)`bitAnd(Flags, 1)`,
+			pair: samplePair(opts.table, opts.component),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -131,9 +156,7 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 			)})`,
 			sql.cond`${$.TimeUnix} > fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
 			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
-			// A no-recorded-value point (a failed scrape) is not a sample.
-			sql.cond`bitAnd(Flags, 1) = 0`,
-			finiteSampleCond(opts.component),
+			validSampleCond(opts.table, opts.component),
 			...opts.conditions($),
 		])
 
@@ -153,26 +176,38 @@ const keyedQuery = (opts: PromqlSelectorOpts) =>
 			ResourceAttributes: $.ResourceAttributes,
 			t: $.t,
 			isDelta: $.isDelta,
+			stale: $.stale,
 			le: sql(T.float64)`${$.pair}[1]`,
 			raw: sql(T.float64)`${$.pair}[2]`,
 		}))
 		// sk includes the bound, so whole series drop before the window and the limit.
 		.where(($) => (opts.component === "bucket" ? opts.boundConditions(sql(T.float64)`${$.pair}[1]`) : []))
 
-/** Each sample's value and the series' previous sample; delta samples accumulate into a counter. */
+/**
+ * Each sample's value, the series' previous sample and the first stale marker after it. Stale
+ * markers are their own partition for the previous-sample and counter windows, and drop after.
+ */
 const windowedQuery = (opts: PromqlSelectorOpts) =>
 	fromQuery(keyedQuery(opts), "keyed").select(($) => {
 		const lag = CH.windowSpec({
-			partitionBy: [$.sk],
+			partitionBy: [$.sk, $.stale],
 			orderBy: [[$.t, "asc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
 		const running = CH.windowSpec({
-			partitionBy: [$.sk],
+			partitionBy: [$.sk, $.stale],
 			orderBy: [[$.t, "asc"]],
 			frame: CH.rowsBetween(CH.unboundedPreceding, CH.currentRow),
 		})
+		// Descending, so the lag is the series' next row, stale or not.
+		const next = CH.windowSpec({
+			partitionBy: [$.sk],
+			orderBy: [[$.t, "desc"]],
+			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+		})
 		const cumulative = CH.over(CH.sum($.raw), running)
+		const accumulate = opts.accumulateDeltas ? $.isDelta : sql(T.uint8)`0`
+		const nextStale = CH.over(CH.lagInFrame($.stale, 1, $.stale), next)
 		return {
 			sk: $.sk,
 			MetricName: $.MetricName,
@@ -181,10 +216,14 @@ const windowedQuery = (opts: PromqlSelectorOpts) =>
 			ResourceAttributes: $.ResourceAttributes,
 			le: $.le,
 			t: $.t,
-			v: sql(T.float64)`if(${$.isDelta} = 1, ${cumulative}, ${$.raw})`,
+			stale: $.stale,
+			staleT: sql(
+				T.float64,
+			)`if(${nextStale} = 1, toFloat64(${CH.over(CH.lagInFrame($.t, 1, $.t), next)}), 0)`,
+			v: sql(T.float64)`if(${accumulate} = 1, ${cumulative}, ${$.raw})`,
 			pv: sql(
 				T.float64,
-			)`if(${$.isDelta} = 1, ${cumulative} - ${$.raw}, ${CH.over(CH.lagInFrame($.raw, 1, $.raw), lag)})`,
+			)`if(${accumulate} = 1, ${cumulative} - ${$.raw}, ${CH.over(CH.lagInFrame($.raw, 1, $.raw), lag)})`,
 			pt: CH.over(CH.lagInFrame($.t, 1, $.t), lag),
 			n: CH.over(CH.count(), lag),
 		}
@@ -199,25 +238,36 @@ const bucketEndExpr = (time: CH.Expr<number>, widthMs: number) =>
 		: sql(T.int64)`${time}`
 
 const placedQuery = (opts: PromqlSelectorOpts) =>
-	fromQuery(windowedQuery(opts), "windowed").select(($) => {
-		const end = bucketEndExpr($.t, opts.widthMs)
-		return {
-			sk: $.sk,
-			MetricName: $.MetricName,
-			ServiceName: $.ServiceName,
-			Attributes: $.Attributes,
-			ResourceAttributes: $.ResourceAttributes,
-			le: $.le,
-			t: $.t,
-			v: $.v,
-			pv: $.pv,
-			pt: $.pt,
-			end,
-			// The pair (previous, this) counts in this bucket only when both samples are in it.
-			pairIn: sql(T.uint8)`${$.n} = 2 AND ${bucketEndExpr($.pt, opts.widthMs)} = ${end}`,
-			ts: sql(T.float64)`(${$.t} - ${param.int("timeOriginMs")}) / 1000`,
-		}
-	})
+	fromQuery(windowedQuery(opts), "windowed")
+		.select(($) => {
+			const end = bucketEndExpr($.t, opts.widthMs)
+			return {
+				sk: $.sk,
+				MetricName: $.MetricName,
+				ServiceName: $.ServiceName,
+				Attributes: $.Attributes,
+				ResourceAttributes: $.ResourceAttributes,
+				le: $.le,
+				t: $.t,
+				v: $.v,
+				pv: $.pv,
+				pt: $.pt,
+				staleT: $.staleT,
+				end,
+				// The pair (previous, this) counts in this bucket only when both samples are in it.
+				pairIn: sql(T.uint8)`${$.n} = 2 AND ${bucketEndExpr($.pt, opts.widthMs)} = ${end}`,
+				ts: sql(T.float64)`(${$.t} - ${param.int("timeOriginMs")}) / 1000`,
+			}
+		})
+		.where(($) => [$.stale.eq(0)])
+
+/** Prometheus' min/max: a NaN gives way to any other value, so NaN only when every value is. */
+const nanAwareExtreme = (op: "min" | "max", value: CH.Expr<number>) =>
+	sql(T.float64)`if(countIf(NOT isNaN(${value})) = 0, nan, ${sql.raw(op)}If(${value}, NOT isNaN(${value})))`
+
+/** A change between two samples, NaN to NaN not being one (Prometheus' changes()). */
+const changed = (v: CH.Expr<number>, previous: CH.Expr<number>) =>
+	sql.cond`NOT (${v} = ${previous} OR (isNaN(${v}) AND isNaN(${previous})))`
 
 const bucketQuery = (opts: PromqlSelectorOpts) =>
 	fromQuery(placedQuery(opts), "placed")
@@ -241,13 +291,14 @@ const bucketQuery = (opts: PromqlSelectorOpts) =>
 				prevV: sql(T.float64)`if(${count} >= 2, ${CH.argMax($.pv, $.t)}, ${lastV})`,
 				count,
 				sum: CH.sum($.v),
-				min: CH.min_($.v),
-				max: CH.max_($.v),
+				min: nanAwareExtreme("min", $.v),
+				max: nanAwareExtreme("max", $.v),
 				sumSquares: sql(T.float64)`sum(${$.v} * ${$.v})`,
 				// The value before each counter reset inside the bucket; the engine adds last - first.
 				resetSum: sql(T.float64)`sumIf(${$.pv}, ${$.pairIn} = 1 AND ${$.v} < ${$.pv})`,
 				resets: sql(T.float64)`countIf(${$.pairIn} = 1 AND ${$.v} < ${$.pv})`,
-				changes: sql(T.float64)`countIf(${$.pairIn} = 1 AND ${$.v} != ${$.pv})`,
+				changes: sql(T.float64)`countIf(${$.pairIn} = 1 AND ${changed($.v, $.pv)})`,
+				staleT: CH.argMax($.staleT, $.t),
 				sumT: sql(T.float64)`sum(${$.ts})`,
 				sumTT: sql(T.float64)`sum(${$.ts} * ${$.ts})`,
 				sumTV: sql(T.float64)`sum(${$.ts} * ${$.v})`,
@@ -277,7 +328,21 @@ const BUCKET_FIELDS = [
 	"sumT",
 	"sumTT",
 	"sumTV",
+	"staleT",
 ] as const
+
+/** Statistics that can be NaN or infinite, which JSON writes as null: they leave as text. */
+const VALUE_FIELDS: ReadonlySet<PromqlBucketField> = new Set([
+	"firstV",
+	"lastV",
+	"prevV",
+	"sum",
+	"min",
+	"max",
+	"sumSquares",
+	"resetSum",
+	"sumTV",
+])
 
 export type PromqlBucketField = (typeof BUCKET_FIELDS)[number]
 
@@ -288,7 +353,13 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 			// Every array in bucket order: sorted by the bucket ends gathered beside it.
 			const ends = sql`groupArray(${$.end})`
 			const column = (field: PromqlBucketField) =>
-				sql(T.array(T.float64))`arraySort((x, e) -> e, groupArray(toFloat64(${$[field]})), ${ends})`
+				VALUE_FIELDS.has(field)
+					? sql(
+							T.array(T.string),
+						)`arraySort((x, e) -> e, groupArray(toString(toFloat64(${$[field]}))), ${ends})`
+					: sql(
+							T.array(T.float64),
+						)`arraySort((x, e) -> e, groupArray(toFloat64(${$[field]})), ${ends})`
 			return {
 				series: sql(T.string)`toString(${$.sk})`,
 				metricName: CH.any_($.MetricName),
@@ -314,9 +385,10 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 				sumT: column("sumT"),
 				sumTT: column("sumTT"),
 				sumTV: column("sumTV"),
+				staleT: column("staleT"),
 				values: sql(
-					T.array(T.array(T.float64)),
-				)`arraySort((x, e) -> e, groupArray(${$.values}), ${ends})`,
+					T.array(T.array(T.string)),
+				)`arraySort((x, e) -> e, groupArray(arrayMap(x -> toString(x), ${$.values})), ${ends})`,
 			}
 		})
 		.groupBy("series")
@@ -325,6 +397,23 @@ export function promqlSelectorQuery(opts: PromqlSelectorOpts) {
 }
 
 const numbers = Schema.Array(CHNumber)
+
+const parseFloatText = (text: string): number => {
+	if (text === "inf" || text === "+inf") return Infinity
+	if (text === "-inf") return -Infinity
+	if (text === "nan" || text === "-nan") return Number.NaN
+	return Number(text)
+}
+
+/** A Float64 sent as text so NaN and the infinities survive JSON (`inf`, `-inf`, `nan`). */
+export const CHFloatText = Schema.String.pipe(
+	Schema.decodeTo(Schema.Number, {
+		decode: SchemaGetter.transform(parseFloatText),
+		encode: SchemaGetter.transform((value: number) => String(value)),
+	}),
+)
+
+const floats = Schema.Array(CHFloatText)
 
 export const promqlSelectorRowSchema = Schema.Struct({
 	series: Schema.String,
@@ -336,23 +425,24 @@ export const promqlSelectorRowSchema = Schema.Struct({
 	le: Schema.String,
 	end: numbers,
 	firstT: numbers,
-	firstV: numbers,
+	firstV: floats,
 	lastT: numbers,
-	lastV: numbers,
+	lastV: floats,
 	prevT: numbers,
-	prevV: numbers,
+	prevV: floats,
 	count: numbers,
-	sum: numbers,
-	min: numbers,
-	max: numbers,
-	sumSquares: numbers,
-	resetSum: numbers,
+	sum: floats,
+	min: floats,
+	max: floats,
+	sumSquares: floats,
+	resetSum: floats,
 	resets: numbers,
 	changes: numbers,
 	sumT: numbers,
 	sumTT: numbers,
-	sumTV: numbers,
-	values: Schema.Array(numbers),
+	sumTV: floats,
+	staleT: numbers,
+	values: Schema.Array(floats),
 })
 export type PromqlSelectorRow = typeof promqlSelectorRowSchema.Type
 
@@ -406,7 +496,13 @@ export type PromqlPushdownFunction =
 	| "present_over_time"
 	| "last"
 
-export interface PromqlPushdownOpts extends Omit<PromqlSelectorOpts, "needsValues" | "limit"> {
+/** Pushed functions that read delta-temporality samples as a running counter. */
+const COUNTER_RATE_FUNCTIONS: ReadonlySet<PromqlPushdownFunction> = new Set(["rate", "increase", "irate"])
+
+export interface PromqlPushdownOpts extends Omit<
+	PromqlSelectorOpts,
+	"needsValues" | "limit" | "accumulateDeltas"
+> {
 	readonly func: PromqlPushdownFunction
 	readonly rangeMs: number
 	/** Evaluation steps; step j is `originMs + j * stepBuckets * widthMs` (offset already applied). */
@@ -433,7 +529,15 @@ const windowSteps = (opts: PromqlPushdownOpts, k: CH.Expr<number>) => {
  * between windows, so "first" is counted over the buckets that fan out at all.
  */
 const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
-	fromQuery(bucketQuery({ ...opts, needsValues: false, limit: opts.limit }), "buckets").select(($) => {
+	fromQuery(
+		bucketQuery({
+			...opts,
+			needsValues: false,
+			limit: opts.limit,
+			accumulateDeltas: COUNTER_RATE_FUNCTIONS.has(opts.func),
+		}),
+		"buckets",
+	).select(($) => {
 		const prev = CH.windowSpec({
 			partitionBy: [$.sk],
 			orderBy: [[$.end, "asc"]],
@@ -479,6 +583,7 @@ const linkedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 			resetSum: $.resetSum,
 			resets: $.resets,
 			changes: $.changes,
+			staleT: $.staleT,
 		}
 	})
 
@@ -517,6 +622,7 @@ const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =
 			resetSum: $.resetSum,
 			resets: $.resets,
 			changes: $.changes,
+			staleT: $.staleT,
 		}
 	})
 
@@ -524,7 +630,9 @@ const expandedQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =
 const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 	fromQuery(expandedQuery(opts, groups), "expanded")
 		.select(($) => {
-			const crossReset = sql(T.float64)`sumIf(${$.pLastV}, ${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`
+			const crossReset = sql(
+				T.float64,
+			)`sumIf(${$.pLastV}, ${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`
 			return {
 				sk: $.sk,
 				j: $.j,
@@ -547,9 +655,10 @@ const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 				lastPLastT: CH.argMax($.pLastT, $.k),
 				lastPLastV: CH.argMax($.pLastV, $.k),
 				sum: CH.sum($.sum),
-				min: CH.min_($.min),
-				max: CH.max_($.max),
+				min: nanAwareExtreme("min", $.min),
+				max: nanAwareExtreme("max", $.max),
 				sumSquares: CH.sum($.sumSquares),
+				lastStaleT: CH.argMax($.staleT, $.k),
 				// Pre-reset values inside the buckets and across their joins; the window adds last - first.
 				resetSum: sql(T.float64)`sum(${$.resetSum}) + ${crossReset}`,
 				resets: sql(
@@ -557,7 +666,7 @@ const windowQuery = (opts: PromqlPushdownOpts, groups: PromqlPushdownGroups) =>
 				)`sum(${$.resets}) + countIf(${$.prevIn} = 1 AND ${$.firstV} < ${$.pLastV})`,
 				changes: sql(
 					T.float64,
-				)`sum(${$.changes}) + countIf(${$.prevIn} = 1 AND ${$.firstV} != ${$.pLastV})`,
+				)`sum(${$.changes}) + countIf(${$.prevIn} = 1 AND ${changed($.firstV, $.pLastV)})`,
 			}
 		})
 		.groupBy("sk", "j")
@@ -582,6 +691,7 @@ type WindowRow = {
 	readonly resetSum: CH.Expr<number>
 	readonly resets: CH.Expr<number>
 	readonly changes: CH.Expr<number>
+	readonly lastStaleT: CH.Expr<number>
 }
 
 /** Prometheus' extrapolatedRate (rate, increase, delta) over the window ending at step j. */
@@ -650,8 +760,17 @@ const windowValue = (opts: PromqlPushdownOpts, $: WindowRow) => {
 		case "max_over_time":
 			return { value: $.max, valid: any }
 		case "last_over_time":
-		case "last":
 			return { value: $.lastV, valid: any }
+		case "last": {
+			// A stale marker after the last sample, inside the lookback, ends the series.
+			const stepEnd = sql(
+				T.float64,
+			)`(${param.int("originMs")} + ${$.j} * ${opts.stepBuckets * opts.widthMs})`
+			return {
+				value: $.lastV,
+				valid: sql(T.uint8)`${any} AND NOT (${$.lastStaleT} > 0 AND ${$.lastStaleT} <= ${stepEnd})`,
+			}
+		}
 		case "present_over_time":
 			return { value: sql(T.float64)`1`, valid: any }
 	}
@@ -691,7 +810,7 @@ const pushdownSeriesQuery = (opts: PromqlPushdownOpts) =>
 			le: sql(T.string)`toString(any(${$.le}))`,
 			groups: sql(T.array(T.string))`emptyArrayString()`,
 			steps: sql(T.array(T.float64))`groupArrayIf(toFloat64(${$.j}), ${$.valid} = 1)`,
-			values: sql(T.array(T.float64))`groupArrayIf(${$.value}, ${$.valid} = 1)`,
+			values: sql(T.array(T.string))`groupArrayIf(toString(${$.value}), ${$.valid} = 1)`,
 		}))
 		.groupBy("series")
 		.having(($) => [sql.cond`countIf(${$.valid} = 1) > 0`])
@@ -712,9 +831,9 @@ const aggregate = (op: PromqlPushdownAggregation["op"], value: CH.Expr<number>) 
 		case "avg":
 			return sql(T.float64)`avg(${value})`
 		case "min":
-			return sql(T.float64)`min(${value})`
+			return nanAwareExtreme("min", value)
 		case "max":
-			return sql(T.float64)`max(${value})`
+			return nanAwareExtreme("max", value)
 		case "count":
 			return sql(T.float64)`toFloat64(count())`
 		case "group":
@@ -749,7 +868,7 @@ const pushdownGroupQuery = (opts: PromqlPushdownOpts, aggregation: PromqlPushdow
 			le: sql(T.string)`toString(${$.gle})`,
 			groups: $.groups,
 			steps: sql(T.array(T.float64))`groupArray(toFloat64(${$.j}))`,
-			values: sql(T.array(T.float64))`groupArray(${$.value})`,
+			values: sql(T.array(T.string))`groupArray(toString(${$.value}))`,
 		}))
 		.groupBy("groups", "le")
 		.limit(opts.limit)
@@ -771,7 +890,7 @@ export const promqlPushdownRowSchema = Schema.Struct({
 	le: Schema.String,
 	groups: Schema.Array(Schema.String),
 	steps: numbers,
-	values: numbers,
+	values: floats,
 })
 export type PromqlPushdownRow = typeof promqlPushdownRowSchema.Type
 
@@ -846,7 +965,11 @@ const storedMetricsCondition = ($: StoredMetricColumns, metrics: PromqlStoredMet
 			)
 
 /** Rows some target of either kind can keep; `undefined` when every row can. */
-const leFilterCondition = ($: StoredMetricColumns, le: NonNullable<PromqlSeriesLabelsOpts["le"]>) => {
+const leFilterCondition = (
+	tableName: PromqlMetricTable,
+	$: StoredMetricColumns,
+	le: NonNullable<PromqlSeriesLabelsOpts["le"]>,
+) => {
 	const bounds = CH.and(...le.boundConditions(sql(T.float64)`_b`))
 	const sides = [
 		le.buckets === undefined
@@ -856,7 +979,7 @@ const leFilterCondition = ($: StoredMetricColumns, le: NonNullable<PromqlSeriesL
 						storedMetricsCondition($, le.buckets),
 						bounds === undefined
 							? undefined
-							: sql.cond`length(BucketCounts) = length(ExplicitBounds) + 1 AND arrayExists(_b -> ${bounds}, arrayPushBack(ExplicitBounds, inf))`,
+							: sql.cond`${sql.raw(bucketsValidSql(tableName))} AND arrayExists(_b -> ${bounds}, ${sql.raw(bucketBoundsSql(tableName) ?? "[inf]")})`,
 					),
 				},
 		le.others === undefined
@@ -878,11 +1001,11 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 			attributes: CH.any_($.Attributes),
 			resourceAttributes: CH.any_($.ResourceAttributes),
 			bounds:
-				opts.table === "metrics_histogram"
-					? sql(
+				bucketBoundsSql(opts.table) === undefined
+					? sql(T.array(T.string))`emptyArrayString()`
+					: sql(
 							T.array(T.string),
-						)`arrayMap(b -> toString(b), arraySort(groupUniqArrayArrayIf(arrayPushBack(ExplicitBounds, inf), length(BucketCounts) = length(ExplicitBounds) + 1)))`
-					: sql(T.array(T.string))`emptyArrayString()`,
+						)`arrayMap(b -> toString(b), arraySort(groupUniqArrayArrayIf(${sql.raw(bucketBoundsSql(opts.table) ?? "[inf]")}, ${sql.raw(bucketsValidSql(opts.table))})))`,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -891,7 +1014,7 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
 			sql.cond`bitAnd(Flags, 1) = 0`,
 			...opts.conditions($),
-			opts.le === undefined ? undefined : leFilterCondition($, opts.le),
+			opts.le === undefined ? undefined : leFilterCondition(opts.table, $, opts.le),
 		])
 		.groupBy("metricName", "labelKey")
 		.orderBy(["metricName", "asc"], ["labelKey", "asc"])

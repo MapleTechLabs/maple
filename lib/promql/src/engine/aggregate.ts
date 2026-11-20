@@ -10,6 +10,7 @@ import {
 	withLabel,
 } from "./labels"
 import type { InstantVector, Labels, Sample } from "./types"
+import { labelsHash } from "./xxhash"
 
 export interface AggregateOptions {
 	readonly grouping: ReadonlyArray<string>
@@ -248,6 +249,48 @@ const heapSelect = (samples: ReadonlyArray<Sample>, k: number, top: boolean): Sa
 	return heap
 }
 
+/** limitk: the first k series of each group, in input order, unchanged. */
+const limitK = (input: InstantVector, opts: AggregateOptions): Result.Result<InstantVector, EvalError> => {
+	const param = opts.param
+	if (typeof param !== "number") return Result.fail(evalError("expected a number parameter for limitk"))
+	if (param < 1) return Result.succeed([])
+	if (Number.isNaN(param)) return Result.fail(evalError("Parameter value is NaN"))
+	if (param >= MAX_INT64)
+		return Result.fail(evalError(`Scalar value ${formatFloat(param)} overflows int64`))
+	const k = Math.trunc(param)
+	return Result.succeed(
+		groupBy(input, opts.grouping, opts.without).flatMap((group) =>
+			group.samples.slice(0, k).map((s) => ({ labels: s.labels, value: s.value, t: opts.evalTimeMs })),
+		),
+	)
+}
+
+/**
+ * limit_ratio: a series is kept when its label hash, as a fraction of 2^64, is below r (r >= 0) or
+ * at least 1 + r (r < 0), so complementary ratios split the series. r is clamped to [-1, 1].
+ */
+const limitRatio = (
+	input: InstantVector,
+	opts: AggregateOptions,
+): Result.Result<InstantVector, EvalError> => {
+	const param = opts.param
+	if (typeof param !== "number")
+		return Result.fail(evalError("expected a number parameter for limit_ratio"))
+	if (Number.isNaN(param)) return Result.fail(evalError("Ratio value is NaN"))
+	const r = Math.max(-1, Math.min(1, param))
+	const kept = (labels: Labels): boolean => {
+		const offset = Number(labelsHash(labels)) / 2 ** 64
+		return r >= 0 ? offset < r : offset >= 1 + r
+	}
+	return Result.succeed(
+		groupBy(input, opts.grouping, opts.without).flatMap((group) =>
+			group.samples
+				.filter((s) => kept(s.labels))
+				.map((s) => ({ labels: s.labels, value: s.value, t: opts.evalTimeMs })),
+		),
+	)
+}
+
 const countValues = (
 	input: InstantVector,
 	opts: AggregateOptions,
@@ -304,8 +347,9 @@ export const aggregate = (
 		case "count_values":
 			return countValues(input, opts)
 		case "limitk":
+			return limitK(input, opts)
 		case "limit_ratio":
-			return Result.fail(evalError("experimental aggregation not supported"))
+			return limitRatio(input, opts)
 		case "sum":
 		case "avg":
 		case "min":

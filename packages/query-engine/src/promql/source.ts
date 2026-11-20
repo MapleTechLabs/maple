@@ -34,9 +34,9 @@ import {
 	formatLe,
 	labelValueExpr,
 	leCondition,
-	matchesAll,
 	matcherCondition,
 	seriesLabels,
+	seriesMatchesAll,
 } from "./labels"
 import {
 	type CatalogMetric,
@@ -78,6 +78,7 @@ const compileSelector = (
 			targets: group.targets,
 			widthMs: request.widthMs,
 			needsValues: request.needsValues,
+			accumulateDeltas: request.accumulateDeltas === true,
 			limit: options.maxSeries + 1,
 			conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
 			boundConditions: (le) =>
@@ -170,6 +171,7 @@ const bucketsOf = (row: PromqlSelectorRow, needsValues: boolean): ReadonlyArray<
 			sumT: at(row.sumT, i),
 			sumTT: at(row.sumTT, i),
 			sumTV: at(row.sumTV, i),
+			staleT: at(row.staleT, i),
 		}
 		return needsValues ? { ...bucket, values: row.values[i] ?? [] } : bucket
 	})
@@ -199,7 +201,7 @@ export const toSelectorData = (
 				resourceAttributes: row.resourceAttributes,
 				le: plan.component === "bucket" ? parseLe(row.le) : undefined,
 			})
-			if (!matchesAll(labels, request.matchers)) return []
+			if (!seriesMatchesAll(row, labels, request.matchers)) return []
 			const buckets = bucketsOf(row, request.needsValues)
 			return buckets.length === 0 ? [] : [{ labels, buckets }]
 		}),
@@ -494,7 +496,7 @@ export const toSeriesLabels = (
 							le,
 						}),
 					),
-					(labels) => matchesAll(labels, matchers),
+					(labels) => seriesMatchesAll(row, labels, matchers),
 				)
 			}),
 		),
