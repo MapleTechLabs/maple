@@ -22,9 +22,11 @@
 		"plugins": [
 			{
 				"name": "@effect/language-service",
-				"ignoreEffectWarningsInTscExitCode": true,
+				"ignoreEffectWarningsInTscExitCode": false,
 				"includeSuggestionsInTsc": false,
 				"diagnosticSeverity": {
+					// Directives also silence oxlint rules that tsrs never reports, so tsrs flags them all as unused.
+					"unusedDirective": "off",
 					"unstableApiUsage": "off",
 					"schemaNumber": "off",
 					"schemaClassMissingBrand": "off",
