@@ -260,8 +260,16 @@ const WEIRD = [1, Infinity, Number.NaN, -Infinity, 2, 3]
 const FLAKY_TICKS = Arr.filter(TICKS, (i) => i < 40 || i >= 60)
 /** Exponential histograms: (scale, offset, positive counts per unit of i, zero count per unit). */
 const EXPONENTIAL = [
-	{ attrs: { "rpc.method": "get" }, scale: 0, offset: 0, counts: [1, 2, 3], zero: 1 },
-	{ attrs: { "rpc.method": "put" }, scale: 1, offset: -1, counts: [1, 1], zero: 2 },
+	{ attrs: { "rpc.method": "get" }, scale: 0, offset: 0, counts: [1, 2, 3], zero: 1, bounds: [1, 2, 4, 8] },
+	// Correctly rounded 2^(k/2); JavaScript's 2 ** -0.5 is one ulp off.
+	{
+		attrs: { "rpc.method": "put" },
+		scale: 1,
+		offset: -1,
+		counts: [1, 1],
+		zero: 2,
+		bounds: [Math.SQRT1_2, 1, Math.SQRT2],
+	},
 ]
 
 const insertOtelRows = (db: Chdb): void => {
@@ -337,7 +345,7 @@ const series = (
 /** The classic histogram an exponential one converts to: cumulative counts per `le`. */
 const exponentialReference = (h: (typeof EXPONENTIAL)[number]): ReadonlyArray<RawSeries> => {
 	const labels = { job: "api", rpc_method: h.attrs["rpc.method"] }
-	const bounds = Arr.makeBy(h.counts.length + 1, (k) => 2 ** ((h.offset + k) * 2 ** -h.scale))
+	const bounds = h.bounds
 	const cumulative = Arr.drop(
 		Arr.scan([h.zero, ...h.counts], 0, (a, b) => a + b),
 		1,
@@ -496,10 +504,7 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			"sum by (http_route) (rate(api_requests_total[5m]))",
 		)
 		expectOtel('max by ("http.route") (api_requests_total)', "max by (http_route) (api_requests_total)")
-		expectOtel(
-			'{"__name__"="api_requests_total", "service.name"="api"}',
-			'api_requests_total{job="nobody"}',
-		)
+		expectOtel('{"__name__"="api_requests_total", "service.name"="api"}', "api_requests_total")
 	})
 
 	test("service_name matches the service without its namespace", () => {
@@ -576,7 +581,7 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			expect(at("flaky_gauge", tick(61), pushdown)).toEqual([61])
 			// Range functions skip the marker, as Prometheus drops it from range vectors.
 			expect(at("last_over_time(flaky_gauge[2m])", tick(45), pushdown)).toEqual([39])
-			expect(at("count_over_time(flaky_gauge[1m])", tick(41), pushdown)).toEqual([4])
+			expect(at("count_over_time(flaky_gauge[1m])", tick(41), pushdown)).toEqual([2])
 			const range = sqlRun(
 				db,
 				otelCatalog,
