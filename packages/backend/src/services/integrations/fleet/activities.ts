@@ -60,7 +60,7 @@ const hasOwnCategory = (type: string): type is keyof typeof CATEGORY_OF =>
 const categoryByWords = (type: string): AuditTrailCategory => {
 	if (/(^|_)(role|roles)(_|$)/.test(type)) return "permission"
 	if (/(^|_)(secret|secrets|token|api_key|certificate)(_|$)/.test(type)) return "credential"
-	if (/(^|_)hosts?(_|$)|software|script|profile|wipe|lock/.test(type)) return "resource"
+	if (/(^|_)hosts?(_|$)|software|script|profile|wipe|lock|enrolled/.test(type)) return "resource"
 	if (
 		/^(applied_spec|edited|enabled|disabled|created|deleted|added|changed|reset|updated|modified)_/.test(
 			type,
@@ -99,6 +99,7 @@ const TARGETS: ReadonlyArray<{
 	{ type: "team", id: ["team_id", "fleet_id"], name: ["team_name", "fleet_name"] },
 	{ type: "script", id: ["script_execution_id"], name: ["script_name"] },
 	{ type: "query", id: ["query_id"], name: ["query_name", "name"] },
+	{ type: "label", id: ["label_id"], name: ["label_name"] },
 ]
 
 const firstText = (details: Details | undefined, keys: ReadonlyArray<string>, read: typeof textAt) =>
@@ -118,7 +119,11 @@ const targetOf = (details: Details | undefined): Target | undefined =>
 
 /** Fleet acting on its own: an automation, or no person behind it. */
 const actorOf = (activity: FleetActivity, details: Details | undefined): AuditTrailEvent["actor"] => {
-	const email = activity.actor_email ?? textAt(details, "email") ?? undefined
+	// Fleet sends an empty address for activity no user did.
+	const email =
+		activity.actor_email !== undefined && activity.actor_email !== null && activity.actor_email !== ""
+			? activity.actor_email
+			: textAt(details, "email")
 	if (activity.actor_id !== undefined && activity.actor_id !== null && activity.fleet_initiated !== true)
 		return {
 			type: "user",
@@ -126,9 +131,10 @@ const actorOf = (activity: FleetActivity, details: Details | undefined): AuditTr
 			name: activity.actor_full_name ?? undefined,
 			email,
 		}
-	if (activity.fleet_initiated === true) return { type: "system", name: "Fleet" }
 	// A failed login names the address tried, never an account that proved itself.
-	return { type: "unknown", email }
+	if (activity.type === "user_failed_login") return { type: "unknown", email }
+	// Automations, and what a device does itself (enrolling), have no person behind them.
+	return { type: "system", name: "Fleet" }
 }
 
 /** Where an activity came from: the org's name for the server, and its host. */
