@@ -285,13 +285,14 @@ const policyDetail = (h: H, policy: DevicePolicyFinding): Html =>
 				]),
 		vstack(h, { gap: "1.5" }, [
 			eyebrow(h, { variant: "label" }, [
-				policy.failingDevices.length < policy.failingDeviceCount
+				policy.failingDevices.length > 0 && policy.failingDevices.length < policy.failingDeviceCount
 					? `Failing devices, ${policy.failingDevices.length} of ${formatNumber(policy.failingDeviceCount)}`
 					: "Failing devices",
 			]),
+			// Empty when the sync sampled no names for this policy (it samples the first hundred).
 			policy.failingDevices.length === 0
 				? typography(h, { size: "xs", tone: "muted" }, [
-						`${brandOf(policy.source).name} listed none by name.`,
+						`Maple has no device names for this policy. ${brandOf(policy.source).name} lists them.`,
 					])
 				: hstack(
 						h,

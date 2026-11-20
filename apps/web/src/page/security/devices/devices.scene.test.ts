@@ -1,5 +1,9 @@
 import { OrgId } from "@maple/domain"
-import { IntegrationsForbiddenError, IntegrationsPersistenceError } from "@maple/domain/http"
+import {
+	DevicePolicyFinding,
+	IntegrationsForbiddenError,
+	IntegrationsPersistenceError,
+} from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	all,
@@ -31,7 +35,7 @@ import {
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
 import { FetchDevices, ReadDevicesClock } from "./command"
-import { type Devices, Message, type Model } from "./model"
+import { Devices, Message, type Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -129,6 +133,24 @@ describe("security devices", () => {
 			),
 			click(role("button", { name: /^Hide failing devices: Disk encryption enabled, critical, 7 of/ })),
 			expectView(role("link", { name: "mbp-anna" })).toBeAbsent(),
+		)
+	})
+
+	test("a policy with no sampled devices says Maple has no names, not that the source listed none", () => {
+		const premium = premiumDevices(NOW)
+		const unsampled = new Devices({
+			...premium,
+			policies: Arr.map(
+				premium.policies,
+				(policy) => new DevicePolicyFinding({ ...policy, failingDevices: [] }),
+			),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(unsampled)),
+			click(role("button", { name: /^Show failing devices: Disk encryption enabled, critical, 7 of/ })),
+			expectView(text("Maple has no device names for this policy. Fleet lists them.")).toExist(),
+			expectView(text("Failing devices, 0 of 7")).toBeAbsent(),
 		)
 	})
 
