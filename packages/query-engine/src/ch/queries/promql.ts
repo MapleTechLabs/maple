@@ -104,19 +104,8 @@ const metricTable = (name: PromqlMetricTable) =>
 		},
 	})
 
-/**
- * An exponential export's own bounds for series discovery: positive bucket i ends at
- * base^(offset + i + 1), base = 2^(2^-scale), from its lowest edge. Reads use `exponentialPair`.
- */
-const EXPONENTIAL_BOUNDS =
-	"arrayPushBack(arrayMap(i -> exp2((PositiveOffset + i) * exp2(-Scale)), range(length(PositiveBucketCounts) + 1)), inf)"
-
-/** Every bucket bound of a histogram row, `+Inf` last; `undefined` for tables without buckets. */
-export const bucketBoundsSql = (tableName: PromqlMetricTable): string | undefined => {
-	if (tableName === "metrics_histogram") return "arrayPushBack(ExplicitBounds, inf)"
-	if (tableName === "metrics_exponential_histogram") return EXPONENTIAL_BOUNDS
-	return undefined
-}
+/** A classic histogram row's bounds, `+Inf` last. */
+const CLASSIC_BOUNDS = "arrayPushBack(ExplicitBounds, inf)"
 
 /** Whether a histogram row's buckets line up with its bounds. */
 export const bucketsValidSql = (tableName: PromqlMetricTable): string =>
@@ -218,6 +207,38 @@ const classicPair = ($: {
 		T.array(T.float64),
 	)`arrayJoin(if(${$.stale} = 1, arrayMap(b -> [b, 0], arrayPushBack(${$.seriesBounds}, inf)), arrayMap((b, c) -> [b, c], arrayPushBack(${$.bounds}, inf), ${$.counts})))`
 
+/** Finite bounds one exponential series expands to at most, about one export's worth of buckets. */
+const MAX_EXPONENTIAL_BOUNDS = 160
+
+/**
+ * The bound grid of an exponential series: indices k of the bounds 2^(k*2^-m) from below its lowest
+ * edge to above its highest, at its coarsest scale m, coarser still when the range would need more
+ * than MAX_EXPONENTIAL_BOUNDS (sparse data at a fine scale): exact at coarser bounds, and small.
+ */
+const exponentialGrid = (scale: CH.Expr<number>, lowExp: CH.Expr<number>, highExp: CH.Expr<number>) => {
+	const span = sql`(${highExp} - ${lowExp}) * exp2(${scale})`
+	const m = sql`(${scale} - toInt64(greatest(0, ceil(log2(greatest(${span}, 1) / ${MAX_EXPONENTIAL_BOUNDS})))))`
+	const kLo = sql`toInt64(floor(${lowExp} * exp2(${m})))`
+	const kHi = sql`toInt64(ceil(${highExp} * exp2(${m})))`
+	return {
+		m,
+		ks: sql`arrayMap(x -> ${kLo} + toInt64(x), range(toUInt64(greatest(${kHi} - ${kLo} + 1, 0))))`,
+	}
+}
+
+/** The grid's bounds for series discovery, from the series' exports aggregated in the read. */
+const exponentialDiscoveryBounds = () => {
+	const occupied = sql.raw("length(PositiveBucketCounts) > 0")
+	const { m, ks } = exponentialGrid(
+		sql(T.int64)`toInt64(minIf(Scale, ${occupied}))`,
+		sql(T.float64)`minIf(PositiveOffset * exp2(-Scale), ${occupied})`,
+		sql(T.float64)`maxIf((PositiveOffset + length(PositiveBucketCounts)) * exp2(-Scale), ${occupied})`,
+	)
+	return sql(
+		T.array(T.string),
+	)`arrayMap(b -> toString(b), arrayPushBack(arrayMap(k -> exp2(k * exp2(-${m})), ${ks}), inf))`
+}
+
 /** One export's cumulative counts at the bounds 2^(k*2^-m) from below its lowest edge to above its highest. */
 const exponentialPair = ($: {
 	readonly scale: CH.Expr<number>
@@ -228,13 +249,11 @@ const exponentialPair = ($: {
 	readonly lowExp: CH.Expr<number>
 	readonly highExp: CH.Expr<number>
 }) => {
-	const kLo = sql`toInt64(floor(${$.lowExp} * exp2(${$.m})))`
-	const kHi = sql`toInt64(ceil(${$.highExp} * exp2(${$.m})))`
-	const ks = sql`arrayMap(x -> ${kLo} + toInt64(x), range(toUInt64(greatest(${kHi} - ${kLo} + 1, 0))))`
-	const atBound = sql`${$.below} + arraySum(arrayMap((c, j) -> if(${$.offset} + j - 1 < k * exp2(${$.scale} - ${$.m}), c, 0), ${$.counts}, arrayEnumerate(${$.counts})))`
+	const { m, ks } = exponentialGrid($.m, $.lowExp, $.highExp)
+	const atBound = sql`${$.below} + arraySum(arrayMap((c, j) -> if(${$.offset} + j - 1 < k * exp2(${$.scale} - ${m}), c, 0), ${$.counts}, arrayEnumerate(${$.counts})))`
 	return sql(
 		T.array(T.float64),
-	)`arrayJoin(arrayPushBack(arrayMap(k -> [exp2(k * exp2(-${$.m})), ${atBound}], ${ks}), [inf, ${$.below} + arraySum(${$.counts})]))`
+	)`arrayJoin(arrayPushBack(arrayMap(k -> [exp2(k * exp2(-${m})), ${atBound}], ${ks}), [inf, ${$.below} + arraySum(${$.counts})]))`
 }
 
 const scanQuery = (opts: PromqlSelectorOpts) =>
@@ -307,7 +326,7 @@ const keyedQuery = (opts: PromqlSelectorOpts) =>
 
 /**
  * Each sample's value, the series' previous sample and the first stale marker after it. Stale
- * markers are their own partition for the previous-sample and counter windows, and drop after.
+ * markers are their own partition for the previous sample, add nothing to the counter, and drop after.
  */
 const windowedQuery = (opts: PromqlSelectorOpts) =>
 	fromQuery(keyedQuery(opts), "keyed").select(($) => {
@@ -316,8 +335,9 @@ const windowedQuery = (opts: PromqlSelectorOpts) =>
 			orderBy: [[$.t, "asc"]],
 			frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
 		})
+		// Over the whole series: a stale marker adds nothing to the counter instead of restarting it.
 		const running = CH.windowSpec({
-			partitionBy: [$.sk, $.stale],
+			partitionBy: [$.sk],
 			orderBy: [[$.t, "asc"]],
 			frame: CH.rowsBetween(CH.unboundedPreceding, CH.currentRow),
 		})
@@ -329,8 +349,9 @@ const windowedQuery = (opts: PromqlSelectorOpts) =>
 		})
 		// From a baseline above twice the deltas' total, as a counter that started long ago, so
 		// extrapolation never stops at zero and the result does not depend on where the read starts.
-		const baseline = sql(T.float64)`2 * sum(abs(${$.raw})) OVER (PARTITION BY ${$.sk}, ${$.stale}) + 1`
-		const cumulative = sql(T.float64)`${CH.over(CH.sum($.raw), running)} + ${baseline}`
+		const delta = sql(T.float64)`if(${$.stale} = 1, 0, ${$.raw})`
+		const baseline = sql(T.float64)`2 * sum(abs(${delta})) OVER (PARTITION BY ${$.sk}) + 1`
+		const cumulative = sql(T.float64)`${CH.over(CH.sum(delta), running)} + ${baseline}`
 		const accumulate = opts.accumulateDeltas ? $.isDelta : sql(T.uint8)`0`
 		const nextStale = CH.over(CH.lagInFrame($.stale, 1, $.stale), next)
 		return {
@@ -1087,9 +1108,10 @@ const leFilterCondition = (
 			: {
 					cond: CH.and(
 						storedMetricsCondition($, le.buckets),
-						bounds === undefined
+						// An exponential row's bounds depend on its whole series; the label check after the read decides.
+						bounds === undefined || tableName === "metrics_exponential_histogram"
 							? undefined
-							: sql.cond`${sql.raw(bucketsValidSql(tableName))} AND arrayExists(_b -> ${bounds}, ${sql.raw(bucketBoundsSql(tableName) ?? "[inf]")})`,
+							: sql.cond`${sql.raw(bucketsValidSql(tableName))} AND arrayExists(_b -> ${bounds}, ${sql.raw(CLASSIC_BOUNDS)})`,
 					),
 				},
 		le.others === undefined
@@ -1111,11 +1133,13 @@ export function promqlSeriesLabelsQuery(opts: PromqlSeriesLabelsOpts) {
 			attributes: CH.any_($.Attributes),
 			resourceAttributes: CH.any_($.ResourceAttributes),
 			bounds:
-				bucketBoundsSql(opts.table) === undefined
-					? sql(T.array(T.string))`emptyArrayString()`
-					: sql(
-							T.array(T.string),
-						)`arrayMap(b -> toString(b), arraySort(groupUniqArrayArrayIf(${sql.raw(bucketBoundsSql(opts.table) ?? "[inf]")}, ${sql.raw(bucketsValidSql(opts.table))})))`,
+				opts.table === "metrics_exponential_histogram"
+					? exponentialDiscoveryBounds()
+					: opts.table !== "metrics_histogram"
+						? sql(T.array(T.string))`emptyArrayString()`
+						: sql(
+								T.array(T.string),
+							)`arrayMap(b -> toString(b), arraySort(groupUniqArrayArrayIf(${sql.raw(CLASSIC_BOUNDS)}, ${sql.raw(bucketsValidSql(opts.table))})))`,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

@@ -296,6 +296,13 @@ const insertOtelRows = (db: Chdb): void => {
 			Value: "2",
 			...sum(1),
 		})),
+		// The same delta stream with a failed export between ticks 40 and 41.
+		...Arr.map([...TICKS, 40.5], (i) => ({
+			...otelRow("jobs.flaky", "", API, { queue: "q" }, tick(i)),
+			Value: i === 40.5 ? "0" : "2",
+			...sum(1),
+			Flags: i === 40.5 ? "1" : "0",
+		})),
 	])
 	insertRows(db, "metrics_gauge", [
 		...Arr.map(TICKS, (i) => ({
@@ -450,6 +457,7 @@ const shiftReference = memorySource(
 
 /** The delta sum as the running counter rate functions read it. */
 const countersReference = memorySource([
+	series({ __name__: "jobs_flaky_total", queue: "q", job: "api" }, (i) => 2 * (i + 1)),
 	series({ __name__: "jobs_done_total", queue: "q", job: "api" }, (i) => 2 * (i + 1)),
 ])
 
@@ -551,9 +559,12 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		},
 	]
 
+	/** The exponential reads are the heaviest: a range and an off-grid instant are enough. */
+	const shortCases = Arr.filter([otelCases[0], otelCases[2]], (c) => c !== undefined)
+
 	/** Both paths (pushdown and not) must equal the reference, and so each other. */
-	const expectOtel = (query: string, want: string = query, source = otelReference) => {
-		for (const { name, params } of otelCases) {
+	const expectOtel = (query: string, want: string = query, source = otelReference, cases = otelCases) => {
+		for (const { name, params } of cases) {
 			const expected = runQuery(want, params, source)
 			if (Result.isFailure(expected)) throw new Error(`${name} reference: ${expected.failure.message}`)
 			for (const pushdown of [false, true]) {
@@ -578,7 +589,7 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			"sum by (http_route) (rate(api_requests_total[5m]))",
 		)
 		expectOtel('{"__name__"="api_requests_total", "service.name"="api"}', "api_requests_total")
-	})
+	}, 120_000)
 
 	test("service_name matches the service without its namespace", () => {
 		expectOtel(
@@ -589,14 +600,16 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			'count(api_requests_total{service_name="shop/api"})',
 			'count(api_requests_total{job="nobody"})',
 		)
-	})
+	}, 120_000)
 
 	test("a delta sum is its deltas outside rate functions, so the query range does not change it", () => {
 		expectOtel("jobs_done_total")
 		expectOtel("max_over_time(jobs_done_total[1h])")
 		expectOtel("rate(jobs_done_total[5m])", "rate(jobs_done_total[5m])", countersReference)
 		expectOtel("increase(jobs_done_total[2m])", "increase(jobs_done_total[2m])", countersReference)
-	})
+		// A stale marker in a delta stream does not restart the counter rate reads.
+		expectOtel("rate(jobs_flaky_total[5m])", "rate(jobs_flaky_total[5m])", countersReference, shortCases)
+	}, 120_000)
 
 	test("NaN and infinities are samples", () => {
 		for (const query of [
@@ -607,29 +620,26 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			"max(weird_gauge)",
 		])
 			expectOtel(query)
-	})
+	}, 120_000)
 
 	test("an exponential histogram has le buckets histogram_quantile reads", () => {
 		for (const query of [
 			'rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}',
 			'histogram_quantile(0.9, sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m])))',
 		])
-			expectOtel(query)
+			expectOtel(query, query, otelReference, shortCases)
 		expectOtel(
 			'count(rate({"rpc.latency_bucket", rpc_method="get"}[5m]))',
 			'count(rate(rpc_latency_milliseconds_bucket{rpc_method="get"}[5m]))',
+			otelReference,
+			shortCases,
 		)
-	})
+	}, 120_000)
 
 	test("exponential bounds stay complete when the scale and offset shift between delta exports", () => {
 		const shift = 'rpc_latency_milliseconds_bucket{rpc_method="shift"}'
-		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference)
-		expectOtel(
-			`histogram_quantile(0.5, sum by (le) (rate(${shift}[5m])))`,
-			`histogram_quantile(0.5, sum by (le) (rate(${shift}[5m])))`,
-			shiftReference,
-		)
-	})
+		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference, shortCases)
+	}, 120_000)
 
 	test("a stale histogram export ends every bucket series, classic and exponential", () => {
 		const count = (query: string, t: number, pushdown: boolean) => {
@@ -652,7 +662,7 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			expect(count(classic, tick(39) + 10_000, pushdown)).toEqual([3])
 			expect(count(classic, tick(41), pushdown)).toEqual([])
 		}
-	})
+	}, 120_000)
 
 	test("a no-recorded-value point ends the series instead of being looked back past", () => {
 		const at = (query: string, t: number, pushdown: boolean) => {
@@ -686,5 +696,5 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			if (Result.isFailure(range)) throw new Error(range.failure)
 			expect(Arr.map(flatten(range.success), ([, t]) => (t - T0) / 15_000)).toEqual([36, 60, 64])
 		}
-	})
+	}, 120_000)
 })

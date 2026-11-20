@@ -11,17 +11,11 @@ describe("xxhash64", () => {
 		expect(hex("Nobody inspects the spammish repetition")).toBe("fbcea83c8a378bf1")
 	})
 
-	it("hashes labels in name order with 0xff separators, as Prometheus does", () => {
-		const bytes = new Uint8Array([
-			...new TextEncoder().encode("a"),
-			0xff,
-			0x31,
-			0xff,
-			0x62,
-			0xff,
-			0x32,
-			0xff,
-		])
+	it("hashes labels in name order, each string length-prefixed, as Prometheus' stringlabels does", () => {
+		const bytes = new Uint8Array([1, 0x61, 1, 0x31, 1, 0x62, 1, 0x32])
 		expect(labelsHash({ b: "2", a: "1" })).toBe(xxhash64(bytes))
+		const long = "x".repeat(200)
+		const prefixed = new Uint8Array([1, 0x6b, 200, 1, ...new TextEncoder().encode(long)])
+		expect(labelsHash({ k: long })).toBe(xxhash64(prefixed))
 	})
 })
