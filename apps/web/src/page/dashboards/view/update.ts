@@ -35,6 +35,7 @@ import {
 	AddWidget,
 	AutoLayout,
 	SaveTags,
+	DismissImportReport,
 	SaveRefreshInterval,
 	SaveTimeRange,
 } from "./command"
@@ -101,6 +102,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		widgetMenuId: null,
 		widgetMenu: Menu.init("dashboard-widget-menu"),
 		titleDraft: null,
+		isImportReportOpen: false,
 		pickerDialog: Dialog.init("dashboard-widget-picker", "dialog"),
 		tagEditor: TagEditor.init("dashboard-view-tags-dialog"),
 		variablesManager: VariablesManagerUpdate.init("dashboard-variables-dialog"),
@@ -830,6 +832,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedRetryPersistence: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
+		ToggledImportReport: () => ({ model: { ...model, isImportReportOpen: !model.isImportReportOpen } }),
+		ClickedDismissImportReport: () => ({
+			model: { ...model, isImportReportOpen: false },
+			commands: [DismissImportReport({ orgId: context.orgId, dashboardId: model.dashboardId })],
+		}),
 		CameBackOnline: () => retryLayoutWrite({ ...model, persistenceError: null }, context),
 		CompletedExport: ({ error }) =>
 			error === null

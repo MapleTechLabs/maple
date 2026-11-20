@@ -238,6 +238,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/dashboard-import-notice",
+		title: "Dashboard import notice",
+		description:
+			"The \"Imported from Grafana: N items need attention\" notice on an imported board, collapsed or expanded (`?state=collapsed|expanded`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/analytics-search",
 		title: "Web analytics: Search",
 		description:

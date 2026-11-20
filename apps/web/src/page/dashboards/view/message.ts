@@ -113,6 +113,10 @@ export const Message = defineMessageUnion({
 	CompletedLayoutWrite: { generation: Schema.Number, result: WriteResult },
 	/** The persistence banner's Retry: editing comes back, and the next write tells whether it holds. */
 	ClickedRetryPersistence: {},
+	/** Show or hide the import notice's list of what did not carry over. */
+	ToggledImportReport: {},
+	/** Dismiss the import notice for everyone: the report is removed from the dashboard. */
+	ClickedDismissImportReport: {},
 	/** The browser came back online while the banner shows: editing comes back as with Retry. */
 	CameBackOnline: {},
 	/** Export JSON's download: `error` is why it could not be written. */
