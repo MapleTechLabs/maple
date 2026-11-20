@@ -106,17 +106,20 @@ export const unscoredKinds = (
 	)
 
 /** The one source-wide CVE list past the 500 listed, when exactly one source has one. */
-export const moreVulnerabilitiesLink = (
+/** Each source with CVEs past those listed: how many, named and linked to its own list. */
+export const moreVulnerabilitiesBySource = (
 	sources: ReadonlyArray<DeviceSource>,
-): Readonly<{ href: string; brand: string }> | null => {
-	const linked = Arr.getSomes(
-		Arr.map(sources, (source) =>
-			source.vulnerabilitiesUrl === null
-				? Option.none()
-				: Option.some({ href: source.vulnerabilitiesUrl, brand: brandOf(source.kind).name }),
-		),
+): ReadonlyArray<Readonly<{ key: string; count: number; name: string; href: string | null }>> => {
+	const many = sources.length > 1
+	return Arr.map(
+		Arr.filter(sources, (source) => source.moreVulnerabilities > 0),
+		(source) => ({
+			key: `${source.kind}:${source.connectionId}`,
+			count: source.moreVulnerabilities,
+			name: many ? sourceLabelOf(source) : brandOf(source.kind).name,
+			href: source.vulnerabilitiesUrl,
+		}),
 	)
-	return linked.length === 1 ? (linked[0] ?? null) : null
 }
 
 export const knownExploitedCount = (vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>): number =>
@@ -151,9 +154,11 @@ const plural = (count: number, one: string, many: string) =>
 
 export const devicesLabel = (count: number): string => plural(count, "device", "devices")
 
-/** "12 of 240 devices failing". */
+/** "12 of 240 devices failing", or "12 devices failing" when the source does not count passing ones. */
 export const failingLabel = (policy: DevicePolicyFinding): string =>
-	`${formatNumber(policy.failingDeviceCount)} of ${devicesLabel(policy.failingDeviceCount + policy.passingDeviceCount)} failing`
+	policy.passingDeviceCount === null
+		? `${devicesLabel(policy.failingDeviceCount)} failing`
+		: `${formatNumber(policy.failingDeviceCount)} of ${devicesLabel(policy.failingDeviceCount + policy.passingDeviceCount)} failing`
 
 /** "openssl 3.0.2". */
 export const softwareLabel = (software: VulnerableSoftware): string => `${software.name} ${software.version}`

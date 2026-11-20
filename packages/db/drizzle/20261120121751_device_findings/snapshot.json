@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "7f95ffb9ca9e3ff78cd0459c49607b7e90e715e62103a622d93ceea28b8f7d10",
+	"id": "25ed66fc397cb319b5f4552821405c5723b841c1590660a56b7bfe3c0b119b3c",
 	"prevIds": [
 		"7748098be2f3a4eab0e92ee966f598c46212797a1cb85ef533f145361dfa1f4c"
 	],
@@ -7805,7 +7805,7 @@
 			"name": "passing_device_count",
 			"position": 10,
 			"type": "integer",
-			"notNull": true,
+			"notNull": false,
 			"default": null,
 			"identity": null
 		},

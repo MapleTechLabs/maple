@@ -1,37 +1,31 @@
 /**
  * The Security hub's Devices page: every connected device source's status, and their findings
- * merged into one list. A new source registers its status reader below; its sync writes through
- * `device-findings-store`.
+ * merged into one list. A new source registers its status reader in `readers` (and its layer
+ * below); its sync writes through `device-findings-store`.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "@maple/db/tables"
 import {
 	DevicePolicyFinding,
-	type DeviceSource,
+	DeviceSource,
 	DevicesResponse,
 	DeviceVulnerabilityFinding,
 	IntegrationsPersistenceError,
 	type OrgId,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { FleetFindingsService } from "@maple/backend/services/integrations/FleetFindingsService"
-import { policyOrder, vulnerabilityOrder } from "./device-findings-store"
+import { type DeviceSourceStatusReader, policyOrder, vulnerabilityOrder } from "./device-findings-store"
 
+/** CVEs listed per source: one with scores never pushes an unscored one off the page. */
 const LISTED_VULNERABILITIES = 500
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
 	"Device findings persistence failure",
 )
-
-/** What a device source tells the page about its connections. */
-export interface DeviceSourceStatusReader {
-	readonly sources: (
-		orgId: OrgId,
-	) => Effect.Effect<ReadonlyArray<DeviceSource>, IntegrationsPersistenceError>
-}
 
 export interface DeviceSecurityServiceApi {
 	readonly devices: (orgId: OrgId) => Effect.Effect<DevicesResponse, IntegrationsPersistenceError>
@@ -86,9 +80,25 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 				)
 				const isConnected = (row: { readonly source: string; readonly connectionId: string }) =>
 					connected.has(`${row.source}:${row.connectionId}`)
-				const openVulnerabilities = Arr.filter(vulnerabilities, isConnected)
-				return new DevicesResponse({
+				const perConnection = Arr.groupBy(
+					Arr.filter(vulnerabilities, isConnected),
+					(row): string => `${row.source}:${row.connectionId}`,
+				)
+				const moreOf = (key: string) =>
+					Math.max(0, (perConnection[key]?.length ?? 0) - LISTED_VULNERABILITIES)
+				const listed = Arr.flatMap(Rec.values(perConnection), (rows) =>
+					Arr.take(Arr.sort(rows, vulnerabilityOrder), LISTED_VULNERABILITIES),
+				)
+				const withCounts = Arr.map(
 					sources,
+					(source) =>
+						new DeviceSource({
+							...source,
+							moreVulnerabilities: moreOf(`${source.kind}:${source.connectionId}`),
+						}),
+				)
+				return new DevicesResponse({
+					sources: withCounts,
 					policies: Arr.map(
 						Arr.sort(Arr.filter(policies, isConnected), policyOrder),
 						(row) =>
@@ -110,7 +120,7 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 							}),
 					),
 					vulnerabilities: Arr.map(
-						Arr.take(Arr.sort(openVulnerabilities, vulnerabilityOrder), LISTED_VULNERABILITIES),
+						Arr.sort(listed, vulnerabilityOrder),
 						(row) =>
 							new DeviceVulnerabilityFinding({
 								source: row.source,
@@ -126,7 +136,11 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 								url: row.url,
 							}),
 					),
-					moreVulnerabilities: Math.max(0, openVulnerabilities.length - LISTED_VULNERABILITIES),
+					moreVulnerabilities: Arr.reduce(
+						withCounts,
+						0,
+						(sum, source) => sum + source.moreVulnerabilities,
+					),
 				})
 			})
 

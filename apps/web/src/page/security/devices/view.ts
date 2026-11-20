@@ -49,7 +49,7 @@ import {
 	failingLabel,
 	hasScores,
 	knownExploitedCount,
-	moreVulnerabilitiesLink,
+	moreVulnerabilitiesBySource,
 	platformLabel,
 	policyKeyOf,
 	screenOf,
@@ -467,7 +467,7 @@ const softwareLines = (h: H, vulnerability: DeviceVulnerabilityFinding): Html =>
 		{ gap: "0.5", as: "ul", attributes: [h.AriaLabel(`Software affected by ${vulnerability.cve}`)] },
 		Arr.map(vulnerability.software, (software) =>
 			h.li(
-				[h.Key(`${software.name}@${software.version}`)],
+				[h.Key(`${software.packageSource ?? ""}:${software.name}@${software.version}`)],
 				[
 					typography(h, { size: "xs" }, [
 						typography(h, { mono: true }, [softwareLabel(software)]),
@@ -558,7 +558,7 @@ const vulnerabilityRow = (
 			tableCell(h, [softwareLines(h, vulnerability)], `${WIDE_COLUMN} whitespace-normal align-top`),
 		],
 		undefined,
-		[h.Key(`${vulnerability.connectionId}:${vulnerability.cve}`)],
+		[h.Key(`${vulnerability.source}:${vulnerability.connectionId}:${vulnerability.cve}`)],
 	)
 
 /** Why some or all CVEs carry no score, naming the sources that give none. */
@@ -577,7 +577,7 @@ const vulnerabilitiesSection = (h: H, devices: Devices): Html => {
 	const { vulnerabilities, moreVulnerabilities, sources } = devices
 	const scored = hasScores(vulnerabilities)
 	const note = noScoresNote(vulnerabilities, scored)
-	const more = moreVulnerabilitiesLink(sources)
+	const more = moreVulnerabilitiesBySource(sources)
 	return vstack(h, { gap: "3" }, [
 		sectionHeading(h, {
 			title: "Vulnerable software",
@@ -612,20 +612,18 @@ const vulnerabilitiesSection = (h: H, devices: Devices): Html => {
 						),
 					]),
 		]),
-		// Past the 500 listed, the source's own list has the rest when there is just one to point at.
-		...(moreVulnerabilities > 0
-			? [
-					typography(h, { size: "xs", as: "p" }, [
-						more === null
-							? typography(h, { tone: "muted" }, [
-									`+${formatNumber(moreVulnerabilities)} more not listed`,
-								])
-							: textLink(h, { href: more.href, attributes: external(h) }, [
-									`+${formatNumber(moreVulnerabilities)} more in ${more.brand}`,
-								]),
-					]),
-				]
-			: []),
+		// Past the 500 listed per source, each source's own list has the rest.
+		...Arr.map(more, (rest) =>
+			typography(h, { size: "xs", as: "p", attributes: [h.Key(`more:${rest.key}`)] }, [
+				rest.href === null
+					? typography(h, { tone: "muted" }, [
+							`+${formatNumber(rest.count)} more from ${rest.name} not listed`,
+						])
+					: textLink(h, { href: rest.href, attributes: external(h) }, [
+							`+${formatNumber(rest.count)} more in ${rest.name}`,
+						]),
+			]),
+		),
 		...(note === null || vulnerabilities.length === 0
 			? []
 			: [typography(h, { size: "xs", tone: "muted", as: "p" }, [note])]),

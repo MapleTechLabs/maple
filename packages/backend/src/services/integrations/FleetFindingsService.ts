@@ -14,7 +14,10 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { openSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
-import { replaceDeviceFindings } from "@maple/backend/services/device-security/device-findings-store"
+import {
+	type DeviceSourceStatusReader,
+	replaceDeviceFindings,
+} from "@maple/backend/services/device-security/device-findings-store"
 import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import * as FleetApi from "./fleet/api"
@@ -49,7 +52,7 @@ interface ServerOutcome {
 	readonly vulnerabilities: number
 }
 
-export interface FleetFindingsServiceApi {
+export interface FleetFindingsServiceApi extends DeviceSourceStatusReader {
 	/** Syncs every server whose findings are an hour old, or never synced. */
 	readonly syncDue: Effect.Effect<FleetFindingsSyncResult, IntegrationsPersistenceError>
 	/** The org's Fleet server as a device source, for the Devices page; empty when none is connected. */
@@ -339,6 +342,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 							error: row.findingsError,
 							authFailed: row.authFailedAt !== null,
 							vulnerabilitiesUrl: `${row.baseUrl}/software/vulnerabilities`,
+							moreVulnerabilities: 0,
 						}),
 				)
 			})

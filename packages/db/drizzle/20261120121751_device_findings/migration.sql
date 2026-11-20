@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS "device_policy_findings" (
 	"critical" boolean NOT NULL,
 	"platform" text,
 	"failing_device_count" integer NOT NULL,
-	"passing_device_count" integer NOT NULL,
+	"passing_device_count" integer,
 	"failing_devices" jsonb NOT NULL,
 	"counted_at" timestamp with time zone,
 	"url" text NOT NULL,

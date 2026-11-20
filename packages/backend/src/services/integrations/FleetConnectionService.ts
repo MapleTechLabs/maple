@@ -196,7 +196,9 @@ export class FleetConnectionService extends Context.Service<
 								.where(($) => [$.orgId.eq(orgId), $.baseUrl.neq(baseUrl)])
 								.returning("id"),
 						)
-						if (replaced.length > 0) yield* clearDeviceFindings(db, orgId, "fleet")
+						yield* Effect.forEach(replaced, (row) =>
+							clearDeviceFindings(db, { orgId, source: "fleet", connectionId: row.id }),
+						)
 						yield* db.run(
 							PG.insertInto(FleetConnections)
 								.values({ id: randomUUID(), orgId, createdAt: now, ...next })
@@ -213,12 +215,16 @@ export class FleetConnectionService extends Context.Service<
 			const rows = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* clearDeviceFindings(db, orgId, "fleet")
-						return yield* db.run(
+						// The row first: a sync holding it commits before the findings are cleared.
+						const removed = yield* db.run(
 							PG.deleteFrom(FleetConnections)
 								.where(($) => [$.orgId.eq(orgId)])
 								.returning("id"),
 						)
+						yield* Effect.forEach(removed, (row) =>
+							clearDeviceFindings(db, { orgId, source: "fleet", connectionId: row.id }),
+						)
+						return removed
 					}),
 				),
 			)

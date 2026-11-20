@@ -25,6 +25,8 @@ export class DeviceSource extends Schema.Class<DeviceSource>("DeviceSource")({
 	authFailed: Schema.Boolean,
 	/** The source's full vulnerability list, past the ones listed here. */
 	vulnerabilitiesUrl: Schema.NullOr(Schema.String),
+	/** This source's CVEs past the 500 listed for it. */
+	moreVulnerabilities: Schema.Number,
 }) {}
 
 export class DevicePolicyFinding extends Schema.Class<DevicePolicyFinding>("DevicePolicyFinding")({
@@ -38,8 +40,9 @@ export class DevicePolicyFinding extends Schema.Class<DevicePolicyFinding>("Devi
 	critical: Schema.Boolean,
 	platform: Schema.NullOr(Schema.String),
 	failingDeviceCount: Schema.Number,
-	passingDeviceCount: Schema.Number,
-	/** Up to 20 of the failing devices. */
+	/** Null when the source does not count passing devices. */
+	passingDeviceCount: Schema.NullOr(Schema.Number),
+	/** A sample of the failing devices; the source decides how many. */
 	failingDevices: Schema.Array(DeviceRef),
 	countedAt: Schema.NullOr(Schema.Number),
 	firstSeenAt: Schema.Number,
@@ -69,9 +72,9 @@ export class DevicesResponse extends Schema.Class<DevicesResponse>("DevicesRespo
 	sources: Schema.Array(DeviceSource),
 	/** Failing policies across sources, critical first, then by failing devices. */
 	policies: Schema.Array(DevicePolicyFinding),
-	/** CVEs across sources, highest score first, then by devices; at most 500. */
+	/** CVEs across sources, highest score first, then by devices; at most 500 per source. */
 	vulnerabilities: Schema.Array(DeviceVulnerabilityFinding),
-	/** CVEs past the 500 listed. */
+	/** CVEs past those listed, summed across sources. */
 	moreVulnerabilities: Schema.Number,
 }) {}
 

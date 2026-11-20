@@ -49,6 +49,7 @@ const source = (nowMs: number, overrides: Partial<Source> = {}): Source => ({
 	error: null,
 	authFailed: false,
 	vulnerabilitiesUrl: `${BASE}/software/vulnerabilities`,
+	moreVulnerabilities: 0,
 	...overrides,
 })
 
@@ -209,7 +210,7 @@ export const firstSyncFailedDevices = (nowMs: number) =>
 
 export const premiumDevices = (nowMs: number) =>
 	decode({
-		sources: [source(nowMs)],
+		sources: [source(nowMs, { moreVulnerabilities: 37 })],
 		policies: policies(nowMs),
 		vulnerabilities: vulnerabilities(nowMs, true),
 		moreVulnerabilities: 37,
@@ -230,6 +231,7 @@ export const authFailedDevices = (nowMs: number) =>
 				syncedAt: nowMs - 5 * 3_600_000,
 				authFailed: true,
 				error: "Fleet answered 401: Authentication required.",
+				moreVulnerabilities: 37,
 			}),
 		],
 		policies: policies(nowMs),
@@ -243,6 +245,7 @@ export const syncErrorDevices = (nowMs: number) =>
 			source(nowMs, {
 				syncedAt: nowMs - 2 * 3_600_000,
 				error: "Fleet did not answer within 30 seconds.",
+				moreVulnerabilities: 37,
 			}),
 		],
 		policies: policies(nowMs),
@@ -277,7 +280,8 @@ const euPolicies = (nowMs: number): Encoded["policies"] => [
 		critical: true,
 		platform: "darwin,windows",
 		failingDeviceCount: 3,
-		passingDeviceCount: 61,
+		// A source that does not count passing devices.
+		passingDeviceCount: null,
 		failingDevices: hosts(3, 8, ACME_EU),
 		countedAt: nowMs - 70 * 60_000,
 		firstSeenAt: nowMs - 9 * 86_400_000,
@@ -306,7 +310,7 @@ const byCvss = Order.mapInput(
 /** Two Fleet servers merged the way the API merges sources: critical first, then by score. */
 export const twoSourceDevices = (nowMs: number) =>
 	decode({
-		sources: [source(nowMs), euSource(nowMs)],
+		sources: [source(nowMs, { moreVulnerabilities: 37 }), euSource(nowMs)],
 		policies: Arr.sort(
 			Arr.appendAll(policies(nowMs), euPolicies(nowMs)),
 			Order.combine(byCritical, byFailing),

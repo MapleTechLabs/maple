@@ -166,12 +166,16 @@ describe("security devices", () => {
 			// Both servers are Fleet, so the tag is the account; the larger failing count leads.
 			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabled"),
 			expectView(nth(all.role("row"), 1)).toContainText("CriticalAcme7 of"),
-			expectView(nth(all.role("row"), 2)).toContainText("CriticalAcme EU3 of"),
+			// The EU source counts no passing devices, so its row gives the failing count alone.
+			expectView(nth(all.role("row"), 2)).toContainText("CriticalAcme EU3 devices failing"),
 			expectView(text("Fleet rejected the saved token for Acme EU")).toExist(),
 			expectView(text("Fleet rejected the saved token for Acme")).toBeAbsent(),
 			expectView(role("link", { name: "Save a new token" })).toHaveAttr("href", FLEET_CARD),
-			// Two lists to point at, so the rest past the 500 is plain text.
-			expectView(text("+37 more not listed")).toExist(),
+			// The rest past the 500 links to the source that has it, named by its account.
+			expectView(role("link", { name: "+37 more in Acme" })).toHaveAttr(
+				"href",
+				"https://fleet.acme.dev/software/vulnerabilities",
+			),
 			expectView(role("link", { name: "+37 more in Fleet" })).toBeAbsent(),
 		)
 	})

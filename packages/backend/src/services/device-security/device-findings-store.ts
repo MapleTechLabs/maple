@@ -11,7 +11,7 @@ import {
 	DeviceVulnerabilityFindings,
 } from "@maple/db/tables"
 import type { DeviceSourceKind } from "@maple/domain/device-security"
-import type { OrgId } from "@maple/domain/http"
+import type { DeviceSource, IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import { Array as Arr, Effect, Order } from "effect"
 
 export interface DeviceFindingsScope {
@@ -113,13 +113,31 @@ export const replaceDeviceFindings = (
 		)
 	})
 
-/** Forgets everything one source reported for the org: its connection was removed or replaced. */
-export const clearDeviceFindings = (db: MapleDb, orgId: OrgId, source: DeviceSourceKind) =>
+/**
+ * Forgets what a connection reported: it was removed or replaced. Run it after deleting the
+ * connection row, so a sync holding that row has committed and its rows are seen.
+ */
+export const clearDeviceFindings = (db: MapleDb, scope: DeviceFindingsScope) =>
 	Effect.gen(function* () {
 		yield* db.run(
-			PG.deleteFrom(DevicePolicyFindings).where(($) => [$.orgId.eq(orgId), $.source.eq(source)]),
+			PG.deleteFrom(DevicePolicyFindings).where(($) => [
+				$.orgId.eq(scope.orgId),
+				$.source.eq(scope.source),
+				$.connectionId.eq(scope.connectionId),
+			]),
 		)
 		yield* db.run(
-			PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [$.orgId.eq(orgId), $.source.eq(source)]),
+			PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [
+				$.orgId.eq(scope.orgId),
+				$.source.eq(scope.source),
+				$.connectionId.eq(scope.connectionId),
+			]),
 		)
 	})
+
+/** What a device source tells the Devices page about the org's connections to it. */
+export interface DeviceSourceStatusReader {
+	readonly sources: (
+		orgId: OrgId,
+	) => Effect.Effect<ReadonlyArray<DeviceSource>, IntegrationsPersistenceError>
+}

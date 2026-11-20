@@ -21,7 +21,8 @@ export const DevicePolicyFindings = PG.table("device_policy_findings", {
 		/** Comma-joined platforms the policy runs on (`darwin,windows`); null for every platform. */
 		platform: PG.nullable(PG.text),
 		failingDeviceCount: PG.column(PG.int4, { name: "failing_device_count" }),
-		passingDeviceCount: PG.column(PG.int4, { name: "passing_device_count" }),
+		/** Null when the source does not count passing devices. */
+		passingDeviceCount: PG.column(PG.nullable(PG.int4), { name: "passing_device_count" }),
 		failingDevices: PG.column(PG.jsonb(Schema.Array(DeviceRef)), { name: "failing_devices" }),
 		/** When the source last counted the policy's devices. */
 		countedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "counted_at" }),
