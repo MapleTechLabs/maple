@@ -3,7 +3,7 @@
 
 import { DateTime, Effect, Option, Array as Arr, String as Str } from "effect"
 import { parseDurationMs, type QueryResult } from "@maple/promql"
-import { PromqlBadQueryError } from "@maple/backend/services/promql/PromqlQueryService"
+import { PromqlBadQueryError, PromqlExecutionError } from "@maple/backend/services/promql/PromqlQueryService"
 
 const FLOAT = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/
@@ -72,6 +72,47 @@ export const parseStep = (text: string): Effect.Effect<number, PromqlBadQueryErr
 				}),
 			)
 }
+
+/** A Prometheus `timeout`: a duration or float seconds, positive. Epoch ms. */
+export const parseTimeout = (text: string): Effect.Effect<number, PromqlBadQueryError> => {
+	const ms = FLOAT.test(text) ? Math.round(Number(text) * 1000) : parseDurationMs(text)
+	return ms !== undefined && Number.isFinite(ms) && ms > 0
+		? Effect.succeed(ms)
+		: Effect.fail(
+				new PromqlBadQueryError({
+					message: `invalid parameter "timeout": cannot parse "${text}" to a valid duration`,
+				}),
+			)
+}
+
+/**
+ * Samples one response may carry. Each encodes to ~30 bytes of JSON, so this keeps a body near
+ * 15 MB in the API's 128 MB isolate; the engine itself allows 5M samples while evaluating.
+ */
+export const MAX_RESPONSE_SAMPLES = 500_000
+
+/** Samples in a result, counted the way the JSON body would hold them. */
+export const resultSamples = (result: QueryResult): number => {
+	switch (result.resultType) {
+		case "matrix":
+			return Arr.reduce(result.result, 0, (total, series) => total + series.points.length)
+		case "vector":
+			return result.result.length
+		case "scalar":
+		case "string":
+			return 1
+	}
+}
+
+/** Refuses a result too large to encode before any JSON is built. */
+export const checkResultSize = (result: QueryResult): Effect.Effect<QueryResult, PromqlExecutionError> =>
+	resultSamples(result) > MAX_RESPONSE_SAMPLES
+		? Effect.fail(
+				new PromqlExecutionError({
+					message: `result too large: more than ${MAX_RESPONSE_SAMPLES} samples; narrow the selector, aggregate with sum by (...), or use a larger step`,
+				}),
+			)
+		: Effect.succeed(result)
 
 /** Moves the decimal point of `digits` (a plain decimal, no sign) by `exponent` places. */
 const shiftPoint = (digits: string, exponent: number): string => {

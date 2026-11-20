@@ -12,7 +12,7 @@ import {
 	V2OrganizationAccessDenied,
 	V2RateLimited,
 } from "@maple/domain/http/v2"
-import { Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Effect, Layer, Option, Result, Schema, String as Str } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ORG_SELECTION_HEADER } from "@maple/auth"
 import { makeResolveTenant } from "@maple/auth"
@@ -33,7 +33,7 @@ import {
 	apiV2RateLimitKey,
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
-import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
+import { API_KEY_DEFAULT_ROLES, getBasicPassword, getBearerToken } from "./bearer-token"
 import { checkAnalystAccessV2 } from "./analyst-gate"
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
@@ -49,6 +49,9 @@ const dpopChallenge = (error: "invalid_token" | "invalid_dpop_proof") =>
 			HttpServerResponse.setHeader(response, "WWW-Authenticate", `DPoP algs="ES256", error="${error}"`),
 		),
 	)
+
+/** The one route group that also takes an API key as a Basic password, as Prometheus clients send it. */
+const BASIC_AUTH_ROUTE_PREFIX = "/v2/metrics/prometheus/api/v1/"
 
 /** `HttpServerRequest` lowercases every incoming header, and the constant is
  * already lowercase, so this is a plain lookup, not a case-insensitive one. */
@@ -195,8 +198,21 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						)
 					}
 
-					const token = getBearerToken(request.headers)
+					// Basic carries only API keys: a session never arrives that way.
+					const { route: matched } = yield* HttpRouter.RouteContext
+					const basic = Str.startsWith(BASIC_AUTH_ROUTE_PREFIX)(matched.path)
+						? getBasicPassword(request.headers)
+						: undefined
+					if (basic !== undefined && Result.isFailure(basic)) {
+						return yield* V2InvalidCredentials.make("The Basic credentials could not be decoded.")
+					}
+					const token = basic === undefined ? getBearerToken(request.headers) : basic.success
 					const apiKeyResolved = yield* apiKeys.resolveByBearer(token)
+					if (basic !== undefined && Option.isNone(apiKeyResolved)) {
+						return yield* V2InvalidCredentials.make(
+							"The Basic password must be a valid Maple API key.",
+						)
+					}
 
 					if (Option.isSome(apiKeyResolved)) {
 						const resolved = apiKeyResolved.value
