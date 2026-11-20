@@ -13,10 +13,12 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { type LoadFailure, toLoadFailure, settled } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleInternalApiClient } from "../../../platform/api-clients"
 
-// The `securityAudit` group on the ai Worker as Effects the Security Center's Commands wrap. Every
+// The security audit as Effects the Security Center's Commands wrap: the reads on the api Worker
+// (`securityAuditReads`, warm), the writes and settings on the ai Worker (`securityAudit`). Every
 // failure becomes the `displayError` body, whose `code` tells the gates apart.
 
 type Ai = typeof MapleAiClient.Service
+type Internal = typeof MapleInternalApiClient.Service
 
 const call = <A, E, R>(run: (api: Ai) => Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
@@ -24,38 +26,41 @@ const call = <A, E, R>(run: (api: Ai) => Effect.Effect<A, E, R>) =>
 		return yield* run(api)
 	}).pipe(settled)
 
-export const listTargets = call((api) => api.securityAudit.listTargets())
+const read = <A, E, R>(run: (api: Internal["securityAuditReads"]) => Effect.Effect<A, E, R>) =>
+	Effect.gen(function* () {
+		const api = yield* MapleInternalApiClient
+		return yield* run(api.securityAuditReads)
+	}).pipe(settled)
+
+export const listTargets = read((api) => api.listTargets())
 
 /** The org's monthly spend limit, this month's spend and its default models. */
 export const getSettings = call((api) => api.securityAudit.getSettings())
 
 export const listRuns = (targetId?: SecurityAuditTargetId) =>
-	call((api) => api.securityAudit.listRuns({ query: targetId === undefined ? {} : { targetId } }))
+	read((api) => api.listRuns({ query: targetId === undefined ? {} : { targetId } }))
 
-export const getRun = (runId: SecurityAuditRunId) =>
-	call((api) => api.securityAudit.getRun({ params: { runId } }))
+export const getRun = (runId: SecurityAuditRunId) => read((api) => api.getRun({ params: { runId } }))
 
 export const cancelRun = (runId: SecurityAuditRunId) =>
 	call((api) => api.securityAudit.cancelRun({ params: { runId } }))
 
 /** The run's coverage ledger, one lean row per unit. */
 export const listRunUnits = (runId: SecurityAuditRunId) =>
-	call((api) => api.securityAudit.listRunUnits({ params: { runId } }))
+	read((api) => api.listRunUnits({ params: { runId } }))
 
 export const listRunEvents = (
 	runId: SecurityAuditRunId,
 	page: Readonly<{ limit: number; beforeAt?: number; beforeId?: string }>,
-) => call((api) => api.securityAudit.listRunEvents({ params: { runId }, query: page }))
+) => read((api) => api.listRunEvents({ params: { runId }, query: page }))
 
 /** What one run reported, rejected included, each with its finding's current triage. */
 export const listRunFindings = (runId: SecurityAuditRunId) =>
-	call((api) => api.securityAudit.listRunFindings({ params: { runId } }))
+	read((api) => api.listRunFindings({ params: { runId } }))
 
 /** Rejected records ride along; the views decide whether to show them. */
 export const listFindings = (targetId: SecurityAuditTargetId) =>
-	call((api) =>
-		api.securityAudit.listFindings({ params: { targetId }, query: { includeRejected: "true" } }),
-	)
+	read((api) => api.listFindings({ params: { targetId }, query: { includeRejected: "true" } }))
 
 /** The code a refused request (a 400, or a payload the client would not encode) carries. */
 export const INVALID_REQUEST_CODE = "security_audit_invalid_request"

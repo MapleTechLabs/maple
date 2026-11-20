@@ -25,13 +25,20 @@ import { API_CORS_RESPONSE_HEADERS } from "@maple/backend/http/api-cors"
  * api's own router, and anything it over-matches never reaches api's routes at
  * all.
  */
-export const forwardsToAi = (path: string): boolean =>
+export const forwardsToAi = (method: string, path: string): boolean =>
 	path === "/mcp" ||
 	Str.startsWith("/mcp/")(path) ||
 	Str.startsWith("/api/chat/")(path) ||
 	Str.startsWith("/internal/chat/")(path) ||
 	Str.startsWith("/internal/mcp/")(path) ||
-	Str.startsWith("/api/security-audit/")(path)
+	(Str.startsWith("/api/security-audit/")(path) && !servesSecurityAuditRead(method, path))
+
+/**
+ * The security audit's reads (`SecurityAuditReadsApiGroup`) are answered here, on a warm isolate,
+ * instead of paying ai's cold start. The settings read stays on ai: it reads the model defaults.
+ */
+const servesSecurityAuditRead = (method: string, path: string): boolean =>
+	method === "GET" && path !== "/api/security-audit/settings"
 
 /** maple-ai could not be reached. CORS headers included: an investigation's conversation calls this from a browser. */
 export const aiUnavailableResponse = (): HttpServerResponse.HttpServerResponse =>
