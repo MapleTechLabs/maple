@@ -220,7 +220,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	StatusPagesService.layer,
 	// Custom domains: Cloudflare for SaaS hostnames, unavailable where its zone is not configured.
 	StatusPageCustomDomainsService.layer,
-	// The `statusPages` rollout gate on the status page routes.
 	OrganizationFeatureFlagsService.layer,
 	// Read-only: previews of unsaved pages.
 	StatusPageSnapshotBuilder.layer,

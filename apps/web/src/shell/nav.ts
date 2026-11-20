@@ -239,10 +239,9 @@ export type NavFlags = Readonly<{
 	cloudSecurity: boolean
 	productAnalytics: boolean
 	securityAudit: boolean
-	statusPages: boolean
 }>
 
-const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+const analystNavGroups = (): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "reliability",
@@ -250,9 +249,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			analystIncidentsItem,
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" },
 		],
 	},
 	{
@@ -273,14 +270,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{
 		id: "monitor",
 		label: "Monitor",
-		items: [
-			{
-				...servicesItem,
-				alsoActive: flags.statusPages ? [] : ["/status-pages"],
-			},
-			infrastructureItem,
-			costItem,
-		],
+		items: [servicesItem, infrastructureItem, costItem],
 	},
 	{
 		id: "analyze",
@@ -307,26 +297,17 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			...(flags.securityAudit || flags.cloudSecurity
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
-			...(flags.statusPages
-				? [
-						{
-							title: "Status pages",
-							href: "/status-pages",
-							icon: "WindowChartLineIcon",
-							startsGroup: true,
-						} as const,
-					]
-				: []),
+			{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon", startsGroup: true },
 		],
 	},
 ]
 
 /**
- * `navGroups(flags, audience)`; `productAnalytics`, `releases`, `securityAudit` (or
- * `cloudSecurity`) and `statusPages` gate a row each, and an analyst gets {@link analystNavGroups}.
+ * `navGroups(flags, audience)`; `productAnalytics`, `releases` and `securityAudit` (or
+ * `cloudSecurity`) gate a row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
-	audience === "analyst" ? analystNavGroups(flags) : operatorNavGroups(flags)
+	audience === "analyst" ? analystNavGroups() : operatorNavGroups(flags)
 
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>
