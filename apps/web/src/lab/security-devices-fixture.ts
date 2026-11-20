@@ -177,6 +177,19 @@ export const firstSyncDevices = (nowMs: number) =>
 		moreVulnerabilities: 0,
 	})
 
+export const firstSyncFailedDevices = (nowMs: number) =>
+	decode({
+		connection: connection(nowMs, {
+			hostCount: null,
+			syncedAt: null,
+			licenseTier: null,
+			error: "Fleet answered 500.",
+		}),
+		policies: [],
+		vulnerabilities: [],
+		moreVulnerabilities: 0,
+	})
+
 export const premiumDevices = (nowMs: number) =>
 	decode({
 		connection: connection(nowMs),

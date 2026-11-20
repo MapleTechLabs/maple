@@ -126,12 +126,15 @@ const authFailedNotice = (h: H, hasFindings: boolean): Html =>
 		]),
 	])
 
-const syncErrorNotice = (h: H, error: string): Html =>
+/** A failed sync; before any sync succeeded there is nothing older to show. */
+const syncErrorNotice = (h: H, error: string, hasSynced: boolean): Html =>
 	alert(h, { variant: "warn", size: "sm" }, [
 		icon(h, "CircleWarningIcon"),
-		alertTitle(h, ["The last sync failed"]),
+		alertTitle(h, [hasSynced ? "The last sync failed" : "The first sync failed"]),
 		alertDescription(h, [
-			`${error} Showing what the last good sync found; Maple tries again within the hour.`,
+			hasSynced
+				? `${error} Showing what the last good sync found; Maple tries again within five minutes.`
+				: `${error} Maple tries again within five minutes.`,
 		]),
 	])
 
@@ -530,8 +533,8 @@ const connectedBody = (
 	const hasSynced = connection.syncedAt !== null
 	const notice = connection.authFailed
 		? authFailedNotice(h, hasSynced)
-		: connection.error !== null && hasSynced
-			? syncErrorNotice(h, connection.error)
+		: connection.error !== null
+			? syncErrorNotice(h, connection.error, hasSynced)
 			: null
 	if (!hasSynced)
 		return [serverLine(h, connection, clock), ...(notice === null ? [firstSyncPending(h)] : [notice])]

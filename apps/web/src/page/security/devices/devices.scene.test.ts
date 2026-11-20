@@ -24,6 +24,7 @@ import {
 	notConnectedDevices,
 	premiumDevices,
 	syncErrorDevices,
+	firstSyncFailedDevices,
 } from "../../../lab/security-devices-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
@@ -157,6 +158,16 @@ describe("security devices", () => {
 			expectView(text("The last sync failed")).toExist(),
 			expectView(text("Fleet did not answer within 30 seconds.", { exact: false })).toExist(),
 			expectView(role("table", { name: "Vulnerabilities" })).toExist(),
+		)
+	})
+
+	test("a first sync that failed shows its error instead of waiting", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(firstSyncFailedDevices(NOW))),
+			expectView(text("The first sync failed")).toExist(),
+			expectView(text("Fleet answered 500.", { exact: false })).toExist(),
+			expectView(text("Waiting for the first sync")).toBeAbsent(),
 		)
 	})
 
