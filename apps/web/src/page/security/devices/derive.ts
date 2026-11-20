@@ -1,26 +1,49 @@
-import type {
-	FleetDevicesConnection,
-	FleetPolicyFinding,
-	FleetVulnerabilityFinding,
-} from "@maple/domain/http"
+import type { DeviceSourceKind, VulnerableSoftware } from "@maple/domain/device-security"
+import type { DevicePolicyFinding, DeviceSource, DeviceVulnerabilityFinding } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
+import type { ProviderId } from "../../kit/providers"
 import type { Devices, Model } from "./model"
 
 // Pure readings of the Devices page: which state it is in, and the words each row shows.
 
-/** The Fleet card on `/integrations`, where a token is saved or replaced. */
-export const FLEET_CARD_HREF = hrefOf(AppRoute.Integrations({ search: { integration: "fleet" } }))
+/** What the page says about one kind of device source. Adding a source is one entry here. */
+export type DeviceSourceBrand = Readonly<{
+	name: string
+	provider: ProviderId
+	/** Where its credential is saved or replaced. */
+	connectHref: string
+	/** What the saved credential is called, as in "rejected the saved token". */
+	credential: string
+	/** The connect card's hint on the empty page. */
+	connectHint: string
+	/** Why its CVEs carry no CVSS score or known exploited flag, when they don't. */
+	noScoresNote: string
+}>
+
+export const DEVICE_SOURCE_BRANDS = {
+	fleet: {
+		name: "Fleet",
+		provider: "fleet",
+		connectHref: hrefOf(AppRoute.Integrations({ search: { integration: "fleet" } })),
+		credential: "token",
+		connectHint:
+			"Read-only. Connect your Fleet server with an API-only Observer token; devices show here within a few minutes.",
+		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
+	},
+} satisfies Readonly<Record<DeviceSourceKind, DeviceSourceBrand>>
+
+export const brandOf = (kind: DeviceSourceKind): DeviceSourceBrand => DEVICE_SOURCE_BRANDS[kind]
 
 export type Screen =
 	| Readonly<{ _tag: "Loading" }>
 	| Readonly<{ _tag: "Forbidden" }>
 	| Readonly<{ _tag: "Failed"; failure: LoadFailure }>
 	| Readonly<{ _tag: "NotConnected" }>
-	| Readonly<{ _tag: "Connected"; connection: FleetDevicesConnection; devices: Devices }>
+	| Readonly<{ _tag: "Connected"; devices: Devices }>
 
 /** A viewer without `security:manage` gets the integrations 403. */
 const isForbidden = (failure: LoadFailure): boolean => failure.code === "integration_forbidden"
@@ -31,23 +54,75 @@ export const screenOf = (model: Pick<Model, "devices">): Screen =>
 		onFailure: (failure): Screen =>
 			isForbidden(failure) ? { _tag: "Forbidden" } : { _tag: "Failed", failure },
 		onData: (devices): Screen =>
-			devices.connection === null
-				? { _tag: "NotConnected" }
-				: { _tag: "Connected", connection: devices.connection, devices },
+			devices.sources.length === 0 ? { _tag: "NotConnected" } : { _tag: "Connected", devices },
 	})
 
-/** The server's name as Fleet reports it, else its host. */
-export const serverNameOf = (connection: FleetDevicesConnection): string =>
-	connection.organizationName ?? Str.replace(/^https?:\/\//, "")(connection.baseUrl)
+/** The account name the source reports, else its brand. */
+export const sourceLabelOf = (source: DeviceSource): string => source.label ?? brandOf(source.kind).name
 
-/** Fleet Free reports no CVSS, EPSS or known-exploited flag: their columns are left out. */
-export const hasScores = (vulnerabilities: ReadonlyArray<FleetVulnerabilityFinding>): boolean =>
+/** A policy's key in `expanded`: ids are only unique within one connection. */
+export const policyKeyOf = (policy: DevicePolicyFinding): string =>
+	`${policy.source}:${policy.connectionId}:${policy.policyId}`
+
+/**
+ * The tag a finding shows when more than one source is connected: the brand, or the account name
+ * when the same kind is connected twice. Null with a single source.
+ */
+export const sourceTagOf = (
+	sources: ReadonlyArray<DeviceSource>,
+	finding: Readonly<{ source: DeviceSourceKind; connectionId: string }>,
+): string | null => {
+	if (sources.length < 2) return null
+	const brand = brandOf(finding.source).name
+	const sameKind = Arr.filter(sources, (source) => source.kind === finding.source)
+	if (sameKind.length < 2) return brand
+	return Option.match(
+		Arr.findFirst(sameKind, (source) => source.connectionId === finding.connectionId),
+		{ onNone: () => brand, onSome: sourceLabelOf },
+	)
+}
+
+/** Enrolled devices summed across sources; null when no source has counted yet. */
+export const deviceTotal = (sources: ReadonlyArray<DeviceSource>): number | null => {
+	const counts = Arr.getSomes(Arr.map(sources, (source) => Option.fromNullishOr(source.deviceCount)))
+	return counts.length === 0 ? null : Arr.reduce(counts, 0, (total, count) => total + count)
+}
+
+/** Some sources (Fleet Free) report no CVSS, EPSS or known-exploited flag: their columns are left out. */
+export const hasScores = (vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>): boolean =>
 	Arr.some(vulnerabilities, (vulnerability) => vulnerability.cvssScore !== null)
 
-export const knownExploitedCount = (vulnerabilities: ReadonlyArray<FleetVulnerabilityFinding>): number =>
+/** The kinds whose CVEs carry no score at all, so the page can say why. */
+export const unscoredKinds = (
+	vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>,
+): ReadonlyArray<DeviceSourceKind> =>
+	Arr.filter(
+		Arr.dedupe(Arr.map(vulnerabilities, (vulnerability) => vulnerability.source)),
+		(kind) =>
+			!Arr.some(
+				vulnerabilities,
+				(vulnerability) => vulnerability.source === kind && vulnerability.cvssScore !== null,
+			),
+	)
+
+/** The one source-wide CVE list past the 500 listed, when exactly one source has one. */
+export const moreVulnerabilitiesLink = (
+	sources: ReadonlyArray<DeviceSource>,
+): Readonly<{ href: string; brand: string }> | null => {
+	const linked = Arr.getSomes(
+		Arr.map(sources, (source) =>
+			source.vulnerabilitiesUrl === null
+				? Option.none()
+				: Option.some({ href: source.vulnerabilitiesUrl, brand: brandOf(source.kind).name }),
+		),
+	)
+	return linked.length === 1 ? (linked[0] ?? null) : null
+}
+
+export const knownExploitedCount = (vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>): number =>
 	Arr.filter(vulnerabilities, (vulnerability) => vulnerability.knownExploited === true).length
 
-export const criticalCount = (policies: ReadonlyArray<FleetPolicyFinding>): number =>
+export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length
 
 const PLATFORM_LABEL = new Map([
@@ -62,7 +137,7 @@ const PLATFORM_LABEL = new Map([
 
 const platformName = (platform: string): string => PLATFORM_LABEL.get(platform) ?? Str.capitalize(platform)
 
-/** "macOS, Windows" from Fleet's "darwin,windows"; a policy with no platform runs on all of them. */
+/** "macOS, Windows" from "darwin,windows"; a policy with no platform runs on all of them. */
 export const platformLabel = (platform: string | null): string => {
 	const names = Arr.filter(
 		Arr.map(Str.split(",")(platform ?? ""), (part) => Str.trim(part)),
@@ -77,17 +152,12 @@ const plural = (count: number, one: string, many: string) =>
 export const devicesLabel = (count: number): string => plural(count, "device", "devices")
 
 /** "12 of 240 devices failing". */
-export const failingLabel = (policy: FleetPolicyFinding): string =>
-	`${formatNumber(policy.failingHostCount)} of ${devicesLabel(policy.failingHostCount + policy.passingHostCount)} failing`
+export const failingLabel = (policy: DevicePolicyFinding): string =>
+	`${formatNumber(policy.failingDeviceCount)} of ${devicesLabel(policy.failingDeviceCount + policy.passingDeviceCount)} failing`
 
-/** "openssl 3.0.2", with the version that fixes it when Fleet knows one. */
-export const softwareLabel = (software: FleetVulnerabilityFinding["software"][number]): string =>
-	`${software.name} ${software.version}`
+/** "openssl 3.0.2". */
+export const softwareLabel = (software: VulnerableSoftware): string => `${software.name} ${software.version}`
 
 /** CVSS reads as a severity: 9 and up critical, 7 high, 4 medium, else low. */
 export const cvssTone = (score: number): "crit" | "warn" | "neutral" =>
 	score >= 9 ? "crit" : score >= 7 ? "warn" : "neutral"
-
-/** The CVE list on the Fleet server, for what Maple does not list. */
-export const fleetVulnerabilitiesHref = (connection: FleetDevicesConnection): string =>
-	`${Str.replace(/\/+$/, "")(connection.baseUrl)}/software/vulnerabilities`

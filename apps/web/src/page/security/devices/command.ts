@@ -10,11 +10,11 @@ import { Message } from "./model"
 
 export const ReadDevicesClock = readClock("ReadSecurityDevicesClock", Message.ReadClock)
 
-export const FetchDevices = Command.define("SecurityApiFleetDevices", {
+export const FetchDevices = Command.define("SecurityApiDevices", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchDevices],
 	execute: ({ key }) =>
-		Effect.flatMap(MapleInternalApiClient, (api) => api.fleetSecurity.devices()).pipe(
+		Effect.flatMap(MapleInternalApiClient, (api) => api.deviceSecurity.devices()).pipe(
 			settleTo((result) => Message.CompletedFetchDevices({ key, result })),
 		),
 })

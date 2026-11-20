@@ -16,6 +16,7 @@ import {
 	notConnectedDevices,
 	premiumDevices,
 	syncErrorDevices,
+	twoSourceDevices,
 } from "../security-devices-fixture"
 import { defineShellLab } from "../shell-lab"
 
@@ -25,6 +26,7 @@ import { defineShellLab } from "../shell-lab"
 const STATES = [
 	"premium",
 	"free",
+	"two-sources",
 	"not-connected",
 	"first-sync",
 	"auth-failed",
@@ -44,6 +46,8 @@ const resultOf = (state: State, nowMs: number) => {
 			return Result.succeed(premiumDevices(nowMs))
 		case "free":
 			return Result.succeed(freeDevices(nowMs))
+		case "two-sources":
+			return Result.succeed(twoSourceDevices(nowMs))
 		case "not-connected":
 			return Result.succeed(notConnectedDevices)
 		case "first-sync":

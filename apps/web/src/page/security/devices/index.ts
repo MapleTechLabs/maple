@@ -5,7 +5,7 @@ import { subscriptions } from "./subscription"
 import { init, routeChanged, update } from "./update"
 import { view } from "./view"
 
-/** `/security/devices`: the Fleet server's failing policies and vulnerable software, in the Security frame. */
+/** `/security/devices`: failing policies and vulnerable software from the device sources, in the Security frame. */
 export const page = definePage(
 	"SecurityDevices",
 	{ Model, Message },

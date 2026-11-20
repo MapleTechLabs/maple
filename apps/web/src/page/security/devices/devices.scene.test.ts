@@ -25,6 +25,7 @@ import {
 	premiumDevices,
 	syncErrorDevices,
 	firstSyncFailedDevices,
+	twoSourceDevices,
 } from "../../../lab/security-devices-fixture"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageContext } from "../../contract"
@@ -56,13 +57,13 @@ const answeredWith = (result: Result.Result<Devices, ReturnType<typeof toLoadFai
 const loaded = (devices: Devices) => answeredWith(Result.succeed(devices))
 
 describe("security devices", () => {
-	test("the page reads the Fleet devices once, with the clock", () => {
+	test("the page reads the device findings once, with the clock", () => {
 		expect(Arr.map(init(route, context).commands ?? [], ({ name }) => name)).toEqual(
-			expect.arrayContaining(["SecurityApiFleetDevices", "ReadSecurityDevicesClock"]),
+			expect.arrayContaining(["SecurityApiDevices", "ReadSecurityDevicesClock"]),
 		)
 	})
 
-	test("an org without Fleet is pointed at the Fleet integration card", () => {
+	test("an org with no device source is pointed at the Fleet integration card", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(notConnectedDevices)),
@@ -105,6 +106,8 @@ describe("security devices", () => {
 				"https://fleet.acme.dev/software/vulnerabilities",
 			),
 			expectView(text("Known exploited")).toExist(),
+			// One source: no source tag between the critical badge and the failing count.
+			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabledCritical7 of"),
 		)
 	})
 
@@ -132,6 +135,8 @@ describe("security devices", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(freeDevices(NOW))),
+			// No account name: the brand links to the server.
+			expectView(role("link", { name: "Fleet" })).toHaveAttr("href", "https://fleet.acme.dev"),
 			expectView(role("table", { name: "Vulnerabilities" })).toExist(),
 			expectView(role("columnheader", { name: "CVSS" })).toBeAbsent(),
 			expectView(text("Known exploited")).toBeAbsent(),
@@ -148,6 +153,39 @@ describe("security devices", () => {
 			expectView(text("Fleet rejected the saved token")).toExist(),
 			expectView(role("link", { name: "Save a new token" })).toHaveAttr("href", FLEET_CARD),
 			expectView(role("table", { name: "Failing policies" })).toExist(),
+		)
+	})
+
+	test("with two sources each row names its source and each notice names the source it is about", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(twoSourceDevices(NOW))),
+			expectView(role("link", { name: "Acme" })).toHaveAttr("href", "https://fleet.acme.dev"),
+			expectView(role("link", { name: "Acme EU" })).toHaveAttr("href", "https://fleet-eu.acme.dev"),
+			expectView(text("304")).toExist(),
+			// Both servers are Fleet, so the tag is the account; the larger failing count leads.
+			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabled"),
+			expectView(nth(all.role("row"), 1)).toContainText("CriticalAcme7 of"),
+			expectView(nth(all.role("row"), 2)).toContainText("CriticalAcme EU3 of"),
+			expectView(text("Fleet rejected the saved token for Acme EU")).toExist(),
+			expectView(text("Fleet rejected the saved token for Acme")).toBeAbsent(),
+			expectView(role("link", { name: "Save a new token" })).toHaveAttr("href", FLEET_CARD),
+			// Two lists to point at, so the rest past the 500 is plain text.
+			expectView(text("+37 more not listed")).toExist(),
+			expectView(role("link", { name: "+37 more in Fleet" })).toBeAbsent(),
+		)
+	})
+
+	test("the same policy id on two sources opens only the one clicked", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(twoSourceDevices(NOW))),
+			click(nth(all.role("button", { name: "Show failing devices: Disk encryption enabled" }), 1)),
+			expectView(role("link", { name: "Open the policy in Fleet" })).toHaveAttr(
+				"href",
+				"https://fleet-eu.acme.dev/policies/12",
+			),
+			expectView(role("button", { name: "Show failing devices: Disk encryption enabled" })).toExist(),
 		)
 	})
 

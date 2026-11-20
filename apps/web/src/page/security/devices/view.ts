@@ -1,10 +1,6 @@
-import type {
-	FleetDevicesConnection,
-	FleetPolicyFinding,
-	FleetVulnerabilityFinding,
-} from "@maple/domain/http"
+import type { DevicePolicyFinding, DeviceSource, DeviceVulnerabilityFinding } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -28,7 +24,14 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import type { PageViewInputs } from "../../contract"
 import { expandChevron } from "../../kit/expand-chevron"
-import { integrationConnectCta } from "../../kit/integration-empty"
+import { linkButton } from "@maple/views/ui/button"
+import {
+	integrationEmpty,
+	integrationEmptyCard,
+	integrationEmptyFeatures,
+	integrationEmptyHint,
+	integrationEmptyMedia,
+} from "../../kit/integration-empty"
 import { providerBrand } from "../../kit/providers"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
@@ -36,18 +39,24 @@ import { statRail, statRailItem } from "../../kit/stat-rail"
 import { securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
+	brandOf,
 	criticalCount,
 	cvssTone,
+	DEVICE_SOURCE_BRANDS,
+	type DeviceSourceBrand,
+	deviceTotal,
 	devicesLabel,
 	failingLabel,
-	FLEET_CARD_HREF,
-	fleetVulnerabilitiesHref,
 	hasScores,
 	knownExploitedCount,
+	moreVulnerabilitiesLink,
 	platformLabel,
+	policyKeyOf,
 	screenOf,
-	serverNameOf,
 	softwareLabel,
+	sourceLabelOf,
+	sourceTagOf,
+	unscoredKinds,
 } from "./derive"
 import { type Devices, Message, type Model } from "./model"
 
@@ -58,10 +67,20 @@ const external = (h: H) => [h.Target("_blank"), h.Rel("noopener noreferrer")]
 
 const SCORE_TONE = { crit: "error", warn: "warning", neutral: "foreground" } as const
 
+const connectCard = (h: H, brand: DeviceSourceBrand): Html =>
+	integrationEmptyCard(h, [
+		integrationEmptyMedia(h, providerBrand(brand.provider)),
+		integrationEmptyHint(h, [brand.connectHint]),
+		linkButton(h, { href: brand.connectHref }, [
+			`Connect ${brand.name}`,
+			icon(h, "ArrowRightIcon", { size: 14 }),
+		]),
+	])
+
+/** The on-ramp: what the page shows, then one connect card per device source Maple reads. */
 const notConnected = (h: H): Html =>
-	integrationConnectCta(h, {
-		brand: providerBrand("fleet"),
-		features: [
+	integrationEmpty(h, [
+		integrationEmptyFeatures(h, [
 			{
 				label: "Policies",
 				title: "Failing device policies",
@@ -75,14 +94,12 @@ const notConnected = (h: H): Html =>
 			},
 			{
 				label: "Audit log",
-				title: "Fleet admin activity",
-				description: "Who changed what on your Fleet server, beside Maple's own audit log.",
+				title: "Device admin activity",
+				description: "Who changed what in your device management tool, beside Maple's own audit log.",
 			},
-		],
-		hint: "Read-only. Connect your Fleet server with an API-only Observer token; devices show here within a few minutes.",
-		label: "Connect Fleet",
-		href: FLEET_CARD_HREF,
-	})
+		]),
+		...Arr.map(Rec.values(DEVICE_SOURCE_BRANDS), (brand) => connectCard(h, brand)),
+	])
 
 const forbidden = (h: H): Html =>
 	empty(
@@ -99,6 +116,9 @@ const forbidden = (h: H): Html =>
 		emptyFrameClass("dashed"),
 	)
 
+const PENDING_DESCRIPTION =
+	"Maple reads a source within about five minutes of connecting, then every hour. Failing policies and vulnerable software show here once the first sync is done."
+
 const firstSyncPending = (h: H): Html =>
 	empty(
 		h,
@@ -106,58 +126,102 @@ const firstSyncPending = (h: H): Html =>
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "HistoryIcon")]),
 				emptyTitle(h, ["Waiting for the first sync"]),
-				emptyDescription(h, [
-					"Maple reads your Fleet server within about five minutes of connecting, then every hour. Failing policies and vulnerable software show here once the first sync is done.",
-				]),
+				emptyDescription(h, [PENDING_DESCRIPTION]),
 			]),
 		],
 		emptyFrameClass("dashed"),
 	)
 
-const authFailedNotice = (h: H, hasFindings: boolean): Html =>
-	alert(h, { variant: "crit", size: "sm" }, [
-		icon(h, "LockIcon"),
-		alertTitle(h, ["Fleet rejected the saved token"]),
-		alertDescription(h, [
-			hasFindings
-				? "Syncing is paused, so what shows here is from the last sync. "
-				: "Nothing syncs until a new token is saved. ",
-			textLink(h, { href: FLEET_CARD_HREF }, ["Save a new token"]),
-		]),
+/** With another source already synced, a pending one is a line, not the whole page. */
+const pendingNotice = (h: H, source: DeviceSource): Html =>
+	alert(h, { variant: "info", size: "sm" }, [
+		icon(h, "HistoryIcon"),
+		alertTitle(h, [`Waiting for the first sync of ${sourceLabelOf(source)}`]),
+		alertDescription(h, [PENDING_DESCRIPTION]),
 	])
 
+/** " for Acme EU" when more than one source is connected, so a notice says which one. */
+const whichSource = (source: DeviceSource, many: boolean): string =>
+	many ? ` for ${sourceLabelOf(source)}` : ""
+
+const authFailedNotice = (h: H, source: DeviceSource, many: boolean): Html => {
+	const brand = brandOf(source.kind)
+	return alert(h, { variant: "crit", size: "sm" }, [
+		icon(h, "LockIcon"),
+		alertTitle(h, [`${brand.name} rejected the saved ${brand.credential}${whichSource(source, many)}`]),
+		alertDescription(h, [
+			source.syncedAt !== null
+				? "Syncing is paused, so what shows here is from the last sync. "
+				: `Nothing syncs until a new ${brand.credential} is saved. `,
+			textLink(h, { href: brand.connectHref }, [`Save a new ${brand.credential}`]),
+		]),
+	])
+}
+
 /** A failed sync; before any sync succeeded there is nothing older to show. */
-const syncErrorNotice = (h: H, error: string, hasSynced: boolean): Html =>
-	alert(h, { variant: "warn", size: "sm" }, [
+const syncErrorNotice = (h: H, source: DeviceSource, error: string, many: boolean): Html => {
+	const hasSynced = source.syncedAt !== null
+	return alert(h, { variant: "warn", size: "sm" }, [
 		icon(h, "CircleWarningIcon"),
-		alertTitle(h, [hasSynced ? "The last sync failed" : "The first sync failed"]),
+		alertTitle(h, [
+			`${hasSynced ? "The last sync failed" : "The first sync failed"}${whichSource(source, many)}`,
+		]),
 		alertDescription(h, [
 			hasSynced
 				? `${error} Showing what the last good sync found; Maple tries again within five minutes.`
 				: `${error} Maple tries again within five minutes.`,
 		]),
 	])
+}
 
-/** The server's name, linking to it, and how long ago it was read. */
-const serverLine = (h: H, connection: FleetDevicesConnection, clock: Clock): Html =>
+/** What went wrong with a source's sync, if anything. */
+const sourceNotice = (h: H, source: DeviceSource, many: boolean): Html | null =>
+	source.authFailed
+		? authFailedNotice(h, source, many)
+		: source.error !== null
+			? syncErrorNotice(h, source, source.error, many)
+			: null
+
+/** The source's account, linking to it, its devices and how long ago it was read. */
+const sourceLine = (h: H, source: DeviceSource, clock: Clock): Html =>
 	hstack(h, { gap: "1.5", align: "center", wrap: true }, [
-		typography(h, { size: "xs", tone: "muted" }, ["Fleet server"]),
+		// With no account name the brand is the link; with one, the brand leads it.
+		...(source.label === null
+			? []
+			: [typography(h, { size: "xs", tone: "muted" }, [brandOf(source.kind).name])]),
 		typography(h, { size: "xs", weight: "medium" }, [
-			textLink(h, { href: connection.baseUrl, tone: "inherit", attributes: external(h) }, [
-				serverNameOf(connection),
+			textLink(h, { href: source.url, tone: "inherit", attributes: external(h) }, [
+				sourceLabelOf(source),
 			]),
 		]),
-		...(connection.syncedAt === null
+		...(source.deviceCount === null
+			? []
+			: [typography(h, { size: "xs", tone: "muted" }, [`· ${devicesLabel(source.deviceCount)}`])]),
+		...(source.syncedAt === null
 			? []
 			: [
 					typography(h, { size: "xs", tone: "muted" }, [
 						"· ",
-						relativeTime(h, { value: connection.syncedAt, ...clock, prefix: "synced" }),
+						relativeTime(h, { value: source.syncedAt, ...clock, prefix: "synced" }),
 					]),
 				]),
 	])
 
-const summary = (h: H, connection: FleetDevicesConnection, devices: Devices): Html => {
+const sourceLines = (h: H, sources: ReadonlyArray<DeviceSource>, clock: Clock): Html =>
+	vstack(
+		h,
+		{ gap: "1" },
+		Arr.map(sources, (source) =>
+			h.div([h.Key(`${source.kind}:${source.connectionId}`)], [sourceLine(h, source, clock)]),
+		),
+	)
+
+/** The source a finding came from, shown only when more than one is connected. */
+const sourceTag = (h: H, tag: string | null): ReadonlyArray<Html> =>
+	tag === null ? [] : [badge(h, { variant: "meta", size: "sm" }, [tag])]
+
+const summary = (h: H, devices: Devices): Html => {
+	const enrolled = deviceTotal(devices.sources)
 	const scored = hasScores(devices.vulnerabilities)
 	const critical = criticalCount(devices.policies)
 	const exploited = knownExploitedCount(devices.vulnerabilities)
@@ -165,7 +229,7 @@ const summary = (h: H, connection: FleetDevicesConnection, devices: Devices): Ht
 	return statRail(h, { columns: scored ? 5 : 4, className: "grid-cols-2" }, [
 		statRailItem(h, {
 			eyebrow: "Enrolled devices",
-			value: connection.hostCount === null ? "Not counted" : formatNumber(connection.hostCount),
+			value: enrolled === null ? "Not counted" : formatNumber(enrolled),
 			compact: true,
 		}),
 		statRailItem(h, {
@@ -203,7 +267,7 @@ const summary = (h: H, connection: FleetDevicesConnection, devices: Devices): Ht
 
 const POLICY_COLUMNS = 4
 
-const policyDetail = (h: H, policy: FleetPolicyFinding): Html =>
+const policyDetail = (h: H, policy: DevicePolicyFinding): Html =>
 	vstack(h, { gap: "3", className: "px-4 py-3 sm:pl-9" }, [
 		...(policy.description === null
 			? []
@@ -220,12 +284,14 @@ const policyDetail = (h: H, policy: FleetPolicyFinding): Html =>
 				]),
 		vstack(h, { gap: "1.5" }, [
 			eyebrow(h, { variant: "label" }, [
-				policy.failingHosts.length < policy.failingHostCount
-					? `Failing devices, ${policy.failingHosts.length} of ${formatNumber(policy.failingHostCount)}`
+				policy.failingDevices.length < policy.failingDeviceCount
+					? `Failing devices, ${policy.failingDevices.length} of ${formatNumber(policy.failingDeviceCount)}`
 					: "Failing devices",
 			]),
-			policy.failingHosts.length === 0
-				? typography(h, { size: "xs", tone: "muted" }, ["Fleet listed none by name."])
+			policy.failingDevices.length === 0
+				? typography(h, { size: "xs", tone: "muted" }, [
+						`${brandOf(policy.source).name} listed none by name.`,
+					])
 				: hstack(
 						h,
 						{
@@ -234,9 +300,9 @@ const policyDetail = (h: H, policy: FleetPolicyFinding): Html =>
 							as: "ul",
 							attributes: [h.AriaLabel(`Devices failing ${policy.name}`)],
 						},
-						Arr.map(policy.failingHosts, (device) =>
+						Arr.map(policy.failingDevices, (device) =>
 							h.li(
-								[h.Key(String(device.id))],
+								[h.Key(device.id)],
 								[
 									typography(h, { size: "xs" }, [
 										textLink(h, { href: device.url, attributes: external(h) }, [
@@ -256,12 +322,20 @@ const policyDetail = (h: H, policy: FleetPolicyFinding): Html =>
 					),
 		]),
 		typography(h, { size: "xs" }, [
-			textLink(h, { href: policy.url, attributes: external(h) }, ["Open the policy in Fleet"]),
+			textLink(h, { href: policy.url, attributes: external(h) }, [
+				`Open the policy in ${brandOf(policy.source).name}`,
+			]),
 		]),
 	])
 
-const policyRows = (h: H, policy: FleetPolicyFinding, isExpanded: boolean): ReadonlyArray<Html> => {
-	const detailId = `fleet-policy-${policy.policyId}`
+const policyRows = (
+	h: H,
+	policy: DevicePolicyFinding,
+	isExpanded: boolean,
+	tag: string | null,
+): ReadonlyArray<Html> => {
+	const key = policyKeyOf(policy)
+	const detailId = `device-policy-${policy.connectionId}-${policy.policyId}`
 	return [
 		tableRow(
 			h,
@@ -272,7 +346,7 @@ const policyRows = (h: H, policy: FleetPolicyFinding, isExpanded: boolean): Read
 						pressable(
 							h,
 							{
-								onClick: Message.ToggledPolicy({ policyId: policy.policyId }),
+								onClick: Message.ToggledPolicy({ key }),
 								label: `${isExpanded ? "Hide" : "Show"} failing devices: ${policy.name}`,
 								className:
 									"focus-visible:ring-ring flex min-h-10 w-full items-center gap-2 px-2.5 py-2 text-left focus-visible:ring-1 focus-visible:outline-none focus-visible:ring-inset",
@@ -288,6 +362,7 @@ const policyRows = (h: H, policy: FleetPolicyFinding, isExpanded: boolean): Read
 										...(policy.critical
 											? [badge(h, { variant: "crit", size: "sm" }, ["Critical"])]
 											: []),
+										...sourceTag(h, tag),
 									]),
 									// A phone has no Failing or Platform column: both ride under the name.
 									typography(h, { size: "2xs", tone: "muted", className: "sm:hidden" }, [
@@ -309,14 +384,16 @@ const policyRows = (h: H, policy: FleetPolicyFinding, isExpanded: boolean): Read
 					h,
 					[
 						typography(h, { size: "xs" }, [
-							textLink(h, { href: policy.url, attributes: external(h) }, ["Open in Fleet"]),
+							textLink(h, { href: policy.url, attributes: external(h) }, [
+								`Open in ${brandOf(policy.source).name}`,
+							]),
 						]),
 					],
 					`${WIDE_COLUMN} text-right`,
 				),
 			],
 			isExpanded ? "bg-surface-faint" : undefined,
-			[h.Key(String(policy.policyId))],
+			[h.Key(key)],
 		),
 		...(isExpanded
 			? [
@@ -328,7 +405,7 @@ const policyRows = (h: H, policy: FleetPolicyFinding, isExpanded: boolean): Read
 							]),
 						],
 						"bg-surface-faint hover:bg-surface-faint active:bg-surface-faint",
-						[h.Key(`${policy.policyId}:detail`), h.Id(detailId)],
+						[h.Key(`${key}:detail`), h.Id(detailId)],
 					),
 				]
 			: []),
@@ -348,15 +425,16 @@ const quietEmpty = (h: H, title: string, description: string): Html =>
 		"py-10",
 	)
 
-const policiesSection = (h: H, model: Model, policies: ReadonlyArray<FleetPolicyFinding>): Html =>
-	vstack(h, { gap: "3" }, [
+const policiesSection = (h: H, model: Model, devices: Devices): Html => {
+	const { policies, sources } = devices
+	return vstack(h, { gap: "3" }, [
 		sectionHeading(h, { title: "Failing policies", count: formatNumber(policies.length) }),
 		panel(h, { className: "overflow-hidden" }, [
 			policies.length === 0
 				? quietEmpty(
 						h,
 						"No failing policies",
-						"Every device passes every global policy on your Fleet server.",
+						"Every enrolled device passes every policy your device sources check.",
 					)
 				: table(h, { ariaLabel: "Failing policies" }, [
 						tableHeader(h, [
@@ -370,14 +448,20 @@ const policiesSection = (h: H, model: Model, policies: ReadonlyArray<FleetPolicy
 						tableBody(
 							h,
 							Arr.flatMap(policies, (policy) =>
-								policyRows(h, policy, Arr.contains(model.expanded, policy.policyId)),
+								policyRows(
+									h,
+									policy,
+									Arr.contains(model.expanded, policyKeyOf(policy)),
+									sourceTagOf(sources, policy),
+								),
 							),
 						),
 					]),
 		]),
 	])
+}
 
-const softwareLines = (h: H, vulnerability: FleetVulnerabilityFinding): Html =>
+const softwareLines = (h: H, vulnerability: DeviceVulnerabilityFinding): Html =>
 	vstack(
 		h,
 		{ gap: "0.5", as: "ul", attributes: [h.AriaLabel(`Software affected by ${vulnerability.cve}`)] },
@@ -388,7 +472,7 @@ const softwareLines = (h: H, vulnerability: FleetVulnerabilityFinding): Html =>
 					typography(h, { size: "xs" }, [
 						typography(h, { mono: true }, [softwareLabel(software)]),
 						typography(h, { tone: "muted" }, [
-							` · ${devicesLabel(software.hostCount)}`,
+							` · ${devicesLabel(software.deviceCount)}`,
 							...(software.resolvedInVersion === null
 								? []
 								: [` · fixed in ${software.resolvedInVersion}`]),
@@ -399,7 +483,12 @@ const softwareLines = (h: H, vulnerability: FleetVulnerabilityFinding): Html =>
 		),
 	)
 
-const vulnerabilityRow = (h: H, vulnerability: FleetVulnerabilityFinding, scored: boolean): Html =>
+const vulnerabilityRow = (
+	h: H,
+	vulnerability: DeviceVulnerabilityFinding,
+	scored: boolean,
+	tag: string | null,
+): Html =>
 	tableRow(
 		h,
 		[
@@ -418,6 +507,7 @@ const vulnerabilityRow = (h: H, vulnerability: FleetVulnerabilityFinding, scored
 							...(vulnerability.knownExploited === true
 								? [badge(h, { variant: "crit", size: "sm" }, ["Known exploited"])]
 								: []),
+							...sourceTag(h, tag),
 						]),
 						// A phone has no Devices or Software column: the software rides under the CVE.
 						h.div([h.Class("sm:hidden")], [softwareLines(h, vulnerability)]),
@@ -462,18 +552,32 @@ const vulnerabilityRow = (h: H, vulnerability: FleetVulnerabilityFinding, scored
 				: []),
 			tableCell(
 				h,
-				[typography(h, { size: "xs", numeric: true }, [formatNumber(vulnerability.hostCount)])],
+				[typography(h, { size: "xs", numeric: true }, [formatNumber(vulnerability.deviceCount)])],
 				`${WIDE_COLUMN} align-top`,
 			),
 			tableCell(h, [softwareLines(h, vulnerability)], `${WIDE_COLUMN} whitespace-normal align-top`),
 		],
 		undefined,
-		[h.Key(vulnerability.cve)],
+		[h.Key(`${vulnerability.connectionId}:${vulnerability.cve}`)],
 	)
 
-const vulnerabilitiesSection = (h: H, connection: FleetDevicesConnection, devices: Devices): Html => {
-	const { vulnerabilities, moreVulnerabilities } = devices
+/** Why some or all CVEs carry no score, naming the sources that give none. */
+const noScoresNote = (
+	vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>,
+	scored: boolean,
+): string | null => {
+	const notes = Arr.map(unscoredKinds(vulnerabilities), (kind) => brandOf(kind).noScoresNote)
+	if (notes.length === 0) return null
+	return scored
+		? `${Arr.join(notes, "; ")}, so their CVEs show no score.`
+		: `${Arr.join(notes, "; ")}, so CVEs are ordered by how many devices they affect.`
+}
+
+const vulnerabilitiesSection = (h: H, devices: Devices): Html => {
+	const { vulnerabilities, moreVulnerabilities, sources } = devices
 	const scored = hasScores(vulnerabilities)
+	const note = noScoresNote(vulnerabilities, scored)
+	const more = moreVulnerabilitiesLink(sources)
 	return vstack(h, { gap: "3" }, [
 		sectionHeading(h, {
 			title: "Vulnerable software",
@@ -484,7 +588,7 @@ const vulnerabilitiesSection = (h: H, connection: FleetDevicesConnection, device
 				? quietEmpty(
 						h,
 						"No known vulnerable software",
-						"Fleet reports no CVE in the software on your devices.",
+						"Your device sources report no CVE in the software on your devices.",
 					)
 				: table(h, { ariaLabel: "Vulnerabilities" }, [
 						tableHeader(h, [
@@ -498,51 +602,59 @@ const vulnerabilitiesSection = (h: H, connection: FleetDevicesConnection, device
 						tableBody(
 							h,
 							Arr.map(vulnerabilities, (vulnerability) =>
-								vulnerabilityRow(h, vulnerability, scored),
+								vulnerabilityRow(
+									h,
+									vulnerability,
+									scored,
+									sourceTagOf(sources, vulnerability),
+								),
 							),
 						),
 					]),
 		]),
-		// Past the 500 listed, Fleet's own list has the rest.
+		// Past the 500 listed, the source's own list has the rest when there is just one to point at.
 		...(moreVulnerabilities > 0
 			? [
 					typography(h, { size: "xs", as: "p" }, [
-						textLink(h, { href: fleetVulnerabilitiesHref(connection), attributes: external(h) }, [
-							`+${formatNumber(moreVulnerabilities)} more in Fleet`,
-						]),
+						more === null
+							? typography(h, { tone: "muted" }, [
+									`+${formatNumber(moreVulnerabilities)} more not listed`,
+								])
+							: textLink(h, { href: more.href, attributes: external(h) }, [
+									`+${formatNumber(moreVulnerabilities)} more in ${more.brand}`,
+								]),
 					]),
 				]
 			: []),
-		...(scored || vulnerabilities.length === 0
+		...(note === null || vulnerabilities.length === 0
 			? []
-			: [
-					typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						"CVSS scores and known exploited flags need Fleet Premium, so CVEs are ordered by how many devices they affect.",
-					]),
-				]),
+			: [typography(h, { size: "xs", tone: "muted", as: "p" }, [note])]),
 	])
 }
 
-const connectedBody = (
-	h: H,
-	model: Model,
-	connection: FleetDevicesConnection,
-	devices: Devices,
-	clock: Clock,
-): ReadonlyArray<Html> => {
-	const hasSynced = connection.syncedAt !== null
-	const notice = connection.authFailed
-		? authFailedNotice(h, hasSynced)
-		: connection.error !== null
-			? syncErrorNotice(h, connection.error, hasSynced)
-			: null
-	if (!hasSynced)
-		return [serverLine(h, connection, clock), ...(notice === null ? [firstSyncPending(h)] : [notice])]
+const connectedBody = (h: H, model: Model, devices: Devices, clock: Clock): ReadonlyArray<Html> => {
+	const { sources } = devices
+	const many = sources.length > 1
+	const notices = Arr.getSomes(
+		Arr.map(sources, (source) => Option.fromNullishOr(sourceNotice(h, source, many))),
+	)
+	// Unsynced sources with no error to show are still on their first read.
+	const waiting = Arr.filter(
+		sources,
+		(source) => source.syncedAt === null && !source.authFailed && source.error === null,
+	)
+	if (!Arr.some(sources, (source) => source.syncedAt !== null))
+		return [
+			sourceLines(h, sources, clock),
+			...notices,
+			...(waiting.length > 0 ? [firstSyncPending(h)] : []),
+		]
 	return [
-		...(notice === null ? [] : [notice]),
-		vstack(h, { gap: "3" }, [serverLine(h, connection, clock), summary(h, connection, devices)]),
-		policiesSection(h, model, devices.policies),
-		vulnerabilitiesSection(h, connection, devices),
+		...notices,
+		...Arr.map(waiting, (source) => pendingNotice(h, source)),
+		vstack(h, { gap: "3" }, [sourceLines(h, sources, clock), summary(h, devices)]),
+		policiesSection(h, model, devices),
+		vulnerabilitiesSection(h, devices),
 	]
 }
 
@@ -567,6 +679,6 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		case "NotConnected":
 			return frame([notConnected(h)])
 		case "Connected":
-			return frame(connectedBody(h, model, screen.connection, screen.devices, clock))
+			return frame(connectedBody(h, model, screen.devices, clock))
 	}
 })

@@ -16,7 +16,7 @@ const readDevices = (model: Model, context: PageContext, mode: Keyed.ReadMode): 
 		model,
 		model.devices,
 		(devices) => ({ devices }),
-		requestKey(context.orgId, "fleetSecurity.devices", {}),
+		requestKey(context.orgId, "deviceSecurity.devices", {}),
 		mode,
 		(key) => FetchDevices({ key }),
 	)
@@ -39,12 +39,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			chain({ model, commands: [ReadDevicesClock()] }, (next) =>
 				readDevices(next, context, "Supersede"),
 			),
-		ToggledPolicy: ({ policyId }) => ({
+		ToggledPolicy: ({ key }) => ({
 			model: {
 				...model,
-				expanded: Arr.contains(model.expanded, policyId)
-					? Arr.filter(model.expanded, (id) => id !== policyId)
-					: [...model.expanded, policyId],
+				expanded: Arr.contains(model.expanded, key)
+					? Arr.filter(model.expanded, (open) => open !== key)
+					: [...model.expanded, key],
 			},
 		}),
 	})
