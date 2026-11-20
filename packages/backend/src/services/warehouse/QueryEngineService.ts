@@ -1,5 +1,5 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/domain/query-engine"
 import {
@@ -121,7 +121,7 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 									result: {
 										kind: "attributeValues",
 										source: "metrics",
-										data: values.map((value) => ({ value, count: 0 })),
+										data: Arr.map(values, (value) => ({ value, count: 0 })),
 									},
 								}),
 						),

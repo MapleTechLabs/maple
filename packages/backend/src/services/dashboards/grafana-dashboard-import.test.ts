@@ -614,7 +614,9 @@ describe("guesses the importer says out loud", () => {
 			const { warnings } = yield* convertGrafanaDashboardToPortable(
 				board([note], [{ name: "job", type: "query", query: 'label_values(up{env="prod"}, job)' }]),
 			)
-			expect(Arr.some(warnings, Str.includes('its selector "up{env="prod"}" was not imported'))).toBe(true)
+			expect(Arr.some(warnings, Str.includes('its selector "up{env="prod"}" was not imported'))).toBe(
+				true,
+			)
 			const bare = yield* convertGrafanaDashboardToPortable(
 				board([note], [{ name: "job", type: "query", query: "label_values(job)" }]),
 			)
@@ -668,7 +670,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 	it.effect("does not take $__orgFilter in a comment or a literal as the scope", () =>
 		Effect.gen(function* () {
 			expect(
-				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) -- add $__orgFilter"),
+				yield* importSql(
+					"SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) -- add $__orgFilter",
+				),
 			).toBeNull()
 			expect(
 				yield* importSql(
@@ -677,7 +681,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 			).toBeNull()
 			// An OrgId in a comment does not count as the predicate either.
 			expect(
-				yield* importSql("SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) /* OrgId */"),
+				yield* importSql(
+					"SELECT count() AS value FROM logs WHERE $__timeFilter(Timestamp) /* OrgId */",
+				),
 			).toBeNull()
 		}),
 	)
@@ -685,7 +691,9 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 	it.effect("needs $__orgFilter in every SELECT of a UNION, not just one", () =>
 		Effect.gen(function* () {
 			const scoped = "SELECT count() FROM a WHERE $__timeFilter(ts) AND $__orgFilter"
-			expect(yield* importSql(`${scoped} UNION ALL SELECT count() FROM b WHERE $__timeFilter(ts)`)).toBeNull()
+			expect(
+				yield* importSql(`${scoped} UNION ALL SELECT count() FROM b WHERE $__timeFilter(ts)`),
+			).toBeNull()
 			expect(yield* importSql(`${scoped} UNION ALL ${scoped}`)).toBe(`${scoped} UNION ALL ${scoped}`)
 		}),
 	)
@@ -694,13 +702,21 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 		Effect.gen(function* () {
 			const scoped = "SELECT 1 FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 			const open = "SELECT 1 FROM logs WHERE $__timeFilter(Timestamp)"
-			for (const op of ["EXCEPT /*c*/ ", "EXCEPT -- c\n", "EXCEPT(", "EXCEPT ALL(", "INTERSECT DISTINCT /* x */ ("]) {
+			for (const op of [
+				"EXCEPT /*c*/ ",
+				"EXCEPT -- c\n",
+				"EXCEPT(",
+				"EXCEPT ALL(",
+				"INTERSECT DISTINCT /* x */ (",
+			]) {
 				const close = Str.endsWith("(")(op) ? ")" : ""
 				expect(yield* importSql(`${scoped} ${op}${open}${close}`), op).toBeNull()
 			}
 			// Column exclusion is not a set operation.
 			expect(
-				yield* importSql("SELECT * EXCEPT (Body) FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+				yield* importSql(
+					"SELECT * EXCEPT (Body) FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				),
 			).not.toBeNull()
 		}),
 	)
@@ -717,15 +733,21 @@ describe("ClickHouse org scoping reads code, not comments or literals", () => {
 				yield* importSql(
 					"SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE OrgId = 'a' AND $__timeFilter(Timestamp)",
 				),
-			).toBe("SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter")
+			).toBe(
+				"SELECT tag FROM logs ARRAY JOIN Tags AS tag WHERE (OrgId = 'a' AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 		}),
 	)
 
 	it.effect("does not read a column named like a clause as that clause", () =>
 		Effect.gen(function* () {
 			expect(
-				yield* importSql("SELECT format, count() FROM logs WHERE OrgId = 1 AND $__timeFilter(Timestamp)"),
-			).toBe("SELECT format, count() FROM logs WHERE (OrgId = 1 AND $__timeFilter(Timestamp)) AND $__orgFilter")
+				yield* importSql(
+					"SELECT format, count() FROM logs WHERE OrgId = 1 AND $__timeFilter(Timestamp)",
+				),
+			).toBe(
+				"SELECT format, count() FROM logs WHERE (OrgId = 1 AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 			expect(
 				yield* importSql(
 					"SELECT count() FROM logs WHERE OrgId = 1 AND limit IN (1, 2) AND $__timeFilter(Timestamp) LIMIT 5",
@@ -801,7 +823,10 @@ const ampDashboard = {
 			gridPos: { x: 0, y: 0, w: 12, h: 8 },
 			datasource: { type: "grafana-amazonprometheus-datasource", uid: "amp" },
 			targets: [{ refId: "A", expr: "sum by (http_route) (rate(http_server_requests_total[5m]))" }],
-			transformations: [{ id: "organize", options: {} }, { id: "reduce", disabled: true }],
+			transformations: [
+				{ id: "organize", options: {} },
+				{ id: "reduce", disabled: true },
+			],
 		},
 		{
 			type: "table",
@@ -809,9 +834,17 @@ const ampDashboard = {
 			gridPos: { x: 12, y: 0, w: 12, h: 8 },
 			datasource: { type: "victoriametrics-metrics-datasource", uid: "vm" },
 			targets: [
-				{ refId: "A", expr: "topk(5, sum by (handler) (rate(http_requests_total[1h])))", instant: true, format: "table" },
+				{
+					refId: "A",
+					expr: "topk(5, sum by (handler) (rate(http_requests_total[1h])))",
+					instant: true,
+					format: "table",
+				},
 			],
-			fieldConfig: { defaults: {}, overrides: [{ matcher: { id: "byName", options: "Value" }, properties: [] }] },
+			fieldConfig: {
+				defaults: {},
+				overrides: [{ matcher: { id: "byName", options: "Value" }, properties: [] }],
+			},
 		},
 		{
 			type: "timeseries",
@@ -827,7 +860,9 @@ describe("PromQL datasources, discovery variables and what does not carry over",
 	it.effect("backs label_values with PromQL label discovery, keeping literal filters", () =>
 		Effect.gen(function* () {
 			const converted = yield* convertGrafanaDashboardToPortable(ampDashboard)
-			expect(Arr.map(converted.dashboard.variables ?? [], (v) => (v.type === "query" ? v.source : v.type))).toEqual([
+			expect(
+				Arr.map(converted.dashboard.variables ?? [], (v) => (v.type === "query" ? v.source : v.type)),
+			).toEqual([
 				{ kind: "promql", label: "handler", match: "http_request_duration_seconds_bucket" },
 				{ kind: "promql", label: "http_route", match: 'http_server_requests_total{env="prod"}' },
 				{ kind: "promql", label: "namespace" },
@@ -850,7 +885,9 @@ describe("PromQL datasources, discovery variables and what does not carry over",
 			expect(dataSourcePromql(widgetNamed(converted, "Top handlers").dataSource)?.query).toBe(
 				"topk(5, sum by (handler) (rate(http_requests_total[1h])))",
 			)
-			const datasourceNotes = Arr.filter(converted.warnings, (w) => Str.includes("were imported as PromQL")(w))
+			const datasourceNotes = Arr.filter(converted.warnings, (w) =>
+				Str.includes("were imported as PromQL")(w),
+			)
 			expect(datasourceNotes).toEqual([
 				"Queries on the grafana-amazonprometheus-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",
 				"Queries on the victoriametrics-metrics-datasource datasource were imported as PromQL over Maple's metrics; check that they read the same series.",

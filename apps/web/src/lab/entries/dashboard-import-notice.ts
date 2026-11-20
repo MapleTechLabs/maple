@@ -35,7 +35,7 @@ const DOCUMENT = Schema.decodeSync(DashboardDocument)({
 			'Variable "route" lists values without the filters in "http_server_requests_total{env="prod", job=~"$job"}" that use other variables; Maple variables do not narrow each other yet.',
 			'Variable "route" filters its values with the regex /api/.*/ in Grafana; Maple lists every value.',
 			'Panel "Requests by route" applies Grafana transformations (organize); Maple shows the query result untransformed.',
-			"Panel \"Top handlers\" has 1 field override in Grafana; Maple applies the panel's defaults to every series.",
+			'Panel "Top handlers" has 1 field override in Grafana; Maple applies the panel\'s defaults to every series.',
 		],
 	},
 })

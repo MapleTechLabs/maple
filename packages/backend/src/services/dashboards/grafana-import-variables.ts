@@ -79,16 +79,26 @@ function matchSelector(selector: string, name: string, warnings: string[]): stri
 	const parts = /^\s*([A-Za-z_:][A-Za-z0-9_:]*)?\s*(?:\{(.*)\})?\s*$/su.exec(selector)
 	if (parts === null) return undefined
 	const [, metric = "", body = ""] = parts
-	const matchers = Arr.map([...body.matchAll(MATCHER)], (m) => ({ text: `${m[1]}${m[2]}${m[3]}`, value: m[3] ?? "" }))
-	const parsed = Arr.join(Arr.map(matchers, (m) => m.text), "")
-	if (Str.replace(/[\s,]/gu, "")(body).length !== Str.replace(/[\s,]/gu, "")(parsed).length) return undefined
+	const matchers = Arr.map([...Str.matchAll(MATCHER)(body)], (m) => ({
+		text: `${m[1]}${m[2]}${m[3]}`,
+		value: m[3] ?? "",
+	}))
+	const parsed = Arr.join(
+		Arr.map(matchers, (m) => m.text),
+		"",
+	)
+	if (Str.replace(/[\s,]/gu, "")(body).length !== Str.replace(/[\s,]/gu, "")(parsed).length)
+		return undefined
 	const kept = Arr.filter(matchers, (m) => !Str.includes("$")(m.value))
 	if (kept.length < matchers.length) {
 		warnings.push(
 			`Variable "${name}" lists values without the filters in "${selector}" that use other variables; Maple variables do not narrow each other yet.`,
 		)
 	}
-	const filters = Arr.join(Arr.map(kept, (m) => m.text), ",")
+	const filters = Arr.join(
+		Arr.map(kept, (m) => m.text),
+		",",
+	)
 	if (metric === "" && filters === "") return undefined
 	return filters === "" ? metric : `${metric}{${filters}}`
 }
@@ -112,7 +122,9 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 	if (selector === undefined || Str.trim(selector) === "") return { kind: "promql", label }
 	const selectorMatch = matchSelector(selector, name, warnings)
 	if (selectorMatch === undefined) {
-		warnings.push(`Variable "${name}" lists every ${label}; its selector "${selector}" could not be read.`)
+		warnings.push(
+			`Variable "${name}" lists every ${label}; its selector "${selector}" could not be read.`,
+		)
 		return { kind: "promql", label }
 	}
 	return { kind: "promql", label, match: selectorMatch }
@@ -130,12 +142,16 @@ export function speaksPromql(type: string | undefined, warnings: string[]): bool
 function unsupportedOptionWarnings(variable: UnknownRecord, name: string, warnings: string[]) {
 	const regex = asString(variable.regex)
 	if (regex !== undefined && Str.trim(regex) !== "") {
-		warnings.push(`Variable "${name}" filters its values with the regex ${regex} in Grafana; Maple lists every value.`)
+		warnings.push(
+			`Variable "${name}" filters its values with the regex ${regex} in Grafana; Maple lists every value.`,
+		)
 	}
 	// 0 is unsorted and 1 alphabetical, which is the order Maple lists values in.
 	const sort = typeof variable.sort === "number" ? variable.sort : 0
 	if (sort > 1) {
-		warnings.push(`Variable "${name}" has a custom sort order in Grafana; Maple lists its values alphabetically.`)
+		warnings.push(
+			`Variable "${name}" has a custom sort order in Grafana; Maple lists its values alphabetically.`,
+		)
 	}
 }
 

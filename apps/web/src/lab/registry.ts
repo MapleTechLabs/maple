@@ -241,7 +241,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/dashboard-import-notice",
 		title: "Dashboard import notice",
 		description:
-			"The \"Imported from Grafana: N items need attention\" notice on an imported board, collapsed or expanded (`?state=collapsed|expanded`).",
+			'The "Imported from Grafana: N items need attention" notice on an imported board, collapsed or expanded (`?state=collapsed|expanded`).',
 		kind: "lab",
 		session: "none",
 	},

@@ -2220,6 +2220,28 @@
                             "attribute_key"
                           ],
                           "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "promql"
+                              ],
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "match": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "label"
+                          ],
+                          "type": "object"
                         }
                       ]
                     },

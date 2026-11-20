@@ -319,7 +319,9 @@ function panelOptionWarnings(
 	warnings: string[],
 ) {
 	if (asString(panel.type) === "barchart") {
-		warnings.push(`Bar chart "${title}" groups by a field in Grafana; Maple draws its series as bars over time.`)
+		warnings.push(
+			`Bar chart "${title}" groups by a field in Grafana; Maple draws its series as bars over time.`,
+		)
 	}
 	const transformations = Arr.flatMap(asArray(panel.transformations), (item) => {
 		const record = asRecord(item)
@@ -339,10 +341,14 @@ function panelOptionWarnings(
 	// Stat, gauge, table and pie rows take each series' latest value, which is what an instant
 	// query returns; only a chart draws differently.
 	if (first.instant === true && first.range !== true && (target === "line" || target === "bar")) {
-		warnings.push(`Panel "${title}" runs an instant query in Grafana; Maple charts it over the time range.`)
+		warnings.push(
+			`Panel "${title}" runs an instant query in Grafana; Maple charts it over the time range.`,
+		)
 	}
 	if (asString(first.format) === "table" && target !== "table") {
-		warnings.push(`Panel "${title}" formats its query as a table in Grafana; Maple draws it as a ${target}.`)
+		warnings.push(
+			`Panel "${title}" formats its query as a table in Grafana; Maple draws it as a ${target}.`,
+		)
 	}
 }
 

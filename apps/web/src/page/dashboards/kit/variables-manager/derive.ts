@@ -149,7 +149,9 @@ export const withSourceValue = (variable: QueryVariable, value: string): Variabl
 			source: {
 				kind: "promql",
 				label: attributeKey,
-				...(source.kind === "promql" && source.match !== undefined ? { match: source.match } : undefined),
+				...(source.kind === "promql" && source.match !== undefined
+					? { match: source.match }
+					: undefined),
 			},
 		}
 	if (kind === "metric" && (detail === "metric" || detail === "resource"))

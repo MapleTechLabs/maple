@@ -27,15 +27,24 @@ export const importReportNotice = (
 	return [
 		alert(h, { variant: "warn", size: "sm", role: "status", className: "mb-4" }, [
 			icon(h, "CircleWarningIcon"),
-			alertTitle(h, [`Imported from ${SOURCE_LABEL[report.source]}: ${countLabel(count, "item")} ${needs} attention`]),
+			alertTitle(h, [
+				`Imported from ${SOURCE_LABEL[report.source]}: ${countLabel(count, "item")} ${needs} attention`,
+			]),
 			...(options.isOpen
 				? [
 						alertDescription(h, [
 							dividedList(
 								h,
-								{ as: "ul", className: "mt-1 max-h-72 overflow-y-auto", attributes: [h.Id(listId)] },
+								{
+									as: "ul",
+									className: "mt-1 max-h-72 overflow-y-auto",
+									attributes: [h.Id(listId)],
+								},
 								Arr.map(report.items, (item) =>
-									h.li([h.Class("py-2")], [typography(h, { size: "sm", tone: "muted" }, [item])]),
+									h.li(
+										[h.Class("py-2")],
+										[typography(h, { size: "sm", tone: "muted" }, [item])],
+									),
 								),
 							),
 						]),
