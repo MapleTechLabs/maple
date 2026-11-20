@@ -29,6 +29,15 @@ export const DashboardQueryVariableFacet = Schema.Literals([
 ])
 export type DashboardQueryVariableFacet = typeof DashboardQueryVariableFacet.Type
 
+/** A Prometheus label a variable lists values of; the discovery query caps it at 256 characters. */
+export const PromqlVariableLabel = Schema.String.check(
+	Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/u),
+	Schema.isMaxLength(256),
+)
+
+/** The series selector narrowing that label's values. */
+export const PromqlVariableMatch = Schema.String.check(Schema.isMaxLength(4096))
+
 export const DashboardQueryVariableSourceSchema = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("facet"),
@@ -53,8 +62,8 @@ export const DashboardQueryVariableSourceSchema = Schema.Union([
 	// (`label/<label>/values?match[]=<match>`). Imported Grafana `label_values`.
 	Schema.Struct({
 		kind: Schema.Literal("promql"),
-		label: Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/u)),
-		match: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4096))),
+		label: PromqlVariableLabel,
+		match: Schema.optionalKey(PromqlVariableMatch),
 	}),
 ])
 export type DashboardQueryVariableSource = typeof DashboardQueryVariableSourceSchema.Type

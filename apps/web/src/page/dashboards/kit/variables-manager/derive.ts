@@ -1,4 +1,4 @@
-import { DashboardVariableName } from "@maple/domain/http"
+import { DashboardVariableName, PromqlVariableLabel, PromqlVariableMatch } from "@maple/domain/http"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
 import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Variable } from "./model"
@@ -114,8 +114,14 @@ export const draftError = (
 		return "Names start with a letter, then letters, digits, or underscores."
 	if (Arr.some(drafts, (other, i) => i !== index && other.name === draft.name))
 		return `Another variable is already named "${draft.name}".`
-	if (draft.type === "query" && draft.source.kind === "promql" && !PROM_LABEL.test(draft.source.label))
-		return "Name the Prometheus label to list values for."
+	if (draft.type === "query" && draft.source.kind === "promql") {
+		const { label, match } = draft.source
+		if (label === "") return "Name the Prometheus label to list values for."
+		if (!isPromqlLabel(label))
+			return "Labels start with a letter or underscore, then letters, digits or underscores, up to 256 characters."
+		if (match !== undefined && !isPromqlMatch(match))
+			return "Keep the series selector to 4096 characters."
+	}
 	if (draft.type === "query" && draft.source.kind !== "facet" && Str.trim(sourceKeyOf(draft.source)) === "")
 		return "Pick the attribute key to list values for."
 	if (draft.type === "query" && draft.source.kind === "metric") {
@@ -177,4 +183,5 @@ export const SOURCE_ITEMS: ReadonlyArray<{ readonly value: string; readonly labe
 	{ value: "promql:label", label: "Prometheus label…" },
 ]
 
-const PROM_LABEL = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const isPromqlLabel = Schema.is(PromqlVariableLabel)
+const isPromqlMatch = Schema.is(PromqlVariableMatch)

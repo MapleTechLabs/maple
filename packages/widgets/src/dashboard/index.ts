@@ -119,6 +119,8 @@ export {
 	type DashboardVariable,
 	DashboardVariableName,
 	DashboardVariableSchema,
+	PromqlVariableLabel,
+	PromqlVariableMatch,
 } from "./shared/variables"
 
 // Current-version aliases. When a version is added, these move to it and every

@@ -1,7 +1,8 @@
 // Grafana `templating.list` to Maple dashboard variables. Pure.
-import type { DashboardVariable } from "@maple/domain/http"
+import { type DashboardVariable, PromqlVariableLabel, PromqlVariableMatch } from "@maple/domain/http"
+import { parse } from "@maple/promql"
 import { replaceWith } from "@maple/strings"
-import { Array as Arr, Order, String as Str } from "effect"
+import { Array as Arr, Order, Result, Schema, String as Str } from "effect"
 import { asArray, asRecord, asString, type UnknownRecord } from "./dashboard-import-shared"
 
 export interface GrafanaVariableConversion {
@@ -111,6 +112,7 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 	const match = LABEL_VALUES.exec(query)
 	if (match === null) return undefined
 	const [, selector, label = ""] = match
+	if (!isPromqlLabel(label)) return undefined
 	// `job` is the service name: OTel metrics carry it only as `service.name`, and the scraper sets
 	// `service.name` to the job too, so the service list holds every job a dashboard can filter by.
 	if (label === "job") {
@@ -130,7 +132,23 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 		)
 		return { kind: "promql", label }
 	}
+	if (!isDiscoverySelector(selectorMatch)) {
+		warnings.push(
+			`Variable "${name}" lists every ${label}; Maple cannot narrow it by "${selectorMatch}", which is too long or matches every series.`,
+		)
+		return { kind: "promql", label }
+	}
 	return { kind: "promql", label, match: selectorMatch }
+}
+
+const isPromqlLabel = Schema.is(PromqlVariableLabel)
+const isPromqlMatch = Schema.is(PromqlVariableMatch)
+
+/** A selector discovery takes: within the stored limit, and one the parser accepts, which refuses all-empty matchers. */
+const isDiscoverySelector = (selector: string): boolean => {
+	if (!isPromqlMatch(selector)) return false
+	const parsed = parse(selector)
+	return Result.isSuccess(parsed) && parsed.success.type === "VectorSelector"
 }
 
 /** True for a PromQL datasource; one other than Prometheus itself is said once per plugin. */

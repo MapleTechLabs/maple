@@ -2254,9 +2254,12 @@
                               "type": "string"
                             },
                             "label": {
+                              "maxLength": 256,
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
                               "type": "string"
                             },
                             "match": {
+                              "maxLength": 4096,
                               "type": "string"
                             }
                           },

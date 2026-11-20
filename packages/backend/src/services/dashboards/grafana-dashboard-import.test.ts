@@ -968,6 +968,30 @@ describe("label_values selectors keep literal filters and drop variable ones", (
 			})
 		}),
 	)
+
+	it.effect("lists every value, with a warning, when the kept filters would match every series", () =>
+		Effect.gen(function* () {
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable('label_values({env="$env", instance=~".*"}, instance)'),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/matches every series/))
+		}),
+	)
+
+	it.effect("lists every value, with a warning, when the kept selector is over the stored limit", () =>
+		Effect.gen(function* () {
+			const hosts = Arr.join(
+				Arr.makeBy(600, (i) => `host${i}`),
+				"|",
+			)
+			const converted = yield* convertGrafanaDashboardToPortable(
+				boardWithVariable(`label_values(up{instance=~"${hosts}"}, instance)`),
+			)
+			expect(firstSource(converted)).toEqual({ kind: "promql", label: "instance" })
+			expect(converted.warnings).toContainEqual(expect.stringMatching(/too long/))
+		}),
+	)
 })
 
 describe("the stored import report is bounded", () => {

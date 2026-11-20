@@ -30,6 +30,8 @@ export {
 	DashboardSectionTabSchema,
 	type DashboardVariable,
 	DashboardVariableName,
+	PromqlVariableLabel,
+	PromqlVariableMatch,
 	DashboardVariableSchema,
 	DashboardWidgetSchema,
 	DASHBOARD_GRID_COLS,

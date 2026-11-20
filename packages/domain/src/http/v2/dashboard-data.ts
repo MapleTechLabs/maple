@@ -6,6 +6,8 @@ import {
 	DashboardQueryVariableFacet,
 	DashboardRefreshIntervalSeconds,
 	DashboardVariableName,
+	PromqlVariableLabel,
+	PromqlVariableMatch,
 } from "@maple/widgets/dashboard"
 import { HEATMAP_COLOR_SCALES, HEATMAP_SCALE_TYPES, WIDGET_VISUALIZATIONS } from "@maple/widgets"
 import {
@@ -564,8 +566,8 @@ const V2DashboardVariableSource = Schema.Union([
 	),
 	Schema.Struct({
 		kind: Schema.Literal("promql"),
-		label: Schema.String,
-		match: optional(Schema.String),
+		label: PromqlVariableLabel,
+		match: optional(PromqlVariableMatch),
 	}),
 ])
 
