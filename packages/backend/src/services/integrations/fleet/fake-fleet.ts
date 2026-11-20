@@ -51,8 +51,10 @@ const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
 		),
 		Order.mapInput(Order.Number, (activity: FakeFleetActivity) => activity.id),
 	)
+	const page = matching.slice(0, perPage)
 	return {
-		activities: matching.slice(0, perPage),
+		// Fleet leaves an empty list out, as Go's omitempty does.
+		...(page.length === 0 ? undefined : { activities: page }),
 		meta: { has_next_results: matching.length > perPage, has_previous_results: after !== null },
 	}
 }
