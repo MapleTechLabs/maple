@@ -123,7 +123,7 @@ export const bucketsValidSql = (tableName: PromqlMetricTable): string =>
 	tableName === "metrics_histogram" ? "length(BucketCounts) = length(ExplicitBounds) + 1" : "1"
 
 /** The sample of one stored row as `[le, value]`; histogram buckets expand into one row per bound. */
-const samplePair = (tableName: PromqlMetricTable, component: PromqlComponent) => {
+const samplePair = (component: PromqlComponent) => {
 	switch (component) {
 		case "bucket":
 			// Histogram buckets expand after the scan, once the series' bounds are known.
@@ -196,7 +196,8 @@ const histogramColumns = (
 		counts: sql(T.array(T.float64))`arrayMap(c -> toFloat64(c), PositiveBucketCounts)`,
 		// Negative values and the zero bucket lie below every positive bound.
 		below: sql(T.float64)`toFloat64(arraySum(NegativeBucketCounts) + ZeroCount)`,
-		m: sql(T.int64)`toInt64(min(Scale) OVER (PARTITION BY ${series}))`,
+		// Only exports with buckets: a stale one carries scale 0 and must not coarsen the rest.
+		m: sql(T.int64)`toInt64(minIf(Scale, ${occupied}) OVER (PARTITION BY ${series}))`,
 		lowExp: sql(
 			T.float64,
 		)`minIf(PositiveOffset * exp2(-Scale), ${occupied}) OVER (PARTITION BY ${series})`,
@@ -248,7 +249,7 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 			isDelta: isDeltaExpr(opts.table),
 			// A no-recorded-value point (a failed scrape) is a stale marker, not a sample.
 			stale: sql(T.uint8)`bitAnd(Flags, 1)`,
-			pair: samplePair(opts.table, opts.component),
+			pair: samplePair(opts.component),
 			...histogramColumns(opts, $),
 		}))
 		.where(($) => [
