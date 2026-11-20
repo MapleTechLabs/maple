@@ -81,6 +81,20 @@ describe("QueryEngineService.execute on promqlLabelValues", () => {
 		}).pipe(Effect.provide(layer)),
 	)
 
+	it.effect("refuses a window wider than the query engine's range ceiling", () =>
+		Effect.gen(function* () {
+			const qe = yield* QueryEngineService
+			const wide = new QueryEngineExecuteRequest({
+				startTime: "2025-01-01 00:00:00",
+				endTime: "2026-01-01 00:00:00",
+				query: { kind: "promqlLabelValues", source: "metrics", label: "http_route" },
+			})
+			const exit = yield* Effect.exit(qe.execute(tenant, wide))
+			assert.ok(Exit.isFailure(exit))
+			assert.match(String(exit.cause), /Time range too large/)
+		}).pipe(Effect.provide(layer)),
+	)
+
 	it.effect("answers an invalid label name with a validation error", () =>
 		Effect.gen(function* () {
 			const qe = yield* QueryEngineService

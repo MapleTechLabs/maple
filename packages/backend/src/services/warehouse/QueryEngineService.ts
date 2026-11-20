@@ -15,6 +15,7 @@ import {
 	makeQueryEngineEvaluateSeries,
 	makeQueryEngineExecute,
 	resolveDirectRouteCachePolicy,
+	validateTimeRange,
 	withTimeout,
 	type BucketGroupObs,
 	type GroupedAlertObservation,
@@ -107,43 +108,47 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const executeImpl = (tenant: TenantContext, request: QueryEngineExecuteRequest) => {
 				const query = request.query
 				if (query.kind !== "promqlLabelValues") return runtimeExecute(tenant, request)
-				return promql
-					.labelValues(tenant, {
-						name: query.label,
-						// A blank selector is no selector, as an absent one: every value of the label.
-						matches:
-							query.match === undefined || Str.trim(query.match) === "" ? [] : [query.match],
-						startMs: parseWarehouseDateTime(request.startTime),
-						endMs: parseWarehouseDateTime(request.endTime),
-					})
-					.pipe(
-						Effect.map(
-							({ data: values }) =>
-								new QueryEngineExecuteResponse({
-									result: {
-										kind: "attributeValues",
-										source: "metrics",
-										data: Arr.map(values, (value) => ({ value, count: 0 })),
-									},
-								}),
-						),
-						Effect.catchTags({
-							"@maple/backend/promql/PromqlBadQueryError": (error) =>
-								Effect.fail(
-									new QueryEngineValidationError({
-										message: "Invalid PromQL label values query",
-										details: [error.message],
-									}),
-								),
-							"@maple/backend/promql/PromqlExecutionError": (error) =>
-								Effect.fail(
-									new QueryEngineValidationError({
-										message: "PromQL label values query could not run",
-										details: [error.message],
-									}),
-								),
+				// The same range ceiling as every other kind, so a year-wide window is a 400, not a scan.
+				return validateTimeRange(request).pipe(
+					Effect.flatMap(({ startMs, endMs }) =>
+						promql.labelValues(tenant, {
+							name: query.label,
+							// A blank selector is no selector, as an absent one: every value of the label.
+							matches:
+								query.match === undefined || Str.trim(query.match) === ""
+									? []
+									: [query.match],
+							startMs,
+							endMs,
 						}),
-					)
+					),
+					Effect.map(
+						({ data: values }) =>
+							new QueryEngineExecuteResponse({
+								result: {
+									kind: "attributeValues",
+									source: "metrics",
+									data: Arr.map(values, (value) => ({ value, count: 0 })),
+								},
+							}),
+					),
+					Effect.catchTags({
+						"@maple/backend/promql/PromqlBadQueryError": (error) =>
+							Effect.fail(
+								new QueryEngineValidationError({
+									message: "Invalid PromQL label values query",
+									details: [error.message],
+								}),
+							),
+						"@maple/backend/promql/PromqlExecutionError": (error) =>
+							Effect.fail(
+								new QueryEngineValidationError({
+									message: "PromQL label values query could not run",
+									details: [error.message],
+								}),
+							),
+					}),
+				)
 			}
 			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
 			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse)

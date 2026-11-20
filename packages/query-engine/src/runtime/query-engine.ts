@@ -435,7 +435,7 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 	return raw
 }
 
-const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (
+export const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (
 	request: {
 		readonly startTime: string
 		readonly endTime: string
