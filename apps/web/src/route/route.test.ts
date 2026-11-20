@@ -275,34 +275,8 @@ describe("routes", () => {
 		expect(routeRedirect(parse("/integrations?integration=chat-hazel"))).toEqual(Option.none())
 	})
 
-	test("an org outside the statusPages rollout is sent home from every status page route", () => {
-		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: false,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.some({ url: "/", isReplace: true }))
-			expect(
-				flaggedRouteRedirect(parse(path), {
-					statusPages: true,
-					productAnalytics: true,
-					cloudSecurity: true,
-				}),
-			).toEqual(Option.none())
-		}
-		expect(
-			flaggedRouteRedirect(parse("/services"), {
-				statusPages: false,
-				productAnalytics: false,
-				cloudSecurity: false,
-			}),
-		).toEqual(Option.none())
-	})
-
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { statusPages: true, cloudSecurity: true }
+		const flags = { cloudSecurity: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -324,14 +298,14 @@ describe("routes", () => {
 	})
 
 	test("every org opens the cost pages, with no rollout flag on", () => {
-		const off = { statusPages: false, productAnalytics: false, cloudSecurity: false }
+		const off = { productAnalytics: false, cloudSecurity: false }
 		for (const path of ["/cost", "/cost?groupBy=region", "/cost/budgets", "/cost/budgets/new"]) {
 			expect(flaggedRouteRedirect(parse(path), off)).toEqual(Option.none())
 		}
 	})
 
 	test("an org outside the cloudSecurity rollout is sent home from the Cloud findings and their detail", () => {
-		const flags = { statusPages: true, productAnalytics: true }
+		const flags = { productAnalytics: true }
 		for (const path of ["/security/cloud?severity=critical", "/security/cloud/finding?id=f-1"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
