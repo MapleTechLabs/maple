@@ -1,6 +1,7 @@
 import type { FleetIntegrationStatus } from "@maple/domain/http"
 import { Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import * as Field from "@maple/views/ui/field"
@@ -60,7 +61,7 @@ const fleetForm = (
 	const isValid = Option.isSome(connectRequestOf(form))
 	const hasError = !form.isSubmitting && form.error !== null
 	const urlState = Field.stateOf(form.url, false)
-	const tokenState = Field.stateOf(form.token, hasError)
+	const tokenState = Field.stateOf(form.token, false)
 	return h.form(
 		[h.Class("flex w-full flex-col gap-4 text-left"), h.OnSubmit(toHub(FleetMessage.SubmittedConnect()))],
 		[
@@ -93,21 +94,18 @@ const fleetForm = (
 							toHub(FleetMessage.GotTokenMessage({ message })),
 						),
 						h.AriaLabelledBy(TOKEN_IDS.label),
-						...(hasError ? [h.AriaInvalid(true)] : []),
 					],
 				}),
-				hasError
-					? Field.fieldError(
-							h,
-							{ ids: TOKEN_IDS, state: tokenState, attributes: [h.Role("alert")] },
-							form.error ?? "",
-						)
-					: Field.fieldDescription(
-							h,
-							{ ids: TOKEN_IDS, state: tokenState },
-							"Maple checks the token with your server before saving it.",
-						),
+				Field.fieldDescription(
+					h,
+					{ ids: TOKEN_IDS, state: tokenState },
+					"Maple checks the token with your server before saving it.",
+				),
 			]),
+			// The server's answer can be about the address or the token, so it belongs to the form.
+			...(hasError
+				? [alert(h, { variant: "crit", size: "sm" }, [alertDescription(h, [form.error ?? ""])])]
+				: []),
 			hstack(h, { gap: "2", wrap: true }, [
 				button(h, { type: "submit", isDisabled: !isValid, isLoading: form.isSubmitting }, [
 					options.mode === "replace" ? "Update token" : "Connect",
