@@ -328,6 +328,25 @@ describe("widget editor over a PromQL widget", () => {
 		])
 	})
 
+	test("a page of metrics that lands after typing paused still asks for the typed prefix", () => {
+		const typed = runAll(opened().model, [
+			Message.ChangedPromql({ value: "zebr" }),
+			Message.GotPromqlCaret({ caret: 4, opens: true }),
+		])
+		const seq = typed.model.promql?.parseSeq ?? 0
+		const landed = runAll(typed.model, [
+			Message.ElapsedPromqlParseDelay({ seq }),
+			Message.CompletedFetchPromqlDiscovery({
+				key: "__name__|",
+				result: Result.succeed(Arr.makeBy(500, (i) => `metric_${i}`)),
+			}),
+		])
+		const asked = Arr.filter(landed.commands, ({ name }) => name === FetchPromqlDiscovery.name)
+		expect(Arr.map(asked, ({ args }) => args)).toEqual([
+			{ key: '__name__|{__name__=~"zebr.*"}', label: "__name__", match: '{__name__=~"zebr.*"}' },
+		])
+	})
+
 	test("the Builder tab previews a query set again", () => {
 		const builder = pageUpdate(
 			opened().model,

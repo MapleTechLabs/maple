@@ -30,6 +30,8 @@ export const PromqlState = Schema.Struct({
 	parseError: Schema.NullOr(PromqlParseErrorSchema),
 	/** The latest edit, so only the newest parse delay applies. */
 	parseSeq: Schema.Number,
+	/** Typing has paused since the last edit (its parse delay ran out). */
+	isSettled: Schema.Boolean,
 	caret: Schema.Number,
 	/** The open completion list's highlighted item; null is closed. */
 	completion: Schema.NullOr(Schema.Struct({ activeIndex: Schema.Number })),
@@ -61,6 +63,7 @@ export const initPromql = (widget: Widget): PromqlState => {
 		initial: draft,
 		parseError: promqlParseError(draft.query),
 		parseSeq: 0,
+		isSettled: true,
 		caret: draft.query.length,
 		completion: null,
 		discovery: EMPTY_DISCOVERY,

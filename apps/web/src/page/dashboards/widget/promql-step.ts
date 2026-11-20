@@ -132,12 +132,9 @@ export const promqlVariablesOf = (model: Model): ReadonlyArray<string> =>
 const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"])
 
 /** The discovery read the open list needs, asked once per editor session. */
-const askDiscovery = (
-	promql: PromqlState,
-	isSettled: boolean,
-): Readonly<{ promql: PromqlState; commands: Commands }> => {
+const askDiscovery = (promql: PromqlState): Readonly<{ promql: PromqlState; commands: Commands }> => {
 	const context = promqlContextOf(promql)
-	const requests = context === null ? [] : discoveryRequestsFor(context, promql.discovery, isSettled)
+	const requests = context === null ? [] : discoveryRequestsFor(context, promql.discovery, promql.isSettled)
 	const missing = Arr.filter(
 		requests,
 		(request) => !Arr.contains(promql.discovery.requested, discoveryKey(request)),
@@ -178,14 +175,9 @@ const replaceEnd = (query: string, caret: number, context: PromqlCompletionConte
 	return caret + Option.match(Str.match(tail)(after), { onNone: () => 0, onSome: ([text]) => text.length })
 }
 
-/** The reads the open list needs; `isSettled` (typing paused) adds the narrowed metric prefix. */
-const withPromql = (
-	model: Model,
-	promql: PromqlState,
-	commands: Commands = [],
-	isSettled = false,
-): Return => {
-	const asked = askDiscovery(promql, isSettled)
+/** The reads the open list needs; once typing has paused they include the narrowed metric prefix. */
+const withPromql = (model: Model, promql: PromqlState, commands: Commands = []): Return => {
+	const asked = askDiscovery(promql)
 	return { model: { ...model, promql: asked.promql }, commands: [...commands, ...asked.commands] }
 }
 
@@ -209,6 +201,7 @@ const accept = (model: Model, promql: PromqlState, index: number): Return => {
 			draft: { ...promql.draft, query: next },
 			caret,
 			parseSeq: seq,
+			isSettled: false,
 			// A call keeps the list open on its first argument.
 			completion: Str.endsWith("(")(suggestion.insert) ? { activeIndex: 0 } : null,
 		},
@@ -243,7 +236,12 @@ const promqlEditorStep = (model: Model, promql: PromqlState, message: PromqlMess
 			return {
 				model: {
 					...model,
-					promql: { ...promql, draft: { ...promql.draft, query: message.value }, parseSeq: seq },
+					promql: {
+						...promql,
+						draft: { ...promql.draft, query: message.value },
+						parseSeq: seq,
+						isSettled: false,
+					},
 				},
 				commands: [
 					DelayPromqlParse({ seq }),
@@ -254,7 +252,11 @@ const promqlEditorStep = (model: Model, promql: PromqlState, message: PromqlMess
 		case "ElapsedPromqlParseDelay":
 			return message.seq !== promql.parseSeq
 				? { model }
-				: withPromql(model, { ...promql, parseError: promqlParseError(promql.draft.query) }, [], true)
+				: withPromql(model, {
+						...promql,
+						parseError: promqlParseError(promql.draft.query),
+						isSettled: true,
+					})
 		case "GotPromqlCaret": {
 			const isOpen = message.opens || promql.completion !== null
 			return withPromql(model, {
