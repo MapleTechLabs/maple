@@ -13,6 +13,7 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { AppRoute, hrefOf } from "../../route"
+import { isDataIntegration } from "../../route/data-integrations"
 import { CAPABILITY_LABEL, type CatalogEntry, type HubFilter, type IntegrationId } from "./catalog"
 import { DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import {
@@ -62,10 +63,16 @@ const connectedRow = (h: H, row: ConnectedRow, onSelect: Select, nowMs: number):
 			? entryPlate(h, row.entry, plateOptions)
 			: kindPlate(h, DATA_SOURCE_KIND_ENTRY[row.source.kind], plateOptions)
 	const name = row._tag === "Integration" ? row.entry.name : row.source.name
+	// A connected data integration lives under Sources: its rows there, not its connect flow.
 	const onClick =
-		row._tag === "Integration"
-			? onSelect(row.entry.id)
-			: Message.ClickedDataSource({ source: row.source.id, connect: null })
+		row._tag === "DataSource"
+			? Message.ClickedDataSource({ source: row.source.id, connect: null })
+			: overview.kind === "connected" && isDataIntegration(row.entry.id)
+				? Message.ClickedConnectedSources({
+						// WarpStream clusters are scraped as Prometheus targets.
+						query: row.entry.id === "warpstream" ? "Prometheus" : row.entry.name,
+					})
+				: onSelect(row.entry.id)
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(
 		h,
@@ -241,7 +248,7 @@ export const hubTitle = (h: H): Html =>
 				"Systems Maple collects telemetry from, queries in place, and sends alerts to. Volume and caps per source are under ",
 				h.a(
 					[
-						h.Href(hrefOf(AppRoute.Sources())),
+						h.Href(hrefOf(AppRoute.Sources({ search: {} }))),
 						h.Class(
 							typographyClass({
 								tone: "foreground",

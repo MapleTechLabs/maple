@@ -22,6 +22,7 @@ import {
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import { AppRoute } from "../../../route"
 import { sourceHref } from "../kit/shared"
 import { groupSources } from "./groups"
 import { type PageContext, PageOutMessage } from "../../contract"
@@ -77,8 +78,8 @@ const defaultSource = source(1, {
 	key_prefix: null,
 })
 
-const loaded = (rows: ReadonlyArray<V2Source>): Model => {
-	const entered = init({ _tag: "Sources" }, context).model
+const loaded = (rows: ReadonlyArray<V2Source>, q?: string): Model => {
+	const entered = init(AppRoute.Sources({ search: { q } }), context).model
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
@@ -126,7 +127,7 @@ const usageOf = (model: Model, data: ReadonlyArray<Readonly<{ source: V2Source; 
 
 describe("sources list", () => {
 	test("entry reads the clock and the list", () => {
-		expect(names(init({ _tag: "Sources" }, context).commands)).toEqual(
+		expect(names(init(AppRoute.Sources({ search: {} }), context).commands)).toEqual(
 			expect.arrayContaining(["ReadSourcesClock", "FetchSourcesList", "FetchSourcesUsage"]),
 		)
 	})
@@ -171,8 +172,19 @@ describe("sources list", () => {
 		)
 	})
 
+	test("a ?q= link opens the list narrowed to it, from an integration's hub row", () => {
+		const billing = source(2, { name: "Billing", health: RECEIVING })
+		const checkout = source(3, { name: "Checkout", health: RECEIVING })
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([defaultSource, billing, checkout], "billing")),
+			expectView(role("link", { name: "Billing" })).toExist(),
+			expectView(role("link", { name: "Checkout" })).not.toExist(),
+		)
+	})
+
 	test("a failure shows the error state and retry refreshes; a stale answer is dropped", () => {
-		const entered = init({ _tag: "Sources" }, context).model
+		const entered = init(AppRoute.Sources({ search: {} }), context).model
 		const stale = pageUpdate(
 			entered,
 			Message.CompletedFetchList({ key: "other", result: Result.succeed([]) }),

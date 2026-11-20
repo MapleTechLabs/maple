@@ -44,14 +44,17 @@ const load = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	return { model: usage.model, commands: [...(list.commands ?? []), ...(usage.commands ?? [])] }
 }
 
-export const init = (_route: unknown, context: PageContext): Return => {
+export const init = (
+	route: Readonly<{ search: Readonly<{ q?: string | undefined }> }>,
+	context: PageContext,
+): Return => {
 	const loaded = load(
 		{
 			nowMs: null,
 			grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 			list: Keyed.idle(),
 			usage: Keyed.idle(),
-			search: "",
+			search: route.search.q ?? "",
 			resuming: null,
 		},
 		context,

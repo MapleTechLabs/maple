@@ -10,7 +10,18 @@ import {
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { all, expect as expectView, expectAll, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	click,
+	expect as expectView,
+	expectAll,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -418,6 +429,17 @@ describe("telemetry and data sources", () => {
 			expectView(text("Acme Eng")).toExist(),
 			expectView(text("Query in place")).toExist(),
 			expectView(text("Infrastructure")).toExist(),
+		)
+	})
+
+	test("a connected Prometheus row opens its sources, not the connect flow", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(hub()),
+			click(role("button", { name: /^Prometheus/ })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/sources?q=Prometheus", isReplace: false }),
+			),
 		)
 	})
 
