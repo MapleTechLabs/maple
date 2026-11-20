@@ -2770,6 +2770,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								resultType: result.resultType,
 								seriesCount: result.seriesCount,
 								stepSeconds: result.stepSeconds,
+								...(result.warnings.length === 0 ? undefined : { warnings: result.warnings }),
 							},
 						})
 					}),

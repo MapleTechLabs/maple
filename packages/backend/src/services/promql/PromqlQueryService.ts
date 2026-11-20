@@ -14,6 +14,7 @@ import {
 	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type Expr,
+	type LabelMatcher,
 	parse,
 	planPushdowns,
 	planRequests,
@@ -48,6 +49,10 @@ import {
 	keysForLabel,
 	labelNamesFrom,
 	matchesValue,
+	missingLabelMatchers,
+	resolveSelectorName,
+	unknownLabelWarning,
+	unknownMetricWarning,
 	prometheusMetadata,
 	promqlAttributeValuesQuery,
 	resourceKeysForLabel,
@@ -117,6 +122,17 @@ export interface PromqlQuery extends QueryParams {
 	readonly query: string
 }
 
+/** A query result with Prometheus' `warnings`: the nearest names when a selector matched nothing. */
+export type PromqlAnswer = QueryResult & { readonly warnings: ReadonlyArray<string> }
+
+/** A discovery answer with Prometheus' `warnings`, set when the limit cut it. */
+export interface Discovered<A> {
+	readonly data: A
+	readonly warnings: ReadonlyArray<string>
+}
+
+export const TRUNCATED_WARNING = "results truncated due to limit"
+
 /** A dashboard widget's PromQL over a warehouse window; the service picks the step. */
 export interface PromqlWidgetInput {
 	readonly query: string
@@ -133,6 +149,8 @@ export interface PromqlWidgetResult {
 	readonly resultType: QueryResult["resultType"]
 	readonly seriesCount: number
 	readonly stepSeconds: number
+	/** Prometheus-style warnings: why the result is empty, or what it left out. */
+	readonly warnings: ReadonlyArray<string>
 }
 
 /** The epoch ms a JavaScript Date can hold, and so the warehouse time formatting. */
@@ -249,6 +267,40 @@ const seriesKey = (labels: Readonly<Record<string, string>>): string =>
 		"\u0000",
 	)
 
+/** Selectors whose label names one empty answer checks, and the series each check reads. */
+const MAX_HINT_READS = 3
+const HINT_SERIES_LIMIT = 500
+const HINT_NAME_FILTER_LIMIT = 50
+
+const nameMatchersOf = (selector: VectorSelector): ReadonlyArray<LabelMatcher> =>
+	Arr.filter(selector.matchers, (m) => m.name === "__name__")
+
+const isEmptyResult = (result: QueryResult): boolean =>
+	(result.resultType === "matrix" || result.resultType === "vector") && result.result.length === 0
+
+/**
+ * Whether a discovery selector keeps more stored metrics in a table than its name-filtered reads
+ * cover; the planner leaves the rest out. A selector keeping every metric of a table reads it unfiltered.
+ */
+const namesOmitted = (matchers: ReadonlyArray<LabelMatcher>, catalog: ReadonlyArray<CatalogMetric>) => {
+	const kept = resolveSelectorName(
+		Arr.filter(matchers, (m) => m.name === "__name__"),
+		catalog,
+	)
+	const everything = resolveSelectorName([], catalog)
+	return Arr.some(Arr.dedupe(Arr.map(kept, (t) => t.table)), (table) => {
+		const inTable = Arr.filter(kept, (t) => t.table === table)
+		if (inTable.length === Arr.filter(everything, (t) => t.table === table).length) return false
+		const metrics = Arr.dedupe(Arr.map(inTable, (t) => `${t.metricName}\u0000${t.unit}`))
+		return metrics.length > DISCOVERY_NAME_FILTER_LIMIT * DISCOVERY_NAME_READS
+	})
+}
+
+const discovered = <A>(data: A, truncated: boolean): Discovered<A> => ({
+	data,
+	warnings: truncated ? [TRUNCATED_WARNING] : [],
+})
+
 const span = (requests: ReadonlyArray<SelectorRequest>) => ({
 	startMs: Math.min(...Arr.map(requests, (r) => r.startMs)),
 	endMs: Math.max(...Arr.map(requests, (r) => r.endMs)),
@@ -343,6 +395,85 @@ const make = Effect.gen(function* () {
 		),
 	)
 
+	/** The label names series of a selector's metrics carry, from one small series read. */
+	const presentLabels = Effect.fn("PromqlQueryService.presentLabels")(function* (
+		tenant: TenantContext,
+		nameMatchers: ReadonlyArray<LabelMatcher>,
+		catalog: ReadonlyArray<CatalogMetric>,
+		window: DiscoveryWindow,
+	) {
+		const plans = buildSeriesLabelsQueries(nameMatchers, window, catalog, {
+			orgId: tenant.orgId,
+			limit: HINT_SERIES_LIMIT,
+			maxNameFilter: HINT_NAME_FILTER_LIMIT,
+			maxNameReads: 1,
+		})
+		const found = yield* Effect.forEach(
+			plans,
+			(plan) =>
+				Effect.map(
+					warehouse.compiledQuery(tenant, plan.compiled, {
+						profile: "discovery",
+						context: "promqlHintLabels",
+					}),
+					(rows) => toSeriesLabels(nameMatchers, [{ plan, rows }]),
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		)
+		return new Set(Arr.flatMap(Arr.flatten(found), (labels) => Rec.keys(labels)))
+	})
+
+	/**
+	 * Warnings for selectors that matched nothing: unknown metric names always (the catalog is in
+	 * hand), unknown label names only when the result is empty, as they cost a series read each.
+	 */
+	const hints = Effect.fn("PromqlQueryService.hints")(function* (
+		tenant: TenantContext,
+		selectors: ReadonlyArray<VectorSelector>,
+		catalog: ReadonlyArray<CatalogMetric>,
+		window: DiscoveryWindow,
+		empty: boolean,
+	) {
+		const exactNames = Arr.flatMap(selectors, (selector) =>
+			Option.match(
+				Arr.findFirst(selector.matchers, (m) => m.name === "__name__" && m.op === "="),
+				{
+					onNone: () => [],
+					onSome: (m) => [{ selector, name: m.value, nameMatchers: nameMatchersOf(selector) }],
+				},
+			),
+		)
+		const resolves = (entry: (typeof exactNames)[number]) =>
+			resolveSelectorName(entry.nameMatchers, catalog).length > 0
+		const unknown = Arr.filter(exactNames, (entry) => !resolves(entry))
+		const known = Arr.filter(exactNames, resolves)
+		const nameWarnings = Arr.dedupe(Arr.map(unknown, ({ name }) => unknownMetricWarning(name, catalog)))
+		if (!empty) return nameWarnings
+		const checked = Arr.take(
+			Arr.filter(
+				known,
+				({ selector }) => missingLabelMatchers(selector.matchers, new Set()).length > 0,
+			),
+			MAX_HINT_READS,
+		)
+		const labelWarnings = yield* Effect.forEach(
+			checked,
+			({ selector, name, nameMatchers }) =>
+				Effect.map(presentLabels(tenant, nameMatchers, catalog, window), (present) =>
+					present.size === 0
+						? []
+						: Arr.map(missingLabelMatchers(selector.matchers, present), (matcher) =>
+								unknownLabelWarning(name, matcher.name, [...present]),
+							),
+				),
+			{ concurrency: WAREHOUSE_CONCURRENCY },
+		).pipe(
+			// Hints explain an answer that already succeeded; a failed hint read must not fail it.
+			Effect.catch((error) => Effect.as(Effect.logWarning("PromQL label hint read failed", error), [])),
+		)
+		return Arr.dedupe([...nameWarnings, ...Arr.flatten(labelWarnings)])
+	})
+
 	const query_ = Effect.fn("PromqlQueryService.query")(function* (
 		tenant: TenantContext,
 		input: PromqlQuery,
@@ -407,7 +538,10 @@ const make = Effect.gen(function* () {
 		const result = evaluate({ expr, params: input, data: new Map(read), pushed: new Map(pushed) })
 		if (Result.isFailure(result))
 			return yield* new PromqlExecutionError({ message: result.failure.message })
-		return result.success satisfies QueryResult
+		const selectors = Arr.map(entries, ([selector]) => selector)
+		const warnings = yield* hints(tenant, selectors, catalog, window, isEmptyResult(result.success))
+		const answer: PromqlAnswer = { ...result.success, warnings }
+		return answer
 	})
 
 	const windowParams = (tenant: TenantContext, window: DiscoveryWindow) => ({
@@ -452,13 +586,18 @@ const make = Effect.gen(function* () {
 						profile: "discovery",
 						context: "promqlSeries",
 					}),
-					(rows) => toSeriesLabels(selector.matchers, [{ plan, rows }]),
+					(rows) => ({
+						found: toSeriesLabels(selector.matchers, [{ plan, rows }]),
+						cut: rows.length >= DISCOVERY_LIMIT,
+					}),
 				),
 			{ concurrency: WAREHOUSE_CONCURRENCY },
 		)
 		// seriesLabels sorts its keys, so the joined pairs are a stable identity.
 		const unique = new Map(
-			Arr.flatMap(read, (found) => Arr.map(found, (labels) => [seriesKey(labels), labels] as const)),
+			Arr.flatMap(read, ({ found }) =>
+				Arr.map(found, (labels) => [seriesKey(labels), labels] as const),
+			),
 		)
 		const limit = Math.min(input.limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT)
 		yield* Effect.annotateCurrentSpan({
@@ -466,7 +605,12 @@ const make = Effect.gen(function* () {
 			"maple.promql.range_ms": window.endMs - window.startMs,
 			"maple.promql.series": unique.size,
 		})
-		return Arr.take([...unique.values()], limit)
+		return discovered(
+			Arr.take([...unique.values()], limit),
+			unique.size > limit ||
+				Arr.some(read, ({ cut }) => cut) ||
+				Arr.some(selectors, (selector) => namesOmitted(selector.matchers, catalog)),
+		)
 	})
 
 	const attributeKeys = Effect.fn("PromqlQueryService.attributeKeys")(function* (
@@ -491,12 +635,15 @@ const make = Effect.gen(function* () {
 			concurrency: 2,
 		})
 
-	const sortedUnique = (values: ReadonlyArray<string>) =>
-		Arr.take(Arr.sort(Arr.dedupe(values), Order.String), DISCOVERY_LIMIT)
-
-	/** The caller's `limit` counts distinct names or values, so it applies after deduplication. */
-	const limited = (values: ReadonlyArray<string>, limit: number | undefined) =>
-		Arr.take(values, Math.min(limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT))
+	/**
+	 * Distinct values, sorted and cut at the caller's `limit` (at most DISCOVERY_LIMIT), which counts
+	 * distinct names or values; warns when that cut them or a source read came back full (`cut`).
+	 */
+	const limitedUnique = (values: ReadonlyArray<string>, limit: number | undefined, cut: boolean) => {
+		const all = Arr.sort(Arr.dedupe(values), Order.String)
+		const max = Math.min(limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT)
+		return discovered(Arr.take(all, max), cut || all.length > max)
+	}
 
 	const labelNames = Effect.fn("PromqlQueryService.labelNames")(function* (
 		tenant: TenantContext,
@@ -505,13 +652,21 @@ const make = Effect.gen(function* () {
 		const window = yield* validateWindow(input)
 		if (input.matches.length > 0) {
 			const found = yield* series(tenant, { ...input, limit: undefined })
-			return limited(sortedUnique(Arr.flatMap(found, (labels) => Rec.keys(labels))), input.limit)
+			return limitedUnique(
+				Arr.flatMap(found.data, (labels) => Rec.keys(labels)),
+				input.limit,
+				found.warnings.length > 0,
+			)
 		}
 		const [catalog, keys] = yield* Effect.all(
 			[readCatalog(tenant, window), bothAttributeKeys(tenant, window)],
 			{ concurrency: 2 },
 		)
-		return limited(labelNamesFrom(catalog, ...keys), input.limit)
+		return limitedUnique(
+			labelNamesFrom(catalog, ...keys),
+			input.limit,
+			Arr.some(keys, (read) => read.length >= ATTRIBUTE_KEY_LIMIT),
+		)
 	})
 
 	const attributeValues = Effect.fn("PromqlQueryService.attributeValues")(function* (
@@ -525,7 +680,7 @@ const make = Effect.gen(function* () {
 			{ scope: "resource", keys: resourceKeysForLabel(resourceKeys, name) },
 		]
 		const reads = Arr.filter(candidates, (read) => read.keys.length > 0)
-		const values = yield* Effect.forEach(
+		const perRead = yield* Effect.forEach(
 			reads,
 			(read) =>
 				Effect.map(
@@ -541,7 +696,12 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: 2 },
 		)
-		return Arr.flatten(values)
+		// A full key list may have left the label's raw key out, as a full value read leaves values out.
+		const keysFull = Arr.some([metricKeys, resourceKeys], (keys) => keys.length >= ATTRIBUTE_KEY_LIMIT)
+		return {
+			values: Arr.flatten(perRead),
+			cut: keysFull || Arr.some(perRead, (v) => v.length >= DISCOVERY_LIMIT),
+		}
 	})
 
 	/** `job` or `instance` values as series carry them: one bounded read per metric table. */
@@ -565,7 +725,10 @@ const make = Effect.gen(function* () {
 				),
 			{ concurrency: "unbounded" },
 		)
-		return Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.value))
+		return {
+			values: Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.value)),
+			cut: Arr.some(perTable, (rows) => rows.length >= DISCOVERY_LIMIT),
+		}
 	})
 
 	const labelValues = Effect.fn("PromqlQueryService.labelValues")(function* (
@@ -579,29 +742,23 @@ const make = Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan({ "maple.promql.label": input.name })
 		if (input.matches.length > 0) {
 			const found = yield* series(tenant, { ...input, limit: undefined })
-			return limited(
-				sortedUnique(Arr.flatMap(found, (labels) => Option.toArray(Rec.get(labels, input.name)))),
+			return limitedUnique(
+				Arr.flatMap(found.data, (labels) => Option.toArray(Rec.get(labels, input.name))),
 				input.limit,
+				found.warnings.length > 0,
 			)
 		}
-		switch (input.name) {
-			case "__name__":
-				return yield* Effect.map(readCatalog(tenant, window), (catalog) =>
-					limited(sortedUnique(canonicalPromNames(catalog)), input.limit),
-				)
-			case "job":
-				return yield* Effect.map(identityValues(tenant, window, "job"), (names) =>
-					limited(sortedUnique(names), input.limit),
-				)
-			case "instance":
-				return yield* Effect.map(identityValues(tenant, window, "instance"), (values) =>
-					limited(sortedUnique(values), input.limit),
-				)
-			default:
-				return yield* Effect.map(attributeValues(tenant, window, input.name), (values) =>
-					limited(sortedUnique(values), input.limit),
-				)
-		}
+		const read =
+			input.name === "__name__"
+				? Effect.map(readCatalog(tenant, window), (catalog) => ({
+						values: canonicalPromNames(catalog),
+						cut: false,
+					}))
+				: input.name === "job" || input.name === "instance"
+					? identityValues(tenant, window, input.name)
+					: attributeValues(tenant, window, input.name)
+		const { values, cut } = yield* read
+		return limitedUnique(values, input.limit, cut)
 	})
 
 	const metadata = Effect.fn("PromqlQueryService.metadata")(function* (
@@ -672,6 +829,7 @@ const make = Effect.gen(function* () {
 			seriesCount:
 				result.resultType === "matrix" || result.resultType === "vector" ? result.result.length : 1,
 			stepSeconds,
+			warnings: result.warnings,
 		} satisfies PromqlWidgetResult
 	})
 

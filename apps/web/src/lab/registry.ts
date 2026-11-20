@@ -700,6 +700,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/promql-hints",
+		title: "PromQL hints",
+		description:
+			"PromQL warnings on dashboard tiles (an empty tile with the nearest-name hint, a header warning beside data) and a metric's PromQL names and example query (`?view=tiles|metric`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",

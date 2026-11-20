@@ -3,7 +3,7 @@
 
 import { HttpApiBuilder } from "effect/http-api"
 import { HttpServerResponse } from "effect/http"
-import { Clock, Effect, Array as Arr, Record as Rec } from "effect"
+import { Clock, Effect, Record as Rec } from "effect"
 import type { QueryResult } from "@maple/promql"
 import { CurrentTenant } from "@maple/domain/http"
 import { MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
@@ -42,9 +42,6 @@ const BUILD_INFO = {
 
 const seriesCount = (result: QueryResult): number =>
 	result.resultType === "matrix" || result.resultType === "vector" ? result.result.length : 1
-
-const limited = (values: ReadonlyArray<string>, limit: number | undefined) =>
-	limit === undefined ? values : Arr.take(values, limit)
 
 /** Prometheus merges URL and form parameters; the body wins, and `match[]` lists add up. */
 const merged = (query: Params, payload: Params): Params => ({
@@ -92,7 +89,7 @@ const respond = <A, E extends { readonly _tag: string; readonly message: string 
 		Effect.catch(toErrorResponse),
 	)
 
-/** A query answer with Prometheus' `warnings` beside `data`. */
+/** An answer with Prometheus' `warnings` beside `data`: nearest names, truncation. */
 const respondWithWarnings = <A, E extends { readonly _tag: string; readonly message: string }, R>(
 	effect: Effect.Effect<{ readonly data: A; readonly warnings: ReadonlyArray<string> }, E, R>,
 ) =>
@@ -170,7 +167,7 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 				"maple.promql.result_series": seriesCount(answer),
 			})
 			const { result, warnings } = limitQueryResult(answer, limit)
-			return { data: encodeQueryResult(result), warnings }
+			return { data: encodeQueryResult(result), warnings: [...answer.warnings, ...warnings] }
 		})
 
 		const rangeQuery = Effect.fn("PrometheusApi.queryRange")(function* (params: Params) {
@@ -194,7 +191,7 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 				"maple.promql.result_series": seriesCount(answer),
 			})
 			const { result, warnings } = limitQueryResult(answer, limit)
-			return { data: encodeQueryResult(result), warnings }
+			return { data: encodeQueryResult(result), warnings: [...answer.warnings, ...warnings] }
 		})
 
 		const discovery = (params: Params) =>
@@ -213,15 +210,13 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 		const labels = Effect.fn("PrometheusApi.labels")(function* (params: Params) {
 			const tenant = yield* CurrentTenant.Context
 			const input = yield* discovery(params)
-			const names = yield* promql.labelNames(tenant, input)
-			return limited(names, input.limit)
+			return yield* promql.labelNames(tenant, input)
 		})
 
 		const labelValues = Effect.fn("PrometheusApi.labelValues")(function* (name: string, params: Params) {
 			const tenant = yield* CurrentTenant.Context
 			const input = yield* discovery(params)
-			const values = yield* promql.labelValues(tenant, { ...input, name })
-			return limited(values, input.limit)
+			return yield* promql.labelValues(tenant, { ...input, name })
 		})
 
 		const metadata = Effect.fn("PrometheusApi.metadata")(function* (params: Params) {
@@ -241,11 +236,13 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 			.handle("queryRangePost", ({ query, payload }) =>
 				respondWithWarnings(rangeQuery(merged(query, payload))),
 			)
-			.handle("series", ({ query }) => respond(series(query)))
-			.handle("seriesPost", ({ query, payload }) => respond(series(merged(query, payload))))
-			.handle("labels", ({ query }) => respond(labels(query)))
-			.handle("labelsPost", ({ query, payload }) => respond(labels(merged(query, payload))))
-			.handle("labelValues", ({ params, query }) => respond(labelValues(params.name, query)))
+			.handle("series", ({ query }) => respondWithWarnings(series(query)))
+			.handle("seriesPost", ({ query, payload }) => respondWithWarnings(series(merged(query, payload))))
+			.handle("labels", ({ query }) => respondWithWarnings(labels(query)))
+			.handle("labelsPost", ({ query, payload }) => respondWithWarnings(labels(merged(query, payload))))
+			.handle("labelValues", ({ params, query }) =>
+				respondWithWarnings(labelValues(params.name, query)),
+			)
 			.handle("metadata", ({ query }) => respond(metadata(query)))
 			.handle("buildInfo", () => respond(Effect.succeed(BUILD_INFO)))
 			.handle("exemplars", () => respond(Effect.succeed([])))

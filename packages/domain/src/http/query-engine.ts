@@ -4097,6 +4097,8 @@ export class PromqlExecuteResponse extends Schema.Class<PromqlExecuteResponse>("
 		resultType: Schema.Literals(["matrix", "vector", "scalar", "string"]),
 		seriesCount: Schema.Number,
 		stepSeconds: Schema.Number,
+		/** Prometheus-style warnings: the nearest names when a selector matched nothing. */
+		warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 	}),
 }) {}
 

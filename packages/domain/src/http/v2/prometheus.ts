@@ -34,8 +34,12 @@ export const PrometheusForm = PrometheusParams.pipe(HttpApiSchema.asFormUrlEncod
 
 const status = Schema.Literal("success")
 
+/** Prometheus' `warnings`: why a query matched nothing (with the nearest names), or that a limit cut it. */
+const warnings = Schema.optionalKey(Schema.Array(Schema.String))
+
 export const PrometheusQueryResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Struct({
 		resultType: Schema.Literals(["matrix", "vector", "scalar", "string"]),
 		result: Schema.Unknown,
@@ -48,11 +52,13 @@ export const PrometheusQueryResponse = Schema.Struct({
 
 export const PrometheusStringListResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Array(Schema.String),
 }).annotate({ identifier: "PrometheusStringListResponse", title: "Prometheus string list" })
 
 export const PrometheusSeriesResponse = Schema.Struct({
 	status,
+	warnings,
 	data: Schema.Array(Schema.Record(Schema.String, Schema.String)),
 }).annotate({ identifier: "PrometheusSeriesResponse", title: "Prometheus series" })
 

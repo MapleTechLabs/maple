@@ -68,3 +68,50 @@ describe("a list tile blocked by the list cap", () => {
 		)
 	})
 })
+
+const HINT = 'no metric named "http_request_total" in the query window; did you mean "http_requests_total"?'
+
+describe("a PromQL tile with warnings", () => {
+	test("shows the hint in place of the generic advice when nothing matched", () => {
+		scene(
+			config,
+			given({
+				state: {
+					_tag: "Error",
+					title: null,
+					message: "No data in this window",
+					kind: "empty",
+					warnings: [HINT],
+				},
+				canNarrow: false,
+				clicked: 0,
+			}),
+			expect(text(HINT)).toExist(),
+			expect(text("Widen the time range or check the query's filters.")).toBeAbsent(),
+		)
+	})
+
+	test("keeps the generic advice for an empty answer without hints", () => {
+		scene(
+			config,
+			given({
+				state: { _tag: "Error", title: null, message: "No data in this window", kind: "empty" },
+				canNarrow: false,
+				clicked: 0,
+			}),
+			expect(text("Widen the time range or check the query's filters.")).toExist(),
+		)
+	})
+
+	test("names the warning in the header beside data", () => {
+		scene(
+			config,
+			given({
+				state: { _tag: "Ready", data: { _tag: "Rows", rows: [] }, warnings: [HINT] },
+				canNarrow: false,
+				clicked: 0,
+			}),
+			expect(role("img", { name: HINT })).toExist(),
+		)
+	})
+})
