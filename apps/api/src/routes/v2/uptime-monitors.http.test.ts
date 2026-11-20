@@ -198,7 +198,7 @@ describe("v2 uptime monitors", () => {
 					method: "GET",
 					headers: {},
 					assertions: [{ type: "status", op: "is", value: "2xx" }],
-					timeout_ms: 10000,
+					timeout_ms: 20000,
 				},
 				state: { status: "pending", consecutive_failures: 0, last_check: null, recent: [] },
 			})
