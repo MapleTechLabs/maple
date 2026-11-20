@@ -197,7 +197,7 @@ const FUNCTION_DOCS = {
 	year: ["year(instant-vector?) → instant-vector", "Year of each timestamp, in UTC."],
 } satisfies Record<string, readonly [signature: string, doc: string]>
 
-/** The aggregation operators, with the parameter the parameterised ones take first. */
+/** The aggregation operators the engine runs (it refuses the experimental `limitk` and `limit_ratio`). */
 export const AGGREGATIONS: ReadonlyArray<readonly [name: string, signature: string, doc: string]> = [
 	["sum", "sum(instant-vector)", "Sum over dimensions."],
 	["avg", "avg(instant-vector)", "Average over dimensions."],
@@ -211,8 +211,6 @@ export const AGGREGATIONS: ReadonlyArray<readonly [name: string, signature: stri
 	["bottomk", "bottomk(k, instant-vector)", "Smallest k elements by value."],
 	["quantile", "quantile(φ, instant-vector)", "φ-quantile (0 to 1) over dimensions."],
 	["count_values", "count_values(label, instant-vector)", "Number of elements with the same value."],
-	["limitk", "limitk(k, instant-vector)", "k elements, picked deterministically."],
-	["limit_ratio", "limit_ratio(ratio, instant-vector)", "A deterministic ratio of the elements."],
 ]
 
 /** Keywords that follow a complete expression: set operators, modifiers and vector matching. */
