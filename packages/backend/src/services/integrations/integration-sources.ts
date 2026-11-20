@@ -239,7 +239,8 @@ type AwsHealthRow = Pick<
 
 /**
  * What an AWS connection adds to its source's health: the stream is all it reads, so no stream is
- * off, and a refused delivery or a stream that never delivered fails. Silence is the row's own.
+ * off, and a refused delivery or a stream that never delivered fails. Its last delivery counts as
+ * data, so the source is not stale while `sources.last_used_at` lags the stream.
  */
 export const awsHealthOverrides = (connection: AwsHealthRow, now: number): SourceHealthOverrides => {
 	const state = awsStreamState(
@@ -261,9 +262,10 @@ export const awsHealthOverrides = (connection: AwsHealthRow, now: number): Sourc
 		case "undelivered":
 			return { failing: AWS_NO_DELIVERY }
 		case "waiting":
+			return {}
 		case "silent":
 		case "delivering":
-			return {}
+			return { deliveredAt: state.receivedAt }
 	}
 }
 
