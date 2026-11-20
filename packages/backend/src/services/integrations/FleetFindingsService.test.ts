@@ -191,4 +191,97 @@ describe("FleetFindingsService", () => {
 			}),
 		)
 	})
+	it.effect("stops both readers when Fleet rejects the token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				world.status = 401
+				assert.strictEqual((yield* syncDue).failedConnections, 1)
+				const page = yield* devices()
+				assert.isTrue(page.connection?.authFailed)
+				// Nothing is due while the token stays rejected, even an hour on.
+				yield* TestClock.adjust(HOUR_MS)
+				const calls = world.fake.calls.length
+				assert.strictEqual((yield* syncDue).connections, 0)
+				assert.strictEqual(world.fake.calls.length, calls)
+			}),
+		)
+	})
+
+	it.effect("holds a rate limited server, at most an hour whatever it asks", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				world.status = 429
+				assert.strictEqual((yield* syncDue).failedConnections, 1)
+				world.status = null
+				yield* TestClock.adjust(10 * 60_000)
+				assert.strictEqual((yield* syncDue).connections, 0)
+				yield* TestClock.adjust(5 * 60_000)
+				assert.strictEqual((yield* syncDue).policies, 2)
+			}),
+		)
+	})
+
+	it.effect("reads vulnerable software in pages, up to ten", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({
+			software: Arr.makeBy(1_050, (index) => ({
+				id: index,
+				name: `pkg-${index}`,
+				version: "1.0",
+				hosts_count: 1,
+				vulnerabilities: [{ cve: `CVE-2026-${index}` }],
+			})),
+		})
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).vulnerabilities, 1_000)
+				const page = yield* devices()
+				assert.lengthOf(page.vulnerabilities, 500)
+				assert.strictEqual(page.moreVulnerabilities, 500)
+			}),
+		)
+	})
+
+	it.effect("starts over when the org connects another server", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				world.policies = []
+				world.software = []
+				world.hostCount = 3
+				yield* FleetConnectionService.use((service) =>
+					service.connect(ORG, USER, {
+						url: "https://devices.example.com",
+						token: "fleet-api-token-0123456789",
+					}),
+				)
+				const pending = yield* devices()
+				assert.deepStrictEqual(
+					[pending.connection?.baseUrl, pending.connection?.syncedAt, pending.policies.length],
+					["https://devices.example.com", null, 0],
+				)
+				// A new server is due at once, not an hour after the old one's sync.
+				yield* syncDue
+				assert.strictEqual((yield* devices()).connection?.hostCount, 3)
+			}),
+		)
+	})
 })

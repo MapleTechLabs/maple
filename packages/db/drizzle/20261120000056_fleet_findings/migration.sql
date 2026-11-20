@@ -55,9 +55,6 @@ ALTER TABLE "fleet_connections" ADD COLUMN IF NOT EXISTS "host_count" integer;
 CREATE UNIQUE INDEX IF NOT EXISTS "fleet_connections_org_id_idx" ON "fleet_connections" USING btree ("org_id", "id");
 --> statement-breakpoint
 -- metadata
-CREATE INDEX IF NOT EXISTS "fleet_vulnerability_findings_org_idx" ON "fleet_vulnerability_findings" USING btree ("org_id", "cvss_score");
---> statement-breakpoint
--- metadata
 ALTER TABLE "fleet_policy_findings" ADD CONSTRAINT "fleet_policy_findings_My7oEJHHBVUy_fk" FOREIGN KEY ("org_id", "connection_id") REFERENCES "fleet_connections" ("org_id", "id") ON DELETE CASCADE;
 --> statement-breakpoint
 -- metadata

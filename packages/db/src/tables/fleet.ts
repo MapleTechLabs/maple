@@ -126,7 +126,6 @@ export const FleetVulnerabilityFindings = PG.table("fleet_vulnerability_findings
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),
 	},
 	primaryKey: ["orgId", "connectionId", "cve"],
-	indexes: [PG.index("fleet_vulnerability_findings_org_idx", ["orgId", "cvssScore"])],
 	foreignKeys: [
 		PG.foreignKey({
 			columns: ["orgId", "connectionId"],

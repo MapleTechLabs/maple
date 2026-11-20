@@ -70,4 +70,21 @@ describe("vulnerabilitiesBySoftware", () => {
 		)
 		assert.strictEqual(found[0]?.software[0]?.resolvedInVersion, "1.3")
 	})
+
+	it("keeps only https detail links, since the server chooses them", () => {
+		const links = Arr.map(
+			["https://nvd.nist.gov/vuln/detail/CVE-A", "javascript:alert(1)", "http://example.com", ""],
+			(link) =>
+				vulnerabilitiesBySoftware([
+					{
+						id: 1,
+						name: "a",
+						version: "1",
+						hosts_count: 1,
+						vulnerabilities: [{ cve: "CVE-A", details_link: link }],
+					},
+				])[0]?.detailsLink,
+		)
+		assert.deepStrictEqual(links, ["https://nvd.nist.gov/vuln/detail/CVE-A", null, null, null])
+	})
 })

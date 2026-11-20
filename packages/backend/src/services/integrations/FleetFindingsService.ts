@@ -27,7 +27,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { openSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
 import { leaseStillOurs } from "./lease"
-import { leaseFree } from "./poller"
+import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import * as FleetApi from "./fleet/api"
 import {
 	failingPolicies,
@@ -40,7 +40,8 @@ import {
 
 const SYNC_EVERY_MS = 60 * 60_000
 const LEASE_MS = 4 * 60_000
-const RATE_LIMIT_HOLD_MS = 15 * 60_000
+/** After this long in a lane, no new server starts: the lane ends at 270 seconds. */
+const START_BY_MS = 150_000
 /** Failing devices kept per policy, and policies sampled per sync. */
 const HOSTS_PER_POLICY = 20
 const SAMPLED_POLICIES = 100
@@ -56,6 +57,13 @@ const toPersistenceError = makePersistenceErrorMapper(
 export interface FleetFindingsSyncResult {
 	readonly connections: number
 	readonly failedConnections: number
+	readonly policies: number
+	readonly vulnerabilities: number
+}
+
+/** How one server's sync ended. */
+interface ServerOutcome {
+	readonly failed: boolean
 	readonly policies: number
 	readonly vulnerabilities: number
 }
@@ -81,38 +89,69 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 			)
 			const dbExecute = makeDbExecute(database, "FleetFindingsService", toPersistenceError)
 
-			/** The row, once this tick holds its findings lease; null when another tick or a hold has it. */
-			const claim = (connectionId: string, now: number) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(FleetConnections)
-							.set({ findingsLeaseUntil: now + LEASE_MS })
-							.where(($) => [
-								$.id.eq(connectionId),
-								$.authFailedAt.isNull(),
-								leaseFree($.findingsLeaseUntil, $.findingsHoldUntil, now, LEASE_MS),
-							])
-							.returning(),
-					),
-				).pipe(Effect.map((rows) => rows[0] ?? null))
+			type FindingsSet = PG.UpdateSetOf<typeof FleetConnections>
+			type FindingsLease = Lease<FleetConnectionRow, FindingsSet, IntegrationsPersistenceError>
 
-			/** One write on the claimed row; false once a reconnect or a later tick owns it. */
-			const writeClaimed = (
-				claimed: FleetConnectionRow,
-				set: PG.UpdateSetOf<typeof FleetConnections>,
-			) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(FleetConnections)
-							.set(set)
-							.where(($) => [
-								$.id.eq(claimed.id),
-								leaseStillOurs($.findingsLeaseUntil, claimed.findingsLeaseUntil),
-								$.tokenCiphertext.eq(claimed.tokenCiphertext),
-							])
-							.returning("id"),
-					),
-				).pipe(Effect.map((rows) => rows.length > 0))
+			/** Still this tick's: its findings lease, and the token it read with. */
+			const stillOurs =
+				(claimed: FleetConnectionRow) => ($: PG.ColumnAccessor<typeof FleetConnections.columns>) => [
+					$.id.eq(claimed.id),
+					leaseStillOurs($.findingsLeaseUntil, claimed.findingsLeaseUntil),
+					$.tokenCiphertext.eq(claimed.tokenCiphertext),
+				]
+
+			const findingsLease = (
+				connectionId: string,
+			): LeaseSpec<FleetConnectionRow, FindingsSet, IntegrationsPersistenceError> => ({
+				leaseMs: LEASE_MS,
+				claim: (leaseUntil, now) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(FleetConnections)
+								.set({ findingsLeaseUntil: leaseUntil })
+								.where(($) => [
+									$.id.eq(connectionId),
+									$.authFailedAt.isNull(),
+									leaseFree($.findingsLeaseUntil, $.findingsHoldUntil, now, LEASE_MS),
+								])
+								.returning(),
+						),
+					).pipe(Effect.map((rows) => rows[0] ?? null)),
+				write: (claimed, set) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(FleetConnections).set(set).where(stillOurs(claimed)).returning("id"),
+						),
+					).pipe(Effect.map((rows) => rows.length > 0)),
+				release: (holdUntil) => ({ findingsLeaseUntil: null, findingsHoldUntil: holdUntil }),
+				// A token saved mid-sync still gets the row back.
+				releaseWrite: (claimed, set) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(FleetConnections)
+								.set(set)
+								.where(($) => [
+									$.id.eq(claimed.id),
+									leaseStillOurs($.findingsLeaseUntil, claimed.findingsLeaseUntil),
+								])
+								.returning("id"),
+						),
+					).pipe(Effect.map((rows) => rows.length > 0)),
+			})
+
+			const readSoftware = (
+				fleet: FleetApi.FleetClient,
+				page: number,
+				acc: ReadonlyArray<FleetApi.FleetSoftwareVersion>,
+			): Effect.Effect<ReadonlyArray<FleetApi.FleetSoftwareVersion>, FleetApi.FleetApiError> =>
+				FleetApi.listVulnerableSoftware(fleet, page, SOFTWARE_PAGE_SIZE).pipe(
+					Effect.flatMap((answer) => {
+						const all = Arr.appendAll(acc, answer.software ?? [])
+						return answer.meta?.has_next_results === true && page + 1 < MAX_SOFTWARE_PAGES
+							? readSoftware(fleet, page + 1, all)
+							: Effect.succeed(all)
+					}),
+				)
 
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
 			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient) {
@@ -129,32 +168,21 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 								(page) => [policy.policyId, Arr.map(page.hosts ?? [], findingHost)] as const,
 							),
 						),
-					{ concurrency: 4 },
+					{ concurrency: 2 },
 				)
-				const pages = yield* readSoftware(fleet, 0, [])
+				const software = yield* readSoftware(fleet, 0, [])
 				return {
 					hostCount: hosts.count,
 					policies: failing,
 					sampledHosts: new Map<number, ReadonlyArray<FleetFindingHost>>(samples),
-					vulnerabilities: vulnerabilitiesBySoftware(pages),
+					vulnerabilities: vulnerabilitiesBySoftware(software),
 				}
 			})
 
-			const readSoftware = (
-				fleet: FleetApi.FleetClient,
-				page: number,
-				read: ReadonlyArray<FleetApi.FleetSoftwareVersion>,
-			): Effect.Effect<ReadonlyArray<FleetApi.FleetSoftwareVersion>, FleetApi.FleetApiError> =>
-				FleetApi.listVulnerableSoftware(fleet, page, SOFTWARE_PAGE_SIZE).pipe(
-					Effect.flatMap((answer) => {
-						const all = Arr.appendAll(read, answer.software ?? [])
-						return answer.meta?.has_next_results === true && page + 1 < MAX_SOFTWARE_PAGES
-							? readSoftware(fleet, page + 1, all)
-							: Effect.succeed(all)
-					}),
-				)
-
-			/** Replaces the server's findings with what it reports now, in one transaction. */
+			/**
+			 * Replaces the server's findings with what it reports now, in one transaction that first
+			 * proves the lease is still this tick's. False, and nothing written, once it is not.
+			 */
 			const store = (
 				claimed: FleetConnectionRow,
 				now: number,
@@ -171,6 +199,18 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				return dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
+							const owned = yield* db.run(
+								PG.update(FleetConnections)
+									.set({
+										findingsSyncedAt: now,
+										findingsError: null,
+										findingsErrorAt: null,
+										hostCount: snapshot.hostCount,
+									})
+									.where(stillOurs(claimed))
+									.returning("id"),
+							)
+							if (owned.length === 0) return false
 							if (snapshot.policies.length > 0)
 								yield* db.run(
 									PG.insertInto(FleetPolicyFindings)
@@ -230,26 +270,27 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 									$.lastSeenAt.lt(now),
 								]),
 							)
+							return true
 						}),
 					),
 				)
 			}
 
+			const NOTHING: ServerOutcome = { failed: false, policies: 0, vulnerabilities: 0 }
+			const FAILED: ServerOutcome = { failed: true, policies: 0, vulnerabilities: 0 }
+
 			const syncClaimed = Effect.fn("FleetFindingsService.syncServer")(function* (
-				claimed: FleetConnectionRow,
-				now: number,
+				lease: FindingsLease,
 			) {
+				const { row: claimed, now } = lease
 				yield* Effect.annotateCurrentSpan({
 					orgId: claimed.orgId,
 					"maple.fleet.connection_id": claimed.id,
 				})
-				const fail = (message: string, hold: number | null = null) =>
-					writeClaimed(claimed, {
-						findingsLeaseUntil: null,
-						findingsHoldUntil: hold,
-						findingsError: message,
-						findingsErrorAt: now,
-					}).pipe(Effect.as({ failed: true, policies: 0, vulnerabilities: 0 }))
+				const fail = (message: string, extra: FindingsSet = {}) =>
+					lease
+						.write({ findingsError: message, findingsErrorAt: now, ...extra })
+						.pipe(Effect.as(FAILED))
 
 				const token = yield* Effect.result(
 					openSecret(
@@ -271,44 +312,40 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				if (snapshot._tag === "Failure") {
 					const failure = snapshot.failure
 					yield* Effect.annotateCurrentSpan("maple.fleet.error_kind", failure.kind)
-					if (failure.kind === "unauthorized")
-						return yield* writeClaimed(claimed, {
-							findingsLeaseUntil: null,
-							authFailedAt: now,
-							lastError: failure.message,
-							lastErrorAt: now,
-							findingsError: failure.message,
-							findingsErrorAt: now,
-						}).pipe(Effect.as({ failed: true, policies: 0, vulnerabilities: 0 }))
-					return yield* fail(
-						failure.message,
-						failure.kind === "rate_limited"
-							? now + Math.max(RATE_LIMIT_HOLD_MS, (failure.retryAfterSeconds ?? 0) * 1000)
-							: null,
-					)
+					switch (failure.kind) {
+						// Both readers stop until a new token is saved.
+						case "unauthorized":
+							return yield* fail(failure.message, {
+								authFailedAt: now,
+								lastError: failure.message,
+								lastErrorAt: now,
+							})
+						case "rate_limited":
+							yield* lease.holdFor({
+								_tag: "RateLimited",
+								message: failure.message,
+								retryAfterMs: (failure.retryAfterSeconds ?? 0) * 1000,
+							})
+							return yield* fail(failure.message)
+						default:
+							return yield* fail(failure.message)
+					}
 				}
-				yield* store(claimed, now, snapshot.success)
+				const stored = yield* store(claimed, now, snapshot.success)
+				if (!stored) return NOTHING
 				yield* Effect.annotateCurrentSpan({
 					"maple.fleet.policies": snapshot.success.policies.length,
 					"maple.fleet.vulnerabilities": snapshot.success.vulnerabilities.length,
-				})
-				yield* writeClaimed(claimed, {
-					findingsLeaseUntil: null,
-					findingsHoldUntil: null,
-					findingsSyncedAt: now,
-					findingsError: null,
-					findingsErrorAt: null,
-					hostCount: snapshot.success.hostCount,
 				})
 				return {
 					failed: false,
 					policies: snapshot.success.policies.length,
 					vulnerabilities: snapshot.success.vulnerabilities.length,
-				}
+				} satisfies ServerOutcome
 			})
 
 			const syncDue = Effect.gen(function* () {
-				const now = yield* Clock.currentTimeMillis
+				const startedAt = yield* Clock.currentTimeMillis
 				const due = yield* dbExecute((db) =>
 					db.run(
 						PG.from(FleetConnections)
@@ -317,7 +354,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 								$.authFailedAt.isNull(),
 								PG.or(
 									$.findingsSyncedAt.isNull(),
-									$.findingsSyncedAt.lte(now - SYNC_EVERY_MS),
+									$.findingsSyncedAt.lte(startedAt - SYNC_EVERY_MS),
 								),
 							]),
 					),
@@ -325,21 +362,21 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				const outcomes = yield* Effect.forEach(
 					due,
 					(candidate) =>
-						claim(candidate.id, now).pipe(
-							Effect.flatMap((claimed) =>
-								claimed === null
-									? Effect.succeedNone
-									: Effect.asSome(syncClaimed(claimed, now)),
-							),
-							// One server's broken row never stops the others; its lease runs out on its own.
+						Effect.gen(function* () {
+							const now = yield* Clock.currentTimeMillis
+							// Late in the lane, a new server waits for the next tick rather than be cut short.
+							if (now - startedAt > START_BY_MS) return Option.none<ServerOutcome>()
+							return yield* withLease(findingsLease(candidate.id), now, syncClaimed)
+						}).pipe(
+							// One server's broken row never stops the others.
 							Effect.catch((error) =>
 								Effect.logWarning("Fleet findings sync failed").pipe(
 									Effect.annotateLogs({ connectionId: candidate.id, error }),
-									Effect.as(Option.some({ failed: true, policies: 0, vulnerabilities: 0 })),
+									Effect.as(Option.some(FAILED)),
 								),
 							),
 						),
-					{ concurrency: 4 },
+					{ concurrency: 2 },
 				)
 				const synced = Arr.getSomes(outcomes)
 				return {

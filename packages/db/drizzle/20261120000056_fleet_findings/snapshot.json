@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "a9bff5846cb605b6d7ef1943989edff60b5f72d8d1a9cf7901461b4e10cbc061",
+	"id": "991bed512c1678f8fc2aeb3ba70be63e4a6009232cba0cf2a51baac7b7065806",
 	"prevIds": [
 		"7c1a58e5c9e8a691393a2aafa6388c9bc3f4198bbf4adfe993af2fe5ee36810e"
 	],
@@ -22859,18 +22859,6 @@
 			"method": "btree",
 			"columns": [
 				"\"org_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "fleet_vulnerability_findings",
-			"name": "fleet_vulnerability_findings_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"cvss_score\""
 			],
 			"where": null
 		},

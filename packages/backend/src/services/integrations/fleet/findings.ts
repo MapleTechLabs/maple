@@ -66,6 +66,12 @@ export const failingPolicies = (policies: ReadonlyArray<FleetPolicy>): ReadonlyA
 const emptyToNull = (value: string | null | undefined): string | null =>
 	value === undefined || value === null || value === "" ? null : value
 
+/** A link the Devices page renders: https only, since the server chooses it. */
+const httpsOnly = (value: string | null | undefined): string | null => {
+	const link = emptyToNull(value)
+	return link !== null && URL.canParse(link) && new URL(link).protocol === "https:" ? link : null
+}
+
 export const findingHost = (host: FleetHost): FleetFindingHost => ({
 	id: host.id,
 	name: emptyToNull(host.display_name) ?? emptyToNull(host.hostname) ?? `host ${host.id}`,
@@ -108,7 +114,7 @@ export const vulnerabilitiesBySoftware = (
 				: Arr.some(exploited, (value) => value === false)
 					? false
 					: null,
-			detailsLink: emptyToNull(first.details_link),
+			detailsLink: httpsOnly(first.details_link),
 			hostCount: Arr.reduce(group, 0, (sum, hit) => sum + (hit.version.hosts_count ?? 0)),
 			software: Arr.map(group, (hit) => ({
 				name: hit.version.name,
