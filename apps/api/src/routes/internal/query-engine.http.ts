@@ -2786,9 +2786,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 							limit: payload.limit ?? 500,
 						}
 						const data = yield* mapExecError(
-							payload.label === undefined
+							(payload.label === undefined
 								? promql.labelNames(tenant, query)
-								: promql.labelValues(tenant, { ...query, name: payload.label }),
+								: promql.labelValues(tenant, { ...query, name: payload.label })
+							).pipe(Effect.map((answer) => answer.data)),
 							"promql discovery failed",
 						).pipe(
 							Effect.catchTags({
