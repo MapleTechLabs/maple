@@ -29,7 +29,7 @@ import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import { fleetActivityToEvent } from "./fleet/activities"
 import * as FleetApi from "./fleet/api"
-import { fleetServerName } from "./fleet/naming"
+import { fleetServerName } from "@maple/domain/http"
 
 const LEASE_MS = 4 * 60_000
 /** How far back a server's first read goes. */
