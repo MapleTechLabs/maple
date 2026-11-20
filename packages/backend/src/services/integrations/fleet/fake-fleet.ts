@@ -129,20 +129,23 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 							license: { tier: world.tier },
 						}),
 				},
-				{ path: `${PREFIX}/hosts/count`, respond: () => VendorFake.json({ count: world.hostCount }) },
 				{
-					path: `${PREFIX}/global/policies`,
+					path: new RegExp(`${PREFIX}/hosts/count$`),
+					respond: () => VendorFake.json({ count: world.hostCount }),
+				},
+				{
+					path: new RegExp(`${PREFIX}/global/policies$`),
 					respond: () => VendorFake.json({ policies: world.policies }),
 				},
 				{
-					path: `${PREFIX}/hosts`,
+					path: new RegExp(`${PREFIX}/hosts$`),
 					respond: (request) =>
 						VendorFake.json({
 							hosts: world.failingHosts[Number(request.search.get("policy_id"))] ?? [],
 						}),
 				},
 				{
-					path: `${PREFIX}/software/versions`,
+					path: new RegExp(`${PREFIX}/software/versions$`),
 					respond: (request) => {
 						const page = Number(request.search.get("page") ?? "0")
 						const perPage = Number(request.search.get("per_page") ?? "100")
