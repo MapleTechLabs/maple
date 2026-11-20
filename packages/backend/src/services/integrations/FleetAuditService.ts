@@ -78,7 +78,11 @@ export const gapsAfter = (
 	const seen = new Set(Arr.map(written, (activity) => activity.id))
 	// Only ids a later read can still reach are worth remembering. A first read has no cursor:
 	// an id below its lowest may still commit, so the whole reach counts.
-	const from = cursor === null ? next - OVERLAP_IDS + 1 : Math.max(cursor + 1, next - OVERLAP_IDS + 1)
+	// Fleet ids start at 1, so nothing below that is a gap.
+	const from = Math.max(
+		1,
+		cursor === null ? next - OVERLAP_IDS + 1 : Math.max(cursor + 1, next - OVERLAP_IDS + 1),
+	)
 	const skipped = from < next ? Arr.range(from, next - 1) : []
 	return new Set(
 		Arr.filter(
