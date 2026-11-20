@@ -64,7 +64,6 @@ const snapshot: ClerkSnapshot = {
 			productAnalytics: false,
 			profiling: false,
 			securityAudit: false,
-			statusPages: false,
 		},
 	}),
 	memberships: [],
@@ -112,30 +111,6 @@ describe("plan gate splash on a slow customer read", () => {
 		expect(Option.map(redirect, ({ url }) => Str.startsWith("/quick-start")(url))).toEqual(
 			Option.some(true),
 		)
-	})
-})
-
-describe("statusPages rollout", () => {
-	const withFlag = (statusPages: boolean): ClerkSnapshot => ({
-		...snapshot,
-		maybeOrganization: Option.map(snapshot.maybeOrganization, (organization) => ({
-			...organization,
-			flags: { ...organization.flags, statusPages },
-		})),
-	})
-	const atStatusPages = (): Model => ({ ...base({ [orgId]: true }), route: AppRoute.StatusPages() })
-
-	test("an org outside the rollout is sent home without the status pages list mounting", () => {
-		const loaded = update(atStatusPages(), Message.CompletedLoadClerk({ snapshot: withFlag(false) }))
-		expect(loaded.model.page).toBeNull()
-		expect(namesOf(loaded)).toContain("ReplaceUrl")
-		expect(namesOf(loaded)).not.toContain("FetchStatusPages")
-	})
-
-	test("an org in the rollout gets the list", () => {
-		const loaded = update(atStatusPages(), Message.CompletedLoadClerk({ snapshot: withFlag(true) }))
-		expect(loaded.model.page).not.toBeNull()
-		expect(namesOf(loaded)).not.toContain("ReplaceUrl")
 	})
 })
 

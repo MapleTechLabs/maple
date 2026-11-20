@@ -17,7 +17,6 @@ import {
 	emptyMedia,
 	emptyTitle,
 } from "@maple/views/ui/empty"
-import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
@@ -129,25 +128,6 @@ const emptyState = (h: H, model: Model): Html =>
 			),
 		],
 		emptyFrameClass("dashed"),
-	)
-
-/** The API's answer for an org outside the rollout: a state of the org, not a failed load. */
-const isNotEnabled = (failure: LoadFailure): boolean => failure.code === "status_pages_disabled"
-
-/** Nothing here retries or creates: the org has to be added to the rollout first. */
-const notEnabledState = (h: H): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
-				emptyTitle(h, ["Status pages are not enabled"]),
-				emptyDescription(h, [
-					"Status pages are rolling out one organization at a time, and this one is not in yet. Contact Maple support to turn them on.",
-				]),
-			]),
-		],
-		"py-12",
 	)
 
 // CARD HEADER
@@ -503,7 +483,6 @@ const pageCard = (
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const data = model.pages.data
-	if (AsyncData.isFailure(data) && isNotEnabled(data.error)) return notEnabledState(h)
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,

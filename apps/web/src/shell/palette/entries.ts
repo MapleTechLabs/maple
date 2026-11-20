@@ -67,7 +67,6 @@ const EVERY_FLAG = {
 	cloudSecurity: true,
 	productAnalytics: true,
 	securityAudit: true,
-	statusPages: true,
 }
 
 /** A page's palette row under each title the nav gives it: the section, its children, their views. */
