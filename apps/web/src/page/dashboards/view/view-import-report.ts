@@ -50,34 +50,39 @@ export const importReportNotice = (
 						]),
 					]
 				: []),
-			alertAction(h, [
-				button(
-					h,
-					{
-						size: "sm",
-						variant: "ghost",
-						attributes: [
-							h.OnClick(Message.ToggledImportReport()),
-							h.AriaExpanded(options.isOpen),
-							h.AriaControls(listId),
-						],
-					},
-					[options.isOpen ? "Hide" : "Show"],
-				),
-				...(options.canDismiss
-					? [
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "outline",
-									attributes: [h.OnClick(Message.ClickedDismissImportReport())],
-								},
-								["Dismiss"],
-							),
-						]
-					: []),
-			]),
+			alertAction(
+				h,
+				[
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "ghost",
+							attributes: [
+								h.OnClick(Message.ToggledImportReport()),
+								h.AriaExpanded(options.isOpen),
+								h.AriaControls(listId),
+							],
+						},
+						[options.isOpen ? "Hide" : "Show"],
+					),
+					...(options.canDismiss
+						? [
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										attributes: [h.OnClick(Message.ClickedDismissImportReport())],
+									},
+									["Dismiss"],
+								),
+							]
+						: []),
+				],
+				// Stays by the title when the list opens below it.
+				"sm:self-start",
+			),
 		]),
 	]
 }
