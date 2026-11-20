@@ -37,12 +37,13 @@ export const importReportNotice = (
 								h,
 								{
 									as: "ul",
+									bordered: false,
 									className: "mt-1 max-h-72 overflow-y-auto",
 									attributes: [h.Id(listId)],
 								},
 								Arr.map(report.items, (item) =>
 									h.li(
-										[h.Class("py-2")],
+										[h.Class("py-2 last:pb-0")],
 										[typography(h, { size: "sm", tone: "muted" }, [item])],
 									),
 								),
