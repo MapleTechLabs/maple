@@ -44,10 +44,12 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/combobox.ts` `inputId`, `listId`, `itemId`, `filterItems`, `queryOf`, `visibleItems`, `focusLeaves` (stateful: Model, init, update): Base UI `Combobox` (multiple, with chips) and `Autocomplete` (`@maple/ui/combobox`, `@maple/ui/autocomplete`): an input that filters a listbox.
 - `packages/views/src/ui/command.ts` `commandTitles`, `commandInput`, `commandList`, `commandGroup`, `commandFooter`, `commandHiddenInput`, `commandOption`, `commandListbox`, `commandEmpty`: `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first match highlighted) on the Combobox Model, inside a `command-dialog` Dialog.
 - `packages/views/src/ui/compact-search-input.ts` `compactSearchInput`: `CompactSearchInput`: a 24px mono filter field (magnifier, search input, clear button) for a panel toolbar.
+- `packages/views/src/ui/concept-flow.ts` `conceptFlow`: `ConceptFlow`: a short primer at the top of a page that introduces an idea: a title, one lead sentence, then the concepts it is built from as tiles joined by arrows (each leads...
 - `packages/views/src/ui/confirm-dialog.ts` `confirmDialog`: A confirm dialog over the alert-dialog Submodel.
 - `packages/views/src/ui/context-menu-view.ts` `idleTrigger`, `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
 - `packages/views/src/ui/context-menu.ts` `itemId`, `subItemId`, `subPopupId` (stateful: Model, init, update): Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at the pointer (fixed, side right, align start, offset 4); arrows move the highlight,...
 - `packages/views/src/ui/contribution-calendar.ts` `contributionLevel`, `contributionCalendar`: One cell per day, a column per week; levels on the amber heatmap ramp.
+- `packages/views/src/ui/control-card.ts` `radioCard`, `checkboxCard`: `ControlCard`: a bordered option card with a visible kit radio or checkbox, the whole card its click target.
 - `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
@@ -135,7 +137,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/page-layout.ts` `pageLayoutRoot`, `pageTitle`, `pageDescription`, `pageHeader`, `pageHeaderActions`: A page's root and header: title, description and header actions.
 - `packages/views/src/ui/page-rails.ts` `splitPageRails`: The filter and right sidebars below `lg`: each renders as a sheet, not an inline rail, and puts a trigger in the top bar while one is mounted.
 - `packages/views/src/ui/panel.ts` `panel`, `panelTitle`, `panelHeader`, `panelBody`, `panelChartBody`: The flat bordered section frame.
-- `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
+- `packages/views/src/ui/person-avatar.ts` `personAvatar`, `personLabel`, `personCard`, `personTrigger`, `personAvatarStack`: `PersonAvatar` and `PersonLabel`: a member of the org as a warm initials tile (or their own image), alone or beside their name.
 - `packages/views/src/ui/popover.ts` `titleId`, `descriptionId`, `open`, `close`, `view`, `popoverTitle`, `popoverDescription` (stateful: Model, init, update): Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press outside close it, and it is placed under the trigger with `sideOffset` 4 and colli...
 - `packages/views/src/ui/pressable.ts` `pressable`: `Pressable`: a click target that draws its own look (a timeline lane, a chart bar, a colour swatch, a bespoke row).
 - `packages/views/src/ui/radio-group.ts` `radioGroup`, `labelId`, `radio` (stateful: Model, init, update): Base UI `RadioGroup`: the checked value.
@@ -324,7 +326,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/service-metrics/markers-view.ts` `markersOverlay`: Commit markers over a chart.
 - `apps/web/src/page/kit/service-metrics/markers.ts` `commitMarkers`, `markerShas`, `markerLayout`: Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 - `apps/web/src/page/kit/service-runtimes.ts` `runtimeLink`, `workloadLink`: Where a service runs, as links to the infra pages: its platform resources (`ServiceRuntimesResponse`) and its Kubernetes workloads.
-- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`, `gatedControl`, `denialReason`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
+- `apps/web/src/page/kit/session-grants.ts` `fetchSessionGrants`, `acceptGrants`, `canManageAlerts`, `canManageOnCall`, `canManageSlos`, `canRespondToIncidents`, `canRunInvestigations`, `canReadAuditLog`, `gatedControl`, `denialReason`, `denialTooltip`, `denialTooltipContent`: A page's read of the viewer's permissions: the answer carries the org it was asked for, so a late answer for another org is dropped.
 - `apps/web/src/page/kit/settings-section.ts` `settingsSection`, `settingsSections`, `adminOnlyNote`, `sectionNote`: A settings tab's titled sections, the stack they sit in, and the admin-only note.
 - `apps/web/src/page/kit/severity-tokens.ts` `statusLabel`: Canonical severity/status → Tailwind class maps for the infrastructure UI.
 - `apps/web/src/page/kit/sheet-detail-header.ts` `sheetDetailHeader`: A detail sheet's eyebrow kind, title, screen-reader description and meta row.

@@ -43,6 +43,7 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+		permission: "ai:act",
 		phrases: ["Drafting a fix"],
 		handler: Effect.fn("McpTool.proposeFix")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

@@ -26,6 +26,7 @@ import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { denialReason } from "../../kit/session-grants"
 import type { PageViewInputs } from "../../contract"
 import { severityBadge } from "../../alerts/shared/badges"
 import {
@@ -233,16 +234,17 @@ const onRamp = (h: H): Html =>
 		"py-12",
 	)
 
-/** Not an org admin: the page says who can read it. */
+/** A role without `audit_log:read`: the page says which permission reads it. */
 const adminsOnly = (h: H): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "LockIcon")]),
-				emptyTitle(h, ["Only org admins can see and change detections"]),
+				emptyTitle(h, ["Your role can't see or change detections"]),
 				emptyDescription(h, [
-					"A detection counts audit events, which record who did what. You still see its incidents in Alerts.",
+					denialReason("audit_log:read"),
+					" A detection counts audit events, which record who did what. You still see its incidents in Alerts.",
 				]),
 			]),
 		],
@@ -252,7 +254,7 @@ const adminsOnly = (h: H): Html =>
 /** What a member sees of a detection, said once: its rule row syncs to every member's browser. */
 const footnote = (h: H): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, [
-		"Every member of the org can see a detection's name and that it fired. Only org admins see the events it counted.",
+		"Every member of the org can see a detection's name and that it fired. Only roles that read the audit log see the events it counted.",
 	])
 
 const listBody = (h: H, model: Model): ReadonlyArray<Html> =>

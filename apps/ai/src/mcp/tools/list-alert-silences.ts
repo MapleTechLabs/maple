@@ -25,6 +25,7 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 			offset: P.offset({ max: 10_000 }),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing alert silences", "Checking alert silences"],
 		handler: Effect.fn("McpTool.listAlertSilences")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

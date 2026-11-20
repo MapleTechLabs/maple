@@ -34,6 +34,7 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 			ends_at: timestamp("When the cover ends"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Creating an on-call override"],
 		handler: Effect.fn("McpTool.createOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
@@ -61,7 +62,7 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 				}),
 			)
 			const override = yield* schedules
-				.createOverride(tenant.orgId, tenant.userId, tenant.roles, scheduleId, request)
+				.createOverride(tenant.orgId, tenant.userId, tenant.permissions, scheduleId, request)
 				.pipe(Effect.catchTags(createOverrideErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { scheduleName: schedule.name, override: toOverrideRow(override, names) }

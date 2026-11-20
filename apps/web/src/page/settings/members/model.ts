@@ -1,5 +1,7 @@
+import { RoleListResponse, RoleRef } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { orgRoleKeys } from "../kit/org-membership"
+import { RoleListData } from "../roles/model"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
@@ -21,7 +23,11 @@ export const MemberRow = Schema.Struct({
 	identifier: Schema.String,
 	/** `publicUserData.imageUrl`, `""` without one. */
 	imageUrl: Schema.String,
+	/** The member's user id, which a role change addresses. */
+	userId: Schema.String,
 	role: Schema.String,
+	/** On `org:custom`, the custom role the membership names; `null` on a built-in role. */
+	customRoleId: Schema.NullOr(Schema.String),
 	createdAtMs: Schema.Number,
 	isCurrentUser: Schema.Boolean,
 })
@@ -52,12 +58,24 @@ const ListOf = <S extends Schema.Top>(row: S) =>
 export const MembersData = AsyncData.Schema(ListOf(MemberRow), LoadFailure)
 export const InvitationsData = AsyncData.Schema(ListOf(InvitationRow), LoadFailure)
 
-const roleChangeFields = { memberId: Schema.String, name: Schema.String, next: OrgRole }
+/** `next` is the role's key (`admin`, or a custom role's id); `roleName` names it in the toast. */
+const roleChangeFields = {
+	memberId: Schema.String,
+	userId: Schema.String,
+	name: Schema.String,
+	next: Schema.String,
+	roleName: Schema.String,
+	ref: RoleRef,
+}
 
-/** A role change on the inline confirm strip under the member's row, then while it saves. */
+/**
+ * A role change: on the inline confirm strip under the member's row (making someone an admin), then
+ * while it saves; any other change saves at once (`Applying`), with no strip.
+ */
 export const PendingRoleChange = Schema.Union([
 	Schema.TaggedStruct("Confirming", roleChangeFields),
 	Schema.TaggedStruct("Saving", roleChangeFields),
+	Schema.TaggedStruct("Applying", roleChangeFields),
 ])
 export type PendingRoleChange = typeof PendingRoleChange.Type
 
@@ -69,6 +87,8 @@ export const Model = Schema.Struct({
 	orgName: Schema.String,
 	members: MembersData.schema,
 	invitations: InvitationsData.schema,
+	/** The built-in and custom roles, for the picker and to name a custom role's holders. */
+	roles: RoleListData.schema,
 	/** Bumped by each read from page 1: a page answer for an older one is dropped. */
 	membersGeneration: Schema.Number,
 	invitationsGeneration: Schema.Number,
@@ -90,7 +110,7 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /** The viewer may invite, remove and re-role members (`members:manage`). */
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "members:manage")
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.can(model.grants, "members:manage")
 
 const done = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, Schema.String) })
 
@@ -102,6 +122,7 @@ export const Message = defineMessageUnion({
 		generation: Schema.Number,
 		result: Schema.Result(MembersPage, LoadFailure),
 	},
+	CompletedFetchRoles: { result: Schema.Result(RoleListResponse, LoadFailure) },
 	CompletedFetchInvitations: {
 		page: Schema.Number,
 		generation: Schema.Number,
@@ -121,12 +142,7 @@ export const Message = defineMessageUnion({
 	ClickedCancelRole: {},
 	ClickedConfirmRole: {},
 	/** Keyed by member and role: a pick made meanwhile is not the change that settled. */
-	CompletedRoleChange: {
-		memberId: Schema.String,
-		name: Schema.String,
-		next: OrgRole,
-		...done(Schema.Void),
-	},
+	CompletedRoleChange: { ...roleChangeFields, ...done(Schema.Void) },
 	GotRowMenuMessage: { menuId: Schema.String, message: Menu.Message },
 	GotRemoveDialogMessage: { message: Dialog.Message },
 	ClickedConfirmRemove: {},

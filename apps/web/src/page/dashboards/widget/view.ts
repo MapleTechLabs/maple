@@ -17,13 +17,14 @@ import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { canApply, previewWidgetOf } from "./update"
+import { applyPermission, canApply, previewWidgetOf } from "./update"
 import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
 import { settingsRail } from "./view-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { gatedControl } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -201,15 +202,17 @@ export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>
 					},
 					["Cancel"],
 				),
-				button(
-					h,
-					{
-						size: "sm",
-						isLoading: model.isSaving,
-						isDisabled: !canApply(model),
-						attributes: [h.OnClick(Message.ClickedApply())],
-					},
-					["Apply"],
+				gatedControl(h, model, applyPermission(model), (isLocked) =>
+					button(
+						h,
+						{
+							size: "sm",
+							isLoading: model.isSaving,
+							isDisabled: !canApply(model) || isLocked,
+							attributes: [h.OnClick(Message.ClickedApply())],
+						},
+						["Apply"],
+					),
 				),
 			]),
 )

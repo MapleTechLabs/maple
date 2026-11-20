@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -57,6 +58,7 @@ const makeLayer = (namesFail = false) => {
 			orgId: ORG,
 			userId: USER,
 			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
 			authMode: "self_hosted",
 		} as never),
 		Layer.succeed(AlertDestinationsService, {

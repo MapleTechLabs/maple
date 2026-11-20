@@ -22,6 +22,7 @@ export function registerAcknowledgeAlertIncidentTool(server: McpToolRegistrar) {
 			acknowledged: P.optionalFlag("false to unacknowledge. Default true."),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "incidents:respond",
 		phrases: ["Acknowledging an alert incident"],
 		handler: Effect.fn("McpTool.acknowledgeAlertIncident")(function* (params) {
 			const incidentId = yield* P.decodeResourceId("alertIncident", "incident_id")(params.incident_id)

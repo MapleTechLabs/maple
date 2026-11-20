@@ -1,8 +1,10 @@
+import { RoleRef } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
+import { UserId } from "@maple/primitives"
 import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../kit/org-membership"
 import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { settleTo } from "@maple/views/data/load-failure"
+import { failureMessage, settleTo, toLoadFailure } from "@maple/views/data/load-failure"
 import type {
 	ClerkInvitationResource,
 	ClerkMembershipResource,
@@ -17,7 +19,25 @@ import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { memberDisplayName, otherAdminName } from "../kit/members"
-import { canManage, type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
+import {
+	builtInEntries,
+	builtInKeyOf,
+	findRole,
+	listRoles,
+	type RoleEntry,
+	roleEntries,
+	rolesHref,
+	setMemberRole,
+} from "../roles/roles"
+import {
+	canManage,
+	type InvitationRow,
+	type MemberRow,
+	Message,
+	type Model,
+	OrgRole,
+	type PendingRoleChange,
+} from "./model"
 
 type Return = PageReturn<Model, Message>
 
@@ -59,7 +79,17 @@ const memberRow = (member: ClerkMembershipResource, userId: string | null): Memb
 	identifier: member.publicUserData?.identifier ?? "",
 	// Clerk's generated silhouette is not the member's; the warm initials tile stands in.
 	imageUrl: member.publicUserData?.hasImage === true ? member.publicUserData.imageUrl : "",
+	userId: member.publicUserData?.userId ?? "",
 	role: member.role,
+	customRoleId:
+		member.role === Policy.CUSTOM_ROLE_CLERK_KEY
+			? Option.getOrNull(
+					Option.map(
+						Policy.membershipRoleFromMetadata(member.publicMetadata),
+						(role): string => role.id,
+					),
+				)
+			: null,
 	createdAtMs: member.createdAt.getTime(),
 	isCurrentUser: userId !== null && member.publicUserData?.userId === userId,
 })
@@ -96,6 +126,11 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 			}),
 			settleTo((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
+})
+
+const FetchRoles = Command.define("FetchMembersRoles", {
+	messages: [Message.CompletedFetchRoles],
+	execute: listRoles.pipe(settleTo((result) => Message.CompletedFetchRoles({ result }))),
 })
 
 const FetchInvitations = Command.define("FetchClerkInvitations", {
@@ -179,13 +214,26 @@ const TrackMemberInvited = Command.define("TrackMemberInvited", {
 		trackProduct("member_invited", { role }).pipe(Effect.as(Message.CompletedTrackMemberInvited())),
 })
 
-const ChangeRole = Command.define("ChangeClerkMemberRole", {
-	args: { memberId: Schema.String, name: Schema.String, next: OrgRole },
+const roleChangeArgs = {
+	memberId: Schema.String,
+	userId: Schema.String,
+	name: Schema.String,
+	next: Schema.String,
+	roleName: Schema.String,
+	ref: RoleRef,
+}
+
+/** Through Maple's API, which keeps a custom role's permissions on the membership in step. */
+const SetMemberRole = Command.define("SetMemberRole", {
+	args: roleChangeArgs,
 	messages: [Message.CompletedRoleChange],
-	execute: ({ memberId, name, next }) =>
-		withMembership(memberId, (member) =>
-			clerkTry("Couldn't change role", () => member.update({ role: next })),
-		).pipe(settleClerk((result) => Message.CompletedRoleChange({ memberId, name, next, result }))),
+	execute: (change) =>
+		setMemberRole(UserId.make(change.userId), change.ref).pipe(
+			Effect.asVoid,
+			Effect.mapError((error) => failureMessage(toLoadFailure(error))),
+			Effect.result,
+			Effect.map((result) => Message.CompletedRoleChange({ ...change, result })),
+		),
 })
 
 const RemoveMember = Command.define("RemoveClerkMember", {
@@ -235,8 +283,35 @@ const ResendInvitation = Command.define("ResendClerkInvitation", {
 		}),
 })
 
+/** The picker's value that opens the Roles tab instead of choosing a role. */
+export const MANAGE_ROLES = "manage-roles"
+
+/** The roles the picker lists: built-in first, then the organization's own once the list answers. */
+export const roleEntriesOf = (model: Pick<Model, "roles">): ReadonlyArray<RoleEntry> =>
+	AsyncData.getOrElse(AsyncData.map(model.roles, roleEntries), () => builtInEntries)
+
+/** A member's role as a picker key: a built-in role's name, or the custom role's id. */
+export const memberRoleKey = (member: MemberRow): string =>
+	member.role === Policy.CUSTOM_ROLE_CLERK_KEY
+		? (member.customRoleId ?? Policy.CUSTOM_ROLE_CLERK_KEY)
+		: Option.getOrElse(builtInKeyOf(toOrgRole(member.role)), () => member.role)
+
+/** On `org:custom` with no role on the membership (its role was deleted mid-change): they hold nothing. */
+export const holdsNoRole = (member: MemberRow): boolean =>
+	member.role === Policy.CUSTOM_ROLE_CLERK_KEY && member.customRoleId === null
+
+/** A member's role by name; a custom role the list does not name reads "Custom". */
+export const memberRoleName = (model: Pick<Model, "roles">, member: MemberRow): string =>
+	holdsNoRole(member)
+		? "No role"
+		: Option.match(findRole(roleEntriesOf(model), memberRoleKey(member)), {
+				onNone: () => "Custom",
+				onSome: (role) => role.name,
+			})
+
 export const roleSelectFor = (model: Model, member: MemberRow): Select.Model =>
-	model.roleSelects[member.id] ?? roleSelect(`member-role-${member.id}`, toOrgRole(member.role))
+	model.roleSelects[member.id] ??
+	Select.init(`member-role-${member.id}`, { value: memberRoleKey(member), selectedIndex: null })
 
 const roleSelect = (id: string, role: OrgRole): Select.Model =>
 	Select.init(id, {
@@ -252,6 +327,7 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 		orgName: "",
 		members: AsyncData.Loading(),
 		invitations: AsyncData.Loading(),
+		roles: AsyncData.Loading(),
 		membersGeneration: 0,
 		invitationsGeneration: 0,
 		inviteDialog: Dialog.init("invite-member", "dialog"),
@@ -272,8 +348,9 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	commands: [
 		FetchOrganization(),
 		FetchMembers({ page: 1, generation: 0 }),
+		FetchRoles(),
 		// Clerk answers 403 to a member reading pending invitations; the section only shows for managers.
-		...(Policy.has(grants, "members:manage")
+		...(Policy.can(grants, "members:manage")
 			? [FetchInvitations({ page: 1, generation: 0 })]
 			: [FetchAdminName()]),
 	],
@@ -439,14 +516,40 @@ export const revisit = (model: Model): Return => {
 		commands: [
 			...members.commands,
 			...invitations.commands,
+			FetchRoles(),
 			FetchOrganization(),
 			...(canManage(model) ? [] : [FetchAdminName()]),
 		],
 	}
 }
 
-const isSavingFor = (model: Model, memberId: string): boolean =>
-	model.pendingRole?._tag === "Saving" && model.pendingRole.memberId === memberId
+/** A role change for the member is on its way (confirmed, or applied without a strip). */
+export const isSavingFor = (model: Model, memberId: string): boolean =>
+	model.pendingRole !== null &&
+	model.pendingRole._tag !== "Confirming" &&
+	model.pendingRole.memberId === memberId
+
+/** Making someone an admin is asked on the confirm strip first; any other role applies at once. */
+const isSensitiveChange = (role: RoleEntry): boolean => role.key === "admin"
+
+const pickedRole = (model: Model, member: MemberRow, role: RoleEntry): Pick<Return, "model" | "commands"> => {
+	const change = {
+		memberId: member.id,
+		userId: member.userId,
+		name: member.name,
+		next: role.key,
+		roleName: role.name,
+		ref: role.ref,
+	}
+	if (isSensitiveChange(role))
+		return { model: { ...model, pendingRole: { _tag: "Confirming", ...change } } }
+	return {
+		model: { ...model, pendingRole: { _tag: "Applying", ...change } },
+		commands: [SetMemberRole(change)],
+	}
+}
+
+const changeOf = ({ _tag, ...change }: PendingRoleChange) => change
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -454,6 +557,9 @@ export const update = (model: Model, message: Message): Return =>
 			model: { ...model, hasOrganization: name !== null, orgName: name ?? "" },
 		}),
 		CompletedFetchAdminName: ({ name }) => ({ model: { ...model, adminName: name } }),
+		CompletedFetchRoles: ({ result }) => ({
+			model: { ...model, roles: AsyncData.settle(model.roles, result) },
+		}),
 		CompletedFetchMembers: ({ page, generation, result }) =>
 			generation === model.membersGeneration
 				? { model: { ...model, members: settlePage(model.members, page, result) } }
@@ -569,48 +675,42 @@ export const update = (model: Model, message: Message): Return =>
 					onNone: () => ({ model }),
 					onSome: (member) => {
 						const step = Select.update(roleSelectFor(model, member), child)
-						const next = {
-							...model,
-							roleSelects: { ...model.roleSelects, [memberId]: step.model },
-						}
 						const commands = Command.mapMessages(step.commands ?? [], (inner) =>
 							Message.GotRoleSelectMessage({ memberId, message: inner }),
 						)
-						const picked = Option.flatMap(Option.fromNullishOr(step.outMessage), (out) =>
-							Schema.decodeUnknownOption(OrgRole)(out.value),
-						)
-						return Option.match(picked, {
+						const picked = Option.fromNullishOr(step.outMessage?.value)
+						// The pick closes the list; the select keeps showing the member's role until it saves.
+						const next = {
+							...model,
+							roleSelects: {
+								...model.roleSelects,
+								[memberId]: Option.isSome(picked)
+									? { ...step.model, value: memberRoleKey(member) }
+									: step.model,
+							},
+						}
+						if (Option.isNone(picked) || picked.value === memberRoleKey(member))
+							return { model: next, commands }
+						if (picked.value === MANAGE_ROLES)
+							return {
+								model: next,
+								commands,
+								outMessage: PageOutMessage.RequestedNavigation({
+									url: rolesHref(),
+									isReplace: false,
+								}),
+							}
+						// One save per member: a pick while one saves is dropped.
+						if (isSavingFor(model, memberId)) return { model: next, commands }
+						return Option.match(findRole(roleEntriesOf(model), picked.value), {
 							onNone: () => ({ model: next, commands }),
-							onSome: (role) =>
-								role === toOrgRole(member.role)
-									? { model: next, commands }
-									: isSavingFor(model, memberId)
-										? // One save per member: the pick closes the list and is dropped.
-											{
-												model: {
-													...next,
-													roleSelects: {
-														...model.roleSelects,
-														[memberId]: {
-															...step.model,
-															value: roleSelectFor(model, member).value,
-														},
-													},
-												},
-												commands,
-											}
-										: {
-												model: {
-													...next,
-													pendingRole: {
-														_tag: "Confirming",
-														memberId,
-														name: member.name,
-														next: role,
-													},
-												},
-												commands,
-											},
+							onSome: (role) => {
+								const after = pickedRole(next, member, role)
+								return {
+									model: after.model,
+									commands: [...commands, ...(after.commands ?? [])],
+								}
+							},
 						})
 					},
 				},
@@ -620,31 +720,46 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedConfirmRole: () => {
 			const pending = model.pendingRole
 			if (pending === null || pending._tag === "Saving") return { model }
-			const { memberId, name, next } = pending
+			const change = changeOf(pending)
 			return {
-				model: { ...model, pendingRole: { _tag: "Saving", memberId, name, next } },
-				commands: [ChangeRole({ memberId, name, next })],
+				model: { ...model, pendingRole: { _tag: "Saving", ...change } },
+				commands: [SetMemberRole(change)],
 			}
 		},
-		CompletedRoleChange: ({ memberId, name, next, result }) => {
+		CompletedRoleChange: ({ result, ...change }) => {
 			const pending = model.pendingRole
 			const isShown =
 				pending !== null &&
-				pending._tag === "Saving" &&
-				pending.memberId === memberId &&
-				pending.next === next
+				pending._tag !== "Confirming" &&
+				pending.memberId === change.memberId &&
+				pending.next === change.next
 			return Result.match(result, {
-				onSuccess: () => ({
-					...revalidateMembers({
+				onSuccess: () => {
+					const members = revalidateMembers({
 						...model,
 						pendingRole: isShown ? null : pending,
-						roleSelects: Rec.remove(model.roleSelects, memberId),
-					}),
-					outMessage: toast("success", `${name} is now ${orgRoleNoun(next)}`),
-				}),
+						roleSelects: Rec.remove(model.roleSelects, change.memberId),
+					})
+					return {
+						model: members.model,
+						// The role counts changed too.
+						commands: [...(members.commands ?? []), FetchRoles()],
+						outMessage: toast(
+							"success",
+							change.ref._tag === "BuiltIn"
+								? `${change.name} is now ${orgRoleNoun(change.ref.clerkKey)}`
+								: `${change.name} now holds ${change.roleName}`,
+						),
+					}
+				},
+				// A confirmed change goes back to its strip to try again; one applied at once just stops.
 				onFailure: (error) => ({
 					model: isShown
-						? { ...model, pendingRole: { _tag: "Confirming", memberId, name, next } }
+						? {
+								...model,
+								pendingRole:
+									pending?._tag === "Saving" ? { ...change, _tag: "Confirming" } : null,
+							}
 						: model,
 					outMessage: toast("error", error),
 				}),

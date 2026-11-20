@@ -12,6 +12,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { publicErrors } from "./public-error"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `rec_…` public ID ⇄ internal `RecommendationIssueId` (raw UUID). */
 export const RecommendationPublicId = PublicId(PublicIdPrefixes.recommendation, RecommendationIssueId)
@@ -116,28 +117,32 @@ export class V2InstrumentationRecommendationsApiGroup extends HttpApiGroup.make(
 			params: { id: RecommendationPublicId },
 			success: V2Recommendation,
 			error: [recommendationNotFound, recommendationPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "dismissInstrumentationRecommendation",
-				summary: "Dismiss an instrumentation recommendation",
-				description:
-					"Marks an instrumentation recommendation as dismissed so it stops appearing as actionable. Requires the `instrumentation:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("recommendations:triage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "dismissInstrumentationRecommendation",
+					summary: "Dismiss an instrumentation recommendation",
+					description:
+						"Marks an instrumentation recommendation as dismissed so it stops appearing as actionable. Requires the `instrumentation:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("reopen", "/:id/reopen", {
 			params: { id: RecommendationPublicId },
 			success: V2Recommendation,
 			error: [recommendationNotFound, recommendationPersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "reopenInstrumentationRecommendation",
-				summary: "Reopen an instrumentation recommendation",
-				description:
-					"Returns a dismissed instrumentation recommendation to the `open` state. Requires the `instrumentation:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("recommendations:triage"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "reopenInstrumentationRecommendation",
+					summary: "Reopen an instrumentation recommendation",
+					description:
+						"Returns a dismissed instrumentation recommendation to the `open` state. Requires the `instrumentation:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/instrumentation/recommendations")
 	.middleware(AuthorizationV2)
@@ -147,4 +152,5 @@ export class V2InstrumentationRecommendationsApiGroup extends HttpApiGroup.make(
 			description:
 				"Automatically detected instrumentation improvements — attribute renames toward canonical semantic conventions, double emissions, and naming violations. List them, and dismiss or reopen individual recommendations.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

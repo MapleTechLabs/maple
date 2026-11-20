@@ -110,6 +110,7 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 		}),
 		aliases: { service_names: "services", start_time: "start_time_of_day" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "alerts:manage",
 		phrases: ["Scheduling a maintenance window", "Creating a maintenance window"],
 		handler: Effect.fn("McpTool.createMaintenanceWindow")(function* (params) {
 			const ruleIds = yield* Effect.forEach(
@@ -144,7 +145,7 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
 			const window = yield* windows
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createWindowErrors))
 
 			return { window: toMaintenanceWindowRow(window) }

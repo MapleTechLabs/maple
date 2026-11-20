@@ -2,7 +2,9 @@ import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { TenantResolver } from "../auth/TenantResolver"
 import { ElectricClient } from "../electric/ElectricClient"
-import { errorResponse, type SyncError, Unauthorized } from "../errors"
+import { subscriptionPermission } from "@maple/domain/electric-shapes"
+import * as Policy from "@maple/domain/policy"
+import { errorResponse, Forbidden, type SyncError, Unauthorized } from "../errors"
 import { decodeSyncRequest } from "../shapes/request"
 import { syncResponseHeaders } from "./headers"
 
@@ -68,6 +70,11 @@ export const ElectricSyncRouter = HttpRouter.use((router) =>
 				.pipe(Effect.mapError((error) => new Unauthorized({ message: error.message })))
 			yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
+			const needed = subscriptionPermission(request.shape)
+			if (needed !== null && !Policy.can(tenant.permissions, needed)) {
+				return yield* new Forbidden({ message: Policy.denialFor(needed).message })
+			}
+
 			const upstream = yield* electric.fetchShape(request, tenant.orgId)
 
 			// Cache-isolate the org-scoped body (Vary: Authorization + no public
@@ -89,6 +96,7 @@ export const ElectricSyncRouter = HttpRouter.use((router) =>
 				Effect.catchTags({
 					"@maple/electric-sync/ShapeRequestInvalid": rejectClient,
 					"@maple/electric-sync/Unauthorized": rejectClient,
+					"@maple/electric-sync/Forbidden": rejectClient,
 				}),
 				// The rest are real failures. Annotate while the span is still current,
 				// then let them through it so it carries `Error` + the error's message,

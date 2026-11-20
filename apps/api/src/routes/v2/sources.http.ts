@@ -104,7 +104,7 @@ export const HttpV2SourcesLive = HttpApiBuilder.group(MapleApiV2, "sources", (ha
 		const permittedTenant = () =>
 			Effect.gen(function* () {
 				const tenant = yield* CurrentTenant.Context
-				yield* Policy.check(tenant.roles, "sources:manage", (denial) =>
+				yield* Policy.check(tenant.permissions, "sources:manage", (denial) =>
 					V2InsufficientPermissions.make(denial.message),
 				)
 				return tenant

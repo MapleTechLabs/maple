@@ -6,6 +6,7 @@
  * the run — as a finished turn with the proposal open.
  */
 import { OrgId, UserId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { prReplySessionId, prReviewSessionId } from "@maple/domain/chat-session"
 import { Cause, Effect, Exit, Layer, Schema, Stream, Array as Arr } from "effect"
 import { LanguageModel } from "effect/ai"
@@ -30,6 +31,7 @@ const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
 	userId: Schema.decodeSync(UserId)("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

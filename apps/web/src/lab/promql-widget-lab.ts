@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument, RawSqlDisplayType } from "@maple/domain/http"
 import { parseWarehouseDateTime, promqlRowsForDisplay } from "@maple/query-engine"
@@ -175,6 +176,7 @@ export const init = () => {
 	)
 	return Arr.reduce(
 		[
+			Message.CompletedFetchSession({ orgId: context.orgId, grants: Policy.allPermissions }),
 			Message.CompletedReadClock({ nowMs: NOW }),
 			Message.UpdatedDashboard({ orgId: context.orgId, maybeDocument: Option.some(document) }),
 			...(query === undefined ? [] : typed(query)),

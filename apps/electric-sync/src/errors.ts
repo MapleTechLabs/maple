@@ -23,6 +23,11 @@ export class Unauthorized extends Schema.TaggedError<Unauthorized>()("@maple/ele
 	message: Schema.String,
 }) {}
 
+/** The session is fine, but its role does not hold what the shape needs. */
+export class Forbidden extends Schema.TaggedError<Forbidden>()("@maple/electric-sync/Forbidden", {
+	message: Schema.String,
+}) {}
+
 /**
  * Sync is disabled for this deploy. Two distinct causes share the 503 — no
  * `ELECTRIC_URL` at all (expected on self-hosted) versus a deploy that
@@ -57,6 +62,7 @@ export class ElectricUpstreamError extends Schema.TaggedError<ElectricUpstreamEr
 export type SyncError =
 	| SyncRequestInvalid
 	| Unauthorized
+	| Forbidden
 	| ElectricNotConfigured
 	| ElectricUpstreamUnreachable
 	| ElectricUpstreamError
@@ -91,6 +97,12 @@ export const errorResponse: (error: SyncError) => ErrorResponse = Match.type<Syn
 		body: "Unauthorized",
 		headers: TEXT_HEADERS,
 		errorType: "Unauthorized",
+	})),
+	Match.tag("@maple/electric-sync/Forbidden", (error): ErrorResponse => ({
+		status: 403,
+		body: error.message,
+		headers: TEXT_HEADERS,
+		errorType: "Forbidden",
 	})),
 	Match.tag("@maple/electric-sync/ElectricNotConfigured", (error): ErrorResponse => ({
 		status: 503,

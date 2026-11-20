@@ -15,6 +15,7 @@ export function registerDeleteOnCallScheduleTool(server: McpToolRegistrar) {
 			schedule_id: P.resourceId("oncallSchedule", "On-call schedule to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Deleting an on-call schedule"],
 		handler: Effect.fn("McpTool.deleteOnCallSchedule")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
@@ -30,7 +31,7 @@ export function registerDeleteOnCallScheduleTool(server: McpToolRegistrar) {
 				}),
 			)
 			yield* schedules
-				.delete(tenant.orgId, tenant.roles, scheduleId)
+				.delete(tenant.orgId, tenant.permissions, scheduleId)
 				.pipe(Effect.catchTags(deleteScheduleErrors))
 			return { id: schedule.id, name: schedule.name }
 		}),

@@ -1,3 +1,4 @@
+import { EndpointAccess, requires } from "../endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ErrorPersistenceError, IssueSeverity } from "../errors"
@@ -259,4 +260,5 @@ export class V2WidgetSummaryApiGroup extends HttpApiGroup.make("widgetSummary")
 			description:
 				"The single read behind the Maple mobile Home Screen widgets. Deliberately its own scope family so a device credential can be fenced to it alone.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

@@ -20,6 +20,7 @@ import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/aud
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { HttpAuthSessionLive } from "./auth.http"
@@ -66,6 +67,7 @@ const makeHarness = (
 					? Layer.succeed(AuditLogService, services.audit)
 					: Layer.mock(AuditLogService)({}),
 				Layer.mock(OrganizationRegionService)({ ensureServedHere: () => Effect.void }),
+				Layer.mock(OrgMembershipService)({ directory: "none" }),
 			),
 		),
 		Layer.provide(Env.layer),

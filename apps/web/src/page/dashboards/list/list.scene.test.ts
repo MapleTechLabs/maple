@@ -1,7 +1,9 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	Command,
+	Mount,
 	expect as expectView,
 	expectOutMessage,
 	given,
@@ -17,9 +19,10 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import { CreateDashboard, DeleteDashboard, SavePreferences, SaveTags } from "./command"
 import * as TagEditor from "../kit/tag-editor"
 import * as Combobox from "@maple/views/ui/combobox"
+import * as Menu from "@maple/views/ui/menu"
 import { Message } from "./message"
 import type { ListDashboard, Model } from "./model"
-import { init, routeChanged, ScrollFocusedRow, update } from "./update"
+import { init, routeChanged, rowMenuIdOf, ScrollFocusedRow, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -73,7 +76,11 @@ const loaded = (search = {}, dashboards: ReadonlyArray<ListDashboard> = BOARDS):
 describe("dashboards list", () => {
 	test("entry reads the clock and the stored preferences, then renders rows as links", () => {
 		expect(names(init({ search: {} }, context).commands)).toEqual(
-			expect.arrayContaining(["ReadDashboardsListClock", "LoadDashboardsPreferences"]),
+			expect.arrayContaining([
+				"ReadDashboardsListClock",
+				"LoadDashboardsPreferences",
+				"FetchDashboardsSession",
+			]),
 		)
 		scene(
 			{ update: pageUpdate, view },
@@ -318,5 +325,43 @@ describe("dashboards list keys", () => {
 		expect(focused.focusedId).toBe("dash_payment")
 		expect(routeChanged(focused, { search: { q: "health" } }).model.focusedId).toBeNull()
 		expect(routeChanged(focused, { search: { sort: "name-asc" } }).model.focusedId).toBeNull()
+	})
+})
+
+describe("dashboards list and the viewer's role", () => {
+	const answered = (grants: ReadonlyArray<Policy.Permission>, model: Model = loaded()): Model =>
+		pageUpdate(model, Message.CompletedFetchSession({ orgId, grants })).model
+
+	test("without dashboards:edit the rows stay links and Export stays, while every write is locked", () => {
+		const reader = answered(["telemetry:read"])
+		scene(
+			{ update: pageUpdate, view },
+			given(reader),
+			expectView(role("link", { name: /Platform overview/ })).toExist(),
+			expectView(role("button", { name: "Create dashboard" })).toBeDisabled(),
+			expectView(role("button", { name: "Import" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("dashboards:edit").message })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given({
+				...reader,
+				rowMenuId: "dash_platform",
+				rowMenu: Menu.init(rowMenuIdOf("dash_platform"), { isOpen: true }),
+			}),
+			Mount.resolve(Menu.MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("menuitem", { name: "Export JSON" })).not.toHaveAttr("aria-disabled", "true"),
+			expectView(role("menuitem", { name: "Duplicate" })).toHaveAttr("aria-disabled", "true"),
+			expectView(role("menuitem", { name: "Delete" })).toHaveAttr("aria-disabled", "true"),
+		)
+	})
+
+	test("with dashboards:edit, Create and Import are enabled", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(["telemetry:read", "dashboards:edit"])),
+			expectView(role("button", { name: "Create dashboard" })).toBeEnabled(),
+			expectView(role("button", { name: "Import" })).toBeEnabled(),
+		)
 	})
 })

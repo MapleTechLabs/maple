@@ -35,7 +35,7 @@ import { GcpCloudSqlSettings } from "../gcp"
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 export {
 	SupabaseAdvisorKind,
 	SupabaseAdvisorLevel,
@@ -1862,7 +1862,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.post("infraSurfaces", "/infra-surfaces", {
 			payload: InfraPresenceRequest,
 			success: InfraSurfacesResponse,
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
@@ -1874,7 +1874,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("cloudflareUsage", "/cloudflare/usage", {
 			success: CloudflareUsageResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("cloudflareTopTraffic", "/cloudflare/top-traffic", {
@@ -1887,7 +1887,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("cloudflareStart", "/cloudflare/start", {
@@ -1935,7 +1935,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.get("cloudflareHyperdrives", "/cloudflare/hyperdrive", {
 			success: CloudflareHyperdrivesResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("railwayStatus", "/railway/status", {
@@ -2029,11 +2029,12 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		// Query insights are the project's query telemetry.
 		HttpApiEndpoint.get("supabaseProjectInsights", "/supabase/projects/:ref/insights", {
 			params: { ref: SupabaseProjectRef },
 			success: SupabaseProjectInsights,
 			error: [IntegrationsNotFoundError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {
@@ -2110,7 +2111,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VercelDeploymentsResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// The inventory behind Infrastructure -> Google Cloud. Connectors are public v2
@@ -2124,7 +2125,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: GcpResourcesResponse,
 			error: IntegrationsPersistenceError,
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("githubStatus", "/github/status", {
@@ -2134,11 +2135,13 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	)
 	.add(
 		// Finishes any OAuth / app-install return for the signed-in caller (see `oauth-return.ts`).
-		// Failures come back as an `error` status with display copy, like the old callback page.
+		// Failures come back as an `error` status with display copy, like the old callback page. The
+		// handler checks the flow's permission: a chat identity link is the caller's own account.
 		HttpApiEndpoint.post("oauthComplete", "/oauth/complete", {
 			payload: OAuthCompleteRequest,
 			success: OAuthCompleteResponse,
-		}),
+			error: IntegrationsForbiddenError,
+		}).annotate(EndpointAccess, "handler"),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/github/start", {
@@ -2282,7 +2285,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// Bulk sibling of vcsCommitDetail, for list views that would otherwise
@@ -2296,7 +2299,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitDetailsResponse,
 			error: [IntegrationsNotConnectedError, IntegrationsUpstreamError, IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// `ranges` is `base..head` pairs, comma-separated, answered in request order.
@@ -2312,7 +2315,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			}),
 			success: VcsCommitRangesResponse,
 			error: [IntegrationsPersistenceError],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		// Scoped to one repository the org has connected, so the picker's options can
@@ -2335,7 +2338,8 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.prefix("/internal/integrations")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

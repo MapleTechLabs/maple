@@ -68,6 +68,32 @@ describe("tabs", () => {
 		)
 	})
 
+	test("a locked tab is disabled with its reason, and the selected tab never locks", () => {
+		const locked = {
+			update,
+			view: (model: Model, h: HtmlBuilder<Message>) =>
+				view(
+					model,
+					{
+						labels: ["Inbox", "Rules", "Routing"],
+						panel: (value) => [`${value} panel`],
+						lockedReason: () => "Needs Manage routing",
+					},
+					h,
+				),
+		}
+		scene(
+			locked,
+			given(rules),
+			measured,
+			expect(tab("Routing")).toHaveAttr("aria-disabled", "true"),
+			expect(tab("Routing")).toHaveAttr("data-tooltip", "Needs Manage routing"),
+			expect(tab("Rules")).toHaveAttr("aria-disabled", "false"),
+			expect(tab("Rules")).not.toHaveAttr("data-tooltip"),
+			expect(panel).toHaveText("rules panel"),
+		)
+	})
+
 	test("the indicator carries the measured rect as Base UI's CSS variables", () => {
 		scene(
 			program,

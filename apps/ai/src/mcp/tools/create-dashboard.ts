@@ -34,7 +34,12 @@ import { validateDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
 import { makeRouteDataSource } from "@maple/widgets/dashboard"
 import { collectDocumentRenderWarnings } from "../lib/validate-widget-renderability"
-import { toMcpDashboardError, optionalJsonText, toDashboardRow } from "../lib/dashboard-mutations"
+import {
+	optionalJsonText,
+	requireRawSqlPermission,
+	toDashboardRow,
+	toMcpDashboardError,
+} from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -411,6 +416,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "dashboards:edit",
 		phrases: ["Creating a dashboard"],
 		handler: Effect.fn("McpTool.createDashboard")(function* (params) {
 			if (params.time_range) {
@@ -572,6 +578,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 
 			const tenant = yield* CurrentMcpTenant
 			const persistence = yield* DashboardPersistenceService
+			yield* requireRawSqlPermission(tenant.permissions, [], portable.widgets)
 
 			const { document: dashboard } = yield* persistence
 				.create(tenant.orgId, tenant.userId, portable)

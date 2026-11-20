@@ -10,11 +10,11 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import type { TenantContext } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { mayQueryDataSources, queryCallerOf } from "@maple/backend/services/data-sources/query-caller"
 import { Array as Arr } from "effect"
-import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
+import { holdsToolPermission } from "../mcp/tools/types"
 import type { AgentDefinition } from "./agents"
-import { READ_ONLY_RULESET } from "./permissions"
+import { approvalPermission } from "./approval-permission"
+import { READ_ONLY_RULESET, READ_TOOL_PERMISSIONS } from "./permissions"
 import { CONNECTOR_ANONYMOUS_SYSTEM_PROMPT, CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import type { LlmCallTags } from "../platform/Llm"
 
@@ -31,36 +31,28 @@ export interface TurnProfile {
 	readonly namesDataSources: boolean
 }
 
-/** The ruleset an analyst's turn runs under: only dashboard changes are still proposed to them. */
-const forAnalyst = (ruleset: PermissionRuleset): PermissionRuleset =>
-	Arr.map(ruleset, (rule) =>
-		rule.action === "ask" && !DASHBOARD_AUTHORING_TOOLS.has(rule.tool)
-			? new PermissionRule({ tool: rule.tool, action: "deny" })
-			: rule,
-	)
-
-/** The profile for whoever the turn's tools run as: an analyst is offered no change outside dashboards. */
-export const profileForRoles = (profile: TurnProfile, roles: ReadonlyArray<string>): TurnProfile =>
-	Policy.isAnalyst(roles) ? { ...profile, ruleset: forAnalyst(profile.ruleset) } : profile
-
-/** The tool whose call the data source service would refuse this turn. */
-const QUERY_DATA_SOURCE = "query_data_source"
+const deny = (tool: string) => new PermissionRule({ tool, action: "deny" })
 
 /**
- * The profile for the tenant a turn's tools run as. On top of the role rules, a turn whose query
- * the service would refuse is not offered the tool: a listed tool invites a call that only fails.
+ * The profile for the tenant a turn's tools run as. A change is proposed only when the tenant could
+ * approve it (`approvalPermission`), and a read tool the tenant may not call is not offered: a listed
+ * tool invites a call that only fails. A data source query answers for whoever caused an unattended
+ * turn, as the data source service judges it.
  */
 export const profileForTenant = (
 	profile: TurnProfile,
-	tenant: Pick<TenantContext, "roles" | "turnOrigin" | "turnStarter">,
+	tenant: Pick<TenantContext, "permissions" | "turnOrigin" | "turnStarter">,
 ): TurnProfile => {
-	const byRole = profileForRoles(profile, tenant.roles)
-	return mayQueryDataSources(queryCallerOf(tenant))
-		? byRole
-		: {
-				...byRole,
-				ruleset: [...byRole.ruleset, new PermissionRule({ tool: QUERY_DATA_SOURCE, action: "deny" })],
-			}
+	const ruleset = Arr.map(profile.ruleset, (rule) =>
+		rule.action === "ask" && !Policy.can(tenant.permissions, approvalPermission(rule.tool))
+			? deny(rule.tool)
+			: rule,
+	)
+	const unreachable = Arr.filter(
+		READ_TOOL_PERMISSIONS,
+		(tool) => !holdsToolPermission(tenant, tool.permission),
+	)
+	return { ...profile, ruleset: [...ruleset, ...Arr.map(unreachable, (tool) => deny(tool.name))] }
 }
 
 export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): TurnProfile => {

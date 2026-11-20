@@ -1,4 +1,5 @@
 import { DashboardDocument, TimeRangeSchema } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { LookupNames } from "../../kit/autocomplete-lookups"
 import { WhereFields } from "../../kit/where-field"
@@ -34,6 +35,8 @@ export const Model = Schema.Struct({
 	dashboardId: Schema.String,
 	widgetId: Schema.String,
 	search: DashboardWidgetSearch,
+	/** The viewer's permissions; empty until the session answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
 	/** The editing state, seeded once from the stored widget. */

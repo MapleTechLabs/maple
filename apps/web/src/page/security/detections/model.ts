@@ -14,7 +14,7 @@ import { LoadOutcome } from "../../kit/load-schemas"
 import { SessionGrants } from "../../kit/session-grants"
 
 // `/security/detections`: the org's audit log detections, each an alert rule that counts audit
-// events. Only org admins (`audit_log:read`) read or change them.
+// events. Only roles with `audit_log:read` read or change them.
 
 export const Model = Schema.Struct({
 	grants: Schema.Array(Policy.PermissionName),

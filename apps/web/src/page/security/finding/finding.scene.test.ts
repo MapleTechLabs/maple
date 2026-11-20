@@ -200,7 +200,7 @@ describe("security finding", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(gated),
-			expectView(text("Security is visible to org admins and engineers only")).toExist(),
+			expectView(text("Your role can't open Security")).toExist(),
 		)
 	})
 })

@@ -342,6 +342,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "alerts:manage",
 		phrases: ["Updating an alert rule"],
 		handler: Effect.fn("McpTool.updateAlertRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -378,7 +379,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			)
 
 			const saved = yield* Effect.forEach(requests, ({ current, request }) =>
-				alerts.updateRule(tenant.orgId, tenant.userId, tenant.roles, current.id, request).pipe(
+				alerts.updateRule(tenant.orgId, tenant.userId, tenant.permissions, current.id, request).pipe(
 					Effect.catchTags(ruleWriteInputErrors),
 					Effect.catchTags({
 						"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,

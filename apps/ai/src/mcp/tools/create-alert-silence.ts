@@ -41,6 +41,7 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 		}),
 		aliases: { service_names: "services" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "alerts:manage",
 		phrases: ["Creating an alert silence", "Silencing alerts"],
 		handler: Effect.fn("McpTool.createAlertSilence")(function* (params) {
 			if ((params.duration_minutes === undefined) === (params.ends_at === undefined)) {
@@ -106,7 +107,7 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const silences = yield* AlertSilencesService
 			const silence = yield* silences
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createSilenceErrors))
 
 			return { silence: toAlertSilenceRow(silence) }

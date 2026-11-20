@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import {
 	DashboardDocument,
@@ -34,6 +35,13 @@ import { subscriptions } from "./subscription"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+/** The session answering with a role that may edit and share dashboards. */
+const asEditor = (model: Model): Model =>
+	update(
+		model,
+		Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		context,
+	).model
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 const DASHBOARD_ID = "dash_platform"
 
@@ -88,7 +96,7 @@ const blankBoard = documentNamed("Platform overview", [])
 /** Entered with `?mode=edit`, clocked, and still waiting on the live board. */
 const waiting = (): Model =>
 	pageUpdate(
-		init({ dashboardId: DASHBOARD_ID, search: { mode: "edit" } }, context).model,
+		asEditor(init({ dashboardId: DASHBOARD_ID, search: { mode: "edit" } }, context).model),
 		Message.CompletedReadClock({ nowMs: NOW }),
 	).model
 

@@ -10,7 +10,8 @@ export const lockedControl = <Message>(
 	h: HtmlBuilder<Message>,
 	reason: string,
 	control: Html,
-	options: Readonly<{ className?: string }> = {},
+	/** `tooltip`: what the hover shows when it says more than `reason` (a title line above it). */
+	options: Readonly<{ className?: string; tooltip?: string }> = {},
 ): Html =>
 	h.span(
 		[
@@ -21,7 +22,7 @@ export const lockedControl = <Message>(
 			h.Role("group"),
 			h.AriaLabel(reason),
 			h.DataAttribute("slot", "locked-control"),
-			...tooltipTrigger(h, reason),
+			...tooltipTrigger(h, options.tooltip ?? reason),
 		],
 		[control],
 	)

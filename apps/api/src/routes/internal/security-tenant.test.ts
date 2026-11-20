@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { CurrentTenant, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
@@ -8,6 +9,7 @@ const tenantAs = (role: string) =>
 		orgId: Schema.decodeSync(OrgId)("org_security"),
 		userId: Schema.decodeSync(UserId)("user_security"),
 		roles: [Schema.decodeSync(RoleName)(role)],
+		permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 		authMode: "clerk",
 	})
 

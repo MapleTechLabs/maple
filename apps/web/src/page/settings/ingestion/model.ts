@@ -63,11 +63,11 @@ export type Model = typeof Model.Type
 
 type Grants = Pick<Model, "grants">
 /** The ingest key pair shows (`ingest_keys:view`). */
-export const canViewKeys = (model: Grants): boolean => Policy.has(model.grants, "ingest_keys:view")
+export const canViewKeys = (model: Grants): boolean => Policy.can(model.grants, "ingest_keys:view")
 /** The pair can be regenerated (`ingest_keys:roll`). */
-export const canRollKeys = (model: Grants): boolean => Policy.has(model.grants, "ingest_keys:roll")
+export const canRollKeys = (model: Grants): boolean => Policy.can(model.grants, "ingest_keys:roll")
 /** Ingest rules can be added, edited and removed (`ingest_rules:manage`). */
-export const canManageRules = (model: Grants): boolean => Policy.has(model.grants, "ingest_rules:manage")
+export const canManageRules = (model: Grants): boolean => Policy.can(model.grants, "ingest_rules:manage")
 /** Attribute mappings, and the rename recommendations that create them (`attribute_mappings:manage`). */
 export const canManageMappings = (model: Grants): boolean =>
-	Policy.has(model.grants, "attribute_mappings:manage")
+	Policy.can(model.grants, "attribute_mappings:manage")

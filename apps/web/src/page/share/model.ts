@@ -46,6 +46,8 @@ export const ShareError = Schema.Union([
 	Schema.TaggedStruct("NotFound", {}),
 	Schema.TaggedStruct("SignInRequired", {}),
 	Schema.TaggedStruct("WrongOrg", {}),
+	/** Signed in to the owning org on a role that can't read telemetry; `message` is the server's denial. */
+	Schema.TaggedStruct("Forbidden", { message: Schema.String }),
 	Schema.TaggedStruct("RateLimited", {}),
 	Schema.TaggedStruct("Unavailable", { message: Schema.String }),
 ])

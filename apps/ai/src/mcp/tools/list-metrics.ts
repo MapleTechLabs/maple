@@ -42,6 +42,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing metrics", "Looking up metrics"],
 		handler: Effect.fn("McpTool.listMetrics")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "list_metrics")

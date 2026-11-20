@@ -1,3 +1,4 @@
+import { EndpointAccess, requires } from "../endpoint-access"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
@@ -89,4 +90,5 @@ export class V2AlertDeliveriesApiGroup extends HttpApiGroup.make("alertDeliverie
 			title: "Alert Deliveries",
 			description: "Read-only notification delivery history for alert rules.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

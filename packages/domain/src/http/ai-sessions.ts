@@ -6,7 +6,7 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 import { AuditedRead } from "./audit-log"
 
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
@@ -1103,6 +1103,6 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 	.prefix("/internal/ai-sessions")
 	.middleware(SessionAuthorization)
 	// Every endpoint here only reads, so an analyst may call it.
-	.annotate(AnalystAccess, "read")
+	.annotate(EndpointAccess, requires("telemetry:read"))
 	// Transcripts and tool calls are customer telemetry, so each read is audited.
 	.annotate(AuditedRead, "telemetry.read") {}

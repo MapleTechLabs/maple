@@ -15,6 +15,6 @@ type SessionAnswer = Readonly<{
 export const auditAccessOf = (model: SessionAnswer): "unknown" | "ask" | "denied" =>
 	!model.isGrantsRead
 		? "unknown"
-		: model.grants.length === 0 || Policy.has(model.grants, "audit_log:read")
+		: model.grants.length === 0 || Policy.can(model.grants, "audit_log:read")
 			? "ask"
 			: "denied"

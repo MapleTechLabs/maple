@@ -8,7 +8,7 @@ import { getCostSources } from "@maple/web-data/warehouse/cost"
 import { Effect } from "effect"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 
-// The cost budgets on the api Worker. Every member reads them; a write needs `alerts:manage` and
+// The cost budgets on the api Worker. Every member reads them; a write needs `slos:manage` and
 // answers `cost_budget_forbidden` without it.
 
 /** Every budget of the org with where it stands, newest first. One read: the API caps an org at 50. */

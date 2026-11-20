@@ -32,6 +32,7 @@ import { ShareMessage } from "./share"
 import { settleTo } from "@maple/views/data/load-failure"
 import { presetById } from "./picker-catalog"
 import { applySectionEdit, SectionEdit } from "./section-edit"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadClock = readClock("ReadDashboardClock", Message.CompletedReadClock)
 
@@ -559,3 +560,8 @@ export const EditSections = Command.define("EditDashboardSections", {
 			)
 		}),
 })
+
+export const FetchDashboardSession = fetchSessionGrants(
+	"FetchDashboardSession",
+	Message.CompletedFetchSession,
+)

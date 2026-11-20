@@ -1,4 +1,5 @@
 import { OrgId, UnauthorizedError, UserId, type TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { TenantResolver, type TenantResolverApi } from "./auth/TenantResolver"
@@ -57,12 +58,13 @@ export const stubFetch =
 		return respond(url)
 	}
 
-/** A resolver that always authenticates, as `orgId`. */
-export const fixedTenantLayer = (orgId: string) => {
+/** A resolver that always authenticates, as `orgId`, holding `permissions` (a member's by default). */
+export const fixedTenantLayer = (orgId: string, permissions: Policy.Grants = Policy.grantsOf([])) => {
 	const tenant: TenantContext = {
 		orgId: Schema.decodeSync(OrgId)(orgId),
 		userId: Schema.decodeSync(UserId)("user_test"),
 		roles: [],
+		permissions,
 		authMode: "self_hosted",
 	}
 	return Layer.succeed(TenantResolver, {

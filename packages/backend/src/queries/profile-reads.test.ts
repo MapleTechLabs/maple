@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import {
 	ProfileSampleTypesRequest,
@@ -22,6 +23,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_profile_reads"),
 	userId: Schema.decodeSync(UserId)("user_profile_reads"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

@@ -1,5 +1,6 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, expect, it } from "@effect/vitest"
+import * as Policy from "@maple/domain/policy"
 import { ChatApiGroup, CurrentTenant, ApiSchemaErrors, ApiUnexpectedErrors } from "@maple/domain/http"
 import {
 	ChatMessage,
@@ -10,11 +11,12 @@ import {
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { HttpChatLive } from "./chat.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
+import { checkEndpointAccess } from "@maple/backend/services/auth/endpoint-gate"
 
 class ChatOnlyApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
@@ -25,23 +27,32 @@ const TENANT = new CurrentTenant.TenantSchema({
 	orgId: "org_chat_approval" as CurrentTenant.TenantSchema["orgId"],
 	userId: "user_chat_approval" as CurrentTenant.TenantSchema["userId"],
 	roles: ["org:member" as CurrentTenant.TenantSchema["roles"][number]],
+	permissions: Policy.grantsOf(["org:member"]),
 	authMode: "clerk",
 })
 
 const SESSION_ID = `${TENANT.orgId}:inv-1`
 
-const AuthorizationStubLayer = Layer.succeed(
-	CurrentTenant.SessionAuthorization,
-	CurrentTenant.SessionAuthorization.of({
-		bearer: (httpEffect) => Effect.provideService(httpEffect, CurrentTenant.Context, TENANT),
-	}),
-)
+/** Session auth as production runs it for `tenant`, the endpoint gate included. */
+const authorizationAs = (tenant: CurrentTenant.TenantSchema) =>
+	Layer.succeed(
+		CurrentTenant.SessionAuthorization,
+		CurrentTenant.SessionAuthorization.of({
+			bearer: (httpEffect, options) =>
+				checkEndpointAccess(tenant.permissions, options).pipe(
+					Effect.andThen(Effect.provideService(httpEffect, CurrentTenant.Context, tenant)),
+				),
+		}),
+	)
 
-/** The transcript after the session recorded `result` as call_9's outcome. */
-const recorded = (result: {
-	readonly output: string
-	readonly isError?: boolean
-}): ReadonlyArray<ChatMessage> => [
+/** The transcript after the session recorded `result` as call_9's outcome, a call of `name`. */
+const recorded = (
+	result: {
+		readonly output: string
+		readonly isError?: boolean
+	},
+	name = "delete_alert_rule",
+): ReadonlyArray<ChatMessage> => [
 	new ChatMessage({
 		id: "a1",
 		role: "assistant",
@@ -51,7 +62,7 @@ const recorded = (result: {
 		toolCalls: [
 			new ChatToolCall({
 				id: "call_9",
-				name: "delete_alert_rule",
+				name,
 				input: {},
 				proposed: true,
 				...result,
@@ -63,6 +74,7 @@ const recorded = (result: {
 const makeHarness = (session: {
 	readonly settle?: () => Promise<ChatProposalOutcome>
 	readonly history?: ReadonlyArray<ChatMessage>
+	readonly tenant?: CurrentTenant.TenantSchema
 }) => {
 	const settlements: Array<ChatProposalSettlement> = []
 	const stub: Pick<ChatSessionStub, "settleProposal" | "history"> = {
@@ -79,7 +91,7 @@ const makeHarness = (session: {
 	const routes = HttpApiBuilder.layer(ChatOnlyApi).pipe(
 		Layer.provide(HttpChatLive),
 		Layer.provide(ApiErrorBoundaryLive),
-		Layer.provideMerge(AuthorizationStubLayer),
+		Layer.provideMerge(authorizationAs(session.tenant ?? TENANT)),
 		Layer.provideMerge(
 			Layer.merge(
 				envPorts({}),
@@ -133,15 +145,55 @@ describe("POST /internal/chat/apply", () => {
 					toolCallId: "call_9",
 					decision: "approve",
 					approver: { kind: "app" },
-					// The caller's own tenant and roles: the change runs as them, nothing granted here.
+					// The caller's own tenant and permissions: the change runs as them, nothing granted here.
 					tenant: {
 						orgId: TENANT.orgId,
 						userId: TENANT.userId,
 						roles: ["org:member"],
+						permissions: TENANT.permissions,
 						authMode: "clerk",
 					},
 				},
 			])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("refuses a decision from someone who may not act through Maple AI, without settling it", async () => {
+		const analyst = new CurrentTenant.TenantSchema({
+			...TENANT,
+			roles: ["org:analyst" as CurrentTenant.TenantSchema["roles"][number]],
+			permissions: Policy.grantsOf(["org:analyst"]),
+		})
+		const harness = makeHarness({ tenant: analyst })
+		try {
+			const approved = await harness.apply(byReference("approve"))
+			const denied = await harness.apply(byReference("deny"))
+
+			expect([approved.status, denied.status]).toEqual([403, 403])
+			expect(JSON.stringify(approved.body)).toContain(Policy.denialFor("ai:act").message)
+			expect(harness.settlements).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets an analyst decide a dashboard change, which needs dashboards:edit", async () => {
+		const analyst = new CurrentTenant.TenantSchema({
+			...TENANT,
+			roles: ["org:analyst" as CurrentTenant.TenantSchema["roles"][number]],
+			permissions: Policy.grantsOf(["org:analyst"]),
+		})
+		const harness = makeHarness({
+			tenant: analyst,
+			history: recorded({ output: "Approved in Maple.\nDashboard created." }, "create_dashboard"),
+		})
+		try {
+			const response = await harness.apply(byReference("approve"))
+
+			expect(response.status).toBe(200)
+			expect(Arr.map(harness.settlements, (settlement) => settlement.decision)).toEqual(["approve"])
 		} finally {
 			await harness.dispose()
 		}

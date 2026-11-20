@@ -107,7 +107,7 @@ export const HttpSecurityAuditLive = HttpApiBuilder.group(MapleAiApi, "securityA
 			orgAccess.pipe(
 				Effect.tap(({ tenant }) =>
 					Policy.check(
-						tenant.roles,
+						tenant.permissions,
 						permission,
 						(denial) => new SecurityAuditForbiddenError({ message: denial.message }),
 					),

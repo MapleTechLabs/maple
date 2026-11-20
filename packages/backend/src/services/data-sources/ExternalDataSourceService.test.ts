@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { registerDriver, type QueryRequest, type DriverConnection } from "@maple/data-sources"
 import {
@@ -50,7 +51,7 @@ const ROLES = {
 	engineer: roles("org:engineer"),
 }
 /** A person or key that may run queries. */
-const ENGINEER: QueryCaller = { kind: "principal", roles: ["org:engineer"] }
+const ENGINEER: QueryCaller = { kind: "principal", permissions: Policy.grantsOf(["org:engineer"]) }
 
 /** What the fake drivers answer, and what they saw. */
 interface World {
@@ -806,7 +807,7 @@ describe("ExternalDataSourceService", () => {
 						{ agent: true },
 						{
 							kind: "principal",
-							roles,
+							permissions: Policy.grantsOf(roles),
 						},
 					)
 					.pipe(Effect.result)
@@ -840,7 +841,7 @@ describe("ExternalDataSourceService", () => {
 						Effect.as("ran"),
 						Effect.catchTag("@maple/data-sources/Forbidden", () => Effect.succeed("refused")),
 					)
-			const pass = { roles: [], turnOrigin: { kind: "autonomous" } } as const
+			const pass = { permissions: [], turnOrigin: { kind: "autonomous" } } as const
 			const verdicts = {
 				producer: yield* ask({ ...pass, turnStarter: { kind: "producer" } }),
 				engineerStarted: yield* ask({
@@ -850,9 +851,15 @@ describe("ExternalDataSourceService", () => {
 				memberStarted: yield* ask({ ...pass, turnStarter: { kind: "person", roles: ROLES.member } }),
 				// Recorded before starters were, or by a caller that named none.
 				nobodyRecorded: yield* ask(pass),
-				withoutRoles: yield* ask({ roles: [] }),
-				analystInApp: yield* ask({ roles: ROLES.analyst, turnOrigin: { kind: "app" } }),
-				engineerInApp: yield* ask({ roles: ROLES.engineer, turnOrigin: { kind: "app" } }),
+				withoutRoles: yield* ask({ permissions: [] }),
+				analystInApp: yield* ask({
+					permissions: Policy.grantsOf(ROLES.analyst),
+					turnOrigin: { kind: "app" },
+				}),
+				engineerInApp: yield* ask({
+					permissions: Policy.grantsOf(ROLES.engineer),
+					turnOrigin: { kind: "app" },
+				}),
 			}
 			expect(verdicts).toEqual({
 				producer: "ran",

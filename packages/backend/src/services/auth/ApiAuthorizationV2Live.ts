@@ -34,7 +34,7 @@ import {
 	deviceRateLimitKey,
 } from "./ApiV2RateLimiter"
 import { API_KEY_DEFAULT_ROLES, getBasicPassword, getBearerToken } from "./bearer-token"
-import { checkAnalystAccessV2 } from "./analyst-gate"
+import { checkEndpointAccessV2 } from "./endpoint-gate"
 
 /** The access token of an RFC 9449 `Authorization: DPoP <token>` request. */
 const getDpopToken = (headers: Record<string, string | undefined>): string | undefined => {
@@ -99,12 +99,12 @@ export const ApiAuthorizationV2Live = Layer.effect(
 		const regions = yield* Effect.serviceOption(OrganizationRegionService)
 		// Optional for route tests; absent, `Authorization: DPoP` is always a 401.
 		const devices = yield* Effect.serviceOption(DeviceCredentialsService)
-		const resolveTenant = makeResolveTenant(
-			env,
-			undefined,
-			undefined,
-			Option.match(membership, { onNone: () => undefined, onSome: (service) => service.verify }),
-		)
+		const resolveTenant = makeResolveTenant(env, {
+			verifyOrgMembership: Option.match(membership, {
+				onNone: () => undefined,
+				onSome: (service) => service.verify,
+			}),
+		})
 
 		return AuthorizationV2.of({
 			bearer: (httpEffect, options) =>
@@ -182,10 +182,11 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							orgId: resolved.orgId,
 							userId: resolved.userId,
 							roles: resolved.roles,
+							permissions: resolved.permissions,
 							authMode: "self_hosted",
 							scopes: resolved.scopes,
 						})
-						yield* checkAnalystAccessV2(tenant.roles, options, route.path)
+						yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 						const label = "Device credential"
 						return yield* httpEffect.pipe(
 							Effect.provideService(CurrentTenant.Context, tenant),
@@ -316,10 +317,11 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							orgId: resolved.orgId,
 							userId: resolved.userId,
 							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
+							permissions: resolved.permissions,
 							authMode: "self_hosted",
 							...(resolved.scopes !== null ? { scopes: resolved.scopes } : undefined),
 						})
-						yield* checkAnalystAccessV2(tenant.roles, options, route.path).pipe(
+						yield* checkEndpointAccessV2(tenant.permissions, options, route.path).pipe(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
@@ -365,7 +367,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					}
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					const { route } = yield* HttpRouter.RouteContext
-					yield* checkAnalystAccessV2(tenant.roles, options, route.path)
+					yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),

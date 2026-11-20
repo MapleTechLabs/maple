@@ -37,6 +37,8 @@ import {
 } from "./device/dpop-proof"
 import { base64url } from "@maple/backend/platform/jwt"
 import { EcPublicJwk, importEcPublicJwk, jwkThumbprint, sha256 } from "./device/jose"
+import type * as Policy from "@maple/domain/policy"
+import { pinAuthority, pinnedGrants } from "./pinned-authority"
 
 /** Every ceiling is the server's: a registering client names a key and nothing else. */
 export const DEVICE_CREDENTIAL_SCOPES = ["widget_summary:read"] as const
@@ -58,6 +60,8 @@ export interface ResolvedDeviceCredential {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly roles: ReadonlyArray<RoleName>
+	/** What the credential acts with: its pinned roles, and codes for a custom role. */
+	readonly permissions: Policy.Grants
 	readonly scopes: ReadonlyArray<string>
 }
 
@@ -291,10 +295,14 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					readonly orgId: OrgId
 					readonly userId: UserId
 					readonly roles: ReadonlyArray<RoleName>
+					readonly permissions: Policy.Grants
 				},
 				params: RegisterDeviceCredentialParams,
 				request: DpopRequest,
 			) {
+				// The credential re-pins the session's authority on every registration.
+				const pinned = pinAuthority(tenant)
+				const pinnedColumns = { roles: pinned.roles, permissions: pinned.permissions ?? null }
 				yield* Effect.annotateCurrentSpan({
 					orgId: tenant.orgId,
 					"tenant.userId": tenant.userId,
@@ -384,7 +392,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 													now + ROLLING_TTL_MS,
 													existing.hardExpiresAt,
 												),
-												roles: [...tenant.roles],
+												...pinnedColumns,
 												...(attestation === undefined
 													? undefined
 													: { attested: true, attestation: attestation.metadata }),
@@ -437,7 +445,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 											installationId: params.installationId,
 											publicJwk: params.publicJwk,
 											jkt,
-											roles: [...tenant.roles],
+											...pinnedColumns,
 											scopes: [...DEVICE_CREDENTIAL_SCOPES],
 											attested: attestation !== undefined,
 											attestation: attestation?.metadata ?? null,
@@ -720,6 +728,7 @@ export class DeviceCredentialsService extends Context.Service<DeviceCredentialsS
 					orgId: row.value.orgId,
 					userId: row.value.userId,
 					roles: row.value.roles,
+					permissions: pinnedGrants(row.value.roles, row.value.permissions ?? undefined),
 					scopes: row.value.scopes,
 				} satisfies ResolvedDeviceCredential
 			})

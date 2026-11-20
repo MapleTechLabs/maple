@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId, UserId } from "@maple/domain"
 import { BillingCustomer } from "@maple/domain/http"
 import { Option, Record as Rec, Result, Schema, Array as Arr, String as Str } from "effect"
@@ -165,6 +166,7 @@ describe("telemetry identity", () => {
 			maybeOrganization: Option.none(),
 			memberships: [],
 			maybeRole: Option.some("org:admin"),
+			maybeGrants: Option.some(Policy.grantsOf(["org:admin"])),
 			maybePendingTask: Option.none(),
 		}
 		const loaded = update(
@@ -195,6 +197,7 @@ describe("telemetry identity", () => {
 			maybeOrganization: Option.none(),
 			memberships: [],
 			maybeRole: Option.none(),
+			maybeGrants: Option.none(),
 			maybePendingTask: Option.none(),
 		}
 		const customer = Schema.decodeSync(BillingCustomer)({
@@ -250,6 +253,7 @@ describe("re-render on change only", () => {
 		}),
 		memberships: [],
 		maybeRole: Option.none(),
+		maybeGrants: Option.none(),
 		maybePendingTask: Option.none(),
 	})
 	const loadedHome = () =>

@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Array as Arr, Option, Result, Schema, SchemaGetter } from "effect"
 import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 // The org's 3D service map as a world the team builds: one row per entity, each with its own
 // revision, so teammates editing different buildings never clobber each other. New entity kinds
@@ -153,7 +154,8 @@ export class ServiceMapWorldApiGroup extends HttpApiGroup.make("serviceMapWorld"
 			payload: ApplyWorldOpsRequest,
 			success: ApplyWorldOpsResponse,
 			error: [WorldPersistenceError, WorldConflictError, WorldInvalidOpsError],
-		}),
+		}).annotate(EndpointAccess, requires("service_map:edit")),
 	)
 	.prefix("/internal/service-map/world")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

@@ -132,7 +132,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const created = yield* schedules.create(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						request,
 					)
 					yield* recordHttpAudit("oncall_schedule.created", {
@@ -159,7 +159,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const updated = yield* schedules.update(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						request,
 					)
@@ -178,7 +178,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* schedules.delete(tenant.orgId, tenant.roles, params.id)
+					yield* schedules.delete(tenant.orgId, tenant.permissions, params.id)
 					yield* recordHttpAudit("oncall_schedule.deleted", { resourceId: params.id })
 					const deleted: V2OnCallScheduleDeleteResponse = {
 						id: params.id,
@@ -243,7 +243,7 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const created = yield* schedules.createOverride(
 						tenant.orgId,
 						tenant.userId,
-						tenant.roles,
+						tenant.permissions,
 						params.id,
 						request,
 					)
@@ -262,7 +262,12 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 			.handle("deleteOverride", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* schedules.deleteOverride(tenant.orgId, tenant.roles, params.id, params.override_id)
+					yield* schedules.deleteOverride(
+						tenant.orgId,
+						tenant.permissions,
+						params.id,
+						params.override_id,
+					)
 					yield* recordHttpAudit("oncall_override.deleted", {
 						resourceId: params.override_id,
 						metadata: { scheduleId: params.id },

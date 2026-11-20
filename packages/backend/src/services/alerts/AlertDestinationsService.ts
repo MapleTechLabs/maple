@@ -15,7 +15,6 @@ import {
 	AlertRuleDocument,
 	AlertRuleStoredConfigInvalidError,
 	AlertValidationError,
-	RoleName,
 	type AlertDestinationCreateRequest,
 	type AlertDestinationUpdateRequest,
 	type ChatWorkspaceId as ChatWorkspaceIdType,
@@ -349,7 +348,7 @@ export interface AlertDestinationsServiceApi {
 	readonly createDestination: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: AlertDestinationCreateRequest,
 	) => Effect.Effect<
 		AlertDestinationDocument,
@@ -362,7 +361,7 @@ export interface AlertDestinationsServiceApi {
 	readonly updateDestination: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 		request: AlertDestinationUpdateRequest,
 	) => Effect.Effect<
@@ -378,7 +377,7 @@ export interface AlertDestinationsServiceApi {
 	>
 	readonly deleteDestination: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 	) => Effect.Effect<
 		AlertDestinationDeleteResponse,
@@ -389,13 +388,13 @@ export interface AlertDestinationsServiceApi {
 		| AlertRuleStoredConfigInvalidError
 	>
 	readonly listTelegramChats: (
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		botToken: string,
 	) => Effect.Effect<ReadonlyArray<TelegramChat>, AlertForbiddenError | AlertValidationError>
 	readonly testDestination: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		destinationId: AlertDestinationDocument["id"],
 	) => Effect.Effect<
 		AlertDestinationTestResponse,
@@ -435,14 +434,13 @@ export class AlertDestinationsService extends Context.Service<
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
 
 		const requireAlertsPermission = Effect.fn("AlertDestinationsService.requireAlertsPermission")(
-			function* (roles: ReadonlyArray<RoleName>) {
+			function* (permissions: Policy.Grants) {
 				return yield* Policy.check(
-					roles,
+					permissions,
 					"alerts:manage",
 					(denial) =>
 						new AlertForbiddenError({
 							message: denial.message,
-							...(roles.length > 0 ? { roles: [...roles] } : undefined),
 						}),
 				)
 			},
@@ -566,11 +564,11 @@ export class AlertDestinationsService extends Context.Service<
 
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertDestinationsService.listTelegramChats",
-		)(function* (roles, botToken) {
+		)(function* (permissions, botToken) {
 			// Gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
-			yield* requireAlertsPermission(roles)
+			yield* requireAlertsPermission(permissions)
 			const trimmed = Str.trim(botToken)
 			if (!TELEGRAM_BOT_TOKEN_PATTERN.test(trimmed)) {
 				return yield* makeValidationError(TELEGRAM_MALFORMED_TOKEN_MESSAGE)
@@ -584,8 +582,8 @@ export class AlertDestinationsService extends Context.Service<
 
 		const createDestination: AlertDestinationsServiceApi["createDestination"] = Effect.fn(
 			"AlertDestinationsService.createDestination",
-		)(function* (orgId, userId, roles, request) {
-			yield* requireAlertsPermission(roles)
+		)(function* (orgId, userId, permissions, request) {
+			yield* requireAlertsPermission(permissions)
 			if (request.type === "webhook") yield* validateDestinationUrl(request.url, "url")
 			else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
@@ -662,8 +660,8 @@ export class AlertDestinationsService extends Context.Service<
 
 		const updateDestination: AlertDestinationsServiceApi["updateDestination"] = Effect.fn(
 			"AlertDestinationsService.updateDestination",
-		)(function* (orgId, userId, roles, destinationId, request) {
-			yield* requireAlertsPermission(roles)
+		)(function* (orgId, userId, permissions, destinationId, request) {
+			yield* requireAlertsPermission(permissions)
 			const existing = yield* requireDestinationRow(orgId, destinationId)
 			if (existing.type !== request.type) {
 				return yield* makeValidationError("Destination type cannot be changed")
@@ -1007,8 +1005,8 @@ export class AlertDestinationsService extends Context.Service<
 
 		const deleteDestination: AlertDestinationsServiceApi["deleteDestination"] = Effect.fn(
 			"AlertDestinationsService.deleteDestination",
-		)(function* (orgId, roles, destinationId) {
-			yield* requireAlertsPermission(roles)
+		)(function* (orgId, permissions, destinationId) {
+			yield* requireAlertsPermission(permissions)
 			yield* requireDestinationRow(orgId, destinationId)
 			const dependentRules = yield* dbExecute((db) =>
 				db.run(
@@ -1129,8 +1127,8 @@ export class AlertDestinationsService extends Context.Service<
 
 		const testDestination: AlertDestinationsServiceApi["testDestination"] = Effect.fn(
 			"AlertDestinationsService.testDestination",
-		)(function* (orgId, _userId, roles, destinationId) {
-			yield* requireAlertsPermission(roles)
+		)(function* (orgId, _userId, permissions, destinationId) {
+			yield* requireAlertsPermission(permissions)
 			const row = yield* requireDestinationRow(orgId, destinationId)
 			const sent = yield* delivery
 				.sendImmediateNotification(row, {

@@ -40,7 +40,7 @@ import {
 } from "./form"
 import { Message, type MenuKind } from "./message"
 import type { Model } from "./model"
-import { acceptGrants, canManageAlerts } from "../../kit/session-grants"
+import { acceptGrants, canManageOnCall } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 export type ChainRoute = Extract<
@@ -127,7 +127,7 @@ export const isDirty = (model: Pick<Model, "form" | "baseline">): boolean =>
 
 /** Leaving with unsaved edits asks first; a save or delete in flight is on its way out already. */
 export const isBlockingNavigation = (model: Model): boolean =>
-	!model.isSaving && !model.isDeleting && canManageAlerts(model) && isDirty(model)
+	!model.isSaving && !model.isDeleting && canManageOnCall(model) && isDirty(model)
 
 const navigate = (model: Model, url: string): Return => ({
 	model,
@@ -160,7 +160,7 @@ const leave = (model: Model, url: string): Return =>
 	isBlockingNavigation(model) ? askToLeave(model, url) : navigate(model, url)
 
 /** A form edit is dropped while a save is in flight, and for a viewer who may not change chains. */
-const canEdit = (model: Model): boolean => !model.isSaving && canManageAlerts(model)
+const canEdit = (model: Model): boolean => !model.isSaving && canManageOnCall(model)
 
 const withForm = (model: Model, edit: (form: Form) => Form): Return =>
 	canEdit(model) ? { model: { ...model, form: edit(model.form) } } : { model }
@@ -357,11 +357,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotDeleteDialogMessage: ({ message: child }) =>
 			model.isDeleting ? { model } : liftDelete(model, Dialog.update(model.deleteDialog, child)),
 		ClickedDelete: () =>
-			model.editingId === null || !canManageAlerts(model)
+			model.editingId === null || !canManageOnCall(model)
 				? { model }
 				: liftDelete({ ...model, deleteError: null }, Dialog.open(model.deleteDialog)),
 		ClickedConfirmDelete: () =>
-			model.editingId === null || model.isDeleting || !canManageAlerts(model)
+			model.editingId === null || model.isDeleting || !canManageOnCall(model)
 				? { model }
 				: {
 						model: { ...model, isDeleting: true, deleteError: null },

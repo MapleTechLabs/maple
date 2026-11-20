@@ -274,7 +274,7 @@ describe("security tabs", () => {
 			{ update: pageUpdate, view },
 			given(gated),
 			expectView(text("acme/api-gateway")).toExist(),
-			expectView(text("Security is visible to org admins and engineers only")).toExist(),
+			expectView(text("Your role can't open Security")).toExist(),
 		)
 	})
 

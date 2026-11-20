@@ -18,7 +18,7 @@ import { V2RateLimited } from "./errors"
 import { publicError } from "./public-error"
 import { DeviceCredentialPublicId } from "./resource-ids"
 import { InstallationId } from "./widget-credentials"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /**
  * Device-bound credentials (DPoP, RFC 9449) for the mobile Home Screen widgets.
@@ -190,7 +190,7 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 				persistence,
 			],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, requires("devices:connect"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "registerDeviceCredential",
@@ -206,7 +206,7 @@ export class V2DeviceCredentialsApiGroup extends HttpApiGroup.make("deviceCreden
 			success: V2DeviceCredentialDeleteResponse,
 			error: [sessionRequired, persistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "revokeDeviceCredential",
@@ -253,7 +253,7 @@ export class V2DeviceTokensApiGroup extends HttpApiGroup.make("deviceTokens")
 				publicError(DeviceCredentialPersistenceError),
 			],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, requires("devices:connect"))
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "issueDeviceToken",

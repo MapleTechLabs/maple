@@ -13,7 +13,6 @@ import {
 	type BillingLinkRejection,
 	BillingLinkRejectedError,
 	type OrgId,
-	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
 import { EdgeCacheService } from "@maple/cache"
@@ -25,6 +24,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database, type DatabaseClient } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import * as Policy from "@maple/domain/policy"
+import { membershipGrants } from "@maple/auth"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import {
 	CUSTOMER_CACHE_BUCKET,
@@ -66,14 +66,14 @@ export interface LinkBillingOrgInput {
 	/** The org being linked; the caller's active org. */
 	readonly orgId: OrgId
 	readonly userId: UserId
-	readonly roles: ReadonlyArray<RoleName>
+	readonly permissions: Policy.Grants
 	readonly billingOrgId: OrgId
 }
 
 export interface UnlinkBillingOrgInput {
 	/** The caller's active org: the member leaving, or the billing org removing it. */
 	readonly orgId: OrgId
-	readonly roles: ReadonlyArray<RoleName>
+	readonly permissions: Policy.Grants
 	readonly memberOrgId: OrgId
 }
 
@@ -289,7 +289,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const link = Effect.fn("BillingOrgService.link")(function* (input: LinkBillingOrgInput) {
 				const { orgId, billingOrgId: payer } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing_org_id": payer })
-				if (!Policy.can(input.roles, "billing:manage")) {
+				if (!Policy.can(input.permissions, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})
@@ -305,7 +305,10 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 							}),
 					),
 				)
-				if (Option.isNone(membership) || !Policy.can([membership.value.role], "billing:manage")) {
+				if (
+					Option.isNone(membership) ||
+					!Policy.can(membershipGrants(membership.value), "billing:manage")
+				) {
 					return yield* reject("not_admin_of_billing_org")
 				}
 				// Usage meters and Postgres rows live per region; a link cannot span two.
@@ -393,7 +396,7 @@ export class BillingOrgService extends Context.Service<BillingOrgService, Billin
 			const unlink = Effect.fn("BillingOrgService.unlink")(function* (input: UnlinkBillingOrgInput) {
 				const { orgId, memberOrgId } = input
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.billing.member_org_id": memberOrgId })
-				if (!Policy.can(input.roles, "billing:manage")) {
+				if (!Policy.can(input.permissions, "billing:manage")) {
 					return yield* new BillingForbiddenError({
 						message: "Only org admins can change who pays for the organization",
 					})

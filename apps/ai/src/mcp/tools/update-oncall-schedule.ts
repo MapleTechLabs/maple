@@ -32,6 +32,7 @@ export function registerUpdateOnCallScheduleTool(server: McpToolRegistrar) {
 			description: P.optionalText("New notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "oncall:manage",
 		phrases: ["Updating an on-call schedule"],
 		handler: Effect.fn("McpTool.updateOnCallSchedule")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
@@ -63,7 +64,7 @@ export function registerUpdateOnCallScheduleTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules
-				.update(tenant.orgId, tenant.userId, tenant.roles, scheduleId, request)
+				.update(tenant.orgId, tenant.userId, tenant.permissions, scheduleId, request)
 				.pipe(Effect.catchTags(updateScheduleErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { schedule: toScheduleRow(schedule, names) }

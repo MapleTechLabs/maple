@@ -38,6 +38,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { AlertDestinationPublicId, AlertRulePublicId } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `upm_…` public ID ⇄ internal `UptimeMonitorId` (raw UUID). */
 export const UptimeMonitorPublicId = PublicId(PublicIdPrefixes.uptimeMonitor, UptimeMonitorId)
@@ -763,14 +764,17 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 			query: ListQuery,
 			success: UptimeMonitorList,
 			error: [V2ParameterInvalid.schema, uptimePersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listUptimeMonitors",
-				summary: "List uptime monitors",
-				description:
-					"Returns your organization's uptime monitors with their current state, most recently created first. Cursor-paginated. Requires the `uptime_monitors:read` scope.",
-			}),
-		),
+		})
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listUptimeMonitors",
+					summary: "List uptime monitors",
+					description:
+						"Returns your organization's uptime monitors with their current state, most recently created first. Cursor-paginated. Requires the `uptime_monitors:read` scope.",
+				}),
+			)
+			// Each monitor carries its latest check results.
+			.annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("create", "/", {
@@ -810,14 +814,17 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 			params: { id: UptimeMonitorPublicId },
 			success: V2UptimeMonitor,
 			error: [uptimeNotFound, uptimePersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "getUptimeMonitor",
-				summary: "Retrieve an uptime monitor",
-				description:
-					"Returns a single uptime monitor by its `upm_…` ID. Requires the `uptime_monitors:read` scope.",
-			}),
-		),
+		})
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "getUptimeMonitor",
+					summary: "Retrieve an uptime monitor",
+					description:
+						"Returns a single uptime monitor by its `upm_…` ID. Requires the `uptime_monitors:read` scope.",
+				}),
+			)
+			// Each monitor carries its latest check results.
+			.annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:id", {
@@ -856,4 +863,5 @@ export class V2UptimeMonitorsApiGroup extends HttpApiGroup.make("uptimeMonitors"
 			description:
 				"Checks Maple runs from outside your infrastructure (HTTP, TCP, DNS) and heartbeats your jobs send. Each check is a span in your traces; a monitor goes down after enough failures in a row.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

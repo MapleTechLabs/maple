@@ -6,7 +6,8 @@
  * that asks "who did this" — the audit log, an issue claim, a comment — reads that pin.
  */
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { Array as Arr, Effect, Layer, Schema } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { ErrorPersistenceError, type TenantContext } from "@maple/domain/http"
 import { ActorId, OrgId, UserId } from "@maple/primitives"
@@ -39,6 +40,7 @@ const tenant: TenantContext = {
 	orgId: ORG,
 	userId: PLACEHOLDER_USER,
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 	turnOrigin: CONNECTOR_ORIGIN,
 }
@@ -110,14 +112,25 @@ const role = Schema.decodeSync(RoleName)
 const STARTER = Schema.decodeSync(UserId)("user_starter")
 
 /** A directory where the starter holds the role `now`, has left (`gone`) or cannot be read (`unavailable`). */
-const memberships = (now: string, directory: "clerk" | "none" = "clerk") =>
-	Layer.succeed(OrgMembershipService, {
+const memberships = (now: string, directory: "clerk" | "none" = "clerk", custom: Policy.Grants = []) =>
+	Layer.mock(OrgMembershipService)({
 		directory,
 		verify: (_userId, orgId) =>
 			now === "unavailable"
 				? Effect.fail(new AuthorizationUnavailableError({ message: "directory down" }))
-				: Effect.succeed(now === "gone" ? Option.none() : Option.some({ orgId, role: role(now) })),
+				: Effect.succeed(
+						now === "gone"
+							? Option.none()
+							: Option.some({ orgId, role: role(now), customPermissions: custom }),
+					),
 	})
+
+/** A person answering for a pass, holding `permissions`. */
+const person = (roles: ReadonlyArray<string>, permissions: Policy.Grants) =>
+	({ kind: "person", roles: Arr.map(roles, (name) => role(name)), permissions }) as const
+
+/** Who answers when nobody can be named or confirmed: a person holding nothing. */
+const NOBODY = { kind: "person", roles: [], permissions: [] } as const
 
 const startedBy = (
 	roles: ReadonlyArray<string>,
@@ -145,29 +158,44 @@ describe("turnStarterOf", () => {
 		}).pipe(Effect.provide(memberships("unavailable"))),
 	)
 
-	it.effect("gives a person the roles they hold now, not the ones they started with", () =>
+	it.effect("gives a person what they hold now, not what they started with", () =>
 		Effect.gen(function* () {
 			const demoted = yield* turnStarterOf(ORG, startedBy(["org:admin"]))
-			assert.deepStrictEqual(demoted, { kind: "person", roles: [role("org:member")] })
+			assert.deepStrictEqual(demoted, person(["org:member"], Policy.grantsOf(["org:member"])))
 		}).pipe(Effect.provide(memberships("org:member"))),
 	)
 
 	it.effect("keeps a credential that was held below its owner's role where it was", () =>
 		Effect.gen(function* () {
 			const pinned = yield* turnStarterOf(ORG, startedBy(["org:member"]))
-			assert.deepStrictEqual(pinned, { kind: "person", roles: [role("org:member")] })
+			assert.deepStrictEqual(pinned, person(["org:admin"], Policy.grantsOf(["org:member"])))
 		}).pipe(Effect.provide(memberships("org:admin"))),
 	)
 
-	it.effect("answers as a person with no role when nobody is recorded, named or still a member", () =>
+	it.effect("holds only what a custom role holds now and the credential held when it started", () =>
 		Effect.gen(function* () {
-			const nobody = { kind: "person", roles: [] } as const
-			assert.deepStrictEqual(yield* turnStarterOf(ORG, { kind: "autonomous" }), nobody)
-			assert.deepStrictEqual(yield* turnStarterOf(ORG, startedBy(["org:admin"], "unnamed")), nobody)
+			const starter = yield* turnStarterOf(ORG, {
+				kind: "autonomous",
+				startedBy: {
+					kind: "person",
+					userId: STARTER,
+					roles: ["org:custom"],
+					permissions: ["telemetry:read", "data_sources:query", "alerts:manage"],
+					mayReadDataSources: true,
+				},
+			})
+			assert.deepStrictEqual(starter, person(["org:custom"], ["telemetry:read", "data_sources:query"]))
+		}).pipe(Effect.provide(memberships("org:custom", "clerk", ["telemetry:read", "data_sources:query"]))),
+	)
+
+	it.effect("answers as a person holding nothing when nobody is recorded, named or still a member", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(yield* turnStarterOf(ORG, { kind: "autonomous" }), NOBODY)
+			assert.deepStrictEqual(yield* turnStarterOf(ORG, startedBy(["org:admin"], "unnamed")), NOBODY)
 		}).pipe(Effect.provide(memberships("org:admin"))),
 	)
 
-	it.effect("answers as a person with no role when the starter left or cannot be looked up", () =>
+	it.effect("answers as a person holding nothing when the starter left or cannot be looked up", () =>
 		Effect.gen(function* () {
 			const left = yield* turnStarterOf(ORG, startedBy(["org:admin"])).pipe(
 				Effect.provide(memberships("gone")),
@@ -175,13 +203,7 @@ describe("turnStarterOf", () => {
 			const unreadable = yield* turnStarterOf(ORG, startedBy(["org:admin"])).pipe(
 				Effect.provide(memberships("unavailable")),
 			)
-			assert.deepStrictEqual(
-				[left, unreadable],
-				[
-					{ kind: "person", roles: [] },
-					{ kind: "person", roles: [] },
-				],
-			)
+			assert.deepStrictEqual([left, unreadable], [NOBODY, NOBODY])
 		}),
 	)
 })
@@ -189,7 +211,6 @@ describe("turnStarterOf", () => {
 describe("turnStarterOf and what the starter's credential could reach", () => {
 	it.effect("answers as nobody for a credential whose scopes did not reach data sources", () =>
 		Effect.gen(function* () {
-			const nobody = { kind: "person", roles: [] } as const
 			const scoped = yield* turnStarterOf(
 				ORG,
 				startedBy(["org:engineer"], "named", "cannot read data sources"),
@@ -199,7 +220,7 @@ describe("turnStarterOf and what the starter's credential could reach", () => {
 				kind: "autonomous",
 				startedBy: { kind: "person", userId: STARTER, roles: ["org:engineer"] },
 			})
-			assert.deepStrictEqual([scoped, unrecorded], [nobody, nobody])
+			assert.deepStrictEqual([scoped, unrecorded], [NOBODY, NOBODY])
 		}).pipe(Effect.provide(memberships("org:engineer"))),
 	)
 })
@@ -215,7 +236,7 @@ describe("turnStarterOf on a deployment with no membership directory", () => {
 		return { warnings, layer }
 	}
 
-	it.effect("takes the roles the credential held as they are, and warns about nothing", () => {
+	it.effect("takes what the credential held as it is, and warns about nothing", () => {
 		const logs = captured()
 		return Effect.gen(function* () {
 			const starter = yield* turnStarterOf(ORG, startedBy(["org:engineer"]))
@@ -223,8 +244,8 @@ describe("turnStarterOf on a deployment with no membership directory", () => {
 			assert.deepStrictEqual(
 				[starter, unnamed],
 				[
-					{ kind: "person", roles: [role("org:engineer")] },
-					{ kind: "person", roles: [role("org:admin")] },
+					person(["org:engineer"], Policy.grantsOf(["org:engineer"])),
+					person(["org:admin"], Policy.grantsOf(["org:admin"])),
 				],
 			)
 			assert.deepStrictEqual(logs.warnings, [])
@@ -237,7 +258,7 @@ describe("turnStarterOf on a deployment with no membership directory", () => {
 				ORG,
 				startedBy(["org:engineer"], "named", "cannot read data sources"),
 			)
-			assert.deepStrictEqual(scoped, { kind: "person", roles: [] })
+			assert.deepStrictEqual(scoped, NOBODY)
 		}).pipe(Effect.provide(memberships("unavailable", "none"))),
 	)
 
@@ -245,7 +266,7 @@ describe("turnStarterOf on a deployment with no membership directory", () => {
 		const logs = captured()
 		return Effect.gen(function* () {
 			const starter = yield* turnStarterOf(ORG, startedBy(["org:engineer"]))
-			assert.deepStrictEqual(starter, { kind: "person", roles: [] })
+			assert.deepStrictEqual(starter, NOBODY)
 			assert.lengthOf(logs.warnings, 1)
 		}).pipe(Effect.provide(Layer.merge(memberships("unavailable", "clerk"), logs.layer)))
 	})
@@ -256,7 +277,10 @@ describe("turnTenant for an unattended pass", () => {
 		Effect.gen(function* () {
 			const pass: TenantContext = { ...tenant, turnOrigin: startedBy(["org:engineer"]) }
 			const resolved = yield* turnTenant(pass, startedBy(["org:engineer"]))
-			assert.deepStrictEqual(resolved.turnStarter, { kind: "person", roles: [role("org:engineer")] })
+			assert.deepStrictEqual(
+				resolved.turnStarter,
+				person(["org:engineer"], Policy.grantsOf(["org:engineer"])),
+			)
 			assert.deepStrictEqual([resolved.userId, resolved.roles], [pass.userId, []])
 		}).pipe(Effect.provide(Layer.merge(memberships("org:engineer"), unavailableActors))),
 	)

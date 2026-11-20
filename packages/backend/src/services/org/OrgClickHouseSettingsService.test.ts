@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
 // BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
@@ -501,7 +502,7 @@ describe("resolveRuntimeConfig caching", () => {
 	it.effect("the settings page still reports a settings database outage as its own error", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = asOrgId("org_ch_settings_db_down")
-		const admin = [asRole("org:admin")]
+		const admin = Policy.grantsOf([asRole("org:admin")])
 		return Effect.gen(function* () {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => executeSql(testDb, "DROP TABLE org_clickhouse_settings CASCADE"))
@@ -602,7 +603,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isSome(before)).toBe(true)
 
-			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
+			yield* service.delete(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
 
 			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// Would still be a stale `Some` if the write had not busted the cache.
@@ -668,7 +669,7 @@ describe("resolveRuntimeConfig caching", () => {
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 			expect(Option.isSome(yield* service.resolveRuntimeConfig(asOrgId(orgId)))).toBe(true)
 
-			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
+			yield* service.delete(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
 
 			// Drop the memo the write just cleared anyway, so this resolve can only
 			// be answered by the shared tier or Postgres. If the write had evicted
@@ -1115,7 +1116,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://user:secret@clickhouse.example.test"))
 			const exit = yield* service
-				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+				.collectorConfig(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
 				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -1133,7 +1134,10 @@ describe("resolveRuntimeConfig caching", () => {
 					'we"ird\\user"\\',
 				]),
 			)
-			const config = yield* service.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+			const config = yield* service.collectorConfig(
+				asOrgId(orgId),
+				Policy.grantsOf([asRole("org:admin")]),
+			)
 			expect(config.yaml).toContain('    username: "we\\"ird\\\\user\\"\\\\"')
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -1152,7 +1156,7 @@ describe("resolveRuntimeConfig caching", () => {
 				),
 			)
 			const exit = yield* service
-				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+				.collectorConfig(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
 				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -1171,7 +1175,7 @@ describe("resolveRuntimeConfig caching", () => {
 					.upsert(
 						orgId,
 						userId,
-						[asRole("org:admin")],
+						Policy.grantsOf([asRole("org:admin")]),
 						new OrgClickHouseSettingsUpsertRequest(
 							password === undefined ? endpoint : { ...endpoint, password },
 						),
@@ -1196,7 +1200,7 @@ describe("applySchema claim lifecycle", () => {
 	const asOrgId = Schema.decodeUnknownSync(OrgId)
 	const asRole = Schema.decodeUnknownSync(RoleName)
 	const asUserIdApply = Schema.decodeUnknownSync(UserId)
-	const ADMIN = [asRole("org:admin")]
+	const ADMIN = Policy.grantsOf([asRole("org:admin")])
 
 	const applyConfigLive = ConfigProvider.layer(
 		ConfigProvider.fromUnknown({

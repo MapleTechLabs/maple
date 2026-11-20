@@ -1,5 +1,6 @@
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 
 /** Stable identifiers used across eval prompts + fixtures. */
 export const FIXTURES = {
@@ -22,6 +23,7 @@ export const EVAL_TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)(FIXTURES.orgId),
 	userId: Schema.decodeSync(UserId)("internal-service"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

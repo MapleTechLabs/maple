@@ -42,6 +42,7 @@ import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2ManagedWarehouseErrors, V2QueryEngineRouteErrors, V2WarehouseErrors } from "./query-errors"
 import { AlertIncidentPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 export { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
 
@@ -1037,14 +1038,17 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				...V2WarehouseErrors,
 				...V2QueryEngineRouteErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "testAlertRule",
-				summary: "Test an alert rule",
-				description:
-					"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role, the `alerts:write` scope, and read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
-			}),
-		),
+		})
+			// It answers with the rule's live result, so it reads telemetry.
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "testAlertRule",
+					summary: "Test an alert rule",
+					description:
+						"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role, the `alerts:write` scope, and read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
@@ -1057,14 +1061,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				...V2WarehouseErrors,
 				...V2QueryEngineRouteErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "previewAlertRule",
-				summary: "Preview an alert rule",
-				description:
-					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "previewAlertRule",
+					summary: "Preview an alert rule",
+					description:
+						"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("checks", "/:id/checks", {
@@ -1077,14 +1083,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				alertRuleNotFound,
 				...V2ManagedWarehouseErrors,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listAlertRuleChecks",
-				summary: "List a rule's checks",
-				description:
-					"Returns the rule's recorded evaluations (its audit trail), newest first, optionally filtered by group key and time range. Requires the `alerts:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listAlertRuleChecks",
+					summary: "List a rule's checks",
+					description:
+						"Returns the rule's recorded evaluations (its audit trail), newest first, optionally filtered by group key and time range. Requires the `alerts:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("checksSummary", "/:id/checks/summary", {
@@ -1092,14 +1100,16 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 			query: AlertCheckSummaryQuery,
 			success: AlertCheckSummary,
 			error: [alertValidation, alertPersistence, alertRuleNotFound, ...V2ManagedWarehouseErrors],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "summarizeAlertRuleChecks",
-				summary: "Summarize a rule's checks",
-				description:
-					"Returns adaptive check-history buckets for a range of up to 365 days. Requires the `alerts:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "summarizeAlertRuleChecks",
+					summary: "Summarize a rule's checks",
+					description:
+						"Returns adaptive check-history buckets for a range of up to 365 days. Requires the `alerts:read` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/alerts/rules")
 	.middleware(AuthorizationV2)
@@ -1109,4 +1119,5 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 			description:
 				"Monitors over your telemetry: error rate, latency percentiles, Apdex, throughput, metrics, query-builder queries, and raw SQL. Rules evaluate on a rolling window, open incidents after consecutive breaches, and notify their alert destinations. Mutations are admin-only.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

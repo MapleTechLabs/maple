@@ -96,7 +96,7 @@ describe("alerts hub, escalation chains", () => {
 			{ update: pageUpdate, view },
 			given(onRouting(MEMBER, [])),
 			expectView(role("button", { name: "Create chain" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("oncall:manage").message })).toExist(),
 		)
 		const menuId = chainMenuId(Schema.decodeSync(EscalationChainId)(chainUuid(1)))
 		const routing = onRouting(MEMBER, CHAINS)

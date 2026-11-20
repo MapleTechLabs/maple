@@ -12,6 +12,8 @@ import { Effect, Option, Array as Arr } from "effect"
 import { encodeChatTurnTenant, chatSessionKind, orgIdFromChatSessionId } from "@maple/domain/chat-session"
 import { ChatSessions } from "@maple/backend/platform/bindings"
 import { describeCause } from "@maple/backend/platform/describe-cause"
+import * as Policy from "@maple/domain/policy"
+import { approvalPermission } from "../../chat/approval-permission"
 
 /** A session call that did not complete. It may have got as far as running the tool, so the copy hedges. */
 const sessionCall = <A>(toolCallId: string, call: Effect.Effect<A, ChatSessionCallError>) =>
@@ -31,7 +33,8 @@ const sessionCall = <A>(toolCallId: string, call: Effect.Effect<A, ChatSessionCa
 	)
 
 /**
- * `POST /internal/chat/apply` — decide an approval-gated proposal as the signed-in user.
+ * `POST /internal/chat/apply` — decide an approval-gated proposal as the signed-in user, who needs
+ * what approving its tool does (`approvalPermission`); the change runs with their permissions.
  *
  * By reference, through `ChatSession.settleProposal`: the session reads the tool and its arguments
  * out of its own log, refuses a call that is not an open proposal or is already decided, runs it
@@ -53,6 +56,21 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 
 			const stub = (yield* ChatSessions).session(sessionId)
 
+			// Deciding needs what approving the tool needs. The session refuses a call that is not an
+			// open proposal on its own; the tool's name comes from its log, never from the caller.
+			const transcript = yield* sessionCall(toolCallId, stub.history())
+			const proposed = Arr.findFirst(
+				Arr.flatMap(transcript, (message) => message.toolCalls),
+				(c) => c.id === toolCallId && c.proposed === true,
+			)
+			if (Option.isSome(proposed)) {
+				yield* Policy.check(
+					tenant.permissions,
+					approvalPermission(proposed.value.name),
+					(denial) => new CurrentTenant.LimitedRoleError({ message: denial.message }),
+				)
+			}
+
 			const outcome = yield* sessionCall(
 				toolCallId,
 				stub.settleProposal({
@@ -64,6 +82,7 @@ export const HttpChatLive = HttpApiBuilder.group(MapleAiApi, "chat", (handlers) 
 						orgId: tenant.orgId,
 						userId: tenant.userId,
 						roles: tenant.roles,
+						permissions: tenant.permissions,
 						authMode: tenant.authMode,
 					}),
 				}),

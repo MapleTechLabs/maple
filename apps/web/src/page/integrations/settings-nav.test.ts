@@ -40,7 +40,7 @@ describe("integrations settings rail", () => {
 		expect(tabs).not.toContain("data-platform")
 	})
 
-	test("an engineer gets the setup rows but not the admin-only audit log or AI", () => {
+	test("an engineer gets the setup rows and AI, for auto-triage, but not the audit log", () => {
 		const model = { ...init({ search: {} }, context).model, grants: [] }
 		const next = update(
 			model,
@@ -50,7 +50,7 @@ describe("integrations settings rail", () => {
 		const tabs = clerkTabs(next)
 		expect(tabs).toContain("ingestion")
 		expect(tabs).not.toContain("audit-log")
-		expect(tabs).not.toContain("ai")
+		expect(tabs).toContain("ai")
 	})
 
 	test("the Data sources tab shows only for an org in the dataSources rollout", () => {

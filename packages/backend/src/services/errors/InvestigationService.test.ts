@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, Clock, Tracer } from "effect"
@@ -78,15 +79,17 @@ const makeLayer = () => makeHarness().layer
 
 const ORG = Schema.decodeSync(OrgId)("org_investigation_test")
 /** A manual start by a key or session nobody is named for. */
-const NOBODY = { userId: null, roles: [], mayReadDataSources: false } as const
+const NOBODY = { userId: null, roles: [], permissions: [], mayReadDataSources: false } as const
 const MEMBER = {
 	userId: Schema.decodeSync(UserId)("user_member"),
 	roles: [Schema.decodeSync(RoleName)("org:member")],
+	permissions: Policy.grantsOf(["org:member"]),
 	mayReadDataSources: true,
 }
 const ENGINEER = {
 	userId: Schema.decodeSync(UserId)("user_engineer"),
 	roles: [Schema.decodeSync(RoleName)("org:engineer")],
+	permissions: Policy.grantsOf(["org:engineer"]),
 	mayReadDataSources: true,
 }
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
@@ -572,6 +575,7 @@ describe("InvestigationService", () => {
 						kind: "person",
 						userId: ENGINEER.userId,
 						roles: ENGINEER.roles,
+						permissions: ENGINEER.permissions,
 						mayReadDataSources: false,
 					},
 				})
@@ -599,6 +603,7 @@ describe("InvestigationService", () => {
 					kind: "person",
 					userId: MEMBER.userId,
 					roles: ENGINEER.roles,
+					permissions: ENGINEER.permissions,
 					mayReadDataSources: true,
 				},
 			})
@@ -623,6 +628,7 @@ describe("InvestigationService", () => {
 					kind: "person",
 					userId: ENGINEER.userId,
 					roles: ENGINEER.roles,
+					permissions: ENGINEER.permissions,
 					mayReadDataSources: true,
 				},
 			})

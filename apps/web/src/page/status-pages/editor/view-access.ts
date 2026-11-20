@@ -19,7 +19,7 @@ import { addressBlock } from "./view-address"
 import { draftSnapshot } from "./view-canvas"
 import { renderAccessPage } from "@maple/status-page"
 import { Message } from "./message"
-import { canChangeAccess, type Model } from "./model"
+import { canChangeAccess, canManage, type Model } from "./model"
 import {
 	accessIssue,
 	blockedReason,
@@ -62,6 +62,9 @@ const VISIBILITIES: ReadonlyArray<{
 	},
 ]
 
+/** A visibility change saves the page itself, so it needs `status_pages:edit` beside `status_pages:access`. */
+const canPickVisibility = (model: Model): boolean => canChangeAccess(model) && canManage(model)
+
 const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeof VISIBILITIES)[number]) => {
 	const blocked = blockedReason(model, page, option.value)
 	const isPicked = draftVisibility(model, page) === option.value
@@ -72,7 +75,7 @@ const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeo
 			name: "status-page-visibility",
 			label: option.title,
 			isChecked: isPicked,
-			isDisabled: !canChangeAccess(model) || model.accessAction !== null || blocked !== null,
+			isDisabled: !canPickVisibility(model) || model.accessAction !== null || blocked !== null,
 			onChange: Message.PickedVisibility({ visibility: option.value }),
 			className: "flex-col gap-1 p-3",
 		},
@@ -83,7 +86,7 @@ const visibilityChoice = (h: H, model: Model, page: V2StatusPage, option: (typeo
 			}),
 			typography(h, { size: "sm", weight: "medium" }, [option.title]),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [option.description]),
-			...(blocked === null || !canChangeAccess(model)
+			...(blocked === null || !canPickVisibility(model)
 				? []
 				: [typography(h, { size: "xs", tone: "muted", as: "p" }, [blocked])]),
 		],
@@ -139,7 +142,11 @@ export const accessSection = (h: H, model: Model, page: V2StatusPage, form: Sett
 		},
 		[
 			vstack(h, { gap: "4" }, [
-				...(canChangeAccess(model) ? [] : [adminOnlyNote(h, [denialReason("status_pages:access")])]),
+				...(canChangeAccess(model)
+					? canManage(model)
+						? []
+						: [adminOnlyNote(h, [denialReason("status_pages:edit")])]
+					: [adminOnlyNote(h, [denialReason("status_pages:access")])]),
 				h.div(
 					[h.Class("grid gap-2 sm:grid-cols-3"), h.Role("radiogroup"), h.AriaLabel("Who can view")],
 					Arr.map(VISIBILITIES, (option) => visibilityChoice(h, model, page, option)),

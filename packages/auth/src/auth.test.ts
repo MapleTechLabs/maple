@@ -3,6 +3,7 @@ import { createHmac, hkdfSync } from "node:crypto"
 import { Effect, Exit, Option, Redacted, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import {
 	extractVerifiedPrimaryEmail,
 	makeGetCustomerData,
@@ -15,6 +16,7 @@ import {
 	rootPasswordProblem,
 	SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS,
 	SELF_HOSTED_SESSION_TTL_SECONDS,
+	type VerifiedOrgMembership,
 } from "./index"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -102,17 +104,19 @@ describe("makeResolveTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "session_token",
-						userId: "user_123",
-						orgId: "org_123",
-						orgRole: "org:admin",
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "session_token",
+							userId: "user_123",
+							orgId: "org_123",
+							orgRole: "org:admin",
+						}),
 					}),
-				}),
+				},
 			)
 
 			const tenant = yield* resolveTenant({
@@ -123,6 +127,7 @@ describe("makeResolveTenant", () => {
 				orgId: asOrgId("org_123"),
 				userId: asUserId("user_123"),
 				roles: [asRoleName("org:admin")],
+				permissions: Policy.grantsOf([asRoleName("org:admin")]),
 				authMode: "clerk",
 			})
 		}),
@@ -138,19 +143,21 @@ describe("makeResolveTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async (request) => {
-					const shown = request.headers.has("authorization") || request.headers.has("cookie")
-					return {
-						isAuthenticated: shown,
-						message: shown ? null : "No credential",
-						toAuth: () => ({
-							isAuthenticated: true,
-							tokenType: "session_token",
-							userId: "user_123",
-							orgId: "org_123",
-							orgRole: "org:admin",
-						}),
-					}
+				{
+					authenticateClerkRequest: async (request) => {
+						const shown = request.headers.has("authorization") || request.headers.has("cookie")
+						return {
+							isAuthenticated: shown,
+							message: shown ? null : "No credential",
+							toAuth: () => ({
+								isAuthenticated: true,
+								tokenType: "session_token",
+								userId: "user_123",
+								orgId: "org_123",
+								orgRole: "org:admin",
+							}),
+						}
+					},
 				},
 			)
 
@@ -175,8 +182,10 @@ describe("makeResolveTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async () => {
-					throw new Error("token verification failed")
+				{
+					authenticateClerkRequest: async () => {
+						throw new Error("token verification failed")
+					},
 				},
 			)
 
@@ -202,17 +211,19 @@ describe("makeResolveTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "session_token",
-						userId: "user_123",
-						orgId: null,
-						orgRole: null,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "session_token",
+							userId: "user_123",
+							orgId: null,
+							orgRole: null,
+						}),
 					}),
-				}),
+				},
 			)
 
 			const exit = yield* Effect.exit(
@@ -312,6 +323,7 @@ describe("makeResolveTenant", () => {
 				orgId: asOrgId("default"),
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
+				permissions: Policy.grantsOf([asRoleName("root")]),
 				authMode: "self_hosted",
 			})
 		}),
@@ -326,18 +338,20 @@ describe("impersonated Clerk sessions", () => {
 		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 	} as const
 	const resolveWith = (auth: Record<string, unknown>) =>
-		makeResolveTenant(clerkEnv, async () => ({
-			isAuthenticated: true,
-			message: null,
-			toAuth: () => ({
+		makeResolveTenant(clerkEnv, {
+			authenticateClerkRequest: async () => ({
 				isAuthenticated: true,
-				tokenType: "session_token",
-				userId: "user_123",
-				orgId: "org_123",
-				orgRole: "org:admin",
-				...auth,
+				message: null,
+				toAuth: () => ({
+					isAuthenticated: true,
+					tokenType: "session_token",
+					userId: "user_123",
+					orgId: "org_123",
+					orgRole: "org:admin",
+					...auth,
+				}),
 			}),
-		}))({ authorization: "Bearer test-token" })
+		})({ authorization: "Bearer test-token" })
 
 	it.effect("carries the impersonator and session from the act claim", () =>
 		Effect.gen(function* () {
@@ -408,12 +422,12 @@ describe("pending Clerk sessions (no organization chosen yet)", () => {
 	it.effect("is refused on organization-scoped routes as having no active organization", () =>
 		Effect.gen(function* () {
 			// Membership would be granted, yet a pending session never adopts a selection.
-			const resolveTenant = makeResolveTenant(
-				clerkEnv,
-				pendingSession,
-				"session_token",
-				(_userId, orgId) => Effect.succeedSome({ orgId, role: asRoleName("org:admin") }),
-			)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: pendingSession,
+				acceptsToken: "session_token",
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome({ orgId, role: asRoleName("org:admin"), customPermissions: [] }),
+			})
 			const exit = yield* Effect.exit(
 				resolveTenant({ authorization: "Bearer test-token", [ORG_SELECTION_HEADER]: "org_123" }),
 			)
@@ -435,17 +449,19 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "api_key",
-						userId: "user_abc",
-						orgId: "org_abc",
-						orgRole: "org:member",
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "api_key",
+							userId: "user_abc",
+							orgId: "org_abc",
+							orgRole: "org:member",
+						}),
 					}),
-				}),
+				},
 			)
 
 			const tenant = yield* resolveMcpTenant({
@@ -456,6 +472,7 @@ describe("makeResolveMcpTenant", () => {
 				orgId: asOrgId("org_abc"),
 				userId: asUserId("user_abc"),
 				roles: [asRoleName("org:member")],
+				permissions: Policy.grantsOf([asRoleName("org:member")]),
 				authMode: "clerk",
 			})
 		}),
@@ -474,17 +491,19 @@ describe("makeResolveMcpTenant", () => {
 					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "api_key",
-						userId: "user_abc",
-						orgId: null,
-						orgRole: null,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "api_key",
+							userId: "user_abc",
+							orgId: null,
+							orgRole: null,
+						}),
 					}),
-				}),
+				},
 			)
 
 			const tenant = yield* resolveMcpTenant({
@@ -495,6 +514,7 @@ describe("makeResolveMcpTenant", () => {
 				orgId: asOrgId("org_override"),
 				userId: asUserId("user_abc"),
 				roles: [],
+				permissions: Policy.grantsOf([]),
 				authMode: "clerk",
 			})
 		}),
@@ -511,17 +531,19 @@ describe("makeResolveMcpTenant", () => {
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_override"),
 					MAPLE_ENVIRONMENT: "development",
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "api_key",
-						userId: "user_abc",
-						orgId: null,
-						orgRole: null,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "api_key",
+							userId: "user_abc",
+							orgId: null,
+							orgRole: null,
+						}),
 					}),
-				}),
+				},
 			)
 
 			const exit = yield* Effect.exit(resolveMcpTenant({ authorization: "Bearer maple_key_xxx" }))
@@ -538,17 +560,19 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async () => ({
-					isAuthenticated: true,
-					message: null,
-					toAuth: () => ({
+				{
+					authenticateClerkRequest: async () => ({
 						isAuthenticated: true,
-						tokenType: "api_key",
-						userId: "user_abc",
-						orgId: null,
-						orgRole: null,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "api_key",
+							userId: "user_abc",
+							orgId: null,
+							orgRole: null,
+						}),
 					}),
-				}),
+				},
 			)
 
 			const exit = yield* Effect.exit(
@@ -578,6 +602,7 @@ describe("makeResolveMcpTenant", () => {
 				orgId: asOrgId("default"),
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
+				permissions: Policy.grantsOf([asRoleName("root")]),
 				authMode: "self_hosted",
 			})
 		}),
@@ -596,19 +621,21 @@ describe("makeResolveMcpTenant", () => {
 					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
 					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
 				},
-				async (_request, options) => {
-					seenAcceptsToken = (options as { acceptsToken?: unknown } | undefined)?.acceptsToken
-					return {
-						isAuthenticated: true,
-						message: null,
-						toAuth: () => ({
+				{
+					authenticateClerkRequest: async (_request, options) => {
+						seenAcceptsToken = (options as { acceptsToken?: unknown } | undefined)?.acceptsToken
+						return {
 							isAuthenticated: true,
-							tokenType: "session_token",
-							userId: "user_123",
-							orgId: "org_123",
-							orgRole: "org:admin",
-						}),
-					}
+							message: null,
+							toAuth: () => ({
+								isAuthenticated: true,
+								tokenType: "session_token",
+								userId: "user_123",
+								orgId: "org_123",
+								orgRole: "org:admin",
+							}),
+						}
+					},
 				},
 			)
 
@@ -619,6 +646,7 @@ describe("makeResolveMcpTenant", () => {
 				orgId: asOrgId("org_123"),
 				userId: asUserId("user_123"),
 				roles: [asRoleName("org:admin")],
+				permissions: Policy.grantsOf([asRoleName("org:admin")]),
 				authMode: "clerk",
 			})
 		}),
@@ -634,6 +662,7 @@ describe("makeGetCustomerData", () => {
 				orgId: asOrgId("default"),
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
+				permissions: Policy.grantsOf([asRoleName("root")]),
 				authMode: "self_hosted",
 			})
 
@@ -854,6 +883,7 @@ describe("self-hosted session claims (correctly signed, malformed)", () => {
 				orgId: asOrgId("default"),
 				userId: asUserId("root"),
 				roles: [asRoleName("root")],
+				permissions: Policy.grantsOf([asRoleName("root")]),
 				authMode: "self_hosted",
 			})
 		}),
@@ -1243,9 +1273,10 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			return Effect.succeed(
 				Option.map(
 					Arr.findFirst(memberships, (membership) => membership.orgId === orgId),
-					(found): { orgId: OrgId; role: RoleName } => ({
+					(found): VerifiedOrgMembership => ({
 						orgId: asOrgId(found.orgId),
 						role: asRoleName(found.role),
+						customPermissions: [],
 					}),
 				),
 			)
@@ -1262,7 +1293,10 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 	it.effect("naming the organization you already have costs nothing", () =>
 		Effect.gen(function* () {
 			const membership = verifier([{ orgId: "org_123", role: "org:admin" }])
-			const resolveTenant = makeResolveTenant(clerkEnv, clerkAuth(), undefined, membership.verify)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth(),
+				verifyOrgMembership: membership.verify,
+			})
 
 			const tenant = yield* resolveTenant({
 				authorization: "Bearer test-token",
@@ -1278,7 +1312,10 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 	it.effect("adopts a verified organization AND its role, not the token's", () =>
 		Effect.gen(function* () {
 			const membership = verifier([{ orgId: "org_other", role: "org:member" }])
-			const resolveTenant = makeResolveTenant(clerkEnv, clerkAuth(), undefined, membership.verify)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth(),
+				verifyOrgMembership: membership.verify,
+			})
 
 			const tenant = yield* resolveTenant({
 				authorization: "Bearer test-token",
@@ -1290,6 +1327,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 				// Carrying `org:admin` across would make an admin of one org an
 				// admin of every org they belong to.
 				roles: [asRoleName("org:member")],
+				permissions: Policy.grantsOf([asRoleName("org:member")]),
 				userId: asUserId("user_123"),
 				authMode: "clerk",
 			})
@@ -1301,12 +1339,10 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 	it.effect("works with no active organization in the token", () =>
 		Effect.gen(function* () {
 			const membership = verifier([{ orgId: "org_other", role: "org:member" }])
-			const resolveTenant = makeResolveTenant(
-				clerkEnv,
-				clerkAuth({ orgId: null }),
-				undefined,
-				membership.verify,
-			)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth({ orgId: null }),
+				verifyOrgMembership: membership.verify,
+			})
 
 			const tenant = yield* resolveTenant({
 				authorization: "Bearer test-token",
@@ -1320,7 +1356,10 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 	it.effect("refuses an organization the user is not in", () =>
 		Effect.gen(function* () {
 			const membership = verifier([])
-			const resolveTenant = makeResolveTenant(clerkEnv, clerkAuth(), undefined, membership.verify)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth(),
+				verifyOrgMembership: membership.verify,
+			})
 
 			const exit = yield* Effect.exit(
 				resolveTenant({
@@ -1338,9 +1377,11 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 
 	it.effect("a lookup failure rejects rather than falling back to the token's org", () =>
 		Effect.gen(function* () {
-			const resolveTenant = makeResolveTenant(clerkEnv, clerkAuth(), undefined, () =>
-				Effect.fail(new AuthorizationUnavailableError({ message: "Clerk unreachable" })),
-			)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth(),
+				verifyOrgMembership: () =>
+					Effect.fail(new AuthorizationUnavailableError({ message: "Clerk unreachable" })),
+			})
 
 			const exit = yield* Effect.exit(
 				resolveTenant({
@@ -1357,7 +1398,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 
 	it.effect("rejects the header when no verifier is wired", () =>
 		Effect.gen(function* () {
-			const resolveTenant = makeResolveTenant(clerkEnv, clerkAuth())
+			const resolveTenant = makeResolveTenant(clerkEnv, { authenticateClerkRequest: clerkAuth() })
 
 			const exit = yield* Effect.exit(
 				resolveTenant({
@@ -1374,12 +1415,11 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		Effect.gen(function* () {
 			const membership = verifier([{ orgId: "org_other", role: "org:admin" }])
 			// The MCP token types, with a verifier wired so a skipped check is observable.
-			const resolveTenant = makeResolveTenant(
-				clerkEnv,
-				clerkAuth({ tokenType: "api_key" }),
-				["api_key", "session_token"],
-				membership.verify,
-			)
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: clerkAuth({ tokenType: "api_key" }),
+				acceptsToken: ["api_key", "session_token"],
+				verifyOrgMembership: membership.verify,
+			})
 
 			const exit = yield* Effect.exit(
 				resolveTenant({
@@ -1401,9 +1441,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			])
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
-				clerkAuth(),
-				undefined,
-				membership.verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: membership.verify },
 			)
 
 			const tenant = yield* resolveTenant({
@@ -1422,9 +1460,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
 				// The session is an `org:admin` of org_123, a different organization.
-				clerkAuth(),
-				undefined,
-				membership.verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: membership.verify },
 			)
 
 			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
@@ -1432,6 +1468,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			assert.deepStrictEqual(tenant, {
 				orgId: asOrgId("org_pinned"),
 				roles: [asRoleName("org:member")],
+				permissions: Policy.grantsOf([asRoleName("org:member")]),
 				userId: asUserId("user_123"),
 				authMode: "clerk",
 			})
@@ -1443,9 +1480,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			const membership = verifier([])
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
-				clerkAuth(),
-				undefined,
-				membership.verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: membership.verify },
 			)
 
 			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
@@ -1461,9 +1496,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 					MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned"),
 					MAPLE_ENVIRONMENT: "development",
 				},
-				clerkAuth(),
-				undefined,
-				membership.verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: membership.verify },
 			)
 
 			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
@@ -1479,9 +1512,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "production",
 				},
-				clerkAuth(),
-				undefined,
-				verifier([]).verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: verifier([]).verify },
 			)
 
 			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
@@ -1498,9 +1529,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
-				clerkAuth(),
-				undefined,
-				membership.verify,
+				{ authenticateClerkRequest: clerkAuth(), verifyOrgMembership: membership.verify },
 			)
 
 			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
@@ -1508,6 +1537,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 			assert.deepStrictEqual(tenant, {
 				orgId: asOrgId("org_pinned"),
 				roles: [asRoleName("org:admin")],
+				permissions: Policy.grantsOf([asRoleName("org:admin")]),
 				userId: asUserId("user_123"),
 				authMode: "clerk",
 			})
@@ -1519,7 +1549,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 		Effect.gen(function* () {
 			const resolveTenant = makeResolveTenant(
 				{ ...clerkEnv, MAPLE_ORG_ID_OVERRIDE: Option.some("org_pinned") },
-				clerkAuth(),
+				{ authenticateClerkRequest: clerkAuth() },
 			)
 
 			assertDenied(yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" })))
@@ -1535,7 +1565,7 @@ describe(`${ORG_SELECTION_HEADER} (organization selection)`, () => {
 					MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: true,
 					MAPLE_ENVIRONMENT: "development",
 				},
-				clerkAuth(),
+				{ authenticateClerkRequest: clerkAuth() },
 			)
 
 			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
@@ -1573,4 +1603,71 @@ describe("rootPasswordProblem", () => {
 		assert.match(rootPasswordProblem("short-password") ?? "", /at least 16 characters/)
 		assert.match(rootPasswordProblem("   ") ?? "", /cannot be empty/)
 	})
+})
+
+describe("custom role sessions", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+
+	const customSession = async () => ({
+		isAuthenticated: true,
+		message: null,
+		toAuth: () => ({
+			isAuthenticated: true,
+			tokenType: "session_token",
+			userId: "user_123",
+			orgId: "org_123",
+			orgRole: Policy.CUSTOM_ROLE_CLERK_KEY,
+		}),
+	})
+
+	it.effect("takes an org:custom session's permissions from its membership", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: (_userId, orgId) =>
+					Effect.succeedSome({
+						orgId,
+						role: asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY),
+						customPermissions: ["telemetry:read", "alerts:manage"],
+					}),
+			})
+
+			const tenant = yield* resolveTenant({ authorization: "Bearer test-token" })
+
+			assert.deepStrictEqual(tenant.roles, [asRoleName(Policy.CUSTOM_ROLE_CLERK_KEY)])
+			assert.sameMembers([...tenant.permissions], ["telemetry:read", "alerts:manage"])
+		}),
+	)
+
+	it.effect("gives an org:custom session nothing when no membership verifier is wired", () =>
+		Effect.gen(function* () {
+			const tenant = yield* makeResolveTenant(clerkEnv, { authenticateClerkRequest: customSession })({
+				authorization: "Bearer test-token",
+			})
+
+			assert.deepStrictEqual(tenant.permissions, [])
+		}),
+	)
+
+	it.effect("refuses an org:custom session when the membership lookup fails", () =>
+		Effect.gen(function* () {
+			const resolveTenant = makeResolveTenant(clerkEnv, {
+				authenticateClerkRequest: customSession,
+				verifyOrgMembership: () =>
+					Effect.fail(new AuthorizationUnavailableError({ message: "Clerk is down" })),
+			})
+
+			const exit = yield* Effect.exit(resolveTenant({ authorization: "Bearer test-token" }))
+
+			assert.strictEqual(
+				(getFailure(exit) as { _tag?: string } | undefined)?._tag,
+				"@maple/http/errors/AuthorizationUnavailableError",
+			)
+		}),
+	)
 })

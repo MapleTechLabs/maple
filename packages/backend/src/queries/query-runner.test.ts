@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect, Schema } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -13,6 +14,7 @@ const tenant: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_query_runner"),
 	userId: Schema.decodeSync(UserId)("user_query_runner"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 }
 

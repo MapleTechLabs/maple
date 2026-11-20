@@ -491,7 +491,7 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 		budget.pausedDimension === "runs" || budget.pausedDimension === "runs_reserved"
 			? "Today's investigation limit is reached"
 			: "Today's model budget is spent"
-	// The limit lives on the AI settings tab, which needs llm_keys:manage to open.
+	// The limit lives on the AI settings tab; raising it needs `ai_triage:configure`.
 	return alert(h, { variant: "warn", className: "mb-4" }, [
 		alertTitle(
 			h,
@@ -519,7 +519,7 @@ const budgetNotice = (h: H, model: Model, timeZone: string): Html | null => {
 			gatedLinkButton(
 				h,
 				model,
-				"llm_keys:manage",
+				"ai_triage:configure",
 				{ size: "sm", variant: "ghost", href: hrefOf(AppRoute.Settings({ search: { tab: "ai" } })) },
 				["Raise the limit"],
 			),

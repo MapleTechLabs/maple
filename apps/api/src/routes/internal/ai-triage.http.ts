@@ -21,7 +21,7 @@ export const HttpAiTriageLive = HttpApiBuilder.group(MapleInternalApi, "aiTriage
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 					yield* Policy.check(
-						tenant.roles,
+						tenant.permissions,
 						"ai_triage:configure",
 						(denial) =>
 							new AiTriageForbiddenError({

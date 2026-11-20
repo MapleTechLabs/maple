@@ -244,7 +244,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("connect", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							// The OAuth state is bound to `tenant.userId`, who must be the one finishing it.
@@ -286,7 +286,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							const tenant = yield* CurrentTenant.Context
 							// Gated like `select_organization`: this drives the org picker
 							// while the connection is pending, and both need integrations:manage.
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							const organizations = yield* planetscaleOAuth
@@ -304,7 +304,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("selectOrganization", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							const status = yield* planetscale
@@ -327,7 +327,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("setMetricsToken", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							const status = yield* planetscale
@@ -350,7 +350,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("updateFeatures", ({ payload }) =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							const status = yield* planetscale
@@ -378,7 +378,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 					.handle("disconnect", () =>
 						Effect.gen(function* () {
 							const tenant = yield* CurrentTenant.Context
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							yield* planetscale
@@ -412,7 +412,7 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							const tenant = yield* CurrentTenant.Context
 							// The response carries the webhook HMAC secret: integrations:manage here, and
 							// `requiredScopeForRoute` asks a scoped key for write on this GET.
-							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+							yield* Policy.check(tenant.permissions, "integrations:manage", (denial) =>
 								V2InsufficientPermissions.make(denial.message),
 							)
 							const config = yield* planetscale

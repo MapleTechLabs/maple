@@ -6,9 +6,15 @@ import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { listAttributeMappings, listRecommendations } from "../kit/recommendations"
+import { fetchSessionGrants } from "../kit/session-grants"
 import { Message } from "./message"
 
 export const ReadRecommendationClock = readClock("ReadRecommendationClock", Message.ReadClock)
+
+export const FetchRecommendationSession = fetchSessionGrants(
+	"FetchRecommendationSession",
+	Message.CompletedFetchSession,
+)
 
 export const FetchRecommendations = Command.define("FetchRecommendations", {
 	args: { key: Schema.String },

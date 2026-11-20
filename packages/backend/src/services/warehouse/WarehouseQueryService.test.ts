@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
@@ -122,6 +123,7 @@ const makeTenant = (): TenantContext => ({
 	orgId: asOrgId("org_test"),
 	userId: asUserId("user_test"),
 	roles: [],
+	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
 })
 

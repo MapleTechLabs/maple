@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "vitest"
 import {
 	ApiSchemaErrors,
@@ -54,6 +55,7 @@ const makeHarness = (enabled: boolean, role = "org:engineer") => {
 							orgId: ORG_ID,
 							userId: USER_ID,
 							roles: [Schema.decodeSync(RoleName)(role)],
+							permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 							authMode: "clerk",
 						}),
 					),

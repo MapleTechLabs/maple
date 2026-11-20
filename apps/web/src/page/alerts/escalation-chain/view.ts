@@ -51,7 +51,7 @@ import {
 } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { canManageOnCall, denialReason, gatedControl } from "../../kit/session-grants"
 import { gatedEntries } from "../../kit/gated-controls"
 import {
 	backHref,
@@ -115,7 +115,7 @@ const stateOf = (value: string, isInvalid: boolean): FieldState => ({
 })
 
 /** Nothing can be typed: a save is in flight, or the viewer may only read the chain. */
-const isLocked = (model: Model): boolean => model.isSaving || !canManageAlerts(model)
+const isLocked = (model: Model): boolean => model.isSaving || !canManageOnCall(model)
 
 /** A destination's own mark (Slack, PagerDuty, email); a bell once the destination is gone. */
 const destinationMedia = (h: H, model: Model, id: AlertDestinationId): Html =>
@@ -336,14 +336,14 @@ const stepCard = (h: H, model: Model, step: StepDraft, index: number): Html => {
 					addLabel: "Add destination, person or schedule",
 					addAriaLabel: `Add destination, person or schedule to step ${index + 1}`,
 					isDisabled: model.isSaving,
-					isReadOnly: !canManageAlerts(model),
+					isReadOnly: !canManageOnCall(model),
 					emptyText: "nobody",
 				}),
 			]),
 			rowActionsMenu(h, {
 				slotId: actionsMenuId,
 				model: model.menus[actionsMenuId] ?? Menu.init(actionsMenuId),
-				entries: gatedEntries(model, "alerts:manage", stepActions(model, index)),
+				entries: gatedEntries(model, "oncall:manage", stepActions(model, index)),
 				label: `Actions for step ${index + 1}`,
 				toParentMessage: (message) => Message.GotMenuMessage({ kind: "actions", key, message }),
 			}),
@@ -378,7 +378,7 @@ const connector = (h: H, model: Model, index: number): Html => {
 	return chainConnector(h, {
 		attributes: [h.Key(`connector-${index}`)],
 		insert:
-			canManageAlerts(model) && !model.isSaving && canAddStep(model.form)
+			canManageOnCall(model) && !model.isSaving && canAddStep(model.form)
 				? {
 						id: insertButtonId(index),
 						label:
@@ -448,7 +448,7 @@ const chainColumn = (h: H, model: Model): Html =>
 		connector(h, model, model.form.steps.length),
 		endCard(h, model),
 		...errorText(h, shown(model, stepsError(model.form.steps))),
-		...(canManageAlerts(model) && !canAddStep(model.form)
+		...(canManageOnCall(model) && !canAddStep(model.form)
 			? [
 					typography(h, { size: "xs", tone: "muted", as: "p", className: "mt-2" }, [
 						`A chain has at most ${MAX_ESCALATION_STEPS} steps`,
@@ -595,7 +595,7 @@ const meta = (h: H, model: Model): ReadonlyArray<Html> => {
 					gatedControl(
 						h,
 						model,
-						"alerts:manage",
+						"oncall:manage",
 						(isLocked) =>
 							button(
 								h,
@@ -664,7 +664,7 @@ const leaveDialog = (h: H, model: Model): Html =>
 	})
 
 const actions = (h: H, model: Model): Html =>
-	canManageAlerts(model)
+	canManageOnCall(model)
 		? hstack(h, { gap: "2" }, [
 				button(h, { variant: "outline", attributes: [h.OnClick(Message.ClickedCancel())] }, [
 					"Cancel",
@@ -676,12 +676,13 @@ const actions = (h: H, model: Model): Html =>
 		: linkButton(h, { variant: "outline", href: backHref() }, ["Back to routing"])
 
 const notices = (h: H, model: Model): ReadonlyArray<Html> => [
-	...(canManageAlerts(model)
+	...(canManageOnCall(model)
 		? []
 		: [
 				alert(h, { variant: "info", size: "sm" }, [
 					icon(h, "ShieldIcon"),
-					alertTitle(h, ["Only org admins and engineers can change escalation chains"]),
+					alertTitle(h, ["Your role can't change this"]),
+					alertDescription(h, [denialReason("oncall:manage")]),
 				]),
 			]),
 	...(model.saveFailure === null
@@ -726,10 +727,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (model.isBadId) return dashboardPage(h, header, [notFound(h)])
 	if (!model.isSessionLoaded) return loading
 	// Nothing to read on a new chain: a viewer who cannot create one is told who can.
-	if (!isEdit && !canManageAlerts(model))
+	if (!isEdit && !canManageOnCall(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create escalation chains",
+			permission: "oncall:manage",
 			back: { href: backHref(), label: "Back to routing" },
 		})
 	if (isEdit && AsyncData.isFailure(model.existing.data))

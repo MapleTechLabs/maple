@@ -6,6 +6,7 @@ import type {
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
 } from "@maple/web-data/warehouse/service-map"
+import * as Policy from "@maple/domain/policy"
 import { type Effect, Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { KeyedSchema } from "@maple/views/data/keyed"
@@ -70,6 +71,7 @@ export const DbSummarySchema = Schema.instanceOf(DbSummary)
 export const BranchStatsSchema = Schema.instanceOf(BranchStats)
 
 export const Model = Schema.Struct({
+	grants: Schema.Array(Policy.PermissionName),
 	search: ServiceMapSearch,
 	/** The map's window and the 24 h facets window, resolved at the same clock; `null` until resolved. */
 	window: Schema.NullOr(TimeWindow),

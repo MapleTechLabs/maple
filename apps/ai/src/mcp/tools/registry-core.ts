@@ -21,11 +21,11 @@ import {
 	type McpToolAudience,
 	type McpToolError,
 	type McpToolHints,
+	type McpToolPermission,
 	type McpToolPhrases,
 	type McpToolRegistrar,
 	type McpToolResult,
 	refusalFor,
-	refusesReadOnlyCredential,
 } from "./types"
 import { unknownToolMessage } from "../lib/tool-suggestions"
 import {
@@ -60,6 +60,7 @@ export interface MapleToolCatalogEntry {
 	readonly parseOptions: SchemaAST.ParseOptions
 	readonly outputSchema: Schema.Codec<unknown, unknown>
 	readonly hints: McpToolHints
+	readonly permission: McpToolPermission
 	readonly aliases: Readonly<Record<string, string>>
 	readonly valueAliases: Readonly<Record<string, Readonly<Record<string, string>>>>
 	readonly audience: McpToolAudience
@@ -314,6 +315,7 @@ export const collectToolDefinitions = (
 			parseOptions: { onExcessProperty: spec.rejectUnknownKeys === true ? "error" : "ignore" },
 			outputSchema,
 			hints: spec.hints,
+			permission: spec.permission,
 			aliases: spec.aliases ?? {},
 			valueAliases: spec.valueAliases ?? {},
 			audience: spec.audience ?? "public",
@@ -354,6 +356,8 @@ export interface McpToolModule {
 	readonly audience: McpToolAudience
 	/** `hints.readOnly`, so a surface's names can be listed without loading every module. */
 	readonly readOnly: boolean
+	/** The tool's permission, so `tools/list` can hide what a caller may not call without loading it. */
+	readonly permission: McpToolPermission
 	readonly load: () => Promise<McpToolRegister>
 }
 
@@ -520,23 +524,26 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 		})
 	}
 
-	if (refusesReadOnlyCredential(definition.name, definition.hints.readOnly)) {
-		const tenant = yield* CurrentMcpTenant
-		const refusal = refusalFor(tenant, definition.name, definition.hints.readOnly)
-		if (refusal !== undefined) {
-			return yield* new McpAuthInvalidError({
-				message:
-					refusal === "analyst"
-						? `\`${definition.name}\` changes data. ${Policy.analystMessage}`
-						: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
-				reason: "insufficient_scope",
-			})
-		}
+	const tenant = yield* CurrentMcpTenant
+	const refusal = refusalFor(tenant, {
+		name: definition.name,
+		permission: definition.permission,
+		readOnly: definition.hints.readOnly,
+	})
+	if (refusal !== undefined) {
+		return yield* refusal._tag === "permission"
+			? new McpAuthInvalidError({
+					message: Policy.denialFor(refusal.permission).message,
+					reason: "insufficient_permission",
+				})
+			: new McpAuthInvalidError({
+					message: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+					reason: "insufficient_scope",
+				})
 	}
 
 	if (definition.scopeFamily !== undefined) {
 		const access = definition.hints.readOnly ? "read" : "write"
-		const tenant = yield* CurrentMcpTenant
 		const missing = Arr.findFirst(
 			Arr.ensure(definition.scopeFamily),
 			(family) => !scopeAllows(tenant.scopes, { family, access }),

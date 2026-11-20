@@ -15,6 +15,7 @@ import { dirname } from "node:path"
 import { afterAll, beforeAll, it } from "vitest"
 import { Option, Schema, Array as Arr } from "effect"
 import { RoleName } from "@maple/primitives"
+import * as Policy from "@maple/domain/policy"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import {
 	integrationFixtureRules,
@@ -54,7 +55,8 @@ beforeAll(async () => {
 	// The data source world: 18 sources, Clerk faked, ClickHouse in Docker with PLAYGROUND_CH=1.
 	const base = makeEvalRuntime(undefined, dataSourceWorldLayer(makeDataSourceWorldState()))
 	// The playground plays an org admin, so the admin-only integration tools can be exercised.
-	rt = { ...base, tenant: { ...base.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	const admin = Schema.decodeSync(RoleName)("org:admin")
+	rt = { ...base, tenant: { ...base.tenant, roles: [admin], permissions: Policy.grantsOf([admin]) } }
 	await seedIntegrationWorld(rt)
 	await seedCommitWorld(rt)
 	await seedSecurityWorld(rt)

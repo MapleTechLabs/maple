@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Order, Result, Schema, String as Str, Tracer } from "effect"
 import { OrgId, SavedViewId, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
 
@@ -14,7 +15,7 @@ const decodeUser = Schema.decodeSync(UserId)
 const caller = (orgId: OrgId, user: string, role: string): SavedViewCaller => ({
 	orgId,
 	userId: decodeUser(user),
-	roles: [role],
+	permissions: Policy.grantsOf([role]),
 })
 
 const ANA = caller(ORG, "user_ana", "org:member")

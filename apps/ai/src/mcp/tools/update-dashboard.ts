@@ -16,6 +16,7 @@ import {
 	dashboardNotFound,
 	toMcpDashboardError,
 	optionalJsonText,
+	requireRawSqlPermission,
 	toDashboardRow,
 } from "../lib/dashboard-mutations"
 import * as P from "../lib/params"
@@ -46,6 +47,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 		}),
 		// `dashboard_json` overwrites every widget: the same call cannot be undone.
 		hints: { readOnly: false, destructive: true, idempotent: true },
+		permission: "dashboards:edit",
 		phrases: ["Updating a dashboard"],
 		handler: Effect.fn("McpTool.updateDashboard")(function* ({
 			dashboard_id,
@@ -76,22 +78,28 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 
 			const { document: dashboard } = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
-					Effect.sync(() =>
+					requireRawSqlPermission(
+						tenant.permissions,
+						existing.widgets,
+						portable?.widgets ?? existing.widgets,
+					).pipe(
 						// Both branches carry the stored document forward through the shared
 						// helpers, so sections, variables and refresh survive every edit.
-						portable
-							? withPortableContent(existing, portable, now)
-							: withDocumentFields(
-									existing,
-									{
-										...(name === undefined ? undefined : { name }),
-										...(description === undefined ? undefined : { description }),
-										...(time_range
-											? { timeRange: { type: "relative", value: time_range } }
-											: undefined),
-									},
-									now,
-								),
+						Effect.map(() =>
+							portable
+								? withPortableContent(existing, portable, now)
+								: withDocumentFields(
+										existing,
+										{
+											...(name === undefined ? undefined : { name }),
+											...(description === undefined ? undefined : { description }),
+											...(time_range
+												? { timeRange: { type: "relative", value: time_range } }
+												: undefined),
+										},
+										now,
+									),
+						),
 					),
 				)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))

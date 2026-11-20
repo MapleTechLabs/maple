@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertDestinationId,
@@ -30,8 +31,8 @@ const OTHER_ORG = asOrgId("org_alert_rules_service_other")
 const USER = asUserId("user_alert_rules_service")
 const DESTINATION = asDestinationId("00000000-0000-4000-8000-000000000021")
 const RULE = asRuleId("00000000-0000-4000-8000-000000000022")
-const ADMIN_ROLES = [asRoleName("org:admin")]
-const MEMBER_ROLES = [asRoleName("org:member")]
+const ADMIN_ROLES = Policy.grantsOf([asRoleName("org:admin")])
+const MEMBER_ROLES = Policy.grantsOf([asRoleName("org:member")])
 const NOW = Date.parse("2026-08-11T12:00:00.000Z")
 
 const createdDbs: TestDb[] = []

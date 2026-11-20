@@ -24,4 +24,4 @@ export const Model = Schema.Struct({
 
 export type Model = typeof Model.Type
 
-export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "sources:manage")
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.can(model.grants, "sources:manage")

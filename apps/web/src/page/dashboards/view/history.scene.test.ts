@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
@@ -12,6 +13,13 @@ import { init, update } from "./update"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+/** The session answering with a role that may edit and share dashboards. */
+const asEditor = (model: Model): Model =>
+	update(
+		model,
+		Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
+		context,
+	).model
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
@@ -50,7 +58,7 @@ const withVersions = (): Model =>
 			openHistoryMessage,
 			Message.CompletedFetchVersions({ generation: 1, nowMs: 0, result: Result.succeed([version]) }),
 		],
-		init(ROUTE, context).model,
+		asEditor(init(ROUTE, context).model),
 		(model, message) => pageUpdate(model, message).model,
 	)
 
@@ -61,7 +69,7 @@ describe("dashboard version history", () => {
 				Message.CompletedReadClock({ nowMs: 0 }),
 				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(document) }),
 			],
-			init(ROUTE, context).model,
+			asEditor(init(ROUTE, context).model),
 			(model, message) => pageUpdate(model, message).model,
 		)
 		const opened = pageUpdate(ready, openHistoryMessage)

@@ -29,7 +29,7 @@ const windowText = (minutes: number): string =>
 export const conditionText = (threshold: number, windowMinutes: number): string =>
 	`${threshold.toLocaleString("en-US")} or more in ${windowText(windowMinutes)}`
 
-/** The API refused the viewer: only org admins hold `audit_log:read`. */
+/** The API refused the viewer: their role lacks `audit_log:read`. */
 export const isForbidden = (failure: LoadFailure): boolean => failure.code === "audit_trail_forbidden"
 
 export const detectionsHref = (): string => hrefOf(AppRoute.SecurityDetections())

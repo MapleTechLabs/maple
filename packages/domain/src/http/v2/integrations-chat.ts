@@ -14,7 +14,7 @@ import { wireExample, Timestamp } from "./envelopes"
 import { V2CallbackHostUnavailable, V2InsufficientPermissions } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-import { AnalystAccess } from "../analyst-access"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 // The chat-platform surface: one contract for every chat platform Maple can
 // connect to. The platform is a value (`connector`), never a path segment or a
@@ -410,14 +410,16 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				chatConfiguration,
 				chatPersistence,
 			],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "startChatIdentityLink",
-				summary: "Begin linking your chat account",
-				description:
-					"Returns the chat platform's authorization URL to redirect the user to. On approval Maple binds that chat account to the Maple user who started the link, so an action taken from the chat platform runs as them, under their own roles. This links your own account only, so any member may call it; no admin role is required. It must be called with a signed-in session rather than an API key, because a key belongs to the person who created it and linking on their behalf would bind an account to an identity that did not ask for it. Requires the `integrations:write` scope. A connector whose platform cannot say who acted has nothing to link, and is a 404.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("devices:connect"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "startChatIdentityLink",
+					summary: "Begin linking your chat account",
+					description:
+						"Returns the chat platform's authorization URL to redirect the user to. On approval Maple binds that chat account to the Maple user who started the link, so an action taken from the chat platform runs as them, under their own roles. This links your own account only, so any member may call it; no admin role is required. It must be called with a signed-in session rather than an API key, because a key belongs to the person who created it and linking on their behalf would bind an account to an identity that did not ask for it. Requires the `integrations:write` scope. A connector whose platform cannot say who acted has nothing to link, and is a 404.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("deleteChatIdentity", "/chat_connectors/:connector/identity", {
@@ -425,7 +427,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 			success: V2ChatIdentityDeleteResponse,
 			error: [V2InsufficientPermissions.schema, chatNotFound, chatPersistence],
 		})
-			.annotate(AnalystAccess, "personal")
+			.annotate(EndpointAccess, "personal")
 			.annotateMerge(
 				OpenApi.annotations({
 					identifier: "deleteChatIdentity",
@@ -493,4 +495,5 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 			description:
 				"Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

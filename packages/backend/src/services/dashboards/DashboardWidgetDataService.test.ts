@@ -304,6 +304,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 						window: BATCH_WINDOW,
 						variableValues: {},
 						canRead: (family) => family === "traces",
+						canRunRawSql: true,
 					},
 				),
 			),
@@ -341,6 +342,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead,
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -361,6 +363,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: (family) => family === "logs",
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -394,6 +397,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: (family) => family === "logs",
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -418,6 +422,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: () => true,
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -437,6 +442,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: () => true,
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -482,6 +488,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: () => true,
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -521,6 +528,7 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 					window: BATCH_WINDOW,
 					variableValues: {},
 					canRead: () => true,
+					canRunRawSql: true,
 				}),
 			),
 		)
@@ -597,6 +605,7 @@ describe("DashboardWidgetDataService with a promql widget", () => {
 						window: HOUR,
 						variableValues: {},
 						canRead,
+						canRunRawSql: true,
 					}),
 				),
 			)

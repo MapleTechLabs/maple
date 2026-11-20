@@ -184,7 +184,7 @@ describe("alerts hub, Maintenance tab", () => {
 			{ update: pageUpdate, view },
 			given(onMaintenance([], MEMBER)),
 			expectView(role("button", { name: "Create window" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("alerts:manage").message })).toExist(),
 		)
 	})
 

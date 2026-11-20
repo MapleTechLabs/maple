@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { DateTime, Option, Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 
 export const DigestSubscriptionId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/DigestSubscriptionId"),
@@ -164,25 +164,26 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 			payload: UpsertDigestSubscriptionRequest,
 			success: DigestSubscriptionResponse,
 			error: [DigestPersistenceError, DigestNotFoundError, DigestEmailUnavailableError],
-		}).annotate(AnalystAccess, "personal"),
+			// The digest is telemetry; opting out (delete, or the email's link) stays open to everyone.
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.delete("deleteSubscription", "/", {
 			success: Schema.Void,
 			error: DigestPersistenceError,
-		}).annotate(AnalystAccess, "personal"),
+		}).annotate(EndpointAccess, "personal"),
 	)
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
 			success: DigestPreviewResponse,
 			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.post("previewWebAnalytics", "/web-analytics/preview", {
 			success: DigestPreviewResponse,
 			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.prefix("/internal/digest")
 	.middleware(SessionAuthorization) {}

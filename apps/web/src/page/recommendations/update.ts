@@ -1,18 +1,22 @@
 import type { V2Recommendation } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Option, Result, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import type { Resources } from "../../platform/resources"
 import type { AppRoute } from "../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
+import { acceptGrants } from "../kit/session-grants"
 import {
 	CreateMapping,
 	DismissRecommendation,
 	FetchAttributeMappings,
 	FetchRecommendations,
+	FetchRecommendationSession,
 	ReadRecommendationClock,
 	ReopenRecommendation,
 } from "./command"
@@ -49,6 +53,8 @@ export const init = (route: RecommendationRoute, context: PageContext): Return =
 	const loaded = load(
 		{
 			recommendationKey: route.recommendationKey,
+			// None until the session answers; self-hosted mode has no session and holds every permission.
+			grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 			nowMs: null,
 			list: Keyed.idle(),
 			mappings: Keyed.idle(),
@@ -59,7 +65,14 @@ export const init = (route: RecommendationRoute, context: PageContext): Return =
 		"Load",
 		true,
 	)
-	return { model: loaded.model, commands: [ReadRecommendationClock(), ...loaded.commands] }
+	return {
+		model: loaded.model,
+		commands: [
+			ReadRecommendationClock(),
+			...(isClerkAuthEnabled ? [FetchRecommendationSession({ orgId: context.orgId })] : []),
+			...loaded.commands,
+		],
+	}
 }
 
 /** The recommendation the route names, once the list has loaded. */
@@ -110,6 +123,7 @@ const startWrite = (
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchList: ({ key, result }) => ({
 			model: { ...model, list: Keyed.accept(model.list, key, result) },
 		}),

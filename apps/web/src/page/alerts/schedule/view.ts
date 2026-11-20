@@ -40,7 +40,7 @@ import {
 	scheduleOf,
 } from "./update"
 import { dividedList } from "@maple/views/ui/rule"
-import { canManageAlerts, gatedControl } from "../../kit/session-grants"
+import { canManageOnCall, gatedControl } from "../../kit/session-grants"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
@@ -72,7 +72,7 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 	// The axis names the schedule's zone; the note only says when the viewer's differs.
 	const noteParts = [
 		...(viewerZone === schedule.time_zone ? [] : [`Your time zone is ${viewerZone}.`]),
-		...(canManageAlerts(model) ? ["Pick a shift in the final row to cover it with an override."] : []),
+		...(canManageOnCall(model) ? ["Pick a shift in the final row to cover it with an override."] : []),
 	]
 	const note = noteParts.length === 0 ? undefined : Arr.join(noteParts, " ")
 	const preview = (
@@ -111,7 +111,7 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 			onFocusGap: (index) => Message.ClickedGap({ index }),
 			// Only a final shift that has not ended opens an override, and only for someone who may add one.
 			onFinalShift: (shift) =>
-				canManageAlerts(model) && shift.endMs > nowMs
+				canManageOnCall(model) && shift.endMs > nowMs
 					? Option.some(Message.ClickedShift({ startMs: shift.startMs, endMs: shift.endMs }))
 					: Option.none(),
 			note,
@@ -169,7 +169,7 @@ const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V
 						schedule.time_zone,
 					),
 				}),
-				gatedControl(h, model, "alerts:manage", (isLocked) =>
+				gatedControl(h, model, "oncall:manage", (isLocked) =>
 					iconButton(
 						h,
 						{
@@ -392,7 +392,7 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 								],
 							}),
 							actions: detailActions(h, [
-								gatedControl(h, model, "alerts:manage", (isDisabled) => {
+								gatedControl(h, model, "oncall:manage", (isDisabled) => {
 									const children = [icon(h, "PencilIcon"), "Edit schedule"]
 									return isDisabled
 										? button(h, { size: "sm", variant: "outline", isDisabled }, children)
@@ -406,7 +406,7 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 												children,
 											)
 								}),
-								gatedControl(h, model, "alerts:manage", (isDisabled) =>
+								gatedControl(h, model, "oncall:manage", (isDisabled) =>
 									button(
 										h,
 										{

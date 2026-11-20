@@ -35,6 +35,7 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			description: P.optionalText("Free-form notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Creating an escalation chain"],
 		handler: Effect.fn("McpTool.createEscalationChain")(function* (params) {
 			const steps = yield* toStepsRequest(params.steps)
@@ -47,7 +48,7 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
 			const chain = yield* chains
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }

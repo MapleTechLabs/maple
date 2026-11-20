@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Option, Array as Arr } from "effect"
@@ -96,7 +97,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				canConnect(model) === false
-					? "Ask an org admin or engineer to connect Linear on the Integrations page, then check again."
+					? `Someone with ${Policy.permissions["integrations:manage"].label} can connect Linear on the Integrations page. Check again once they have.`
 					: isRevoked
 						? "Linear revoked Maple's access. Reconnect it, then pick a team here."
 						: "Connect your Linear workspace, then pick the team issues open in.",
@@ -113,7 +114,7 @@ const connectNote = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>, isRevoked: boolean
 			hstack(h, { gap: "2", align: "stretch", wrap: true }, [
 				// Grants not yet read leave the button disabled without a reason; a denial names who can.
 				canConnect(model) === false
-					? lockedControl(h, denialReason("alerts:manage"), connectButton)
+					? lockedControl(h, denialReason("integrations:manage"), connectButton)
 					: connectButton,
 				retry(h, inputs, "Check again"),
 			]),

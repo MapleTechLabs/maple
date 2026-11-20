@@ -10,6 +10,7 @@ import {
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsValidationError,
 } from "./org-clickhouse-settings-errors"
+import { EndpointAccess } from "./endpoint-access"
 
 export * from "./org-clickhouse-settings-errors"
 
@@ -291,4 +292,5 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 		}),
 	)
 	.prefix("/internal/org-clickhouse-settings")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

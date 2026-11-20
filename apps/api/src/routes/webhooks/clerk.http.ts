@@ -23,6 +23,7 @@ import { ProductEventsService } from "@maple/backend/services/product-events/Pro
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { EnterpriseSsoService } from "@maple/backend/services/org/enterprise-sso/EnterpriseSsoService"
 import { receiveSvixWebhook, webhookText } from "./svix-receiver"
+import * as Policy from "@maple/domain/policy"
 
 /**
  * Clerk webhook receiver. Three jobs:
@@ -147,6 +148,9 @@ const handler = Effect.gen(function* () {
 		}
 		const productEvent = recorded ? membershipProductEvent(event, payload.value, timestamp) : undefined
 		if (event === "organizationMembership.created") {
+			// A cached membership list from before the join would hide the new org for minutes.
+			const evicted = yield* revoke(revocation.invalidateMembership(userId.value))
+			if (evicted.status !== 200) return evicted
 			if (home === "unknown") return yield* regionUnknown
 			if (productEvent !== undefined) yield* productEvents.track(productEvent)
 			yield* Effect.annotateCurrentSpan({
@@ -180,8 +184,8 @@ const handler = Effect.gen(function* () {
 		}
 
 		// A role change is not just a cache eviction: CLI/MCP/device keys pin the
-		// minting user's roles and are never re-checked, so a demotion has to go
-		// and take those keys away. A promotion strips nothing.
+		// minting user's roles (and custom permissions) and are never re-checked, so
+		// a demotion has to go and take those keys away. A promotion strips nothing.
 		const role = payload.value.role === undefined ? Option.none() : decodeRole(payload.value.role)
 		if (Option.isNone(role)) {
 			// Clerk always sends `role`; without one we cannot tell a demotion from
@@ -194,8 +198,14 @@ const handler = Effect.gen(function* () {
 			const evicted = yield* revoke(revocation.invalidateMembership(userId.value))
 			return home === "unknown" && evicted.status === 200 ? yield* regionUnknown : evicted
 		}
-		const demoted = yield* revoke(revocation.demoteMembership(orgId.value, userId.value, [role.value]))
-		return home === "unknown" && demoted.status === 200 ? yield* regionUnknown : demoted
+		const current = Policy.grantsOf(
+			[role.value],
+			Policy.customPermissionsFromMembershipMetadata(payload.value.public_metadata),
+		)
+		const demoted = yield* revoke(revocation.demoteMembership(orgId.value, userId.value, current))
+		if (demoted.status !== 200) return demoted
+		if (home === "unknown") return yield* regionUnknown
+		return demoted
 	})
 
 	return Effect.fn("ClerkWebhook.receive")(function* (req: HttpServerRequest.HttpServerRequest) {

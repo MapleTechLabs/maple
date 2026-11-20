@@ -53,6 +53,7 @@ export function registerServiceDeploymentsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Checking deployed versions", "Comparing releases"],
 		handler: Effect.fn("McpTool.serviceDeployments")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

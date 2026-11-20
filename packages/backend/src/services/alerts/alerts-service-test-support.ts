@@ -1,9 +1,11 @@
+import * as Policy from "@maple/domain/policy"
 // Shared fixtures for the AlertsService suites, split across files so CI can shard them.
 // BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService, type IncidentPushEvent } from "@maple/backend/services/push/MobilePushService"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import {
 	Cause,
@@ -270,6 +272,7 @@ export const makeLayer = (
 							ApnsClient.layer,
 							MobileDevicesService.layer,
 							LiveActivitiesService.layer,
+							Layer.mock(OrgMembershipService)({ directory: "none" }),
 						),
 					),
 				)
@@ -411,8 +414,8 @@ export const asOrgId = Schema.decodeUnknownSync(OrgId)
 export const asUserId = Schema.decodeUnknownSync(UserId)
 export const asRoleName = Schema.decodeUnknownSync(RoleName)
 
-export const adminRoles = [asRoleName("root")]
-export const memberRoles = [asRoleName("org:member")]
+export const adminGrants = Policy.grantsOf([asRoleName("root")])
+export const memberGrants = Policy.grantsOf([asRoleName("org:member")])
 
 export const createWebhookDestination = (
 	alerts: AlertServices,
@@ -422,7 +425,7 @@ export const createWebhookDestination = (
 	alerts.createDestination(
 		orgId,
 		userId,
-		adminRoles,
+		adminGrants,
 		new WebhookAlertDestinationConfig({
 			type: "webhook",
 			name: "Primary webhook",
@@ -444,7 +447,7 @@ export const createErrorRateRule = (
 	alerts.createRule(
 		orgId,
 		userId,
-		adminRoles,
+		adminGrants,
 		new AlertRuleUpsertRequest({
 			name,
 			severity: "critical",

@@ -8,7 +8,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import { isFormReady } from "./dialog"
 import type { DestinationForm } from "./form"
-import { init, type LinearStatus, Message, type Model, reset, update } from "./linear-fields"
+import { canConnect, init, type LinearStatus, Message, type Model, reset, update } from "./linear-fields"
 import { linearFields } from "./linear-fields-view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
@@ -22,10 +22,10 @@ const CONNECTED: LinearStatus = { connected: true, revoked: false, workspaceName
 
 const NOT_CONNECTED: LinearStatus = { connected: false, revoked: false, workspaceName: null }
 
-const withStatus = (status: LinearStatus, current: DestinationForm = form, canConnect = true) => {
+const withStatus = (status: LinearStatus, current: DestinationForm = form, isConnectAllowed = true) => {
 	const mounted = update(
 		reset(init(), current).model,
-		Message.CompletedFetchGrants({ grants: canConnect ? ENGINEER : MEMBER }),
+		Message.CompletedFetchGrants({ grants: isConnectAllowed ? ENGINEER : MEMBER }),
 		current,
 	).model
 	return update(
@@ -161,7 +161,7 @@ describe("linear destination fields", () => {
 		shows(blocked.model, "Allow pop-ups for Maple, then try again.")
 	})
 
-	test("a member is asked to find an admin or engineer, and can check again once one connected", () => {
+	test("a role without integrations:manage is told who can connect Linear, and can check again", () => {
 		const model = withStatus(NOT_CONNECTED, form, false).model
 		scene(
 			{
@@ -171,16 +171,19 @@ describe("linear destination fields", () => {
 				view: render(),
 			},
 			given(model),
-			expectView(
-				text(
-					"Ask an org admin or engineer to connect Linear on the Integrations page, then check again.",
-				),
-			).toExist(),
+			expectView(text(/can connect Linear on the Integrations page/)).toExist(),
 			expectView(role("button", { name: "Connect Linear" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("integrations:manage").message })).toExist(),
 		)
 		expect(update(model, Message.ClickedConnect(), form).commands).toEqual([])
 		expect(names(update(model, Message.ClickedRetry(), form))).toEqual(["FetchAlertLinearStatus"])
+	})
+
+	test("connecting Linear follows integrations:manage, not alerts:manage", () => {
+		const as = (grants: ReadonlyArray<Policy.Permission>) =>
+			update(reset(init(), form).model, Message.CompletedFetchGrants({ grants }), form).model
+		expect(canConnect(as(["telemetry:read", "alerts:manage"]))).toBe(false)
+		expect(canConnect(as(["telemetry:read", "integrations:manage"]))).toBe(true)
 	})
 
 	test("a picked team is the form's, and makes the destination savable", () => {

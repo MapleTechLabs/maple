@@ -22,6 +22,7 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "ai:act",
 		phrases: ["Registering an agent"],
 		handler: Effect.fn("McpTool.registerAgent")(function* (params) {
 			const tenant = yield* CurrentMcpTenant

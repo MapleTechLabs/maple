@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
@@ -13,6 +14,7 @@ import { AuditLogService, type AuditLogRecordInput } from "@maple/backend/servic
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 import { McpOAuthService } from "./McpOAuthService"
 import { MembershipRevocationService } from "./MembershipRevocationService"
+import { pinAuthority } from "./pinned-authority"
 import { ORG_MEMBERSHIP_CACHE_BUCKET } from "./OrgMembershipService"
 
 const createdDbs: TestDb[] = []
@@ -140,6 +142,17 @@ const seedMobileDevice = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 				 last_seen_at, created_at, updated_at)
 			 values ($1, $2, $3, 'ios', $1, 'production', 'dev.maple.app', '{}'::jsonb, now(), now(), now())`,
 			[id, org, user],
+		),
+	)
+
+/** A Live Activity running on `deviceId` for one incident. */
+const seedLiveActivity = (db: TestDb, id: string, org: OrgId, deviceId: string) =>
+	Effect.promise(() =>
+		db.pglite.query(
+			`insert into live_activities
+				(id, org_id, device_id, incident_id, activity_id, push_token, created_at, updated_at)
+			 values ($1, $2, $3, 'inc_1', $1, $1, now(), now())`,
+			[id, org, deviceId],
 		),
 	)
 
@@ -477,10 +490,10 @@ describe("MembershipRevocationService", () => {
 			const elsewhereToken = yield* cli.poll(elsewhere.deviceCode)
 
 			// A promotion strips nothing.
-			const promoted = yield* revocation.demoteMembership(orgId, userId, [adminRole])
+			const promoted = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([adminRole]))
 			expect(promoted.apiKeysRevoked).toBe(0)
 
-			const demoted = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const demoted = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 			expect(demoted.apiKeysRevoked).toBe(1)
 			expect(cache.invalidated).toEqual([
 				{ bucket: ORG_MEMBERSHIP_CACHE_BUCKET, key: userId },
@@ -498,7 +511,7 @@ describe("MembershipRevocationService", () => {
 			}
 
 			// Idempotent, so a Clerk retry converges.
-			const retry = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const retry = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 			expect(retry.apiKeysRevoked).toBe(0)
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
@@ -528,16 +541,28 @@ describe("MembershipRevocationService", () => {
 
 			// An admin demoted to engineer loses the admin key.
 			const adminToken = yield* login(userId, adminRole)
-			const toEngineer = yield* revocation.demoteMembership(orgId, userId, [engineerRole])
+			const toEngineer = yield* revocation.demoteMembership(
+				orgId,
+				userId,
+				Policy.grantsOf([engineerRole]),
+			)
 			expect(toEngineer.apiKeysRevoked).toBe(1)
 			expect(yield* stillWorks(adminToken)).toBe(false)
 
 			// An engineer keeps an engineer key while still an engineer, and loses it as a member.
 			const engineerToken = yield* login(stayerId, engineerRole)
-			const unchanged = yield* revocation.demoteMembership(orgId, stayerId, [engineerRole])
+			const unchanged = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([engineerRole]),
+			)
 			expect(unchanged.apiKeysRevoked).toBe(0)
 			expect(yield* stillWorks(engineerToken)).toBe(true)
-			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			const toMember = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([memberRole]),
+			)
 			expect(toMember.apiKeysRevoked).toBe(1)
 			expect(yield* stillWorks(engineerToken)).toBe(false)
 
@@ -557,9 +582,92 @@ describe("MembershipRevocationService", () => {
 				roles: [memberRole],
 				userEmail: null,
 			})
-			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, Policy.grantsOf([memberRole]))
 			expect((yield* cli.poll(pending.deviceCode)).status).toBe("expired")
 			expect((yield* cli.poll(kept.deviceCode)).status).toBe("complete")
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect(
+		"retires a custom-role key when the new grants are narrower, and keeps it when they cover it",
+		() => {
+			const db = createTestDb(createdDbs)
+			const cache = recordingEdgeCache()
+			return Effect.gen(function* () {
+				const revocation = yield* MembershipRevocationService
+				const cli = yield* CliDeviceAuthService
+				const apiKeys = yield* ApiKeysService
+				const customRole = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+
+				const started = yield* cli.start("Custom laptop", "127.0.0.1")
+				yield* cli.approve(started.userCode, {
+					orgId,
+					userId: stayerId,
+					roles: [customRole],
+					permissions: ["telemetry:read", "alerts:manage"],
+					userEmail: null,
+				})
+				const token = yield* cli.poll(started.deviceCode)
+				expect(token.status).toBe("complete")
+				const resolve = () =>
+					token.status === "complete" ? apiKeys.resolveByKey(token.token) : Effect.succeedNone
+
+				const widened = yield* revocation.demoteMembership(
+					orgId,
+					stayerId,
+					Policy.grantsOf([customRole], ["telemetry:read", "alerts:manage", "slos:manage"]),
+				)
+				expect(widened.apiKeysRevoked).toBe(0)
+				const kept = yield* resolve()
+				expect(Option.map(kept, (key) => [...key.permissions].sort())).toEqual(
+					Option.some(["alerts:manage", "telemetry:read"]),
+				)
+
+				const narrowed = yield* revocation.demoteMembership(
+					orgId,
+					stayerId,
+					Policy.grantsOf([customRole], ["telemetry:read"]),
+				)
+				expect(narrowed.apiKeysRevoked).toBe(1)
+				expect(Option.isNone(yield* resolve())).toBe(true)
+			}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+		},
+	)
+
+	it.effect("narrows a restricted key whose scopes still fit the new role instead of retiring it", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const apiKeys = yield* ApiKeysService
+			const customRole = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+			const minted = (name: string, scopes: ReadonlyArray<string>) =>
+				apiKeys.create(orgId, stayerId, {
+					name,
+					scopes,
+					metadataJson: {
+						source: "maple_api_key",
+						...pinAuthority({
+							roles: [customRole],
+							permissions: Policy.grantsOf([customRole], ["alerts:manage", "dashboards:edit"]),
+						}),
+					},
+				})
+			const dashboards = yield* minted("dashboards", ["dashboards:write"])
+			const alerts = yield* minted("alerts", ["alerts:write"])
+
+			const demoted = yield* revocation.demoteMembership(
+				orgId,
+				stayerId,
+				Policy.grantsOf([customRole], ["dashboards:edit"]),
+			)
+
+			expect(demoted.apiKeysRevoked).toBe(1)
+			expect(Option.isNone(yield* apiKeys.resolveByKey(alerts.secret))).toBe(true)
+			const kept = yield* apiKeys.resolveByKey(dashboards.secret)
+			expect(Option.map(kept, (key) => [...key.permissions].sort())).toEqual(
+				Option.some(["dashboards:edit", "telemetry:read"]),
+			)
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 
@@ -572,7 +680,7 @@ describe("MembershipRevocationService", () => {
 			const apiKeys = yield* ApiKeysService
 
 			const grant = yield* issueMcpGrant(oauth, userId, orgId, [adminRole])
-			const summary = yield* revocation.demoteMembership(orgId, userId, [memberRole])
+			const summary = yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
 
 			// The visible key alone would be re-minted by the next rotation.
 			expect(summary.apiKeysRevoked).toBe(1)
@@ -596,7 +704,7 @@ describe("MembershipRevocationService", () => {
 
 			const pending = yield* approveMcpAuthorization(oauth, stayerId, orgId, [engineerRole])
 			const kept = yield* approveMcpAuthorization(oauth, stayerId, orgId, [memberRole])
-			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, Policy.grantsOf([memberRole]))
 
 			const refused = yield* Effect.result(exchangeMcpCode(oauth, pending))
 			expect(refused._tag).toBe("Failure")
@@ -700,5 +808,148 @@ describe("MembershipRevocationService", () => {
 				"alert_destination.disabled",
 			])
 		}).pipe(Effect.provide(makeLayer(db, cache.layer, audit.layer)))
+	})
+
+	it.effect(
+		"takes a demoted member's phones and Live Activities when the new role reads no telemetry",
+		() => {
+			const db = createTestDb(createdDbs)
+			const custom = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+			const devices = (sql: string) =>
+				Effect.promise(() => db.pglite.query<{ id: string }>(sql)).pipe(
+					Effect.map((result) => Arr.map(result.rows, (row) => row.id)),
+				)
+			return Effect.gen(function* () {
+				const revocation = yield* MembershipRevocationService
+				yield* seedMobileDevice(db, "dev_demoted", orgId, userId)
+				yield* seedMobileDevice(db, "dev_demoted_other_org", otherOrgId, userId)
+				yield* seedMobileDevice(db, "dev_stayer", orgId, stayerId)
+				yield* seedLiveActivity(db, "act_demoted", orgId, "dev_demoted")
+				yield* seedLiveActivity(db, "act_stayer", orgId, "dev_stayer")
+
+				// Still reads telemetry: the phone keeps its pushes.
+				yield* revocation.demoteMembership(
+					orgId,
+					userId,
+					Policy.grantsOf([custom], ["telemetry:read"]),
+				)
+				expect(yield* devices("select id from mobile_devices order by id")).toEqual([
+					"dev_demoted",
+					"dev_demoted_other_org",
+					"dev_stayer",
+				])
+
+				const summary = yield* revocation.demoteMembership(
+					orgId,
+					userId,
+					Policy.grantsOf([custom], ["billing:manage"]),
+				)
+				expect(summary.mobileDevicesDeleted).toBe(1)
+				expect(yield* devices("select id from mobile_devices order by id")).toEqual([
+					"dev_demoted_other_org",
+					"dev_stayer",
+				])
+				expect(yield* devices("select id from live_activities order by id")).toEqual(["act_stayer"])
+			}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer)))
+		},
+	)
+
+	describe("a demotion retires what the new role could not set up", () => {
+		const custom = Schema.decodeSync(RoleName)(Policy.CUSTOM_ROLE_CLERK_KEY)
+		const seedAll = (db: TestDb) =>
+			Effect.gen(function* () {
+				yield* seedShare(db, "dshare_demoted", orgId, userId)
+				yield* seedShare(db, "dshare_stayer", orgId, stayerId)
+				yield* seedDigestSubscription(db, "digest_demoted", orgId, userId)
+				yield* seedWebhookDestination(db, "00000000-0000-4000-8000-0000000000f1", orgId, userId)
+			})
+		const state = (db: TestDb) =>
+			Effect.gen(function* () {
+				const shares = yield* Effect.promise(() =>
+					db.pglite.query<{ id: string; revoked: boolean }>(
+						"select id, revoked_at is not null as revoked from dashboard_shares order by id",
+					),
+				)
+				const destinations = yield* Effect.promise(() =>
+					db.pglite.query<{ enabled: boolean; disabled_reason: string | null }>(
+						"select enabled, disabled_reason from alert_destinations",
+					),
+				)
+				return {
+					shares: shares.rows,
+					digests: Arr.map(yield* digestState(db), (row) => row.enabled),
+					destinations: destinations.rows,
+				}
+			})
+
+		it.effect(
+			"a role without telemetry or sharing loses links and digest, and the org keeps its destinations",
+			() => {
+				const db = createTestDb(createdDbs)
+				const audit = recordingAudit()
+				return Effect.gen(function* () {
+					const revocation = yield* MembershipRevocationService
+					yield* seedAll(db)
+
+					const summary = yield* revocation.demoteMembership(
+						orgId,
+						userId,
+						Policy.grantsOf([custom], ["billing:manage"]),
+					)
+
+					expect([summary.dashboardSharesRevoked, summary.digestSubscriptionsDisabled]).toEqual([
+						1, 1,
+					])
+					expect(yield* state(db)).toEqual({
+						shares: [
+							{ id: "dshare_demoted", revoked: true },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						digests: [false],
+						destinations: [{ enabled: true, disabled_reason: null }],
+					})
+					expect(Arr.map(audit.recorded, (entry) => [entry.action, entry.metadata])).toEqual([
+						["dashboard_share.revoked", { reason: "role_changed" }],
+					])
+				}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer, audit.layer)))
+			},
+		)
+
+		it.effect(
+			"a role that still reads and shares keeps them; losing only sharing revokes the links",
+			() => {
+				const db = createTestDb(createdDbs)
+				return Effect.gen(function* () {
+					const revocation = yield* MembershipRevocationService
+					yield* seedAll(db)
+
+					yield* revocation.demoteMembership(orgId, userId, Policy.grantsOf([memberRole]))
+					const asMember = yield* state(db)
+					// A member reads and shares; the engineer's alert destinations keep routing.
+					expect([asMember.shares, asMember.digests]).toEqual([
+						[
+							{ id: "dshare_demoted", revoked: false },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						[true],
+					])
+					expect(Arr.map(asMember.destinations, (row) => row.enabled)).toEqual([true])
+
+					yield* revocation.demoteMembership(
+						orgId,
+						userId,
+						Policy.grantsOf([custom], ["telemetry:read"]),
+					)
+					const asReader = yield* state(db)
+					expect([asReader.shares, asReader.digests]).toEqual([
+						[
+							{ id: "dshare_demoted", revoked: true },
+							{ id: "dshare_stayer", revoked: false },
+						],
+						[true],
+					])
+				}).pipe(Effect.provide(makeLayer(db, recordingEdgeCache().layer)))
+			},
+		)
 	})
 })

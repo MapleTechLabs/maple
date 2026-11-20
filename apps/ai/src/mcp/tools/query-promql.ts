@@ -34,6 +34,7 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 			instant: P.optionalFlag("Evaluate once at end_time instead of over the window (default false)"),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Running a PromQL query", "Querying metrics"],
 		handler: Effect.fn("McpTool.queryPromql")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, "query_promql")

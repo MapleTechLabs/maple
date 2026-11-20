@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import * as Policy from "@maple/domain/policy"
 import { Schema, Array as Arr, String as Str } from "effect"
 import {
 	CiRunsOutput,
@@ -28,7 +29,14 @@ beforeAll(async () => {
 	await seedIntegrationWorld(member)
 	await seedCommitWorld(member)
 	// Same database, an org admin calling.
-	admin = { ...member, tenant: { ...member.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
+	admin = {
+		...member,
+		tenant: {
+			...member.tenant,
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
+			permissions: Policy.grantsOf(["org:admin"]),
+		},
+	}
 })
 afterAll(async () => {
 	restoreWarehouse()
@@ -225,7 +233,7 @@ describe("sync_vercel", () => {
 	it("is refused for a member who is not an org admin or engineer", async () => {
 		const result = await runToolDirect(member, "sync_vercel", {})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("Only org admins and engineers can manage integrations")
+		expect(markdown(result)).toContain(Policy.denialFor("integrations:manage").message)
 	})
 
 	it("says where to connect Vercel when it is not connected", async () => {
@@ -241,7 +249,7 @@ describe("update_scrape_target", () => {
 			enabled: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("Only org admins and engineers can manage scrape targets")
+		expect(markdown(result)).toContain(Policy.denialFor("scrape_targets:manage").message)
 	})
 
 	it("pauses a target for an admin and says it is paused", async () => {

@@ -20,7 +20,7 @@ import { groupPickerField, groupsOf } from "../shared/group-picker"
 import { RevealOpenComponent } from "./command"
 import { Message } from "./message"
 import { canManage, type ComponentSave, type Model } from "./model"
-import { gatedControl } from "../../kit/session-grants"
+import { denialReason, gatedControl } from "../../kit/session-grants"
 import { componentsOf, incidentsOf, listedComponentsOf, monitorsOf } from "./reads"
 import {
 	componentGripId,
@@ -78,7 +78,7 @@ const componentBody = (h: H, model: Model, component: V2StatusPageComponent): Re
 	const isReadOnly = !canManage(model)
 	const save = saveOf(model, component)
 	return [
-		...(isReadOnly ? [adminOnlyNote(h, ["Only org admins and engineers can change components."])] : []),
+		...(isReadOnly ? [adminOnlyNote(h, [denialReason("status_pages:edit")])] : []),
 		...componentFields(h, {
 			idPrefix: "status-page-panel",
 			form: model.componentForm,

@@ -22,6 +22,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `scrp_…` public ID ⇄ internal `ScrapeTargetId` (raw UUID). */
 export const ScrapeTargetPublicId = PublicId(PublicIdPrefixes.scrapeTarget, ScrapeTargetId)
@@ -492,14 +493,16 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			query: V2ScrapeTargetChecksQuery,
 			success: ScrapeTargetCheckList,
 			error: [V2ParameterInvalid.schema, scrapeNotFound, scrapePersistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "listScrapeTargetChecks",
-				summary: "List scrape checks",
-				description:
-					"Returns recent scheduled-scrape attempts for the target, newest first, optionally bounded by `since`/`until`. Cursor-paginated over the most recent 200 checks. Requires the `scrape_targets:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "listScrapeTargetChecks",
+					summary: "List scrape checks",
+					description:
+						"Returns recent scheduled-scrape attempts for the target, newest first, optionally bounded by `since`/`until`. Cursor-paginated over the most recent 200 checks. Requires the `scrape_targets:read` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/scrape_targets")
 	.middleware(AuthorizationV2)
@@ -509,4 +512,5 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			description:
 				"Metrics endpoints Maple scrapes on a schedule — self-hosted Prometheus endpoints and PlanetScale branch metrics. Manage targets, probe them on demand, and inspect recent scrape checks. Credentials are write-only.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}

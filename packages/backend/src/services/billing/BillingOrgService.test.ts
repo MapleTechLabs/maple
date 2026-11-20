@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -25,8 +26,8 @@ const PAYER = orgId("org_payer")
 const MEMBER = orgId("org_member")
 const OTHER = orgId("org_other")
 const USER = Schema.decodeSync(UserId)("user_admin")
-const ADMIN = [Schema.decodeSync(RoleName)("org:admin")]
-const MEMBER_ROLE = [Schema.decodeSync(RoleName)("org:member")]
+const ADMIN = Policy.grantsOf(["org:admin"])
+const MEMBER_ROLE = Policy.grantsOf(["org:member"])
 
 interface World {
 	/** Orgs whose Autumn customer holds the `billing_sub_orgs` flag. */
@@ -105,14 +106,18 @@ const layerFor = (testDb: TestDb, world: World) =>
 					updateCustomerBillingControls: die,
 					updateCustomerName: die,
 				}),
-				Layer.succeed(OrgMembershipService, {
+				Layer.mock(OrgMembershipService)({
 					directory: "clerk",
 					verify: (_userId, org) =>
 						Effect.sync(() => {
 							const role = world.roles.get(org)
 							return role === undefined
 								? Option.none()
-								: Option.some({ orgId: org, role: Schema.decodeSync(RoleName)(role) })
+								: Option.some({
+										orgId: org,
+										role: Schema.decodeSync(RoleName)(role),
+										customPermissions: [],
+									})
 						}),
 				}),
 				Layer.succeed(OrganizationRegionService, {
@@ -169,7 +174,7 @@ const run = <A, E>(
 const linkMember = (to = PAYER) =>
 	Effect.gen(function* () {
 		const service = yield* BillingOrgService
-		return yield* service.link({ orgId: MEMBER, userId: USER, roles: ADMIN, billingOrgId: to })
+		return yield* service.link({ orgId: MEMBER, userId: USER, permissions: ADMIN, billingOrgId: to })
 	})
 
 const rejection = <A, E extends { readonly _tag: string }>(exit: Exit.Exit<A, E>) =>
@@ -320,7 +325,7 @@ describe("BillingOrgService", () => {
 				const service = yield* BillingOrgService
 				yield* linkMember()
 				yield* linkMember()
-				yield* service.unlink({ orgId: MEMBER, roles: ADMIN, memberOrgId: MEMBER })
+				yield* service.unlink({ orgId: MEMBER, permissions: ADMIN, memberOrgId: MEMBER })
 				const monitorMoves = Arr.filter(world.tracked, (track) => track.feature === "uptime_monitors")
 				assert.deepStrictEqual(monitorMoves, [
 					{ customer: MEMBER, feature: "uptime_monitors", value: -2 },
@@ -345,13 +350,13 @@ describe("BillingOrgService", () => {
 		Effect.gen(function* () {
 			const attempt = (
 				world: World,
-				input: { orgId: OrgId; billingOrgId: OrgId; roles?: typeof ADMIN },
+				input: { orgId: OrgId; billingOrgId: OrgId; permissions?: typeof ADMIN },
 			) =>
 				run(
 					world,
 					Effect.gen(function* () {
 						const service = yield* BillingOrgService
-						return yield* service.link({ userId: USER, roles: ADMIN, ...input })
+						return yield* service.link({ userId: USER, permissions: ADMIN, ...input })
 					}),
 				).pipe(Effect.exit, Effect.map(rejection))
 
@@ -382,7 +387,7 @@ describe("BillingOrgService", () => {
 				"region_mismatch",
 			)
 			assert.strictEqual(
-				yield* attempt(makeWorld(), { orgId: MEMBER, billingOrgId: PAYER, roles: MEMBER_ROLE }),
+				yield* attempt(makeWorld(), { orgId: MEMBER, billingOrgId: PAYER, permissions: MEMBER_ROLE }),
 				"@maple/http/errors/BillingForbiddenError",
 			)
 		}),
@@ -397,11 +402,11 @@ describe("BillingOrgService", () => {
 				// A member cannot pay for others, a payer cannot be billed elsewhere, and a member
 				// cannot move to a second payer without leaving the first.
 				const throughMember = yield* Effect.exit(
-					service.link({ orgId: OTHER, userId: USER, roles: ADMIN, billingOrgId: MEMBER }),
+					service.link({ orgId: OTHER, userId: USER, permissions: ADMIN, billingOrgId: MEMBER }),
 				)
 				assert.strictEqual(rejection(throughMember), "billing_org_is_member")
 				const payerElsewhere = yield* Effect.exit(
-					service.link({ orgId: PAYER, userId: USER, roles: ADMIN, billingOrgId: OTHER }),
+					service.link({ orgId: PAYER, userId: USER, permissions: ADMIN, billingOrgId: OTHER }),
 				)
 				assert.strictEqual(rejection(payerElsewhere), "org_is_billing_org")
 				assert.strictEqual(rejection(yield* Effect.exit(linkMember(OTHER))), "already_linked")
@@ -418,20 +423,20 @@ describe("BillingOrgService", () => {
 				yield* linkMember()
 
 				const stranger = yield* Effect.exit(
-					service.unlink({ orgId: OTHER, roles: ADMIN, memberOrgId: MEMBER }),
+					service.unlink({ orgId: OTHER, permissions: ADMIN, memberOrgId: MEMBER }),
 				)
 				assert.strictEqual(rejection(stranger), "not_a_member")
 				const nonAdmin = yield* Effect.exit(
-					service.unlink({ orgId: PAYER, roles: MEMBER_ROLE, memberOrgId: MEMBER }),
+					service.unlink({ orgId: PAYER, permissions: MEMBER_ROLE, memberOrgId: MEMBER }),
 				)
 				assert.strictEqual(rejection(nonAdmin), "@maple/http/errors/BillingForbiddenError")
 
-				const payer = yield* service.unlink({ orgId: PAYER, roles: ADMIN, memberOrgId: MEMBER })
+				const payer = yield* service.unlink({ orgId: PAYER, permissions: ADMIN, memberOrgId: MEMBER })
 				assert.strictEqual(payer.role, "standalone")
 				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 
 				yield* linkMember()
-				const left = yield* service.unlink({ orgId: MEMBER, roles: ADMIN, memberOrgId: MEMBER })
+				const left = yield* service.unlink({ orgId: MEMBER, permissions: ADMIN, memberOrgId: MEMBER })
 				assert.strictEqual(left.role, "standalone")
 				assert.strictEqual(yield* resolver.customerFor(MEMBER), ownBillingCustomer(MEMBER))
 			}),

@@ -8,7 +8,6 @@ import {
 	OrganizationProviderError,
 	OrganizationRegionLockedError,
 	OrgId,
-	RoleName,
 	type UserId,
 } from "@maple/domain/http"
 import {
@@ -319,7 +318,7 @@ export interface OrganizationServiceApi {
 	/** Sets the region of an organization created without one, while it is still onboarding. */
 	readonly chooseRegion: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		region: MapleRegion,
 	) => Effect.Effect<
 		ChooseOrganizationRegionResponse,
@@ -328,18 +327,14 @@ export interface OrganizationServiceApi {
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<OrganizationInfo, OrganizationProviderError>
 }
 
-/** Fails unless the caller administers the organization; `action` completes "Only admins can ...". */
+/** Fails unless the caller may change the organization's settings. */
 export const requireOrganizationAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
-	roles: ReadonlyArray<RoleName>,
-	action: string,
+	permissions: Policy.Grants,
 ) {
 	return yield* Policy.check(
-		roles,
+		permissions,
 		"organization:manage",
-		(denial) =>
-			new OrganizationForbiddenError({
-				message: `Only ${Policy.holdersPhrase(denial.required)} can ${action}.`,
-			}),
+		(denial) => new OrganizationForbiddenError({ message: denial.message }),
 	)
 })
 
@@ -419,11 +414,11 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 
 			const chooseRegion = Effect.fn("OrganizationService.chooseRegion")(function* (
 				orgId: OrgId,
-				roles: ReadonlyArray<RoleName>,
+				permissions: Policy.Grants,
 				region: MapleRegion,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.org_region": region })
-				yield* requireOrganizationAdmin(roles, "choose the data region")
+				yield* requireOrganizationAdmin(permissions)
 				const clerk = clerkClient()
 				if (Option.isNone(clerk)) {
 					return yield* new OrganizationProviderError({

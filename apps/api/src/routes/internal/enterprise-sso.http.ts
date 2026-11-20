@@ -11,7 +11,7 @@ import {
 const requireSsoAdmin = Effect.gen(function* () {
 	const tenant = yield* CurrentTenant.Context
 	yield* Policy.check(
-		tenant.roles,
+		tenant.permissions,
 		"sso:manage",
 		(denial) => new EnterpriseSsoForbiddenError({ message: denial.message }),
 	)
@@ -29,7 +29,7 @@ export const HttpEnterpriseSsoLive = HttpApiBuilder.group(MapleInternalApi, "ent
 			.handle("get", () =>
 				CurrentTenant.Context.pipe(
 					Effect.flatMap((tenant) =>
-						Policy.can(tenant.roles, "sso:manage")
+						Policy.can(tenant.permissions, "sso:manage")
 							? sso.get(tenant.orgId)
 							: sso.getSummary(tenant.orgId),
 					),

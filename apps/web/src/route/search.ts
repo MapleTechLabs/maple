@@ -212,6 +212,7 @@ export const accountTabValues = [
 export const settingsTabValues = [
 	"general",
 	"members",
+	"roles",
 	"domains",
 	"sso",
 	"billing",

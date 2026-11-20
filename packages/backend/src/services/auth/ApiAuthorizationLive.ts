@@ -12,7 +12,8 @@ import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
-import { checkAnalystAccess } from "./analyst-gate"
+import { checkEndpointAccess } from "./endpoint-gate"
+import { OrgMembershipService } from "./OrgMembershipService"
 
 export const ApiAuthorizationLive = Layer.effect(
 	CurrentTenant.Authorization,
@@ -21,7 +22,9 @@ export const ApiAuthorizationLive = Layer.effect(
 		const apiKeys = yield* ApiKeysService
 		const audit = yield* AuditLogService
 		const regions = yield* OrganizationRegionService
-		const resolveTenant = makeResolveTenant(env)
+		// Looks up an `org:custom` session's permissions; the header stays refused here.
+		const membership = yield* OrgMembershipService
+		const resolveTenant = makeResolveTenant(env, { customRoleDirectory: membership.verify })
 
 		return CurrentTenant.Authorization.of({
 			bearer: (httpEffect, options) =>
@@ -74,9 +77,10 @@ export const ApiAuthorizationLive = Layer.effect(
 							orgId: resolved.orgId,
 							userId: resolved.userId,
 							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
+							permissions: resolved.permissions,
 							authMode: "self_hosted",
 						})
-						yield* checkAnalystAccess(tenant.roles, options).pipe(
+						yield* checkEndpointAccess(tenant.permissions, options).pipe(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
@@ -105,7 +109,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
-					yield* checkAnalystAccess(tenant.roles, options)
+					yield* checkEndpointAccess(tenant.permissions, options)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),

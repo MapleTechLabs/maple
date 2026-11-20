@@ -44,6 +44,7 @@ import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 import { UptimeMonitorPublicId } from "./uptime-monitors"
+import { EndpointAccess, requires } from "../endpoint-access"
 
 /** `stp_…` public ID ⇄ internal `StatusPageId` (raw UUID). */
 export const StatusPagePublicId = PublicId(PublicIdPrefixes.statusPage, StatusPageId)
@@ -1211,14 +1212,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			payload: StatusPagePreviewParams,
 			success: StatusPagePublicSnapshot,
 			error: [V2ParameterInvalid.schema, validation, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "previewStatusPage",
-				summary: "Preview a status page",
-				description:
-					"Builds the snapshot a draft config would publish, from your organization's real uptime history. Writes nothing. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "previewStatusPage",
+					summary: "Preview a status page",
+					description:
+						"Builds the snapshot a draft config would publish, from your organization's real uptime history. Writes nothing. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -1239,14 +1242,16 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			params: pageParams,
 			success: StatusPagePublicSnapshot,
 			error: [pageNotFound, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "viewStatusPage",
-				summary: "View a status page",
-				description:
-					"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("telemetry:read"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "viewStatusPage",
+					summary: "View a status page",
+					description:
+						"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.patch("update", "/:id", {
@@ -1538,7 +1543,8 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 			description:
 				"Public status pages for your customers, served from edge storage so they stay up when Maple does not. Components follow your uptime monitors.",
 		}),
-	) {}
+	)
+	.annotate(EndpointAccess, "handler") {}
 
 export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPageIncidents")
 	.add(
@@ -1560,14 +1566,16 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			payload: V2StatusPageIncidentCreateParams,
 			success: V2StatusPageIncident,
 			error: [pageNotFound, validation, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "createStatusPageIncident",
-				summary: "Open a status page incident",
-				description:
-					"Opens an incident or schedules maintenance with its first public update. Published unless `published` is `false`. Requires the `status_page_incidents:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("status_page_incidents:post"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "createStatusPageIncident",
+					summary: "Open a status page incident",
+					description:
+						"Opens an incident or schedules maintenance with its first public update. Published unless `published` is `false`. Requires the `status_page_incidents:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.get("retrieve", "/:id", {
@@ -1589,28 +1597,32 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			payload: V2StatusPageIncidentUpdateParams,
 			success: V2StatusPageIncident,
 			error: [incidentNotFound, pageNotFound, validation, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "updateStatusPageIncident",
-				summary: "Update a status page incident",
-				description:
-					"Edits the title, impact, components, window or published flag without posting an update. Requires the `status_page_incidents:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("status_page_incidents:post"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "updateStatusPageIncident",
+					summary: "Update a status page incident",
+					description:
+						"Edits the title, impact, components, window or published flag without posting an update. Requires the `status_page_incidents:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: StatusPageIncidentPublicId },
 			success: V2StatusPageIncidentDeleteResponse,
 			error: [incidentNotFound, pageNotFound, validation, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "deleteStatusPageIncident",
-				summary: "Delete a status page incident",
-				description:
-					"Deletes an incident and its updates from the page. Requires the `status_page_incidents:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("status_page_incidents:post"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "deleteStatusPageIncident",
+					summary: "Delete a status page incident",
+					description:
+						"Deletes an incident and its updates from the page. Requires the `status_page_incidents:write` scope.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("postUpdate", "/:id/updates", {
@@ -1618,14 +1630,16 @@ export class V2StatusPageIncidentsApiGroup extends HttpApiGroup.make("statusPage
 			payload: V2StatusPageIncidentPostUpdateParams,
 			success: V2StatusPageIncident,
 			error: [incidentNotFound, pageNotFound, validation, persistence],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "postStatusPageIncidentUpdate",
-				summary: "Post a status page update",
-				description:
-					"Posts a public update and moves the incident to its status; `resolved` or `completed` closes it. Requires the `status_page_incidents:write` scope.",
-			}),
-		),
+		})
+			.annotate(EndpointAccess, requires("status_page_incidents:post"))
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "postStatusPageIncidentUpdate",
+					summary: "Post a status page update",
+					description:
+						"Posts a public update and moves the incident to its status; `resolved` or `completed` closes it. Requires the `status_page_incidents:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/status_page_incidents")
 	.middleware(AuthorizationV2)

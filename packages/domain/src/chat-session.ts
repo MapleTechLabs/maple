@@ -25,6 +25,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/primitives"
+import { type Grants, PermissionName } from "./policy"
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -440,6 +441,11 @@ export const ChatTurnTenant = Schema.Struct({
 	orgId: OrgId,
 	userId: UserId,
 	roles: Schema.Array(RoleName),
+	/**
+	 * What the caller may do. Absent on a turn recorded before permissions existed, and from Maple's
+	 * own producers, which hold none of their own: read as what `roles` grant (`Policy.grantsOf`).
+	 */
+	permissions: Schema.optionalKey(Schema.Array(PermissionName)),
 	authMode: AuthMode,
 	/** Pre-resolved agent identity, when the caller authenticated as one. */
 	actorId: Schema.optionalKey(ActorId),
@@ -472,12 +478,14 @@ export const AutonomousTurnStarter = Schema.Union([
 	}),
 	/**
 	 * A person started or restarted it, or wrote what it reads. `userId` is absent when nobody can
-	 * name them (a pull request's author). `roles` are what their credential held at that moment.
+	 * name them (a pull request's author). `roles` and `permissions` are what their credential held
+	 * at that moment; a start recorded without `permissions` reads as what `roles` grant.
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("person"),
 		userId: Schema.optionalKey(UserId),
 		roles: Schema.Array(RoleName),
+		permissions: Schema.optionalKey(Schema.Array(PermissionName)),
 		/** Whether their credential could read data sources (a scoped key may not). Absent reads as no. */
 		mayReadDataSources: Schema.optionalKey(Schema.Boolean),
 	}),
@@ -547,18 +555,23 @@ export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
  */
 export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
 
+/** What a connector turn nobody is named on holds: its tools only read telemetry. */
+export const ANONYMOUS_CONNECTOR_GRANTS = ["telemetry:read"] as const satisfies Grants
+
 /**
  * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
  *
  * No roles, and there is no connector identity that carries any: a change is only ever applied as
  * a Maple user. A turn whose origin names an `actingUserId` is widened to that user's tenant on
- * the other side of the hop; one that names nobody stays here and is offered no mutating tool.
+ * the other side of the hop; one that names nobody stays here, holding
+ * {@link ANONYMOUS_CONNECTOR_GRANTS}, and is offered no mutating tool.
  */
 export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({
 		orgId,
 		userId: CONNECTOR_TENANT_USER_ID,
 		roles: [],
+		permissions: ANONYMOUS_CONNECTOR_GRANTS,
 		authMode: "self_hosted",
 	})
 
@@ -608,7 +621,7 @@ export type ChatProposalApproval =
 	| {
 			/** A signed-in person in the Maple app. */
 			readonly approver: Extract<ChatTurnOrigin, { readonly kind: "app" }>
-			/** Who the route authenticated, with the roles they hold: the change runs as them. */
+			/** Who the route authenticated, with the permissions they hold: the change runs as them. */
 			readonly tenant: ChatTurnTenantEncoded
 	  }
 	| {
@@ -617,7 +630,7 @@ export type ChatProposalApproval =
 			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
 			 * database — never from anything the click carried.
 			 *
-			 * The change runs as that user, under the roles they hold in the org at that moment.
+			 * The change runs as that user, under the permissions they hold in the org at that moment.
 			 * Required: a click nobody can attribute to a Maple user applies nothing.
 			 */
 			readonly actingUserId: UserId

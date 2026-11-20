@@ -44,6 +44,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { ChartTimeseries, ShareChartRequest, ShareChartResponse } from "../share-chart"
 import {
+	ShareForbiddenError,
 	ShareNotConfiguredError,
 	ShareNotFoundError,
 	ShareOgCardRequest,
@@ -67,6 +68,7 @@ const [
 	shareNotFound,
 	shareSignInRequired,
 	shareWrongOrg,
+	shareForbidden,
 	shareRangeInvalid,
 	shareVariableInvalid,
 	shareRateLimited,
@@ -76,6 +78,7 @@ const [
 	ShareNotFoundError,
 	ShareSignInRequiredError,
 	ShareWrongOrgError,
+	ShareForbiddenError,
 	ShareRangeInvalidError,
 	ShareVariableInvalidError,
 	ShareRateLimitedError,
@@ -92,6 +95,7 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 				shareNotFound,
 				shareSignInRequired,
 				shareWrongOrg,
+				shareForbidden,
 				shareRateLimited,
 				shareNotConfigured,
 				sharePersistence,
@@ -113,6 +117,7 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 				shareNotFound,
 				shareSignInRequired,
 				shareWrongOrg,
+				shareForbidden,
 				shareRangeInvalid,
 				shareVariableInvalid,
 				shareRateLimited,

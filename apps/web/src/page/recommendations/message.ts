@@ -3,10 +3,15 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { SessionGrants } from "../kit/session-grants"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
-	CompletedFetchList: { key: Schema.String, result: Schema.Result(Schema.Array(V2Recommendation), LoadFailure) },
+	CompletedFetchSession: SessionGrants,
+	CompletedFetchList: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(V2Recommendation), LoadFailure),
+	},
 	CompletedFetchMappings: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2AttributeMapping), LoadFailure),

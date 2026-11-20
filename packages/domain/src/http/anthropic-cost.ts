@@ -8,6 +8,7 @@ import {
 	CostConnectionValidationError,
 } from "./cost-connections"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess } from "./endpoint-access"
 
 /** Far above any admin key: it only bounds what the request carries. */
 export const ANTHROPIC_COST_KEY_MAX_LENGTH = 512
@@ -39,4 +40,5 @@ export class AnthropicCostApiGroup extends HttpApiGroup.make("anthropicCost")
 		}),
 	)
 	.prefix("/internal/cost/anthropic")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, "handler") {}

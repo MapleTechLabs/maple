@@ -152,15 +152,15 @@ export type Model = typeof Model.Type
 
 /** The saves need this permission: a viewer without it is offered no action that would be refused. */
 export const canManageSources = (model: Pick<Model, "grants">): boolean =>
-	model.grants !== null && Policy.has(model.grants, "integrations:manage")
+	model.grants !== null && Policy.can(model.grants, "integrations:manage")
 
 /** The viewer's roles are known and lack the permission: only then does the page say who has it. */
 export const cannotManageSources = (model: Pick<Model, "grants">): boolean =>
-	model.grants !== null && !Policy.has(model.grants, "integrations:manage")
+	model.grants !== null && !Policy.can(model.grants, "integrations:manage")
 
-/** A budget is an alert rule: who manages alerts sets one. False until the session answers. */
+/** Who manages SLOs and budgets (`slos:manage`) sets one. False until the session answers. */
 export const canManageBudgets = (model: Pick<Model, "grants">): boolean =>
-	model.grants !== null && Policy.has(model.grants, "alerts:manage")
+	model.grants !== null && Policy.can(model.grants, "slos:manage")
 
 /** The org's cost sources once read; none before. */
 export const sourcesOf = (model: Pick<Model, "sources">): ReadonlyArray<CostSourceSummary> =>

@@ -1370,9 +1370,7 @@ const loaded = (
 	return [
 		...(document.ssoEntitled ? [] : [notEntitled(h, model)]),
 		// While the role is unknown the page banner speaks; nothing claims the viewer is not an admin.
-		...(model.canManage || !isKnownMember
-			? []
-			: [adminOnlyNote(h, ["Only admins can change SSO and SCIM settings."])]),
+		...(model.canManage || !isKnownMember ? [] : [adminOnlyNote(h, [denialReason("sso:manage")])]),
 		domainsSection(h, model, document),
 		connectionSection(h, model, document),
 		// The API sends the bypass list and the IdP groups to managers only: no empty lists for others.

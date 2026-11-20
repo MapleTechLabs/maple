@@ -11,6 +11,7 @@ import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
 import { SessionAuthorizationLive } from "@maple/backend/services/auth/SessionAuthorizationLive"
+import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
@@ -43,6 +44,8 @@ export const QueryRoutes = Layer.mergeAll(
 			PromqlQueryService.layer,
 			AuditLogService.layer,
 			OrganizationRegionService.layer,
+			// Where an `org:custom` session's permissions come from.
+			OrgMembershipService.layer,
 			RuntimeReleaseCatalog.layer,
 			RuntimeAdvisoryCatalog.layer,
 		),

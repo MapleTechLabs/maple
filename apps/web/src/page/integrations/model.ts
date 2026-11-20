@@ -97,7 +97,7 @@ export type Model = typeof Model.Type
 
 /** The viewer may connect, disconnect and change integrations (`integrations:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
-	Policy.has(model.grants, "integrations:manage")
+	Policy.can(model.grants, "integrations:manage")
 
 /** Why this viewer's integration switches are locked; undefined when they may flip them. */
 export const manageLock = (model: Pick<Model, "grants">): string | undefined =>

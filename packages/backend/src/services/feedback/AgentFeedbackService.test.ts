@@ -1,7 +1,8 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Order, Result, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { OrgId, RoleName, UserId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { AgentFeedbackService } from "./AgentFeedbackService"
@@ -14,7 +15,7 @@ const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
 const USER = Schema.decodeSync(UserId)("user_feedback")
 
 const INTERNAL_ORG = Schema.decodeSync(OrgId)("org_maple_internal")
-const INTERNAL_ADMIN = { orgId: INTERNAL_ORG, roles: [RoleName.make("org:admin")] }
+const INTERNAL_ADMIN = { orgId: INTERNAL_ORG, permissions: Policy.grantsOf(["org:admin"]) }
 
 const provideWith =
 	(env: Record<string, unknown>) =>
@@ -175,7 +176,10 @@ describe("AgentFeedbackService", () => {
 				Effect.gen(function* () {
 					const service = yield* seed
 					const result = yield* Effect.result(
-						service.triage({ orgId: ORG, roles: [RoleName.make("org:admin")] }, { limit: 10 }),
+						service.triage(
+							{ orgId: ORG, permissions: Policy.grantsOf(["org:admin"]) },
+							{ limit: 10 },
+						),
 					)
 					assert.isTrue(Result.isFailure(result))
 					if (Result.isFailure(result)) {
@@ -195,7 +199,7 @@ describe("AgentFeedbackService", () => {
 					yield* Effect.forEach(["org:analyst", "org:member", "org:engineer"], (role) =>
 						Effect.result(
 							service.triage(
-								{ orgId: INTERNAL_ORG, roles: [RoleName.make(role)] },
+								{ orgId: INTERNAL_ORG, permissions: Policy.grantsOf([role]) },
 								{ limit: 10 },
 							),
 						).pipe(Effect.map((result) => assert.isTrue(Result.isFailure(result), role))),

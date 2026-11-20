@@ -100,6 +100,8 @@ const errorCard = (h: H, error: ShareError): Html => {
 				"You don't have access to this dashboard",
 				"It's shared with a different organization. Switch organizations and try again.",
 			)
+		case "Forbidden":
+			return centeredCard(h, "Your role can't view this dashboard", error.message)
 		case "RateLimited":
 			return centeredCard(
 				h,

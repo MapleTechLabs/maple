@@ -18,7 +18,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { MAX_SLOS_PER_ORG, SlosService } from "@maple/backend/services/slos/SlosService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	createWebhookDestination,
@@ -101,7 +101,7 @@ const createNamedWebhook = (alerts: AlertsServiceApi, name: string) =>
 	alerts.createDestination(
 		orgId,
 		userId,
-		adminRoles,
+		adminGrants,
 		new WebhookAlertDestinationConfig({
 			type: "webhook",
 			name,
@@ -262,7 +262,7 @@ describe("AlertsService SLO burn-rate rules", () => {
 			const ruleId = Option.getOrThrow(Option.fromNullOr(slo.alertRuleId))
 
 			assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
-			const refused = yield* alerts.deleteRule(orgId, adminRoles, ruleId).pipe(Effect.flip)
+			const refused = yield* alerts.deleteRule(orgId, adminGrants, ruleId).pipe(Effect.flip)
 			assert.strictEqual(refused._tag, "@maple/http/errors/AlertRuleNotFoundError")
 
 			// Switching alerting off disables the rule; the SLO keeps it.

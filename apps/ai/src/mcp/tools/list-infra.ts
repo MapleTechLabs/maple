@@ -129,6 +129,7 @@ export function registerListInfraTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Listing infrastructure", "Checking hosts, pods, containers and providers"],
 		handler: Effect.fn("McpTool.listInfra")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)

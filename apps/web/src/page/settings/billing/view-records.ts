@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { formatCurrency } from "@maple/domain/format"
 import type { BillingInvoice, CatalogPlan } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
@@ -27,6 +28,9 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str, Order } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
+
+/** The permission that pays and reads invoices, as the roles editor names it. */
+const BILLING_LABEL = Policy.permissions["billing:manage"].label
 
 type H = HtmlBuilder<Message>
 
@@ -193,7 +197,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string, nowMs: num
 									),
 									".",
 								]
-							: ["An org admin can view them in the billing portal."],
+							: [`A role with ${BILLING_LABEL} can view them in the billing portal.`],
 					),
 				],
 			),
@@ -418,7 +422,7 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 				since,
 				canManage(model)
 					? ". Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment."
-					: ". An org admin can pay it from this page.",
+					: `. A role with ${BILLING_LABEL} can pay it from this page.`,
 			]),
 			...(!canManage(model)
 				? [

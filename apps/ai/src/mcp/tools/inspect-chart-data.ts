@@ -1,4 +1,4 @@
-import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { McpAuthInvalidError, McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
@@ -104,6 +104,7 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Inspecting chart data"],
 		handler: Effect.fn("McpTool.inspectChartData")(function* ({
 			dashboard_id,
@@ -272,10 +273,15 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 					}
 				}
 				case "skipped":
-					return yield* new McpInvalidInputError({
-						message: outcome.detail,
-						parameter: "widget_id",
-					})
+					return yield* outcome.reason === "denied"
+						? new McpAuthInvalidError({
+								message: outcome.detail,
+								reason: "insufficient_permission",
+							})
+						: new McpInvalidInputError({
+								message: outcome.detail,
+								parameter: "widget_id",
+							})
 				case "inspection_error":
 					return yield* new McpQueryError({
 						message: `Inspection failed unexpectedly: ${outcome.message}`,

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, DateTime, Effect, Exit, Layer, Option, Schema, String as Str } from "effect"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -29,6 +30,7 @@ const tenant: TenantContext = {
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_member"),
 	roles: ["org:admin"],
+	permissions: Policy.grantsOf(["org:admin"]),
 	authMode: "self_hosted",
 }
 const KEPT = asIssueId("00000000-0000-4000-8000-000000000001")

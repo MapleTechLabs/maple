@@ -17,8 +17,8 @@ export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costB
 		const managing = (tenant: CurrentTenant.TenantSchema) =>
 			Effect.as(
 				Policy.check(
-					tenant.roles,
-					"alerts:manage",
+					tenant.permissions,
+					"slos:manage",
 					(denial) => new CostBudgetForbiddenError({ message: denial.message }),
 				),
 				tenant,

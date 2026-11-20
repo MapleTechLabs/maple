@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { HttpClient } from "effect/http"
@@ -44,6 +45,7 @@ const tenant: TenantContext = {
 	orgId,
 	userId,
 	roles: [Schema.decodeSync(RoleName)("org:admin")],
+	permissions: Policy.grantsOf([Schema.decodeSync(RoleName)("org:admin")]),
 	authMode: "self_hosted",
 }
 

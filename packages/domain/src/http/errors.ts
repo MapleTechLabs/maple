@@ -43,7 +43,7 @@ import {
 	IssueSeveritySource,
 	WorkflowState,
 } from "../error-issues"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 export {
 	ActorType,
 	ErrorIncidentReason,
@@ -820,7 +820,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 				ErrorIssueTransitionError,
 				ErrorValidationError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("claimIssue", "/issues/:issueId/claim", {
@@ -833,14 +833,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 				ErrorIssueLeaseConflictError,
 				ErrorIssueTransitionError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("heartbeatIssue", "/issues/:issueId/heartbeat", {
 			params: { issueId: ErrorIssueId },
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssueLeaseConflictError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("releaseIssue", "/issues/:issueId/release", {
@@ -853,7 +853,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 				ErrorIssueLeaseConflictError,
 				ErrorIssueTransitionError,
 			],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("commentOnIssue", "/issues/:issueId/comments", {
@@ -861,7 +861,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: ErrorIssueCommentRequest,
 			success: ErrorIssueEventDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.put("setIssueSeverity", "/issues/:issueId/severity", {
@@ -869,7 +869,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: ErrorIssueSetSeverityRequest,
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("mergeIssues", "/issues/:issueId/merge", {
@@ -877,14 +877,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: ErrorIssueMergeRequest,
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.post("unmergeIssue", "/issues/:issueId/unmerge", {
 			params: { issueId: ErrorIssueId },
 			success: ErrorIssueDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorValidationError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueEvents", "/issues/:issueId/events", {
@@ -913,14 +913,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: IssueEscalationPolicyUpsertRequest,
 			success: IssueEscalationPolicyDocument,
 			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
-		}),
+		}).annotate(EndpointAccess, "handler"),
 	)
 	.add(
 		HttpApiEndpoint.post("evaluateEscalationPolicy", "/escalation-policy/evaluate", {
 			payload: EscalationPolicyEvaluationRequest,
 			success: EscalationPolicyEvaluationDocument,
 			error: ErrorPersistenceError,
-		}).annotate(AnalystAccess, "read"),
+		}).annotate(EndpointAccess, requires("telemetry:read")),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueEscalations", "/issues/:issueId/escalations", {
@@ -956,14 +956,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			payload: ErrorIssueLinkPullRequestRequest,
 			success: ErrorIssuePullRequestDocument,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssuePullRequestInvalidError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.delete("unlinkIssuePullRequest", "/issues/:issueId/pull-requests/:pullRequestId", {
 			params: { issueId: ErrorIssueId, pullRequestId: ErrorIssuePullRequestId },
 			success: ErrorIssuePullRequestsResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssuePullRequestNotFoundError],
-		}),
+		}).annotate(EndpointAccess, requires("error_issues:triage")),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueVerifications", "/issues/:issueId/verifications", {
@@ -973,4 +973,5 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		}),
 	)
 	.prefix("/internal/errors")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	.annotate(EndpointAccess, requires("telemetry:read")) {}

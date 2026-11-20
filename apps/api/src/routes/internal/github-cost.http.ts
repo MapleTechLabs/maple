@@ -13,9 +13,9 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (roles: CurrentTenant.TenantSchema["roles"]) =>
+const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
 	Policy.check(
-		roles,
+		permissions,
 		"integrations:manage",
 		(denial) => new GithubCostForbiddenError({ message: denial.message }),
 	)
@@ -35,7 +35,7 @@ export const HttpGithubCostLive = HttpApiBuilder.group(MapleInternalApi, "github
 			.handle("add", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const { accountLogin, created } = yield* sources.add(tenant.orgId, params.installationId)
 					// It was a source already: nothing happened to record.
 					if (created) {
@@ -49,7 +49,7 @@ export const HttpGithubCostLive = HttpApiBuilder.group(MapleInternalApi, "github
 			.handle("remove", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.roles)
+					yield* requireIntegrationsManager(tenant.permissions)
 					const { accountLogin } = yield* sources.remove(tenant.orgId, params.installationId)
 					// Nothing was there to remove: nothing happened to record.
 					if (accountLogin !== null) {

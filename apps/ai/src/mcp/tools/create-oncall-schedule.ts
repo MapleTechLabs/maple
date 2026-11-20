@@ -31,6 +31,7 @@ export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
 			description: P.optionalText("Free-form notes"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "oncall:manage",
 		phrases: ["Creating an on-call schedule"],
 		handler: Effect.fn("McpTool.createOnCallSchedule")(function* (params) {
 			const request = yield* decodeCreateRequest({
@@ -50,7 +51,7 @@ export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules
-				.create(tenant.orgId, tenant.userId, tenant.roles, request)
+				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
 				.pipe(Effect.catchTags(createScheduleErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { schedule: toScheduleRow(schedule, names) }

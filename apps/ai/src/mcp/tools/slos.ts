@@ -34,11 +34,11 @@ const canManage = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
 		yield* Policy.check(
-			tenant.roles,
-			"alerts:manage",
-			() =>
+			tenant.permissions,
+			"slos:manage",
+			(denial) =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's SLOs and their burn-rate alerts, which only org admins and engineers may do. Ask an admin or engineer, or change it in Maple.`,
+					message: `${tool} changes the organization's SLOs and their burn-rate alerts. ${denial.message}`,
 					capability: "org_admin",
 				}),
 		)
@@ -153,6 +153,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		scopeFamily: "slos",
 		phrases: ["Checking SLOs"],
 		handler: Effect.fn("McpTool.listSlos")(function* (params) {
@@ -274,6 +275,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 			slo: P.text("The SLO's name or id (list_slos lists them)"),
 		}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		scopeFamily: "slos",
 		phrases: ["Inspecting an SLO"],
 		handler: Effect.fn("McpTool.inspectSlo")(function* (params) {
@@ -364,6 +366,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		permission: "slos:manage",
 		scopeFamily: "slos",
 		phrases: ["Adding an SLO"],
 		handler: Effect.fn("McpTool.createSlo")(function* (params) {
@@ -409,6 +412,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "slos:manage",
 		scopeFamily: "slos",
 		phrases: ["Updating an SLO"],
 		handler: Effect.fn("McpTool.updateSlo")(function* (params) {
@@ -456,6 +460,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		permission: "slos:manage",
 		scopeFamily: "slos",
 		phrases: ["Deleting an SLO"],
 		handler: Effect.fn("McpTool.deleteSlo")(function* (params) {

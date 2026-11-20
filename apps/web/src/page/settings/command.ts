@@ -3,7 +3,6 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
-import * as Policy from "@maple/domain/policy"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import { Duration, Effect, Schema } from "effect"
@@ -24,7 +23,7 @@ export const FetchSettingsSession = Command.define("FetchSettingsSession", {
 			? organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata)
 			: ENABLED_ORGANIZATION_FEATURE_FLAGS
 		return {
-			grants: Policy.grantsOf(session.roles),
+			grants: session.permissions,
 			userId: session.userId,
 			hasAiAutoTriage: flags.aiAutoTriage,
 			hasDataSources: flags.dataSources,

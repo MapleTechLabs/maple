@@ -1,6 +1,8 @@
 import * as Policy from "@maple/domain/policy"
 import { V2AttributeMapping, V2Recommendation } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
+import { Submodel } from "foldkit"
+import { expect as expectView, given, role, scene, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -11,6 +13,7 @@ import * as MappingDialog from "./mapping-dialog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, type InitOptions, update } from "./update"
+import { recommendationsSection } from "./view-rules"
 
 const ADMIN = Policy.grantsOf(["org:admin"])
 
@@ -242,5 +245,35 @@ describe("ingestion tab", () => {
 		const once = pressEscape(typed)
 		expect([once.mappingDialog.sourceKey.isOpen, isOpen(once)]).toEqual([false, true])
 		expect(isOpen(pressEscape(once))).toBe(false)
+	})
+
+	test("an analyst sees the recommendation's Apply fix, Dismiss and Reopen locked", () => {
+		const sectionView = Submodel.defineView<Model, Message, Readonly<{ readonly none?: never }>>(
+			(model, _inputs, h) => h.div([], recommendationsSection(h, model)),
+		)
+		const asAnalyst = (row: V2Recommendation): Model =>
+			step(
+				{ ...init(options).model, grants: Policy.grantsOf(["org:analyst"]) },
+				Message.CompletedFetchRecommendations({ result: Result.succeed([row]) }),
+			).model
+		const triageDenial = Policy.denialFor("recommendations:triage").message
+		scene(
+			{ update: step, view: withViewInputs(sectionView, {})() },
+			given(asAnalyst(rename)),
+			expectView(role("button", { name: "Apply fix" })).toBeDisabled(),
+			expectView(role("button", { name: "Dismiss" })).toBeDisabled(),
+			expectView(role("group", { name: triageDenial })).toExist(),
+		)
+		scene(
+			{ update: step, view: withViewInputs(sectionView, {})() },
+			given(
+				step(
+					asAnalyst({ ...rename, status: "dismissed" }),
+					Message.ClickedRecommendationTab({ tab: "closed" }),
+				).model,
+			),
+			expectView(role("button", { name: "Reopen" })).toBeDisabled(),
+			expectView(role("group", { name: triageDenial })).toExist(),
+		)
 	})
 })

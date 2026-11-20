@@ -52,7 +52,7 @@ import { type Model, zoneItems } from "./model"
 import { schedulePreview } from "./preview"
 import { participantMenuId } from "./update"
 import { stripClass } from "@maple/views/ui/rule"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageOnCall } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -520,7 +520,7 @@ const actionBar = (h: H, model: Model): Html => {
 			button(
 				h,
 				{
-					isDisabled: !canManageAlerts(model),
+					isDisabled: !canManageOnCall(model),
 					isLoading: model.isSaving,
 					attributes: [h.OnClick(Message.ClickedSave())],
 				},
@@ -536,10 +536,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		title: isEdit ? "Edit schedule" : "New schedule",
 		description: "Who is on call when: people take turns in layers, in one time zone.",
 	}
-	if (model.isSessionLoaded && !canManageAlerts(model))
+	if (model.isSessionLoaded && !canManageOnCall(model))
 		return managersOnlyPage(h, {
 			header,
-			title: "Only org admins and engineers can create or change on-call schedules",
+			permission: "oncall:manage",
 			back: { href: backHref(model), label: isEdit ? "Back to the schedule" : "Back to on-call" },
 		})
 	if (isEdit && AsyncData.isFailure(model.existing.data))

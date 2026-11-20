@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2Recommendation } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
 import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -37,11 +38,19 @@ const rec = (status: "open" | "dismissed" = "open") =>
 
 const route = (recommendationKey = UUID) => ({ _tag: "Recommendation" as const, recommendationKey })
 
-const loaded = (rows: ReadonlyArray<V2Recommendation>, key = UUID): Model => {
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const ANALYST = Policy.grantsOf(["org:analyst"])
+
+const loaded = (
+	rows: ReadonlyArray<V2Recommendation>,
+	key = UUID,
+	grants: ReadonlyArray<Policy.Permission> = ENGINEER,
+): Model => {
 	const entered = init(route(key), context).model
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
+			Message.CompletedFetchSession({ orgId: ORG, grants }),
 			Message.CompletedFetchList({ key: entered.list.key ?? "", result: Result.succeed(rows) }),
 		],
 		entered,
@@ -151,6 +160,25 @@ describe("recommendation detail", () => {
 			{ update: pageUpdate, view },
 			given(failed.model),
 			expectView(role("button", { name: "Apply mapping" })).toBeEnabled(),
+		)
+	})
+
+	test("an analyst reads the recommendation with Apply, Dismiss and Reopen locked", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([rec()], UUID, ANALYST)),
+			expectView(role("button", { name: "Apply mapping" })).toBeDisabled(),
+			expectView(role("button", { name: "Dismiss recommendation" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("recommendations:triage").message })).toExist(),
+			expectView(
+				role("group", { name: Policy.denialFor("attribute_mappings:manage").message }),
+			).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([rec("dismissed")], UUID, ANALYST)),
+			expectView(role("button", { name: "Reopen recommendation" })).toBeDisabled(),
+			expectView(role("group", { name: Policy.denialFor("recommendations:triage").message })).toExist(),
 		)
 	})
 })

@@ -18,6 +18,7 @@ import {
 	SecurityAuditValidationModel,
 } from "../security-audit"
 import { SessionAuthorization } from "./current-tenant"
+import { EndpointAccess } from "./endpoint-access"
 import { HttpTaggedError } from "./error-policy"
 
 /** The highest monthly spend limit an org may set, in whole US dollars. */
@@ -660,4 +661,6 @@ export class SecurityAuditApiGroup extends HttpApiGroup.make("securityAudit")
 		}),
 	)
 	.prefix("/api/security-audit")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Each handler checks `security:manage` or `security_audit:run` itself.
+	.annotate(EndpointAccess, "handler") {}

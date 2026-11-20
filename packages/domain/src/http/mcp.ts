@@ -5,7 +5,7 @@ import { TinybirdDateTime } from "../query-engine"
 import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
-import { AnalystAccess } from "./analyst-access"
+import { EndpointAccess, requires } from "./endpoint-access"
 import { AuditedRead } from "./audit-log"
 
 // MCP hub endpoint schemas (`/mcp-servers`, a server's overview, its tool page and its sessions).
@@ -343,6 +343,6 @@ export class McpInternalApiGroup extends HttpApiGroup.make("mcpInternal")
 	.prefix("/internal/mcp-servers")
 	.middleware(SessionAuthorization)
 	// Every endpoint here only reads, so an analyst may call it.
-	.annotate(AnalystAccess, "read")
+	.annotate(EndpointAccess, requires("telemetry:read"))
 	// Transcripts and tool calls are customer telemetry, so each read is audited.
 	.annotate(AuditedRead, "telemetry.read") {}

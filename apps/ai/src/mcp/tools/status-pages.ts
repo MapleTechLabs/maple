@@ -169,18 +169,6 @@ const toIncidentRow = (incident: StatusPageIncidentRecord): typeof StatusPageInc
 	}
 }
 
-/** Setting pages up is for admins and engineers, as on the REST routes (`status_pages:edit`). */
-const requireEditor = (roles: ReadonlyArray<string>, tool: string, action: string) =>
-	Policy.check(
-		roles,
-		"status_pages:edit",
-		() =>
-			new McpUnavailableError({
-				message: `${tool} ${action}, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.`,
-				capability: "org_admin",
-			}),
-	)
-
 /** The page entries the REST routes write, under the same actions. */
 const auditPage = Effect.fnUntraced(function* (
 	action:
@@ -572,6 +560,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		permission: "telemetry:read",
 		// One page's detail lists its incidents, drafts included.
 		scopeFamily: ["status_pages", "status_page_incidents"],
 		phrases: ["Reading status pages"],
@@ -639,6 +628,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			publish: publishParameter,
 		}),
 		hints: MUTATION_HINTS,
+		permission: "status_page_incidents:post",
 		scopeFamily: "status_page_incidents",
 		phrases: ["Posting a status page update"],
 		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
@@ -781,12 +771,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		}),
 		rejectUnknownKeys: true,
 		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
+		permission: "status_pages:edit",
 		scopeFamily: "status_pages",
 		phrases: ["Applying a status page config"],
 		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
 			const tool = "apply_status_page_config"
 			const tenant = yield* CurrentMcpTenant
-			yield* requireEditor(tenant.roles, tool, "changes a public status page")
 			const service = yield* StatusPagesService
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			// Who can read the page has its own permission, checked as the HTTP routes check it. The
@@ -794,7 +784,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			const visibility = params.config.visibility
 			if (visibility !== undefined && visibility !== page.visibility)
 				yield* Policy.check(
-					tenant.roles,
+					tenant.permissions,
 					"status_pages:access",
 					(denial) =>
 						new McpUnavailableError({
@@ -876,12 +866,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			description: P.optionalText("Optional public text under the page's title"),
 		}),
 		hints: MUTATION_HINTS,
+		permission: "status_pages:edit",
 		scopeFamily: "status_pages",
 		phrases: ["Creating a status page"],
 		handler: Effect.fn("McpTool.createStatusPage")(function* (params) {
 			const tool = "create_status_page"
 			const tenant = yield* CurrentMcpTenant
-			yield* requireEditor(tenant.roles, tool, "creates a status page")
 			const name = Str.trim(params.name)
 			const slug = params.slug === undefined ? slugFromName(name) : Str.trim(params.slug)
 			if (!isSlug(slug)) {
@@ -945,12 +935,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			page: P.text("The page's slug, name or id"),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		permission: "status_pages:edit",
 		scopeFamily: "status_pages",
 		phrases: ["Publishing a status page"],
 		handler: Effect.fn("McpTool.publishStatusPage")(function* (params) {
 			const tool = "publish_status_page"
 			const tenant = yield* CurrentMcpTenant
-			yield* requireEditor(tenant.roles, tool, "publishes a status page")
 			const page = yield* resolvePage(tool, tenant.orgId, params.page)
 			if (!page.draft) return { action: "already_public" as const, page: toPageRow(page) }
 			// The minutely publish writes it: this Worker has no edge storage to publish to itself.
@@ -1005,12 +995,12 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: true, openWorld: true },
+		permission: "status_pages:edit",
 		scopeFamily: "status_pages",
 		phrases: ["Setting a status page domain"],
 		handler: Effect.fn("McpTool.setStatusPageDomain")(function* (params) {
 			const tool = "set_status_page_domain"
 			const tenant = yield* CurrentMcpTenant
-			yield* requireEditor(tenant.roles, tool, "changes a status page's custom domain")
 			const remove = params.remove === true
 			if (remove && params.domain !== undefined) {
 				return yield* new McpInvalidInputError({

@@ -33,7 +33,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Context, Effect, Layer, Option, Result, Schema, Stream, String as Str } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option, Result, Schema, Stream, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -94,6 +94,7 @@ const toChatTurnTenant = (tenant: TenantContext): ChatTurnTenantEncoded =>
 		orgId: tenant.orgId,
 		userId: tenant.userId,
 		roles: tenant.roles,
+		permissions: tenant.permissions,
 		authMode: tenant.authMode,
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
 	})
@@ -148,10 +149,17 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
-	// Driving an investigation is a member's job (`investigations:run`): a follow-up can file a new
-	// diagnosis, and a stop ends a running pass. An analyst reads the thread.
-	if (request.method !== "GET" && Policy.isAnalyst(tenant.roles)) {
-		return { ok: false, failure: problem(Policy.analystMessage, 403) } as const
+	// The transcript quotes telemetry, so every call needs `telemetry:read`. A follow-up is also asking
+	// Maple AI and driving the investigation (`investigations:run`): it can file a new diagnosis, and a
+	// stop ends a running pass. Without those, the thread is read-only.
+	const missing = Arr.findFirst(
+		request.method === "GET"
+			? (["telemetry:read"] as const)
+			: (["telemetry:read", "ai:ask", "investigations:run"] as const),
+		(permission) => !Policy.can(tenant.permissions, permission),
+	)
+	if (Option.isSome(missing)) {
+		return { ok: false, failure: problem(Policy.denialFor(missing.value).message, 403) } as const
 	}
 
 	const stub = (yield* ChatSessions).session(sessionId)

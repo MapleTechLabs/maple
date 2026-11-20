@@ -18,13 +18,13 @@ import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService
 import { AlertSilencesService } from "./AlertSilencesService"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
-	adminRoles,
+	adminGrants,
 	asOrgId,
 	asUserId,
 	getError,
 	makeLayer,
 	makeWarehouseStub,
-	memberRoles,
+	memberGrants,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -63,7 +63,7 @@ const createWindow = (
 		windows.create(
 			options.org ?? orgId,
 			userId,
-			adminRoles,
+			adminGrants,
 			new AlertMaintenanceWindowCreateRequest({
 				name: "Nightly DB",
 				reason: "vacuum",
@@ -171,7 +171,7 @@ describe("AlertMaintenanceWindowsService", () => {
 			yield* service.update(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				window.id,
 				new AlertMaintenanceWindowUpdateRequest({ schedule: { ...nightly, startTime: "23:45" } }),
 			)
@@ -192,7 +192,7 @@ describe("AlertMaintenanceWindowsService", () => {
 			yield* service.update(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				window.id,
 				new AlertMaintenanceWindowUpdateRequest({
 					matchers: { services: ["checkout", "cart"] },
@@ -216,7 +216,7 @@ describe("AlertMaintenanceWindowsService", () => {
 			const deletedAt = TUE_2330 + 10 * MINUTE
 			yield* TestClock.setTime(deletedAt)
 
-			yield* service.delete(orgId, userId, adminRoles, window.id)
+			yield* service.delete(orgId, userId, adminGrants, window.id)
 
 			assert.deepStrictEqual(yield* windows(window.id), [[at(TUE_2330), at(deletedAt)]])
 			const missing = yield* Effect.exit(service.get(orgId, window.id))
@@ -238,7 +238,7 @@ describe("AlertMaintenanceWindowsService", () => {
 			const updated = yield* service.update(
 				orgId,
 				userId,
-				adminRoles,
+				adminGrants,
 				window.id,
 				new AlertMaintenanceWindowUpdateRequest({ enabled: false }),
 			)
@@ -255,13 +255,13 @@ describe("AlertMaintenanceWindowsService", () => {
 				new AlertMaintenanceWindowCreateRequest({ name: "x", matchers, schedule })
 
 			const denied = yield* Effect.exit(
-				service.create(orgId, userId, memberRoles, request(nightly, { services: ["checkout"] })),
+				service.create(orgId, userId, memberGrants, request(nightly, { services: ["checkout"] })),
 			)
 			const ended = yield* Effect.exit(
 				service.create(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					request(
 						{
 							_tag: "once",
@@ -276,7 +276,7 @@ describe("AlertMaintenanceWindowsService", () => {
 				service.create(
 					orgId,
 					userId,
-					adminRoles,
+					adminGrants,
 					request(nightly, {
 						ruleIds: [Schema.decodeSync(AlertRuleId)("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")],
 					}),

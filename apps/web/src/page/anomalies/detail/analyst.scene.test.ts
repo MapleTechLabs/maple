@@ -102,12 +102,10 @@ describe("anomaly detail, analyst", () => {
 			expectView(role("button", { name: "Open investigation" })).toBeDisabled(),
 			expectView(
 				role("group", {
-					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+					name: Policy.denialFor("incidents:respond").message,
 				}),
 			).toExist(),
-			expectView(
-				role("group", { name: "Only org admins, engineers and members can start investigations." }),
-			).toExist(),
+			expectView(role("group", { name: Policy.denialFor("investigations:run").message })).toExist(),
 		)
 	})
 
@@ -133,7 +131,7 @@ describe("anomaly detail, analyst", () => {
 			expectView(role("button", { name: "Unlink issue" })).toBeDisabled(),
 			expectView(
 				role("group", {
-					name: "Only org admins, engineers and members can acknowledge and resolve incidents.",
+					name: Policy.denialFor("incidents:respond").message,
 				}),
 			).toExist(),
 		)

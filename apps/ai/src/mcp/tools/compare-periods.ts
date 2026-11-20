@@ -89,6 +89,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 		}),
 		aliases: P.SERVICE_ALIASES,
 		hints: { readOnly: true },
+		permission: "telemetry:read",
 		phrases: ["Comparing time periods", "Comparing against an earlier period"],
 		handler: Effect.fn("McpTool.comparePeriods")(function* (params) {
 			const windows = yield* resolveComparisonWindows(params)

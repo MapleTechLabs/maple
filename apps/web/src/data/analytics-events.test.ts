@@ -241,6 +241,7 @@ const snapshot = (fullName: string | null): ClerkSnapshot => ({
 	maybeOrganization: Option.none(),
 	memberships: [],
 	maybeRole: Option.some("org:admin"),
+	maybeGrants: Option.none(),
 	maybePendingTask: Option.none(),
 })
 

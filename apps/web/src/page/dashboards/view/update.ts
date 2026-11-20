@@ -22,11 +22,13 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { popupId } from "@maple/views/ui/overlay/popup-state"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
+import { acceptGrants } from "../../kit/session-grants"
 import {
 	CloneWidget,
 	EditSections,
 	CompleteReloadSpin,
 	ExportDashboard,
+	FetchDashboardSession,
 	FetchShares,
 	ReadClock,
 	ReloadPage,
@@ -57,7 +59,7 @@ import {
 	viewerTimeRangeOf,
 	withCharts,
 } from "./plan"
-import { isEditing, isWriteBlocked } from "./mode"
+import { canEditDashboard, isEditing, isWriteBlocked } from "./mode"
 import { PICKER_TABS } from "./picker-catalog"
 import { menuStep } from "./menu-step"
 import { sectionStep } from "./section-update"
@@ -77,10 +79,11 @@ export type Return = PageReturn<Model, Message>
 type Search = typeof DashboardSearch.Type
 type Route = Readonly<{ dashboardId: string; search: Search }>
 
-export const init = (route: Route, _context: PageContext): Return => ({
+export const init = (route: Route, context: PageContext): Return => ({
 	model: {
 		dashboardId: route.dashboardId,
 		search: route.search,
+		grants: [],
 		status: "Loading",
 		document: null,
 		snapshot: { _tag: "Idle" },
@@ -135,7 +138,7 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		variableComboName: null,
 		variableDrafts: {},
 	},
-	commands: [ReadClock(), LoadChartRuntime()],
+	commands: [ReadClock(), LoadChartRuntime(), FetchDashboardSession({ orgId: context.orgId })],
 })
 
 const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean =>
@@ -609,6 +612,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.status === "Failed"
 				? readSnapshot(model, "retry")
 				: { model, outMessage: PageOutMessage.RequestedReconnectOrgCollections() },
+		CompletedFetchSession: (answer) => {
+			const next = acceptGrants(model, context.orgId, answer)
+			// Edit mode opens with the grants and shows the board's range, not the URL's.
+			return isRangeMoved(model, next)
+				? { model: { ...next, clockRead: "Navigation" }, commands: [ReadClock()] }
+				: { model: next }
+		},
 		CompletedReadClock: ({ nowMs }) =>
 			withReplan({ ...model, nowMs }, context, planModeOf(model.clockRead)),
 		MeasuredGrid: ({ width }) => cancelStaleGesture({ ...model, gridWidth: width }, context),
@@ -743,7 +753,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedTitle: () =>
-			isWriteBlocked(model) || model.document === null || model.history.previewed !== null
+			!canEditDashboard(model) ||
+			isWriteBlocked(model) ||
+			model.document === null ||
+			model.history.previewed !== null
 				? { model }
 				: { model: { ...model, titleDraft: model.document.name } },
 		ChangedTitleDraft: ({ value }) => ({ model: { ...model, titleDraft: value } }),

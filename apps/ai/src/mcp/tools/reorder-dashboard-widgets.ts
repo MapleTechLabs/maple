@@ -72,6 +72,7 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 			),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		permission: "dashboards:edit",
 		phrases: ["Reordering widgets"],
 		handler: Effect.fn("McpTool.reorderDashboardWidgets")(function* ({
 			dashboard_id,

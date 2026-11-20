@@ -20,7 +20,7 @@ import { emptyForm, type Form, type Tier } from "./form"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { acceptGrants } from "../../kit/session-grants"
-import { canManageAlerts } from "../../kit/session-grants"
+import { canManageSlos } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsSloNew" }>
@@ -92,7 +92,7 @@ const updateDestinationMenu = (model: Model, tier: Tier, message: Menu.Message):
 }
 
 const save = (model: Model): Return =>
-	model.isSaving || !canManageAlerts(model) || formIssues(model.form).length > 0
+	model.isSaving || !canManageSlos(model) || formIssues(model.form).length > 0
 		? { model }
 		: {
 				model: { ...model, isSaving: true, saveFailure: null },

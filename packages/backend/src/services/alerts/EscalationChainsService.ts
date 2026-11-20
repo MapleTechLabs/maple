@@ -17,7 +17,6 @@ import {
 	type EscalationChainUpdateRequest,
 	type EscalationSteps,
 	type OrgId,
-	type RoleName,
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -56,7 +55,7 @@ export interface EscalationChainsServiceApi {
 	readonly create: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		request: EscalationChainCreateRequest,
 	) => Effect.Effect<
 		EscalationChainDocument,
@@ -68,7 +67,7 @@ export interface EscalationChainsServiceApi {
 	readonly update: (
 		orgId: OrgId,
 		userId: UserId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		chainId: EscalationChainId,
 		request: EscalationChainUpdateRequest,
 	) => Effect.Effect<
@@ -82,7 +81,7 @@ export interface EscalationChainsServiceApi {
 	/** Refused while a rule's tier names the chain; escalations already running finish from their snapshot. */
 	readonly delete: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 		chainId: EscalationChainId,
 	) => Effect.Effect<
 		void,
@@ -156,14 +155,13 @@ export class EscalationChainsService extends Context.Service<
 		const orgMembers = yield* OrgMembersService
 		const dbExecute = makeDbExecute(database, "EscalationChainsService", makePersistenceError)
 
-		const requireManage = (roles: ReadonlyArray<RoleName>) =>
+		const requireManage = (permissions: Policy.Grants) =>
 			Policy.check(
-				roles,
-				"alerts:manage",
+				permissions,
+				"oncall:manage",
 				(denial) =>
 					new AlertForbiddenError({
 						message: denial.message,
-						...(roles.length > 0 ? { roles: [...roles] } : undefined),
 					}),
 			)
 
@@ -275,10 +273,10 @@ export class EscalationChainsService extends Context.Service<
 		const create = Effect.fn("EscalationChainsService.create")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			request: EscalationChainCreateRequest,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const id = decodeChainIdSync(runtime.makeUuid())
@@ -327,11 +325,11 @@ export class EscalationChainsService extends Context.Service<
 		const update = Effect.fn("EscalationChainsService.update")(function* (
 			orgId: OrgId,
 			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			chainId: EscalationChainId,
 			request: EscalationChainUpdateRequest,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			if (request.steps !== undefined) yield* requireMembers(orgId, request.steps)
 			const nowMs = yield* runtime.now
 			const [row, refs] = yield* dbExecute((db) =>
@@ -374,10 +372,10 @@ export class EscalationChainsService extends Context.Service<
 
 		const remove = Effect.fn("EscalationChainsService.delete")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 			chainId: EscalationChainId,
 		) {
-			yield* requireManage(roles)
+			yield* requireManage(permissions)
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {

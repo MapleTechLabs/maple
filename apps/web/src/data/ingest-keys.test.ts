@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Effect, Layer, Predicate, Ref, Schema, String as Str } from "effect"
@@ -64,6 +65,7 @@ const run = <A, E>(
 					orgId: "org_a",
 					userId: "user_a",
 					roles,
+					permissions: Policy.grantsOf(roles),
 					authMode: "clerk",
 				}),
 			),

@@ -29,6 +29,9 @@ import { view as pageView } from "./view"
 
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
+/** Custom roles: uptime checks without alert rules, and alert rules without uptime checks. */
+const UPTIME_ONLY: ReadonlyArray<Policy.Permission> = ["telemetry:read", "uptime_monitors:manage"]
+const ALERTS_ONLY: ReadonlyArray<Policy.Permission> = ["telemetry:read", "alerts:manage"]
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -210,13 +213,59 @@ describe("alerts hub, Uptime tab", () => {
 			expectView(text("No uptime checks yet")).toExist(),
 			expectView(role("link", { name: "New uptime check" })).not.toExist(),
 			expectView(role("button", { name: "New uptime check" })).toBeDisabled(),
-			expectView(role("group", { name: "Only org admins and engineers can manage alerts." })).toExist(),
+			expectView(role("group", { name: Policy.denialFor("uptime_monitors:manage").message })).toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(asMember(withMonitors(THREE))),
 			// The row menu stays, its items disabled with who can use them.
 			expectView(role("button", { name: `Actions for ${httpMonitor().name}` })).toExist(),
+		)
+	})
+
+	test("a custom role with only uptime_monitors:manage creates, edits and deletes monitors", () => {
+		const asUptimeOnly = (model: Model) =>
+			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: UPTIME_ONLY })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asUptimeOnly(withMonitors([]))),
+			expectView(role("link", { name: "New uptime check" })).toHaveAttr("href", "/alerts/uptime/new"),
+		)
+		const listed = asUptimeOnly(withMonitors(THREE))
+		const menuId = monitorMenuId(httpMonitor().id)
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...listed, menus: { ...listed.menus, [menuId]: Menu.init(menuId, { isOpen: true }) } }),
+			Mount.resolve(MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("link", { name: "New monitor" })).toHaveAttr("href", "/alerts/uptime/new"),
+			expectView(role("menuitem", { name: "Edit" })).not.toHaveAttr("aria-disabled", "true"),
+			expectView(role("menuitem", { name: "Delete" })).not.toHaveAttr("aria-disabled", "true"),
+		)
+		// The Inbox's New rule menu offers it too, and keeps alert rules locked.
+		const inbox = { ...listed, tab: "inbox" as const }
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...inbox, newRuleMenu: Menu.init(inbox.newRuleMenu.id, { isOpen: true }) }),
+			Mount.resolve(MountMenu, Menu.Message.CompletedMountMenu()),
+			expectView(role("menuitem", { name: /Uptime check/ })).not.toHaveAttr("aria-disabled", "true"),
+			expectView(role("menuitem", { name: /SLO/ })).toHaveAttr("aria-disabled", "true"),
+		)
+	})
+
+	test("alerts:manage alone does not unlock uptime checks", () => {
+		const asAlertsOnly = (model: Model) =>
+			pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: ALERTS_ONLY })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asAlertsOnly(withMonitors([]))),
+			expectView(role("link", { name: "New uptime check" })).not.toExist(),
+			expectView(role("group", { name: Policy.denialFor("uptime_monitors:manage").message })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(asAlertsOnly(withMonitors(THREE))),
+			expectView(role("link", { name: "New monitor" })).not.toExist(),
+			expectView(role("button", { name: "New monitor" })).toBeDisabled(),
 		)
 	})
 

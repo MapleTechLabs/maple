@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { DashboardId, OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
@@ -50,11 +51,12 @@ const stamp = (key: string, instance: number, message: Message, org: string = or
 
 const send = (slot: PageSlot | null, message: PageMessage) => updatePage(slot, message, context)
 
-/** Dashboard `id` entered in edit mode as build `instance`, clocked and holding its document. */
+/** Dashboard `id` entered in edit mode as build `instance` by an editor, clocked and holding its document. */
 const opened = (current: PageSlot | null, id: string, instance: number): PageSlot | null =>
 	Arr.reduce(
 		Arr.map(
 			[
+				Message.CompletedFetchSession({ orgId, grants: Policy.grantsOf(["org:engineer"]) }),
 				Message.CompletedReadClock({ nowMs: NOW }),
 				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(documentOf(id)) }),
 			],

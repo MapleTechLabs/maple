@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { describe, expect, it } from "@effect/vitest"
 import { AfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
@@ -666,6 +667,7 @@ describe("AuditLogService.layerMemory", () => {
 			orgId: ORG,
 			userId: USER,
 			roles: [],
+			permissions: Policy.grantsOf([]),
 			authMode: "self_hosted",
 		})
 

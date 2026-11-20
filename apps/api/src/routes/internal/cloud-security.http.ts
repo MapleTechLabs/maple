@@ -7,7 +7,7 @@ import { Effect } from "effect"
 /** The caller's tenant, once they hold `security:manage`, as every Security Center read requires. */
 const cloudSecurityTenant = Effect.tap(CurrentTenant.Context, (tenant) =>
 	Policy.check(
-		tenant.roles,
+		tenant.permissions,
 		"security:manage",
 		(denial) => new CloudSecurityForbiddenError({ message: denial.message }),
 	),

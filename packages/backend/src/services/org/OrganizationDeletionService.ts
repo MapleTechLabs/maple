@@ -1,3 +1,4 @@
+import type * as Policy from "@maple/domain/policy"
 import * as Clerk from "@distilled.cloud/clerk"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_MONITORS_FEATURE_ID } from "@maple/domain/billing"
@@ -10,7 +11,6 @@ import {
 	OrganizationPersistenceError,
 	OrganizationProviderError,
 	type OrgId,
-	type RoleName,
 } from "@maple/domain/http"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -43,7 +43,7 @@ type PurgedTable = (typeof ORG_DELETE_REGISTRY.orgScoped)[number]
 export interface OrganizationDeletionServiceApi {
 	readonly delete: (
 		orgId: OrgId,
-		roles: ReadonlyArray<RoleName>,
+		permissions: Policy.Grants,
 	) => Effect.Effect<
 		DeleteOrganizationResponse,
 		OrganizationForbiddenError | OrganizationPersistenceError | OrganizationProviderError
@@ -116,10 +116,10 @@ export class OrganizationDeletionService extends Context.Service<
 
 		const deleteOrganization = Effect.fn("OrganizationDeletionService.delete")(function* (
 			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
+			permissions: Policy.Grants,
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireOrganizationAdmin(roles, "delete the organization")
+			yield* requireOrganizationAdmin(permissions)
 			// Under the link lock, like every link write and monitor create or delete: the member
 			// check, the monitor count and the link's removal see one state. Once the link is gone,
 			// monitors made before the purge bill to the org itself.
