@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "7c1a58e5c9e8a691393a2aafa6388c9bc3f4198bbf4adfe993af2fe5ee36810e",
+	"id": "7748098be2f3a4eab0e92ee966f598c46212797a1cb85ef533f145361dfa1f4c",
 	"prevIds": [
 		"8159f7abf73d5ba42b366461393a0471100a0a3b4530fb0275830b027dc350b0"
 	],
@@ -10016,8 +10016,18 @@
 		{
 			"kind": "column",
 			"table": "fleet_connections",
-			"name": "connected_by_user_id",
+			"name": "activity_gaps",
 			"position": 12,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "fleet_connections",
+			"name": "connected_by_user_id",
+			"position": 13,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -10027,16 +10037,6 @@
 			"kind": "column",
 			"table": "fleet_connections",
 			"name": "auth_failed_at",
-			"position": 13,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_connections",
-			"name": "lease_until",
 			"position": 14,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -10046,7 +10046,7 @@
 		{
 			"kind": "column",
 			"table": "fleet_connections",
-			"name": "hold_until",
+			"name": "lease_until",
 			"position": 15,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -10056,7 +10056,7 @@
 		{
 			"kind": "column",
 			"table": "fleet_connections",
-			"name": "last_success_at",
+			"name": "hold_until",
 			"position": 16,
 			"type": "timestamp with time zone",
 			"notNull": false,
@@ -10066,8 +10066,18 @@
 		{
 			"kind": "column",
 			"table": "fleet_connections",
-			"name": "last_error",
+			"name": "last_success_at",
 			"position": 17,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "fleet_connections",
+			"name": "last_error",
+			"position": 18,
 			"type": "text",
 			"notNull": false,
 			"default": null,
@@ -10077,7 +10087,7 @@
 			"kind": "column",
 			"table": "fleet_connections",
 			"name": "last_error_at",
-			"position": 18,
+			"position": 19,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -10087,7 +10097,7 @@
 			"kind": "column",
 			"table": "fleet_connections",
 			"name": "created_at",
-			"position": 19,
+			"position": 20,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -10097,7 +10107,7 @@
 			"kind": "column",
 			"table": "fleet_connections",
 			"name": "updated_at",
-			"position": 20,
+			"position": 21,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,

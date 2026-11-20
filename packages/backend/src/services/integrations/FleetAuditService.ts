@@ -53,6 +53,31 @@ export interface FleetAuditServiceApi {
 	readonly pollAll: Effect.Effect<FleetAuditPollResult, IntegrationsPersistenceError>
 }
 
+/**
+ * The gaps still open after a read: the old ones not filled, plus ids skipped between the
+ * previous cursor and the new one, kept while a read can still reach them.
+ */
+export const gapsAfter = (
+	gaps: ReadonlySet<number>,
+	written: ReadonlyArray<{ readonly id: number }>,
+	fresh: ReadonlyArray<{ readonly id: number }>,
+	cursor: number | null,
+	next: number | null,
+): ReadonlySet<number> => {
+	if (next === null) return new Set()
+	const seen = new Set(Arr.map(written, (activity) => activity.id))
+	const lowest = cursor ?? Math.min(...Arr.map(fresh, (activity) => activity.id))
+	// Only ids a later read can still reach are worth remembering.
+	const from = Math.max(lowest + 1, next - OVERLAP_IDS + 1)
+	const skipped = from < next ? Arr.range(from, next - 1) : []
+	return new Set(
+		Arr.filter(
+			Arr.appendAll(Arr.fromIterable(gaps), skipped),
+			(id) => !seen.has(id) && id > next - OVERLAP_IDS,
+		),
+	)
+}
+
 /** The org's name for its server, as the trail's `account`. */
 const accountOf = (row: FleetConnectionRow) => row.organizationName ?? new URL(row.baseUrl).host
 
@@ -136,6 +161,7 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 				const since = DateTime.formatIso(DateTime.makeUnsafe(now - FIRST_READ_MS))
 				const step = (
 					cursor: number | null,
+					gaps: ReadonlySet<number>,
 					pages: number,
 					events: number,
 				): Effect.Effect<
@@ -144,34 +170,41 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 				> =>
 					Effect.gen(function* () {
 						if (pages >= MAX_PAGES) return events
-						// Ids can commit out of order, so each read reaches back a little; a re-read event writes the same row.
+						// Reaching back over the gaps finds an id that committed after a higher one.
 						const page = yield* FleetApi.listActivities(fleet, {
 							perPage: PAGE_SIZE,
 							...(cursor === null ? { since } : { after: Math.max(0, cursor - OVERLAP_IDS) }),
 						})
-						const floor = cursor === null ? null : cursor - OVERLAP_IDS
-						const window = Arr.filter(
-							page.activities ?? [],
-							(activity) => floor === null || activity.id > floor,
+						const activities = page.activities ?? []
+						// Each event is written once: new ids, and gaps that have now appeared.
+						const fresh = Arr.filter(
+							activities,
+							(activity) => cursor === null || activity.id > cursor,
 						)
+						const filled = Arr.filter(activities, (activity) => gaps.has(activity.id))
+						const toWrite = Arr.appendAll(filled, fresh)
+						if (toWrite.length === 0) return events
 						yield* trail.write(
 							row.orgId,
 							Arr.getSomes(
-								Arr.map(window, (activity) => fleetActivityToEvent(activity, source)),
+								Arr.map(toWrite, (activity) => fleetActivityToEvent(activity, source)),
 							),
 						)
-						const fresh = Arr.filter(
-							window,
-							(activity) => cursor === null || activity.id > cursor,
-						)
-						// Nothing past the cursor: read up, or a server that ignores `after`.
-						if (fresh.length === 0) return events
-						const next = Math.max(...Arr.map(fresh, (activity) => activity.id))
-						const ours = yield* lease.write({ activityCursor: next, updatedAt: now })
-						if (!ours || page.meta?.has_next_results !== true) return events + fresh.length
-						return yield* step(next, pages + 1, events + fresh.length)
+						const next =
+							fresh.length === 0
+								? cursor
+								: Math.max(...Arr.map(fresh, (activity) => activity.id))
+						const nextGaps = gapsAfter(gaps, toWrite, fresh, cursor, next)
+						const ours = yield* lease.write({
+							activityCursor: next,
+							activityGaps: Arr.fromIterable(nextGaps),
+							updatedAt: now,
+						})
+						if (!ours || fresh.length === 0 || page.meta?.has_next_results !== true)
+							return events + toWrite.length
+						return yield* step(next, nextGaps, pages + 1, events + toWrite.length)
 					})
-				return yield* step(row.activityCursor, 0, 0)
+				return yield* step(row.activityCursor, new Set(row.activityGaps ?? []), 0, 0)
 			})
 
 			const pollClaimed = Effect.fn("FleetAuditService.pollServer")(function* (lease: FleetLease) {

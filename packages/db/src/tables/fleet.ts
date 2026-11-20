@@ -1,5 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgId, UserId } from "@maple/primitives"
+import { Schema } from "effect"
 
 /**
  * One Fleet server per Maple org, read with an API token (AES-GCM, bound to the org and the
@@ -24,6 +25,13 @@ export const FleetConnections = PG.table("fleet_connections", {
 		licenseTier: PG.column(PG.nullable(PG.text), { name: "license_tier" }),
 		/** The newest activity id stored in the audit log; the next poll reads after it. Null: never read. */
 		activityCursor: PG.column(PG.nullable(PG.int8), { name: "activity_cursor" }),
+		/**
+		 * Ids below the cursor not seen yet: an id can commit after a higher one. The next reads
+		 * write them if they appear, and drop them once they fall out of the overlap.
+		 */
+		activityGaps: PG.column(PG.nullable(PG.jsonb(Schema.Array(Schema.Number))), {
+			name: "activity_gaps",
+		}),
 		connectedByUserId: PG.column(PG.brand(PG.text, UserId), { name: "connected_by_user_id" }),
 		/** Set when Fleet rejected the token; polling stops until a new token is saved. */
 		authFailedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "auth_failed_at" }),

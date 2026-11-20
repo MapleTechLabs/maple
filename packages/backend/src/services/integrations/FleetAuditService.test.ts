@@ -5,7 +5,7 @@ import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
-import { FleetAuditService } from "./FleetAuditService"
+import { FleetAuditService, gapsAfter } from "./FleetAuditService"
 import { FleetConnectionService } from "./FleetConnectionService"
 import { type FakeFleet, type FakeFleetActivity, fakeFleetDeps, makeFakeFleet } from "./fleet/fake-fleet"
 
@@ -225,10 +225,23 @@ describe("FleetAuditService", () => {
 			Effect.gen(function* () {
 				yield* connect
 				yield* pollAll
+				// A quiet tick writes nothing again, so detections never count an event twice.
+				const written = trail.written.length
+				assert.strictEqual((yield* pollAll).events, 0)
+				assert.strictEqual(trail.written.length, written)
+
 				world.activities.push(activityAt(11, "wiped_host"))
+				assert.strictEqual((yield* pollAll).events, 1)
 				yield* pollAll
-				assert.isTrue(
-					Arr.some(trail.written, ({ event }) => event.providerEventId === "fleet.example.com:11"),
+				assert.deepStrictEqual(
+					Arr.map(
+						Arr.filter(
+							trail.written,
+							({ event }) => event.providerEventId === "fleet.example.com:11",
+						),
+						({ event }) => event.action,
+					),
+					["wiped_host"],
 				)
 			}),
 		)
@@ -275,5 +288,21 @@ describe("FleetAuditService", () => {
 				assert.isNull((yield* row(testDb))?.activity_cursor)
 			}),
 		)
+	})
+
+	describe("gapsAfter", () => {
+		const ids = (...values: ReadonlyArray<number>) => Arr.map(values, (id) => ({ id }))
+
+		it("remembers ids skipped below the new cursor, and forgets them once filled", () => {
+			const open = gapsAfter(new Set(), ids(10, 12, 15), ids(10, 12, 15), 9, 15)
+			assert.deepStrictEqual(Arr.fromIterable(open).sort(), [11, 13, 14])
+			const after = gapsAfter(open, ids(13, 16), ids(16), 15, 16)
+			assert.deepStrictEqual(Arr.fromIterable(after).sort(), [11, 14])
+		})
+
+		it("drops gaps a read can no longer reach", () => {
+			const open = gapsAfter(new Set([3]), ids(40), ids(40), 30, 40)
+			assert.isFalse(open.has(3))
+		})
 	})
 })
