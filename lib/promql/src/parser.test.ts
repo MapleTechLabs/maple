@@ -65,6 +65,10 @@ describe("parse", () => {
 			args: [{}, { value: "d_a" }, { value: "-" }, { value: "s_1" }, { value: "s_2" }],
 		})
 		expect(ok('count_values("v.x", x)')).toMatchObject({ param: { value: "v_x" } })
+		expect(ok('count_values(("v.x"), x)')).toMatchObject({ param: { expr: { value: "v_x" } } })
+		expect(ok('label_replace(x, ("dst.a"), "$1", (("src.b")), "(.*)")')).toMatchObject({
+			args: [{}, { expr: { value: "dst_a" } }, {}, { expr: { expr: { value: "src_b" } } }, {}],
+		})
 		expect(ok('x{foo__bar="1"}')).toMatchObject({ matchers: [{}, { name: "foo__bar" }] })
 	})
 

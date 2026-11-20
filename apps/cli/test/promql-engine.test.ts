@@ -331,6 +331,50 @@ const insertOtelRows = (db: Chdb): void => {
 			})),
 		),
 	)
+	const exponentialExport = (
+		method: string,
+		i: number,
+		e: {
+			scale: number
+			offset: number
+			counts: ReadonlyArray<number>
+			flags: number
+			temporality: number
+		},
+	): SqlRow => ({
+		...otelRow("rpc.latency", "ms", API, { "rpc.method": method }, tick(i)),
+		Count: String(Arr.reduce(e.counts, 0, (a, b) => a + b)),
+		Sum: "1",
+		Scale: String(e.scale),
+		ZeroCount: "0",
+		PositiveOffset: String(e.offset),
+		PositiveBucketCounts: `[${Arr.join(Arr.map(e.counts, String), ", ")}]`,
+		NegativeOffset: "0",
+		NegativeBucketCounts: "[]",
+		Flags: String(e.flags),
+		AggregationTemporality: String(e.temporality),
+	})
+	insertRows(db, "metrics_exponential_histogram", [
+		// Delta exports alternating one observation in (1, 2] at scale 0 and one in (4, 2^2.5] at scale 1.
+		...Arr.map(TICKS, (i) =>
+			exponentialExport("shift", i, {
+				...(i % 2 === 0 ? { scale: 0, offset: 0 } : { scale: 1, offset: 4 }),
+				counts: [1],
+				flags: 0,
+				temporality: 1,
+			}),
+		),
+		// A cumulative series whose last export, at tick 40, is a stale marker with no buckets.
+		...Arr.map(Arr.range(0, 40), (i) =>
+			exponentialExport("flaky", i, {
+				scale: 0,
+				offset: 0,
+				counts: i === 40 ? [] : [i, i],
+				flags: i === 40 ? 1 : 0,
+				temporality: 2,
+			}),
+		),
+	])
 }
 
 const series = (
@@ -372,6 +416,24 @@ const otelReference = memorySource([
 	series({ __name__: "weird_gauge", job: "api" }, (i) => WEIRD[i % WEIRD.length] ?? 0),
 	...Arr.flatMap(EXPONENTIAL, exponentialReference),
 ])
+
+/** The alternating delta histogram as cumulative counters at the coarse (scale 0) bounds. */
+const shiftReference = memorySource(
+	Arr.map(
+		[
+			["1.0", () => 0],
+			["2.0", (i: number) => Math.floor(i / 2) + 1],
+			["4.0", (i: number) => Math.floor(i / 2) + 1],
+			["8.0", (i: number) => i + 1],
+			["+Inf", (i: number) => i + 1],
+		] as const,
+		([le, value]) =>
+			series(
+				{ __name__: "rpc_latency_milliseconds_bucket", job: "api", rpc_method: "shift", le },
+				value,
+			),
+	),
+)
 
 /** The delta sum as the running counter rate functions read it. */
 const countersReference = memorySource([
@@ -548,17 +610,46 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 
 	test("an exponential histogram has le buckets histogram_quantile reads", () => {
 		for (const query of [
-			"rpc_latency_milliseconds_bucket",
-			"rpc_latency_milliseconds_count",
-			"sum by (le) (rate(rpc_latency_milliseconds_bucket[5m]))",
-			"histogram_quantile(0.5, rate(rpc_latency_milliseconds_bucket[5m]))",
-			"histogram_quantile(0.9, sum by (le) (rate(rpc_latency_milliseconds_bucket[5m])))",
+			'rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}',
+			'rpc_latency_milliseconds_count{rpc_method=~"get|put"}',
+			'sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m]))',
+			'histogram_quantile(0.5, rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m]))',
+			'histogram_quantile(0.9, sum by (le) (rate(rpc_latency_milliseconds_bucket{rpc_method=~"get|put"}[5m])))',
 		])
 			expectOtel(query)
 		expectOtel(
 			'count(rate({"rpc.latency_bucket", rpc_method="get"}[5m]))',
 			'count(rate(rpc_latency_milliseconds_bucket{rpc_method="get"}[5m]))',
 		)
+	})
+
+	test("exponential bounds stay complete when the scale and offset shift between delta exports", () => {
+		const shift = 'rpc_latency_milliseconds_bucket{rpc_method="shift"}'
+		expectOtel(`rate(${shift}[5m])`, `rate(${shift}[5m])`, shiftReference)
+		expectOtel(
+			`histogram_quantile(0.5, sum by (le) (rate(${shift}[5m])))`,
+			`histogram_quantile(0.5, sum by (le) (rate(${shift}[5m])))`,
+			shiftReference,
+		)
+	})
+
+	test("a stale exponential export ends every bucket series", () => {
+		const count = (t: number, pushdown: boolean) => {
+			const got = sqlRun(
+				db,
+				otelCatalog,
+				'count(rpc_latency_milliseconds_bucket{rpc_method="flaky"})',
+				{ startMs: t, endMs: t, stepMs: 0 },
+				pushdown,
+				ORG_OTEL,
+			)
+			if (Result.isFailure(got)) throw new Error(got.failure)
+			return Arr.map(flatten(got.success), ([, , v]) => v)
+		}
+		for (const pushdown of [false, true]) {
+			expect(count(tick(39) + 10_000, pushdown)).toEqual([4])
+			expect(count(tick(41), pushdown)).toEqual([])
+		}
 	})
 
 	test("a no-recorded-value point ends the series instead of being looked back past", () => {

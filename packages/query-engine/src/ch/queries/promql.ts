@@ -105,14 +105,11 @@ const metricTable = (name: PromqlMetricTable) =>
 	})
 
 /**
- * An exponential histogram's buckets as classic cumulative `le` bounds: positive bucket i ends at
- * base^(offset + i + 1), base = 2^(2^-scale). The zero bucket (and any negative values) sits at the
- * first positive bucket's lower edge, which bounds the zero threshold the table does not store.
+ * An exponential export's own bounds for series discovery: positive bucket i ends at
+ * base^(offset + i + 1), base = 2^(2^-scale), from its lowest edge. Reads use `exponentialPair`.
  */
 const EXPONENTIAL_BOUNDS =
 	"arrayPushBack(arrayMap(i -> exp2((PositiveOffset + i) * exp2(-Scale)), range(length(PositiveBucketCounts) + 1)), inf)"
-const EXPONENTIAL_COUNTS =
-	"arrayPushBack(arrayCumSum(arrayConcat([arraySum(NegativeBucketCounts) + ZeroCount], PositiveBucketCounts)), arraySum(NegativeBucketCounts) + ZeroCount + arraySum(PositiveBucketCounts))"
 
 /** Every bucket bound of a histogram row, `+Inf` last; `undefined` for tables without buckets. */
 export const bucketBoundsSql = (tableName: PromqlMetricTable): string | undefined => {
@@ -128,15 +125,13 @@ export const bucketsValidSql = (tableName: PromqlMetricTable): string =>
 /** The sample of one stored row as `[le, value]`; histogram buckets expand into one row per bound. */
 const samplePair = (tableName: PromqlMetricTable, component: PromqlComponent) => {
 	switch (component) {
-		case "bucket": {
-			const counts =
-				tableName === "metrics_exponential_histogram"
-					? EXPONENTIAL_COUNTS
-					: "arrayCumSum(BucketCounts)"
-			return sql(T.array(T.float64))`arrayJoin(arrayMap((b, c) -> [b, toFloat64(c)], ${sql.raw(
-				bucketBoundsSql(tableName) ?? "[inf]",
-			)}, ${sql.raw(counts)}))`
-		}
+		case "bucket":
+			// Exponential buckets expand after the scan, once the series' scale and range are known.
+			return tableName === "metrics_exponential_histogram"
+				? sql(T.array(T.float64))`[0, 0]`
+				: sql(
+						T.array(T.float64),
+					)`arrayJoin(arrayMap((b, c) -> [b, toFloat64(c)], arrayPushBack(ExplicitBounds, inf), arrayCumSum(BucketCounts)))`
 		case "count":
 			return sql(T.array(T.float64))`[0, toFloat64(Count)]`
 		case "sum":
@@ -154,6 +149,87 @@ const isDeltaExpr = (tableName: PromqlMetricTable) =>
 const validSampleCond = (tableName: PromqlMetricTable, component: PromqlComponent) =>
 	component === "bucket" ? sql.cond`${sql.raw(bucketsValidSql(tableName))}` : undefined
 
+const isExponentialBuckets = (opts: PromqlSelectorOpts): boolean =>
+	opts.table === "metrics_exponential_histogram" && opts.component === "bucket"
+
+/**
+ * What an exponential histogram needs to read as classic `_bucket` series: its buckets, and over
+ * the series in the read its coarsest scale m and the base-2 exponents of its lowest and highest
+ * bucket edges. Every export is then brought to scale m (exact: coarse bounds are a subset of
+ * fine ones) and emits its cumulative count at every bound the series needs (`exponentialPair`),
+ * so each bound stays complete when the occupied range shifts, and a stale export marks them all.
+ */
+const exponentialColumns = (
+	opts: PromqlSelectorOpts,
+	$: PromqlLabelColumns & { readonly MetricName: CH.Expr<string>; readonly MetricUnit: CH.Expr<string> },
+) => {
+	if (!isExponentialBuckets(opts))
+		return {
+			scale: sql(T.int64)`toInt64(0)`,
+			offset: sql(T.int64)`toInt64(0)`,
+			counts: sql(T.array(T.float64))`emptyArrayFloat64()`,
+			below: sql(T.float64)`toFloat64(0)`,
+			m: sql(T.int64)`toInt64(0)`,
+			lowExp: sql(T.float64)`toFloat64(0)`,
+			highExp: sql(T.float64)`toFloat64(0)`,
+		}
+	const series = sql`PARTITION BY cityHash64(${$.MetricName}, ${$.MetricUnit}, ${labelSetExpr($, true)})`
+	const occupied = sql.raw("length(PositiveBucketCounts) > 0")
+	return {
+		scale: sql(T.int64)`toInt64(Scale)`,
+		offset: sql(T.int64)`toInt64(PositiveOffset)`,
+		counts: sql(T.array(T.float64))`arrayMap(c -> toFloat64(c), PositiveBucketCounts)`,
+		// Negative values and the zero bucket lie below every positive bound.
+		below: sql(T.float64)`toFloat64(arraySum(NegativeBucketCounts) + ZeroCount)`,
+		m: sql(T.int64)`toInt64(min(Scale) OVER (${series}))`,
+		lowExp: sql(T.float64)`minIf(PositiveOffset * exp2(-Scale), ${occupied}) OVER (${series})`,
+		highExp: sql(
+			T.float64,
+		)`maxIf((PositiveOffset + length(PositiveBucketCounts)) * exp2(-Scale), ${occupied}) OVER (${series})`,
+	}
+}
+
+/** One export's cumulative counts at the bounds 2^(k*2^-m) from below its lowest edge to above its highest. */
+const exponentialPair = ($: {
+	readonly scale: CH.Expr<number>
+	readonly offset: CH.Expr<number>
+	readonly counts: CH.Expr<ReadonlyArray<number>>
+	readonly below: CH.Expr<number>
+	readonly m: CH.Expr<number>
+	readonly lowExp: CH.Expr<number>
+	readonly highExp: CH.Expr<number>
+}) => {
+	const kLo = sql`toInt64(floor(${$.lowExp} * exp2(${$.m})))`
+	const kHi = sql`toInt64(ceil(${$.highExp} * exp2(${$.m})))`
+	const ks = sql`arrayMap(x -> ${kLo} + toInt64(x), range(toUInt64(greatest(${kHi} - ${kLo} + 1, 0))))`
+	const atBound = sql`${$.below} + arraySum(arrayMap((c, j) -> if(${$.offset} + j - 1 < k * exp2(${$.scale} - ${$.m}), c, 0), ${$.counts}, arrayEnumerate(${$.counts})))`
+	return sql(
+		T.array(T.float64),
+	)`arrayJoin(arrayPushBack(arrayMap(k -> [exp2(k * exp2(-${$.m})), ${atBound}], ${ks}), [inf, ${$.below} + arraySum(${$.counts})]))`
+}
+
+/** The scan's WHERE: org, stored metrics, the read window and the pushed-down label matchers. */
+const scanConditions = (
+	opts: PromqlSelectorOpts,
+	$: PromqlLabelColumns & {
+		readonly OrgId: CH.Expr<string>
+		readonly MetricName: CH.Expr<string>
+		readonly MetricUnit: CH.Expr<string>
+		readonly TimeUnix: CH.Expr<unknown>
+	},
+) => [
+	sql.cond`${$.OrgId} = ${orgIdParam}`,
+	CH.inList($.MetricName, Arr.dedupe(Arr.map(opts.targets, (t) => t.metricName))),
+	sql.cond`(${$.MetricName}, ${$.MetricUnit}) IN (${sql.join(
+		Arr.map(opts.targets, (t) => sql`(${t.metricName}, ${t.unit})`),
+		", ",
+	)})`,
+	sql.cond`${$.TimeUnix} > fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
+	sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
+	validSampleCond(opts.table, opts.component),
+	...opts.conditions($),
+]
+
 const scanQuery = (opts: PromqlSelectorOpts) =>
 	from(metricTable(opts.table))
 		.select(($) => ({
@@ -167,26 +243,29 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 			// A no-recorded-value point (a failed scrape) is a stale marker, not a sample.
 			stale: sql(T.uint8)`bitAnd(Flags, 1)`,
 			pair: samplePair(opts.table, opts.component),
+			...exponentialColumns(opts, $),
 		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.MetricName.in_(...Arr.dedupe(Arr.map(opts.targets, (t) => t.metricName))),
-			sql.cond`(${$.MetricName}, ${$.MetricUnit}) IN (${sql.join(
-				Arr.map(opts.targets, (t) => sql`(${t.metricName}, ${t.unit})`),
-				", ",
-			)})`,
-			sql.cond`${$.TimeUnix} > fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
-			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
-			validSampleCond(opts.table, opts.component),
-			...opts.conditions($),
-		])
+		.where(($) => scanConditions(opts, $))
 
 /**
  * The series key: the series' resolved labels and nothing else, so rows that differ only in a
  * value the labels hide (a dropped resource key, an overridden or empty one) stay one series.
  */
+/** Each sample as `[le, value]`: an exponential export expands into its bounds here, once. */
+const sampledQuery = (opts: PromqlSelectorOpts) =>
+	fromQuery(scanQuery(opts), "scan").select(($) => ({
+		MetricName: $.MetricName,
+		ServiceName: $.ServiceName,
+		Attributes: $.Attributes,
+		ResourceAttributes: $.ResourceAttributes,
+		t: $.t,
+		isDelta: $.isDelta,
+		stale: $.stale,
+		pair: isExponentialBuckets(opts) ? exponentialPair($) : $.pair,
+	}))
+
 const keyedQuery = (opts: PromqlSelectorOpts) =>
-	fromQuery(scanQuery(opts), "scan")
+	fromQuery(sampledQuery(opts), "sampled")
 		.select(($) => ({
 			sk: sql(
 				T.uint64,

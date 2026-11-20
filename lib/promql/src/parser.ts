@@ -111,13 +111,18 @@ const LABEL_ARGS = new Map<string, { readonly at: ReadonlyArray<number>; readonl
 	["sort_by_label_desc", { at: [], from: 1 }],
 ])
 
+/** A string argument that names a label, escaped through any parentheses around it. */
+const escapeLabelArg = (arg: Expr): Expr => {
+	if (arg.type === "StringLiteral") return { ...arg, value: escapeLabelName(arg.value) }
+	if (arg.type === "Paren") return { ...arg, expr: escapeLabelArg(arg.expr) }
+	return arg
+}
+
 const escapeLabelArgs = (func: string, args: ReadonlyArray<Expr>): Expr[] => {
 	const spec = LABEL_ARGS.get(func)
 	return args.map((arg, i) =>
-		spec !== undefined &&
-		arg.type === "StringLiteral" &&
-		(spec.at.includes(i) || (spec.from !== undefined && i >= spec.from))
-			? { ...arg, value: escapeLabelName(arg.value) }
+		spec !== undefined && (spec.at.includes(i) || (spec.from !== undefined && i >= spec.from))
+			? escapeLabelArg(arg)
 			: arg,
 	)
 }
@@ -476,8 +481,8 @@ class Converter {
 				op,
 				expr,
 				param:
-					op === "count_values" && first?.type === "StringLiteral"
-						? { ...first, value: escapeLabelName(first.value) }
+					op === "count_values" && first !== undefined
+						? escapeLabelArg(first)
 						: wantsParam
 							? first
 							: undefined,
