@@ -347,7 +347,17 @@ const policyRows = (
 							h,
 							{
 								onClick: Message.ToggledPolicy({ key }),
-								label: `${isExpanded ? "Hide" : "Show"} failing devices: ${policy.name}`,
+								// The label replaces the row's content for a screen reader, so it carries what the row shows.
+								label: Arr.join(
+									[
+										`${isExpanded ? "Hide" : "Show"} failing devices: ${policy.name}`,
+										...(policy.critical ? ["critical"] : []),
+										...(tag === null ? [] : [tag]),
+										failingLabel(policy),
+										platformLabel(policy.platform),
+									],
+									", ",
+								),
 								className:
 									"focus-visible:ring-ring flex min-h-10 w-full items-center gap-2 px-2.5 py-2 text-left focus-visible:ring-1 focus-visible:outline-none focus-visible:ring-inset",
 								attributes: [h.AriaExpanded(isExpanded), h.AriaControls(detailId)],

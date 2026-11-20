@@ -116,7 +116,7 @@ describe("security devices", () => {
 			{ update: pageUpdate, view },
 			given(loaded(premiumDevices(NOW))),
 			expectView(role("link", { name: "mbp-anna" })).toBeAbsent(),
-			click(role("button", { name: "Show failing devices: Disk encryption enabled" })),
+			click(role("button", { name: /^Show failing devices: Disk encryption enabled, critical, 7 of/ })),
 			expectView(role("link", { name: "mbp-anna" })).toHaveAttr(
 				"href",
 				"https://fleet.acme.dev/hosts/100",
@@ -126,7 +126,7 @@ describe("security devices", () => {
 				"href",
 				"https://fleet.acme.dev/policies/12",
 			),
-			click(role("button", { name: "Hide failing devices: Disk encryption enabled" })),
+			click(role("button", { name: /^Hide failing devices: Disk encryption enabled, critical, 7 of/ })),
 			expectView(role("link", { name: "mbp-anna" })).toBeAbsent(),
 		)
 	})
@@ -184,12 +184,21 @@ describe("security devices", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(twoSourceDevices(NOW))),
-			click(nth(all.role("button", { name: "Show failing devices: Disk encryption enabled" }), 1)),
+			// Each row names its source, so the EU one is reachable by name alone.
+			click(
+				role("button", {
+					name: /^Show failing devices: Disk encryption enabled, critical, Acme EU, 3 devices failing/,
+				}),
+			),
 			expectView(role("link", { name: "Open the policy in Fleet" })).toHaveAttr(
 				"href",
 				"https://fleet-eu.acme.dev/policies/12",
 			),
-			expectView(role("button", { name: "Show failing devices: Disk encryption enabled" })).toExist(),
+			expectView(
+				role("button", {
+					name: /^Show failing devices: Disk encryption enabled, critical, Acme, 7 of/,
+				}),
+			).toExist(),
 		)
 	})
 
