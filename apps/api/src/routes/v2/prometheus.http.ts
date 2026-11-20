@@ -69,6 +69,26 @@ const errorResponse = (type: PrometheusErrorType, message: string) =>
 		HttpServerResponse.jsonUnsafe(errorBody(type, message), { status: errorStatus(type) }),
 	)
 
+/** A 503 answer whose diagnosis goes to the span, the error log and error tracking, as every API failure. */
+const recorded503 = <E extends { readonly _tag: string; readonly message: string }>(
+	error: E,
+	summary: string,
+	type: PrometheusErrorType,
+	message: string,
+) =>
+	Effect.andThen(
+		recordRenderedFailure({
+			group: "prometheus",
+			operation: "read",
+			errorType: error._tag,
+			summary,
+			message: error.message,
+			status: 503,
+			cause: error,
+		}),
+		errorResponse(type, message),
+	)
+
 /** A query error as Prometheus' error envelope; warehouse failures never leak their diagnostics. */
 const toErrorResponse = <E extends { readonly _tag: string; readonly message: string }>(error: E) => {
 	switch (error._tag) {
@@ -77,12 +97,19 @@ const toErrorResponse = <E extends { readonly _tag: string; readonly message: st
 		case "@maple/backend/promql/PromqlExecutionError":
 			return errorResponse("execution", error.message)
 		case "@maple/api/prometheus/PrometheusTimeoutError":
-			return errorResponse("timeout", error.message)
+			return recorded503(
+				error,
+				"Prometheus API query hit its timeout parameter",
+				"timeout",
+				error.message,
+			)
 		default:
 			// A query over the store's time or memory budget is the query's fault: say how to shrink it.
 			if (isQuotaExceeded(error)) {
 				return error.setting === "max_execution_time"
-					? errorResponse(
+					? recorded503(
+							error,
+							"Prometheus API query over the metric store's time budget",
 							"timeout",
 							"query timed out in the metric store; narrow the selector, shorten the range or use a larger step",
 						)
@@ -91,18 +118,12 @@ const toErrorResponse = <E extends { readonly _tag: string; readonly message: st
 							"query needs more memory than the metric store allows; narrow the selector, aggregate with sum by (...) or use a larger step",
 						)
 			}
-			// The client sees a generic 503; the span and log carry the diagnosis, as for every API failure.
-			return Effect.andThen(
-				recordRenderedFailure({
-					group: "prometheus",
-					operation: "read",
-					errorType: error._tag,
-					summary: "Prometheus API warehouse read failed",
-					message: error.message,
-					status: 503,
-					cause: error,
-				}),
-				errorResponse("unavailable", "the metric store is unavailable, try again"),
+			// The client sees a generic 503; the span and log carry the diagnosis.
+			return recorded503(
+				error,
+				"Prometheus API warehouse read failed",
+				"unavailable",
+				"the metric store is unavailable, try again",
 			)
 	}
 }
