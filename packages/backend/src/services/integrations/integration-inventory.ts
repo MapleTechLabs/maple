@@ -23,6 +23,7 @@ import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import { type SourceHealthResult, worstSourceStatus } from "@maple/domain/source-health"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { fleetServerName } from "./fleet/naming"
 
 const STATUS_RANK = {
 	disconnected: 0,
@@ -548,7 +549,7 @@ const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntr
 									: (connection.lastError ?? "Reading Fleet failed"),
 					}
 	return entry("fleet", now, {
-		account: connection.organizationName ?? new URL(connection.baseUrl).host,
+		account: fleetServerName(connection),
 		connectedAt: connection.createdAt,
 		own,
 		resources: [

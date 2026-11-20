@@ -290,6 +290,30 @@ describe("FleetAuditService", () => {
 			}),
 		)
 	})
+	it.effect("keeps reading a server that ignores the cursor past a full page", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeFleet({
+			activities: Arr.makeBy(600, (index) => activityAt(index + 1)),
+			ignoresAfter: true,
+		})
+		const trail: Trail = { written: [], failing: false }
+		return run(
+			testDb,
+			world,
+			trail,
+			Effect.gen(function* () {
+				yield* connect
+				// The first page is the oldest 500; the server then answers from id 1 again, so the
+				// rest comes from its newest page.
+				assert.strictEqual((yield* pollAll).events, 600)
+				world.activities = Arr.appendAll(world.activities, [activityAt(601), activityAt(602)])
+				assert.strictEqual((yield* pollAll).events, 2)
+				const ids = Arr.map(trail.written, ({ event }) => event.providerEventId)
+				assert.strictEqual(new Set(ids).size, ids.length)
+			}),
+		)
+	})
+
 	it.effect("starts the feed over when the org switches to another server", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({ activities: [activityAt(1)] })
