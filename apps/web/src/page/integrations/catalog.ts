@@ -152,7 +152,7 @@ const PROVIDER_COPY = {
 		category: "security",
 		isNew: true,
 		description:
-			"Connect a Fleet server with a read-only API token to bring its admin activity into the audit log.",
+			"Connect a Fleet server with a read-only API token: its admin activity goes to the audit log, its failing policies and vulnerable software to Security, Devices.",
 	},
 } as const satisfies { readonly [K in ProviderId]: ProviderCopy }
 

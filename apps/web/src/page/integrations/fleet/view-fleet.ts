@@ -7,7 +7,9 @@ import * as Field from "@maple/views/ui/field"
 import { input } from "@maple/views/ui/input"
 import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
+import { AppRoute, hrefOf } from "../../../route"
 import { codeBlock } from "../../kit/code-block"
 import { providerBrand } from "../../kit/providers"
 import { relativeTime } from "../../kit/relative-time"
@@ -154,7 +156,9 @@ const notConnectedView = (h: H, model: Model): Html =>
 		brand: BRAND,
 		title: "Connect Fleet",
 		badge: null,
-		summary: ["Bring your Fleet server's admin activity into the audit log."],
+		summary: [
+			"Bring your Fleet server's admin activity into the audit log, and its failing policies and vulnerable software into Security, Devices.",
+		],
 		body: canManage(model) ? [setupHelp(h, model.fleetCard)] : [],
 		actions: canManage(model)
 			? fleetForm(h, model.fleetCard.form, { mode: "connect", canCancel: false })
@@ -236,6 +240,15 @@ const connectedView = (h: H, model: Model, status: FleetIntegrationStatus, timeZ
 				: null,
 		body: [
 			details(h, model, status, timeZone),
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				"Failing policies and vulnerable software are in ",
+				textLink(h, { href: hrefOf(AppRoute.SecurityDevices()) }, ["Security, Devices"]),
+				"; admin activity is in the ",
+				textLink(h, { href: hrefOf(AppRoute.SecurityAuditLog({ search: { provider: "fleet" } })) }, [
+					"audit log",
+				]),
+				".",
+			]),
 			...(hasExtraRole(status)
 				? [
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
