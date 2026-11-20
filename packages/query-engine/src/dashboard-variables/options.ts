@@ -19,6 +19,7 @@ import type { DashboardVariable } from "@maple/domain/http"
 import type {
 	AttributeValuesQuery,
 	LogsFacetsQuery,
+	PromqlLabelValuesQuery,
 	QueryEngineExecuteResponse,
 	TracesFacetsQuery,
 } from "@maple/domain/query-engine"
@@ -76,11 +77,16 @@ const TRACES_FACET_BY_SOURCE = {
 	http_status_code: "httpStatus",
 } as const
 
-export type DashboardVariableOptionsQuery = TracesFacetsQuery | LogsFacetsQuery | AttributeValuesQuery
+export type DashboardVariableOptionsQuery =
+	| TracesFacetsQuery
+	| LogsFacetsQuery
+	| AttributeValuesQuery
+	| PromqlLabelValuesQuery
 
 /**
  * The query-engine request that lists a `query` variable's options — one facet
- * branch or one attribute-values scan, never the full sidebar facet sweep.
+ * branch, one attribute-values scan or one PromQL label discovery, never the
+ * full sidebar facet sweep.
  * `null` for variables whose options are stored (`custom`) or free (`textbox`).
  */
 export function dashboardVariableOptionsQuery(
@@ -88,6 +94,14 @@ export function dashboardVariableOptionsQuery(
 ): DashboardVariableOptionsQuery | null {
 	if (variable.type !== "query") return null
 	const source = variable.source
+	if (source.kind === "promql") {
+		return {
+			kind: "promqlLabelValues",
+			source: "metrics",
+			label: source.label,
+			...(source.match === undefined ? undefined : { match: source.match }),
+		}
+	}
 	if (source.kind === "metric") {
 		return {
 			kind: "attributeValues",
@@ -124,7 +138,7 @@ export function dashboardVariableOptionsFromResult(
 	query: DashboardVariableOptionsQuery,
 	result: QueryEngineExecuteResponse["result"],
 ): string[] {
-	if (query.kind === "attributeValues") {
+	if (query.kind === "attributeValues" || query.kind === "promqlLabelValues") {
 		return result.kind === "attributeValues" ? Arr.map(result.data, (row) => row.value) : []
 	}
 	if (result.kind !== "facets") return []

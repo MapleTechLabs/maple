@@ -49,6 +49,13 @@ export const DashboardQueryVariableSourceSchema = Schema.Union([
 		scope: Schema.Literals(["metric", "resource"]),
 		attributeKey: Schema.String,
 	}),
+	// Values of a Prometheus label, read by the discovery PromQL panels use
+	// (`label/<label>/values?match[]=<match>`). Imported Grafana `label_values`.
+	Schema.Struct({
+		kind: Schema.Literal("promql"),
+		label: Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/u)),
+		match: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4096))),
+	}),
 ])
 export type DashboardQueryVariableSource = typeof DashboardQueryVariableSourceSchema.Type
 

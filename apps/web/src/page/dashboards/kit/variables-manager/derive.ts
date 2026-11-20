@@ -64,6 +64,8 @@ export const sourceSummary = (variable: Variable): string => {
 			return FACET_LABELS[source.facet]
 		case "attribute":
 			return `${source.scope} attribute: ${source.attributeKey === "" ? "…" : source.attributeKey}`
+		case "promql":
+			return `Prometheus label: ${source.label === "" ? "…" : source.label}${source.match === undefined ? "" : ` of ${source.match}`}`
 		case "metric":
 			return `metric ${source.scope} attribute: ${source.attributeKey === "" ? "…" : source.attributeKey} (${source.metricNames.length === 1 ? source.metricNames[0] : `${source.metricNames.length} metrics`})`
 	}
@@ -93,6 +95,14 @@ export const withType = (variable: Variable, type: Variable["type"]): Variable =
 	}
 }
 
+type QuerySource = Extract<Variable, { type: "query" }>["source"]
+
+/** The key a source lists values of: an attribute key, or a Prometheus label. */
+export const sourceKeyOf = (source: QuerySource): string => {
+	if (source.kind === "facet") return ""
+	return source.kind === "promql" ? source.label : source.attributeKey
+}
+
 /** The first problem with a draft, computed live. */
 export const draftError = (
 	draft: Variable,
@@ -104,7 +114,9 @@ export const draftError = (
 		return "Names start with a letter, then letters, digits, or underscores."
 	if (Arr.some(drafts, (other, i) => i !== index && other.name === draft.name))
 		return `Another variable is already named "${draft.name}".`
-	if (draft.type === "query" && draft.source.kind !== "facet" && Str.trim(draft.source.attributeKey) === "")
+	if (draft.type === "query" && draft.source.kind === "promql" && !PROM_LABEL.test(draft.source.label))
+		return "Name the Prometheus label to list values for."
+	if (draft.type === "query" && draft.source.kind !== "facet" && Str.trim(sourceKeyOf(draft.source)) === "")
 		return "Pick the attribute key to list values for."
 	if (draft.type === "query" && draft.source.kind === "metric") {
 		if (Arr.some(draft.source.metricNames, (name) => name === ""))
@@ -115,21 +127,31 @@ export const draftError = (
 }
 
 /** The "Values from" select's value for a query source. */
-export const sourceValueOf = (variable: QueryVariable): string =>
-	variable.source.kind === "facet"
-		? `facet:${variable.source.facet}`
-		: `${variable.source.kind}:${variable.source.scope}`
+export const sourceValueOf = (variable: QueryVariable): string => {
+	const source = variable.source
+	if (source.kind === "facet") return `facet:${source.facet}`
+	return source.kind === "promql" ? "promql:label" : `${source.kind}:${source.scope}`
+}
 
 /** The "Values from" pick applied to a query variable. */
 export const withSourceValue = (variable: QueryVariable, value: string): Variable => {
 	const [kind, detail] = Str.split(":")(value)
 	const source = variable.source
-	const attributeKey = source.kind === "facet" ? "" : source.attributeKey
+	const attributeKey = sourceKeyOf(source)
 	const facet = Arr.findFirst(FACETS, (candidate) => candidate === detail)
 	if (kind === "facet" && Option.isSome(facet))
 		return { ...variable, source: { kind: "facet", facet: facet.value } }
 	if (kind === "attribute" && (detail === "span" || detail === "resource"))
 		return { ...variable, source: { kind: "attribute", scope: detail, attributeKey } }
+	if (kind === "promql")
+		return {
+			...variable,
+			source: {
+				kind: "promql",
+				label: attributeKey,
+				...(source.kind === "promql" && source.match !== undefined ? { match: source.match } : undefined),
+			},
+		}
 	if (kind === "metric" && (detail === "metric" || detail === "resource"))
 		return {
 			...variable,
@@ -150,4 +172,7 @@ export const SOURCE_ITEMS: ReadonlyArray<{ readonly value: string; readonly labe
 	{ value: "attribute:resource", label: "Resource attribute…" },
 	{ value: "metric:metric", label: "Metric attribute…" },
 	{ value: "metric:resource", label: "Metric resource attribute…" },
+	{ value: "promql:label", label: "Prometheus label…" },
 ]
+
+const PROM_LABEL = /^[A-Za-z_][A-Za-z0-9_]*$/u

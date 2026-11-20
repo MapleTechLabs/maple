@@ -562,6 +562,11 @@ const V2DashboardVariableSource = Schema.Union([
 			attributeKey: "attribute_key",
 		}),
 	),
+	Schema.Struct({
+		kind: Schema.Literal("promql"),
+		label: Schema.String,
+		match: optional(Schema.String),
+	}),
 ])
 
 const variableBase = {
