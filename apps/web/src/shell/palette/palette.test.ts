@@ -144,6 +144,7 @@ describe("command palette", () => {
 			"Connect Supabase",
 			"Connect Vercel",
 			"Connect Google Search Console",
+			"Connect Fleet",
 		])
 	})
 
