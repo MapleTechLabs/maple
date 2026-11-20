@@ -190,7 +190,9 @@ const placeholderFor = (
 ): string => {
 	const size = token.text.length
 	if (next?.kind === "ident" && next.start === token.start + size) return `${Str.repeat(size - 1)("0")}1`
-	const isDuration = previous?.text === "[" || previous?.text === ":" || previous?.text === "offset"
+	// A duration needs two characters; a lone `$` stays a name, so every offset still maps back.
+	const isDuration =
+		size >= 2 && (previous?.text === "[" || previous?.text === ":" || previous?.text === "offset")
 	return isDuration ? `${Str.repeat(size - 2)("0")}1m` : `x${Str.repeat(size - 1)("_")}`
 }
 

@@ -111,6 +111,14 @@ describe("promqlParseError", () => {
 		expect(promqlParseError("rate(up[${__interval_ms}ms])")).toBeNull()
 	})
 
+	it("keeps offsets after a lone $: the error inside the half-typed variable is the server's", () => {
+		expect(promqlParseError("sum(x[$]) +* 2")).toBeNull()
+		expect(promqlParseError("sum(x[$a]) +* 2")).toMatchObject({
+			from: 12,
+			message: 'syntax error near "*"',
+		})
+	})
+
 	it("reports an unclosed matcher at the end of the input", () => {
 		expect(promqlParseError('up{job="api"')).toMatchObject({ message: "unexpected end of input" })
 	})
