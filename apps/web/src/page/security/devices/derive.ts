@@ -18,8 +18,6 @@ export type DeviceSourceBrand = Readonly<{
 	connectHref: string
 	/** What the saved credential is called, as in "rejected the saved token". */
 	credential: string
-	/** The connect card's hint on the empty page. */
-	connectHint: string
 	/** Why its CVEs carry no CVSS score or known exploited flag, when they don't. */
 	noScoresNote: string
 	/** The all-clear for policies, saying which ones the source reads. */
@@ -32,8 +30,6 @@ export const DEVICE_SOURCE_BRANDS = {
 		provider: "fleet",
 		connectHref: hrefOf(AppRoute.Integrations({ search: { integration: "fleet" } })),
 		credential: "token",
-		connectHint:
-			"Read-only. Connect your Fleet server with an API-only Observer token; devices show here within a few minutes.",
 		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
 		noFailingPolicies:
 			"Every enrolled device passes every global policy on your Fleet server. Team policies are not read yet.",

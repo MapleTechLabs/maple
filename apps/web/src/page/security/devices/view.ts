@@ -26,13 +26,13 @@ import type { PageViewInputs } from "../../contract"
 import { expandChevron } from "../../kit/expand-chevron"
 import { linkButton } from "@maple/views/ui/button"
 import {
+	type IntegrationBrand,
 	integrationEmpty,
 	integrationEmptyCard,
 	integrationEmptyFeatures,
 	integrationEmptyHint,
 	integrationEmptyMedia,
 } from "../../kit/integration-empty"
-import { providerBrand } from "../../kit/providers"
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem } from "../../kit/stat-rail"
@@ -68,14 +68,31 @@ const external = (h: H) => [h.Target("_blank"), h.Rel("noopener noreferrer")]
 
 const SCORE_TONE = { crit: "error", warn: "warning", neutral: "foreground" } as const
 
-const connectCard = (h: H, brand: DeviceSourceBrand): Html =>
+const connectButton = (h: H, brand: DeviceSourceBrand): Html =>
+	linkButton(h, { href: brand.connectHref }, [
+		`Connect ${brand.name}`,
+		icon(h, "ArrowRightIcon", { size: 14 }),
+	])
+
+/** Not any one source's mark: the card offers every device source Maple reads. */
+const DEVICES_MEDIA: IntegrationBrand = {
+	icon: "LaptopIcon",
+	accent: "var(--muted-foreground)",
+	iconClassName: "text-foreground",
+}
+
+/** One card for every device source: a generic device mark, then a connect button per source. */
+const connectCard = (h: H): Html =>
 	integrationEmptyCard(h, [
-		integrationEmptyMedia(h, providerBrand(brand.provider)),
-		integrationEmptyHint(h, [brand.connectHint]),
-		linkButton(h, { href: brand.connectHref }, [
-			`Connect ${brand.name}`,
-			icon(h, "ArrowRightIcon", { size: 14 }),
+		integrationEmptyMedia(h, DEVICES_MEDIA),
+		integrationEmptyHint(h, [
+			"Connect the tool that manages your devices. Maple reads it with a read-only token, and devices show here within a few minutes.",
 		]),
+		hstack(
+			h,
+			{ gap: "2", wrap: true, justify: "center" },
+			Arr.map(Rec.values(DEVICE_SOURCE_BRANDS), (brand) => connectButton(h, brand)),
+		),
 	])
 
 /** The on-ramp: what the page shows, then one connect card per device source Maple reads. */
@@ -99,7 +116,7 @@ const notConnected = (h: H): Html =>
 				description: "Who changed what in your device management tool, beside Maple's own audit log.",
 			},
 		]),
-		...Arr.map(Rec.values(DEVICE_SOURCE_BRANDS), (brand) => connectCard(h, brand)),
+		connectCard(h),
 	])
 
 const forbidden = (h: H): Html =>
