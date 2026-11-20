@@ -385,6 +385,16 @@ const makeEnv = Effect.gen(function* () {
 			message: "CLICKHOUSE_ACCESS_CLIENT_ID needs CLICKHOUSE_URL with CLICKHOUSE_PROVIDER=clickhouse",
 		})
 	}
+	// The service token rides every request, so it must never cross plain HTTP.
+	if (
+		Option.isSome(env.CLICKHOUSE_ACCESS_CLIENT_ID) &&
+		Option.isSome(env.CLICKHOUSE_URL) &&
+		!Str.startsWith("https://")(Str.toLowerCase(Str.trim(env.CLICKHOUSE_URL.value)))
+	) {
+		return yield* new EnvValidationError({
+			message: "CLICKHOUSE_URL must use https:// when CLICKHOUSE_ACCESS_CLIENT_ID is configured",
+		})
+	}
 
 	const hasTinybirdSigningKey = Option.isSome(env.TINYBIRD_SIGNING_KEY)
 	const hasTinybirdWorkspaceId = Option.isSome(env.TINYBIRD_WORKSPACE_ID)

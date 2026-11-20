@@ -254,6 +254,26 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("refuses an Access service token over plain HTTP", () => {
+		setClientFactory(() => Effect.die("must not build a client"))
+		const layer = buildLayer(createTestDb(trackedDbs), {
+			CLICKHOUSE_URL: "http://ch.customer.example:8123",
+			CLICKHOUSE_PROVIDER: "clickhouse",
+			CLICKHOUSE_ACCESS_CLIENT_ID: "abc.access",
+			CLICKHOUSE_ACCESS_CLIENT_SECRET: "access-secret",
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(makeTenant(), "SELECT 1 WHERE OrgId = 'org_test'"),
+				).pipe(Effect.provide(layer)),
+			)
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) assert.include(Cause.pretty(exit.cause), "must use https://")
+		})
+	})
+
 	it.effect("refuses an Access client id without its secret", () => {
 		setClientFactory(() => Effect.die("must not build a client"))
 		const layer = buildLayer(createTestDb(trackedDbs), {

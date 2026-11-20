@@ -31,7 +31,7 @@ Maple runs user-authored SQL on a ClickHouse server in the server's read-only mo
 
 ### ClickHouse behind Cloudflare Access
 
-An env-level ClickHouse can sit behind a Cloudflare Access application, for example one reached through a Cloudflare Tunnel with no public port. Issue a service token for the application and set `CLICKHOUSE_ACCESS_CLIENT_ID` and `CLICKHOUSE_ACCESS_CLIENT_SECRET`: every query to `CLICKHOUSE_URL` then carries the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers beside the ClickHouse credentials. Both must be set together, and only with `CLICKHOUSE_PROVIDER=clickhouse`; the API refuses to start otherwise. Revoking the token in Access cuts Maple off without touching ClickHouse.
+An env-level ClickHouse can sit behind a Cloudflare Access application, for example one reached through a Cloudflare Tunnel with no public port. Issue a service token for the application and set `CLICKHOUSE_ACCESS_CLIENT_ID` and `CLICKHOUSE_ACCESS_CLIENT_SECRET`: every query to `CLICKHOUSE_URL` then carries the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers beside the ClickHouse credentials. Both must be set together, only with `CLICKHOUSE_PROVIDER=clickhouse` and an `https://` `CLICKHOUSE_URL`; the API refuses to start otherwise. Revoking the token in Access cuts Maple off without touching ClickHouse.
 
 ### Routing precedence
 
