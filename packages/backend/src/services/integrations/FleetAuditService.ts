@@ -29,6 +29,7 @@ import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import { fleetActivityToEvent } from "./fleet/activities"
 import * as FleetApi from "./fleet/api"
+import { fleetServerName } from "./fleet/naming"
 
 const LEASE_MS = 4 * 60_000
 /** How far back a server's first read goes. */
@@ -86,9 +87,6 @@ export const gapsAfter = (
 		),
 	)
 }
-
-/** The org's name for its server, as the trail's `account`. */
-const accountOf = (row: FleetConnectionRow) => row.organizationName ?? new URL(row.baseUrl).host
 
 export class FleetAuditService extends Context.Service<FleetAuditService, FleetAuditServiceApi>()(
 	"@maple/backend/services/integrations/FleetAuditService",
@@ -168,7 +166,7 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 				const { row, now } = lease
 				// Host and path: two servers on one host under different paths keep apart.
 				const source = {
-					account: accountOf(row),
+					account: fleetServerName(row),
 					server: Str.replace(/^https:\/\//, "")(row.baseUrl),
 				}
 				const since = DateTime.formatIso(DateTime.makeUnsafe(now - FIRST_READ_MS))
@@ -184,11 +182,24 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 					Effect.gen(function* () {
 						if (pages >= MAX_PAGES) return events
 						// Reaching back over the gaps finds an id that committed after a higher one.
+						const after = cursor === null ? null : Math.max(0, cursor - OVERLAP_IDS)
 						const page = yield* FleetApi.listActivities(fleet, {
 							perPage: PAGE_SIZE,
-							...(cursor === null ? { since } : { after: Math.max(0, cursor - OVERLAP_IDS) }),
+							...(after === null ? { since } : { after }),
 						})
-						const activities = page.activities ?? []
+						const asked = page.activities ?? []
+						// A server that ignores `after` answers from its oldest id again: past a full page
+						// that never reaches the cursor, so read its newest page instead.
+						const ignoresCursor =
+							after !== null &&
+							asked.length === PAGE_SIZE &&
+							Arr.some(asked, (activity) => activity.id <= after)
+						const activities = ignoresCursor
+							? ((yield* FleetApi.listActivities(fleet, {
+									perPage: PAGE_SIZE,
+									newestFirst: true,
+								})).activities ?? [])
+							: asked
 						// Each event is written once: new ids, and gaps that have now appeared.
 						const fresh = Arr.filter(
 							activities,
@@ -213,7 +224,9 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 							activityGaps: Arr.fromIterable(nextGaps),
 							updatedAt: now,
 						})
-						if (!ours || fresh.length === 0 || page.meta?.has_next_results !== true)
+						// Fleet may leave `meta` out of a cursor read: a full page means there may be more.
+						const more = page.meta?.has_next_results === true || asked.length === PAGE_SIZE
+						if (!ours || fresh.length === 0 || ignoresCursor || !more)
 							return events + toWrite.length
 						return yield* step(next, nextGaps, pages + 1, events + toWrite.length)
 					})
@@ -271,7 +284,6 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 			})
 
 			const pollAll = Effect.gen(function* () {
-				const now = yield* Clock.currentTimeMillis
 				const candidates = yield* dbExecute((db) =>
 					db.run(
 						PG.from(FleetConnections)
@@ -282,7 +294,9 @@ export class FleetAuditService extends Context.Service<FleetAuditService, FleetA
 				const outcomes = yield* Effect.forEach(
 					candidates,
 					(candidate) =>
-						withLease(fleetLease(candidate.id), now, pollClaimed).pipe(
+						// Each server's own clock: servers run four at a time and one can take minutes.
+						Clock.currentTimeMillis.pipe(
+							Effect.flatMap((now) => withLease(fleetLease(candidate.id), now, pollClaimed)),
 							// One server's broken row never stops the others.
 							Effect.catch((error) =>
 								Effect.logWarning("Fleet audit poll failed").pipe(

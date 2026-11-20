@@ -178,13 +178,19 @@ export const getConfig = (fleet: FleetClient) =>
  */
 export const listActivities = (
 	fleet: FleetClient,
-	page: { readonly after?: number; readonly since?: string; readonly perPage: number },
+	page: {
+		readonly after?: number
+		readonly since?: string
+		readonly perPage: number
+		/** Newest first: for a server that ignores `after`. */
+		readonly newestFirst?: boolean
+	},
 ) =>
 	fleet.json(FleetActivitiesPage, {
 		path: "/activities",
 		query: {
 			order_key: "id",
-			order_direction: "asc",
+			order_direction: page.newestFirst === true ? "desc" : "asc",
 			per_page: page.perPage,
 			after: page.after,
 			start_created_at: page.after === undefined ? page.since : undefined,

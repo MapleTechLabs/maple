@@ -49,7 +49,9 @@ const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
 				(after === null || activity.id > Number(after)) &&
 				(start === null || activity.created_at >= start),
 		),
-		Order.mapInput(Order.Number, (activity: FakeFleetActivity) => activity.id),
+		search.get("order_direction") === "desc"
+			? Order.mapInput(Order.flip(Order.Number), (activity: FakeFleetActivity) => activity.id)
+			: Order.mapInput(Order.Number, (activity: FakeFleetActivity) => activity.id),
 	)
 	const page = matching.slice(0, perPage)
 	return {
