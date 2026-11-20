@@ -12,12 +12,10 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
-	Policy.check(
-		permissions,
-		"integrations:manage",
-		(denial) => new OpenRouterKeyForbiddenError({ message: denial.message }),
-	)
+const requireIntegrationsManager = Policy.authorize(
+	"integrations:manage",
+	(denial) => new OpenRouterKeyForbiddenError({ message: denial.message }),
+)
 
 export const HttpOpenRouterCostLive = HttpApiBuilder.group(MapleInternalApi, "openRouterCost", (handlers) =>
 	Effect.gen(function* () {
@@ -27,7 +25,7 @@ export const HttpOpenRouterCostLive = HttpApiBuilder.group(MapleInternalApi, "op
 			.handle("set", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.permissions)
+					yield* requireIntegrationsManager
 					const saved = yield* connections.set(tenant.orgId, tenant.userId, payload.apiKey)
 					yield* recordHttpAudit("cost_source_key.updated", {
 						metadata: { provider: "openrouter", keyLabel: saved.keyLabel },
@@ -38,7 +36,7 @@ export const HttpOpenRouterCostLive = HttpApiBuilder.group(MapleInternalApi, "op
 			.handle("remove", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.permissions)
+					yield* requireIntegrationsManager
 					yield* connections.remove(tenant.orgId)
 					yield* recordHttpAudit("cost_source_key.deleted", {
 						metadata: { provider: "openrouter" },

@@ -251,14 +251,11 @@ export const makeOAuthCompleter = Effect.gen(function* () {
 		)
 	}
 
-	return Effect.fn("OAuthComplete.complete")(function* (
-		request: OAuthCompleteRequest,
-		initiator: OAuthFlowInitiator,
-		permissions: Policy.Grants,
-	) {
-		yield* Effect.annotateCurrentSpan({ orgId: initiator.orgId, "maple.integration.flow": request.flow })
-		yield* Policy.check(
-			permissions,
+	return Effect.fn("OAuthComplete.complete")(function* (request: OAuthCompleteRequest) {
+		const { orgId, userId } = yield* Policy.CurrentActor
+		const initiator: OAuthFlowInitiator = { orgId, userId }
+		yield* Effect.annotateCurrentSpan({ orgId, "maple.integration.flow": request.flow })
+		yield* Policy.authorize(
 			FLOW_PERMISSIONS[request.flow],
 			(denial) => new IntegrationsForbiddenError({ message: denial.message }),
 		)

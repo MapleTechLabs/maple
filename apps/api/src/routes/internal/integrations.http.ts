@@ -143,12 +143,8 @@ const toSearchConsoleStatus = (status: SearchConsoleStatus) =>
 		),
 	})
 
-const requirePermission = (permissions: Policy.Grants, permission: Policy.Permission) =>
-	Policy.check(
-		permissions,
-		permission,
-		(denial) => new IntegrationsForbiddenError({ message: denial.message }),
-	)
+const requirePermission = (permission: Policy.Permission) =>
+	Policy.authorize(permission, (denial) => new IntegrationsForbiddenError({ message: denial.message }))
 
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
@@ -214,16 +210,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 		return (
 			handlers
 				// The caller's own session is the proof: a state only redeems for the user who began it.
-				.handle("oauthComplete", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* completeOAuth(
-							payload,
-							{ orgId: tenant.orgId, userId: tenant.userId },
-							tenant.permissions,
-						)
-					}),
-				)
+				.handle("oauthComplete", ({ payload }) => completeOAuth(payload))
 				.handle("linearStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -233,7 +220,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearFeatures", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						// Like Cloudflare's: switches are set on a connected integration only.
 						const current = yield* linear.getStatus(tenant.orgId)
 						if (!current.connected) {
@@ -251,7 +238,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(LINEAR_CALLBACK_PATH)
 						const result = yield* linear.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -265,7 +252,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const tenant = yield* CurrentTenant.Context
 						// A live read of the workspace, for the alert destination picker: either manager may.
 						if (!Policy.can(tenant.permissions, "alerts:manage")) {
-							yield* requirePermission(tenant.permissions, "integrations:manage")
+							yield* requirePermission("integrations:manage")
 						}
 						const teams = yield* linear.listTeams(tenant.orgId)
 						return new LinearTeamsListResponse({ teams })
@@ -274,7 +261,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const disconnected = yield* linear.disconnect(tenant.orgId)
 						return new LinearDisconnectResponse(disconnected)
 					}),
@@ -289,7 +276,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsoleStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(GOOGLE_CALLBACK_PATH)
 						const result = yield* google.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -302,7 +289,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						// A live read of every property the Google account holds, for the manager's picker.
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const sites = yield* searchConsole.listAvailableSites(tenant.orgId)
 						return new SearchConsoleAvailableSitesResponse({ sites })
 					}),
@@ -310,7 +297,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsoleSaveSites", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						yield* searchConsole.saveSites(tenant.orgId, payload.siteUrls)
 						const status = yield* searchConsole.getStatus(tenant.orgId)
 						return toSearchConsoleStatus(status)
@@ -319,7 +306,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsoleDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* google.disconnect(tenant.orgId)
 						return new SearchConsoleDisconnectResponse(result)
 					}),
@@ -327,7 +314,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("searchConsolePrime", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						// Timing out is ordinary: the lease it drops expires and the cron resumes the import.
 						const summary = yield* Effect.timeoutOption(
 							searchConsoleImport.importOrg(tenant.orgId),
@@ -581,7 +568,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(CLOUDFLARE_CALLBACK_PATH)
 						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -593,7 +580,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareZoneSettings", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						yield* cloudflareAnalytics.setZoneSettings(tenant.orgId, tenant.userId, payload)
 						yield* recordHttpAudit("cloudflare_integration.zones_updated", {
 							metadata: {
@@ -611,7 +598,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareFeatures", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const features = yield* cloudflareAnalytics.setFeatures(
 							tenant.orgId,
 							tenant.userId,
@@ -626,7 +613,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflareDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* cloudflare.disconnect(tenant.orgId)
 						return new CloudflareDisconnectResponse(result)
 					}),
@@ -634,7 +621,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("cloudflarePrime", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						// Discovery (the part that stops the integration looking empty) commits in
 						// the first seconds; the rest spends what call budget it has on the newest
 						// window. Timing out is an ordinary outcome, not a failure — the cron picks
@@ -663,7 +650,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("railwayConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* railway.connect(tenant.orgId, tenant.userId, payload.token)
 					}),
 				)
@@ -671,14 +658,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						// Spends the org's per-token Railway quota, so it needs integrations:manage like connect.
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* railway.sync(tenant.orgId)
 					}),
 				)
 				.handle("railwayDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const disconnected = yield* railway.disconnect(tenant.orgId)
 						return new RailwayDisconnectResponse(disconnected)
 					}),
@@ -692,14 +679,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("fleetConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* fleet.connect(tenant.orgId, tenant.userId, payload)
 					}),
 				)
 				.handle("fleetDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return new FleetDisconnectResponse({
 							disconnected: yield* fleet.disconnect(tenant.orgId),
 						})
@@ -715,7 +702,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(SUPABASE_CALLBACK_PATH)
 						const result = yield* supabaseOAuth.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -728,14 +715,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						// Spends the org's Supabase rate limit, so it needs integrations:manage like connect.
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* supabase.sync(tenant.orgId)
 					}),
 				)
 				.handle("supabaseUpdateProject", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						// Drain first: switching a project from drain to polling turns the drain off before polling on.
 						const status = yield* supabase.updateProject(
 							tenant.orgId,
@@ -757,7 +744,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("supabaseDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const disconnected = yield* supabase.disconnect(tenant.orgId)
 						return new SupabaseDisconnectResponse(disconnected)
 					}),
@@ -770,15 +757,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				)
 				.handle("vercelDiscover", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* vercel.discover(payload.token, payload.teamId)
 					}),
 				)
 				.handle("vercelConnect", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const status = yield* vercel.connect(tenant.orgId, tenant.userId, payload)
 						yield* recordHttpAudit("vercel_integration.connected", {
 							metadata: {
@@ -800,7 +786,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("vercelSettings", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const status = yield* vercel.updateSettings(tenant.orgId, payload)
 						yield* recordHttpAudit("vercel_integration.updated", {
 							metadata: {
@@ -822,14 +808,14 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						// Spends the token's per-user Vercel rate limit, so it needs integrations:manage like connect.
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						return yield* vercel.sync(tenant.orgId)
 					}),
 				)
 				.handle("vercelDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* vercel.disconnect(tenant.orgId)
 						if (result.disconnected) {
 							yield* recordHttpAudit("vercel_integration.disconnected", {
@@ -878,7 +864,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubStart", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const callbackUrl = yield* trustedCallbackUrl(GITHUB_CALLBACK_PATH)
 						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
 							callbackUrl,
@@ -891,7 +877,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSelectInstallation", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const selected = yield* github.selectInstallation(
 							payload.installationId,
 							payload.state,
@@ -906,7 +892,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* github.disconnect(tenant.orgId)
 						return new GithubDisconnectResponse(result)
 					}),
@@ -914,7 +900,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubDeleteRepository", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
 						return new GithubDeleteRepositoryResponse(result)
 					}),
@@ -922,7 +908,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetTrackedBranch", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* github.setTrackedBranch(
 							tenant.orgId,
 							params.repositoryId,
@@ -934,7 +920,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetCiTraces", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* github.setCiTracesEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetCiTracesResponse(result)
 					}),
@@ -942,7 +928,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetAuditLog", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "integrations:manage")
+						yield* requirePermission("integrations:manage")
 						const result = yield* github.setAuditLogEnabled(tenant.orgId, payload.enabled)
 						return new GithubSetAuditLogResponse(result)
 					}),
@@ -950,7 +936,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReview", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "code_review:configure")
+						yield* requirePermission("code_review:configure")
 						// Switching review on for a repository that approves gives Maple that say there.
 						const [settings, stored] = yield* Effect.all([
 							github.getPrReviewSettings(tenant.orgId),
@@ -959,7 +945,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						const autoApprove =
 							mergePrReviewConfig(settings.defaults, stored).autoApprove === true
 						if (payload.enabled && autoApprove) {
-							yield* requirePermission(tenant.permissions, "code_review:auto_approve")
+							yield* requirePermission("code_review:auto_approve")
 						}
 						const result = yield* github.setPrReviewEnabled(
 							tenant.orgId,
@@ -986,7 +972,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "code_review:configure")
+						yield* requirePermission("code_review:configure")
 						const [settings, stored] = yield* Effect.all([
 							github.getPrReviewSettings(tenant.orgId),
 							github.getPrReviewConfig(tenant.orgId, params.repositoryId),
@@ -998,7 +984,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								next: payload.config,
 							})
 						) {
-							yield* requirePermission(tenant.permissions, "code_review:auto_approve")
+							yield* requirePermission("code_review:auto_approve")
 						}
 						const config = yield* github.setPrReviewConfig(
 							tenant.orgId,
@@ -1027,7 +1013,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("githubSetPrReviewSettings", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						yield* requirePermission(tenant.permissions, "code_review:configure")
+						yield* requirePermission("code_review:configure")
 						const stored = yield* github.getPrReviewSettings(tenant.orgId)
 						if (
 							prReviewDefaultsNeedAutoApprove({
@@ -1038,7 +1024,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 								),
 							})
 						) {
-							yield* requirePermission(tenant.permissions, "code_review:auto_approve")
+							yield* requirePermission("code_review:auto_approve")
 						}
 						const settings = yield* github.setPrReviewSettings(
 							tenant.orgId,

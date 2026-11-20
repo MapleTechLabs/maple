@@ -13,12 +13,10 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
 
 // A cost source is a connection like any other: the role that manages integrations manages it.
-const requireIntegrationsManager = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
-	Policy.check(
-		permissions,
-		"integrations:manage",
-		(denial) => new IntegrationsForbiddenError({ message: denial.message }),
-	)
+const requireIntegrationsManager = Policy.authorize(
+	"integrations:manage",
+	(denial) => new IntegrationsForbiddenError({ message: denial.message }),
+)
 
 export const HttpVercelCostLive = HttpApiBuilder.group(MapleInternalApi, "vercelCost", (handlers) =>
 	Effect.gen(function* () {
@@ -35,7 +33,7 @@ export const HttpVercelCostLive = HttpApiBuilder.group(MapleInternalApi, "vercel
 			.handle("add", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.permissions)
+					yield* requireIntegrationsManager
 					const added = yield* sources.add(tenant.orgId, payload.teamId)
 					// Adding what is a source already changed nothing, so it leaves no entry.
 					if (added.created) {
@@ -49,7 +47,7 @@ export const HttpVercelCostLive = HttpApiBuilder.group(MapleInternalApi, "vercel
 			.handle("remove", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireIntegrationsManager(tenant.permissions)
+					yield* requireIntegrationsManager
 					const removed = yield* sources.remove(tenant.orgId)
 					// Removing what is not there changed nothing, so it leaves no entry.
 					if (removed.removed) {
