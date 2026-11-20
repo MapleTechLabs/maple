@@ -91,9 +91,7 @@ const makeHarness = (role: string) => {
 		CurrentTenant.SessionAuthorization,
 		CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect) =>
-				Effect.provideService(
-					httpEffect,
-					CurrentTenant.Context,
+				CurrentTenant.provide(
 					new CurrentTenant.TenantSchema({
 						orgId: ORG_ID,
 						userId: USER_ID,
@@ -101,7 +99,7 @@ const makeHarness = (role: string) => {
 						permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 						authMode: "clerk",
 					}),
-				),
+				)(httpEffect),
 		}),
 	)
 	const routes = HttpApiBuilder.layer(SsoOnlyApi).pipe(

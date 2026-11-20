@@ -13,13 +13,14 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { Context, Effect, Layer, Array as Arr } from "effect"
 import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
 import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools/runtime-services"
-import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
+import { CurrentMcpRequestTenant, CurrentMcpTenant, provideMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { mayReadDataSources } from "./lib/data-sources"
 import { executeRegisteredTool, type McpToolLookup } from "./tools/registry-core"
 import { makeModuleToolLookup, mcpToolTitle } from "./tools/tool-lookup"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 import type { TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { productEventSpanAttributes } from "@maple/domain/tinybird/product-event-attributes"
 
 /**
@@ -210,6 +211,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 			const runtimeServices = Context.omit(
 				CurrentMcpRequestTenant,
 				CurrentMcpTenant,
+				Policy.CurrentActor,
 				Cloudflare.WorkerExecutionContext,
 			)(withoutInvocationContext(buildContext))
 			const sandbox = yield* RepoSandboxService
@@ -246,7 +248,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 					)
 				}
 				const result = yield* callMcpToolUnscoped(tools, name, input, surface).pipe(
-					Effect.provideService(CurrentMcpTenant, tenant),
+					provideMcpTenant(tenant),
 					Effect.provide(runtimeServices),
 				)
 				// Every tool call is a read of (or change to) org data; the entry

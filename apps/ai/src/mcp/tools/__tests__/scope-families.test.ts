@@ -6,12 +6,12 @@ import { describe, expect, it } from "vitest"
 import * as Policy from "@maple/domain/policy"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
-import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
-import { CurrentMcpTenant } from "../../tenant"
+import { Context, Effect, Schema, Array as Arr } from "effect"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const tenantWith = (scopes: ReadonlyArray<string>) =>
-	Layer.succeed(CurrentMcpTenant, {
+	mcpTenantLayer({
 		orgId: Schema.decodeSync(OrgId)("org_scope_families"),
 		userId: Schema.decodeSync(UserId)("user_scope_families"),
 		roles: [Schema.decodeSync(RoleName)("org:admin")],

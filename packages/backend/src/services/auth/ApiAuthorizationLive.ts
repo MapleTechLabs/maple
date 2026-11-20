@@ -84,7 +84,7 @@ export const ApiAuthorizationLive = Layer.effect(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
-							Effect.provideService(CurrentTenant.Context, tenant),
+							CurrentTenant.provide(tenant),
 							Effect.provideService(CurrentAuditActor, {
 								type: "api_key",
 								apiKeyId: resolved.keyId,
@@ -111,7 +111,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					yield* recordImpersonation(audit, request, tenant, "dashboard")
 					yield* checkEndpointAccess(tenant.permissions, options)
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						CurrentTenant.provide(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,

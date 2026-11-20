@@ -51,9 +51,7 @@ const makeHarness = (options: { readonly isDirectoryDown?: boolean } = {}) => {
 		CurrentTenant.SessionAuthorization,
 		CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect) =>
-				Effect.provideService(
-					httpEffect,
-					CurrentTenant.Context,
+				CurrentTenant.provide(
 					new CurrentTenant.TenantSchema({
 						orgId: session.orgId,
 						userId: decodeUser(session.userId),
@@ -61,7 +59,7 @@ const makeHarness = (options: { readonly isDirectoryDown?: boolean } = {}) => {
 						permissions: Policy.grantsOf([decodeRole(session.role)]),
 						authMode: "clerk",
 					}),
-				),
+				)(httpEffect),
 		}),
 	)
 	const directory = Layer.succeed(OrgMembersService, {

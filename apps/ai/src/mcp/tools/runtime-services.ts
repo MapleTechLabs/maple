@@ -52,6 +52,7 @@ import { FetchHttpClient } from "effect/http"
 import { Layer } from "effect"
 import type { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
 import type { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import type { CurrentActor } from "@maple/domain/policy"
 import type { CurrentMcpTenant } from "../tenant"
 
 /**
@@ -127,4 +128,4 @@ export type McpToolRuntimeRequirements =
 	| OrganizationFeatureFlagsService
 
 /** Every service a raw registered MCP handler may require. */
-export type McpToolRequirements = CurrentMcpTenant | McpToolRuntimeRequirements
+export type McpToolRequirements = CurrentMcpTenant | CurrentActor | McpToolRuntimeRequirements

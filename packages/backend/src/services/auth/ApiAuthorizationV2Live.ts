@@ -189,7 +189,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 						yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 						const label = "Device credential"
 						return yield* httpEffect.pipe(
-							Effect.provideService(CurrentTenant.Context, tenant),
+							CurrentTenant.provide(tenant),
 							Effect.provideService(CurrentAuditActor, { type: "user", label, source: "api" }),
 							withAuditedRead(audit, request, options, {
 								orgId: resolved.orgId,
@@ -325,7 +325,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 							Effect.tapError((error) => recordDenied(error.message)),
 						)
 						return yield* httpEffect.pipe(
-							Effect.provideService(CurrentTenant.Context, tenant),
+							CurrentTenant.provide(tenant),
 							Effect.provideService(CurrentAuditActor, {
 								type: "api_key",
 								apiKeyId: resolved.keyId,
@@ -369,7 +369,7 @@ export const ApiAuthorizationV2Live = Layer.effect(
 					const { route } = yield* HttpRouter.RouteContext
 					yield* checkEndpointAccessV2(tenant.permissions, options, route.path)
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						CurrentTenant.provide(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,

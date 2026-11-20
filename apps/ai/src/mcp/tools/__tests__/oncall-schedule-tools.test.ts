@@ -28,9 +28,9 @@ import {
 import { encodePublicId } from "@maple/domain/http/v2"
 import { ListOnCallSchedulesOutput, WhoIsOnCallOutput } from "@maple/domain/mcp-outputs"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const SCHEDULE_ID = "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d"
 const OVERRIDE_ID = "6b5c4d3e-2f10-4b8c-9d8e-7f6a5b4c3d2e"
@@ -107,7 +107,7 @@ const rejectMember = () => {
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],

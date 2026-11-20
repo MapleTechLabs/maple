@@ -7,6 +7,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -33,7 +34,7 @@ const layerFor = (permissions: Policy.Grants) =>
 			Layer.provide(Env.layer),
 			Layer.provide(config),
 		),
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_raw_sql"),
 			userId: Schema.decodeSync(UserId)("user_raw_sql"),
 			roles: [Schema.decodeSync(RoleName)("org:custom")],

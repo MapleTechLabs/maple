@@ -7,7 +7,7 @@ import {
 	ApiSchemaErrors,
 	ApiUnexpectedErrors,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Context, Layer, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -35,7 +35,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 const AuthorizationStubLayer = Layer.succeed(
 	CurrentTenant.SessionAuthorization,
 	CurrentTenant.SessionAuthorization.of({
-		bearer: (httpEffect) => Effect.provideService(httpEffect, CurrentTenant.Context, TENANT),
+		bearer: (httpEffect) => CurrentTenant.provide(TENANT)(httpEffect),
 	}),
 )
 

@@ -19,9 +19,9 @@ import { GetIncidentTimelineOutput, ListAlertSilencesOutput } from "@maple/domai
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const ACTIVE_ID = "a1111111-2222-4333-8444-555555555555"
@@ -62,7 +62,7 @@ interface Seen {
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],

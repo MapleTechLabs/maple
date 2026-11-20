@@ -42,11 +42,11 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
 import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const DEST_ID = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
@@ -179,7 +179,7 @@ interface Seen {
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],

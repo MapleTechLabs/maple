@@ -7,8 +7,8 @@ import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testin
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -44,7 +44,7 @@ const layer = (
 				),
 			),
 		),
-		Layer.succeed(CurrentMcpTenant, tenant(orgId, options.role)),
+		mcpTenantLayer(tenant(orgId, options.role)),
 		Layer.succeed(CurrentAuditActor, "actor" in options ? options.actor : OAUTH_USER),
 	)
 

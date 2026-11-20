@@ -29,6 +29,7 @@ import {
 } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { registerSandboxTools } from "./sandbox"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 /** Every parameter the four tools accept; each test passes the subset its tool reads. */
 interface SandboxToolParams {
@@ -73,13 +74,13 @@ registerSandboxTools({
 	},
 } satisfies McpToolRegistrar)
 
-const tenant = Layer.succeed(CurrentMcpTenant, {
+const tenant = mcpTenantLayer({
 	orgId: Schema.decodeSync(OrgId)("org_tools"),
 	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
-} as CurrentMcpTenant["Service"])
+})
 
 const ok = (stdout: string, exitCode = 0, stderr = ""): SandboxCommandResult => ({
 	exitCode,

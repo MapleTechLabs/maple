@@ -24,9 +24,9 @@ import { ListEscalationChainsOutput } from "@maple/domain/mcp-outputs"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const CHAIN_ID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 const MISSING_ID = "9b8c7d6e-5f4a-4b3c-9d2e-1f0a9b8c7d6e"
@@ -70,7 +70,7 @@ interface Seen {
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
