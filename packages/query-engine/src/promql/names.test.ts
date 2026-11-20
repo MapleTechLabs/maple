@@ -119,13 +119,24 @@ describe("resolveSelectorName", () => {
 				op: "!=",
 				value: "rpc_duration_milliseconds_sum",
 			}),
-		).toEqual(["metrics_exponential_histogram:rpc.duration:count:rpc_duration_milliseconds_count"])
+		).toEqual([
+			"metrics_exponential_histogram:rpc.duration:bucket:rpc_duration_milliseconds_bucket",
+			"metrics_exponential_histogram:rpc.duration:count:rpc_duration_milliseconds_count",
+		])
 	})
 
-	it("has no bucket series for an exponential histogram", () => {
-		expect(resolve(re(".*_bucket"))).not.toContain(
+	it("gives an exponential histogram bucket series", () => {
+		expect(resolve(eq("rpc_duration_milliseconds_bucket"))).toEqual([
 			"metrics_exponential_histogram:rpc.duration:bucket:rpc_duration_milliseconds_bucket",
-		)
-		expect(resolve(re(".*_bucket"))).toHaveLength(2)
+		])
+	})
+
+	it("resolves a histogram's stored name with the component suffixes", () => {
+		expect(resolve(eq("http.server.request.duration_bucket"))).toEqual([
+			"metrics_histogram:http.server.request.duration:bucket:http.server.request.duration_bucket",
+		])
+		expect(resolve(eq("rpc.duration_count"))).toEqual([
+			"metrics_exponential_histogram:rpc.duration:count:rpc.duration_count",
+		])
 	})
 })

@@ -42,6 +42,11 @@ export interface SampleBucket {
 	readonly sumTV: number
 	/** Raw mode only: the sample values in time order (quantile_over_time, smoothing). */
 	readonly values?: ReadonlyArray<number>
+	/**
+	 * The first stale marker after the bucket's last sample and before the series' next sample, if
+	 * any (absent or 0: none). Range functions ignore it; an instant selector ends the series there.
+	 */
+	readonly staleT?: number
 }
 
 export interface SeriesData {
@@ -66,6 +71,11 @@ export interface SelectorRequest {
 	readonly widthMs: number
 	/** Raw mode must also return `values`. */
 	readonly needsValues: boolean
+	/**
+	 * The selector feeds rate, increase or irate: a source storing delta-temporality samples reads
+	 * them as a running counter. Elsewhere it returns the deltas as they are, as Prometheus 3 does.
+	 */
+	readonly accumulateDeltas?: boolean
 }
 
 export interface SelectorData {

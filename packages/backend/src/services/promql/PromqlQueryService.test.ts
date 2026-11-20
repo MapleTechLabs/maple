@@ -41,7 +41,7 @@ const STAT_COLUMNS = [
 	"sum",
 	"min",
 	"max",
-].concat(["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV", "values"])
+].concat(["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV", "staleT", "values"])
 
 describe("PromqlQueryService", () => {
 	it.effect("refuses a widget window that ends before it starts", () =>
@@ -354,7 +354,7 @@ const selectorRow = (attributes: Record<string, string>) => ({
 	),
 	...Rec.fromEntries(
 		Arr.map(
-			["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV"],
+			["sumSquares", "resetSum", "resets", "changes", "sumT", "sumTT", "sumTV", "staleT"],
 			(field) => [field, [0]] as const,
 		),
 	),

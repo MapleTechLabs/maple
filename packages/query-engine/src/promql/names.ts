@@ -147,13 +147,12 @@ export const promNamesOf = (metric: CatalogMetric): ReadonlyArray<PromName> => {
 		}
 		case "histogram":
 		case "exponential_histogram": {
+			// The stored name too, so `{"http.server.request.duration_bucket"}` reads as it is written.
+			// Exponential buckets are converted to cumulative `le` bounds by the source.
+			const histogramBases = unique([...bases, metric.metricName])
 			const suffixed = (suffix: string, component: MetricComponent): ReadonlyArray<PromName> =>
-				Arr.map(bases, (base) => ({ promName: `${base}_${suffix}`, component }))
-			return [
-				...(metric.metricType === "histogram" ? suffixed("bucket", "bucket") : []),
-				...suffixed("count", "count"),
-				...suffixed("sum", "sum"),
-			]
+				Arr.map(histogramBases, (base) => ({ promName: `${base}_${suffix}`, component }))
+			return [...suffixed("bucket", "bucket"), ...suffixed("count", "count"), ...suffixed("sum", "sum")]
 		}
 	}
 }
