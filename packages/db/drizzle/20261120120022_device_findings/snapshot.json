@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "1459f54523f6d6adeab991120e85496677ba78c2d0a777c7e6bb3db66de7b5be",
+	"id": "7f95ffb9ca9e3ff78cd0459c49607b7e90e715e62103a622d93ceea28b8f7d10",
 	"prevIds": [
 		"7748098be2f3a4eab0e92ee966f598c46212797a1cb85ef533f145361dfa1f4c"
 	],
@@ -427,11 +427,37 @@
 		},
 		{
 			"kind": "table",
+			"name": "device_policy_findings",
+			"primaryKey": {
+				"name": "device_policy_findings_pkey",
+				"columns": [
+					"org_id",
+					"source",
+					"connection_id",
+					"policy_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
 			"name": "device_proof_replays",
 			"primaryKey": {
 				"name": "device_proof_replays_pkey",
 				"columns": [
 					"key"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "device_vulnerability_findings",
+			"primaryKey": {
+				"name": "device_vulnerability_findings_pkey",
+				"columns": [
+					"org_id",
+					"source",
+					"connection_id",
+					"cve"
 				]
 			}
 		},
@@ -606,30 +632,6 @@
 				"name": "fleet_connections_pkey",
 				"columns": [
 					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "fleet_policy_findings",
-			"primaryKey": {
-				"name": "fleet_policy_findings_pkey",
-				"columns": [
-					"org_id",
-					"connection_id",
-					"policy_id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "fleet_vulnerability_findings",
-			"primaryKey": {
-				"name": "fleet_vulnerability_findings_pkey",
-				"columns": [
-					"org_id",
-					"connection_id",
-					"cve"
 				]
 			}
 		},
@@ -7699,6 +7701,166 @@
 		},
 		{
 			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "source",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "policy_id",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "description",
+			"position": 5,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "resolution",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "critical",
+			"position": 7,
+			"type": "boolean",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "platform",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "failing_device_count",
+			"position": 9,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "passing_device_count",
+			"position": 10,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "failing_devices",
+			"position": 11,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "counted_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "url",
+			"position": 13,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "first_seen_at",
+			"position": 14,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_policy_findings",
+			"name": "last_seen_at",
+			"position": 15,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "device_proof_replays",
 			"name": "key",
 			"position": 0,
@@ -7712,6 +7874,136 @@
 			"table": "device_proof_replays",
 			"name": "expires_at",
 			"position": 1,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "source",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "connection_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "cve",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "cvss_score",
+			"position": 4,
+			"type": "double precision",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "epss_probability",
+			"position": 5,
+			"type": "double precision",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "known_exploited",
+			"position": 6,
+			"type": "boolean",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "details_link",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "device_count",
+			"position": 8,
+			"type": "integer",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "software",
+			"position": 9,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "url",
+			"position": 10,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "first_seen_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "device_vulnerability_findings",
+			"name": "last_seen_at",
+			"position": 12,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -10170,7 +10462,7 @@
 		{
 			"kind": "column",
 			"table": "fleet_connections",
-			"name": "host_count",
+			"name": "device_count",
 			"position": 25,
 			"type": "integer",
 			"notNull": false,
@@ -10192,256 +10484,6 @@
 			"table": "fleet_connections",
 			"name": "updated_at",
 			"position": 27,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "org_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "connection_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "policy_id",
-			"position": 2,
-			"type": "bigint",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "name",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "description",
-			"position": 4,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "resolution",
-			"position": 5,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "critical",
-			"position": 6,
-			"type": "boolean",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "platform",
-			"position": 7,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "failing_host_count",
-			"position": 8,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "passing_host_count",
-			"position": 9,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "failing_hosts",
-			"position": 10,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "counted_at",
-			"position": 11,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "first_seen_at",
-			"position": 12,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_policy_findings",
-			"name": "last_seen_at",
-			"position": 13,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "org_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "connection_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "cve",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "cvss_score",
-			"position": 3,
-			"type": "double precision",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "epss_probability",
-			"position": 4,
-			"type": "double precision",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "known_exploited",
-			"position": 5,
-			"type": "boolean",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "details_link",
-			"position": 6,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "host_count",
-			"position": 7,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "software",
-			"position": 8,
-			"type": "jsonb",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "first_seen_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "fleet_vulnerability_findings",
-			"name": "last_seen_at",
-			"position": 10,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -22852,18 +22894,6 @@
 		{
 			"kind": "index",
 			"table": "fleet_connections",
-			"name": "fleet_connections_org_id_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "fleet_connections",
 			"name": "fleet_connections_org_idx",
 			"unique": true,
 			"method": "btree",
@@ -24546,38 +24576,6 @@
 			],
 			"foreignTable": "external_data_sources",
 			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "fleet_policy_findings",
-			"name": "fleet_policy_findings_My7oEJHHBVUy_fk",
-			"columns": [
-				"org_id",
-				"connection_id"
-			],
-			"foreignTable": "fleet_connections",
-			"foreignColumns": [
-				"org_id",
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "fleet_vulnerability_findings",
-			"name": "fleet_vulnerability_findings_chCivlNtIwmU_fk",
-			"columns": [
-				"org_id",
-				"connection_id"
-			],
-			"foreignTable": "fleet_connections",
-			"foreignColumns": [
-				"org_id",
 				"id"
 			],
 			"onDelete": "CASCADE",

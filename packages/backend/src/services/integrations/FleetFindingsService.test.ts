@@ -3,7 +3,8 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { Array as Arr, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
+import { DeviceSecurityService } from "@maple/backend/services/device-security/DeviceSecurityService"
 import { FleetConnectionService } from "./FleetConnectionService"
 import { FleetFindingsService } from "./FleetFindingsService"
 import { type FakeFleet, fakeFleetDeps, makeFakeFleet } from "./fleet/fake-fleet"
@@ -19,12 +20,16 @@ const HOUR_MS = 60 * 60_000
 const run = <A, E>(
 	testDb: TestDb,
 	world: FakeFleet,
-	effect: Effect.Effect<A, E, FleetFindingsService | FleetConnectionService>,
+	effect: Effect.Effect<A, E, FleetFindingsService | FleetConnectionService | DeviceSecurityService>,
 ) => {
 	const deps = fakeFleetDeps(testDb, world)
+	const findings = Layer.effect(FleetFindingsService, FleetFindingsService.make).pipe(Layer.provide(deps))
 	return effect.pipe(
 		Effect.provide([
-			Layer.effect(FleetFindingsService, FleetFindingsService.make).pipe(Layer.provide(deps)),
+			Layer.effect(DeviceSecurityService, DeviceSecurityService.make).pipe(
+				Layer.provideMerge(findings),
+				Layer.provide(deps),
+			),
 			Layer.effect(FleetConnectionService, FleetConnectionService.make).pipe(Layer.provide(deps)),
 		]),
 	)
@@ -34,7 +39,17 @@ const connect = FleetConnectionService.use((service) =>
 	service.connect(ORG, USER, { url: "https://fleet.example.com", token: "fleet-api-token-0123456789" }),
 )
 const syncDue = FleetFindingsService.use((service) => service.syncDue)
-const devices = (orgId = ORG) => FleetFindingsService.use((service) => service.devices(orgId))
+const devices = (orgId = ORG) => DeviceSecurityService.use((service) => service.devices(orgId))
+
+/** Rows stored for the org, whatever the page shows. */
+const storedFindings = (testDb: TestDb) =>
+	Effect.promise(() =>
+		queryFirstRow<{ policies: number; vulnerabilities: number }>(
+			testDb,
+			`SELECT (SELECT count(*)::int FROM device_policy_findings) AS policies,
+				(SELECT count(*)::int FROM device_vulnerability_findings) AS vulnerabilities`,
+		),
+	)
 
 const fleetWithFindings = () =>
 	makeFakeFleet({
@@ -91,24 +106,27 @@ describe("FleetFindingsService", () => {
 				})
 
 				const page = yield* devices()
-				assert.strictEqual(page.connection?.hostCount, 40)
+				assert.deepStrictEqual(
+					Arr.map(page.sources, (source) => [source.kind, source.deviceCount]),
+					[["fleet", 40]],
+				)
 				// Critical first; the passing policy is not a finding.
 				assert.deepStrictEqual(
-					Arr.map(page.policies, (policy) => [policy.name, policy.failingHostCount, policy.url]),
+					Arr.map(page.policies, (policy) => [policy.name, policy.failingDeviceCount, policy.url]),
 					[
 						["Disk encrypted", 1, "https://fleet.example.com/policies/2"],
 						["Firewall on", 3, "https://fleet.example.com/policies/1"],
 					],
 				)
-				assert.deepStrictEqual(page.policies[1]?.failingHosts, [
-					{ id: 11, name: "jane-mbp", platform: null, url: "https://fleet.example.com/hosts/11" },
+				assert.deepStrictEqual(page.policies[1]?.failingDevices, [
+					{ id: "11", name: "jane-mbp", platform: null, url: "https://fleet.example.com/hosts/11" },
 				])
 				// One finding per CVE across its versions, highest score first.
 				assert.deepStrictEqual(
 					Arr.map(page.vulnerabilities, (finding) => [
 						finding.cve,
 						finding.cvssScore,
-						finding.hostCount,
+						finding.deviceCount,
 						finding.software.length,
 					]),
 					[
@@ -117,7 +135,7 @@ describe("FleetFindingsService", () => {
 					],
 				)
 				// Another org sees nothing of it.
-				assert.isNull((yield* devices(OTHER_ORG)).connection)
+				assert.lengthOf((yield* devices(OTHER_ORG)).sources, 0)
 			}),
 		)
 	})
@@ -143,7 +161,7 @@ describe("FleetFindingsService", () => {
 				yield* syncDue
 				const page = yield* devices()
 				assert.deepStrictEqual(
-					Arr.map(page.policies, (policy) => [policy.name, policy.failingHostCount]),
+					Arr.map(page.policies, (policy) => [policy.name, policy.failingDeviceCount]),
 					[["Firewall on", 2]],
 				)
 				// A finding still open keeps the time it was first seen.
@@ -168,7 +186,7 @@ describe("FleetFindingsService", () => {
 				assert.strictEqual((yield* VendorFake.elapsing(syncDue)).failedConnections, 1)
 				const page = yield* devices()
 				assert.lengthOf(page.policies, 2)
-				assert.include(page.connection?.error ?? "", "500")
+				assert.include(page.sources[0]?.error ?? "", "500")
 			}),
 		)
 	})
@@ -185,12 +203,29 @@ describe("FleetFindingsService", () => {
 				yield* FleetConnectionService.use((service) => service.disconnect(ORG))
 				const page = yield* devices()
 				assert.deepStrictEqual(
-					[page.connection, page.policies.length, page.vulnerabilities.length],
-					[null, 0, 0],
+					[page.sources.length, page.policies.length, page.vulnerabilities.length],
+					[0, 0, 0],
 				)
+				assert.deepStrictEqual(yield* storedFindings(testDb), { policies: 0, vulnerabilities: 0 })
 			}),
 		)
 	})
+	it.effect("keeps the findings when the same server gets a new token", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFindings()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				yield* connect
+				assert.deepStrictEqual(yield* storedFindings(testDb), { policies: 2, vulnerabilities: 2 })
+				assert.lengthOf((yield* devices()).policies, 2)
+			}),
+		)
+	})
+
 	it.effect("stops both readers when Fleet rejects the token", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = fleetWithFindings()
@@ -202,7 +237,7 @@ describe("FleetFindingsService", () => {
 				world.status = 401
 				assert.strictEqual((yield* syncDue).failedConnections, 1)
 				const page = yield* devices()
-				assert.isTrue(page.connection?.authFailed)
+				assert.isTrue(page.sources[0]?.authFailed)
 				// Nothing is due while the token stays rejected, even an hour on.
 				yield* TestClock.adjust(HOUR_MS)
 				const calls = world.fake.calls.length
@@ -275,12 +310,13 @@ describe("FleetFindingsService", () => {
 				)
 				const pending = yield* devices()
 				assert.deepStrictEqual(
-					[pending.connection?.baseUrl, pending.connection?.syncedAt, pending.policies.length],
+					[pending.sources[0]?.url, pending.sources[0]?.syncedAt, pending.policies.length],
 					["https://devices.example.com", null, 0],
 				)
+				assert.deepStrictEqual(yield* storedFindings(testDb), { policies: 0, vulnerabilities: 0 })
 				// A new server is due at once, not an hour after the old one's sync.
 				yield* syncDue
-				assert.strictEqual((yield* devices()).connection?.hostCount, 3)
+				assert.strictEqual((yield* devices()).sources[0]?.deviceCount, 3)
 			}),
 		)
 	})

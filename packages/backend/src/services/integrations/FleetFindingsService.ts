@@ -1,24 +1,12 @@
 /**
- * The Security hub's Devices page: each Fleet server's failing policies and vulnerable software,
- * synced hourly under the connection's findings lease. A sync replaces the server's findings: a
- * policy every device passes again, or a CVE no longer installed, drops out.
+ * Fleet as a device source: each server's failing policies and vulnerable software, synced hourly
+ * under the connection's findings lease into the shared device findings. A sync replaces the
+ * server's findings: a policy every device passes again, or a CVE no longer installed, drops out.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	type FleetConnectionRow,
-	FleetConnections,
-	type FleetFindingHost,
-	FleetPolicyFindings,
-	FleetVulnerabilityFindings,
-} from "@maple/db/tables"
-import {
-	FleetDevicesConnection,
-	FleetDevicesResponse,
-	FleetPolicyFinding,
-	FleetVulnerabilityFinding,
-	IntegrationsPersistenceError,
-	type OrgId,
-} from "@maple/domain/http"
+import { type FleetConnectionRow, FleetConnections } from "@maple/db/tables"
+import type { DeviceRef } from "@maple/domain/device-security"
+import { DeviceSource, IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -26,17 +14,11 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { openSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
+import { replaceDeviceFindings } from "@maple/backend/services/device-security/device-findings-store"
 import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import * as FleetApi from "./fleet/api"
-import {
-	failingPolicies,
-	findingHost,
-	policyOrder,
-	type PolicyFinding,
-	vulnerabilitiesBySoftware,
-	vulnerabilityOrder,
-} from "./fleet/findings"
+import { failingPolicies, findingDevice, vulnerabilitiesBySoftware } from "./fleet/findings"
 
 const SYNC_EVERY_MS = 60 * 60_000
 const LEASE_MS = 4 * 60_000
@@ -47,7 +29,6 @@ const HOSTS_PER_POLICY = 20
 const SAMPLED_POLICIES = 100
 const SOFTWARE_PAGE_SIZE = 100
 const MAX_SOFTWARE_PAGES = 10
-const LISTED_VULNERABILITIES = 500
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -71,10 +52,11 @@ interface ServerOutcome {
 export interface FleetFindingsServiceApi {
 	/** Syncs every server whose findings are an hour old, or never synced. */
 	readonly syncDue: Effect.Effect<FleetFindingsSyncResult, IntegrationsPersistenceError>
-	readonly devices: (orgId: OrgId) => Effect.Effect<FleetDevicesResponse, IntegrationsPersistenceError>
+	/** The org's Fleet server as a device source, for the Devices page; empty when none is connected. */
+	readonly sources: (
+		orgId: OrgId,
+	) => Effect.Effect<ReadonlyArray<DeviceSource>, IntegrationsPersistenceError>
 }
-
-const hostUrl = (baseUrl: string, id: number) => `${baseUrl}/hosts/${id}`
 
 export class FleetFindingsService extends Context.Service<FleetFindingsService, FleetFindingsServiceApi>()(
 	"@maple/backend/services/integrations/FleetFindingsService",
@@ -154,28 +136,35 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				)
 
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
-			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient) {
+			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient, baseUrl: string) {
 				const [hosts, policies] = yield* Effect.all(
 					[FleetApi.countHosts(fleet), FleetApi.listGlobalPolicies(fleet)],
 					{ concurrency: 2 },
 				)
-				const failing = failingPolicies(policies.policies ?? [])
+				const failing = failingPolicies(policies.policies ?? [], baseUrl)
 				const samples = yield* Effect.forEach(
 					Arr.take(failing, SAMPLED_POLICIES),
 					(policy) =>
-						FleetApi.listFailingHosts(fleet, policy.policyId, HOSTS_PER_POLICY).pipe(
+						FleetApi.listFailingHosts(fleet, policy.fleetId, HOSTS_PER_POLICY).pipe(
 							Effect.map(
-								(page) => [policy.policyId, Arr.map(page.hosts ?? [], findingHost)] as const,
+								(page) =>
+									[
+										policy.fleetId,
+										Arr.map(page.hosts ?? [], (host) => findingDevice(host, baseUrl)),
+									] as const,
 							),
 						),
 					{ concurrency: 2 },
 				)
+				const sampled = new Map<number, ReadonlyArray<DeviceRef>>(samples)
 				const software = yield* readSoftware(fleet, 0, [])
 				return {
-					hostCount: hosts.count,
-					policies: failing,
-					sampledHosts: new Map<number, ReadonlyArray<FleetFindingHost>>(samples),
-					vulnerabilities: vulnerabilitiesBySoftware(software),
+					deviceCount: hosts.count,
+					policies: Arr.map(failing, (policy) => ({
+						...policy.finding,
+						failingDevices: sampled.get(policy.fleetId) ?? [],
+					})),
+					vulnerabilities: vulnerabilitiesBySoftware(software, baseUrl),
 				}
 			})
 
@@ -187,16 +176,8 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				claimed: FleetConnectionRow,
 				now: number,
 				snapshot: Effect.Success<ReturnType<typeof read>>,
-			) => {
-				const scope = { orgId: claimed.orgId, connectionId: claimed.id }
-				const policyRow = (policy: PolicyFinding) => ({
-					...scope,
-					...policy,
-					failingHosts: snapshot.sampledHosts.get(policy.policyId) ?? [],
-					firstSeenAt: now,
-					lastSeenAt: now,
-				})
-				return dbExecute((db) =>
+			) =>
+				dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							const owned = yield* db.run(
@@ -205,76 +186,22 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 										findingsSyncedAt: now,
 										findingsError: null,
 										findingsErrorAt: null,
-										hostCount: snapshot.hostCount,
+										deviceCount: snapshot.deviceCount,
 									})
 									.where(stillOurs(claimed))
 									.returning("id"),
 							)
 							if (owned.length === 0) return false
-							if (snapshot.policies.length > 0)
-								yield* db.run(
-									PG.insertInto(FleetPolicyFindings)
-										.values(Arr.map(snapshot.policies, policyRow))
-										.onConflictDoUpdate({
-											target: ["orgId", "connectionId", "policyId"],
-											set: (_, excluded) => ({
-												name: excluded.name,
-												description: excluded.description,
-												resolution: excluded.resolution,
-												critical: excluded.critical,
-												platform: excluded.platform,
-												failingHostCount: excluded.failingHostCount,
-												passingHostCount: excluded.passingHostCount,
-												failingHosts: excluded.failingHosts,
-												countedAt: excluded.countedAt,
-												lastSeenAt: excluded.lastSeenAt,
-											}),
-										}),
-								)
-							if (snapshot.vulnerabilities.length > 0)
-								yield* db.run(
-									PG.insertInto(FleetVulnerabilityFindings)
-										.values(
-											Arr.map(snapshot.vulnerabilities, (finding) => ({
-												...scope,
-												...finding,
-												firstSeenAt: now,
-												lastSeenAt: now,
-											})),
-										)
-										.onConflictDoUpdate({
-											target: ["orgId", "connectionId", "cve"],
-											set: (_, excluded) => ({
-												cvssScore: excluded.cvssScore,
-												epssProbability: excluded.epssProbability,
-												knownExploited: excluded.knownExploited,
-												detailsLink: excluded.detailsLink,
-												hostCount: excluded.hostCount,
-												software: excluded.software,
-												lastSeenAt: excluded.lastSeenAt,
-											}),
-										}),
-								)
-							// What this sync did not see is resolved.
-							yield* db.run(
-								PG.deleteFrom(FleetPolicyFindings).where(($) => [
-									$.orgId.eq(claimed.orgId),
-									$.connectionId.eq(claimed.id),
-									$.lastSeenAt.lt(now),
-								]),
-							)
-							yield* db.run(
-								PG.deleteFrom(FleetVulnerabilityFindings).where(($) => [
-									$.orgId.eq(claimed.orgId),
-									$.connectionId.eq(claimed.id),
-									$.lastSeenAt.lt(now),
-								]),
+							yield* replaceDeviceFindings(
+								db,
+								{ orgId: claimed.orgId, source: "fleet", connectionId: claimed.id },
+								now,
+								snapshot,
 							)
 							return true
 						}),
 					),
 				)
-			}
 
 			const NOTHING: ServerOutcome = { failed: false, policies: 0, vulnerabilities: 0 }
 			const FAILED: ServerOutcome = { failed: true, policies: 0, vulnerabilities: 0 }
@@ -307,7 +234,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					FleetApi.fleetClient(httpClient, {
 						baseUrl: claimed.baseUrl,
 						token: Redacted.make(token.success),
-					}).pipe(Effect.flatMap(read)),
+					}).pipe(Effect.flatMap((fleet) => read(fleet, claimed.baseUrl))),
 				)
 				if (snapshot._tag === "Failure") {
 					const failure = snapshot.failure
@@ -391,95 +318,32 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				} satisfies FleetFindingsSyncResult
 			}).pipe(Effect.withSpan("FleetFindingsService.syncDue"))
 
-			const devices = Effect.fn("FleetFindingsService.devices")(function* (orgId: OrgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				const connections = yield* dbExecute((db) =>
+			const sources = Effect.fn("FleetFindingsService.sources")(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(FleetConnections)
 							.select()
-							.where(($) => [$.orgId.eq(orgId)])
-							.limit(1),
+							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				const connection = connections[0]
-				if (connection === undefined)
-					return new FleetDevicesResponse({
-						connection: null,
-						policies: [],
-						vulnerabilities: [],
-						moreVulnerabilities: 0,
-					})
-				const [policies, vulnerabilities] = yield* Effect.all(
-					[
-						dbExecute((db) =>
-							db.run(
-								PG.from(FleetPolicyFindings)
-									.select()
-									.where(($) => [$.orgId.eq(orgId), $.connectionId.eq(connection.id)]),
-							),
-						),
-						dbExecute((db) =>
-							db.run(
-								PG.from(FleetVulnerabilityFindings)
-									.select()
-									.where(($) => [$.orgId.eq(orgId), $.connectionId.eq(connection.id)]),
-							),
-						),
-					],
-					{ concurrency: 2 },
+				return Arr.map(
+					rows,
+					(row) =>
+						new DeviceSource({
+							kind: "fleet",
+							connectionId: row.id,
+							label: row.organizationName,
+							url: row.baseUrl,
+							deviceCount: row.deviceCount,
+							syncedAt: row.findingsSyncedAt,
+							error: row.findingsError,
+							authFailed: row.authFailedAt !== null,
+							vulnerabilitiesUrl: `${row.baseUrl}/software/vulnerabilities`,
+						}),
 				)
-				const base = connection.baseUrl
-				return new FleetDevicesResponse({
-					connection: new FleetDevicesConnection({
-						organizationName: connection.organizationName,
-						baseUrl: base,
-						licenseTier: connection.licenseTier,
-						hostCount: connection.hostCount,
-						syncedAt: connection.findingsSyncedAt,
-						error: connection.findingsError,
-						authFailed: connection.authFailedAt !== null,
-					}),
-					policies: Arr.map(
-						Arr.sort(policies, policyOrder),
-						(row) =>
-							new FleetPolicyFinding({
-								policyId: row.policyId,
-								name: row.name,
-								description: row.description,
-								resolution: row.resolution,
-								critical: row.critical,
-								platform: row.platform,
-								failingHostCount: row.failingHostCount,
-								passingHostCount: row.passingHostCount,
-								failingHosts: Arr.map(row.failingHosts, (host) => ({
-									...host,
-									url: hostUrl(base, host.id),
-								})),
-								countedAt: row.countedAt,
-								firstSeenAt: row.firstSeenAt,
-								url: `${base}/policies/${row.policyId}`,
-							}),
-					),
-					vulnerabilities: Arr.map(
-						Arr.take(Arr.sort(vulnerabilities, vulnerabilityOrder), LISTED_VULNERABILITIES),
-						(row) =>
-							new FleetVulnerabilityFinding({
-								cve: row.cve,
-								cvssScore: row.cvssScore,
-								epssProbability: row.epssProbability,
-								knownExploited: row.knownExploited,
-								detailsLink: row.detailsLink,
-								hostCount: row.hostCount,
-								software: row.software,
-								firstSeenAt: row.firstSeenAt,
-								url: `${base}/software/vulnerabilities/${encodeURIComponent(row.cve)}`,
-							}),
-					),
-					moreVulnerabilities: Math.max(0, vulnerabilities.length - LISTED_VULNERABILITIES),
-				})
 			})
 
-			return { syncDue, devices } satisfies FleetFindingsServiceApi
+			return { syncDue, sources } satisfies FleetFindingsServiceApi
 		}),
 	},
 ) {

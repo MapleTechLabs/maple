@@ -20,6 +20,7 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { fleetTokenSlot } from "@maple/backend/platform/secret-slots"
+import { clearDeviceFindings } from "@maple/backend/services/device-security/device-findings-store"
 import * as FleetApi from "./fleet/api"
 
 const VALIDATE_TIMEOUT = Duration.seconds(30)
@@ -190,12 +191,12 @@ export class FleetConnectionService extends Context.Service<
 				db.transaction(
 					Effect.gen(function* () {
 						// Another server is a new connection: nothing read from the old one carries over.
-						yield* db.run(
-							PG.deleteFrom(FleetConnections).where(($) => [
-								$.orgId.eq(orgId),
-								$.baseUrl.neq(baseUrl),
-							]),
+						const replaced = yield* db.run(
+							PG.deleteFrom(FleetConnections)
+								.where(($) => [$.orgId.eq(orgId), $.baseUrl.neq(baseUrl)])
+								.returning("id"),
 						)
+						if (replaced.length > 0) yield* clearDeviceFindings(db, orgId, "fleet")
 						yield* db.run(
 							PG.insertInto(FleetConnections)
 								.values({ id: randomUUID(), orgId, createdAt: now, ...next })
@@ -210,10 +211,15 @@ export class FleetConnectionService extends Context.Service<
 		const disconnect = Effect.fn("FleetConnectionService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(FleetConnections)
-						.where(($) => [$.orgId.eq(orgId)])
-						.returning(($) => ({ id: $.id })),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* clearDeviceFindings(db, orgId, "fleet")
+						return yield* db.run(
+							PG.deleteFrom(FleetConnections)
+								.where(($) => [$.orgId.eq(orgId)])
+								.returning("id"),
+						)
+					}),
 				),
 			)
 			return rows.length > 0

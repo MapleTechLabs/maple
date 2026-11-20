@@ -3,8 +3,8 @@ import {
 	ApiSchemaErrors,
 	ApiUnexpectedErrors,
 	CurrentTenant,
-	FleetDevicesResponse,
-	FleetSecurityApiGroup,
+	DevicesResponse,
+	DeviceSecurityApiGroup,
 	OrgId,
 	RoleName,
 	UserId,
@@ -13,27 +13,26 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
-import { FleetFindingsService } from "@maple/backend/services/integrations/FleetFindingsService"
-import { HttpFleetSecurityLive } from "./fleet-security.http"
+import { DeviceSecurityService } from "@maple/backend/services/device-security/DeviceSecurityService"
+import { HttpDeviceSecurityLive } from "./device-security.http"
 
-class FleetSecurityOnlyApi extends HttpApi.make("MapleInternalApi")
-	.add(FleetSecurityApiGroup)
+class DeviceSecurityOnlyApi extends HttpApi.make("MapleInternalApi")
+	.add(DeviceSecurityApiGroup)
 	.middleware(ApiSchemaErrors)
 	.middleware(ApiUnexpectedErrors) {}
 
-const ORG_ID = Schema.decodeSync(OrgId)("org_fleet_route")
-const USER_ID = Schema.decodeSync(UserId)("user_fleet_route")
+const ORG_ID = Schema.decodeSync(OrgId)("org_device_route")
+const USER_ID = Schema.decodeSync(UserId)("user_device_route")
 
 const devicesAs = async (role: string) => {
 	const asked: Array<string> = []
 	const services = Layer.mergeAll(
-		Layer.succeed(FleetFindingsService, {
-			syncDue: Effect.die("unused"),
+		Layer.succeed(DeviceSecurityService, {
 			devices: (orgId) =>
 				Effect.sync(() => {
 					asked.push(orgId)
-					return new FleetDevicesResponse({
-						connection: null,
+					return new DevicesResponse({
+						sources: [],
 						policies: [],
 						vulnerabilities: [],
 						moreVulnerabilities: 0,
@@ -57,14 +56,14 @@ const devicesAs = async (role: string) => {
 			}),
 		),
 	)
-	const routes = HttpApiBuilder.layer(FleetSecurityOnlyApi).pipe(
-		Layer.provide(HttpFleetSecurityLive),
+	const routes = HttpApiBuilder.layer(DeviceSecurityOnlyApi).pipe(
+		Layer.provide(HttpDeviceSecurityLive),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provide(services),
 	)
 	const { handler, dispose } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const response = await handler(
-		new Request("http://maple.test/internal/fleet-security/devices", {
+		new Request("http://maple.test/internal/device-security/devices", {
 			headers: { authorization: "Bearer test-token" },
 		}),
 		Context.empty(),
@@ -73,7 +72,7 @@ const devicesAs = async (role: string) => {
 	return { status: response.status, asked }
 }
 
-describe("GET /internal/fleet-security/devices", () => {
+describe("GET /internal/device-security/devices", () => {
 	it("reads the caller's own org for engineers and admins", async () => {
 		for (const role of ["org:engineer", "org:admin"]) {
 			const answer = await devicesAs(role)
