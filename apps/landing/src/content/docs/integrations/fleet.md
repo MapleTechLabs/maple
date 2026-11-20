@@ -46,7 +46,7 @@ The card then shows the organization name, the URL, the server version, the lice
 
 ## Audit log
 
-Maple reads Fleet's activity feed every 5 minutes, oldest first, from where the last read stopped. The first read goes back 7 days. A long backlog drains over the following reads, up to 5,000 activities per read.
+Maple reads Fleet's activity feed every 5 minutes, oldest first, from where the last read stopped. The first read goes back 7 days. A long backlog drains over the following reads, up to about 5,000 activities per read.
 
 Each activity becomes one entry under the Fleet platform, with the Fleet user who acted, what happened, and the device, user, policy, team, script or query it was about.
 

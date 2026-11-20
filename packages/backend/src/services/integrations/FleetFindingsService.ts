@@ -331,8 +331,12 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 							return yield* fail(failure.message)
 					}
 				}
-				const stored = yield* store(claimed, now, snapshot.success)
-				if (!stored) return NOTHING
+				const stored = yield* Effect.result(store(claimed, now, snapshot.success))
+				if (stored._tag === "Failure")
+					return yield* fail(
+						"Findings were read from Fleet but could not be saved. Maple retries next tick.",
+					)
+				if (!stored.success) return NOTHING
 				yield* Effect.annotateCurrentSpan({
 					"maple.fleet.policies": snapshot.success.policies.length,
 					"maple.fleet.vulnerabilities": snapshot.success.vulnerabilities.length,
