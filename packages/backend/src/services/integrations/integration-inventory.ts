@@ -536,9 +536,17 @@ const fleet = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntr
 					status: "disconnected" as const,
 					problem: "Fleet rejected the API token; save a new one in Integrations.",
 				}
-			: status === "failing"
-				? { status: "failing" as const, problem: connection.lastError ?? "Reading Fleet failed" }
-				: undefined
+			: status === "healthy"
+				? undefined
+				: {
+						status,
+						problem:
+							status === "pending"
+								? "Connected; waiting for the first read of Fleet."
+								: status === "stale"
+									? "No successful read of Fleet lately."
+									: (connection.lastError ?? "Reading Fleet failed"),
+					}
 	return entry("fleet", now, {
 		account: connection.organizationName ?? new URL(connection.baseUrl).host,
 		connectedAt: connection.createdAt,

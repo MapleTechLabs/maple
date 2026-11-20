@@ -196,6 +196,29 @@ describe("buildIntegrationInventory", () => {
 		)
 	})
 
+	it("reads a Fleet server as pending until its first read, then healthy", () => {
+		const fleet = (lastSuccessAt: number | null) =>
+			providerOf(
+				{
+					fleetConnection: {
+						organizationName: "Acme",
+						baseUrl: "https://fleet.example.com",
+						authFailedAt: null,
+						lastSuccessAt,
+						lastErrorAt: null,
+						lastError: null,
+						createdAt: NOW - MINUTE,
+					},
+				},
+				"fleet",
+			)
+		expect([fleet(null)?.status, fleet(null)?.problem]).toEqual([
+			"pending",
+			"Connected; waiting for the first read of Fleet.",
+		])
+		expect([fleet(NOW - MINUTE)?.status, fleet(NOW - MINUTE)?.account]).toEqual(["healthy", "Acme"])
+	})
+
 	describe("vercel", () => {
 		const connection = {
 			teamName: "Acme",

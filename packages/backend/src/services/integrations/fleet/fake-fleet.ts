@@ -56,6 +56,7 @@ export interface FakeFleet {
 	readonly fake: VendorFake.VendorFake
 }
 
+/** Matched as a suffix: a server can sit under a path prefix. */
 const PREFIX = "/api/v1/fleet"
 
 /** `GET /activities` as Fleet pages it: `order_key=id` with `after` is a keyset cursor. */
@@ -104,7 +105,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 								),
 				},
 				{
-					path: `${PREFIX}/me`,
+					path: new RegExp(`${PREFIX}/me$`),
 					respond: () =>
 						VendorFake.json({
 							user: {
@@ -116,9 +117,12 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 							},
 						}),
 				},
-				{ path: `${PREFIX}/version`, respond: () => VendorFake.json({ version: world.version }) },
 				{
-					path: `${PREFIX}/config`,
+					path: new RegExp(`${PREFIX}/version$`),
+					respond: () => VendorFake.json({ version: world.version }),
+				},
+				{
+					path: new RegExp(`${PREFIX}/config$`),
 					respond: () =>
 						VendorFake.json({
 							org_info: { org_name: world.orgName },
@@ -149,7 +153,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 					},
 				},
 				{
-					path: `${PREFIX}/activities`,
+					path: new RegExp(`${PREFIX}/activities$`),
 					respond: (request) => VendorFake.json(activitiesPage(world, request.search)),
 				},
 			],
