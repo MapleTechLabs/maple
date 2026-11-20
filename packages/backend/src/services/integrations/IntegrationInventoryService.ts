@@ -233,6 +233,9 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								"lastErrorAt",
 								"lastError",
 								"createdAt",
+								"findingsSyncedAt",
+								"findingsErrorAt",
+								"findingsError",
 							)
 							.where(($) => [$.orgId.eq(orgId)])
 							.limit(1),
@@ -392,7 +395,17 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					rows.supabaseProjects,
 					(project) => project.connectionId === supabase?.id,
 				),
-				fleetConnection: rows.fleetConnections[0] ?? null,
+				fleetConnection: Option.match(Arr.head(rows.fleetConnections), {
+					onNone: () => null,
+					onSome: ({ findingsSyncedAt, findingsErrorAt, findingsError, ...connection }) => ({
+						...connection,
+						findings: {
+							lastSuccessAt: findingsSyncedAt,
+							lastErrorAt: findingsErrorAt,
+							lastError: findingsError,
+						},
+					}),
+				}),
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: Arr.map(rows.railwayEnvironments, ({ servicesJson, ...env }) => ({
 					...env,

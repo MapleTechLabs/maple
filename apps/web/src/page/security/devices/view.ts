@@ -225,7 +225,7 @@ const summary = (h: H, devices: Devices): Html => {
 	const enrolled = deviceTotal(devices.sources)
 	const scored = hasScores(devices.vulnerabilities)
 	const critical = criticalCount(devices.policies)
-	const exploited = knownExploitedCount(devices.vulnerabilities)
+	const exploited = knownExploitedCount(devices.sources)
 	const cves = devices.vulnerabilities.length + devices.moreVulnerabilities
 	return statRail(h, { columns: scored ? 5 : 4, className: "grid-cols-2" }, [
 		statRailItem(h, {

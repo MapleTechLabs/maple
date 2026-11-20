@@ -6,9 +6,23 @@ import { Array as Arr, Order, Schema } from "effect"
 
 const BASE = "https://fleet.acme.dev"
 const CONNECTION_ID = "conn_fleet_acme"
-const decode = Schema.decodeSync(DevicesResponse)
 type Encoded = typeof DevicesResponse.Encoded
 type Source = Encoded["sources"][number]
+
+/** Each source's known exploited count, as the API counts it: every CVE of the connection. */
+const decode = (devices: Encoded) =>
+	Schema.decodeSync(DevicesResponse)({
+		...devices,
+		sources: Arr.map(devices.sources, (source) => ({
+			...source,
+			knownExploitedVulnerabilities: Arr.filter(
+				devices.vulnerabilities,
+				(vulnerability) =>
+					vulnerability.connectionId === source.connectionId &&
+					vulnerability.knownExploited === true,
+			).length,
+		})),
+	})
 
 /** Where a fixture's findings come from: the Fleet server's address and connection. */
 type Origin = Readonly<{ base: string; connectionId: string }>
@@ -50,6 +64,7 @@ const source = (nowMs: number, overrides: Partial<Source> = {}): Source => ({
 	authFailed: false,
 	vulnerabilitiesUrl: `${BASE}/software/vulnerabilities`,
 	moreVulnerabilities: 0,
+	knownExploitedVulnerabilities: 0,
 	...overrides,
 })
 

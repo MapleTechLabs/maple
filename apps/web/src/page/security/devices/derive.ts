@@ -125,8 +125,9 @@ export const moreVulnerabilitiesBySource = (
 	)
 }
 
-export const knownExploitedCount = (vulnerabilities: ReadonlyArray<DeviceVulnerabilityFinding>): number =>
-	Arr.filter(vulnerabilities, (vulnerability) => vulnerability.knownExploited === true).length
+/** Known exploited CVEs across every source, counted by the API over all of them, not the listed. */
+export const knownExploitedCount = (sources: ReadonlyArray<DeviceSource>): number =>
+	Arr.reduce(sources, 0, (sum, source) => sum + source.knownExploitedVulnerabilities)
 
 export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length

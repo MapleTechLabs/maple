@@ -27,6 +27,8 @@ export class DeviceSource extends Schema.Class<DeviceSource>("DeviceSource")({
 	vulnerabilitiesUrl: Schema.NullOr(Schema.String),
 	/** This source's CVEs past the 500 listed for it. */
 	moreVulnerabilities: Schema.Number,
+	/** This source's CVEs on CISA's known exploited list, listed or not. */
+	knownExploitedVulnerabilities: Schema.Number,
 }) {}
 
 export class DevicePolicyFinding extends Schema.Class<DevicePolicyFinding>("DevicePolicyFinding")({

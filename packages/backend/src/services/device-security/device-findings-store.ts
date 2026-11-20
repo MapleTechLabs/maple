@@ -29,10 +29,13 @@ export interface DeviceFindingsSnapshot {
 	readonly vulnerabilities: ReadonlyArray<VulnerabilityFindingInput>
 	/**
 	 * False when the source had more than it read: a CVE it did not reach is not resolved, so the
-	 * ones stored before stay.
+	 * ones stored before stay, for a day at most.
 	 */
 	readonly vulnerabilitiesComplete: boolean
 }
+
+/** How long a partial read keeps a CVE it did not reach before taking it as gone. */
+const UNREACHED_KEPT_MS = 24 * 60 * 60_000
 
 /** Rows per INSERT: Postgres binds at most 65535 values a statement, and effect-orm never splits. */
 const ROWS_PER_INSERT = 1_000
@@ -113,15 +116,14 @@ export const replaceDeviceFindings = (
 				$.lastSeenAt.lt(now),
 			]),
 		)
-		if (snapshot.vulnerabilitiesComplete)
-			yield* db.run(
-				PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [
-					$.orgId.eq(scope.orgId),
-					$.source.eq(scope.source),
-					$.connectionId.eq(scope.connectionId),
-					$.lastSeenAt.lt(now),
-				]),
-			)
+		yield* db.run(
+			PG.deleteFrom(DeviceVulnerabilityFindings).where(($) => [
+				$.orgId.eq(scope.orgId),
+				$.source.eq(scope.source),
+				$.connectionId.eq(scope.connectionId),
+				$.lastSeenAt.lt(snapshot.vulnerabilitiesComplete ? now : now - UNREACHED_KEPT_MS),
+			]),
+		)
 	})
 
 /**
@@ -147,7 +149,7 @@ export const clearDeviceFindings = (db: MapleDb, scope: DeviceFindingsScope) =>
 	})
 
 /** A connection as its source reports it; the read service adds what it counts from the findings. */
-export type DeviceSourceStatus = Omit<DeviceSource, "moreVulnerabilities">
+export type DeviceSourceStatus = Omit<DeviceSource, "moreVulnerabilities" | "knownExploitedVulnerabilities">
 
 /** What a device source tells the Devices page about the org's connections to it. */
 export interface DeviceSourceStatusReader {

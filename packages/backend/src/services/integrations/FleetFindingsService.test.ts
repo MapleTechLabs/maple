@@ -187,6 +187,9 @@ describe("FleetFindingsService", () => {
 				const page = yield* devices()
 				assert.lengthOf(page.policies, 2)
 				assert.include(page.sources[0]?.error ?? "", "500")
+				// The Fleet card says the device sync is failing, though the activity feed is fine.
+				const card = yield* FleetConnectionService.use((service) => service.getStatus(ORG))
+				assert.include(card.lastError ?? "", "Devices sync: ")
 
 				// A failed sync waits 15 minutes rather than hitting the server every tick.
 				world.status = null
@@ -306,6 +309,11 @@ describe("FleetFindingsService", () => {
 				yield* TestClock.adjust(HOUR_MS)
 				yield* syncDue
 				assert.strictEqual((yield* storedFindings(testDb))?.vulnerabilities, 6_006)
+
+				// A day on, still never reached, they are taken as gone.
+				yield* TestClock.adjust(25 * HOUR_MS)
+				yield* syncDue
+				assert.strictEqual((yield* storedFindings(testDb))?.vulnerabilities, 6_000)
 
 				// A read that reaches the end drops what is gone.
 				world.software = Arr.take(versions(0), 3)

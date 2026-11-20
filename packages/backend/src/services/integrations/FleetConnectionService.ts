@@ -48,6 +48,14 @@ const DISCONNECTED = new FleetIntegrationStatus({
 	lastError: null,
 })
 
+/** The device findings sync's error while it is the latest outcome; the activity feed's comes first. */
+const devicesSyncError = (row: FleetConnectionRow): string | null =>
+	row.findingsError !== null &&
+	row.findingsErrorAt !== null &&
+	(row.findingsSyncedAt === null || row.findingsErrorAt > row.findingsSyncedAt)
+		? `Devices sync: ${row.findingsError}`
+		: null
+
 export const fleetStatusOf = (row: FleetConnectionRow | undefined): FleetIntegrationStatus =>
 	row === undefined
 		? DISCONNECTED
@@ -63,7 +71,7 @@ export const fleetStatusOf = (row: FleetConnectionRow | undefined): FleetIntegra
 				connectedAt: row.createdAt,
 				authFailed: row.authFailedAt !== null,
 				lastSyncedAt: row.lastSuccessAt,
-				lastError: row.lastError,
+				lastError: row.lastError ?? devicesSyncError(row),
 			})
 
 /** What the connect form shows for a failed check; every Fleet failure is about the entered server or token. */

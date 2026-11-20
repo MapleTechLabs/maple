@@ -278,6 +278,8 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				)
 				if (stored._tag === "Failure") {
 					yield* Effect.annotateCurrentSpan("maple.fleet.error_kind", "store")
+					// The read is redone from scratch, so a write that keeps failing waits like any failure.
+					yield* lease.hold(now + FAILED_SYNC_HOLD_MS)
 					yield* Effect.logWarning("Fleet findings could not be stored").pipe(
 						Effect.annotateLogs({
 							connectionId: claimed.id,

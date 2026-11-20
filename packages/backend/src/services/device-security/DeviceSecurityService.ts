@@ -82,7 +82,10 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 						dbExecute((db) =>
 							db.run(
 								PG.from(DeviceVulnerabilityFindings)
-									.select(() => ({ count: PG.count() }))
+									.select(($) => ({
+										count: PG.count(),
+										knownExploited: PG.countIf($.knownExploited.eq(true)),
+									}))
 									.where(scopeOf(orgId, source)),
 							),
 						),
@@ -93,6 +96,7 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 						source,
 						rows: Arr.take(Arr.appendAll(scored, unscored), LISTED_VULNERABILITIES),
 						more: Math.max(0, Number(counted[0]?.count ?? 0) - LISTED_VULNERABILITIES),
+						knownExploited: Number(counted[0]?.knownExploited ?? 0),
 					})),
 				)
 
@@ -110,12 +114,19 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 						vulnerabilities: [],
 						moreVulnerabilities: 0,
 					})
-				const policies = yield* dbExecute((db) =>
-					db.run(
-						PG.from(DevicePolicyFindings)
-							.select()
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
+				// The policies and each source's CVEs are independent reads: run them together.
+				const [policies, perSource] = yield* Effect.all(
+					[
+						dbExecute((db) =>
+							db.run(
+								PG.from(DevicePolicyFindings)
+									.select()
+									.where(($) => [$.orgId.eq(orgId)]),
+							),
+						),
+						Effect.forEach(sources, (source) => listedFor(orgId, source), { concurrency: 2 }),
+					],
+					{ concurrency: 2 },
 				)
 				// Only what a connected source reported: rows outliving their connection never show.
 				const connected = new Set(
@@ -123,13 +134,15 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 				)
 				const isConnected = (row: { readonly source: string; readonly connectionId: string }) =>
 					connected.has(`${row.source}:${row.connectionId}`)
-				const perSource = yield* Effect.forEach(sources, (source) => listedFor(orgId, source), {
-					concurrency: 2,
-				})
 				const listed = Arr.flatMap(perSource, ({ rows }) => rows)
 				const withCounts = Arr.map(
 					perSource,
-					({ source, more }) => new DeviceSource({ ...source, moreVulnerabilities: more }),
+					({ source, more, knownExploited }) =>
+						new DeviceSource({
+							...source,
+							moreVulnerabilities: more,
+							knownExploitedVulnerabilities: knownExploited,
+						}),
 				)
 				return new DevicesResponse({
 					sources: withCounts,
