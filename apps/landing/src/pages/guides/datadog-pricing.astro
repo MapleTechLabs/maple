@@ -61,6 +61,7 @@ const price = {
     customMetricsPer100: [5, 5],
     indexedSpans15dPerM: [1.7, 2.55],
     rumMeasurePer1k: [0.15, 0.22],
+    rumInvestigatePer1k: [3, 4.5],
     replayPer1k: [2.5, 3.6],
     apiTestsPer10k: [5, 7.2],
 };
@@ -85,15 +86,18 @@ interface Usage {
 }
 const bill = (u: Usage, b: Billing) => {
     const metricsOver = Math.max(0, u.customMetrics - u.hosts * included.customMetricsPerHost);
-    const spansOver = Math.max(0, u.indexedSpansM - u.apmHosts * included.indexedSpansPerApmHostM);
+    // On-demand allotments accrue per host-hour: 1M a month over the year's 730-hour average month, for a 720-hour month here.
+    const spansIncluded = b === 0 ? u.apmHosts * included.indexedSpansPerApmHostM : Math.round(u.apmHosts * included.indexedSpansPerApmHostM * (720 / 730) * 100) / 100;
+    const spansOver = Math.max(0, cents(u.indexedSpansM - spansIncluded));
     const lines: { cat: Cat; label: string; calc: string; cost: number }[] = [
         { cat: "hosts", label: "Infrastructure Pro", calc: `${u.hosts} hosts × ${rate(price.infraPro[b])}`, cost: u.hosts * price.infraPro[b] },
         { cat: "apm", label: "APM", calc: `${u.apmHosts} APM hosts × ${rate(price.apm[b])}`, cost: u.apmHosts * price.apm[b] },
         { cat: "logs", label: "Log ingest", calc: `${num(u.logGb)} GB × ${rate(price.logIngestGb[b])}`, cost: u.logGb * price.logIngestGb[b] },
         { cat: "logs", label: "Log indexing, 15 days", calc: `${num(u.indexedLogsM)}M events × ${rate(price.logIndex15dPerM[b])}`, cost: u.indexedLogsM * price.logIndex15dPerM[b] },
         { cat: "metrics", label: "Custom metrics", calc: `${num(u.customMetrics)} − ${num(u.hosts * included.customMetricsPerHost)} included = ${num(metricsOver)}, × ${rate(price.customMetricsPer100[b])} per 100`, cost: (metricsOver / 100) * price.customMetricsPer100[b] },
-        { cat: "apm", label: "Indexed spans", calc: `${u.indexedSpansM}M − ${u.apmHosts}M included = ${spansOver}M × ${rate(price.indexedSpans15dPerM[b])}`, cost: spansOver * price.indexedSpans15dPerM[b] },
+        { cat: "apm", label: "Indexed spans", calc: `${u.indexedSpansM}M − ${spansIncluded}M included = ${spansOver}M × ${rate(price.indexedSpans15dPerM[b])}`, cost: spansOver * price.indexedSpans15dPerM[b] },
         { cat: "frontEnd", label: "RUM Measure", calc: `${num(u.rumSessionsK)}k sessions × ${rate(price.rumMeasurePer1k[b])} per 1,000`, cost: u.rumSessionsK * price.rumMeasurePer1k[b] },
+        { cat: "frontEnd", label: "RUM Investigate", calc: `${num(u.replaysK)}k replayed sessions retained × ${rate(price.rumInvestigatePer1k[b])} per 1,000`, cost: u.replaysK * price.rumInvestigatePer1k[b] },
         { cat: "frontEnd", label: "Session Replay", calc: `${num(u.replaysK)}k sessions × ${rate(price.replayPer1k[b])} per 1,000`, cost: u.replaysK * price.replayPer1k[b] },
         { cat: "frontEnd", label: "Synthetic API tests", calc: `${num(u.apiRuns)} runs × ${rate(price.apiTestsPer10k[b])} per 10,000`, cost: (u.apiRuns / 10_000) * price.apiTestsPer10k[b] },
     ]
@@ -323,6 +327,7 @@ const articleJsonLd = {
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Log indexing, 15 days</span></td><td>Per million events</td><td>$1.70</td><td>$2.55</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.metrics.color}`}>Custom metrics</span></td><td>Per 100, above the allotment</td><td>$5</td><td>$5</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.frontEnd.color}`}>RUM Measure</span></td><td>Per 1,000 sessions</td><td>$0.15</td><td>$0.22</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.frontEnd.color}`}>RUM Investigate</span></td><td>Per 1,000 retained sessions</td><td>$3</td><td>$4.50</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.frontEnd.color}`}>Session Replay</span></td><td>Per 1,000 sessions</td><td>$2.50</td><td>$3.60</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.frontEnd.color}`}>Synthetic API tests</span></td><td>Per 10,000 runs</td><td>$5</td><td>$7.20</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.frontEnd.color}`}>Synthetic browser tests</span></td><td>Per 1,000 runs</td><td>$12</td><td>$18</td></tr>
@@ -429,7 +434,7 @@ const articleJsonLd = {
 
                     <h3 id="mid-team" class="scroll-mt-24">Mid-sized team: about {usd(mid.total)} a month</h3>
                     <p>
-                        Forty hosts on Infrastructure Pro, 25 of them running APM. They ingest 1,000 GB of logs and index 200 million events for 15 days. Services send 600 GB of spans, emit 12,000 custom metrics and index 60 million spans. The web app has 500,000 sessions a month on RUM Measure, with Session Replay on 50,000 of them. Ten API checks run every minute from two locations, {num(apiRuns)} runs.
+                        Forty hosts on Infrastructure Pro, 25 of them running APM. They ingest 1,000 GB of logs and index 200 million events for 15 days. Services send 600 GB of spans, emit 12,000 custom metrics and index 60 million spans. The web app has 500,000 sessions a month on RUM Measure, with Session Replay on 50,000 of them, which are retained on RUM Investigate so they can be replayed. Ten API checks run every minute from two locations, {num(apiRuns)} runs.
                     </p>
                     <div class="guide-table">
                         <table>
