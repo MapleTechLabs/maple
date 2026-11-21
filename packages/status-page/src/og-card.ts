@@ -21,7 +21,7 @@ import type { StatusPageComponentStatus } from "@maple/primitives"
 import { Array as Arr, Schema } from "effect"
 import { safeImageUrl } from "./escape"
 import { MAPLE_MARK_PATH, STATUS_GLYPH } from "./icons"
-import { COMPONENT_STATUS_LABEL, HERO_SENTENCE } from "./format"
+import { COMPONENT_STATUS_LABEL, formatPercent, HERO_SENTENCE } from "./format"
 import { activeIncidents } from "./select"
 import { resolveSafeTheme, safeTheme } from "./theme"
 
@@ -98,10 +98,6 @@ const overallDays = (
 	}
 }
 
-/** `99.98%`, never rounded up to a perfect score it did not earn. */
-const formatUptime = (percent: number): string =>
-	`${percent >= 100 ? "100" : (Math.floor(percent * 100) / 100).toFixed(2)}%`
-
 /**
  * The card for a page as it is now. A forced appearance draws that scheme; `auto` draws light,
  * which is what a visitor without a preference sees. The logo follows the same choice.
@@ -137,7 +133,7 @@ export const statusOgCard = (
 		moreDetails: lines.length <= MAX_DETAIL_LINES ? 0 : lines.length - MAX_DETAIL_LINES + 1,
 		delayed: freshness._tag === "delayed",
 		days,
-		uptime: uptime === null ? null : formatUptime(uptime),
+		uptime: uptime === null ? null : formatPercent(uptime),
 		logoUrl: dark ? (darkLogo ?? light) : (light ?? darkLogo),
 		poweredBy: snapshot.page.showPoweredBy,
 		font: theme.font,

@@ -67,6 +67,13 @@ describe("the status card", () => {
 		expect(card.uptime).toBe("99.98%")
 	})
 
+	it("reads uptime as the page does, without a float error costing a hundredth", () => {
+		const today = makeDays(FIXTURE_NOW, {}, 1)[0]?.day ?? ""
+		const days = [{ day: today, checks: 10_000, failures: 3, downChecks: 3 }]
+		const snapshot = makeSnapshot({ components: [makeComponent(0, { days })] })
+		expect(statusOgCard(snapshot, live, null).uptime).toBe("99.97%")
+	})
+
 	it("counts uptime over the 90 days it shows, not the year the snapshot carries", () => {
 		const year = makeDays(FIXTURE_NOW, { 0: "down", 1: "down" }, 365)
 		const snapshot = makeSnapshot({ components: [makeComponent(0, { days: year })] })
