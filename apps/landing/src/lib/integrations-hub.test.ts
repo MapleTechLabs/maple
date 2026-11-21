@@ -61,10 +61,13 @@ describe("HUB_CATEGORIES", () => {
 	})
 
 	it("covers every page the instrumentation index links to", () => {
+		const hub = new Set(Arr.map(tiles, (tile) => Str.split("#")(tile.href)[0]))
 		// Pages the hub reaches another way, or leaves out on purpose.
 		const elsewhere = new Set([
-			// Guides with an /integrations page are reached through it; the page links the guide.
-			...Arr.map(Object.values(integrations), (i) => i.docsHref),
+			// Guides with an /integrations page are reached through it, when the hub offers that page.
+			...Arr.flatMap(Object.values(integrations), (i) =>
+				hub.has(`/integrations/${i.slug}`) ? [i.docsHref] : [],
+			),
 			// One Effect tile stands for the SDK's runtime-specific pages.
 			"/docs/sdks/effect-cloudflare",
 			"/docs/sdks/effect-client",
@@ -74,7 +77,6 @@ describe("HUB_CATEGORIES", () => {
 			// An API, not an integration.
 			"/docs/product-events/api",
 		])
-		const hub = new Set(Arr.map(tiles, (tile) => Str.split("#")(tile.href)[0]))
 		const pages = Arr.flatMap(GUIDE_SECTIONS, (section) =>
 			Arr.map(section.cards, (card) => Str.split("#")(card.href)[0]),
 		)

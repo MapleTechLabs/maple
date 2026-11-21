@@ -994,14 +994,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
         ));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    axum::serve(listener, app)
+    let served = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
-        .await?;
+        .await;
 
-    // Reached on Ctrl-C or SIGTERM: send the last batch
+    // Reached on Ctrl-C, SIGTERM or a server error: send the last batch first
     let _ = tracer_provider.shutdown();
     let _ = logger_provider.shutdown();
-    Ok(())
+    Ok(served?)
 }
 
 async fn shutdown_signal() {
