@@ -37,11 +37,11 @@ const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 /** How long a `tools/list` or an `initialize` waits for an org's rollout flags. */
 const FLAGS_WAIT = Duration.seconds(2)
 
-/** An org's rollout flags, when they are known within {@link FLAGS_WAIT}. */
+/** An org's rollout flags, when known within {@link FLAGS_WAIT}; a slow read is not waited on twice. */
 export const flagsInTime = (
 	featureFlags: Context.Service.Shape<typeof OrganizationFeatureFlagsService>,
 	orgId: OrgId,
-) => featureFlags.known(orgId).pipe(Effect.timeoutOption(FLAGS_WAIT), Effect.map(Option.flatten))
+) => featureFlags.known(orgId, FLAGS_WAIT)
 
 /** The values a tool publishes for an `action` parameter: a family's actions, and so a bounded set. */
 const publishedActionsOf = (descriptor: McpToolDescriptor): ReadonlyArray<unknown> => {

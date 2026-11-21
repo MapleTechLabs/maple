@@ -275,6 +275,19 @@ describe("toInputSchema tagged-variant merge", () => {
 		expect(rangeOf(schema).anyOf).toHaveLength(2)
 	})
 
+	it("keeps the union when the tag is constrained differently per branch", () => {
+		const tagged = (value: string) => Schema.Literal(value).check(Schema.isMaxLength(value.length))
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ ...shared, type: tagged("a") }),
+					Schema.Struct({ ...shared, type: tagged("long") }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
 	it("keeps the union when its branches are labelled", () => {
 		const schema = toInputSchema(
 			Schema.Struct({
