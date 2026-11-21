@@ -105,6 +105,8 @@ const readCapped = <E>(stream: Stream.Stream<Uint8Array, E>) =>
 /** An image type under the size cap, within the timeout; anything else draws the name. */
 export const fetchLogo = Effect.fn("status.og_image.logo")(
 	function* (url: string) {
+		// One fixed name for every logo host: customers' domains would flood the service map.
+		yield* Effect.annotateCurrentSpan("peer.service", "status-logo")
 		const client = yield* HttpClient.HttpClient
 		const response = yield* client.get(url).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk))
 		const type = response.headers["content-type"] ?? ""
