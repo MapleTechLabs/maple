@@ -38,7 +38,11 @@ const clerkApi = vi.hoisted(() => {
 })
 
 const ORG = Schema.decodeSync(OrgId)("org_roles")
-const tenant = { orgId: ORG, userId: Schema.decodeSync(UserId)("user_admin") }
+const tenant = {
+	orgId: ORG,
+	userId: Schema.decodeSync(UserId)("user_admin"),
+	permissions: Policy.grantsOf(["org:admin"]),
+}
 
 const clerkMode = ConfigProvider.layer(
 	ConfigProvider.fromUnknown({
@@ -141,10 +145,9 @@ describe("ClerkRolesGateway", () => {
 			clerkApi.calls.length = 0
 			const roles = yield* RolesService
 			const created = yield* Effect.flip(
-				roles.create(
-					tenant,
-					new CreateRoleRequest({ name: "On-call", permissions: ["telemetry:read"] }),
-				),
+				roles
+					.create(new CreateRoleRequest({ name: "On-call", permissions: ["telemetry:read"] }))
+					.pipe(Effect.provideService(Policy.CurrentActor, tenant)),
 			)
 			assert.instanceOf(created, RolesUnavailableError)
 			assert.deepStrictEqual(clerkApi.calls, ["GET /v1/organizations/org_roles"])

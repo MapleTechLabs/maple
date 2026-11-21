@@ -46,10 +46,10 @@ const makeHarness = (role: string) => {
 	const audited: Array<Pick<AuditLogRecordInput, "action" | "changes" | "metadata">> = []
 	const unused = () => Effect.die("unused")
 	const service = Layer.succeed(RolesService, {
-		list: unused,
+		list: Effect.die("unused"),
 		members: unused,
-		create: (_tenant, request) => Effect.sync(() => (creates.push(request.name), created)),
-		update: (_tenant, _roleId, request) =>
+		create: (request) => Effect.sync(() => (creates.push(request.name), created)),
+		update: (_roleId, request) =>
 			Effect.succeed({
 				before: created,
 				role: new CustomRoleResponse({
