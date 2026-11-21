@@ -120,6 +120,8 @@
 	--brand-snowflake: #29b5e8;
 	--brand-tinybird: oklch(0.82 0.19 155);
 	--brand-microsoft: #0078d4;
+	--brand-python: #4b8bbe;
+	--brand-go: #00add8;
 	/* The account pages' art panel: Maple's orange and its ink, fixed in both themes. */
 	--brand-maple: #e9831a;
 	--brand-maple-ink: #241d16;
@@ -613,6 +615,8 @@
 	--color-brand-snowflake: var(--brand-snowflake);
 	--color-brand-tinybird: var(--brand-tinybird);
 	--color-brand-microsoft: var(--brand-microsoft);
+	--color-brand-python: var(--brand-python);
+	--color-brand-go: var(--brand-go);
 	--color-brand-maple: var(--brand-maple);
 	--color-brand-maple-ink: var(--brand-maple-ink);
 	--color-media: var(--media);

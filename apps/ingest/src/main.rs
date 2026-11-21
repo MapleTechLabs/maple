@@ -966,6 +966,18 @@ impl moka::Expiry<String, Duration> for SourceUseExpiry {
     ) -> Option<Duration> {
         Some(*interval)
     }
+
+    /// An insert over an expired, not yet evicted entry is an update. moka's default keeps the
+    /// old remaining time, which is none once expired, so the entry would never expire again.
+    fn expire_after_update(
+        &self,
+        _key: &String,
+        interval: &Duration,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        Some(*interval)
+    }
 }
 
 /// A cached answer for one `maple_source_id` claim. The pause window is kept
@@ -12574,6 +12586,29 @@ mod tests {
             GunzipError::Invalid(e) => e,
             GunzipError::TooLarge => std::io::Error::other("unreachable under usize::MAX"),
         })
+    }
+
+    /// A source's use is recorded again after every interval, not once per process: the
+    /// second record lands on an expired entry, which moka treats as an update.
+    #[tokio::test]
+    async fn source_use_is_recorded_again_after_each_interval() {
+        let recent = recent_key_uses_cache();
+        let interval = Duration::from_millis(40);
+        let mut recorded = 0;
+        for _ in 0..4 {
+            if !recent.contains_key("source") {
+                if recent
+                    .entry("source".to_owned())
+                    .or_insert(interval)
+                    .await
+                    .is_fresh()
+                {
+                    recorded += 1;
+                }
+            }
+            tokio::time::sleep(interval * 2).await;
+        }
+        assert_eq!(recorded, 4);
     }
 
     #[tokio::test]

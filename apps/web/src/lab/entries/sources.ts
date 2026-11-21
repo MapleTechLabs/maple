@@ -9,7 +9,7 @@ import {
 	V2SourceUsageSummary,
 	V2SourceWithSecret,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, String as Str, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { button } from "@maple/views/ui/button"
@@ -57,7 +57,7 @@ const context: PageContext = {
 }
 
 const encoded = (index: number, fields: Readonly<Record<string, unknown>>): typeof V2Source.Encoded => ({
-	id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-00000000000${index}`),
+	id: encodePublicId(PublicIdPrefixes.source, `0199a0e1-0000-7000-8000-${Str.padStart(12, "0")(String(index))}`),
 	object: "source",
 	name: `Source ${index}`,
 	description: null,
@@ -151,6 +151,22 @@ const SOURCES: ReadonlyArray<V2Source> = [
 		key_prefix: null,
 		health: health("stale", "2026-11-06T10:00:00.000Z", { resources: { total: 14, unhealthy: 2 } }),
 	}),
+	source(10, {
+		name: "redis.internal:9121",
+		platform: "prometheus",
+		kind: "integration",
+		key_prefix: null,
+		health: health("failing", "2026-11-06T09:12:00.000Z", {
+			problem: "The endpoint answered 503 Service Unavailable.",
+		}),
+	}),
+	source(11, {
+		name: "node-exporter.internal:9100",
+		platform: "prometheus",
+		kind: "integration",
+		key_prefix: null,
+		health: health("healthy", "2026-11-06T11:59:00.000Z"),
+	}),
 ]
 
 /** What Create answers on the `sent` page: a fresh source and its one-time token. */
@@ -203,7 +219,7 @@ const grantsOf = (role: LabRole): ReadonlyArray<Policy.Permission> =>
 
 const listModel = (role: LabRole): ListModel => {
 	const step = (model: ListModel, message: ListMessage) => listUpdate(model, message, context).model
-	const entered = listInit({ _tag: "Sources" }, context).model
+	const entered = listInit(AppRoute.Sources({ search: {} }), context).model
 	return Arr.reduce(
 		[
 			ListMessage.ReadClock({ nowMs: NOW }),

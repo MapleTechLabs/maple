@@ -342,6 +342,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTrackDisconnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
+		ClickedConnectedSources: ({ query }) =>
+			navigateTo(model, hrefOf(AppRoute.Sources({ search: { q: query } })), false),
 		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings/${encodeURIComponent(tab)}`, false),
 		CompletedChatToast: () => {
 			const callback = chatCallbackOf(model.search)

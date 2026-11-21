@@ -14,9 +14,20 @@ import type { SortState } from "../table-sort"
 // The table chrome the tools pages share: open, mono, uppercase heads and 38px rows, with
 // client-side column sorting.
 
-/** Scrolls sideways once the fixed lanes outgrow the panel. */
-export const toolTable = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, className?: string): Html =>
-	h.div([h.Class(cn("overflow-x-auto", className))], [h.div([h.Class("min-w-fit")], children)])
+/**
+ * Scrolls sideways once the fixed lanes outgrow the panel. `hasShrinkingLanes`: the lanes narrow
+ * to their `min-w-*` floors first (truncating), so it scrolls only once those no longer fit.
+ */
+export const toolTable = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	className?: string,
+	options: Readonly<{ hasShrinkingLanes?: boolean }> = {},
+): Html =>
+	h.div(
+		[h.Class(cn("overflow-x-auto", className))],
+		[h.div([h.Class(options.hasShrinkingLanes === true ? "min-w-0" : "min-w-fit")], children)],
+	)
 
 export const toolTableHead = <M>(
 	h: HtmlBuilder<M>,
