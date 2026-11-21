@@ -466,7 +466,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 				const tenant = yield* canManage(TOOL)
 				if (params.confirm !== true) {
 					return yield* new McpInvalidInputError({
-						message: `Deletion not confirmed. Re-call with confirm=true to delete "${params.slo}", or silence it with action=update alerting_enabled=false.`,
+						message: `Deletion not confirmed. Re-call manage_slo action=delete with confirm=true to delete "${params.slo}", or silence it with manage_slo action=update alerting_enabled=false.`,
 						parameter: "confirm",
 					})
 				}
