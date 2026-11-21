@@ -1,0 +1,73 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+import Code from "../../components/guides/Code.astro";
+
+const tree = String.raw`trace 4bf92f3577b34da6a3ce929d0e0e4736                       total 412 ms
+└─ POST /api/checkout            api-gateway            0 ms ──────────── 412 ms
+   ├─ authorize                  auth-service           6 ms ─ 31 ms
+   └─ create order               orders-service        35 ms ──────── 398 ms
+      ├─ SELECT cart             orders-service        38 ms ─ 52 ms
+      ├─ charge card             payments-service      55 ms ──────── 389 ms
+      │  └─ POST /v1/charges     payments-service      61 ms ─────── 384 ms
+      └─ publish orders          orders-service       390 ms ─ 396 ms`;
+---
+
+<GlossaryTermPage
+    slug="trace"
+    pageTitle="What is a trace? Distributed tracing, defined | Maple Glossary"
+    description="A trace is the record of one request as it moves through a system: spans that share a trace ID and form a tree. Definition, an example, and how traces are built."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/concepts/signals/traces/", title: "OpenTelemetry docs: Traces" },
+        { href: "https://www.w3.org/TR/trace-context/", title: "W3C Trace Context" },
+        { href: "https://opentelemetry.io/docs/specs/otel/trace/api/", title: "OpenTelemetry spec: Tracing API" },
+    ]}
+    readNext={[
+        { href: "/guides/opentelemetry-context-propagation", title: "Context propagation and trace IDs in logs" },
+        { href: "/guides/opentelemetry-sampling", title: "OpenTelemetry sampling" },
+        { href: "/observability", title: "What is observability?" },
+        { href: "/docs/concepts/missing-root-spans", title: "Missing root spans (Maple docs)" },
+    ]}
+    relatedTerms={["span", "otlp", "instrumentation", "percentiles"]}
+>
+    <section>
+        <h2>An example</h2>
+        <p>
+            A customer clicks "Pay". The request passes through an API gateway, an auth service, an orders service, a database, a payments service and a third-party payment provider, and the orders service publishes an event to a queue. Each instrumented service records spans for the work it does, including client spans for its calls to the database, the payment provider and the message queue. Those three record nothing themselves. Every span carries the same trace ID. Put together, they form the trace:
+        </p>
+        <Code code={tree} />
+        <p>
+            Read top to bottom, the trace shows what the request did. Read by width, it shows where the time went: of 412 ms, the call to the payment provider took 323 ms. Without the trace you would see a slow checkout endpoint and a payments service that looks busy, and you would have to guess the link between them.
+        </p>
+    </section>
+
+    <section>
+        <h2>How a trace is built</h2>
+        <p>
+            Nobody writes a trace as a whole. Each service records its own spans and sends them to a backend separately, often seconds apart. The backend groups spans by trace ID and rebuilds the tree from each span's parent span ID.
+        </p>
+        <p>
+            For that to work, the trace ID has to travel with the request. When the gateway calls the orders service, its HTTP client adds a <code>traceparent</code> header with the trace ID and the gateway span's ID. The orders service reads it and makes its own span a child of the gateway's. This is <a href="/guides/opentelemetry-context-propagation">context propagation</a>, and a service that skips it splits the trace in two.
+        </p>
+        <p>
+            The first span, the one with no parent, is the <strong>root span</strong>. Its duration is the request's total duration as the system saw it. A trace whose root span is missing usually means something upstream, such as a browser, proxy or load balancer, sent a <code>traceparent</code> header but never exported its own span, or that span was dropped or has not arrived yet. An entry point that is not instrumented at all looks different: the next service simply becomes the root.
+        </p>
+    </section>
+
+    <section>
+        <h2>Trace vs log vs metric</h2>
+        <p>
+            A metric says that p99 latency for checkout rose to 900 ms. A log says that one request failed with a timeout. A trace shows one specific request across every service it touched, with timing for each step. Logs written during a request can carry its trace ID, which lets you move from one signal to another.
+        </p>
+    </section>
+
+    <section>
+        <h2>Traces in OpenTelemetry</h2>
+        <p>
+            In OpenTelemetry a trace ID is 16 bytes, written as 32 hex characters, and a span ID is 8 bytes, 16 hex characters. The SDK creates the trace ID when a request arrives without one. Spans are exported over <a href="/glossary/otlp">OTLP</a>, usually in batches every few seconds.
+        </p>
+        <p>
+            Recording every trace gets expensive at high traffic, so many systems keep a sample. Sampling is designed to decide per trace, so that the traces you keep are complete; services that sample independently of each other are the usual way that goes wrong. The <a href="/guides/opentelemetry-sampling">sampling guide</a> covers how.
+        </p>
+    </section>
+</GlossaryTermPage>

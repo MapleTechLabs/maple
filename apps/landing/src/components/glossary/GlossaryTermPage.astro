@@ -1,0 +1,125 @@
+---
+// One glossary term: the definition from lib/glossary.ts first, then the
+// page's own explanation (the default slot), then links onward. DefinedTerm
+// JSON-LD ties the page to the /glossary DefinedTermSet.
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../Nav.astro";
+import Footer from "../Footer.astro";
+import BottomCTA from "../BottomCTA.astro";
+import Breadcrumb from "../Breadcrumb.astro";
+import SeoHead from "../SeoHead.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { type GlossarySlug, glossaryTerm } from "../../lib/glossary";
+import "../../styles/guide-prose.css";
+
+interface Props {
+    slug: GlossarySlug;
+    /** The <title>, with the brand suffix. */
+    pageTitle: string;
+    description: string;
+    /** Guides and pages to read next, most relevant first. */
+    readNext: Array<{ href: string; title: string }>;
+    /** Other glossary terms worth a look. */
+    relatedTerms: GlossarySlug[];
+    /** External references the page relies on. */
+    sources: Array<{ href: string; title: string }>;
+    modified: string;
+}
+
+const { slug, pageTitle, description, readNext, relatedTerms, sources, modified } = Astro.props;
+const entry = glossaryTerm(slug);
+const related = relatedTerms.map(glossaryTerm);
+const author = CONTRIBUTORS.makisuo;
+const authorUrl = `https://github.com/${author.github}`;
+const modifiedLabel = new Date(`${modified}T00:00:00Z`).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+});
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const termJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "DefinedTerm",
+    "@id": `${siteUrl}/glossary/${slug}#term`,
+    name: entry.term,
+    description: entry.definition,
+    url: `${siteUrl}/glossary/${slug}`,
+    dateModified: modified,
+    inDefinedTermSet: {
+        "@type": "DefinedTermSet",
+        "@id": `${siteUrl}/glossary#set`,
+        name: "Maple observability glossary",
+        url: `${siteUrl}/glossary`,
+    },
+};
+---
+
+<Layout title={pageTitle} description={description} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={description} type="WebPage" dateModified={modified} />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(termJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        class="shell pt-4"
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Glossary", href: "/glossary" },
+            { label: entry.term },
+        ]}
+    />
+
+    <main class="shell pb-20 pt-14 md:pb-28 md:pt-20">
+        <div class="mx-auto max-w-[46rem]">
+            <header>
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <a href="/glossary" class="border border-primary/40 px-2 py-1 text-primary transition-colors hover:text-fg">Glossary</a>
+                </div>
+                <h1 class="mt-6 font-display text-[clamp(36px,5.5vw,60px)] font-medium leading-[1.02] tracking-[-0.04em] text-fg">{entry.term}</h1>
+                <div class="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={modified}>Updated {modifiedLabel}</time>
+                </div>
+            </header>
+
+            <article class="guide-prose mt-12">
+                <p class="guide-definition">{entry.definition}</p>
+                <slot />
+                <section class="guide-sources">
+                    <h2>Sources</h2>
+                    <ul>
+                        {sources.map((source) => (
+                            <li><a href={source.href} target="_blank" rel="noopener noreferrer">{source.title}</a></li>
+                        ))}
+                    </ul>
+                </section>
+            </article>
+
+            <nav aria-labelledby="read-next" class="mt-16 border-t border-border pt-8">
+                <h2 id="read-next" class="text-[12px] font-medium text-fg">Read next</h2>
+                <ul class="mt-4 grid list-none gap-3 p-0 sm:grid-cols-2">
+                    {readNext.map((link) => (
+                        <li>
+                            <a href={link.href} class="flex h-full items-center rounded-xl border border-border p-4 text-[14px] font-medium text-fg transition-colors hover:border-primary/40">
+                                {link.title}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+                <h2 class="mt-10 text-[12px] font-medium text-fg">Related terms</h2>
+                <ul class="mt-3 flex list-none flex-wrap gap-x-5 gap-y-2 p-0 text-[14px]">
+                    {related.map((term) => (
+                        <li><a href={`/glossary/${term.slug}`} class="text-fg-muted underline decoration-border underline-offset-4 transition-colors hover:text-fg">{term.term}</a></li>
+                    ))}
+                    <li><a href="/glossary" class="text-primary transition-colors hover:text-fg">All terms</a></li>
+                </ul>
+            </nav>
+        </div>
+    </main>
+
+    <BottomCTA />
+    <Footer />
+</Layout>
