@@ -189,9 +189,10 @@ const MINIFIED_NAME = "([A-Za-z_$][A-Za-z0-9_$]?|[A-Za-z_$]([0-9$][A-Za-z0-9_$]|
 export const MINIFIED_NAME_REDACTIONS: Redactions = [
 	[`^([ \\t]*at (async |new )?)${MINIFIED_NAME}([.]${MINIFIED_NAME})* \\(`, "$1("],
 	// A minified receiver before a real method: `at Kt.render (`, then `at Qz.render (`.
-	[`^([ \\t]*at (async |new )?)(${MINIFIED_NAME}[.])+`, "$1"],
+	// The method and its `(` must follow: `at a.js` is a file, not a receiver.
+	[`^([ \\t]*at (async |new )?)(${MINIFIED_NAME}[.])+([^ ()]+ \\()`, "$1$6"],
 	[`^[</.]*${MINIFIED_NAME}([</.]+${MINIFIED_NAME})*[</.]*@`, "@"],
-	[`^(${MINIFIED_NAME}[</.]+)+`, ""],
+	[`^(${MINIFIED_NAME}[</.]+)+([^@ \\t]+@)`, "$4"],
 ]
 
 /**
@@ -332,33 +333,37 @@ const PATH_DELIMS = ` \\t\\r\\n'"\`:,)`
 const PATH_RULE = `(^|[ \\t\\r\\n'"(\`=])/(${FS_ROOTS}|Users/[^/${PATH_DELIMS}]+|home/[^/${PATH_DELIMS}]+)([/.][^${PATH_DELIMS}]*)?([${PATH_DELIMS}]|$)`
 
 const VALUE_DELIMS = `/?<> \\t\\r\\n'"\`:,)`
-const VALUE_SEGMENT = `[^${VALUE_DELIMS}]`
-const VALUE_SEGMENT_NO_DIGIT = `[^0-9${VALUE_DELIMS}]`
-const VALUE_SEGMENT_NO_DOT = `[^.${VALUE_DELIMS}]`
-const VALUE_SEGMENT_END = `([${VALUE_DELIMS}]|$)`
-/** The last part of a dotted value starts lower case; an RPC service's (`acme.v1.Orders`) does not. */
-const DOTTED_VALUE = `${VALUE_SEGMENT_NO_DOT}+([.]${VALUE_SEGMENT_NO_DOT}+)*[.][^A-Z.${VALUE_DELIMS}]${VALUE_SEGMENT_NO_DOT}*`
+/** Stands in for the dot of a file extension, so no value pass reads a file name as a value. */
+const FILE_DOT = "⸱"
 const FILE_EXTENSIONS =
 	"js|mjs|cjs|jsx|ts|tsx|css|map|json|html|htm|xml|txt|md|csv|pdf|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|wasm|zip|gz|ya?ml|php|py|rb|go|rs|java|sql|log"
-/** Stands in for the dot of a file extension while the dotted passes run. */
-const FILE_DOT = "⸱"
+const VALUE_SEGMENT = `[^${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_NO_DIGIT = `[^0-9${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_NO_DOT = `[^.${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_END = `([${VALUE_DELIMS}]|$)`
+const TWO_DIGIT_RUNS = `/${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT_NO_DIGIT}${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT}*${VALUE_SEGMENT_END}`
+const DIGIT_LED = `/[0-9]${VALUE_SEGMENT}{4,}${VALUE_SEGMENT_END}`
+/** The last part of a dotted value starts lower case; an RPC service's (`acme.v1.Orders`) does not. */
+const DOTTED_VALUE = `${VALUE_SEGMENT_NO_DOT}+([.]${VALUE_SEGMENT_NO_DOT}+)*[.][^A-Z.${FILE_DOT}${VALUE_DELIMS}]${VALUE_SEGMENT_NO_DOT}*`
 /**
  * A path segment that reads as a value, not a route name: one with two separate runs of
  * digits (`PZN8GVZLF8`), one of five or more characters that starts with a digit
- * (`7d-trial`), or a dotted one (`app.acme.pro.annual`, a host). A dotted last segment
- * needs two dots, since a file name sits there. `oauth2`, `sha256`, `2fa`, `v1beta1`,
- * `app.min.js` and an RPC service (`/acme.v1.Orders/Get`) stay names. An echoed request
- * URL (`StatusCode error (503 GET /v3/applications/<package>/...)`) otherwise opened one
- * issue per customer, and almost no client span carries a route to read instead.
+ * (`7d-trial`), or a dotted one (`app.acme.pro.annual`, a host), which needs two dots when
+ * it is the last segment. `oauth2`, `sha256`, `2fa`, a version (`v1beta1`), a file name
+ * (`jquery-3.7.1.min.js`) and an RPC service (`/acme.v1beta1.Orders/Get`) stay names. An
+ * echoed request URL (`StatusCode error (503 GET /v3/applications/<package>/...)`)
+ * otherwise opened one issue per customer, and almost no client span carries a route.
  */
 export const PATH_VALUE_REDACTIONS: Redactions = [
-	// An API version is the one name with two runs: spell it as the number pass would.
-	[`/v[0-9]+(alpha|beta|rc)[0-9]+${VALUE_SEGMENT_END}`, "/v#$1#$2"],
-	[`/${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT_NO_DIGIT}${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT}*`, "/#"],
-	[`/[0-9]${VALUE_SEGMENT}{4,}`, "/#"],
+	// A version is the one name with two runs: spell it as the number pass would.
+	[`([/.])v[0-9]+(alpha|beta|rc)[0-9]+([.${VALUE_DELIMS}]|$)`, "$1v#$2#$3"],
 	[`[.](${FILE_EXTENSIONS})${VALUE_SEGMENT_END}`, `${FILE_DOT}$1$2`],
+	// Each twice: a match consumes the slash the next segment starts at.
+	[TWO_DIGIT_RUNS, "/#$1"],
+	[TWO_DIGIT_RUNS, "/#$1"],
+	[DIGIT_LED, "/#$1"],
+	[DIGIT_LED, "/#$1"],
 	[`/${VALUE_SEGMENT_NO_DOT}+[.]${DOTTED_VALUE}${VALUE_SEGMENT_END}`, "/#$2"],
-	// Twice: a match consumes the slash the next segment starts at.
 	[`/${DOTTED_VALUE}/`, "/#/"],
 	[`/${DOTTED_VALUE}/`, "/#/"],
 	[FILE_DOT, "."],

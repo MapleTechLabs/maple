@@ -256,11 +256,12 @@ loop in verification without a human ever seeing it.
   being worked. Their old hashes need not arrive together: every tick checks each new hash's
   current owner against the owners of its previous hashes, so an old issue that shows up in a
   later tick, or a new hash that opened its own issue while lineage could not be read, is folded
-  then. Once they agree the check writes nothing. A bump that splits a hash does not split an
-  issue that already exists: every new hash whose previous hash has an owner joins that owner,
-  so only errors first seen after the bump get the finer grouping. The error-spike detector
-  reads its 7 day baseline per issue, across every hash the issue owns, so a re-keyed hash is
-  judged against its history and not against the hours since the bump.
+  then. Once they agree the check writes nothing. Two issues a bump folded share one hash, so
+  unmerging them does not hold: the next tick folds them again. A bump that splits a hash does
+  not split an issue that already exists: every new hash whose previous hash has an owner joins
+  that owner, so only errors first seen after the bump get the finer grouping. The error-spike detector
+  adds to a re-keyed hash's 7 day baseline the history of its previous hashes, read from
+  lineage, so it is judged against its history and not against the hours since the bump.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs

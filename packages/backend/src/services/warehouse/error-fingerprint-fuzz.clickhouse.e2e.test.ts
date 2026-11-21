@@ -101,6 +101,8 @@ const frameLine = fc.oneof(
 		'    at [2]["params"]',
 		"    at async Promise.all (index 3)",
 		"    at file:///bundle/worker.js:1:2345",
+		"    at a.js:1:2",
+		"    at async b3.mjs:4:5",
 		'{"user":"a@b.io","attempt":0}',
 		"params: 1, abc, 2026-10-01",
 		"Traceback (most recent call last):",
@@ -134,6 +136,8 @@ const messagePart = fc.oneof(
 	fc.constantFrom(
 		"/acme.orders.v1.OrderService/Create",
 		"/assets/app.min.js",
+		"/assets/jquery-3.7.1.min.js",
+		"/acme.orders.v1beta1.OrderService/Create /a1b2/c3d4/9zzzz/8yyyy",
 		"/v1beta1/models",
 		"/auth/2fa/verify",
 		"/offers/7d-trial/x.y",

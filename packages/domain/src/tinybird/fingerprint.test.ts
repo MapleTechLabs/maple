@@ -1487,6 +1487,10 @@ describe("fingerprint v5", () => {
 			)
 		})
 
+		it("keeps a frame that is only a short file name", () => {
+			expect(error("    at a.js:1:2")).not.toBe(error("    at b.js:2:3"))
+		})
+
 		it("groups Firefox's composite names for nested anonymous functions", () => {
 			const build = (name: string) => `${name}@https://app.dev/assets/nav.js:7:67883`
 			expect(error(build("Bx</o<"))).toBe(error(build("Gu</<")))
@@ -1526,6 +1530,8 @@ describe("fingerprint v5", () => {
 			expect(status("/auth/2fa/verify")).not.toBe(status("/auth/3ds/verify"))
 			expect(status("/v1beta1/models")).not.toBe(status("/v1alpha1/models"))
 			expect(status("/keys/sha256/verify")).not.toBe(status("/keys/x509/verify"))
+			expect(status("/assets/jquery-3.7.1.min.js")).not.toBe(status("/assets/bootstrap-5.3.0.min.js"))
+			expect(status("/assets/jquery-3.7.1.min.js")).toBe(status("/assets/jquery-3.8.0.min.js"))
 		})
 
 		it("keeps the service in an RPC path", () => {
@@ -1533,6 +1539,9 @@ describe("fingerprint v5", () => {
 				status("/acme.billing.v1.InvoiceService/Create"),
 			)
 			expect(status("/twirp/acme.Orders/Create")).not.toBe(status("/twirp/acme.Invoices/Create"))
+			expect(status("/acme.orders.v1beta1.OrderService/Create")).not.toBe(
+				status("/acme.billing.v1beta1.InvoiceService/Create"),
+			)
 		})
 
 		it("folds a host or an offer id that sits in the path", () => {
