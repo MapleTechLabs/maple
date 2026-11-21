@@ -34,6 +34,7 @@ import {
 } from "./alchemy/secrets.ts"
 import { blockedIngestKeysEnv, blockIngestKeysAtEdge } from "./alchemy/edge-block.ts"
 import { gatewayTuningEnv } from "./alchemy/gateway-env.ts"
+import { walKeyPolicy } from "./alchemy/wal-key.ts"
 
 /** Compiled ahead of time by CI so the image build is a COPY. Absent on a dev machine. */
 const PREBUILT_BINARY = "apps/ingest/dist/maple-ingest"
@@ -78,13 +79,70 @@ const WAL_CONTAINER_DIR = "/var/lib/maple-ingest/wal"
 /** The host's instance-store NVMe (mounted by `ec2UserData`) or a root-volume directory. */
 const WAL_HOST_DIR = "/mnt/wal"
 
+/** Host directory holding the instance facts the gateway would otherwise ask the metadata service for. */
+const HOST_IDENTITY_HOST_DIR = "/etc/maple-ingest"
+/** Where the gateway reads them (`INGEST_HOST_IDENTITY_FILE`, `src/host_identity.rs`). */
+const HOST_IDENTITY_CONTAINER_DIR = "/etc/maple-ingest"
+
 /**
  * Boot script for a gateway host (ECS-optimized AL2023). An instance-store host mounts the
  * NVMe at WAL_HOST_DIR and only THEN joins the cluster, so a host whose disk did not come
  * up never gets a task. The S3 tier covers the disk being wiped on replace.
+ *
+ * Tasks share the host's network namespace, so the hop limit alone does not keep the gateway
+ * off the instance metadata service. A boot-time unit drops metadata traffic from every
+ * non-root uid (the ECS agent and SSM run as root) before the host can join the cluster.
  */
 const ec2UserData = (clusterName: string, disk: "instance-store" | "root-volume") => `#!/bin/bash
 set -euxo pipefail
+
+# Instance facts for the gateway's telemetry, read while root still reaches the metadata service.
+# Tracing off around the session token so it stays out of the boot log. Each call is capped
+# at 2s so a silent metadata service leaves the fields empty instead of stalling boot.
+set +x
+imds_token=$(curl -sf --connect-timeout 1 --max-time 2 -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token) || imds_token=""
+imds() { curl -sf --connect-timeout 1 --max-time 2 -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
+mkdir -p ${HOST_IDENTITY_HOST_DIR}
+cat > ${HOST_IDENTITY_HOST_DIR}/host-identity <<IDENTITY
+host.id=$(imds instance-id)
+host.type=$(imds instance-type)
+host.image.id=$(imds ami-id)
+cloud.availability_zone=$(imds placement/availability-zone)
+IDENTITY
+unset imds_token
+set -x
+chmod 0644 ${HOST_IDENTITY_HOST_DIR}/host-identity
+
+cat > /usr/local/sbin/maple-imds-block <<'BLOCK'
+#!/bin/bash
+set -euo pipefail
+for cmd in iptables ip6tables; do
+	addr=169.254.169.254/32
+	[ "$cmd" = ip6tables ] && addr=fd00:ec2::254/128
+	"$cmd" -w -C OUTPUT -d "$addr" -m owner ! --uid-owner 0 -j DROP 2>/dev/null \\
+		|| "$cmd" -w -I OUTPUT 1 -d "$addr" -m owner ! --uid-owner 0 -j DROP
+done
+BLOCK
+chmod 0755 /usr/local/sbin/maple-imds-block
+# RequiredBy ecs.service: if the rule cannot be installed on a reboot, no task starts.
+cat > /etc/systemd/system/maple-imds-block.service <<'UNIT'
+[Unit]
+Description=Keep non-root processes off the instance metadata service
+DefaultDependencies=no
+After=local-fs.target network-pre.target
+Before=network.target docker.service ecs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/maple-imds-block
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=ecs.service
+UNIT
+systemctl daemon-reload
+systemctl enable --now maple-imds-block.service
 
 mkdir -p ${WAL_HOST_DIR}
 ${
@@ -240,8 +298,8 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			instanceProfileName: instanceProfile.instanceProfileName,
 			associatePublicIpAddress: true,
 			// IMDSv2 only: a forged request from inside the gateway (SSRF) cannot read the instance
-			// role, and hop limit 1 keeps it off any bridge-networked container. The gateway's own
-			// host lookup already uses the token flow (src/host_identity.rs).
+			// role, and hop limit 1 keeps it off any bridge-networked container. The host-networked
+			// gateway is kept off by the boot script's firewall unit (`ec2UserData`).
 			metadataOptions: { httpTokens: "required", httpPutResponseHopLimit: 1, httpEndpoint: "enabled" },
 			userData: ec2UserData(clusterName, WAL_STORAGE[instanceType].disk),
 			tags,
@@ -361,31 +419,9 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 
 		// Durability tier for the WAL (`apps/ingest/src/wal_store.rs`): sealed,
 		// unexported segments, claimed by the next task if their owner dies.
-		// Named up front so the env var below is a plain string.
+		// Named up front so the env var and the IAM policy below are plain strings.
 		const walBucketName = name("ingest-wal")
-		const walSegments = yield* AWS.S3.Bucket("ingest-wal-segments", {
-			bucketName: walBucketName,
-			// Backstop for segments whose delete was lost.
-			lifecycleRules: [
-				{
-					ID: "expire-wal-segments",
-					Status: "Enabled",
-					Filter: { Prefix: "wal/" },
-					Expiration: { Days: 7 },
-					AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
-				},
-			],
-			publicAccessBlock: {
-				blockPublicAcls: true,
-				blockPublicPolicy: true,
-				ignorePublicAcls: true,
-				restrictPublicBuckets: true,
-			},
-			encryption: { sseAlgorithm: "AES256" },
-			forceDestroy: true,
-			tags,
-		})
-
+		const walBucketArn = `arn:aws:s3:::${walBucketName}`
 		// Its own logical id: alchemy keys resources by id alone, and a repeat id
 		// silently returns the first registration. Keep these policies without a
 		// `description`: changing one replaces the policy under the same name, and the
@@ -398,12 +434,12 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 					{
 						Effect: "Allow",
 						Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-						Resource: [Output.map(walSegments.bucketArn, (arn) => `${arn}/wal/*`)],
+						Resource: [`${walBucketArn}/wal/*`],
 					},
 					{
 						Effect: "Allow",
 						Action: ["s3:ListBucket"],
-						Resource: [walSegments.bucketArn],
+						Resource: [walBucketArn],
 						Condition: { StringLike: { "s3:prefix": ["wal/*"] } },
 					},
 				],
@@ -452,11 +488,21 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 			placementConstraints: [{ type: "distinctInstance" }],
 			cpu: taskSize.cpu,
 			memory: taskSize.memory,
-			volumes: [{ name: "wal", host: { sourcePath: WAL_HOST_DIR } }],
+			volumes: [
+				{ name: "wal", host: { sourcePath: WAL_HOST_DIR } },
+				{ name: "host-identity", host: { sourcePath: HOST_IDENTITY_HOST_DIR } },
+			],
 			container: {
 				// The shutdown drain (`INGEST_SHUTDOWN_DRAIN_SECS`, default 90) must fit inside this.
 				stopTimeout: 120,
-				mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
+				mountPoints: [
+					{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR },
+					{
+						sourceVolume: "host-identity",
+						containerPath: HOST_IDENTITY_CONTAINER_DIR,
+						readOnly: true,
+					},
+				],
 				// Replaces the mapping alchemy derives from `port`; host mode needs hostPort = containerPort.
 				portMappings: [INGEST_PORT, INGEST_GRPC_PORT].map((port) => ({
 					containerPort: port,
@@ -533,6 +579,8 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				// The task role signs these requests; the S3 gateway endpoint keeps them private.
 				INGEST_WAL_S3_BUCKET: walBucketName,
 				INGEST_WAL_S3_REGION: resolveAwsRegion(region),
+				// Written by the boot script: the task itself cannot reach the metadata service.
+				INGEST_HOST_IDENTITY_FILE: `${HOST_IDENTITY_CONTAINER_DIR}/host-identity`,
 
 				...(replayBlobs
 					? {
@@ -565,6 +613,55 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 				...(yield* commitShaEnv("INGEST_COMMIT_SHA")),
 			} satisfies Record<string, string | Output.Output<string>>,
 
+			tags,
+		})
+
+		// The WAL's own key. Only the gateway's task role (and the deploy role, when the deploy
+		// names it) may use it; the account keeps administration so the key cannot be orphaned.
+		// Declared after the service because its policy names the task role.
+		const deployRoleArn = (yield* optionalPlain("MAPLE_AWS_DEPLOY_ROLE_ARN")).MAPLE_AWS_DEPLOY_ROLE_ARN
+		const walKey = yield* AWS.KMS.Key("ingest-wal-key", {
+			description: `Maple ingest WAL segments (${walBucketName})`,
+			enableKeyRotation: true,
+			policy: Output.map(service.taskRoleArn, (taskRoleArn = "") =>
+				walKeyPolicy({
+					region: resolveAwsRegion(region),
+					users: deployRoleArn ? [taskRoleArn, deployRoleArn] : [taskRoleArn],
+				}),
+			),
+			tags,
+		})
+		yield* AWS.KMS.Alias("ingest-wal-key-alias", {
+			aliasName: `alias/${walBucketName}`,
+			targetKeyId: walKey.keyId,
+		})
+
+		yield* AWS.S3.Bucket("ingest-wal-segments", {
+			bucketName: walBucketName,
+			// Backstop for segments whose delete was lost.
+			lifecycleRules: [
+				{
+					ID: "expire-wal-segments",
+					Status: "Enabled",
+					Filter: { Prefix: "wal/" },
+					Expiration: { Days: 7 },
+					AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
+				},
+			],
+			publicAccessBlock: {
+				blockPublicAcls: true,
+				blockPublicPolicy: true,
+				ignorePublicAcls: true,
+				restrictPublicBuckets: true,
+			},
+			// Objects written before the switch keep the encryption S3 recorded on each of them.
+			encryption: {
+				sseAlgorithm: "aws:kms",
+				kmsMasterKeyId: walKey.keyArn,
+				// One data key per bucket instead of a KMS call per object.
+				bucketKeyEnabled: true,
+			},
+			forceDestroy: true,
 			tags,
 		})
 
