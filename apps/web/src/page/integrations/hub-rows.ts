@@ -83,8 +83,8 @@ const isPlanetscaleConnected = (statuses: Model["statuses"]): boolean =>
 	})
 
 /**
- * Scrape targets are stored as Prometheus sources, so WarpStream clusters and standalone PlanetScale
- * targets are found under that platform; every other data integration under its own name.
+ * Scrape targets are stored as Prometheus sources, so standalone PlanetScale targets are found under
+ * that platform; every other data integration under its own name. (WarpStream is never a connected row.)
  */
 const sourcesQueryOf = (
 	model: Model,
@@ -93,7 +93,7 @@ const sourcesQueryOf = (
 ) =>
 	overview.kind !== "connected" || !isDataIntegration(entry.id)
 		? null
-		: entry.id === "warpstream" || (entry.id === "planetscale" && !isPlanetscaleConnected(model.statuses))
+		: entry.id === "planetscale" && !isPlanetscaleConnected(model.statuses)
 			? "Prometheus"
 			: entry.name
 
