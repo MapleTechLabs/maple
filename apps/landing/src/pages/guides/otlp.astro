@@ -64,6 +64,7 @@ const collectorBatch = String.raw`exporters:
       batch:
         enabled: true
         sizer: items
+        min_size: 2000   # the default minimum is 8192, above this maximum
         max_size: 4000`;
 
 const faqs = [

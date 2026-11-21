@@ -68,14 +68,19 @@ service:
       processors: [memory_limiter, resource_detection]
       exporters: [otlp_http]`;
 
+// Published on localhost only: anyone who can reach these ports sends with your backend key.
 const dockerRun = String.raw`docker run --rm \
-  -p 4317:4317 -p 4318:4318 -p 13133:13133 \
-  -e OTLP_ENDPOINT=https://otlp.example.com \
-  -e OTLP_API_KEY \
+  -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:13133:13133 \
+  -e OTLP_ENDPOINT -e OTLP_API_KEY \
   -v "$PWD/config.yaml:/etc/otelcol-contrib/config.yaml" \
   otel/opentelemetry-collector-contrib:0.165.0`;
 
-const validate = String.raw`docker run --rm \
+const validate = String.raw`# Your backend's OTLP base URL and key, read by the config
+export OTLP_ENDPOINT=https://otlp.example.com
+export OTLP_API_KEY=your-api-key
+
+docker run --rm \
+  -e OTLP_ENDPOINT -e OTLP_API_KEY \
   -v "$PWD/config.yaml:/etc/otelcol-contrib/config.yaml" \
   otel/opentelemetry-collector-contrib:0.165.0 \
   validate --config /etc/otelcol-contrib/config.yaml`;
@@ -288,7 +293,7 @@ const faqs = [
         <p>Check the file before you start anything. <code>validate</code> catches unknown keys, wrong types and components that are not in your distribution. The contrib image runs it without installing anything:</p>
         <Code code={validate} lang="shell" />
         <p>
-            One mistake it caught while we tested this guide: the <code>load_balancing</code> exporter's DNS resolver wants <code>port</code> as a string, so <code>port: 4317</code> fails and <code>port: "4317"</code> passes on v0.165.0, although the exporter's README shows an integer. Then start the Collector with the config mounted and the backend's address and key in the environment:
+            One mistake it caught while we tested this guide: the <code>load_balancing</code> exporter's DNS resolver wants <code>port</code> as a string, so <code>port: 4317</code> fails and <code>port: "4317"</code> passes on v0.165.0, although the exporter's README shows an integer. Then start the Collector with the config mounted and the same two variables passed in. The ports are published on localhost only, since anything that can reach them sends telemetry with your key:
         </p>
         <Code code={dockerRun} lang="shell" />
         <p>
