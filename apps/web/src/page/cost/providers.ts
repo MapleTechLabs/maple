@@ -74,8 +74,7 @@ export const COST_PROVIDERS = {
 	// Morph serves only this month's spend so far: Maple reads it hourly and keeps the readings.
 	morph: {
 		name: "Morph",
-		icon: "MorphIcon",
-		iconClassName: "text-foreground",
+		icon: "MorphBrandIcon",
 		requestUsd: null,
 		sourceNote:
 			"Morph reports only this month's spend so far, so Maple reads it every hour and counts each day's change. What was spent before Maple's first reading shows on the month's first day, and spend after a month's last reading, up to an hour, is not counted. Morph has no split by model.",

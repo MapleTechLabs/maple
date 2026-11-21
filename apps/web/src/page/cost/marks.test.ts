@@ -101,7 +101,7 @@ describe("cost key marks", () => {
 
 	test("Morph's one service wears Morph's mark, never the platform beside it", () => {
 		const morph = keyMark("provider", "morph", [])?.icon
-		expect(morph).toBe("MorphIcon")
+		expect(morph).toBe("MorphBrandIcon")
 		const withAws = [source("aws", "123456789012"), source("morph", "organization")]
 		expect(keyMark("cloud_service", "morph", withAws)?.icon).toBe(morph)
 		expect(keyMark("cloud_service", "morph", [])?.icon).toBe(morph)
