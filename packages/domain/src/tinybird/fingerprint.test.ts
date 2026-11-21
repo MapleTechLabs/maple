@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	chPattern,
+	chRedactChain,
 	computeFingerprintInputs,
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
 	CUSTOM_FINGERPRINT_MAX_CHARS,
@@ -9,7 +10,10 @@ import {
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
 	LIBRARY_FRAME_PATTERN,
+	PREVIOUS_ERROR_MSG_REDACTIONS,
 	PREVIOUS_FINGERPRINT_HASH_SALT,
+	PREVIOUS_FRAME_LINE_PATTERN,
+	PREVIOUS_FRAME_REDACTIONS,
 	resolveCustomFingerprint,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
@@ -285,20 +289,30 @@ describe("error fingerprint normalization", () => {
 		})
 
 		it("keeps every frame of a stack that never enters app code", () => {
-			const stack = "    at a (/app/node_modules/x/a.js:1:1)\n    at b (/app/node_modules/x/b.js:2:2)"
+			const stack =
+				"    at first (/app/node_modules/x/a.js:1:1)\n    at second (/app/node_modules/x/b.js:2:2)"
 			expect(inputs(stack).fpFrames).toBe(
-				"    at a (node_modules/x/a.js)\n    at b (node_modules/x/b.js)",
+				"    at first (node_modules/x/a.js)\n    at second (node_modules/x/b.js)",
 			)
 		})
 
-		it("hashes the previous version's frames for the re-key", () => {
-			const stack =
-				"    at validate (/app/node_modules/zod/lib/index.js:1:1)\n    at saveOrder (/app/src/orders.ts:42:5)"
-			const result = inputs(stack)
+		it("hashes the previous version's frames and message for the re-key", () => {
+			const result = computeFingerprintInputs({
+				exceptionType: "Error",
+				exceptionStacktrace:
+					"    at JB (/app/dist/entry.js:1:1)\n    at saveOrder (/app/src/orders.ts:42:5)",
+				statusMessage: "StatusCode error (503 GET https://api.dev/v3/apps/PZN8GVZLF8/reviews)",
+			})
+			expect(result.hashInputs).toEqual([
+				"Error",
+				"    at (/app/dist/entry.js)\n    at saveOrder (/app/src/orders.ts)",
+				"StatusCode error (5xx GET /v#/apps/#/reviews)",
+				FINGERPRINT_HASH_SALT,
+			])
 			expect(result.previousHashInputs).toEqual([
 				"Error",
-				"    at validate (node_modules/zod/lib/index.js)\n    at saveOrder (/app/src/orders.ts)",
-				result.msgSignature,
+				"    at JB (/app/dist/entry.js)\n    at saveOrder (/app/src/orders.ts)",
+				"StatusCode error (5xx GET /v#/apps/PZN#GVZLF#/reviews)",
 				PREVIOUS_FINGERPRINT_HASH_SALT,
 			])
 		})
@@ -778,6 +792,7 @@ describe("SQL parity", () => {
 
 	it("renders the frame matcher and every redaction from the shared constants", () => {
 		expect(sql).toContain(`match(line, ${chPattern(FRAME_LINE_PATTERN)})`)
+		expect(sql).toContain(`match(line, ${chPattern(PREVIOUS_FRAME_LINE_PATTERN)})`)
 		expect(sql).toContain(`position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})`)
 		expect(sql).toContain(`NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})`)
@@ -802,16 +817,17 @@ describe("SQL parity", () => {
 		expect(sql).toContain(`_msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})\n          ) AS _hash`)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the previous salt is what the re-key matches on
 		expect(sql).toContain(
-			`_msgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})\n          ) AS _prevHash`,
+			`_prevFpFrames, _prevMsgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})\n          ) AS _prevHash`,
 		)
 	})
 
 	it("truncates by character in both implementations, not by byte", () => {
 		// ClickHouse `substring` counts bytes while JS `slice` counts UTF-16 units,
 		// so a non-ASCII message would truncate at a different point on each side.
+		expect(sql).toContain(`substringUTF8(_sigText, 1, ${MSG_SCAN_CHARS})`)
 		expect(sql).toContain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`)
 		expect(sql).toContain(`1, ${MSG_SIGNATURE_CHARS}`)
-		expect(sql).not.toMatch(/substring\((StatusMessage|_msgText)/)
+		expect(sql).not.toMatch(/substring\((StatusMessage|_msgText|_sigText|SpanName)/)
 	})
 
 	it("keeps the frame limit in step", () => {
@@ -835,6 +851,17 @@ describe("SQL parity", () => {
 		}
 		expect(FRAME_LINE_PATTERN).not.toMatch(/\(\?[=!<]/)
 		expect(LIBRARY_FRAME_PATTERN).not.toMatch(/\(\?[=!<]/)
+	})
+
+	it("renders the previous version's hash from the previous version's rules, in their order", () => {
+		// Whole chains: a previous hash built from this version's rules names no issue.
+		expect(sql).toContain(`line -> ${chRedactChain("line", PREVIOUS_FRAME_REDACTIONS)},`)
+		expect(sql).toContain(
+			chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, PREVIOUS_ERROR_MSG_REDACTIONS),
+		)
+		expect(chRedactChain("line", PREVIOUS_FRAME_REDACTIONS)).not.toBe(
+			chRedactChain("line", FRAME_REDACTIONS),
+		)
 	})
 
 	it("uses no replacement syntax beyond a group reference both engines share", () => {
@@ -1021,12 +1048,12 @@ describe("fingerprint v3", () => {
 					statusMessage: "",
 				}).topFrame
 
-			expect(top("    at a (file:///bundle/worker.js:1:2)")).toBe("    at a (worker.js)")
-			expect(top("    at a (https://x.dev/assets/index-AbCd1234-EfGh5678.js:1:2)")).toBe(
-				"    at a (/assets/index.js)",
+			expect(top("    at load (file:///bundle/worker.js:1:2)")).toBe("    at load (worker.js)")
+			expect(top("    at load (https://x.dev/assets/index-AbCd1234-EfGh5678.js:1:2)")).toBe(
+				"    at load (/assets/index.js)",
 			)
-			expect(top("    at a (https://x.dev/_astro/Layout.AbCd1234.js:1:2)")).toBe(
-				"    at a (/_astro/Layout.js)",
+			expect(top("    at load (https://x.dev/_astro/Layout.AbCd1234.js:1:2)")).toBe(
+				"    at load (/_astro/Layout.js)",
 			)
 		})
 
@@ -1429,5 +1456,205 @@ describe("grouping residuals from a production replay", () => {
 		const selector = (value: string) => signature(`Function selector ${value} does not match value()`)
 
 		expect(selector("0x722713f7")).toBe(selector("0x18160ddd"))
+	})
+})
+
+describe("fingerprint v5", () => {
+	const key = (args: Parameters<typeof computeFingerprintInputs>[0]) =>
+		Arr.join(computeFingerprintInputs(args).hashInputs, "\u0000")
+	const error = (exceptionStacktrace: string, statusMessage = "boom") =>
+		key({ exceptionType: "Error", exceptionStacktrace, statusMessage })
+
+	describe("minified function names", () => {
+		it("groups one throw site across builds that rename it", () => {
+			const build = (name: string) =>
+				`    at ${name} (/app/dist/entry.js:1512:14367)\n    at async Object.evaluate (/app/dist/entry.js:9:1)`
+			expect(error(build("JB"))).toBe(error(build("x3")))
+			expect(error(build("i.f.j"))).toBe(error(build("QV")))
+		})
+
+		it("groups a method whose receiver was renamed", () => {
+			const build = (receiver: string) =>
+				`    at ${receiver}.handleRequest (/app/dist/worker.js:9:1)\n    at async ${receiver}.fetch (/app/dist/worker.js:1:1)`
+			expect(error(build("Kt"))).toBe(error(build("e.t")))
+			expect(error("e.render@https://app.dev/assets/nav.js:7:67883")).toBe(
+				error("Qz.render@https://app.dev/assets/nav.js:7:67883"),
+			)
+			expect(error(build("Kt"))).not.toBe(
+				error(
+					"    at Kt.handleQueue (/app/dist/worker.js:9:1)\n    at async Kt.fetch (/app/dist/worker.js:1:1)",
+				),
+			)
+		})
+
+		it("keeps a frame that is only a short file name", () => {
+			expect(error("    at a.js:1:2")).not.toBe(error("    at b.js:2:3"))
+		})
+
+		it("groups Firefox's composite names for nested anonymous functions", () => {
+			const build = (name: string) => `${name}@https://app.dev/assets/nav.js:7:67883`
+			expect(error(build("Bx</o<"))).toBe(error(build("Gu</<")))
+			expect(error(build("t"))).toBe(error(build("Ux")))
+		})
+
+		it("keeps real function names, which tell two throw sites in one file apart", () => {
+			const at = (name: string) => `    at ${name} (/app/src/orders.ts:1:1)`
+			expect(error(at("saveOrder"))).not.toBe(error(at("loadOrder")))
+			expect(error(at("run"))).not.toBe(error(at("map")))
+			expect(error(at("Effect.fn"))).not.toBe(error(at("Effect.gen")))
+			expect(error("saveOrder/<@https://app.dev/a.js:1:2")).not.toBe(
+				error("loadOrder/<@https://app.dev/a.js:1:2"),
+			)
+		})
+	})
+
+	describe("values in an echoed URL path", () => {
+		const status = (path: string) => error("", `StatusCode error (503 GET https://api.dev${path})`)
+
+		it("folds ids, package names and dotted product ids", () => {
+			expect(status("/v3/applications/com.acme.reader/subscriptions/acme.pro.annual")).toBe(
+				status("/v3/applications/app.whipp/subscriptions/planner5d.yearly.2"),
+			)
+			expect(status("/v2/organizations/28913/proxy/PZN8GVZLF8/v1/apps")).toBe(
+				status("/v2/organizations/3562/proxy/569VQ2VCM3/v1/apps"),
+			)
+		})
+
+		it("keeps route names that carry a version digit or a file extension", () => {
+			expect(status("/v1/oauth2/token")).not.toBe(status("/v1/saml2/token"))
+			expect(status("/purchases/subscriptionsv2/tokens")).not.toBe(
+				status("/purchases/productsv2/tokens"),
+			)
+			expect(status("/static/index.js")).not.toBe(status("/static/vendor.js"))
+			expect(status("/assets/app.min.js")).not.toBe(status("/assets/vendor.min.js"))
+			expect(status("/auth/2fa/verify")).not.toBe(status("/auth/3ds/verify"))
+			expect(status("/v1beta1/models")).not.toBe(status("/v1alpha1/models"))
+			expect(status("/keys/sha256/verify")).not.toBe(status("/keys/x509/verify"))
+			expect(status("/assets/jquery-3.7.1.min.js")).not.toBe(status("/assets/bootstrap-5.3.0.min.js"))
+			expect(status("/assets/jquery-3.7.1.min.js")).toBe(status("/assets/jquery-3.8.0.min.js"))
+		})
+
+		it("keeps the service in an RPC path", () => {
+			expect(status("/acme.orders.v1.OrderService/Create")).not.toBe(
+				status("/acme.billing.v1.InvoiceService/Create"),
+			)
+			expect(status("/twirp/acme.Orders/Create")).not.toBe(status("/twirp/acme.Invoices/Create"))
+			expect(status("/acme.orders.v1beta1.OrderService/Create")).not.toBe(
+				status("/acme.billing.v1beta1.InvoiceService/Create"),
+			)
+		})
+
+		it("folds a host or an offer id that sits in the path", () => {
+			expect(status("/sites/shop.acme.com/pages")).toBe(status("/sites/blog.example.org/pages"))
+			expect(status("/plans/monthly/offers/7d-trial")).toBe(status("/plans/monthly/offers/14-day-free"))
+		})
+
+		it("keeps two endpoints of one API apart", () => {
+			expect(status("/v2/organizations/1/query")).not.toBe(status("/v2/organizations/1/events"))
+		})
+	})
+
+	it("reads a Go error library's `pkg.Func (file.go:N)` lines as frames", () => {
+		const stack = (line: number) =>
+			`github.com/acme/api/server/mysql.(*Store).Insert (software.go:${line})\nmain.run (cron.go:206)`
+		const inputs = computeFingerprintInputs({
+			exceptionType: "*errors.errorString",
+			exceptionStacktrace: stack(3541),
+			statusMessage: "context deadline exceeded",
+		})
+		expect(inputs.topFrame).toBe("github.com/acme/api/server/mysql.(*Store).Insert (software.go)")
+		expect(inputs.fpFrames).toBe(
+			computeFingerprintInputs({
+				exceptionType: "*errors.errorString",
+				exceptionStacktrace: stack(3550),
+				statusMessage: "context deadline exceeded",
+			}).fpFrames,
+		)
+	})
+
+	it("re-keys an error whose message came from its exception event from a hash with no message", () => {
+		const inputs = computeFingerprintInputs({
+			exceptionType: "Error",
+			exceptionStacktrace: "    at deliver (/app/src/notify.ts:1:1)",
+			statusMessage: "delivery rejected: telegram credentials unavailable",
+			messageFromEvent: true,
+		})
+		expect(inputs.hashInputs[2]).toBe("delivery rejected: telegram credentials unavailable")
+		expect(inputs.previousHashInputs[2]).toBe("")
+	})
+
+	describe("an error with no type, message or stack", () => {
+		const bare = (kind: string, name: string) =>
+			computeFingerprintInputs({
+				exceptionType: "",
+				exceptionStacktrace: "",
+				statusMessage: "",
+				span: { kind, name },
+			})
+
+		it("is keyed and labelled by its span", () => {
+			const queue = bare("Server", "POST /queue/run")
+			expect(queue.label).toBe("POST /queue/run (no exception)")
+			expect(queue.hashInputs).not.toEqual(bare("Server", "ssh.tunnel.open").hashInputs)
+			expect(queue.hashInputs).not.toEqual(bare("Client", "POST /queue/run").hashInputs)
+		})
+
+		it("folds the ids in a span name", () => {
+			expect(bare("Server", "GET /users/18082/profile").hashInputs).toEqual(
+				bare("Server", "GET /users/45098/profile").hashInputs,
+			)
+		})
+
+		it("has no previous hash: the one every such error shared was a bucket, not an issue", () => {
+			const queue = bare("Server", "POST /queue/run")
+			expect(queue.previousHashInputs).toEqual(queue.hashInputs)
+		})
+
+		it("is keyed by its span when a status code is all the type says", () => {
+			const status = (type: string, name: string) =>
+				computeFingerprintInputs({
+					exceptionType: type,
+					exceptionStacktrace: "",
+					statusMessage: "",
+					span: { kind: "Server", name },
+				})
+			expect(status("500", "GET /orders").label).toBe("GET /orders (500)")
+			expect(status("500", "GET /orders").hashInputs).not.toEqual(
+				status("500", "GET /users").hashInputs,
+			)
+			expect(status("500", "GET /orders").hashInputs).not.toEqual(
+				status("503", "GET /orders").hashInputs,
+			)
+			expect(status("_OTHER", "GET /orders").hashInputs).not.toEqual(
+				status("_OTHER", "GET /users").hashInputs,
+			)
+		})
+
+		it("leaves a named error type to key itself", () => {
+			const typed = (name: string) =>
+				computeFingerprintInputs({
+					exceptionType: "ConnectionError",
+					exceptionStacktrace: "",
+					statusMessage: "",
+					span: { kind: "Client", name },
+				})
+			expect(typed("GET /a").hashInputs).toEqual(typed("GET /b").hashInputs)
+			expect(typed("GET /a").label).toBe("ConnectionError")
+		})
+
+		it("stays Unknown Error when the span has no name either", () => {
+			expect(bare("Server", "").label).toBe("Unknown Error")
+		})
+
+		it("leaves an error that has a message alone", () => {
+			const withSpan = computeFingerprintInputs({
+				exceptionType: "",
+				exceptionStacktrace: "",
+				statusMessage: "upstream closed",
+				span: { kind: "Server", name: "POST /queue/run" },
+			})
+			expect(withSpan.msgSignature).toBe("upstream closed")
+			expect(withSpan.label).toBe("upstream closed")
+		})
 	})
 })

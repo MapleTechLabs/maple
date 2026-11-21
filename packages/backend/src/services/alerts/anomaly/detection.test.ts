@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
 	capBusiestLogSeries,
 	blendGoldenHours,
+	errorSpikeBaselineKey,
 	evaluateErrorSpike,
 	excludeMaintenanceHours,
 	isBaselineHourExcluded,
@@ -13,6 +14,7 @@ import {
 	isWatchedEnvironment,
 	mad,
 	median,
+	rekeyedErrorSpikeBaselines,
 	robustSigma,
 	SENSITIVITY,
 	windowBaseline,
@@ -361,6 +363,130 @@ describe("evaluateErrorSpike", () => {
 	it("skips when no baseline row exists", () => {
 		const e = evaluateErrorSpike(observation(100), undefined, spikeConfig)
 		expect(e.status).toBe("skipped")
+	})
+})
+
+describe("rekeyedErrorSpikeBaselines", () => {
+	const nowMs = Date.parse("2026-06-11T12:00:00Z")
+	const monthAgo = nowMs - 30 * 24 * 60 * 60 * 1000
+	const observed = (fingerprintHash: string, count: number, deploymentEnv = "production") => ({
+		fingerprintHash,
+		serviceName: "api",
+		deploymentEnv,
+		count,
+	})
+	const row = (fingerprintHash: string, totalCount: number, deploymentEnv = "production") => ({
+		fingerprintHash,
+		deploymentEnv,
+		totalCount,
+	})
+	const baselineOf = (
+		baselines: ReturnType<typeof rekeyedErrorSpikeBaselines>,
+		fingerprintHash: string,
+		deploymentEnv = "production",
+	) => baselines.get(errorSpikeBaselineKey(fingerprintHash, deploymentEnv))
+
+	// A steady 100 per half hour. `old` was re-keyed to `new` an hour ago: 334 half hours on the
+	// old hash, 2 on the new one, and lineage pairs them.
+	const rekeyedRows = [row("old", 33_400), row("new", 200)]
+	const previousByHash = new Map([["new", ["old"]]])
+	const noLineage = new Map<string, ReadonlyArray<string>>()
+	// Every issue here is a month old, so the "too young" guard does not apply.
+	const spikeConfig = {
+		sensitivity: SENSITIVITY.normal,
+		issueFirstSeenAt: new Map([
+			["new", monthAgo],
+			["quiet", monthAgo],
+			["busy", monthAgo],
+		]),
+		nowMs,
+	}
+	const evaluate = (count: number) => {
+		const observation = observed("new", count)
+		const baselines = rekeyedErrorSpikeBaselines([observation], rekeyedRows, previousByHash)
+		return evaluateErrorSpike(observation, baselineOf(baselines, "new"), spikeConfig)
+	}
+
+	it("holds a re-keyed hash at its steady rate against its previous hash's history", () => {
+		const e = evaluate(100)
+		// λ = (33400 + 200) / 336 = 100; threshold = max(100 + 30, 400, 20) = 400.
+		expect(e).toMatchObject({ status: "healthy", value: 100, baselineMedian: 100, threshold: 400 })
+		// Its own hour of history alone reads the same rate as a critical spike.
+		expect(evaluateErrorSpike(observed("new", 100), row("new", 200), spikeConfig)).toMatchObject({
+			status: "breached",
+			severity: "critical",
+		})
+	})
+
+	it("still breaches a re-keyed hash on a real 10x spike", () => {
+		expect(evaluate(1000)).toMatchObject({ status: "breached", value: 1000, threshold: 400 })
+	})
+
+	it("uses the previous hash's history for a re-keyed hash that has no row of its own yet", () => {
+		const baselines = rekeyedErrorSpikeBaselines(
+			[observed("new", 100)],
+			[row("old", 33_600)],
+			previousByHash,
+		)
+		expect(baselineOf(baselines, "new")).toEqual({ totalCount: 33_600 })
+	})
+
+	it("sums every previous hash of a bump that folded several errors, each row counted once", () => {
+		const baselines = rekeyedErrorSpikeBaselines(
+			[observed("folded", 300)],
+			[row("left", 10_000), row("right", 20_000), row("folded", 600)],
+			// Lineage is read per minute and can repeat a pair, or name the hash itself.
+			new Map([["folded", ["left", "right", "left", "folded"]]]),
+		)
+		expect(baselineOf(baselines, "folded")).toEqual({ totalCount: 30_600 })
+	})
+
+	it("does not hand a previous hash the history of the hash that replaced it", () => {
+		const baselines = rekeyedErrorSpikeBaselines(
+			[observed("old", 40), observed("new", 60)],
+			rekeyedRows,
+			previousByHash,
+		)
+		expect(baselineOf(baselines, "old")).toEqual({ totalCount: 33_400 })
+		expect(baselineOf(baselines, "new")).toEqual({ totalCount: 33_600 })
+	})
+
+	it("keeps a hash with no lineage on its own row", () => {
+		const baselines = rekeyedErrorSpikeBaselines(
+			[observed("plain", 50), observed("unseen", 50)],
+			[row("plain", 672), ...rekeyedRows],
+			previousByHash,
+		)
+		expect(baselineOf(baselines, "plain")).toEqual({ totalCount: 672 })
+		// No row and no lineage: nothing to compare against, so the evaluator skips it as before.
+		expect(baselineOf(baselines, "unseen")).toBeUndefined()
+	})
+
+	it("does not mix environments", () => {
+		const baselines = rekeyedErrorSpikeBaselines(
+			[observed("new", 100), observed("new", 100, "staging")],
+			[...rekeyedRows, row("old", 3_360, "staging")],
+			previousByHash,
+		)
+		expect(baselineOf(baselines, "new")).toEqual({ totalCount: 33_600 })
+		expect(baselineOf(baselines, "new", "staging")).toEqual({ totalCount: 3_360 })
+	})
+
+	it("keeps two hashes a user merged into one issue on independent baselines", () => {
+		// One issue owns both, but lineage does not relate them: 1 and 1,000 per half hour.
+		const observations = [observed("quiet", 100), observed("busy", 1000)]
+		const baselines = rekeyedErrorSpikeBaselines(
+			observations,
+			[row("quiet", 336), row("busy", 336_000)],
+			noLineage,
+		)
+		const [quiet, busy] = Arr.map(observations, (observation) =>
+			evaluateErrorSpike(observation, baselineOf(baselines, observation.fingerprintHash), spikeConfig),
+		)
+		// λ = 1; threshold = max(1 + 20, 4, 20) = 21. Against the pooled history it was 4,004.
+		expect(quiet).toMatchObject({ status: "breached", value: 100, baselineMedian: 1, threshold: 21 })
+		// λ = 1000; threshold = max(1000 + 94.9, 4000, 20) = 4000.
+		expect(busy).toMatchObject({ status: "healthy", value: 1000, baselineMedian: 1000, threshold: 4000 })
 	})
 })
 
