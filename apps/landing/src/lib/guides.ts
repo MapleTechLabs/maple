@@ -191,6 +191,34 @@ export const guideCategories: GuideCategory[] = [
 				description:
 					"The DPS rate card, cost per host and per GiB, and a worked bill for a small fleet.",
 			},
+			{
+				href: "/guides/datadog-pricing",
+				icon: "CreditCardIcon",
+				title: "Datadog pricing, explained",
+				description:
+					"Per-host prices, log ingest and indexing, custom metric billing, and three worked monthly bills.",
+			},
+			{
+				href: "/guides/honeycomb-pricing",
+				icon: "CreditCardIcon",
+				title: "Honeycomb pricing in 2026",
+				description:
+					"The free plan, the new $3.00 per million Pro rate, what counts as an event, and three worked bills.",
+			},
+			{
+				href: "/guides/grafana-cloud-pricing",
+				icon: "CreditCardIcon",
+				title: "Grafana Cloud pricing, explained",
+				description:
+					"Free tier limits, Pro rates for series, gigabytes and users, and how DPM multiplies a metrics bill.",
+			},
+			{
+				href: "/guides/posthog-pricing",
+				icon: "CreditCardIcon",
+				title: "PostHog pricing, explained",
+				description:
+					"The monthly free tier and the per-unit bands for events, recordings, exceptions and logs.",
+			},
 		],
 	},
 ]

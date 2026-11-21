@@ -1,0 +1,578 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import "../../styles/pricing-guide.css";
+import GuideBody from "../../components/guides/GuideBody.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { getOffer, money, rateLabel } from "../../lib/pricing-offer";
+
+const pageTitle = "PostHog Pricing: Free Tier, Per-Event and Replay Rates | Maple";
+const pageDescription =
+    "PostHog pricing explained: the monthly free tier, tiered rates for analytics events, session replay, error tracking and logs, billing limits, and two worked monthly bills.";
+const published = "2026-11-21";
+const updated = "2026-11-21";
+const updatedLabel = "November 21, 2026";
+const verified = "2026-11-21";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const offer = await getOffer();
+const gb = offer.allotments.find((a) => a.unit === "gb");
+const sessions = offer.allotments.find((a) => a.unit === "sessions");
+const events = offer.allotments.find((a) => a.unit === "events");
+
+const toc = [
+    { depth: 2, slug: "how-it-works", text: "How PostHog pricing works" },
+    { depth: 3, slug: "free-tier", text: "The free tier" },
+    { depth: 3, slug: "limits", text: "Billing limits" },
+    { depth: 2, slug: "rates", text: "Per-unit rates" },
+    { depth: 3, slug: "analytics", text: "Product analytics" },
+    { depth: 3, slug: "replay", text: "Session replay" },
+    { depth: 3, slug: "errors-logs", text: "Error tracking and logs" },
+    { depth: 2, slug: "surprises", text: "What surprises teams" },
+    { depth: 2, slug: "examples", text: "What a month costs" },
+    { depth: 3, slug: "small-team", text: "Small product" },
+    { depth: 3, slug: "mid-team", text: "Growing product" },
+    { depth: 2, slug: "reduce", text: "Cutting the bill" },
+    { depth: 2, slug: "maple", text: "Maple pricing" },
+];
+
+// One color per product, reused by the badges, the bill bars and the tables.
+const cats = {
+    analytics: { label: "Product analytics", color: "var(--chart-1)" },
+    replay: { label: "Session replay", color: "var(--chart-5)" },
+    errors: { label: "Error tracking", color: "var(--chart-error)" },
+    logs: { label: "Logs", color: "var(--chart-3)" },
+} as const;
+type Cat = keyof typeof cats;
+
+// PostHog's published bands, verified on the date above. Each band's rate applies
+// only to the units inside it, as PostHog's calculator adds it up.
+type Band = { upTo: number; rate: number; label: string };
+const tiers = {
+    analytics: {
+        free: 1_000_000,
+        unit: "event",
+        bands: [
+            { upTo: 2_000_000, rate: 0.00005, label: "1M to 2M" },
+            { upTo: 15_000_000, rate: 0.0000343, label: "2M to 15M" },
+            { upTo: 50_000_000, rate: 0.0000295, label: "15M to 50M" },
+            { upTo: 100_000_000, rate: 0.0000218, label: "50M to 100M" },
+            { upTo: 250_000_000, rate: 0.000015, label: "100M to 250M" },
+            { upTo: Infinity, rate: 0.000009, label: "Above 250M" },
+        ],
+    },
+    replay: {
+        free: 5_000,
+        unit: "recording",
+        bands: [
+            { upTo: 15_000, rate: 0.005, label: "5k to 15k" },
+            { upTo: 50_000, rate: 0.0035, label: "15k to 50k" },
+            { upTo: 150_000, rate: 0.002, label: "50k to 150k" },
+            { upTo: 500_000, rate: 0.0017, label: "150k to 500k" },
+            { upTo: Infinity, rate: 0.0015, label: "Above 500k" },
+        ],
+    },
+    errors: {
+        free: 100_000,
+        unit: "exception",
+        bands: [
+            { upTo: 325_000, rate: 0.00037, label: "100k to 325k" },
+            { upTo: 10_000_000, rate: 0.00014, label: "325k to 10M" },
+            { upTo: Infinity, rate: 0.000115, label: "Above 10M" },
+        ],
+    },
+    logs: {
+        free: 10,
+        unit: "GB",
+        bands: [
+            { upTo: 300, rate: 0.25, label: "10 to 300 GB" },
+            { upTo: Infinity, rate: 0.15, label: "Above 300 GB" },
+        ],
+    },
+} satisfies Record<Cat, { free: number; unit: string; bands: Band[] }>;
+const mobileBands: Band[] = [
+    { upTo: 15_000, rate: 0.01, label: "2.5k to 15k" },
+    { upTo: 50_000, rate: 0.007, label: "15k to 50k" },
+    { upTo: 150_000, rate: 0.004, label: "50k to 150k" },
+    { upTo: 500_000, rate: 0.0034, label: "150k to 500k" },
+    { upTo: Infinity, rate: 0.003, label: "Above 500k" },
+];
+
+const cents = (n: number) => Math.round(n * 100 + 1e-6) / 100;
+const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const num = (n: number) => n.toLocaleString("en-US");
+const short = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : n >= 1_000 ? `${n / 1_000}k` : `${n}`);
+const unitRate = (n: number) => `$${n.toFixed(7).replace(/0+$/, "").replace(/\.$/, "")}`;
+
+// The bill for one product, band by band, with the arithmetic for each band that applies.
+const priced = (cat: Cat, volume: number) => {
+    const { free, bands } = tiers[cat];
+    let start = free;
+    const steps: { units: number; rate: number; cost: number }[] = [];
+    for (const band of bands) {
+        if (volume <= start) break;
+        const units = Math.min(volume, band.upTo) - start;
+        steps.push({ units, rate: band.rate, cost: cents(units * band.rate) });
+        start = band.upTo;
+    }
+    const cost = cents(steps.reduce((sum, s) => sum + s.cost, 0));
+    const fmt = (u: number) => (cat === "logs" ? `${num(u)} GB` : num(u));
+    const calc = steps.length === 0 ? "Inside the free tier" : steps.map((s) => `${fmt(s.units)} × ${unitRate(s.rate)}`).join(" + ");
+    return { cat, cost, calc };
+};
+
+interface Usage { analytics: number; replay: number; errors: number; logs: number }
+const bill = (u: Usage) => {
+    const lines = (Object.keys(cats) as Cat[]).map((cat) => ({ ...priced(cat, u[cat]), volume: u[cat] }));
+    return { lines, total: cents(lines.reduce((sum, l) => sum + l.cost, 0)) };
+};
+const smallUsage: Usage = { analytics: 3_000_000, replay: 12_000, errors: 150_000, logs: 20 };
+const midUsage: Usage = { analytics: 20_000_000, replay: 80_000, errors: 1_000_000, logs: 200 };
+const small = bill(smallUsage);
+const mid = bill(midUsage);
+const sampledReplays = Math.round(midUsage.replay * 0.15);
+const billBars = [
+    { label: "Small product", bill: small },
+    { label: "Growing product", bill: mid },
+];
+
+// The same overlap on Maple: product events and replays by count, logs by GB,
+// exceptions as error spans inside the trace allowance at about 1 KB each.
+const mapleRate = gb?.rate ?? 0.3;
+const mapleIncluded = gb?.included ?? 100;
+const sessionRate = sessions?.rate ?? 0.002;
+const sessionsIncluded = sessions?.included ?? 5_000;
+const eventsIncluded = events?.included ?? 1_000_000;
+const eventRatePerM = events?.rate ?? 5;
+const mapleBill = (u: Usage) => {
+    const lines = [
+        { label: "Plan", calc: "Monthly price", cost: offer.price },
+        { label: "Product events", calc: u.analytics > eventsIncluded ? `${short(u.analytics)} − ${short(eventsIncluded)} included = ${short(u.analytics - eventsIncluded)} × ${money(eventRatePerM)} per million` : "Inside the 1M included", cost: (Math.max(0, u.analytics - eventsIncluded) / 1_000_000) * eventRatePerM },
+        { label: "Session replays", calc: `${num(u.replay)} − ${num(sessionsIncluded)} included = ${num(u.replay - sessionsIncluded)} × ${rateLabel(sessionRate)}`, cost: Math.max(0, u.replay - sessionsIncluded) * sessionRate },
+        { label: "Errors", calc: `about ${num(u.errors / 1_000_000)} GB of error spans, inside the ${mapleIncluded} GB of traces`, cost: Math.max(0, u.errors / 1_000_000 - mapleIncluded) * mapleRate },
+        { label: "Logs", calc: u.logs > mapleIncluded ? `${u.logs} GB − ${mapleIncluded} included = ${num(u.logs - mapleIncluded)} GB × ${rateLabel(mapleRate)}` : `inside the ${mapleIncluded} GB included`, cost: Math.max(0, u.logs - mapleIncluded) * mapleRate },
+    ].map((l) => ({ ...l, cost: cents(l.cost) }));
+    return { lines, total: cents(lines.reduce((sum, l) => sum + l.cost, 0)) };
+};
+const mapleSmall = mapleBill(smallUsage);
+const mapleMid = mapleBill(midUsage);
+
+const faqs = [
+    {
+        question: "Is PostHog free?",
+        answer:
+            "Yes, up to a monthly allowance per product, with no time limit and no credit card: 1 million analytics events, 5,000 web recordings, 2,500 mobile recordings, 100,000 exceptions, 10 GB of logs and 1 million feature flag requests, among others. The free plan has one project and keeps events for one year. Usage past the allowance is dropped until you add a card.",
+    },
+    {
+        question: "How much does PostHog cost per event?",
+        answer:
+            `Analytics events above the first million cost $0.00005 each up to 2 million, then fall in bands to $0.000009 each above 250 million. Each band's rate applies only to the events inside it. A product with 3 million events a month pays $84.30 for analytics (prices verified ${verified}).`,
+    },
+    {
+        question: "How much does PostHog session replay cost?",
+        answer:
+            "5,000 web recordings a month are free. Above that, a web recording costs $0.005 up to 15,000, then less in bands down to $0.0015 above 500,000. Mobile recordings have their own 2,500 free and start at $0.01 each. Recordings are kept 1 month on the free plan and 90 days on pay-as-you-go.",
+    },
+    {
+        question: "Can I cap my PostHog bill?",
+        answer:
+            "Yes. Most products take their own billing limit. When usage reaches it, further events are dropped and PostHog does not charge more than the limit. The exception is logs custom retention, which the logs limit does not cap and which cannot have a limit of its own.",
+    },
+    {
+        question: "Does PostHog have a minimum or an annual contract?",
+        answer:
+            "No. Pay-as-you-go has no minimum and is billed monthly. PostHog offers annual commitments and volume discounts above a certain spend through its sales team, and startups under 2 years old and before Series B can apply for $50,000 in credits.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "PostHog pricing, explained",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: updated,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/posthog-pricing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        class="shell pt-4"
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "PostHog pricing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="shell relative pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                    <span>9 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    PostHog pricing, explained
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    The free allowance, the per-unit bands for events, recordings, exceptions and logs, and two monthly bills worked out.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={updated}>Updated {updatedLabel}</time>
+                    <span>Prices verified {verified}</span>
+                </div>
+            </div>
+        </header>
+
+        <GuideBody headings={toc} class="pricing-guide">
+                <section class="guide-lead">
+                    <p>
+                        <strong>PostHog</strong> is a product platform: product and web analytics, session replay, feature flags and experiments, surveys, error tracking, logs, a data warehouse and more, under one account. Each product is priced on its own, by usage, with a free allowance that resets every month.
+                    </p>
+                    <p>
+                        This guide covers how that pricing works and prices four products in detail: product analytics, session replay, error tracking and logs. Those are the four that overlap with Maple, an observability platform. Feature flags, experiments, surveys and the data warehouse are out of scope here; PostHog's pricing page lists their rates.
+                    </p>
+                    <p class="guide-disclosure">
+                        Maple publishes this guide and competes with PostHog. Section 06 compares the two; every PostHog figure comes from PostHog's own pages, linked at the end.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Every product has a monthly free allowance, such as 1M analytics events and 5,000 web recordings.</li>
+                            <li>Above it, rates fall in bands: analytics events start at $0.00005 each, web recordings at $0.005.</li>
+                            <li>There are no seat fees, no minimum and no contract on pay-as-you-go.</li>
+                            <li>Most products take their own billing limit, and usage past it is dropped, not billed.</li>
+                            <li>Logs are $0.25 per GB after 10 GB free, kept 14 days unless you pay for longer.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="how-it-works" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · The model</p>
+                    <h2>How PostHog pricing works</h2>
+                    <p>
+                        PostHog meters each product in its own unit: events for analytics, recordings for replay, exceptions for error tracking, GB for logs, requests for feature flags. You pay only for products you use. Billing is monthly, organization-wide, and starts one month after sign-up.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Free</th><th>Pay-as-you-go</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr class="row-price"><td>Price</td><td>$0</td><td>Usage above the free allowance</td></tr>
+                                <tr><td>Free allowance</td><td>Every month</td><td>The same, every month</td></tr>
+                                <tr><td>Past the allowance</td><td>Data dropped</td><td>Billed, up to your billing limits</td></tr>
+                                <tr><td>Team members</td><td>Unlimited</td><td>Unlimited</td></tr>
+                                <tr><td>Projects</td><td>1</td><td>6</td></tr>
+                                <tr><td>Event retention</td><td>1 year</td><td>2 years</td></tr>
+                                <tr><td>Recording retention</td><td>1 month</td><td>90 days</td></tr>
+                                <tr><td>Support</td><td>Community</td><td>Email</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Platform packages add SSO, audit logs, custom roles and longer retention (up to 3 years for events on Boost, 5 on Scale and 7 on Enterprise). Annual plans and volume discounts are available from sales above a certain spend.
+                    </p>
+
+                    <h3 id="free-tier" class="scroll-mt-24">The free tier</h3>
+                    <p>
+                        The allowance is per product and resets each month. It is the same whether or not a card is on file, and unused allowance does not roll over. All projects in an organization share one allowance.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Product</th><th>Free every month</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.analytics.color}`}>Product analytics</span></td><td>1,000,000 events</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.replay.color}`}>Session replay</span></td><td>5,000 web and 2,500 mobile recordings</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Error tracking</span></td><td>100,000 exceptions</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>10 GB ingested</td></tr>
+                                <tr><td>Feature flags</td><td>1,000,000 requests</td></tr>
+                                <tr><td>Surveys</td><td>1,500 responses</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="limits" class="scroll-mt-24">Billing limits</h3>
+                    <p>
+                        Most products take their own billing limit in the organization's billing settings. When a product reaches its limit, further events are dropped and feature flags return a quota-limited response. PostHog says it will not charge more than the limit you set. One exception matters for logs: custom retention cannot have a limit, and the logs limit does not cap it.
+                    </p>
+                    <p class="guide-verified">
+                        Verified {verified} against <a href="https://posthog.com/pricing" target="_blank" rel="noopener noreferrer">posthog.com/pricing</a> and the product pricing pages for <a href="https://posthog.com/product-analytics/pricing" target="_blank" rel="noopener noreferrer">analytics</a>, <a href="https://posthog.com/session-replay/pricing" target="_blank" rel="noopener noreferrer">session replay</a>, <a href="https://posthog.com/error-tracking/pricing" target="_blank" rel="noopener noreferrer">error tracking</a> and <a href="https://posthog.com/logs/pricing" target="_blank" rel="noopener noreferrer">logs</a>.
+                    </p>
+                </section>
+
+                <section id="rates" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Rates</p>
+                    <h2>PostHog's per-unit rates</h2>
+                    <p>
+                        Rates fall as volume grows. Each band's rate applies only to the units inside that band, the way PostHog's own calculator adds it up, so a bill sums one line per band.
+                    </p>
+
+                    <h3 id="analytics" class="scroll-mt-24">Product analytics</h3>
+                    <p>
+                        Analytics bills per event captured: pageviews, clicks, custom events and everything autocapture records.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Events per month</th><th>Per event</th><th>Per million</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>First 1M</td><td>Free</td><td>Free</td></tr>
+                                {tiers.analytics.bands.map((b) => (
+                                    <tr><td>{b.label}</td><td class="num">{unitRate(b.rate)}</td><td class="num">{usd(b.rate * 1_000_000)}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="replay" class="scroll-mt-24">Session replay</h3>
+                    <p>
+                        Replay bills per recording. Web and mobile recordings are separate meters, each with its own free allowance and bands. Mobile costs about twice as much per recording.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Recordings per month</th><th>Web</th><th>Mobile</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Free</td><td>First 5,000</td><td>First 2,500</td></tr>
+                                {tiers.replay.bands.map((b, i) => (
+                                    <tr><td>{b.label}</td><td class="num">{unitRate(b.rate)}</td><td class="num">{unitRate(mobileBands[i].rate)}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="table-note">
+                        The mobile bands start at 2,500 instead of 5,000; the upper bounds match the web ones.
+                    </p>
+
+                    <h3 id="errors-logs" class="scroll-mt-24">Error tracking and logs</h3>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Product</th><th>Band</th><th>Rate</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Error tracking</span></td><td>First 100k exceptions</td><td>Free</td></tr>
+                                {tiers.errors.bands.map((b) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats.errors.color}`}>Error tracking</span></td><td>{b.label}</td><td class="num">{unitRate(b.rate)} per exception</td></tr>
+                                ))}
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>First 10 GB</td><td>Free</td></tr>
+                                {tiers.logs.bands.map((b) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>{b.label}</td><td class="num">{usd(b.rate)} per GB</td></tr>
+                                ))}
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs retention</span></td><td>Beyond the 14-day default</td><td class="num">$0.05 per GB-month</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        PostHog does not charge to store or query events, recordings or exceptions; the unit price covers capture, processing, storage and queries. Logs are the exception: past the default 14 days, each GB you keep costs $0.05 for every month you keep it, set per service or per source.
+                    </p>
+                </section>
+
+                <section id="surprises" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Surprises</p>
+                    <h2>What surprises teams on PostHog</h2>
+                    <ul class="guide-list">
+                        <li><strong>Autocapture counts every click.</strong> It is the easiest way to start, and every captured interaction is a billable event.</li>
+                        <li><strong>Replay is billed per recording, so sampling sets the bill.</strong> Recording every session of a busy site passes the free 5,000 in days.</li>
+                        <li><strong>Mobile recordings cost twice as much.</strong> $0.01 against $0.005 at the first band, with half the free allowance.</li>
+                        <li><strong>An error loop is billed per exception.</strong> A client stuck retrying a failing call can send hundreds of thousands of exceptions in an afternoon. A billing limit on error tracking caps it.</li>
+                        <li><strong>Log retention is outside the limit.</strong> Custom retention bills GB-months for as long as data is kept, and no billing limit stops it.</li>
+                        <li><strong>Projects share the allowance.</strong> Staging and production in the same organization draw from one free tier.</li>
+                    </ul>
+                </section>
+
+                <section id="examples" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Examples</p>
+                    <h2>What a month of PostHog costs</h2>
+                    <p>
+                        Two bills on pay-as-you-go at the rates checked {verified}, for the four products in this guide. Each bar splits one bill by product:
+                    </p>
+
+                    <figure class="bills" aria-label={`Where each bill goes. ${billBars.map(({ label, bill: b }) => `${label}, ${usd(b.total)}: ${b.lines.filter((l) => l.cost > 0).map((l) => `${cats[l.cat].label} ${usd(l.cost)}`).join(", ")}.`).join(" ")}`}>
+                        <div aria-hidden="true">
+                            {billBars.map(({ label, bill: b }) => (
+                                <div class="bills__row">
+                                    <p class="bills__head"><span>{label}</span><strong>{usd(b.total)}</strong></p>
+                                    <div class="bills__bar">
+                                        {b.lines.filter((l) => l.cost > 0).map((l) => {
+                                            const share = (l.cost / b.total) * 100;
+                                            return <span style={`--cat: ${cats[l.cat].color}; width: ${share}%`}>{share >= 9 ? `${Math.round(share)}%` : ""}</span>;
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            <div class="bills__legend">
+                                {(Object.keys(cats) as Cat[]).map((cat) => (
+                                    <span><i style={`--cat: ${cats[cat].color}`}></i>{cats[cat].label}</span>
+                                ))}
+                            </div>
+                        </div>
+                    </figure>
+
+                    <h3 id="small-team" class="scroll-mt-24">Small product: {usd(small.total)} a month</h3>
+                    <p>
+                        A web app with {short(smallUsage.analytics)} analytics events, {num(smallUsage.replay)} web recordings, {num(smallUsage.errors)} exceptions and {smallUsage.logs} GB of logs a month.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Product</th><th>Calculation, above the free allowance</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {small.lines.map((l) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats[l.cat].color}`}>{cats[l.cat].label}</span></td><td>{l.calc}</td><td class="num">{usd(l.cost)}</td></tr>
+                                ))}
+                                <tr class="row-total"><td>Total</td><td></td><td class="num">{usd(small.total)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="mid-team" class="scroll-mt-24">Growing product: {usd(mid.total)} a month</h3>
+                    <p>
+                        {short(midUsage.analytics)} analytics events, {num(midUsage.replay)} web recordings, {short(midUsage.errors)} exceptions and {midUsage.logs} GB of logs a month.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Product</th><th>Calculation, above the free allowance</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {mid.lines.map((l) => (
+                                    <tr><td><span class="cat-badge" style={`--cat: ${cats[l.cat].color}`}>{cats[l.cat].label}</span></td><td>{l.calc}</td><td class="num">{usd(l.cost)}</td></tr>
+                                ))}
+                                <tr class="row-total"><td>Total</td><td></td><td class="num">{usd(mid.total)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Analytics events are more than half of this bill. At 20 million events, the average rate works out to about {unitRate(Math.round((mid.lines[0].cost / midUsage.analytics) * 1e9) / 1e9)} per event, because the first million are free and later bands are cheaper.
+                    </p>
+                </section>
+
+                <section id="reduce" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Cutting the bill</p>
+                    <h2>How to cut a PostHog bill</h2>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Set a billing limit on each product</h4><p>Limits stop a viral day or an error loop from becoming a bill. Past the limit, data is dropped, so a limit set too low loses the day you most want to see. Set it a little above normal use.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Trim autocapture</h4><p>Check which captured events no insight or dashboard uses, and turn off what you do not need. Every event dropped in the SDK is one not billed.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4>Record fewer sessions</h4><p>Record a sample of sessions instead of all of them. If the growing product's 80,000 recordings are every session, a 15% sample makes {num(sampledReplays)} recordings, {usd(priced("replay", sampledReplays).cost)} a month instead of {usd(mid.lines[1].cost)}.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h4>Group repeat exceptions at the source</h4><p>Fix or suppress the noisiest exception first. The error tracking billing limit caps the cost of a loop until you do.</p></div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div><h4>Keep logs for 14 days unless you need more</h4><p>Default retention is included in the ingest price. Extend it only for the services where you search older logs.</p></div>
+                        </li>
+                    </ol>
+                    <p>
+                        PostHog also has a usage-estimating guide and per-product docs on cutting costs, linked from its pricing page.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Maple</p>
+                    <h2>Maple pricing for the overlapping products</h2>
+                    <p>
+                        Maple is an OpenTelemetry observability platform: traces, logs and metrics, with error tracking, browser session replay and product events on top. It overlaps with PostHog on those last three and on logs, and only those are compared here. Maple has no feature flags, experiments, surveys or data warehouse, and no mobile replay.
+                    </p>
+                    <p>
+                        Maple has one plan at <strong>{money(offer.price)}{offer.interval}</strong>. It includes {mapleIncluded} GB each of logs, traces and metrics, then {rateLabel(mapleRate)} per GB; {num(sessionsIncluded)} browser sessions with replay, then {rateLabel(sessionRate)} each; and {short(eventsIncluded)} product events, then {money(eventRatePerM)} per million. Errors are spans with an error status, so they bill as trace data. Replays are kept 30 days.
+                    </p>
+                    <p>
+                        The same two months on Maple, which meters uncompressed OTLP bytes. Each exception is counted as an error span of about 1 KB; stack traces can make them larger. If the app also sends backend traces, they share the same 100 GB:
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Line</th><th>Small product</th><th>Per month</th><th>Growing product</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {mapleSmall.lines.map((l, i) => (
+                                    <tr><td>{l.label}</td><td>{l.calc}</td><td class="num">{usd(l.cost)}</td><td>{mapleMid.lines[i].calc}</td><td class="num">{usd(mapleMid.lines[i].cost)}</td></tr>
+                                ))}
+                                <tr class="row-total"><td>Total</td><td></td><td class="num">{usd(mapleSmall.total)}</td><td></td><td class="num">{usd(mapleMid.total)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        That compares with {usd(small.total)} and {usd(mid.total)} on PostHog for the same four products. Maple's {money(offer.price)} also covers traces and metrics, which PostHog does not price in this comparison. Maple's errors come from OpenTelemetry traces, so they need a tracing SDK; PostHog captures exceptions with its own SDK.
+                    </p>
+                    <p>
+                        PostHog is the better fit for product teams. Its analytics go further than Maple's funnels and paths, with feature flags, experiments and surveys on the same events. A product that stays inside every free allowance pays $0 on PostHog, and Maple has no free cloud plan. PostHog keeps events for one to two years and Maple keeps product events for 365 days, but Maple keeps traces, logs and replays only 30. Maple fits teams whose main question is why a request failed or slowed down, and who want the replay, the error and the backend trace in one place.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Maple</p>
+                        <h3>Replays, errors and traces on one bill</h3>
+                        <p>How the browser SDK records sessions, and how product events turn into funnels.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/pricing" class="guide-button guide-button--primary">See Maple pricing</a>
+                            <a href="/docs/session-replay/browser-sdk" class="guide-button">Browser SDK and replay</a>
+                            <a href="/features/product-events" class="guide-button">Product events</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://posthog.com/pricing" target="_blank" rel="noopener noreferrer">PostHog: Pricing (verified {verified})</a></li>
+                        <li><a href="https://posthog.com/product-analytics/pricing" target="_blank" rel="noopener noreferrer">PostHog: Product analytics pricing (verified {verified})</a></li>
+                        <li><a href="https://posthog.com/session-replay/pricing" target="_blank" rel="noopener noreferrer">PostHog: Session replay pricing (verified {verified})</a></li>
+                        <li><a href="https://posthog.com/error-tracking/pricing" target="_blank" rel="noopener noreferrer">PostHog: Error tracking pricing (verified {verified})</a></li>
+                        <li><a href="https://posthog.com/logs/pricing" target="_blank" rel="noopener noreferrer">PostHog: Logs pricing (verified {verified})</a></li>
+                        <li><a href="/pricing">Maple pricing</a></li>
+                        <li><a href="/docs/errors/overview">Maple docs: Errors and issues</a></li>
+                        <li><a href="/docs/session-replay/replays">Maple docs: Replays</a></li>
+                    </ul>
+                </section>
+        </GuideBody>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
