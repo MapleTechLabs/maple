@@ -4,18 +4,20 @@ import { walKeyPolicy } from "../../apps/ingest/alchemy/wal-key.ts"
 
 const TASK_ROLE = "arn:aws:iam::123456789012:role/maple-ingest-ec2-task-role-prd-abc"
 const DEPLOY_ROLE = "arn:aws:iam::123456789012:role/deploy"
-const DATA_ACTIONS = [
-	"kms:Decrypt",
-	"kms:GenerateDataKey",
-	"kms:CreateGrant",
-	"kms:ReEncrypt*",
-	"kms:Encrypt",
+/** Each data action and exactly who may run it. */
+const DATA_ACTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
+	["kms:Decrypt", [TASK_ROLE, DEPLOY_ROLE]],
+	["kms:GenerateDataKey", [TASK_ROLE, DEPLOY_ROLE]],
+	["kms:CreateGrant", []],
+	["kms:ReEncrypt*", []],
+	["kms:Encrypt", []],
 ]
 
 const policy = walKeyPolicy({ region: "us-east-1", users: [TASK_ROLE, DEPLOY_ROLE] })
 
-/** Principals a statement names, flattened. */
+/** Principals a statement names, flattened. A bare string (`"*"`) names everyone. */
 const principalsOf = (principal: unknown): ReadonlyArray<string> => {
+	if (typeof principal === "string") return [principal]
 	if (typeof principal !== "object" || principal === null || !("AWS" in principal)) return []
 	const aws = principal.AWS
 	return typeof aws === "string"
@@ -37,9 +39,8 @@ const allowedFor = (action: string) =>
 		return statement.Effect === "Allow" && matches ? principalsOf(statement.Principal) : []
 	})
 
-test.each(DATA_ACTIONS)("only the task and deploy roles may %s", (action) => {
-	const allowed = allowedFor(action)
-	expect(Arr.every(allowed, (principal) => principal === TASK_ROLE || principal === DEPLOY_ROLE)).toBe(true)
+test.each(DATA_ACTIONS)("%s is allowed to exactly %j", (action, principals) => {
+	expect([...allowedFor(action)].sort()).toEqual([...principals].sort())
 })
 
 test("the task role decrypts and makes data keys only through S3 in the key's region", () => {
