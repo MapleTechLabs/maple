@@ -609,6 +609,17 @@ describe("list_data_sources, one tool for three questions", () => {
 		expect(Arr.dedupe(Arr.map(search?.hits ?? [], (hit) => hit.source))).toEqual(["shop-staging"])
 	})
 
+	it("says a miss in one source is not a miss everywhere, and offers the wider search", async () => {
+		const result = await runToolDirect(seeded, "list_data_sources", {
+			query: "zebra migrations",
+			data_source: "clerk-prod",
+		})
+		expect(markdown(result)).toContain('No table of "clerk-prod"')
+		expect(markdown(result)).toContain('Only "clerk-prod" was searched')
+		expect(markdown(result)).toContain('`list_data_sources query="zebra migrations"`')
+		expect(markdown(result)).not.toContain("not in a connected source")
+	})
+
 	it("suggests the closest source when a search names a misspelt one", async () => {
 		const result = await runToolDirect(seeded, "list_data_sources", {
 			query: "payments",
