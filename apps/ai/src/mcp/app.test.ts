@@ -63,6 +63,7 @@ const McpResponseBody = Schema.Struct({
 			serverInfo: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
 			capabilities: Schema.optionalKey(Schema.Unknown),
 			instructions: Schema.optionalKey(Schema.String),
+			structuredContent: Schema.optionalKey(Schema.Unknown),
 			tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
 		}),
 	),
@@ -840,7 +841,10 @@ describe("MCP retired tool names", () => {
 			makeMcpToolExecutorStubLayer((_tenant, name, input) =>
 				Effect.sync(() => {
 					calls.push({ name, input })
-					return { content: [{ type: "text" as const, text: "ok" }] }
+					return {
+						content: [{ type: "text" as const, text: "ok" }],
+						structuredContent: { action: "delete", result: { deleted: true } },
+					}
 				}),
 			),
 			makeRateLimiterStubLayer(),
@@ -881,9 +885,15 @@ describe("MCP retired tool names", () => {
 			)
 		try {
 			// A family's retired name is its action; a renamed tool keeps its arguments as sent.
-			await call(1, "delete_slo", { slo: "Checkout", confirm: true })
+			const retired = await call(1, "delete_slo", { slo: "Checkout", confirm: true })
 			await call(2, "search_data_sources", { query: "payments" })
-			await call(3, "manage_slo", { action: "update", slo: "Checkout" })
+			const family = await call(3, "manage_slo", { action: "update", slo: "Checkout" })
+			// A client holding the old tool list holds its output schema too: it gets that shape.
+			expect((await readBody(retired)).result?.structuredContent).toEqual({ deleted: true })
+			expect((await readBody(family)).result?.structuredContent).toEqual({
+				action: "delete",
+				result: { deleted: true },
+			})
 			expect(calls).toEqual([
 				{ name: "manage_slo", input: { slo: "Checkout", confirm: true, action: "delete" } },
 				{ name: "list_data_sources", input: { query: "payments" } },

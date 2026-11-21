@@ -645,14 +645,18 @@ describe("list_data_sources, one tool for three questions", () => {
 		expect(markdown(result)).toContain("not both")
 	})
 
-	it("still answers to its retired names search_data_sources and describe_data_source", async () => {
+	it("still answers to its retired names, in the shape each of them published", async () => {
 		const searched = await runToolDirect(seeded, "search_data_sources", { q: "payments failed" })
-		expect(decode(ListDataSourcesOutput, searched).view).toBe("search")
+		expect(searched.structuredContent.query).toBe("payments failed")
+		expect(searched.structuredContent.hits[0]).toMatchObject({ source: "shop-prod" })
 		const described = await runToolDirect(seeded, "describe_data_source", {
 			source: "shop-prod",
 			tables: ["payments"],
 		})
-		expect(decode(ListDataSourcesOutput, described).catalog?.described?.[0]?.name).toBe("shop.payments")
+		expect(described.structuredContent).toMatchObject({
+			source: { name: "shop-prod" },
+			described: [{ name: "shop.payments" }],
+		})
 	})
 })
 

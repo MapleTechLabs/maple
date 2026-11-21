@@ -90,11 +90,6 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
-/** What a family action returned: its tool's output is `{ action, result }`. */
-const ActionOutput = Schema.Struct({ result: Schema.Unknown })
-const decodeAction = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(Schema.decodeUnknownSync(ActionOutput)(result.structuredContent).result)
-
 const DENIED = "only org admins and engineers"
 
 describe("create_slo", () => {
@@ -117,7 +112,7 @@ describe("create_slo", () => {
 			target_percent: 99.9,
 			environments: ["production"],
 		})
-		const output = decodeAction(SloMutationOutput, result)
+		const output = decode(SloMutationOutput, result)
 		expect(output).toMatchObject({
 			action: "created",
 			slo: {
@@ -135,7 +130,7 @@ describe("create_slo", () => {
 	})
 
 	it("creates a latency SLO on a threshold from the ladder", async () => {
-		const output = decodeAction(
+		const output = decode(
 			SloMutationOutput,
 			await runToolDirect(admin, "create_slo", {
 				name: "Search latency",
@@ -303,7 +298,7 @@ describe("update_slo", () => {
 			alerting_enabled: false,
 			target_percent: 99.5,
 		})
-		const output = decodeAction(SloMutationOutput, result)
+		const output = decode(SloMutationOutput, result)
 		expect(output.slo).toMatchObject({
 			targetPercent: 99.5,
 			serviceName: "checkout",
@@ -314,7 +309,7 @@ describe("update_slo", () => {
 	})
 
 	it("changes a latency threshold alone and refuses one on an availability SLI", async () => {
-		const latency = decodeAction(
+		const latency = decode(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", { slo: "Search latency", threshold_ms: 1000 }),
 		)
@@ -329,7 +324,7 @@ describe("update_slo", () => {
 	})
 
 	it("sets a description, and clear_description removes it", async () => {
-		const described = decodeAction(
+		const described = decode(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", {
 				slo: "Search latency",
@@ -337,7 +332,7 @@ describe("update_slo", () => {
 			}),
 		)
 		expect(described.slo.description).toBe("Search stays fast")
-		const cleared = decodeAction(
+		const cleared = decode(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", { slo: "Search latency", clear_description: true }),
 		)
@@ -361,7 +356,7 @@ describe("delete_slo", () => {
 		expect(unconfirmed.isError).toBe(true)
 		expect(markdown(unconfirmed)).toContain("confirm=true")
 
-		const deleted = decodeAction(
+		const deleted = decode(
 			DeleteSloOutput,
 			await runToolDirect(admin, "delete_slo", { slo: "Search latency", confirm: true }),
 		)
@@ -383,6 +378,17 @@ describe("manage_slo", () => {
 			result: { action: "updated", slo: { description: "Checkout stays up." } },
 		})
 		expect(markdown(result)).toContain("SLO updated")
+	})
+
+	it("answers a retired name in the shape that name published", async () => {
+		const result = await runToolDirect(admin, "update_slo", {
+			slo: "Checkout availability",
+			description: "Checkout stays up.",
+		})
+		expect(result.structuredContent).toMatchObject({
+			action: "updated",
+			slo: { description: "Checkout stays up." },
+		})
 	})
 
 	it("names its actions when the call gives none, or one it does not have", async () => {

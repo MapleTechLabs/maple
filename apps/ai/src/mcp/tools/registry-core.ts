@@ -31,7 +31,7 @@ import {
 	refusalFor,
 	refusesReadOnlyCredential,
 } from "./types"
-import { canonicalToolCall } from "./tool-name-aliases"
+import { canonicalToolCall, retiredOutputKey } from "./tool-name-aliases"
 import { unknownToolMessage } from "../lib/tool-suggestions"
 import {
 	argumentWarnings,
@@ -250,7 +250,12 @@ const tagValueOf = (schema: unknown): string | undefined => {
 }
 
 /** The keywords a branch may carry and still merge: anything else, a label included, would be lost. */
-const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set(["type", "properties", "required", "additionalProperties"])
+const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set([
+	"type",
+	"properties",
+	"required",
+	"additionalProperties",
+])
 
 /**
  * One object for a union whose branches are the same object under different tag values: shared
@@ -936,11 +941,21 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 	const windowNotes = new WindowNotes()
 	const run = yield* definition.run(decoded).pipe(Effect.provideService(CurrentWindowNotes, windowNotes))
 	yield* Effect.logInfo("Tool completed")
-	return yield* finish(
+	const result = yield* finish(
 		lookup,
 		definition,
 		{ ...run, doc: windowNotes.decorate(run.doc) },
 		argumentWarnings(normalized, definition.name),
 		surface,
 	)
+	// Called by a retired name, it answers as that name did.
+	const own = ownOutputOf(result.structuredContent, retiredOutputKey(name))
+	return own === undefined ? result : { ...result, structuredContent: own }
 })
+
+const isJsonRecord = (value: Schema.Json | undefined): value is Readonly<Record<string, Schema.Json>> =>
+	typeof value === "object" && value !== null && !Arr.isArray(value)
+
+/** The part of a structured output under `key`, when there is one. */
+const ownOutputOf = (structured: Schema.Json | undefined, key: string | undefined): Schema.Json | undefined =>
+	key !== undefined && isJsonRecord(structured) ? structured[key] : undefined

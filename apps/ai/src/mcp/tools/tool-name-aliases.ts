@@ -6,12 +6,16 @@ export interface ToolNameAlias {
 	readonly args?: Readonly<Record<string, string>>
 	/** Arguments the old name took under a name its replacement gives another meaning. */
 	readonly renamed?: Readonly<Record<string, string>>
+	/** The key of the replacement's structured output that holds what the old name returned. */
+	readonly output?: string
 }
 
 const action = (tool: string, name: string, renamed?: ToolNameAlias["renamed"]): ToolNameAlias => ({
 	tool,
 	args: { action: name },
 	...(renamed === undefined ? undefined : { renamed }),
+	// A family answers `{ action, result }`, and `result` is what the standalone tool answered.
+	output: "result",
 })
 
 /** An ingest rule's drop or redact spec was `action`, which a family reads as what to do. */
@@ -24,8 +28,8 @@ const RULE_ACTION = { action: "rule_action" }
  */
 export const TOOL_NAME_ALIASES = {
 	list_sources: { tool: "list_ingest_sources" },
-	search_data_sources: { tool: "list_data_sources" },
-	describe_data_source: { tool: "list_data_sources" },
+	search_data_sources: { tool: "list_data_sources", output: "search" },
+	describe_data_source: { tool: "list_data_sources", output: "catalog" },
 	create_alert_silence: action("manage_alert_silence", "create"),
 	end_alert_silence: action("manage_alert_silence", "end"),
 	create_escalation_chain: action("manage_escalation_chain", "create"),
@@ -58,6 +62,12 @@ export const TOOL_NAME_ALIASES = {
 } as const satisfies Readonly<Record<string, ToolNameAlias>>
 
 const ALIASES: ReadonlyMap<string, ToolNameAlias> = new Map(Rec.toEntries(TOOL_NAME_ALIASES))
+
+/**
+ * Where a retired name's own answer sits in its replacement's structured output. A client holding
+ * the old tool list also holds its output schema, so the answer goes back in that shape.
+ */
+export const retiredOutputKey = (name: string): string | undefined => ALIASES.get(name)?.output
 
 /** The registered name a call means. */
 export const canonicalToolName = (name: string): string => ALIASES.get(name)?.tool ?? name

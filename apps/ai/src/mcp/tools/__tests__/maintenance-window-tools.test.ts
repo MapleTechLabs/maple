@@ -74,9 +74,9 @@ describe("maintenance window tools", () => {
 			const created = yield* call("create_maintenance_window", { ...weekly, service_names: "checkout" })
 			assert.strictEqual(created._tag, "Success")
 			if (created._tag !== "Success") return
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			assert.deepStrictEqual(window.matchers, { services: ["checkout"] })
 			assert.deepStrictEqual(window.schedule, {
 				type: "weekly",
@@ -118,9 +118,9 @@ describe("maintenance window tools", () => {
 			})
 			assert.strictEqual(created._tag, "Success")
 			if (created._tag !== "Success") return
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			assert.strictEqual(
 				window.schedule.type === "weekly" ? window.schedule.startTime : undefined,
 				"02:00",
@@ -141,9 +141,9 @@ describe("maintenance window tools", () => {
 			})
 			assert.strictEqual(created._tag, "Success")
 			if (created._tag !== "Success") return
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			assert.strictEqual(
 				window.schedule.type === "weekly" ? window.schedule.startTime : undefined,
 				"02:00",
@@ -173,9 +173,9 @@ describe("maintenance window tools", () => {
 			})
 			assert.strictEqual(created._tag, "Success")
 			if (created._tag !== "Success") return
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			assert.deepStrictEqual(window.schedule, {
 				type: "once",
 				startsAt: "2030-01-01T00:00:00.000Z",
@@ -214,9 +214,9 @@ describe("maintenance window tools", () => {
 		return Effect.gen(function* () {
 			const created = yield* call("create_maintenance_window", { ...weekly, tags: ["db"] })
 			if (created._tag !== "Success") return assert.fail("create failed")
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			const publicId = encodePublicId(PublicIdPrefixes.alertMaintenanceWindow, window.id)
 
 			const unconfirmed = yield* call("delete_maintenance_window", { maintenance_window_id: publicId })
@@ -242,9 +242,9 @@ describe("maintenance window tools", () => {
 		return Effect.gen(function* () {
 			const created = yield* call("create_maintenance_window", { ...weekly, tags: ["db"] })
 			if (created._tag !== "Success") return assert.fail("create failed")
-			const { window } = Schema.decodeUnknownSync(
-				Schema.Struct({ result: MaintenanceWindowMutationOutput }),
-			)(created.success.structuredContent).result
+			const { window } = Schema.decodeUnknownSync(MaintenanceWindowMutationOutput)(
+				created.success.structuredContent,
+			)
 			const silences = yield* AlertSilencesService.use((service) => service.list(ORG))
 			const owned = silences.silences.find((silence) => silence.maintenanceWindowId === window.id)
 			if (owned === undefined) return assert.fail("no occurrence silence")

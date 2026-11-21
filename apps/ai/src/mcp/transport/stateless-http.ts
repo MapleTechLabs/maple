@@ -60,7 +60,7 @@ import { CurrentMcpRequestTenant } from "../tenant"
 import type { TenantContext } from "@maple/domain/http"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
-import { canonicalToolCall } from "../tools/tool-name-aliases"
+import { canonicalToolCall, retiredOutputKey } from "../tools/tool-name-aliases"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -158,6 +158,25 @@ const withToolsCapability =
 					...(instructions === undefined ? undefined : { instructions }),
 				},
 			},
+		}
+	}
+
+/**
+ * A retired tool's answer in the shape its name published. The call ran as its replacement, whose
+ * structured output holds the old answer under one key.
+ */
+const withRetiredOutput =
+	(toolCalls: ReadonlyMap<string | number, string>) =>
+	(response: FromServerEncoded): FromServerEncoded => {
+		if (response._tag !== "Exit" || response.exit._tag !== "Success") return response
+		const key = retiredOutputKey(toolCalls.get(response.requestId) ?? "")
+		const result = response.exit.value
+		if (key === undefined || !Predicate.isObject(result)) return response
+		const structured = result.structuredContent
+		if (!Predicate.isObject(structured) || !(key in structured)) return response
+		return {
+			...response,
+			exit: { _tag: "Success", value: { ...result, structuredContent: structured[key] } },
 		}
 	}
 
@@ -478,7 +497,10 @@ export const layerStatelessMcpHttp = (options: {
 											(response._tag === "Exit" && overdue.has(response.requestId)))
 									),
 							),
-							withToolsCapability(initializeIds, instructions),
+							(response) =>
+								withRetiredOutput(toolCalls)(
+									withToolsCapability(initializeIds, instructions)(response),
+								),
 						),
 						Arr.map([...overdue], ([requestId, error]): FromServerEncoded => ({
 							_tag: "Exit",
