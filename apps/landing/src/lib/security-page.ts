@@ -84,7 +84,7 @@ export const securitySections: SecuritySection[] = [
 			},
 			{
 				title: "Or your own infrastructure",
-				body: "The source is on GitHub under FSL-1.1, which becomes Apache 2.0 after two years. Self-hosting keeps the data inside your own network. The self-hosted version runs for one team, without alerting.",
+				body: "The source is on GitHub under FSL-1.1, which becomes Apache 2.0 after two years. Self-hosting keeps the data inside your own network. The self-hosted version runs for one team; alerting and team accounts are on Cloud.",
 				href: "https://github.com/MapleTechLabs/maple",
 				link: "Source on GitHub",
 			},
