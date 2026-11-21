@@ -347,6 +347,9 @@ const dash0: AlternativesPage = {
 /** A vendor page with no `/compare` entry behind it, cited on the roundup itself. */
 const checkedNow = (label: string, url: string): Source => ({ label, url, checked: PRICES_CHECKED })
 
+/** Maple's own prices and retention, held to the same citation rule as everyone else's. */
+const MAPLE_SOURCE = checkedNow("Maple pricing and retention", "https://maple.dev/pricing")
+
 const CLICKSTACK_SOURCES = [
 	checkedNow(
 		"ClickStack overview",
@@ -439,6 +442,7 @@ const datadog: AlternativesPage = {
 				"Uptime checks are HTTP, TCP and DNS; no scripted browser tests",
 				"An OpenTelemetry-first catalog, not 800 vendor-maintained integrations",
 				"SOC 2 and ISO 27001 certification still in progress",
+				"No free plan; it starts at $39 a month",
 			],
 			compareSlug: "datadog",
 		},
@@ -617,6 +621,7 @@ const datadog: AlternativesPage = {
 		},
 	],
 	sources: [
+		MAPLE_SOURCE,
 		...(competitorBySlug("datadog")?.sources ?? []).map((source, i) =>
 			i === 0 ? { ...source, checked: PRICES_CHECKED } : source,
 		),
@@ -642,7 +647,7 @@ const grafana: AlternativesPage = {
 	lede: "Grafana is the dashboard most engineers already know. Behind it sits a stack: Loki for logs, Tempo for traces, Mimir or Prometheus for metrics, each with its own query language and scaling model. Teams look elsewhere when running four services takes more time than using them, when they want one query across signals, or when Grafana Cloud's per-user and per-series pricing stops fitting. These are the seven tools worth comparing, and when to stay.",
 	updated: "2026-11-21",
 	disclosure:
-		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The rest are ordered by how much of a Grafana setup they keep: self-hostable tools that take PromQL first, hosted platforms that do not last. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
+		"We build Maple and list it first because this is our site: that placement is our bias, not a ranking. The rest start with the self-hostable tools, which keep the most of a Grafana setup, then the hosted platforms. Every price comes from the vendor's own pricing page, linked at the bottom with the month we checked it.",
 	method: "How we compared: we re-read each vendor's pricing page in November 2026. Other facts repeat sourced rows from our side-by-side comparison pages, each with the month it was last checked. OpenObserve and ClickStack have no comparison page, so their facts link to their own pages below. We did not benchmark the tools against each other; treat this as a map of trade-offs, not a test result.",
 	keyColumn: "PromQL",
 	baseline: {
@@ -863,6 +868,7 @@ const grafana: AlternativesPage = {
 		},
 	],
 	sources: [
+		MAPLE_SOURCE,
 		...(competitorBySlug("grafana")?.sources ?? []).map((source, i) =>
 			i === 0 ? { ...source, checked: PRICES_CHECKED } : source,
 		),
@@ -1110,6 +1116,7 @@ const newRelic: AlternativesPage = {
 		},
 	],
 	sources: [
+		MAPLE_SOURCE,
 		...(competitorBySlug("new-relic")?.sources ?? []).map((source, i) =>
 			i === 0 ? { ...source, checked: PRICES_CHECKED } : source,
 		),
@@ -1152,7 +1159,7 @@ const sentry: AlternativesPage = {
 	slug: "sentry",
 	vendor: "Sentry",
 	vendorUrl: "https://sentry.io",
-	seoTitle: "Sentry Alternatives (2026): 6 Error Tracking Tools Compared",
+	seoTitle: "Sentry Alternatives (2026): 6 Error Tracking Options Compared",
 	seoDescription:
 		"Six Sentry alternatives, including GlitchTip and self-hosted Sentry, compared on price and SDK support. Written by the Maple team, with sources.",
 	title: "Sentry alternatives",
@@ -1211,7 +1218,7 @@ const sentry: AlternativesPage = {
 			ours: true,
 			pickIf: "You want errors, traces, logs and session replay from OpenTelemetry in one app, priced per GB.",
 			pricing:
-				"$39/mo with 100 GB each of logs, traces and metrics; 5,000 browser sessions, then $0.002 each",
+				"$39/mo with 100 GB each of logs, traces and metrics, then $0.30 per GB; 5,000 browser sessions included",
 			openSource: "Source-available (FSL-1.1, Apache 2.0 after two years)",
 			keyFact: "No; OpenTelemetry SDKs",
 			summary:
@@ -1332,7 +1339,7 @@ const sentry: AlternativesPage = {
 	faqs: [
 		{
 			question: "What is the best Sentry alternative?",
-			answer: "It depends on why you are leaving. To keep your Sentry SDKs and pay less, look at Better Stack or GlitchTip. To self-host on a small server, GlitchTip; to self-host Sentry itself, plan for a 16 GB machine. To get errors, traces, logs and replay from OpenTelemetry in one app, Maple. If your product team already lives in PostHog, its error tracking. We build Maple, so weigh our view accordingly.",
+			answer: "It depends on what you want to keep. To keep your Sentry SDKs and pay less, look at Better Stack or GlitchTip. To self-host on a small server, GlitchTip; to self-host Sentry itself, plan for a 16 GB machine. To get errors, traces, logs and replay from OpenTelemetry in one app, Maple. If your product team already lives in PostHog, its error tracking. We build Maple, so weigh our view accordingly.",
 		},
 		{
 			question: "Is there an open-source alternative to Sentry?",
@@ -1352,6 +1359,7 @@ const sentry: AlternativesPage = {
 		},
 	],
 	sources: [
+		MAPLE_SOURCE,
 		...SENTRY_SOURCES,
 		...GLITCHTIP_SOURCES,
 		...pricingSource("better-stack"),
