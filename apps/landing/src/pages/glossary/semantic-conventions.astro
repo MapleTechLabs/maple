@@ -1,0 +1,89 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+---
+
+<GlossaryTermPage
+    slug="semantic-conventions"
+    pageTitle="What are OpenTelemetry semantic conventions? | Maple Glossary"
+    description="Semantic conventions are OpenTelemetry's standard names for attributes, spans and metrics, such as http.request.method and service.name. What they cover, renamed attributes, and custom names."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/specs/semconv/", title: "OpenTelemetry semantic conventions" },
+        { href: "https://opentelemetry.io/docs/specs/semconv/non-normative/http-migration/", title: "OpenTelemetry semantic conventions: HTTP migration guide" },
+    ]}
+    readNext={[
+        { href: "/docs/concepts/otel-conventions", title: "OpenTelemetry conventions (Maple docs)" },
+        { href: "/guides/metric-cardinality", title: "Metric cardinality" },
+        { href: "/guides/opentelemetry-collector", title: "The OpenTelemetry Collector" },
+        { href: "/opentelemetry", title: "OpenTelemetry with Maple" },
+    ]}
+    relatedTerms={["span", "instrumentation", "cardinality", "otlp"]}
+>
+    <section>
+        <h2>Why they exist</h2>
+        <p>
+            Without shared names, one library records <code>method</code>, another <code>http_method</code>, a third <code>verb</code>. A query for "all POST requests" has to know every spelling, and a dashboard built for one service breaks on the next. Semantic conventions fix the names, the value formats and the units, so any backend can read data from any instrumented library the same way.
+        </p>
+    </section>
+
+    <section>
+        <h2>What they cover</h2>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Area</th><th>Examples</th></tr></thead>
+                <tbody>
+                    <tr><td>Resource attributes: who produced the data</td><td><code>service.name</code>, <code>service.version</code>, <code>deployment.environment.name</code>, <code>host.name</code>, <code>k8s.pod.name</code></td></tr>
+                    <tr><td>HTTP</td><td><code>http.request.method</code>, <code>http.route</code>, <code>http.response.status_code</code>, <code>url.path</code></td></tr>
+                    <tr><td>Databases</td><td><code>db.system.name</code>, <code>db.operation.name</code>, <code>db.collection.name</code>, <code>db.query.text</code></td></tr>
+                    <tr><td>Messaging</td><td><code>messaging.system</code>, <code>messaging.destination.name</code>, <code>messaging.operation.type</code></td></tr>
+                    <tr><td>Errors</td><td><code>error.type</code>, <code>exception.type</code>, <code>exception.message</code></td></tr>
+                    <tr><td>Metrics</td><td><code>http.server.request.duration</code> in seconds, as a histogram</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            They also define span names and kinds. An HTTP server span is named <code>&#123;method&#125; &#123;route&#125;</code>, such as <code>GET /orders/&#123;id&#125;</code>, and has kind <code>SERVER</code>. Conventions for metrics say which attributes to attach, and they stick to bounded ones such as <code>http.route</code> rather than <code>url.path</code>, which keeps <a href="/glossary/cardinality">cardinality</a> under control.
+        </p>
+        <p>
+            <code>service.name</code> is the one attribute every service should set, usually through <code>OTEL_SERVICE_NAME</code>. Without it, data arrives as <code>unknown_service</code> and services cannot be told apart.
+        </p>
+    </section>
+
+    <section>
+        <h2>Renamed attributes</h2>
+        <p>
+            The conventions changed as they stabilised, and older instrumentation still emits the earlier names. The HTTP conventions, stable since 2023, renamed several common attributes:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Older name</th><th>Current name</th></tr></thead>
+                <tbody>
+                    <tr><td><code>http.method</code></td><td><code>http.request.method</code></td></tr>
+                    <tr><td><code>http.status_code</code></td><td><code>http.response.status_code</code></td></tr>
+                    <tr><td><code>http.target</code>, <code>http.url</code></td><td><code>url.path</code> and <code>url.query</code>, <code>url.full</code></td></tr>
+                    <tr><td><code>net.peer.name</code></td><td><code>server.address</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Instrumentation that supports both lets you choose with <code>OTEL_SEMCONV_STABILITY_OPT_IN</code>: <code>http</code> for the new names only, <code>http/dup</code> for both while dashboards and alerts migrate. If a query that worked last month returns nothing after a dependency upgrade, a renamed attribute is a likely cause.
+        </p>
+    </section>
+
+    <section>
+        <h2>Stability levels</h2>
+        <p>
+            Each group of conventions carries a stability level. Stable conventions, such as HTTP and the core resource attributes, will not be renamed. Development conventions can still change, so instrumentation that emits them may rename attributes in a minor release. Before you build alerts on an attribute, check its status in the conventions; for anything still in development, pin the instrumentation version and read its changelog before upgrading.
+        </p>
+        <p>
+            A <code>schema_url</code> on resources and scopes records which version of the conventions the data follows, so a backend or Collector can translate between versions.
+        </p>
+    </section>
+
+    <section>
+        <h2>Your own attributes</h2>
+        <p>
+            For data the conventions do not cover, use a namespace you own, such as <code>app.</code> or your company name: <code>app.order.value</code>, <code>app.customer.plan</code>. Do not invent names inside an OpenTelemetry namespace like <code>http.</code> or <code>db.</code>, since a future convention may define the same name with a different meaning. Use lowercase, dot-separated words and snake_case within a segment, as the conventions do.
+        </p>
+    </section>
+</GlossaryTermPage>

@@ -1,0 +1,33 @@
+---
+// The parts of a guide series, current part marked. Sits under the outline on
+// desktop and above the article on smaller screens.
+import type { SeriesPosition } from "../../lib/guide-series";
+
+interface Props {
+    position: SeriesPosition;
+    class?: string;
+}
+
+const { position, class: className } = Astro.props;
+const { series, parts, index } = position;
+---
+
+<nav aria-label={`${series.title} series`} class={className}>
+    <p class="text-[12px] font-medium text-fg">{series.title}</p>
+    <p class="mt-0.5 text-[12px] text-fg-muted">Part {index + 1} of {parts.length}</p>
+    <ol class="mt-3 list-none border-l border-border p-0">
+        {parts.map((part, i) => (
+            <li>
+                {i === index ? (
+                    <span aria-current="page" class="-ml-px block border-l border-primary py-[5px] pl-3.5 font-display text-[13px] leading-[1.4] text-fg">
+                        {part.title}
+                    </span>
+                ) : (
+                    <a href={part.href} class="block py-[5px] pl-3.5 font-display text-[13px] leading-[1.4] text-fg-muted transition-colors hover:text-fg">
+                        {part.title}
+                    </a>
+                )}
+            </li>
+        ))}
+    </ol>
+</nav>

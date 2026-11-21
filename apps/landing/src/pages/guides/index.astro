@@ -9,6 +9,7 @@ import SeoHead from "../../components/SeoHead.astro";
 import type { BlogPost } from "../../lib/blog";
 import Icon from "../../components/Icon.astro";
 import { allGuides, guideCategories } from "../../lib/guides";
+import { glossaryTerms } from "../../lib/glossary";
 
 const pageTitle = "Guides to APM, Observability & OpenTelemetry | Maple";
 const pageDescription =
@@ -156,6 +157,22 @@ const itemListJsonLd = {
                         </ul>
                     </div>
                 )}
+            </div>
+        </section>
+
+        <section class="mt-12" aria-labelledby="glossary">
+            <h2 id="glossary" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Glossary</h2>
+            <div class="hairline-grid mt-4 grid grid-cols-1">
+                <div class="cell p-5">
+                    <p class="text-[13.5px] leading-relaxed text-fg-muted">
+                        Short definitions of the terms these guides use. <a href="/glossary" class="text-primary hover:text-fg">All terms</a>
+                    </p>
+                    <ul class="mt-3 flex list-none flex-wrap gap-x-5 gap-y-2 p-0 text-[13.5px]">
+                        {glossaryTerms.map((term) => (
+                            <li><a href={`/glossary/${term.slug}`} class="text-fg/85 underline decoration-border underline-offset-4 transition-colors hover:text-fg">{term.term}</a></li>
+                        ))}
+                    </ul>
+                </div>
             </div>
         </section>
     </main>

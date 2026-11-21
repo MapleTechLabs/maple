@@ -14,7 +14,13 @@ const pageTitle = "Loguru for Python: setup, JSON and OpenTelemetry | Maple";
 const pageDescription =
     "How to use Loguru in Python: install it, set the log level, write files and JSON, add context, and send Loguru logs to OpenTelemetry.";
 const published = "2026-10-19";
-const updatedLabel = "October 22, 2026";
+const modified = "2026-10-22";
+const updatedLabel = new Date(`${modified}T00:00:00Z`).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+});
 const author = CONTRIBUTORS.jeremyfunk;
 const authorUrl = `https://github.com/${author.github}`;
 
@@ -352,7 +358,7 @@ const articleJsonLd = {
     headline: "Loguru for Python",
     description: pageDescription,
     datePublished: published,
-    dateModified: "2026-10-22",
+    dateModified: modified,
     author: { "@type": "Person", name: author.name, url: authorUrl },
     publisher: {
         "@type": "Organization",
@@ -400,7 +406,7 @@ const articleJsonLd = {
                         <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
-                    <time datetime="2026-10-22">Updated {updatedLabel}</time>
+                    <time datetime={modified}>Updated {updatedLabel}</time>
                 </div>
             </div>
         </header>

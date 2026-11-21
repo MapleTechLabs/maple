@@ -1,0 +1,319 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-is-otlp", text: "What OTLP is" },
+    { depth: 2, slug: "grpc-vs-http", text: "gRPC vs HTTP" },
+    { depth: 2, slug: "encoding", text: "Protobuf vs JSON" },
+    { depth: 2, slug: "endpoints", text: "Endpoints and env vars" },
+    { depth: 2, slug: "auth", text: "Auth headers and TLS" },
+    { depth: 2, slug: "errors", text: "Common errors" },
+    { depth: 3, slug: "connection-refused", text: "Connection refused" },
+    { depth: 3, slug: "status-401", text: "401 and 403" },
+    { depth: 3, slug: "status-404", text: "404" },
+    { depth: 3, slug: "status-413", text: "413" },
+    { depth: 3, slug: "protocol-mismatch", text: "Protocol mismatch" },
+    { depth: 2, slug: "debugging", text: "Debug an exporter" },
+];
+
+const envHttp = String.raw`export OTEL_SERVICE_NAME="checkout"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"`;
+
+const perSignal = String.raw`# Generic variable: a base URL. The SDK appends /v1/traces, /v1/metrics, /v1/logs.
+OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+#   traces  -> http://collector:4318/v1/traces
+
+# Per-signal variable: used exactly as written. Include the path yourself.
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://collector:4318/v1/traces`;
+
+const jsonDiff = String.raw`{
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "kind": 2,
+  "startTimeUnixNano": "1763712000000000000",
+  "droppedAttributesCount": 0
+}`;
+
+const collectorHeaders = String.raw`exporters:
+  otlp_http:
+    endpoint: https://ingest.maple.dev
+    headers:
+      Authorization: Bearer ${"$"}{env:MAPLE_INGEST_KEY}
+  otlp_grpc:
+    endpoint: https://ingest.maple.dev
+    headers:
+      authorization: Bearer ${"$"}{env:MAPLE_INGEST_KEY}`;
+
+const curlProbe = String.raw`curl -i https://ingest.maple.dev/v1/traces \
+  -H "Authorization: Bearer YOUR_INGEST_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"resourceSpans":[]}'`;
+
+const sdkBatch = String.raw`# Smaller span batches from the SDK (default 512 spans)
+export OTEL_BSP_MAX_EXPORT_BATCH_SIZE=256`;
+
+const collectorBatch = String.raw`exporters:
+  otlp_http:
+    endpoint: https://ingest.maple.dev
+    sending_queue:
+      enabled: true
+      batch:
+        enabled: true
+        sizer: items
+        min_size: 2000   # the default minimum is 8192, above this maximum
+        max_size: 4000`;
+
+const faqs = [
+    {
+        question: "What is OTLP?",
+        answer:
+            "OTLP, the OpenTelemetry Protocol, is the wire format OpenTelemetry uses to send traces, metrics, logs and profiles between SDKs, Collectors and backends. It defines protobuf messages and two transports, gRPC and HTTP.",
+    },
+    {
+        question: "What ports does OTLP use?",
+        answer: "4317 for OTLP over gRPC and 4318 for OTLP over HTTP. These are defaults, so a hosted backend may serve both on 443 instead.",
+    },
+    {
+        question: "Should I use OTLP over gRPC or HTTP?",
+        answer:
+            "The specification makes http/protobuf the default, and it works through any HTTP proxy, load balancer or browser. gRPC can be slightly more efficient between services you control. If you are not sure, use http/protobuf.",
+    },
+    {
+        question: "Why does my OTLP exporter get a 404?",
+        answer:
+            "Usually the path. OTEL_EXPORTER_OTLP_ENDPOINT is a base URL and the SDK appends /v1/traces. The per-signal OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is used exactly as written, so it must include /v1/traces. Setting /v1/traces on the generic variable produces /v1/traces/v1/traces.",
+    },
+    {
+        question: "What does 413 mean from an OTLP endpoint?",
+        answer:
+            "The request body was larger than the server accepts. Lower the export batch size in the SDK or set max_size on the Collector exporter's batch settings, and turn on gzip compression if it is off.",
+    },
+    {
+        question: "Can I send OTLP as JSON?",
+        answer:
+            "Yes, over HTTP with Content-Type: application/json. Trace and span IDs are hex strings, enums are integers, field names are lowerCamelCase and 64-bit integers such as timestamps are written as strings. gRPC always uses protobuf.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="OTLP explained: gRPC vs HTTP, ports 4317/4318 and export errors | Maple"
+    description="How OTLP works: gRPC vs HTTP, ports 4317 and 4318, protobuf vs JSON, endpoint env vars, auth headers, and how to fix 401, 404, 413 and connection refused."
+    title="OTLP explained"
+    lede="The protocol every OpenTelemetry exporter speaks: which transport to pick, how endpoints and headers are configured, and what each export error means."
+    category="OpenTelemetry"
+    readMinutes={10}
+    published="2026-11-21"
+    modified="2026-11-21"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            <strong>OTLP</strong>, the OpenTelemetry Protocol, is how telemetry moves between an OpenTelemetry SDK, a <a href="/guides/opentelemetry-collector">Collector</a> and a backend. If you have seen <code>4317</code>, <code>4318</code> or <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>, you have configured OTLP.
+        </p>
+        <p>
+            Most OTLP problems are configuration problems: the wrong port for the transport, a path appended twice, a header in the wrong format. This guide explains the parts and then works through the errors in the order you are likely to hit them.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>gRPC listens on 4317 and HTTP on 4318 by default. Sending one transport to the other's port fails with confusing errors.</li>
+                <li><code>http/protobuf</code> is the specified default and the safest choice when in doubt.</li>
+                <li><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is a base URL. The per-signal variables are used as written, path included.</li>
+                <li>Retry on 429, 502, 503 and 504. Do not retry 400, 401, 403 or 413 unchanged.</li>
+                <li>A 200 response can still carry <code>partialSuccess</code> with rejected items. Read it.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-is-otlp" class="scroll-mt-24">
+        <h2>What OTLP is</h2>
+        <p>
+            OTLP is a specification with two parts. The first is a set of protobuf messages: <code>ExportTraceServiceRequest</code>, <code>ExportMetricsServiceRequest</code>, <code>ExportLogsServiceRequest</code> and, still in development, one for profiles. Each request groups data by resource (the service and host that produced it), then by instrumentation scope (the library that recorded it).
+        </p>
+        <p>
+            The second part is how those messages travel: over gRPC, or as HTTP <code>POST</code> requests. The traces, metrics and logs parts of the protocol are stable, so an exporter written today talks to a Collector from two years ago.
+        </p>
+        <p>
+            A request is a batch. An SDK collects spans for a few seconds (5 seconds by default for traces) or until it has 512 of them, and sends them in one call. That is why a span shows up in the backend a few seconds after the request finishes, and why a process that exits without flushing loses its last batch.
+        </p>
+    </section>
+
+    <section id="grpc-vs-http" class="scroll-mt-24">
+        <h2>gRPC vs HTTP</h2>
+        <p>Both transports carry the same messages. They differ in where they work well.</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th></th><th>OTLP/gRPC</th><th>OTLP/HTTP</th></tr></thead>
+                <tbody>
+                    <tr><td>Default port</td><td><code>4317</code></td><td><code>4318</code></td></tr>
+                    <tr><td>Protocol value</td><td><code>grpc</code></td><td><code>http/protobuf</code> or <code>http/json</code></td></tr>
+                    <tr><td>Where data goes</td><td>The <code>Export</code> method of <code>TraceService</code>, <code>MetricsService</code> or <code>LogsService</code></td><td><code>POST /v1/traces</code>, <code>/v1/metrics</code>, <code>/v1/logs</code></td></tr>
+                    <tr><td>Encoding</td><td>Protobuf only</td><td>Protobuf or JSON</td></tr>
+                    <tr><td>Browsers</td><td>No</td><td>Yes</td></tr>
+                    <tr><td>Proxies and load balancers</td><td>Needs HTTP/2 end to end; long-lived connections can pin to one backend</td><td>Works through anything that forwards HTTP</td></tr>
+                    <tr><td>Errors</td><td>gRPC status codes such as <code>UNAVAILABLE</code></td><td>HTTP status codes</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The specification says SDKs should default to <code>http/protobuf</code>, though some SDKs kept <code>grpc</code> as their default for compatibility with earlier releases. Check your SDK's docs, or set <code>OTEL_EXPORTER_OTLP_PROTOCOL</code> explicitly so nobody has to guess.
+        </p>
+        <p>
+            Choose <strong>HTTP</strong> when traffic crosses a proxy, an API gateway or the public internet, or when it comes from a browser. Choose <strong>gRPC</strong> between services and Collectors you run yourself, where its single multiplexed connection saves a little overhead. The difference in throughput rarely matters next to batch size and compression.
+        </p>
+        <p>
+            One gRPC caveat: a layer-4 load balancer balances connections, not requests. A gRPC exporter opens one connection and keeps it, so all its data lands on whichever Collector it first reached. Use a load balancer that understands gRPC, or OTLP/HTTP.
+        </p>
+    </section>
+
+    <section id="encoding" class="scroll-mt-24">
+        <h2>Protobuf vs JSON</h2>
+        <p>
+            Over HTTP you choose the encoding with <code>Content-Type</code>: <code>application/x-protobuf</code> for binary protobuf, <code>application/json</code> for JSON. The server answers in the same encoding it received.
+        </p>
+        <p>
+            Protobuf is smaller and cheaper to encode, and it is what you want in production. JSON is for places where protobuf is awkward, such as a hand-written <code>curl</code> test, a shell script or a small browser exporter. OTLP/JSON is not the JSON you would guess from the protobuf schema. Four rules trip people up:
+        </p>
+        <Code code={jsonDiff} lang="json" />
+        <ul class="guide-list">
+            <li><strong>IDs are hex strings.</strong> <code>traceId</code> is 32 hex characters and <code>spanId</code> is 16. The standard protobuf-to-JSON mapping would use base64, and a base64 ID is rejected with a 400.</li>
+            <li><strong>Enums are integers.</strong> <code>"kind": 2</code> for a server span, never <code>"SPAN_KIND_SERVER"</code>.</li>
+            <li><strong>Keys are lowerCamelCase.</strong> <code>droppedAttributesCount</code>, not <code>dropped_attributes_count</code>.</li>
+            <li><strong>64-bit integers are strings.</strong> Timestamps such as <code>startTimeUnixNano</code> are decimal strings. Receivers accept numbers too, but a JavaScript number loses precision past 2<sup>53</sup>.</li>
+        </ul>
+        <p>
+            Compression is separate from encoding. Set <code>OTEL_EXPORTER_OTLP_COMPRESSION=gzip</code> in the SDK; the Collector's OTLP exporters already use gzip by default. Telemetry repeats the same keys and values constantly and compresses well, which matters for both egress cost and the 413 errors below.
+        </p>
+    </section>
+
+    <section id="endpoints" class="scroll-mt-24">
+        <h2>Endpoints and environment variables</h2>
+        <p>Every OpenTelemetry SDK reads the same environment variables, so this setup works in any language:</p>
+        <Code code={envHttp} lang="shell" />
+        <p>
+            Each variable has a per-signal form, such as <code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</code> or <code>OTEL_EXPORTER_OTLP_LOGS_HEADERS</code>, which overrides the generic one for that signal. The two endpoint forms behave differently, and that difference causes most OTLP 404s:
+        </p>
+        <Code code={perSignal} lang="shell" />
+        <p>
+            With no endpoint set, SDKs send to <code>http://localhost:4318</code> for HTTP or <code>http://localhost:4317</code> for gRPC. That default is right when a Collector runs on the same host, and wrong almost everywhere else.
+        </p>
+        <p>
+            The export timeout defaults to 10 seconds per batch (<code>OTEL_EXPORTER_OTLP_TIMEOUT</code>, in milliseconds). Retries happen inside that budget, so a slow endpoint shows up as timeouts, then dropped batches.
+        </p>
+    </section>
+
+    <section id="auth" class="scroll-mt-24">
+        <h2>Auth headers and TLS</h2>
+        <p>
+            OTLP has no authentication of its own. Backends read a header: usually <code>Authorization: Bearer &lt;key&gt;</code>, sometimes a vendor header. Over HTTP it is a request header; over gRPC it is metadata, where keys are lowercase.
+        </p>
+        <p>
+            <code>OTEL_EXPORTER_OTLP_HEADERS</code> takes a comma-separated list of <code>key=value</code> pairs in the W3C Baggage format. Two details matter. A comma inside a value ends it, so a key containing a comma must be percent-encoded. And quoting is part of the value, so <code>Authorization="Bearer abc"</code> sends the quotes. Most SDKs accept the space in <code>Bearer abc</code> as written; if yours rejects it, encode it as <code>Bearer%20abc</code>.
+        </p>
+        <p>In a Collector, headers go on the exporter, and the key comes from the environment rather than the file:</p>
+        <Code title="config.yaml" code={collectorHeaders} lang="yaml" />
+        <p>
+            The scheme in the endpoint sets transport security. <code>https://</code> means TLS and <code>http://</code> means plain text, for both transports. A gRPC endpoint with no scheme falls back to the <code>insecure</code> setting (<code>OTEL_EXPORTER_OTLP_INSECURE</code>), which defaults to TLS on. For a private certificate authority, point <code>OTEL_EXPORTER_OTLP_CERTIFICATE</code> at its PEM file; for mutual TLS, also set <code>OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE</code> and <code>OTEL_EXPORTER_OTLP_CLIENT_KEY</code>.
+        </p>
+    </section>
+
+    <section id="errors" class="scroll-mt-24">
+        <h2>Common errors and fixes</h2>
+        <p>
+            OTLP defines which failures a client retries. Over HTTP, 429, 502, 503 and 504 are retryable, with exponential backoff or after the <code>Retry-After</code> header when the server sends one. Every other 4xx and 5xx is final: sending the same batch again gets the same answer. Over gRPC the retryable signal is <code>UNAVAILABLE</code>.
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Symptom</th><th>Usual cause</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Connection refused</td><td>Nothing listens at that host and port</td><td>Check the host, the port and the Collector's bind address</td></tr>
+                    <tr><td><code>400 Bad Request</code></td><td>Undecodable body, such as JSON with base64 IDs</td><td>Fix the payload; never retry it</td></tr>
+                    <tr><td><code>401</code> / <code>403</code></td><td>Missing, wrong or revoked key, or a key from another region</td><td>Check the header name, the <code>Bearer</code> prefix and the key</td></tr>
+                    <tr><td><code>404 Not Found</code></td><td>Wrong path, usually a missing or doubled <code>/v1/traces</code></td><td>Use the base URL in the generic variable</td></tr>
+                    <tr><td><code>413</code></td><td>The request body is over the server's limit</td><td>Smaller batches, gzip on</td></tr>
+                    <tr><td><code>415</code></td><td>Unsupported <code>Content-Type</code> or compression</td><td>Protobuf or JSON, gzip or none</td></tr>
+                    <tr><td><code>429</code> / <code>503</code></td><td>Rate limit or backpressure</td><td>Let the exporter retry; lower volume if it persists</td></tr>
+                    <tr><td>Protocol or parse errors</td><td>gRPC sent to the HTTP port, or the reverse</td><td>Match the protocol to the port</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3 id="connection-refused" class="scroll-mt-24">Connection refused</h3>
+        <p>
+            The TCP connection never opened. In order of likelihood: the Collector is not running; the exporter uses the default <code>localhost</code> while the Collector runs in another container, so <code>localhost</code> is the app's own container; or the Collector listens only on <code>localhost</code> inside its container, so nothing outside can reach it. The last one is the default since Collector v0.104.0. Bind the receiver to <code>0.0.0.0:4318</code> and point the app at the Collector's service name, such as <code>http://otel-collector:4318</code>.
+        </p>
+
+        <h3 id="status-401" class="scroll-mt-24">401 and 403</h3>
+        <p>
+            A 401 means the backend did not accept the credential. Check that the header reached the exporter: a variable set in your shell is not set inside a container or a systemd unit. Check the format: <code>Authorization=Bearer key</code> in the environment variable, and the exact header name your backend documents. Some backends issue keys per region and reject a key sent to the other region's endpoint. A 403 usually means the key is valid but not allowed to send that signal.
+        </p>
+
+        <h3 id="status-404" class="scroll-mt-24">404</h3>
+        <p>
+            Almost always the path. Setting <code>OTEL_EXPORTER_OTLP_ENDPOINT=https://host/v1/traces</code> sends traces to <code>/v1/traces/v1/traces</code>. Setting <code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://host</code> sends them to <code>/</code>. In a Node.js test, the HTTP exporter given a bare <code>http://localhost:4318</code> as its URL got <code>Not Found</code> from the Collector, because a URL passed in code is also used as written.
+        </p>
+
+        <h3 id="status-413" class="scroll-mt-24">413 Content Too Large</h3>
+        <p>
+            The specification tells servers to answer 413 when a request is over their size limit, and suggests supporting at least 64 MiB. Hosted backends often set lower limits, and proxies in front of a Collector (an nginx default is 1 MB) are lower still. Make batches smaller at the source:
+        </p>
+        <Code code={sdkBatch} lang="shell" />
+        <p>In a Collector, cap the batch the exporter builds. <code>max_size</code> splits anything larger:</p>
+        <Code code={collectorBatch} lang="yaml" />
+        <p>Turn on gzip if it is off. Check which size the limit applies to: some backends measure the compressed body, others the decompressed one.</p>
+
+        <h3 id="protocol-mismatch" class="scroll-mt-24">Protocol mismatch</h3>
+        <p>
+            Sending gRPC to the HTTP port, or HTTP to the gRPC port, does not produce a clear message. In a test with the Node.js exporters against a Collector, the gRPC exporter pointed at 4318 failed with <code>14 UNAVAILABLE: No connection established. Last error: Protocol error</code>, and the HTTP exporter pointed at 4317 failed with <code>Parse Error: Expected HTTP/, RTSP/ or ICE/</code>. Other languages word it differently, often as an HTTP/2 frame or preface error. When you see a protocol-level error, check that <code>OTEL_EXPORTER_OTLP_PROTOCOL</code> and the port agree before anything else.
+        </p>
+    </section>
+
+    <section id="debugging" class="scroll-mt-24">
+        <h2>Debug an exporter</h2>
+        <p>When data does not arrive, take the application out of the picture and test the endpoint directly. An empty OTLP/JSON request is valid and checks the URL, the TLS setup and the key in one go:</p>
+        <Code code={curlProbe} lang="shell" />
+        <p>
+            <code>200</code> means the endpoint and key work, so the problem is in the app's configuration. <code>401</code> points at the key and <code>404</code> at the path. If <code>curl</code> cannot connect at all, the network is the problem: DNS, a firewall, or a proxy that needs its own settings.
+        </p>
+        <p>Then check the SDK side:</p>
+        <ul class="guide-list">
+            <li><strong>Print the effective config.</strong> Log <code>OTEL_EXPORTER_OTLP_*</code> at startup, minus the header values. A typo such as <code>OTEL_EXPORTER_OTLP_ENDPIONT</code> is silently ignored.</li>
+            <li><strong>Turn on SDK logs.</strong> <code>OTEL_LOG_LEVEL=debug</code> makes the SDKs that support it log each failed export. Support varies by language.</li>
+            <li><strong>Flush on exit.</strong> Short-lived processes, such as CLI tools, cron jobs and serverless functions, must call <code>shutdown()</code> or <code>forceFlush()</code> on the provider before exiting, or the last batch never leaves.</li>
+            <li><strong>Read partial success.</strong> A <code>200</code> whose body has <code>partialSuccess.rejectedSpans</code> greater than zero means some items were dropped, with the reason in <code>errorMessage</code>. Clients do not retry it, so log it.</li>
+            <li><strong>Put a Collector in between.</strong> A local Collector with the <code>debug</code> exporter shows exactly what the SDK sends. The <a href="/guides/opentelemetry-collector#run">Collector guide</a> has a config that does this.</li>
+        </ul>
+        <p>
+            Data that arrives but is incomplete is usually not an OTLP problem. Missing child spans point at <a href="/guides/opentelemetry-context-propagation">context propagation</a>, and traces that appear for some requests but not others point at <a href="/guides/opentelemetry-sampling">sampling</a>.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Send OTLP to Maple</h3>
+            <p>Set the endpoint to <code>https://ingest.maple.dev</code> and the header to your ingest key. Both transports work on port 443, and the ingest reference lists every status code with its fix.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/getting-started/quickstart" class="guide-button guide-button--primary">Quickstart</a>
+                <a href="/docs/reference/ingest" class="guide-button">Ingest reference</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="guide-sources">
+        <h2>Sources and further reading</h2>
+        <ul>
+            <li><a href="https://opentelemetry.io/docs/specs/otlp/" target="_blank" rel="noopener noreferrer">OpenTelemetry Protocol specification</a></li>
+            <li><a href="https://opentelemetry.io/docs/specs/otel/protocol/exporter/" target="_blank" rel="noopener noreferrer">OpenTelemetry spec: OTLP exporter configuration</a></li>
+            <li><a href="https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/" target="_blank" rel="noopener noreferrer">OpenTelemetry spec: SDK environment variables</a></li>
+            <li><a href="https://opentelemetry.io/blog/2024/hardening-the-collector-one/" target="_blank" rel="noopener noreferrer">OpenTelemetry blog: a new default bind address for the Collector</a></li>
+            <li><a href="/docs/reference/ingest">Maple docs: Ingest API</a></li>
+            <li><a href="/opentelemetry">OpenTelemetry with Maple</a></li>
+        </ul>
+    </section>
+</GuidePage>

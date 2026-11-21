@@ -1,0 +1,87 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import { glossaryTerms } from "../../lib/glossary";
+import { guideSeries } from "../../lib/guide-series";
+import { allGuides } from "../../lib/guides";
+
+const pageTitle = "Observability glossary: traces, spans, OTLP, SLOs | Maple";
+const pageDescription =
+    "Plain definitions of observability and OpenTelemetry terms: trace, span, OTLP, p99 and percentiles, SLOs and error budgets, cardinality, instrumentation and semantic conventions.";
+
+const series = guideSeries[0];
+const seriesGuides = series === undefined ? [] : series.hrefs.flatMap((href) => allGuides.filter((guide) => guide.href === href));
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const termSetJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "DefinedTermSet",
+    "@id": `${siteUrl}/glossary#set`,
+    name: "Maple observability glossary",
+    description: pageDescription,
+    url: `${siteUrl}/glossary`,
+    hasDefinedTerm: glossaryTerms.map((term) => ({
+        "@type": "DefinedTerm",
+        "@id": `${siteUrl}/glossary/${term.slug}#term`,
+        name: term.term,
+        description: term.definition,
+        url: `${siteUrl}/glossary/${term.slug}`,
+    })),
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(termSetJsonLd)} />
+    <Nav />
+    <Breadcrumb class="shell pt-4" items={[{ label: "Home", href: "/" }, { label: "Glossary" }]} />
+
+    <main class="shell pb-20 pt-14 font-display md:pb-28 md:pt-20">
+        <header>
+            <h1 class="text-[clamp(40px,6.3vw,72px)] font-semibold leading-[0.98] tracking-[-0.04em] text-fg">Glossary</h1>
+            <p class="mt-6 max-w-[58ch] text-base leading-[1.6] text-pretty text-fg-muted md:text-[17px]">
+                Short, precise definitions of the observability and OpenTelemetry terms used across Maple's <a href="/guides" class="text-primary underline decoration-primary/40 underline-offset-4 hover:text-fg">guides</a> and docs, each with an example.
+            </p>
+        </header>
+
+        <section class="mt-12 md:mt-16" aria-labelledby="terms">
+            <h2 id="terms" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Terms</h2>
+            <dl class="mt-4 divide-y divide-border border-y border-border">
+                {glossaryTerms.map((term) => (
+                    <div class="grid gap-1.5 py-5 md:grid-cols-[16rem_minmax(0,1fr)] md:gap-10">
+                        <dt>
+                            <a href={`/glossary/${term.slug}`} class="text-[15px] font-medium text-fg underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-primary/40">
+                                {term.term}
+                            </a>
+                        </dt>
+                        <dd class="max-w-[68ch] text-[14px] leading-relaxed text-fg-muted">{term.definition}</dd>
+                    </div>
+                ))}
+            </dl>
+        </section>
+
+        {series && (
+            <section class="mt-12" aria-labelledby="series">
+                <h2 id="series" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Go deeper: {series.title}</h2>
+                <ol class="mt-4 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
+                    {seriesGuides.map((guide, index) => (
+                        <li>
+                            <a href={guide.href} class="flex h-full flex-col rounded-xl border border-border p-4 transition-colors hover:border-primary/40">
+                                <span class="text-[12px] text-fg-muted">Part {index + 1} of {seriesGuides.length}</span>
+                                <span class="mt-1 text-[14px] font-medium text-fg">{guide.title}</span>
+                                <span class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{guide.description}</span>
+                            </a>
+                        </li>
+                    ))}
+                </ol>
+            </section>
+        )}
+    </main>
+
+    <BottomCTA />
+    <Footer />
+</Layout>

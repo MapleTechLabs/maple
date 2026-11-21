@@ -1,0 +1,76 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+import Code from "../../components/guides/Code.astro";
+
+const nodeAuto = String.raw`npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node
+
+export OTEL_SERVICE_NAME="checkout"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+node --require @opentelemetry/auto-instrumentations-node/register app.js`;
+
+const pythonAuto = String.raw`pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install
+
+export OTEL_SERVICE_NAME="checkout"
+opentelemetry-instrument python app.py`;
+---
+
+<GlossaryTermPage
+    slug="instrumentation"
+    pageTitle="Instrumentation vs auto-instrumentation in OpenTelemetry | Maple Glossary"
+    description="Instrumentation is the code that produces telemetry. How auto-instrumentation works, what it covers, when to add manual spans, and how to start in Node.js and Python."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/zero-code/", title: "OpenTelemetry docs: Zero-code instrumentation" },
+        { href: "https://opentelemetry.io/docs/zero-code/js/", title: "OpenTelemetry docs: JavaScript zero-code instrumentation" },
+        { href: "https://opentelemetry.io/docs/zero-code/python/", title: "OpenTelemetry docs: Python zero-code instrumentation" },
+    ]}
+    readNext={[
+        { href: "/opentelemetry", title: "OpenTelemetry with Maple" },
+        { href: "/guides/opentelemetry-context-propagation", title: "Context propagation and trace IDs in logs" },
+        { href: "/docs/instrumentation", title: "Instrumentation docs (Maple)" },
+        { href: "/guides/otlp", title: "OTLP explained" },
+    ]}
+    relatedTerms={["span", "trace", "semantic-conventions", "otlp"]}
+>
+    <section>
+        <h2>Auto-instrumentation</h2>
+        <p>
+            Auto-instrumentation hooks into libraries your application already uses, such as the HTTP server, the HTTP client, the database driver and the queue client, and records spans and metrics for them. You add a package and a startup flag; your code does not change.
+        </p>
+        <p>In Node.js, the auto-instrumentations package registers before your app loads:</p>
+        <Code code={nodeAuto} lang="shell" />
+        <p>In Python, the distro installs instrumentation for the libraries it finds and wraps the start command:</p>
+        <Code code={pythonAuto} lang="shell" />
+        <p>
+            How it works differs by language. Node.js and Python patch modules as they are loaded. Java uses a <code>-javaagent</code> that rewrites bytecode. .NET uses a profiler. Go compiles to a static binary, so its options are libraries you wire in yourself, compile-time instrumentation, or an eBPF agent that observes the process from outside.
+        </p>
+    </section>
+
+    <section>
+        <h2>What auto-instrumentation gives you, and what it does not</h2>
+        <p>
+            It covers the edges of each service: incoming requests, outgoing calls, database queries. That is enough for a service map, request rates, error rates, latency per route, and traces that cross services, because the HTTP instrumentation also <a href="/guides/opentelemetry-context-propagation">propagates context</a>.
+        </p>
+        <p>
+            It does not know your business logic. A checkout request appears as one server span with a database call and an HTTP call under it; the steps in between, such as pricing, fraud checks or inventory reservation, are invisible. It also cannot add attributes only your code knows, such as the order value or the customer's plan.
+        </p>
+    </section>
+
+    <section>
+        <h2>Manual instrumentation</h2>
+        <p>
+            Manual instrumentation fills that gap with the OpenTelemetry API: a span around an important function, an attribute with the tenant ID, a counter for orders placed. It works alongside auto-instrumentation, since manual spans become children of whatever span is active. See the <a href="/glossary/span">span</a> entry for an example.
+        </p>
+        <p>
+            A practical order: start with auto-instrumentation everywhere, look at a few traces of real requests, then add manual spans where the trace has a long gap with no explanation. Name custom attributes with a prefix you own, such as <code>app.order.value</code>, so they do not collide with the <a href="/glossary/semantic-conventions">semantic conventions</a>.
+        </p>
+    </section>
+
+    <section>
+        <h2>Costs to watch</h2>
+        <p>
+            Auto-instrumentation can produce more spans than you need: a span per Redis command in a loop, or per file system call. Most instrumentation packages let you disable individual libraries; turn off the noisy ones rather than sampling everything harder. Instrumentation also adds startup time and some overhead per request, usually small next to the network calls being measured.
+        </p>
+    </section>
+</GlossaryTermPage>

@@ -15,6 +15,7 @@ import { features } from "../lib/features"
 import { useCases } from "../lib/use-cases"
 import { allGuides } from "../lib/guides"
 import { alternativesPages, alternativesPath } from "../lib/alternatives"
+import { glossaryTerms } from "../lib/glossary"
 import { absolute, plainText } from "../lib/page-markdown"
 import { scaleProofMarkdown } from "../lib/scale-proof"
 import { enterpriseOfferMarkdown } from "../lib/enterprise-offer"
@@ -145,6 +146,17 @@ export const GET: APIRoute = ({ site }) => {
 			...Arr.map(
 				Arr.filter(allGuides, (guide) => !guide.href.startsWith("/alternatives/")),
 				(guide) => `- [${guide.title}](${url(guide.href)})`,
+			),
+			"",
+
+			"## Glossary",
+			"",
+			"One-paragraph definitions of observability and OpenTelemetry terms, each with an example.",
+			"",
+			`- [Glossary index](${url("/glossary")})`,
+			...Arr.map(
+				glossaryTerms,
+				(term) => `- [${term.term}](${url(`/glossary/${term.slug}`)}): ${term.definition}`,
 			),
 			"",
 

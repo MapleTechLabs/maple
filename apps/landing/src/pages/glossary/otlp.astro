@@ -1,0 +1,82 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+import Code from "../../components/guides/Code.astro";
+
+const env = String.raw`export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp.example.com"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_KEY"`;
+---
+
+<GlossaryTermPage
+    slug="otlp"
+    pageTitle="What is OTLP? The OpenTelemetry Protocol, defined | Maple Glossary"
+    description="OTLP is the OpenTelemetry Protocol for sending traces, metrics and logs over gRPC (port 4317) or HTTP (port 4318). Definition, ports, encodings and configuration."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/specs/otlp/", title: "OpenTelemetry Protocol specification" },
+        { href: "https://opentelemetry.io/docs/specs/otel/protocol/exporter/", title: "OpenTelemetry spec: OTLP exporter configuration" },
+    ]}
+    readNext={[
+        { href: "/guides/otlp", title: "OTLP explained: transports, headers and errors" },
+        { href: "/guides/opentelemetry-collector", title: "The OpenTelemetry Collector" },
+        { href: "/opentelemetry", title: "OpenTelemetry with Maple" },
+        { href: "/docs/reference/ingest", title: "Maple ingest API reference" },
+    ]}
+    relatedTerms={["trace", "span", "instrumentation", "semantic-conventions"]}
+>
+    <section>
+        <h2>OTLP at a glance</h2>
+        <div class="guide-table">
+            <table>
+                <tbody>
+                    <tr><td>Full name</td><td>OpenTelemetry Protocol</td></tr>
+                    <tr><td>Signals</td><td>Traces, metrics and logs (stable); profiles (in development)</td></tr>
+                    <tr><td>Transports</td><td>gRPC, or HTTP <code>POST</code></td></tr>
+                    <tr><td>Default ports</td><td><code>4317</code> for gRPC, <code>4318</code> for HTTP</td></tr>
+                    <tr><td>HTTP paths</td><td><code>/v1/traces</code>, <code>/v1/metrics</code>, <code>/v1/logs</code></td></tr>
+                    <tr><td>Encodings</td><td>Protobuf; JSON over HTTP only</td></tr>
+                    <tr><td>Compression</td><td>gzip, optional</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section>
+        <h2>What OTLP is for</h2>
+        <p>
+            Before OpenTelemetry, each tracing or metrics system had its own wire format and its own client libraries. Switching backends meant re-instrumenting every service. OTLP separates the two: you instrument once with OpenTelemetry, the SDK speaks OTLP, and any backend or <a href="/guides/opentelemetry-collector">Collector</a> that accepts OTLP can receive the data. Changing where data goes becomes a configuration change.
+        </p>
+        <p>
+            An OTLP request carries a batch. Data is grouped by resource (the service and host that produced it) and then by instrumentation scope (the library that recorded it), so shared values are sent once per batch instead of on every span.
+        </p>
+    </section>
+
+    <section>
+        <h2>Configuring an exporter</h2>
+        <p>Every OpenTelemetry SDK reads the same environment variables:</p>
+        <Code code={env} lang="shell" />
+        <p>
+            <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is a base URL: the SDK adds <code>/v1/traces</code> and the other paths itself. The per-signal form, <code>OTEL_EXPORTER_OTLP_TRACES_ENDPOINT</code>, is used exactly as written and must include the path. Mixing the two up is the most common cause of 404 errors. The <a href="/guides/otlp">OTLP guide</a> covers this and the other common errors: 401, 413, protocol mismatches and refused connections.
+        </p>
+    </section>
+
+    <section>
+        <h2>gRPC or HTTP?</h2>
+        <p>
+            The specification makes <code>http/protobuf</code> the default. It passes through any proxy and load balancer and works from browsers. gRPC suits traffic between services and Collectors you run yourself. Both carry the same data, so pick HTTP unless you have a reason not to, and set <code>OTEL_EXPORTER_OTLP_PROTOCOL</code> explicitly, since some SDKs still default to gRPC.
+        </p>
+    </section>
+
+    <section>
+        <h2>OTLP and other formats</h2>
+        <p>
+            OTLP is not the only telemetry format, and it does not need to be. The OpenTelemetry Collector receives Prometheus scrapes and remote write, Zipkin, Jaeger, StatsD, syslog and many vendor formats, converts them to its internal model, and exports OTLP. A system in the middle of a migration can keep its old agents and still send everything onward as OTLP.
+        </p>
+        <p>
+            The reverse also works: a Collector can receive OTLP and export Prometheus or another format for a backend that does not accept OTLP yet. Most observability backends now accept OTLP directly, which removes the translation step entirely.
+        </p>
+        <p>
+            Because the format is shared, debugging tools work everywhere. A Collector with the <code>debug</code> exporter prints what any SDK sends, and an empty OTLP/JSON request sent with <code>curl</code> checks an endpoint and its credentials in one step.
+        </p>
+    </section>
+</GlossaryTermPage>

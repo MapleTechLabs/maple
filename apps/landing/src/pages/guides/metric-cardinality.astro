@@ -1,0 +1,305 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-is-cardinality", text: "What cardinality is" },
+    { depth: 2, slug: "cost", text: "How it reaches your bill" },
+    { depth: 2, slug: "causes", text: "Common causes" },
+    { depth: 2, slug: "finding", text: "Find the culprit" },
+    { depth: 2, slug: "fixing", text: "Fix it" },
+    { depth: 3, slug: "fix-attributes", text: "Bounded attributes" },
+    { depth: 3, slug: "fix-views", text: "SDK views" },
+    { depth: 3, slug: "fix-limit", text: "Cardinality limits" },
+    { depth: 3, slug: "fix-collector", text: "In the Collector" },
+    { depth: 2, slug: "where-detail-goes", text: "Where the detail goes" },
+];
+
+const seriesExample = String.raw`http.server.request.duration{http.request.method="GET",  http.route="/orders/{id}", http.response.status_code="200"}
+http.server.request.duration{http.request.method="GET",  http.route="/orders/{id}", http.response.status_code="404"}
+http.server.request.duration{http.request.method="POST", http.route="/orders",      http.response.status_code="201"}`;
+
+const promTopMetrics = String.raw`# The 10 metric names with the most series
+topk(10, count by (__name__) ({__name__=~".+"}))`;
+
+const promLabel = String.raw`# How many distinct values one attribute has on one metric
+count(count by (url_path) (http_server_request_duration_seconds_count))`;
+
+const nodeView = String.raw`import { MeterProvider, createAllowListAttributesProcessor } from "@opentelemetry/sdk-metrics";
+
+const meterProvider = new MeterProvider({
+  readers: [reader],
+  views: [
+    {
+      // Keep only these three attributes on this histogram.
+      instrumentName: "http.server.request.duration",
+      attributesProcessors: [
+        createAllowListAttributesProcessor(["http.request.method", "http.route", "http.response.status_code"]),
+      ],
+    },
+  ],
+});`;
+
+const pythonView = String.raw`from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.view import View
+
+provider = MeterProvider(
+    metric_readers=[reader],
+    views=[
+        # Keep only these three attributes on this histogram.
+        View(
+            instrument_name="http.server.request.duration",
+            attribute_keys={"http.request.method", "http.route", "http.response.status_code"},
+        ),
+    ],
+)`;
+
+const limitView = String.raw`views: [
+  { instrumentName: "orders.created", aggregationCardinalityLimit: 3 },
+],`;
+
+const limitOutput = String.raw`orders.created points 3 [{"customer.id":"c_0"},{"customer.id":"c_1"},{"otel.metric.overflow":true}]`;
+
+const collectorFix = String.raw`processors:
+  transform/route:
+    metric_statements:
+      - context: datapoint
+        statements:
+          - replace_pattern(attributes["url.path"], "/orders/[0-9]+", "/orders/{id}")
+  metrics_transform/drop-user:
+    transforms:
+      - include: http.server.request.count
+        action: update
+        operations:
+          - action: aggregate_labels
+            label_set: [http.request.method, url.path]
+            aggregation_type: sum
+  filter/debug-metrics:
+    metrics:
+      metric:
+        - 'IsMatch(name, "^debug\\.")'`;
+
+const faqs = [
+    {
+        question: "What is metric cardinality?",
+        answer:
+            "Metric cardinality is the number of distinct time series a metric produces. Each unique combination of attribute values (labels in Prometheus) is its own series, so the cardinality is roughly the product of the number of values each attribute takes.",
+    },
+    {
+        question: "Why is high cardinality expensive?",
+        answer:
+            "Most metrics backends store, index and bill per active series or per data point, and every series produces a data point at every export interval. An attribute with many distinct values, such as a user ID, multiplies the series count by the number of users.",
+    },
+    {
+        question: "Which attributes cause high cardinality?",
+        answer:
+            "Unbounded values: user, session, request or order IDs, full URLs and paths with IDs in them, IP addresses, error messages, timestamps, and resource attributes that change on every deploy such as pod or container IDs.",
+    },
+    {
+        question: "How do I reduce metric cardinality in OpenTelemetry?",
+        answer:
+            "Record bounded attributes, such as http.route instead of url.path. Drop attributes in the SDK with a View that allow-lists the keys you need. Use the cardinality limit as a safety net. For metrics you do not control, re-aggregate in the Collector with the metrics_transform processor's aggregate_labels action.",
+    },
+    {
+        question: "What is otel.metric.overflow?",
+        answer:
+            "When a metric reaches the SDK's cardinality limit (2,000 attribute sets per metric by default), further new attribute sets are folded into one series with the attribute otel.metric.overflow=true. Seeing it means the metric has more combinations than the limit allows.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="Metric cardinality: what it is, why it costs, how to fix it | Maple"
+    description="What metric cardinality is, how one high-cardinality attribute multiplies a metrics bill, and how to find and fix it with OpenTelemetry views, limits and the Collector."
+    title="Metric cardinality"
+    lede="Why one innocent attribute can multiply a metrics bill, how to find the metric and the attribute responsible, and four ways to bring the series count back down."
+    category="OpenTelemetry"
+    readMinutes={10}
+    published="2026-11-21"
+    modified="2026-11-21"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            <strong>Metric cardinality</strong> is the number of distinct time series a metric produces. It is the main driver of metrics cost, and it is easy to raise by accident: add <code>user.id</code> to a request counter and the metric now has one series per user.
+        </p>
+        <p>
+            This guide explains how series multiply, how that turns into storage and money, how to find the attribute responsible, and how to fix it at the source, in the SDK and in the Collector. The SDK and Collector examples were run against current OpenTelemetry releases.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Every unique set of attribute values is a separate time series. Series counts multiply across attributes.</li>
+                <li>Histograms multiply again by their bucket count.</li>
+                <li>IDs, full URLs, IP addresses and error messages do not belong on metrics. Put them on spans and logs.</li>
+                <li>Fix it where the metric is recorded: bounded attributes and SDK views beat cleanup downstream.</li>
+                <li>A series with <code>otel.metric.overflow=true</code> means a metric hit the SDK's cardinality limit.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-is-cardinality" class="scroll-mt-24">
+        <h2>What cardinality is</h2>
+        <p>
+            A time series is a metric name plus one specific set of attribute values (Prometheus calls them labels). These are three different series of the same histogram:
+        </p>
+        <Code code={seriesExample} />
+        <p>
+            The metric's cardinality is how many such combinations actually occur. As an upper bound it is the product of each attribute's distinct values. Take <code>http.server.request.duration</code> with 5 methods, 40 routes and 10 status codes, reported by 20 instances whose <code>service.instance.id</code> differs:
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Attributes</th><th>Series</th></tr></thead>
+                <tbody>
+                    <tr><td>method &times; route &times; status</td><td>5 &times; 40 &times; 10 = 2,000</td></tr>
+                    <tr><td>&times; 20 instances</td><td>40,000</td></tr>
+                    <tr><td>&times; <code>user.id</code> with 10,000 active users</td><td>400,000,000</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            In practice not every combination occurs, since a route only returns some status codes. But the shape holds: adding an attribute multiplies, and an attribute with unbounded values multiplies without limit.
+        </p>
+        <p>
+            Histograms make it worse. A histogram series carries a count per bucket. The OpenTelemetry SDK's default explicit boundaries are <code>0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000</code>: 15 boundaries, 16 buckets. Stored the Prometheus way, that is 16 bucket series plus <code>_sum</code> and <code>_count</code>, so 18 series for every attribute combination. With those buckets, the 40,000 combinations above become 720,000 series. HTTP instrumentation usually sets its own boundaries in seconds (the semantic conventions advise 14), which changes the multiplier a little and the conclusion not at all.
+        </p>
+    </section>
+
+    <section id="cost" class="scroll-mt-24">
+        <h2>How cardinality reaches your bill</h2>
+        <p>Every series costs something at each stage:</p>
+        <ul class="guide-list">
+            <li><strong>In the application.</strong> The SDK keeps one aggregation in memory per series and exports all of them each interval. The default export interval is 60 seconds.</li>
+            <li><strong>In transit.</strong> Each series becomes a data point in every export. 40,000 series at one point a minute is about 1.75 billion data points a month.</li>
+            <li><strong>In storage.</strong> Time series databases index each series. Memory use and query time grow with the number of active series, and queries that aggregate across a high-cardinality attribute read every one of them.</li>
+            <li><strong>On the invoice.</strong> Metrics products commonly bill per active series, per custom metric or per data point ingested. All three grow with cardinality.</li>
+        </ul>
+        <p>
+            Churn counts too. A series that appears for ten minutes and never again still had to be created, indexed and kept for the retention period. Attributes that change on every deploy, such as a pod name, create a new set of series per deploy, so a service deployed twenty times a day accumulates series even if its live count looks steady.
+        </p>
+    </section>
+
+    <section id="causes" class="scroll-mt-24">
+        <h2>Common causes</h2>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Attribute</th><th>Why it explodes</th><th>Use instead</th></tr></thead>
+                <tbody>
+                    <tr><td><code>user.id</code>, <code>session.id</code>, order or request IDs</td><td>One series per entity</td><td>Span attributes</td></tr>
+                    <tr><td><code>url.path</code>, <code>url.full</code></td><td>IDs inside paths: <code>/orders/8812</code></td><td><code>http.route</code>: <code>/orders/&#123;id&#125;</code></td></tr>
+                    <tr><td><code>client.address</code>, <code>network.peer.address</code></td><td>One series per IP</td><td>Nothing, or a coarse region</td></tr>
+                    <tr><td><code>exception.message</code>, error text</td><td>Messages embed values</td><td><code>error.type</code></td></tr>
+                    <tr><td><code>db.query.text</code></td><td>One series per distinct statement</td><td><code>db.operation.name</code>, <code>db.collection.name</code></td></tr>
+                    <tr><td><code>k8s.pod.name</code>, <code>container.id</code></td><td>New values on every deploy and restart</td><td><code>k8s.deployment.name</code>, or drop it from metrics</td></tr>
+                    <tr><td>Tenant or customer ID</td><td>Grows with the business</td><td>Fine for a few hundred tenants; above that, a plan tier</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Auto-instrumentation libraries that follow the <a href="/glossary/semantic-conventions">semantic conventions</a> already use bounded attributes on their metrics. The usual source of trouble is custom metrics, where an attribute was added for one investigation and never removed, or a framework that reports the raw path because it does not know the route template.
+        </p>
+    </section>
+
+    <section id="finding" class="scroll-mt-24">
+        <h2>Find the culprit</h2>
+        <p>
+            Start with the metric, then the attribute. In a Prometheus-compatible backend, count series per metric name. This query touches every series, so run it on a recent window and not on a dashboard:
+        </p>
+        <Code code={promTopMetrics} lang="promql" />
+        <p>Then count each attribute's distinct values on the worst metric. With its default name translation, Prometheus stores <code>url.path</code> as <code>url_path</code>:</p>
+        <Code code={promLabel} lang="promql" />
+        <p>
+            Prometheus also shows the metric names and label names with the most series on its <code>/tsdb-status</code> page. Other backends have an equivalent: a cardinality explorer, a usage page, or a SQL table you can group by metric and attribute.
+        </p>
+        <p>
+            On the sending side, two signals help. A series with <code>otel.metric.overflow=true</code> means an SDK hit its cardinality limit, covered below. And a Collector's <code>debug</code> exporter with <code>verbosity: detailed</code> prints every data point's attributes, which shows quickly whether an unexpected attribute is present before anything reaches the backend.
+        </p>
+    </section>
+
+    <section id="fixing" class="scroll-mt-24">
+        <h2>Fix it</h2>
+        <p>Fix cardinality as close to where the metric is recorded as you can. Each step downstream is less precise and costs more.</p>
+
+        <h3 id="fix-attributes" class="scroll-mt-24">1. Record bounded attributes</h3>
+        <p>
+            The best fix is to not record the value. Replace the path with the route template, the error message with an error type, the user ID with nothing. If you need a per-user answer, a metric is the wrong tool; see <a href="#where-detail-goes">where the detail goes</a>.
+        </p>
+
+        <h3 id="fix-views" class="scroll-mt-24">2. Drop attributes with an SDK view</h3>
+        <p>
+            When the metric comes from a library you cannot change, a <strong>view</strong> in the metrics SDK rewrites it before aggregation. An allow-list of attribute keys keeps the ones you name and discards the rest, and the SDK aggregates the result correctly: points that only differed by a dropped attribute are summed.
+        </p>
+        <Code title="Node.js" code={nodeView} lang="typescript" />
+        <Code title="Python" code={pythonView} lang="python" />
+        <p>
+            We recorded 500 measurements with 500 different <code>user.id</code> values through each of these. Both SDKs exported a single data point with the three allowed attributes.
+        </p>
+
+        <h3 id="fix-limit" class="scroll-mt-24">3. Keep the cardinality limit as a safety net</h3>
+        <p>
+            The OpenTelemetry metrics SDK caps how many attribute sets one metric can hold per collection: 2,000 by default. Past the limit, new combinations are folded into a single overflow series carrying <code>otel.metric.overflow=true</code>. No measurement is lost or counted twice, but the overflow series has no breakdown, so the metric stops being useful for whatever exceeded the limit. In the JavaScript SDK, a view can set a lower limit per instrument:
+        </p>
+        <Code code={limitView} lang="typescript" />
+        <p>With a limit of 3 and ten different <code>customer.id</code> values, the export held two real series and the overflow:</p>
+        <Code code={limitOutput} output />
+        <p>Alert on the overflow series. It is the earliest sign that a deploy added an unbounded attribute.</p>
+
+        <h3 id="fix-collector" class="scroll-mt-24">4. Re-aggregate in the Collector</h3>
+        <p>
+            For metrics you do not instrument, such as scraped Prometheus endpoints or a vendor agent, fix them in a <a href="/guides/opentelemetry-collector">Collector</a>. Three processors cover most cases:
+        </p>
+        <Code title="config.yaml" code={collectorFix} lang="yaml" />
+        <ul class="guide-list">
+            <li><strong><code>transform</code></strong> rewrites values: here, order IDs in paths become <code>/orders/&#123;id&#125;</code>.</li>
+            <li><strong><code>metrics_transform</code></strong> with <code>aggregate_labels</code> keeps only the listed attributes and sums points that become identical. In our test, three points for three users collapsed into one point with their total.</li>
+            <li><strong><code>filter</code></strong> drops whole metrics nobody uses.</li>
+        </ul>
+        <div class="guide-callout">
+            <p class="guide-kicker">Do not just delete the attribute</p>
+            <p>The <code>attributes</code> processor can delete <code>user.id</code> from metric points, but it does not merge the points that are now identical. In our test, three points for three users came out as three points with the same attributes and a value of 5 each, where the right answer was one point of 15. Depending on the backend, such duplicates overwrite each other or are rejected. The same applies to <code>transform</code> on its own, which is why <code>aggregate_labels</code> runs after it. List the processors in the pipeline in the order shown.</p>
+        </div>
+        <p>
+            The Collector receives the full cardinality before reducing it, so applications still pay for the memory and network of the original series. Treat Collector fixes as the place for metrics you cannot change at the source.
+        </p>
+    </section>
+
+    <section id="where-detail-goes" class="scroll-mt-24">
+        <h2>Where the detail goes</h2>
+        <p>
+            High cardinality is a problem for metrics, not for observability. Spans and logs are stored per event, so a <code>user.id</code> on a span costs a few bytes, while the same attribute on a metric multiplies the series count. A good split:
+        </p>
+        <ul class="guide-list">
+            <li><strong>Metrics</strong> answer "how many, how fast, how often" with bounded dimensions: route, method, status, region, version.</li>
+            <li><strong>Spans</strong> carry the specifics: user, tenant, order ID, query text. When a metric shows a slow route, the spans for that route tell you which users and which queries.</li>
+            <li><strong>Exemplars</strong> join the two: a metric point can carry the trace ID of one measurement, so a spike in a latency chart links to a trace from that spike.</li>
+        </ul>
+        <p>
+            For SLOs and alerts, keep the metric. For "which customer was affected", query the spans. Read the <a href="/glossary/cardinality">cardinality glossary entry</a> for the short version, or go back to <a href="/guides/opentelemetry-collector">part 1</a> of this series to set up the Collector these fixes run in.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Metrics with the traces behind them</h3>
+            <p>Send OTLP metrics, traces and logs to Maple and keep per-request detail on spans, where it costs bytes and not series.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/getting-started/quickstart" class="guide-button guide-button--primary">Quickstart</a>
+                <a href="/docs/reference/ingest" class="guide-button">Ingest reference</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="guide-sources">
+        <h2>Sources and further reading</h2>
+        <ul>
+            <li><a href="https://opentelemetry.io/docs/specs/otel/metrics/sdk/" target="_blank" rel="noopener noreferrer">OpenTelemetry spec: Metrics SDK (views, cardinality limits)</a></li>
+            <li><a href="https://opentelemetry.io/docs/specs/semconv/http/http-metrics/" target="_blank" rel="noopener noreferrer">OpenTelemetry semantic conventions: HTTP metrics</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/metricstransformprocessor" target="_blank" rel="noopener noreferrer">Collector contrib: metrics transform processor</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/transformprocessor" target="_blank" rel="noopener noreferrer">Collector contrib: transform processor</a></li>
+            <li><a href="https://prometheus.io/docs/practices/naming/#labels" target="_blank" rel="noopener noreferrer">Prometheus docs: label naming and cardinality</a></li>
+            <li><a href="/guides/prometheus-metrics">Prometheus metrics, explained</a></li>
+        </ul>
+    </section>
+</GuidePage>

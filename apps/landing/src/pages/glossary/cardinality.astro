@@ -1,0 +1,66 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+---
+
+<GlossaryTermPage
+    slug="cardinality"
+    pageTitle="What is cardinality in observability? High cardinality explained | Maple Glossary"
+    description="Cardinality is the number of distinct values an attribute takes, and the number of time series a metric produces. Why high cardinality is costly for metrics and fine for traces."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/specs/otel/metrics/sdk/#cardinality-limits", title: "OpenTelemetry spec: Metrics SDK cardinality limits" },
+        { href: "https://prometheus.io/docs/practices/naming/#labels", title: "Prometheus docs: Label naming" },
+    ]}
+    readNext={[
+        { href: "/guides/metric-cardinality", title: "Metric cardinality: find and fix it" },
+        { href: "/guides/prometheus-metrics", title: "Prometheus metrics, explained" },
+        { href: "/guides/opentelemetry-collector", title: "The OpenTelemetry Collector" },
+        { href: "/observability", title: "What is observability?" },
+    ]}
+    relatedTerms={["semantic-conventions", "percentiles", "span", "trace"]}
+>
+    <section>
+        <h2>Low and high cardinality</h2>
+        <p>
+            An attribute's cardinality is how many different values it takes. <code>http.request.method</code> has a handful: GET, POST, PUT, DELETE and a few more. <code>http.response.status_code</code> has a few dozen in practice. <code>user.id</code> has one value per user, so its cardinality grows with your business. <code>http.request.id</code> has a new value on every request and is unbounded.
+        </p>
+        <p>
+            "High cardinality" has no fixed threshold. It means "enough distinct values to matter for the system storing them", and that depends a great deal on whether the system stores metrics or events.
+        </p>
+    </section>
+
+    <section>
+        <h2>Why it matters for metrics</h2>
+        <p>
+            A metric stores one time series per distinct combination of attribute values. A request counter with 5 methods, 40 routes and 10 status codes can produce up to 2,000 series. Add <code>user.id</code> with 10,000 active users and the ceiling becomes 20 million. Each series is indexed and kept, gets a data point at every export, and in many products is billed. This is why a single attribute added to a metric can multiply its cost overnight.
+        </p>
+        <p>
+            The OpenTelemetry metrics SDK guards against runaway growth with a cardinality limit, 2,000 attribute combinations per metric by default. Past it, new combinations are folded into one series marked <code>otel.metric.overflow=true</code>. The <a href="/guides/metric-cardinality">metric cardinality guide</a> covers how to find the attribute responsible and how to drop it with SDK views or the Collector.
+        </p>
+    </section>
+
+    <section>
+        <h2>Why it is fine for traces and logs</h2>
+        <p>
+            Spans and log records are stored one event at a time. A <code>user.id</code> attribute on a span adds a few bytes to that span and creates no new series. High-cardinality attributes are what make traces useful: "show me the slow checkout requests for customer acme" needs the customer ID on the span.
+        </p>
+        <p>
+            The practical rule: put bounded dimensions (route, method, status, region, version) on metrics, and put identifiers (user, tenant, order, request) on spans and logs. When a metric shows a problem, the spans carry the detail that explains it.
+        </p>
+    </section>
+
+    <section>
+        <h2>Common high-cardinality attributes</h2>
+        <ul class="guide-list">
+            <li>User, session, request and order IDs</li>
+            <li>Full URLs and paths with IDs in them, such as <code>/orders/8812</code>; use the route template <code>/orders/&#123;id&#125;</code></li>
+            <li>Client IP addresses</li>
+            <li>Error messages that embed values; use an error type</li>
+            <li>Raw SQL statements</li>
+            <li>Pod names and container IDs, which change on every deploy</li>
+        </ul>
+        <p>
+            The <a href="/glossary/semantic-conventions">semantic conventions</a> already mark which attributes are safe on metrics, which is one reason to follow them.
+        </p>
+    </section>
+</GlossaryTermPage>

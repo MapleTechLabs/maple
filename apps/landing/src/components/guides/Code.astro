@@ -1,0 +1,18 @@
+---
+// One code block in a guide-prose article. `title` names the file above it;
+// `output` marks a block that shows what the one above printed (no copy button).
+import { type GuideLang, highlight } from "../../lib/guide-highlight";
+
+interface Props {
+    code: string;
+    lang?: GuideLang;
+    title?: string;
+    output?: boolean;
+}
+
+const { code, lang, title, output = false } = Astro.props;
+const html = lang === undefined ? undefined : highlight(code, lang);
+---
+
+{title && <p class="code-title">{title}</p>}
+<pre class:list={[output && "pre-output"]}>{html === undefined ? <code>{code}</code> : <code set:html={html} />}</pre>
