@@ -97,10 +97,11 @@ const ec2UserData = (clusterName: string, disk: "instance-store" | "root-volume"
 set -euxo pipefail
 
 # Instance facts for the gateway's telemetry, read while root still reaches the metadata service.
-# Tracing off around the session token so it stays out of the boot log.
+# Tracing off around the session token so it stays out of the boot log. Each call is capped
+# at 2s so a silent metadata service leaves the fields empty instead of stalling boot.
 set +x
-imds_token=$(curl -sf -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token) || imds_token=""
-imds() { curl -sf -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
+imds_token=$(curl -sf --connect-timeout 1 --max-time 2 -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token) || imds_token=""
+imds() { curl -sf --connect-timeout 1 --max-time 2 -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"; }
 mkdir -p ${HOST_IDENTITY_HOST_DIR}
 cat > ${HOST_IDENTITY_HOST_DIR}/host-identity <<IDENTITY
 host.id=$(imds instance-id)
