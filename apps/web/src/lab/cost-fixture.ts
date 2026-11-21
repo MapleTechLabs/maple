@@ -536,7 +536,7 @@ const morphSource = source({
 	provider: "morph",
 	connectionRef: "0190f2b3-0000-7000-8000-00000000a068",
 	accountId: "organization",
-	accountName: "Morph",
+	accountName: "Organization",
 	backfillDate: "2026-10-01",
 	lastSyncedAt: LAB_NOW_MS - 20 * 60_000,
 	requestsThisMonth: 0,

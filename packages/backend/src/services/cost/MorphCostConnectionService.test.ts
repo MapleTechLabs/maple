@@ -51,7 +51,7 @@ describe("MorphCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				const saved = yield* set(`  ${KEY}  `)
-				assert.deepStrictEqual(saved, { accountId: "organization", accountLabel: "Morph" })
+				assert.deepStrictEqual(saved, { accountId: "organization", accountLabel: "Organization" })
 				assert.deepStrictEqual(world.urls, ["/api/v1/org/members/budgets"])
 				assert.deepStrictEqual(world.authorizations, [`Bearer ${KEY}`])
 				const row = yield* stored(testDb)

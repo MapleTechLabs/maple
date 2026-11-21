@@ -1,7 +1,7 @@
 // The Morph API key an org's Morph spend is read with: checked with Morph, then kept in the shared
 // cost connection store. Only an organization key owned by an organization admin reads spend.
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CostConnections, MorphSpendReadings } from "@maple/db/tables"
+import { MorphSpendReadings } from "@maple/db/tables"
 import {
 	CostConnectionPersistenceError,
 	CostConnectionValidationError,
@@ -23,7 +23,9 @@ const VALIDATE_TIMEOUT = Duration.seconds(20)
  * from another Morph organization is caught by its members instead (see `set`).
  */
 const ACCOUNT_ID = "organization"
-const ACCOUNT_LABEL = "Morph"
+const ACCOUNT_LABEL = "Organization"
+/** Rows the replacement check reads: far more members than one reading holds. */
+const KNOWN_MEMBERS_SCAN = 1000
 
 const refused = (message: string) => new CostConnectionValidationError({ message })
 
@@ -80,24 +82,24 @@ export class MorphCostConnectionService extends Context.Service<
 		 * at the same instant. Readings go with their connection, so these are its.
 		 */
 		const knownMembers = Effect.fnUntraced(function* (orgId: OrgId) {
-			const [newest] = yield* dbExecute((db) =>
-				db.run(
-					PG.from(MorphSpendReadings)
-						.select(($) => ({ lastReadAt: $.lastReadAt }))
-						.where(($) => [$.orgId.eq(orgId)])
-						.orderBy(["lastReadAt", "desc"])
-						.limit(1),
-				),
-			)
-			if (newest === undefined) return []
+			// One statement, so the newest reading's time and its members come from one snapshot.
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(MorphSpendReadings)
-						.select(($) => ({ memberId: $.memberId }))
-						.where(($) => [$.orgId.eq(orgId), $.lastReadAt.eq(newest.lastReadAt)]),
+						.select(($) => ({ memberId: $.memberId, lastReadAt: $.lastReadAt }))
+						.where(($) => [$.orgId.eq(orgId)])
+						.orderBy(["lastReadAt", "desc"])
+						.limit(KNOWN_MEMBERS_SCAN),
 				),
 			)
-			return Arr.dedupe(Arr.map(rows, (row) => row.memberId))
+			const [newest] = rows
+			if (newest === undefined) return []
+			return Arr.dedupe(
+				Arr.map(
+					Arr.filter(rows, (row) => row.lastReadAt === newest.lastReadAt),
+					(row) => row.memberId,
+				),
+			)
 		})
 
 		const set = Effect.fn("MorphCostConnectionService.set")(function* (
@@ -140,29 +142,28 @@ export class MorphCostConnectionService extends Context.Service<
 				Effect.mapError(() => refused("Morph reported a spend Maple cannot read.")),
 			)
 			const account = { accountId: ACCOUNT_ID, accountLabel: ACCOUNT_LABEL }
+			// The check's reading is kept with the row the save wrote, in its transaction: Morph never
+			// serves it again once its month has ended. The account id is the same for every Morph key,
+			// so `other_account` cannot come back.
 			yield* connections
-				.save({ orgId, userId, provider: "morph", secret, ...account })
+				.save({
+					orgId,
+					userId,
+					provider: "morph",
+					secret,
+					...account,
+					afterSave: (db, connectionId) =>
+						Effect.asVoid(
+							writeReadings(
+								db,
+								{ orgId, connectionRef: connectionId },
+								list.month,
+								readings,
+								readAt,
+							),
+						),
+				})
 				.pipe(Effect.mapError(toPersistenceError))
-			// The account id is the same for every Morph key, so `other_account` cannot come back.
-			// The check's reading is kept: Morph never serves it again once its month has ended.
-			yield* dbExecute((db) =>
-				Effect.gen(function* () {
-					const [connection] = yield* db.run(
-						PG.from(CostConnections)
-							.select(($) => ({ id: $.id }))
-							.where(($) => [$.orgId.eq(orgId), $.provider.eq("morph")])
-							.limit(1),
-					)
-					if (connection === undefined) return
-					yield* writeReadings(
-						db,
-						{ orgId, connectionRef: connection.id },
-						list.month,
-						readings,
-						readAt,
-					)
-				}),
-			)
 			return account
 		})
 

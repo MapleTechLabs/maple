@@ -79,7 +79,7 @@ export const toMemberReadings = (
 
 /**
  * Keeps `readings`, taken at `readAt`, as their day's first and last where they are earlier or
- * later than what is stored, all members or none. Then drops the months the sync no longer pulls,
+ * later than what is stored. Then drops the months the sync no longer pulls,
  * keeping one more for a pull that started before the floor moved.
  */
 export const writeReadings = Effect.fnUntraced(function* (
@@ -136,17 +136,13 @@ export const writeReadings = Effect.fnUntraced(function* (
 					]),
 			)
 		})
-	yield* db.transaction(
-		Effect.gen(function* () {
-			yield* Effect.forEach(readings, write, { discard: true })
-			yield* db.run(
-				PG.deleteFrom(MorphSpendReadings).where(($) => [
-					$.orgId.eq(source.orgId),
-					$.connectionId.eq(source.connectionRef),
-					$.month.lt(Str.slice(0, 7)(monthStart(historyFloor("morph", utcToday(readAt)), -1))),
-				]),
-			)
-		}),
+	yield* Effect.forEach(readings, write, { discard: true })
+	yield* db.run(
+		PG.deleteFrom(MorphSpendReadings).where(($) => [
+			$.orgId.eq(source.orgId),
+			$.connectionId.eq(source.connectionRef),
+			$.month.lt(Str.slice(0, 7)(monthStart(historyFloor("morph", utcToday(readAt)), -1))),
+		]),
 	)
 	return day
 })
@@ -181,7 +177,10 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 					"maple.cost.morph.month": list.month,
 					"maple.cost.morph.members": readings.length,
 				})
-				return yield* dbExecute((db) => writeReadings(db, source, list.month, readings, readAt))
+				// One reading's members are kept all or none.
+				return yield* dbExecute((db) =>
+					db.transaction(writeReadings(db, source, list.month, readings, readAt)),
+				)
 			})
 
 			const pull = Effect.fn("MorphCostProvider.pull")(
