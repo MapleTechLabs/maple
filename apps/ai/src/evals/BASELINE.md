@@ -24,17 +24,24 @@ production triage model that day). "Before" is the 115-tool catalog at `d4b83412
 suite added; "after" adds `manage_ingest_source`, `manage_alert_destination`, `delete_dashboard`,
 `manage_maintenance_window action=update` and the "Used by" column of `list_alert_destinations`.
 
-| Group         | Tasks | Before         | After           |
-| ------------- | ----- | -------------- | --------------- |
-| control       | 16    | 97.5% (78/80)  | 97.5% (78/80)   |
-| gap           | 13    | 0.0% (0/65)    | 100.0% (65/65)  |
-| negative      | 4     | 100.0% (20/20) | 100.0% (20/20)  |
-| all           | 33    | 59.4% (98/165) | 98.8% (163/165) |
-| calls / trial |       | 3.38           | 2.41            |
-| input tokens  |       | 172k           | 149k            |
+| Group         | Tasks | Before         | After           | After, regraded |
+| ------------- | ----- | -------------- | --------------- | --------------- |
+| control       | 16    | 97.5% (78/80)  | 97.5% (78/80)   | 92.5% (74/80)   |
+| gap           | 13    | 0.0% (0/65)    | 100.0% (65/65)  | 100.0% (65/65)  |
+| negative      | 4     | 100.0% (20/20) | 100.0% (20/20)  | 100.0% (20/20)  |
+| all           | 33    | 59.4% (98/165) | 98.8% (163/165) | 96.4% (159/165) |
+| calls / trial |       | 3.38           | 2.41            | 2.41            |
+| input tokens  |       | 172k           | 149k            | 149k            |
 
-Both misses after are `drop-noise` (3/5 on both sides): the agent keeps looking for `/ready` spans
-that the world does not hold. Without the tools the agent's fallbacks were the finding: it filed
+"Regraded" is the same after run under two targets tightened in review, read from its saved trials.
+`drop-noise` now needs the proposed rule, not a preview: 0/5, where 3/5 had passed on a preview
+alone. `weekly-window` now needs Sunday 02:00 for 120 minutes: 4/5, one trial proposed 240. The
+before run's trials were not kept, so it is not regraded; neither task touches a tool this change
+added. A rerun of the two under the new targets scored `weekly-window` 5/5 and `drop-noise` 0/5.
+
+`drop-noise` is the open miss: the world holds no spans, so `preview_ingest_rule` samples nothing
+and the agent spends the call budget looking for `/ready` instead of proposing the rule it was
+asked for. Without the tools the agent's fallbacks were the finding: it filed
 `send_maple_feedback` feature requests for the source and dashboard changes, and to change a
 maintenance window it created a second window under the same name.
 

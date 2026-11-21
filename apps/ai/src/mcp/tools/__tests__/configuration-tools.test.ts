@@ -105,6 +105,24 @@ describe("manage_ingest_source", () => {
 		expect(rowOf(await text("list_ingest_sources"), W.otherSource)).toContain(id)
 	})
 
+	it("reads a reference as an id before a name, when another source is named like that id", async () => {
+		const listed = await text("list_ingest_sources")
+		const id = idOf(listed, W.otherSource, /src_[A-Za-z0-9]+/)
+		const namesake = idOf(listed, W.source, /src_[A-Za-z0-9]+/)
+		expect(id).toBeDefined()
+		expect(namesake).not.toBe(id)
+		await run("manage_ingest_source", { action: "update", source: namesake, name: id })
+
+		const paused = await run("manage_ingest_source", { action: "pause", source: id })
+		expect(paused.isError).not.toBe(true)
+		expect(markdown(paused)).toContain(W.otherSource)
+
+		// Back to the seeded state, so the other tests find both.
+		await run("manage_ingest_source", { action: "resume", source: id })
+		await run("manage_ingest_source", { action: "update", source: namesake, name: W.source })
+		expect(rowOf(await text("list_ingest_sources"), W.source)).toContain(namesake)
+	})
+
 	it("limits the signals a token may send, and lifts the limit", async () => {
 		const limited = await text("manage_ingest_source", {
 			action: "update",

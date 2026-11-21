@@ -76,7 +76,15 @@ export const CONFIG_TASKS: ReadonlyArray<ToolTask> = [
 		"weekly-window",
 		["control", "alerts"],
 		"Every Sunday from 02:00 to 04:00 UTC we patch the database. Don't page anyone for subscriptions-api alerts during that.",
-		calls(call("manage_maintenance_window", { action: "create", schedule_type: "weekly" })),
+		calls(
+			call("manage_maintenance_window", {
+				action: "create",
+				schedule_type: "weekly",
+				days: "sun",
+				start_time_of_day: "02:00",
+				duration_minutes: 120,
+			}),
+		),
 	),
 	task(
 		"extend-silence",
@@ -114,8 +122,8 @@ export const CONFIG_TASKS: ReadonlyArray<ToolTask> = [
 		"drop-noise",
 		["control", "ingest"],
 		"Stop storing spans for the /ready route. They're just noise and we pay for them.",
-		// Previewing the rule before creating it is what the tool's own description recommends.
-		calls(call("manage_ingest_rule", { action: "create" }), call("preview_ingest_rule")),
+		// A preview first is what the tool recommends, but only the proposed rule is the change.
+		calls(call("manage_ingest_rule", { action: "create" })),
 	),
 	task(
 		"disable-ingest-rule",

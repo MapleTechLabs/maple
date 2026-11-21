@@ -52,10 +52,9 @@ const resolveSource = (orgId: OrgId, ref: string) =>
 			Effect.flatMap((service) => service.list(orgId)),
 			Effect.mapError(toMcpSourceError),
 		)
-		const matches = Arr.filter(
-			sources,
-			(source) => publicSourceId(source.id) === ref || source.id === ref || source.name === ref,
-		)
+		// An id wins over a name, so the id a list printed never collides with a source named like it.
+		const byId = Arr.filter(sources, (source) => publicSourceId(source.id) === ref || source.id === ref)
+		const matches = byId.length > 0 ? byId : Arr.filter(sources, (source) => source.name === ref)
 		const [source] = matches
 		if (source === undefined) {
 			return yield* new McpInvalidInputError({
