@@ -106,6 +106,15 @@ export const sanitizeArgv = (argv: string): string => {
 	return Arr.join(kept, " ")
 }
 
+/** argv as one string for `cli.argv`. An argument with whitespace is a value
+ *  (a -d body field, a -H header, SQL), so it is masked before joining:
+ *  otherwise a word in it that starts with `-` would pass as a flag name. */
+export const argvAttribute = (argv: ReadonlyArray<string>): string =>
+	Arr.join(
+		Arr.map(argv, (arg) => (/\s/.test(arg) ? "_" : arg)),
+		" ",
+	)
+
 /** Stack frames without the message lines or directory prefixes. */
 export const sanitizeStack = (stack: string): string =>
 	Arr.join(
