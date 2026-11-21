@@ -212,10 +212,10 @@ The write tools here need the org admin or engineer role.
 
 ### Data sources
 
-| Tool                | Access | What it does                                                                                        |
-| ------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| `list_data_sources` | read   | The connected databases and APIs; `query` finds a topic, `data_source` gives its tables and fields  |
-| `query_data_source` | read   | Run one read-only SQL or resource query against a data source; `explain=true` returns only the plan |
+| Tool                | Access | What it does                                                                                                                    |
+| ------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `list_data_sources` | read   | The connected databases and APIs; `query` finds a topic, `data_source` lists a source's tables, and `entries` adds their fields |
+| `query_data_source` | read   | Run one read-only SQL or resource query against a data source; `explain=true` returns only the plan                             |
 
 ### Infrastructure
 
