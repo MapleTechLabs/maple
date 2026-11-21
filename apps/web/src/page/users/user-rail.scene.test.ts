@@ -48,6 +48,7 @@ describe("the user rail", () => {
 			given({ profile: USER_DETAIL.profile, stats: SOLO_GROUP, active: "payments" }),
 			expectView(text(ONLY_ACTIVE)).not.toExist(),
 			expectView(text("Sessions per user")).toExist(),
+			expectView(role("link", { name: /See the 1 user in Northwind Traders/ })).toExist(),
 		)
 	})
 

@@ -372,7 +372,7 @@ const groupFigures = <M>(
 			: [
 					typography(h, { size: "xs", truncate: true }, [
 						textLink(h, { href: groupHref, tone: "muted" }, [
-							`See all ${countLabel(stats.users, "user")} in ${label}`,
+							`See ${stats.users === 1 ? "the 1 user" : `all ${countLabel(stats.users, "user")}`} in ${label}`,
 							icon(h, "ArrowRightIcon", { size: 12 }),
 						]),
 					]),
