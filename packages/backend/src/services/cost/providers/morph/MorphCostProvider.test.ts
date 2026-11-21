@@ -151,6 +151,12 @@ describe("MorphCostProvider", () => {
 				world.holdNext = new Promise<void>((resolve) => {
 					release = resolve
 				})
+				const reached = new Promise<void>((resolve) => {
+					world.onRequest = () => {
+						world.onRequest = undefined
+						resolve()
+					}
+				})
 				world.members = [{ userId: "user_dev", spent: "7.00" }]
 				yield* TestClock.setTime(at("2026-11-21T15:00:00Z"))
 				const older = yield* Effect.forkChild(
@@ -158,7 +164,7 @@ describe("MorphCostProvider", () => {
 						provider.pull({ orgId: ORG, connectionRef: ref }, NOVEMBER),
 					),
 				)
-				yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
+				yield* Effect.promise(() => reached)
 				// Pull B asks at 15:00:05, gets $9 and finishes first.
 				world.members = [{ userId: "user_dev", spent: "9.00" }]
 				yield* pullAt("2026-11-21T15:00:05Z", ref, NOVEMBER)

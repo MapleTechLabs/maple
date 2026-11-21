@@ -21,6 +21,8 @@ export interface FakeMorph {
 	members: ReadonlyArray<FakeMorphMember> | string
 	/** The next answer waits for this, with the members as they were when it was asked. */
 	holdNext: Promise<void> | undefined
+	/** Called as each request arrives, before any hold. */
+	onRequest: (() => void) | undefined
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
@@ -30,6 +32,7 @@ export const makeFakeMorph = (overrides: Partial<FakeMorph> = {}): FakeMorph => 
 	month: "2026-11",
 	members: [],
 	holdNext: undefined,
+	onRequest: undefined,
 	urls: [],
 	authorizations: [],
 	...overrides,
@@ -48,6 +51,7 @@ const fetchStub =
 				{ status: world.status },
 			)
 		}
+		world.onRequest?.()
 		const members = world.members
 		const month = world.month
 		const hold = world.holdNext
