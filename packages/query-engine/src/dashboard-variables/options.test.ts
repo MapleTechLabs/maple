@@ -108,6 +108,28 @@ describe("dashboardVariableOptionsQuery", () => {
 		})
 	})
 
+	it("maps a promql variable onto Prometheus label discovery, with and without a selector", () => {
+		expect(
+			dashboardVariableOptionsQuery({
+				name: "handler",
+				type: "query",
+				source: { kind: "promql", label: "handler", match: "http_request_duration_seconds_bucket" },
+			}),
+		).toEqual({
+			kind: "promqlLabelValues",
+			source: "metrics",
+			label: "handler",
+			match: "http_request_duration_seconds_bucket",
+		})
+		expect(
+			dashboardVariableOptionsQuery({
+				name: "namespace",
+				type: "query",
+				source: { kind: "promql", label: "namespace" },
+			}),
+		).toEqual({ kind: "promqlLabelValues", source: "metrics", label: "namespace" })
+	})
+
 	it("has nothing to run for custom and textbox variables", () => {
 		expect(
 			dashboardVariableOptionsQuery({
@@ -151,6 +173,21 @@ describe("dashboardVariableOptionsFromResult", () => {
 				},
 			),
 		).toEqual(["ERROR"])
+	})
+
+	it("reads PromQL label values from the attribute-values result they answer with", () => {
+		const options = dashboardVariableOptionsFromResult(
+			{ kind: "promqlLabelValues", source: "metrics", label: "http_route" },
+			{
+				kind: "attributeValues",
+				source: "metrics",
+				data: [
+					{ value: "/api/orders", count: 0 },
+					{ value: "/api/users", count: 0 },
+				],
+			},
+		)
+		expect(options).toEqual(["/api/orders", "/api/users"])
 	})
 
 	it("reads attribute values, and nothing from a result of another kind", () => {

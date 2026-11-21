@@ -4,6 +4,7 @@ import {
 	type StatusPageIncidentImpact,
 	type StatusPageIncidentKind,
 	type StatusPageIncidentStatus,
+	UptimeMonitorId,
 } from "@maple/domain"
 import {
 	V2StatusPage,
@@ -38,6 +39,8 @@ export const SummaryComponent = Schema.Struct({
 	status: StatusPageComponentStatus,
 	/** Backed by an uptime monitor; without one its status is set by hand. */
 	monitored: Schema.Boolean,
+	/** The uptime monitor behind it, for a link to its checks; null without one. */
+	monitorId: Schema.NullOr(UptimeMonitorId),
 	/** Oldest first; empty without a monitor or with uptime hidden. */
 	days: Schema.Array(StatusPageDayBar),
 })
@@ -247,6 +250,8 @@ export const summarizePage = (input: {
 	readonly page: V2StatusPage
 	readonly snapshot: StatusPagePublicSnapshot
 	readonly incidents: ReadonlyArray<V2StatusPageIncident>
+	/** The page's components, for their monitors; the snapshot leaves the monitor ids out. */
+	readonly components?: ReadonlyArray<Pick<V2StatusPageComponent, "id" | "monitor_id">>
 }): StatusPageSummary => ({
 	page: input.page,
 	overall: overallStatus(input.snapshot),
@@ -256,6 +261,12 @@ export const summarizePage = (input: {
 		group: component.group,
 		status: component.status,
 		monitored: component.monitored,
+		monitorId: Option.getOrNull(
+			Option.flatMapNullishOr(
+				Arr.findFirst(input.components ?? [], (row) => row.id === component.id),
+				(row) => row.monitor_id,
+			),
+		),
 		days: Arr.takeRight(component.days, SUMMARY_UPTIME_DAYS),
 	})),
 	openIncidents: Arr.filter(

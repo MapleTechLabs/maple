@@ -1,0 +1,26 @@
+---
+/**
+ * Product events · paths. The dashboard's own paths view on the same invented signup
+ * week as the hero funnel, at full width: the chart needs the room for its columns.
+ */
+import * as m from "../../../paraglide/messages.js";
+import { LiveProductPaths } from "../../live/LiveProductPaths";
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-14 md:py-20">
+		<div class="grid gap-4 lg:grid-cols-2 lg:items-end lg:gap-20">
+			<div>
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.pe_paths_eyebrow()}</p>
+				<h2 class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.08] tracking-[-0.02em] text-fg lg:text-[34px]">
+					{m.pe_paths_title()}
+				</h2>
+			</div>
+			<p class="max-w-[62ch] text-sm leading-relaxed text-fg-muted">{m.pe_paths_lede()}</p>
+		</div>
+
+		<div class="mt-8 md:mt-10">
+			<LiveProductPaths client:visible />
+		</div>
+	</div>
+</section>

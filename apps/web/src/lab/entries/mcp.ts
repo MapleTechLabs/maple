@@ -15,7 +15,7 @@ import * as TimeRangePicker from "../../page/kit/time-range-picker"
 import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-tabs"
 import { listBody } from "../../page/mcp/view-list"
 import { formatClock } from "../../page/kit/timezone-zones"
-import { MCP_CHART_TOKENS, scopeText } from "../../page/mcp/view-kit"
+import { MCP_CHART_TOKENS, clientIcon, scopeText } from "../../page/mcp/view-kit"
 import { McpMetric, serverBody } from "../../page/mcp/view-server"
 import { serviceMcpTab } from "../mcp-service-tab"
 import { noServersState, quietWindow, serverError, serverLoading } from "../../page/mcp/view-states"
@@ -145,6 +145,7 @@ const toolbar = (h: H, model: Model, withSearch: boolean): Html => {
 		options: Arr.map(CALLERS, (client) => ({ name: client.name, count: client.calls })),
 		model: model.clientSelect,
 		toMessage: (message) => Message.GotSelectMessage({ facet: "client", message }),
+		optionIcon: (name) => clientIcon(h, name),
 	})
 	const kindSelect = facetSelect(h, {
 		label: "kind",

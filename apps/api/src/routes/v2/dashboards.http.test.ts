@@ -353,6 +353,28 @@ describe("v2 dashboards over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("keeps a Grafana import's report across edits until a PATCH dismisses it", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const imported = await harness.request("POST", "/v2/dashboards/import/grafana", key.secret, {
+			dashboard: nodeExporterDashboard,
+		})
+		const path = `/v2/dashboards/${imported.body.dashboard.id}`
+		const report = { source: "grafana", items: imported.body.warnings }
+		expect((await harness.request("GET", path, key.secret)).body.import_report).toEqual(report)
+
+		const renamed = await harness.request("PATCH", path, key.secret, { name: "Renamed" })
+		expect(renamed.status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).body.import_report).toEqual(report)
+
+		const dismissed = await harness.request("PATCH", path, key.secret, { import_report: null })
+		expect(dismissed.status).toBe(200)
+		const after = await harness.request("GET", path, key.secret)
+		expect(after.body.import_report).toBeUndefined()
+		expect(after.body.name).toBe("Renamed")
+		await harness.dispose()
+	})
+
 	it("refuses a PATCH based on a stale expected_version, and keeps last-write-wins without one", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["dashboards:write"])
@@ -1036,6 +1058,38 @@ describe("v2 dashboard shares", () => {
 		const again = await harness.request("DELETE", `/v2/dashboards/${id}/share`, key.secret)
 		expect(again.status).toBe(200)
 		expect(again.body.deleted).toBe(true)
+
+		await harness.dispose()
+	})
+
+	it("takes an expires_at, and an expired link answers like a revoked one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, key.secret)
+		const later = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+		const shared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: later,
+		})
+		expect(shared.body.expires_at).toBe(later)
+		const token: string = shared.body.token
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
+
+		const past = new Date(Date.now() - 1000).toISOString()
+		await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: past,
+		})
+		expect(await resolve(harness, token)).toBe("__not_found__")
+
+		const cleared = await harness.request("PUT", `/v2/dashboards/${id}/share`, key.secret, {
+			mode: "public",
+			expires_at: null,
+		})
+		expect(cleared.body.expires_at).toBeUndefined()
+		expect(cleared.body.token).toBe(token)
+		expect(await resolve(harness, token)).not.toBe("__not_found__")
 
 		await harness.dispose()
 	})

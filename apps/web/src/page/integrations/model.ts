@@ -2,6 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
+	FleetIntegrationStatus,
 	GithubIntegrationStatus,
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
@@ -36,6 +37,7 @@ import { SupabaseCardModel } from "../infra-integrations/supabase/integration/su
 import { SearchConsoleCardModel } from "./search-console"
 import { ConnectModel } from "./connect"
 import { HubFilter } from "./catalog"
+import { FleetCardModel } from "./fleet/fleet"
 import { VercelCardModel } from "../infra-integrations/vercel/integration/vercel-schema"
 
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
@@ -53,6 +55,7 @@ export const Statuses = Schema.Struct({
 	linear: keyed(LinearIntegrationStatus),
 	github: keyed(GithubIntegrationStatus),
 	searchConsole: keyed(SearchConsoleIntegrationStatus),
+	fleet: keyed(FleetIntegrationStatus),
 	chat: keyed(V2ChatConnectorList),
 	scrapeTargets: keyed(Schema.Array(V2ScrapeTarget)),
 	/** The org's data sources, read only while the `dataSources` flag is on. */
@@ -88,9 +91,14 @@ export const Model = Schema.Struct({
 	awsCard: AwsCardModel,
 	supabaseCard: SupabaseCardModel,
 	searchConsoleCard: SearchConsoleCardModel,
+	fleetCard: FleetCardModel,
 })
 export type Model = typeof Model.Type
 
 /** The viewer may connect, disconnect and change integrations (`integrations:manage`). */
 export const canManage = (model: Pick<Model, "grants">): boolean =>
 	Policy.has(model.grants, "integrations:manage")
+
+/** Why this viewer's integration switches are locked; undefined when they may flip them. */
+export const manageLock = (model: Pick<Model, "grants">): string | undefined =>
+	canManage(model) ? undefined : Policy.denialFor("integrations:manage").message

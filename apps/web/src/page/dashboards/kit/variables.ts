@@ -6,7 +6,7 @@ import {
 	type VariableValues,
 } from "@maple/query-engine"
 import { getLogsFacetValues } from "@maple/web-data/warehouse/logs"
-import { getMetricAttributeValues } from "@maple/web-data/warehouse/metrics"
+import { getMetricAttributeValues, getPromqlLabelValues } from "@maple/web-data/warehouse/metrics"
 import {
 	getResourceAttributeValues,
 	getSpanAttributeValues,
@@ -45,6 +45,18 @@ export const optionsSourceOf = (orgId: string, variable: Variable, window: Windo
 export const fetchVariableOptions = (variable: Variable, window: Window) => {
 	const query = dashboardVariableOptionsQuery(variable)
 	if (query === null) return Effect.succeed<ReadonlyArray<string>>([])
+	if (query.kind === "promqlLabelValues") {
+		return Effect.map(
+			getPromqlLabelValues({
+				data: {
+					...window,
+					label: query.label,
+					...(query.match === undefined ? undefined : { match: query.match }),
+				},
+			}),
+			(response) => response.data,
+		)
+	}
 	if (query.kind === "attributeValues") {
 		const data = { ...window, attributeKey: query.attributeKey }
 		return query.source === "metrics"

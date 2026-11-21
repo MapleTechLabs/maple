@@ -230,10 +230,34 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/dashboard-share",
+		title: "Dashboard share",
+		description:
+			"The dashboard's Share dialog, open: not shared, shared with no expiry, a link that expires and one that already has (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/dashboard-import-notice",
+		title: "Dashboard import notice",
+		description:
+			'The "Imported from Grafana: N items need attention" notice on an imported board, collapsed or expanded (`?state=collapsed|expanded`).',
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/analytics-search",
 		title: "Web analytics: Search",
 		description:
 			"The Search tab's tiles, trend, queries and pages over a young site's Search Console data; sorting, the tiles and the filters work. Conversions, loading, an empty window, failing (all reads, or some), importing, revoked, no property and not connected too, and the Overview tab's pointer to Search (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/fleet",
+		title: "Fleet",
+		description:
+			"The Fleet card from the connect form to a rejected token, an admin-role token and the read-only view, over fixtures, no API needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -463,7 +487,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/code-review-rules",
 		title: "Code review rules",
 		description:
-			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on.",
+			"The default review rules as an engineer (`?as=engineer`, automatic approval locked while off) and an admin (`?as=admin`) see them; `&approval=on` starts with it on; `&repo=private` or `&repo=public` shows a repository's rules over them.",
 		kind: "lab",
 		session: "none",
 	},
@@ -536,6 +560,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Security Center",
 		description:
 			"Every Security Center page over fixtures: overview, empty, not enabled, Add target and its errors, findings, runs, a live, incomplete, failed and cancelled run, a finding and its triage, the admins-only states, and the telemetry tabs (exposure, exposure-empty, runtimes). Pick one with ?state=.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/security-devices",
+		title: "Security devices",
+		description:
+			"Security > Devices over Fleet fixtures: a Premium and a Free fleet, not connected, first sync, token rejected, sync error, all clear, forbidden, error and loading. Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},
@@ -687,7 +719,15 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/promql-widget",
 		title: "PromQL widget",
 		description:
-			"The widget editor over a PromQL line chart with fixture series; ?state=error shows the parser's message.",
+			"The widget editor over a PromQL line chart with fixture series and discovery; ?state=error shows a parse error, ?state=metrics and ?state=values the autocomplete.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/promql-hints",
+		title: "PromQL hints",
+		description:
+			"PromQL warnings on dashboard tiles (an empty tile with the nearest-name hint, a header warning beside data) and a metric's PromQL names and example query (`?view=tiles|metric`).",
 		kind: "lab",
 		session: "none",
 	},

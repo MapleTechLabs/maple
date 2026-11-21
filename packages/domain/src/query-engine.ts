@@ -581,6 +581,19 @@ export const AttributeValuesQuery = Schema.Struct({
 })
 export type AttributeValuesQuery = Schema.Schema.Type<typeof AttributeValuesQuery>
 
+/**
+ * Prometheus `label/<label>/values?match[]=<match>` over the metric tables: the same discovery
+ * PromQL panels read by, so an imported `label_values(metric, label)` names what panels see.
+ * Answers with an `attributeValues` result.
+ */
+export const PromqlLabelValuesQuery = Schema.Struct({
+	kind: Schema.Literal("promqlLabelValues"),
+	source: Schema.Literal("metrics"),
+	label: Schema.String.check(Schema.isMaxLength(256)),
+	match: Schema.optional(Schema.String.check(Schema.isMaxLength(4096))),
+})
+export type PromqlLabelValuesQuery = Schema.Schema.Type<typeof PromqlLabelValuesQuery>
+
 export const LogsCountQuery = Schema.Struct({
 	kind: Schema.Literal("count"),
 	source: Schema.Literal("logs"),
@@ -608,6 +621,7 @@ export const QuerySpec = Schema.Union([
 	ServicesFacetsQuery,
 	TracesStatsQuery,
 	AttributeValuesQuery,
+	PromqlLabelValuesQuery,
 	LogsCountQuery,
 ])
 export type QuerySpec = Schema.Schema.Type<typeof QuerySpec>

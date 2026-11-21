@@ -1,0 +1,62 @@
+---
+/**
+ * The bill, as the second beat of the pricing chapter: one row per vendor and the four lines that
+ * decide a bill. The other five lines (free plan, retention, OpenTelemetry, licence, self-hosting)
+ * are on /compare, which prints the same data with a column per vendor.
+ */
+import { getRelativeLocaleUrl } from "astro:i18n";
+import * as m from "../../paraglide/messages.js";
+import { billRowLabels, billVendors, type BillRowKey } from "../../lib/bill-comparison";
+
+const COLUMNS: ReadonlyArray<BillRowKey> = ["base", "perHost", "perSeat", "ingest"];
+const locale = Astro.currentLocale ?? "en";
+const l = (path: string) => getRelativeLocaleUrl(locale, path);
+const vendors = billVendors();
+const labels = billRowLabels();
+---
+
+<section class="ledger ledger--continued">
+	<div class="shell">
+		<div class="ledger-subhead">
+			<h2>{m.bill_title()}</h2>
+			<p>{m.bill_lede()}</p>
+		</div>
+
+		<div class="ledger-bill__scroll">
+			<table class="ledger-bill">
+				<thead>
+					<tr>
+						<td></td>
+						{COLUMNS.map((key) => <th scope="col">{labels[key]}</th>)}
+						{/* Named for a table reader: the cells under it are each vendor's comparison link. */}
+						<th scope="col">
+							<span class="sr-only">{m.nav_compare()}</span>
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{
+						vendors.map((vendor) => (
+							<tr class:list={[vendor.id === "maple" && "is-maple"]}>
+								<th scope="row">{vendor.name}</th>
+								{COLUMNS.map((key) => <td>{vendor.cells[key]}</td>)}
+								<td class="ledger-bill__link">
+									{vendor.href ? (
+										<a href={l(vendor.href)}>
+											{vendor.link}
+											<span aria-hidden="true"> →</span>
+										</a>
+									) : (
+										<a href={l("/pricing")}>{m.bill_link_calculator()}</a>
+									)}
+								</td>
+							</tr>
+						))
+					}
+				</tbody>
+			</table>
+		</div>
+
+		<p class="ledger-bill__note">{m.bill_footnote()}</p>
+	</div>
+</section>

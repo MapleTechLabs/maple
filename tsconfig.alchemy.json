@@ -17,9 +17,11 @@
 		"plugins": [
 			{
 				"name": "@effect/language-service",
-				"ignoreEffectWarningsInTscExitCode": true,
+				"ignoreEffectWarningsInTscExitCode": false,
 				"includeSuggestionsInTsc": false,
 				"diagnosticSeverity": {
+					// Directives also silence oxlint rules that tsrs never reports, so tsrs flags them all as unused.
+					"unusedDirective": "off",
 					"unstableApiUsage": "off",
 					"schemaNumber": "off",
 					"schemaClassMissingBrand": "off",
@@ -60,5 +62,6 @@
 			"@/*": ["./apps/api/src/*"]
 		}
 	},
-	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "test/alchemy/**/*.ts"]
+	// The status Worker's font module declaration; imports alone never pull a .d.ts in.
+	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "apps/status/src/og-fonts.d.ts", "test/alchemy/**/*.ts"]
 }

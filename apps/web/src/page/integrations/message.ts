@@ -4,6 +4,7 @@ import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
+	FleetIntegrationStatus,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
@@ -63,6 +64,7 @@ import {
 } from "../infra-integrations/gcp/integration/gcp-schema"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { LinearMessage } from "./linear"
+import { FleetMessage } from "./fleet/fleet"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
@@ -83,6 +85,7 @@ export const StatusName = Schema.Literals([
 	"linear",
 	"github",
 	"searchConsole",
+	"fleet",
 	"chat",
 	"scrapeTargets",
 	"dataSources",
@@ -107,6 +110,7 @@ export const Message = defineMessageUnion({
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
+	CompletedLoadFleet: result(FleetIntegrationStatus),
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
@@ -123,6 +127,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
 	/** A catalog row or card, or the header's back button. */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
+	/** A connected data integration's hub row: its sources, where a failing one heads the list. */
+	ClickedConnectedSources: { query: Schema.String },
 	/** A settings nav tab. */
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */
@@ -219,6 +225,8 @@ export const Message = defineMessageUnion({
 	GotSearchConsoleMessage: { message: SearchConsoleMessage },
 	GotChatMessage: { message: ChatMessage },
 	GotLinearMessage: { message: LinearMessage },
+	/** A message for the Fleet module (`provider-modules.ts`). */
+	GotFleetMessage: { message: FleetMessage },
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },

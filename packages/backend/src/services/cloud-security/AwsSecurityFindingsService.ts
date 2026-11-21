@@ -5,7 +5,13 @@
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type AwsConnectionRow, AwsConnections } from "@maple/db/tables"
-import { awsConnectionResourceNames, awsOidcIssuer, awsOidcSubject, awsRoleArn } from "@maple/domain/aws"
+import {
+	awsConnectionResourceNames,
+	awsModuleGranted,
+	awsOidcIssuer,
+	awsOidcSubject,
+	awsRoleArn,
+} from "@maple/domain/aws"
 import {
 	CloudSecurityFeed,
 	type CloudServiceState,
@@ -13,7 +19,7 @@ import {
 } from "@maple/domain/cloud-security"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { IntegrationsPersistenceError as PersistenceError } from "@maple/domain/http"
-import { AwsRegion } from "@maple/primitives"
+import { type AwsModule, AwsRegion } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Random, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -120,6 +126,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 		const pollConnection = Effect.fn("AwsSecurityFindingsService.pollConnection")(function* (
 			signerKey: AwsOidcSigner,
 			row: AwsConnectionRow,
+			feeds: ReadonlyArray<CloudSecurityFeed>,
 			deadlineMs: number,
 		) {
 			yield* Effect.annotateCurrentSpan({
@@ -156,9 +163,7 @@ export class AwsSecurityFindingsService extends Context.Service<
 			// Least recently read first, so a tick cut short by its budget rotates through every feed.
 			const due = Arr.sort(
 				Arr.filter(
-					Arr.flatMap(regions, (region) =>
-						Arr.map(CloudSecurityFeed.literals, (source) => ({ region, source })),
-					),
+					Arr.flatMap(regions, (region) => Arr.map(feeds, (source) => ({ region, source }))),
 					({ region, source }) =>
 						Option.match(stateOf(region, source), {
 							onNone: () => true,
@@ -295,24 +300,34 @@ export class AwsSecurityFindingsService extends Context.Service<
 						.where(($) => [$.grantedModules.isNotNull()]),
 				),
 			)
-			const granted = Arr.filter(
-				rows,
+			const isOn = (row: AwsConnectionRow, module: AwsModule) =>
+				Arr.contains(row.modules, module) && awsModuleGranted(row.grantedModules, module)
+			// The audit log reads CloudTrail for every org; findings only behind the `cloudSecurity` rollout.
+			const withFeeds = yield* Effect.forEach(
+				Arr.filter(rows, (row) => isOn(row, "audit") || isOn(row, "security")),
 				(row) =>
-					Arr.contains(row.modules, "security") &&
-					Arr.contains(row.grantedModules ?? [], "security"),
+					Effect.map(
+						isOn(row, "security")
+							? Effect.map(featureFlags.flags(row.orgId), (flags) => flags.cloudSecurity)
+							: Effect.succeed(false),
+						(findings) => ({
+							row,
+							feeds: Arr.filter(CloudSecurityFeed.literals, (feed) =>
+								feed === "cloudtrail" ? isOn(row, "audit") : findings,
+							),
+						}),
+					),
 			)
-			const eligible = yield* Effect.filter(granted, (row) =>
-				Effect.map(featureFlags.flags(row.orgId), (flags) => flags.cloudSecurity),
-			)
+			const eligible = Arr.filter(withFeeds, (entry) => entry.feeds.length > 0)
 			const deadlineMs = (yield* Clock.currentTimeMillis) + TICK_BUDGET_MS
 			// A random order each tick: when the budget runs out, no connection is always the one left out.
 			const order = yield* Random.shuffle(eligible)
 			const polls = yield* pollFleet(
 				order,
-				(row) => pollConnection(signer, row, deadlineMs),
+				({ row, feeds }) => pollConnection(signer, row, feeds, deadlineMs),
 				{
 					message: "AWS security findings poll failed",
-					annotations: (row) => ({ orgId: row.orgId, connectionId: row.id }),
+					annotations: ({ row }) => ({ orgId: row.orgId, connectionId: row.id }),
 					fallback: (): ConnectionPoll => ({ reads: 0, findings: 0, auditEvents: 0, failed: true }),
 				},
 				CONNECTION_CONCURRENCY,

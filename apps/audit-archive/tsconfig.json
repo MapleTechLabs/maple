@@ -1,0 +1,34 @@
+{
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"compilerOptions": {
+		"noUncheckedIndexedAccess": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["node", "@cloudflare/workers-types"],
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"ignoreEffectWarningsInTscExitCode": false,
+				"includeSuggestionsInTsc": false,
+				"diagnosticSeverity": {
+					// Directives also silence oxlint rules that tsrs never reports, so tsrs flags them all as unused.
+					"unusedDirective": "off",
+					"unstableApiUsage": "off",
+					"schemaNumber": "off",
+					"schemaClassMissingBrand": "off",
+					"schemaSync": "off"
+				}
+			}
+		]
+	}
+}

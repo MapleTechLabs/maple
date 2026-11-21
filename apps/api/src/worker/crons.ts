@@ -39,10 +39,14 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 						),
 					])
 				// Both sweeps ride this one cron, sequentially: they share the tick's
-				// one Postgres socket, so running them concurrently would only queue.
+				// one Postgres socket, so running them concurrently would only queue. A failed
+				// sweep does not skip the next.
 				// The jobs talk only to Postgres, so the layer is the database alone.
 				return yield* runEvent(
-					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
+					Effect.all([runScrapeCheckRetention, runPlanetScaleEventRetention], {
+						mode: "result",
+						discard: true,
+					}),
 					DatabasePgLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
 				)
 			}).pipe(settleFire(SCRAPE_RETENTION_CRON)),

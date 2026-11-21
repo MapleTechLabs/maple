@@ -1,12 +1,11 @@
 ---
 /**
- * ScreenGallery: the rest of a feature's surface, after the panel and the
- * artifact. Each capture is one `.live-frame` (route left, subject right) with
- * the shot as its body, two to a row on desktop. The shots come from the
- * seeded demo world, so a page shows one consistent story across all of them.
+ * ScreenGallery: the rest of a feature's surface, as windows of the screen each title points at,
+ * two to a row on desktop. One shot sits beside the heading. The lightbox opens the whole capture.
  */
 import type { GalleryShot } from "../../lib/page-registry";
-import { GALLERY_SHOT_SIZE } from "../../lib/page-registry";
+import { APP_MAIN, GALLERY_SHOT_SIZE } from "../../lib/page-registry";
+import Shot from "./Shot.astro";
 
 interface Props {
 	eyebrow: string;
@@ -16,35 +15,36 @@ interface Props {
 }
 
 const { eyebrow, title, shots, class: className = "" } = Astro.props;
+const single = shots.length === 1;
+const oddLast = !single && shots.length % 2 === 1;
 ---
 
 <section class={`bg-bg ${className}`}>
-	<div class="shell py-16 md:py-24">
-		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
-		<h2
-			class="mt-4 max-w-[24ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
-		>
-			{title}
-		</h2>
-		<div class="mt-10 grid gap-6 md:mt-14 lg:grid-cols-2" data-lightbox-group>
+	<div
+		class:list={[
+			"shell py-14 md:py-20",
+			single && "grid gap-8 lg:grid-cols-[20rem_1fr] lg:items-center lg:gap-10",
+		]}
+	>
+		<div class="min-w-0">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+			<h2 class="mt-4 max-w-[24ch] font-display text-3xl font-medium leading-[1.08] tracking-[-0.02em] text-fg lg:text-[34px]">
+				{title}
+			</h2>
+		</div>
+		<div class:list={["grid min-w-0 gap-6", !single && "mt-8 md:mt-10 lg:grid-cols-2"]} data-lightbox-group>
 			{
-				shots.map((shot) => (
-					<figure class="live-frame min-w-0">
-						<figcaption class="live-frame__head">
-							<span>{shot.route}</span>
-							<span class="text-fg normal-case tracking-normal">{shot.title}</span>
-						</figcaption>
-						<img
-							src={`/screenshots/${shot.id}.webp`}
-							alt={shot.alt}
-							width={GALLERY_SHOT_SIZE.width}
-							height={GALLERY_SHOT_SIZE.height}
-							loading="lazy"
-							decoding="async"
-							data-zoomable=""
-							class="block h-auto w-full"
-						/>
-					</figure>
+				shots.map((shot, i) => (
+					<Shot
+						class={oddLast && i === shots.length - 1 ? "lg:col-span-2" : ""}
+						src={`/screenshots/${shot.id}.webp`}
+						alt={shot.alt}
+						width={GALLERY_SHOT_SIZE.width}
+						height={GALLERY_SHOT_SIZE.height}
+						crop={oddLast && i === shots.length - 1 ? APP_MAIN : (shot.crop ?? APP_MAIN)}
+						route={shot.route}
+						title={shot.title}
+					/>
 				))
 			}
 		</div>

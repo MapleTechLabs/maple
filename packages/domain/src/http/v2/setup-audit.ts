@@ -65,7 +65,8 @@ export const V2SetupAuditCheck = Schema.Struct({
 		examples: ["fail"],
 	}),
 	detail: Schema.NullOr(Schema.String).annotate({
-		description: "One-sentence description of the finding, or `null` when the check passed.",
+		description:
+			"One-sentence description of the finding. A `pass` may carry an informational note (e.g. Cloudflare datasets the plan does not include) and is otherwise `null`.",
 		examples: ["2 enabled alert rules will evaluate and breach but deliver to nobody."],
 	}),
 	affected: Schema.Array(V2SetupAuditAffectedEntity).annotate({

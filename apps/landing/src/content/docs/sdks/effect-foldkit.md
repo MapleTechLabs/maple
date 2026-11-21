@@ -118,14 +118,14 @@ import { fromString } from "foldkit/url"
 
 const routeName = (pathname: string): string =>
 	Option.match(fromString(`https://app.invalid${pathname}`), {
-		onNone: () => pathname,
+		onNone: () => "NotFound",
 		onSome: (url) => urlToAppRoute(url)._tag,
 	})
 
 const maple = MapleFoldkit.make({ serviceName: "acme-web", ingestKey: "maple_pk_...", routeName })
 ```
 
-The full path stays on the span as `url.path`.
+The full path stays on the span as `url.path`, sanitized as usual. The `routeName` result is used as is, so return a label, never the raw path. Keep ids and user data out of it, like `customer-123`: the SDK sends the label as part of the span name.
 
 ## Sampling
 
@@ -142,7 +142,7 @@ The full path stays on the span as `url.path`.
 | `keepCommands`         | `string[]`                              | `[]`                                  | Commands exported even without a child span                                    |
 | `sampleCommands`       | `Record<string, number>`                | `{}`                                  | Per-Command sample rates outside a navigation                                  |
 | `navigationSampleRate` | `number`                                | `1`                                   | Share of navigations traced                                                    |
-| `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name or template                     |
+| `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name; used as is, not sanitized      |
 | `slowPhases`           | `false \| { Update?, View?, Patch? }`   | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false` to turn them off                          |
 
 The returned object has `instrument`, plus the `layer`, `flush()`, `dispose()` and `captureException(error)` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.

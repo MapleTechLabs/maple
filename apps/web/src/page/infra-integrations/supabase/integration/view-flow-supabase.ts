@@ -317,7 +317,7 @@ const chooseStep = (h: H, model: Model): Html => {
 					h,
 					"Switches save as you flip them. A feature below sets every project; the table sets one.",
 				),
-				supabaseFeatures(h, model, status),
+				supabaseFeatures(h, model, status, "flow"),
 				dataTable(
 					h,
 					{ ariaLabel: "Supabase projects" },

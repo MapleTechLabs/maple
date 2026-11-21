@@ -1,5 +1,5 @@
 import type { PromqlQueryResult } from "@maple/query-engine"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 // Request rate per service over the last hour at a 30s step, as the engine returns a range query.
 
@@ -29,3 +29,33 @@ export const promqlLabResult = (nowMs: number): PromqlQueryResult => {
 		})),
 	}
 }
+
+/** What the editor's autocomplete discovers: metric names, label names and label values. */
+export const PROMQL_LAB_METRICS = [
+	"http_server_request_duration_seconds_bucket",
+	"http_server_request_duration_seconds_count",
+	"http_server_request_duration_seconds_sum",
+	"http_server_active_requests",
+	"process_cpu_seconds_total",
+	"process_resident_memory_bytes",
+	"up",
+]
+
+const LABELS = ["__name__", "job", "instance", "http_route", "http_response_status_code", "service_namespace"]
+
+const VALUES = {
+	job: ["api-gateway", "checkout", "payments", "search", "worker"],
+	instance: ["api-gateway-0", "checkout-0", "payments-0"],
+	http_route: ["/api/cart", "/api/checkout", "/api/search", "/healthz"],
+	http_response_status_code: ["200", "201", "404", "500"],
+} satisfies Record<string, ReadonlyArray<string>>
+
+/** A discovery read as the API answers it: `__name__` lists metrics, no label lists label names. */
+export const promqlLabDiscovery = (label: string | undefined): ReadonlyArray<string> =>
+	label === undefined
+		? LABELS
+		: label === "__name__"
+			? PROMQL_LAB_METRICS
+			: Arr.findFirst(Rec.toEntries(VALUES), ([name]) => name === label).pipe(
+					Option.match({ onNone: (): ReadonlyArray<string> => [], onSome: ([, values]) => values }),
+				)

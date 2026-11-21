@@ -20,6 +20,8 @@ const service = (serviceName: string): ServiceRow => ({
 })
 
 const incident = (groupKey: string, signalType: HealthIncident["signalType"]): HealthIncident => ({
+	ruleId: `rule-${groupKey}`,
+	ruleName: `${groupKey} errors`,
 	status: "open",
 	groupKey,
 	severity: "critical",

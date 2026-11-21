@@ -6,6 +6,7 @@ import {
 	defaultWidgetLayout,
 } from "@maple/domain/http"
 import { MAX_QUERY_RANGE_SECONDS, validateRelativeRange } from "@maple/query-engine"
+import { MAX_IMPORT_REPORT_ITEMS } from "@maple/widgets/dashboard"
 import { Effect, Schema, Array as Arr, Order, String as Str } from "effect"
 import {
 	type DashboardWidget,
@@ -210,6 +211,15 @@ function convertPanels(placed: ReadonlyArray<PlacedPanel>, context: PanelContext
 	}
 }
 
+/** The stored report holds at most `MAX_IMPORT_REPORT_ITEMS`; past that, the last item counts the rest. */
+const reportItems = (warnings: ReadonlyArray<string>): ReadonlyArray<string> =>
+	warnings.length <= MAX_IMPORT_REPORT_ITEMS
+		? warnings
+		: [
+				...warnings.slice(0, MAX_IMPORT_REPORT_ITEMS - 1),
+				`${warnings.length - MAX_IMPORT_REPORT_ITEMS + 1} more items are not listed here.`,
+			]
+
 // Returns the validation error rather than failing; unexpected throws are caught by the caller.
 function convertSync(input: unknown): GrafanaImportConversion | DashboardValidationError {
 	const dashboard = unwrapGrafanaDashboard(input)
@@ -229,16 +239,22 @@ function convertSync(input: unknown): GrafanaImportConversion | DashboardValidat
 	const { widgets, stats } = convertPanels(placed, { variables, widgetIds: new Set(), warnings })
 	const description = asString(dashboard.description)
 	const refresh = refreshInterval(dashboard)
+	// Read before the report, since an unmappable range adds a warning.
+	const range = timeRange(dashboard, warnings)
 	return {
 		dashboard: decodePortableDashboard({
 			name: Str.trim(asString(dashboard.title) ?? "") || "Imported Grafana dashboard",
 			...(description === undefined ? undefined : { description }),
 			tags: tags(dashboard),
-			timeRange: timeRange(dashboard, warnings),
+			timeRange: range,
 			...(refresh === undefined ? undefined : { refreshIntervalSeconds: refresh }),
 			...(variables.variables.length > 0 ? { variables: variables.variables } : undefined),
 			...(sections.length > 0 ? { sections } : undefined),
 			widgets,
+			// Kept with the board, so what did not import stays visible after this response.
+			...(warnings.length > 0
+				? { importReport: { source: "grafana", items: reportItems(warnings) } }
+				: undefined),
 		}),
 		warnings,
 		stats,

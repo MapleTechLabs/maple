@@ -5,9 +5,14 @@
  * Google's error code and reason only, never a response body, transport error or schema issue.
  * The one sentence of Google's that is read, to tell a missing billing account from a missing
  * role, chooses a reason and is dropped.
- * Untraced on purpose: VendorHttp records a Client span per request, and "not set up yet" is not
- * an exception.
+ * Untraced on purpose: each request gets its own Client span, and "not set up yet" is not an
+ * exception. Monitoring, Cloud Asset and IAM go through `@distilled.cloud/gcp`; the OAuth token
+ * exchange and BigQuery stay on plain HTTP (the SDK drops BigQuery's `error.errors[].reason`).
  */
+import * as Gcp from "@distilled.cloud/gcp"
+import * as CloudAsset from "@distilled.cloud/gcp/cloudasset_v1"
+import * as IamCredentials from "@distilled.cloud/gcp/iamcredentials_v1"
+import * as Monitoring from "@distilled.cloud/gcp/monitoring_v3"
 import { gcpConnectorResourceNames } from "@maple/domain/gcp"
 import {
 	GCP_ASSET_TYPES,
@@ -19,6 +24,7 @@ import type { GcpConnectorId, GcpProjectId } from "@maple/primitives"
 import {
 	Duration,
 	Effect,
+	Layer,
 	Option,
 	Redacted,
 	Schedule,
@@ -30,6 +36,7 @@ import {
 import { type HttpClient, HttpClientRequest } from "effect/http"
 import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 import * as VendorHttp from "../vendor-http"
+import * as VendorSdk from "../vendor-sdk"
 
 const OAUTH_URL = "https://oauth2.googleapis.com"
 const TOKEN_URL = `${OAUTH_URL}/token`
@@ -154,14 +161,39 @@ const errorInfoReason = (body: unknown): string =>
 	)[0]?.reason ?? ""
 
 /**
- * What a refusal's whole body says, kept as `code|ErrorInfo reason|reason read from the message`:
+ * What a refusal's parsed body says, kept as `code|ErrorInfo reason|reason read from the message`:
  * each part a short code with no `|`. The body itself is dropped with the error.
  */
-const googleDetail = (body: string) => {
-	const parsed = Option.getOrNull(decodeJsonBody(body))
+const googleDetailOf = (parsed: unknown) => {
 	const fromMessage = reasonFromMessage(parsed)
 	return `${errorCode(parsed)}|${errorInfoReason(parsed)}|${fromMessage === "" ? legacyReason(parsed) : fromMessage}`
 }
+
+const googleDetail = (body: string) => googleDetailOf(Option.getOrNull(decodeJsonBody(body)))
+
+// The SDK keeps the envelope's gRPC `status` (or `code` on an unmapped status), `message` and
+// `details`; the same reading applies to them as to a whole body.
+const decodeSdkRefusal = Schema.decodeUnknownOption(
+	Schema.Struct({
+		status: Schema.optionalKey(Schema.Unknown),
+		code: Schema.optionalKey(Schema.Unknown),
+		message: Schema.optionalKey(Schema.Unknown),
+		details: Schema.optionalKey(Schema.Unknown),
+	}),
+)
+
+const sdkGoogleDetail = (error: VendorSdk.SdkFailure) =>
+	Option.match(decodeSdkRefusal(error), {
+		onNone: () => "||",
+		onSome: (refusal) =>
+			googleDetailOf({
+				error: {
+					status: typeof refusal.status === "string" ? refusal.status : refusal.code,
+					message: refusal.message,
+					details: refusal.details,
+				},
+			}),
+	})
 
 /** A failed call as the poller sees it: Google's status, code and reason, never the body. */
 const toGcpApiError =
@@ -216,6 +248,38 @@ export const google = (
 		retryInvalidResponse: true,
 		maxRetryAfter: Duration.zero,
 	})
+
+const STATUS_BY_TAG = Rec.fromEntries(
+	Arr.map(Rec.toEntries(Gcp.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
+
+/** One Google API through the SDK, under the same rules as {@link google}. */
+const googleSdk = (
+	httpClient: HttpClient.HttpClient,
+	api: GcpApiError["api"],
+	credentials: { readonly accessToken: Redacted.Redacted; readonly quotaProject?: string },
+) =>
+	VendorSdk.make({
+		httpClient,
+		peerService: "google-cloud",
+		sdk: Layer.mergeAll(
+			Layer.succeed(Gcp.Credentials, Effect.succeed(credentials)),
+			Layer.succeed(Gcp.Retry.Retry, { while: () => false }),
+		),
+		statusByTag: STATUS_BY_TAG,
+		toError: toGcpApiError(api),
+		detail: sdkGoogleDetail,
+		timeout: REQUEST_TIMEOUT,
+		retry: Schedule.recurs(1),
+		retryInvalidResponse: true,
+		maxRetryAfter: Duration.zero,
+	})
+
+/** The reader's token, its project paying the quota (`x-goog-user-project`). */
+const readerCredentials = (reader: GcpReader) => ({
+	accessToken: reader.accessToken,
+	quotaProject: reader.quotaProject,
+})
 
 const ServiceAccountKey = Schema.Struct({
 	client_email: Schema.String,
@@ -325,18 +389,15 @@ export const impersonateReader = Effect.fnUntraced(function* (
 ) {
 	// A project id has nothing to encode; encoding keeps any other stored value inside the path.
 	const account = `${gcpConnectorResourceNames(connector.id).serviceAccountId}@${encodeURIComponent(connector.projectId)}.iam.gserviceaccount.com`
-	const response = yield* google(
-		httpClient,
-		"IAM Credentials",
-		"https://iamcredentials.googleapis.com",
-		(request) => HttpClientRequest.bearerToken(request, mapleToken),
-	)
-		.json(ImpersonatedToken, {
-			method: "POST",
-			path: `/v1/projects/-/serviceAccounts/${account}:generateAccessToken`,
-			body: { scope: [READER_SCOPE], lifetime: `${TOKEN_LIFETIME_SECONDS}s` },
-			operation: "impersonating the reader",
-		})
+	const response = yield* googleSdk(httpClient, "IAM Credentials", { accessToken: mapleToken })
+		.call(
+			ImpersonatedToken,
+			IamCredentials.generateAccessTokenProjectsServiceAccounts({
+				name: `projects/-/serviceAccounts/${account}`,
+				body: { scope: [READER_SCOPE], lifetime: `${TOKEN_LIFETIME_SECONDS}s` },
+			}),
+			{ method: "POST", operation: "impersonating the reader" },
+		)
 		.pipe(
 			// Not made through the host project, so its reason says nothing about that project.
 			Effect.mapError(({ message, api, kind }) => new GcpApiError({ message, api, kind })),
@@ -412,37 +473,43 @@ export const gcpAlignmentMs = (query: Pick<GcpTimeSeriesQuery, "group" | "startM
  * One page of one metric type over `[startMs, endMs]` for everything in the scope, aligned per
  * `gcpAlignmentMs` and reduced to the project plus the labels the table keeps.
  */
+/** The `timeSeries.list` operation of a scope's kind; all three send the same request. */
+const listTimeSeriesOf = (scope: string) =>
+	Str.startsWith("folders/")(scope)
+		? Monitoring.listFoldersTimeSeries
+		: Str.startsWith("organizations/")(scope)
+			? Monitoring.listOrganizationsTimeSeries
+			: Monitoring.listProjectsTimeSeries
+
 export const listTimeSeriesPage = (
 	httpClient: HttpClient.HttpClient,
 	reader: GcpReader,
 	query: GcpTimeSeriesQuery,
 	pageToken: string | undefined,
 ) =>
-	google(httpClient, "Cloud Monitoring", "https://monitoring.googleapis.com", asReader(reader)).json(
+	googleSdk(httpClient, "Cloud Monitoring", readerCredentials(reader)).call(
 		TimeSeriesPage,
-		{
-			path: `/v3/${query.scope}/timeSeries`,
-			query: {
-				filter: `metric.type = "${query.metric.type}" AND resource.type = "${query.group.resourceType}"`,
-				"interval.startTime": new Date(query.startMs).toISOString(),
-				"interval.endTime": new Date(query.endMs).toISOString(),
-				"aggregation.alignmentPeriod": `${gcpAlignmentMs(query) / 1000}s`,
-				"aggregation.perSeriesAligner": gcpMetricAligner(query.metric),
-				"aggregation.crossSeriesReducer": query.metric.reducer,
-				"aggregation.groupByFields": [
-					"resource.label.project_id",
-					...Arr.map(query.group.resourceLabels, (label) => `resource.label.${label}`),
-					...Arr.map(
-						[...query.group.resourceMetricLabels, ...query.metric.labels],
-						(label) => `metric.label.${label}`,
-					),
-				],
-				view: "FULL",
-				pageSize: TIME_SERIES_PAGE_SIZE,
-				pageToken,
-			},
-			operation: "reading metrics",
-		},
+		listTimeSeriesOf(query.scope)({
+			name: query.scope,
+			filter: `metric.type = "${query.metric.type}" AND resource.type = "${query.group.resourceType}"`,
+			"interval.startTime": new Date(query.startMs).toISOString(),
+			"interval.endTime": new Date(query.endMs).toISOString(),
+			"aggregation.alignmentPeriod": `${gcpAlignmentMs(query) / 1000}s`,
+			"aggregation.perSeriesAligner": gcpMetricAligner(query.metric),
+			"aggregation.crossSeriesReducer": query.metric.reducer,
+			"aggregation.groupByFields": [
+				"resource.label.project_id",
+				...Arr.map(query.group.resourceLabels, (label) => `resource.label.${label}`),
+				...Arr.map(
+					[...query.group.resourceMetricLabels, ...query.metric.labels],
+					(label) => `metric.label.${label}`,
+				),
+			],
+			view: "FULL",
+			pageSize: TIME_SERIES_PAGE_SIZE,
+			...(pageToken === undefined ? undefined : { pageToken }),
+		}),
+		{ operation: "reading metrics" },
 	)
 
 const ResourceSearchResult = Schema.Struct({
@@ -466,7 +533,7 @@ const ResourcePage = Schema.Struct({
 })
 
 const cloudAsset = (httpClient: HttpClient.HttpClient, reader: GcpReader) =>
-	google(httpClient, "Cloud Asset Inventory", "https://cloudasset.googleapis.com", asReader(reader))
+	googleSdk(httpClient, "Cloud Asset Inventory", readerCredentials(reader))
 
 export const searchResourcesPage = (
 	httpClient: HttpClient.HttpClient,
@@ -474,16 +541,17 @@ export const searchResourcesPage = (
 	scope: string,
 	pageToken: string | undefined,
 ) =>
-	cloudAsset(httpClient, reader).json(ResourcePage, {
-		path: `/v1/${scope}:searchAllResources`,
-		query: {
-			assetTypes: GCP_ASSET_TYPES,
+	cloudAsset(httpClient, reader).call(
+		ResourcePage,
+		CloudAsset.searchAllResourcesV1({
+			scope,
+			assetTypes: [...GCP_ASSET_TYPES],
 			readMask: Arr.join(Rec.keys(ResourceSearchResult.fields), ","),
 			pageSize: RESOURCE_PAGE_SIZE,
-			pageToken,
-		},
-		operation: "listing resources",
-	})
+			...(pageToken === undefined ? undefined : { pageToken }),
+		}),
+		{ operation: "listing resources" },
+	)
 
 /** What Maple reads of a Cloud SQL instance: the Cloud SQL Admin API's `DatabaseInstance`. */
 const SqlInstanceData = Schema.Struct({
@@ -537,13 +605,14 @@ export const listSqlInstancesPage = (
 	scope: string,
 	pageToken: string | undefined,
 ) =>
-	cloudAsset(httpClient, reader).json(SqlInstancePage, {
-		path: `/v1/${scope}/assets`,
-		query: {
-			assetTypes: "sqladmin.googleapis.com/Instance",
+	cloudAsset(httpClient, reader).call(
+		SqlInstancePage,
+		CloudAsset.listAssets({
+			parent: scope,
+			assetTypes: ["sqladmin.googleapis.com/Instance"],
 			contentType: "RESOURCE",
 			pageSize: RESOURCE_PAGE_SIZE,
-			pageToken,
-		},
-		operation: "listing Cloud SQL instances",
-	})
+			...(pageToken === undefined ? undefined : { pageToken }),
+		}),
+		{ operation: "listing Cloud SQL instances" },
+	)

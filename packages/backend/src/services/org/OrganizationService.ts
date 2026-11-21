@@ -1,3 +1,4 @@
+import * as Clerk from "@distilled.cloud/clerk"
 import * as Policy from "@maple/domain/policy"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
 import {
@@ -21,11 +22,10 @@ import * as Tables from "@maple/db/tables"
 import type { ColumnDefs, PgSchemaTable } from "@maple-dev/effect-orm/postgres"
 import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, Record as Rec } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-import { clerkModeClient } from "@maple/auth"
+import { type ClerkApi, clerkModeApi } from "@maple/auth"
 
 const toProviderError = (error: unknown) =>
 	new OrganizationProviderError({
@@ -145,9 +145,19 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
 	"PlanetscaleConnections",
+	// Text derived from the org's telemetry: diagnoses, notification payloads, database events.
+	// Their chat sessions are queued for erasure first (`queueOrgErasures`).
+	"Investigations",
+	"ErrorNotificationDeliveries",
+	"PlanetscaleEvents",
 	// Dedupe receipts for the org's error issues, which are purged above; with the
 	// connection gone no redelivery can arrive for them to catch.
 	"PlanetscaleIssueReceipts",
+	// The encrypted Fleet token would keep the poller reading a device server for a deleted org.
+	"FleetConnections",
+	// What the org's device sources reported about its devices.
+	"DevicePolicyFindings",
+	"DeviceVulnerabilityFindings",
 	// The encrypted Railway token would keep the poller reading an account for a deleted org.
 	"RailwayConnections",
 	"RailwayEnvironments",
@@ -226,9 +236,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"CloudflareZoneSettings",
 	"ErrorFingerprintCandidates",
 	"ErrorIssuePullRequests",
-	"ErrorNotificationDeliveries",
 	"ErrorTickStates",
-	"Investigations",
 	"IssueEscalationPolicies",
 	"IssueEscalations",
 	"LinearFeatureSettings",
@@ -238,11 +246,12 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"OrgOnboardingState",
 	"OrgRecommendationIssues",
 	"PlanetscaleDatabases",
-	"PlanetscaleEvents",
 	"PlanetscalePollState",
 	"ScrapeTargetChecks",
 	// Edge cleanups queued by the delete itself; the publisher removes each row once done.
 	"StatusPageCleanups",
+	// Erasures outside Postgres queued by the delete itself; the drain removes each row once done.
+	"OrgErasures",
 	"VcsRepositoryBranches",
 ] as const satisfies ReadonlyArray<TableName>
 
@@ -343,8 +352,10 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const autumn = yield* AutumnClient
 			const regions = yield* OrganizationRegionService
 
-			/** The Clerk backend client, or `None` when not running in Clerk auth mode. */
-			const clerkClient = () => Option.fromUndefinedOr(clerkModeClient(env))
+			/** The Clerk Backend API, or `None` when not running in Clerk auth mode. */
+			const clerkClient = () => Option.fromUndefinedOr(clerkModeApi(env))
+			const getOrganization = (api: ClerkApi, orgId: OrgId) =>
+				api.run(Clerk.getOrganization({ organization_id: orgId }))
 
 			/**
 			 * The caller's org identity. In Clerk mode it is read from Clerk; in
@@ -363,15 +374,13 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						createdAtMs: null,
 					} satisfies OrganizationInfo
 				}
-				const org = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-					clerk.value.organizations.getOrganization({ organizationId: orgId }),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				const org = yield* getOrganization(clerk.value, orgId).pipe(Effect.mapError(toProviderError))
 				return {
 					id: orgId,
 					name: org.name,
 					slug: org.slug,
-					imageUrl: org.hasImage ? org.imageUrl : null,
-					createdAtMs: org.createdAt,
+					imageUrl: org.has_image ? (org.image_url ?? null) : null,
+					createdAtMs: org.created_at,
 				} satisfies OrganizationInfo
 			})
 
@@ -387,13 +396,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						message: "Organizations can only be created in Clerk auth mode",
 					})
 				}
-				const org = yield* clerkRequest("Clerk.organizations.createOrganization", { userId }, () =>
-					clerk.value.organizations.createOrganization({
-						name,
-						createdBy: userId,
-						publicMetadata: organizationRegionMetadata(region),
-					}),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				const org = yield* clerk.value
+					.run(
+						Clerk.createOrganization({
+							name,
+							created_by: userId,
+							public_metadata: organizationRegionMetadata(region),
+						}),
+					)
+					.pipe(Effect.mapError(toProviderError))
 				const orgId = yield* Schema.decodeEffect(OrgId)(org.id).pipe(
 					Effect.mapError(
 						() =>
@@ -419,12 +430,10 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						message: "Data regions can only be chosen in Clerk auth mode",
 					})
 				}
-				const org = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-					clerk.value.organizations.getOrganization({ organizationId: orgId }),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
-				if (organizationRegionChosen(org.publicMetadata)) {
+				const org = yield* getOrganization(clerk.value, orgId).pipe(Effect.mapError(toProviderError))
+				if (organizationRegionChosen(org.public_metadata)) {
 					// Choosing the region it already has is a no-op, so a retried request succeeds.
-					if (organizationHomeRegion(org.publicMetadata) === region) {
+					if (organizationHomeRegion(org.public_metadata) === region) {
 						return new ChooseOrganizationRegionResponse({ region })
 					}
 					return yield* new OrganizationRegionLockedError({
@@ -433,7 +442,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				}
 				// An organization that predates regions has data on US already, plan or not.
 				const nowMs = yield* Clock.currentTimeMillis
-				if (!organizationRegionOpen(org.publicMetadata, org.createdAt, nowMs)) {
+				if (!organizationRegionOpen(org.public_metadata, org.created_at, nowMs)) {
 					return yield* new OrganizationRegionLockedError({
 						message: "Only a new organization can choose its data region.",
 					})
@@ -452,23 +461,21 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				// Clerk merges public metadata by key, so rollout flags stay as they are.
-				const written = yield* clerkRequest(
-					"Clerk.organizations.updateOrganizationMetadata",
-					{ orgId },
-					() =>
-						clerk.value.organizations.updateOrganizationMetadata(orgId, {
-							publicMetadata: organizationRegionMetadata(region),
+				const written = yield* clerk.value
+					.run(
+						Clerk.mergeOrganizationMetadata({
+							organization_id: orgId,
+							public_metadata: organizationRegionMetadata(region),
 						}),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+					)
+					.pipe(Effect.mapError(toProviderError))
 				// A yes this instance cached before the write may now be wrong.
 				yield* regions.forget(orgId)
 				// Clerk has no conditional write, so two admins choosing at once both succeed and the
 				// later write wins. Answering with a fresh read rather than the request sends both to
 				// the region that stuck in all but a same-instant race. The write already landed, so a
 				// failed read falls back to what the write returned rather than failing the request.
-				const stored = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
-					clerk.value.organizations.getOrganization({ organizationId: orgId }),
-				).pipe(
+				const stored = yield* getOrganization(clerk.value, orgId).pipe(
 					Effect.catch((error) =>
 						Effect.logWarning("Region read-back failed; answering with the write's result").pipe(
 							Effect.annotateLogs({ orgId, error: error.message }),
@@ -477,7 +484,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					),
 				)
 				return new ChooseOrganizationRegionResponse({
-					region: organizationHomeRegion(stored.publicMetadata),
+					region: organizationHomeRegion(stored.public_metadata),
 				})
 			})
 

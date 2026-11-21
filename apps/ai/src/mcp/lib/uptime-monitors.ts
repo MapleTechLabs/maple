@@ -112,7 +112,7 @@ export const pingCommand = (heartbeatUrl: string | null): string | null =>
 export const limitReachedMessage = (limit: number): string =>
 	limit === 0
 		? "This organization's plan doesn't include uptime monitors. An admin can upgrade the plan in Settings → Billing."
-		: `This organization has used its ${limit} included uptime monitors. Delete one with delete_uptime_monitor, or upgrade the plan in Settings → Billing to add more.`
+		: `This organization has used its ${limit} included uptime monitors. Delete one with manage_uptime_monitor action=delete, or upgrade the plan in Settings → Billing to add more.`
 
 type UptimeServiceError =
 	| { readonly _tag: "@maple/http/errors/UptimeMonitorValidationError"; readonly message: string }

@@ -57,19 +57,28 @@ const listOpenIncidents = Effect.gen(function* () {
 
 /**
  * The list's cards: each page as visitors see it now (statuses and uptime bars, from its live
- * view) with its open incidents and maintenance, drafts included.
+ * view) with its open incidents and maintenance, drafts included, and each component's monitor.
  */
 export const listPageSummaries = Effect.gen(function* () {
 	const pages = yield* listPages
 	if (pages.length === 0) return []
-	const [incidents, snapshots] = yield* Effect.all(
-		[listOpenIncidents, Effect.forEach(pages, (page) => viewSnapshot(page.id), { concurrency: 4 })],
+	const [incidents, perPage] = yield* Effect.all(
+		[
+			listOpenIncidents,
+			Effect.forEach(
+				pages,
+				(page) =>
+					Effect.all([viewSnapshot(page.id), listPageComponents(page.id)], { concurrency: 2 }),
+				{ concurrency: 4 },
+			),
+		],
 		{ concurrency: "unbounded" },
 	)
-	return Arr.zipWith(pages, snapshots, (page, snapshot) =>
+	return Arr.zipWith(pages, perPage, (page, [snapshot, components]) =>
 		summarizePage({
 			page,
 			snapshot,
+			components,
 			incidents: Arr.filter(incidents, (incident) => incident.page_id === page.id),
 		}),
 	)

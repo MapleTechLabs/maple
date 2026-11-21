@@ -1,7 +1,8 @@
 // Grafana `templating.list` to Maple dashboard variables. Pure.
-import type { DashboardVariable } from "@maple/domain/http"
+import { type DashboardVariable, PromqlVariableLabel, PromqlVariableMatch } from "@maple/domain/http"
+import { parse } from "@maple/promql"
 import { replaceWith } from "@maple/strings"
-import { Array as Arr, Order, String as Str } from "effect"
+import { Array as Arr, Order, Result, Schema, String as Str } from "effect"
 import { asArray, asRecord, asString, type UnknownRecord } from "./dashboard-import-shared"
 
 export interface GrafanaVariableConversion {
@@ -15,7 +16,6 @@ export interface GrafanaVariableConversion {
 }
 
 const VALID_NAME = /^[A-Za-z][A-Za-z0-9_]*$/u
-const METRIC_NAME = /^[A-Za-z_:][A-Za-z0-9_:]*$/u
 const LABEL_VALUES = /^\s*label_values\(\s*(?:(.+?)\s*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$/su
 
 function mapleName(name: string, taken: Set<string>): string {
@@ -58,20 +58,61 @@ function customOptions(variable: UnknownRecord): Array<{ value: string; label?: 
 	})
 }
 
-/** Prometheus metric types Maple keeps in different tables; guessed from the name's suffix. */
-function guessMetricType(metric: string): "sum" | "gauge" | "histogram" {
-	if (/_(total|created)$/u.test(metric)) return "sum"
-	if (/_(bucket|count|sum)$/u.test(metric)) return "histogram"
-	return "gauge"
-}
-
 type QuerySource = Extract<DashboardVariable, { type: "query" }>["source"]
+
+/** Datasource plugins that speak PromQL; Mimir, Cortex and Thanos use `prometheus` itself. */
+export const PROMQL_DATASOURCE_TYPES: ReadonlySet<string> = new Set([
+	"prometheus",
+	"grafana-amazonprometheus-datasource",
+	"grafana-azureprometheus-datasource",
+	"victoriametrics-datasource",
+	"victoriametrics-metrics-datasource",
+])
+
+const MATCHER =
+	/\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=~|!~|!=|=)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)\s*(?:,|$)/gsu
+
+/** A `$name`, `${name}` or `[[name]]` reference; a regex's `$` end anchor is not one. */
+const VARIABLE_REF = /\$(?:\{|[A-Za-z_])|\[\[[A-Za-z_]/u
+
+/**
+ * A `label_values` selector as a `match[]` selector: label filters that name a dashboard variable
+ * are dropped (variables do not narrow each other yet), the literal ones kept. `""` when nothing
+ * literal is left, `undefined` when the selector cannot be read.
+ */
+function matchSelector(selector: string, name: string, warnings: string[]): string | undefined {
+	const parts = /^\s*([A-Za-z_:][A-Za-z0-9_:]*)?\s*(?:\{(.*)\})?\s*$/su.exec(selector)
+	if (parts === null) return undefined
+	const [, metric = "", body = ""] = parts
+	const matchers = Arr.map([...Str.matchAll(MATCHER)(body)], (m) => ({
+		text: `${m[1]}${m[2]}${m[3]}`,
+		value: m[3] ?? "",
+	}))
+	const parsed = Arr.join(
+		Arr.map(matchers, (m) => m.text),
+		"",
+	)
+	if (Str.replace(/[\s,]/gu, "")(body).length !== Str.replace(/[\s,]/gu, "")(parsed).length)
+		return undefined
+	const kept = Arr.filter(matchers, (m) => !VARIABLE_REF.test(m.value))
+	if (kept.length < matchers.length) {
+		warnings.push(
+			`Variable "${name}" lists values without the filters in "${selector}" that use other variables; Maple variables do not narrow each other yet.`,
+		)
+	}
+	const filters = Arr.join(
+		Arr.map(kept, (m) => m.text),
+		",",
+	)
+	return filters === "" ? metric : `${metric}{${filters}}`
+}
 
 /** A `label_values(...)` Prometheus query as a Maple variable source, when it can be one. */
 function labelValuesSource(query: string, name: string, warnings: string[]): QuerySource | undefined {
 	const match = LABEL_VALUES.exec(query)
 	if (match === null) return undefined
 	const [, selector, label = ""] = match
+	if (!isPromqlLabel(label)) return undefined
 	// `job` is the service name: OTel metrics carry it only as `service.name`, and the scraper sets
 	// `service.name` to the job too, so the service list holds every job a dashboard can filter by.
 	if (label === "job") {
@@ -82,23 +123,65 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 		}
 		return { kind: "facet", facet: "service" }
 	}
-	if (selector === undefined) return undefined
-	const [metricPart, matchers] = Str.split(selector, "{")
-	const metric = Str.trim(metricPart)
-	if (!METRIC_NAME.test(metric)) return undefined
-	if (matchers !== undefined && !/^\s*\}/u.test(matchers)) {
+	// Read by the discovery PromQL panels use, so Prometheus names and labels resolve as they do there.
+	if (selector === undefined || Str.trim(selector) === "") return { kind: "promql", label }
+	const selectorMatch = matchSelector(selector, name, warnings)
+	if (selectorMatch === undefined) {
 		warnings.push(
-			`Variable "${name}" lists every ${label} of ${metric}; the label filters in "${selector}" were not imported.`,
+			`Variable "${name}" lists every ${label}; its selector "${selector}" could not be read.`,
+		)
+		return { kind: "promql", label }
+	}
+	// Every filter named a variable; matchSelector already said they were dropped.
+	if (selectorMatch === "") return { kind: "promql", label }
+	if (!isDiscoverySelector(selectorMatch)) {
+		warnings.push(
+			`Variable "${name}" lists every ${label}; Maple cannot narrow it by "${selectorMatch}", which is too long or matches every series.`,
+		)
+		return { kind: "promql", label }
+	}
+	return { kind: "promql", label, match: selectorMatch }
+}
+
+const isPromqlLabel = Schema.is(PromqlVariableLabel)
+const isPromqlMatch = Schema.is(PromqlVariableMatch)
+
+/** A selector discovery takes: within the stored limit, and one the parser accepts, which refuses all-empty matchers. */
+const isDiscoverySelector = (selector: string): boolean => {
+	if (!isPromqlMatch(selector)) return false
+	const parsed = parse(selector)
+	return Result.isSuccess(parsed) && parsed.success.type === "VectorSelector"
+}
+
+/** True for a PromQL datasource. */
+export const speaksPromql = (type: string | undefined): type is string =>
+	type !== undefined && PROMQL_DATASOURCE_TYPES.has(type)
+
+/** What to say once a query on a PromQL datasource other than Prometheus itself is imported. */
+export const promqlPluginNote = (type: string): string | undefined =>
+	type === "prometheus"
+		? undefined
+		: `Queries on the ${type} datasource were imported as PromQL over Maple's metrics; check that they read the same series.`
+
+/** Says a note once, when the query it describes was imported. */
+export function noteOnce(note: string | undefined, warnings: string[]): void {
+	if (note !== undefined && !Arr.contains(warnings, note)) warnings.push(note)
+}
+
+/** Grafana's variable `regex` and `sort` have no Maple equivalent; say so instead of dropping them. */
+function unsupportedOptionWarnings(variable: UnknownRecord, name: string, warnings: string[]) {
+	const regex = asString(variable.regex)
+	if (regex !== undefined && Str.trim(regex) !== "") {
+		warnings.push(
+			`Variable "${name}" filters its values with the regex ${regex} in Grafana; Maple lists every value.`,
 		)
 	}
-	// Scraped Prometheus data, what these dashboards read, carries job and instance as datapoint
-	// labels on the metric itself, like every other label.
-	return {
-		kind: "metric",
-		metricType: guessMetricType(metric),
-		metricNames: [metric],
-		scope: "metric",
-		attributeKey: label,
+	// 0 is unsorted and 1 alphabetical, which is the order Maple lists values in.
+	const sort = typeof variable.sort === "number" ? variable.sort : 0
+	if (sort > 1) {
+		warnings.push(
+			`Variable "${name}" has a custom sort order in Grafana; Maple lists its values alphabetically.`,
+		)
 	}
 }
 
@@ -150,10 +233,12 @@ function convertOne(
 			const query = queryText(variable) ?? ""
 			const plugin = datasourceType(variable.datasource, datasourceTypes)
 			const source =
-				plugin === undefined || plugin === "prometheus"
+				plugin === undefined || speaksPromql(plugin)
 					? labelValuesSource(query, name, warnings)
 					: undefined
 			if (source !== undefined) {
+				if (plugin !== undefined) noteOnce(promqlPluginNote(plugin), warnings)
+				unsupportedOptionWarnings(variable, name, warnings)
 				return {
 					...base,
 					type: "query",

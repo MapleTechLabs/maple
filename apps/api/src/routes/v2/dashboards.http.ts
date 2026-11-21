@@ -27,13 +27,14 @@ import type {
 	V2DashboardCreateParams,
 	V2DashboardMutation,
 	V2DashboardShare,
+	V2DashboardShareParams,
 	V2DashboardTemplate,
 	V2DashboardUpdateParams,
 	V2DashboardVersion,
 	V2DashboardVersionDetail,
 	V2DashboardWidgetDataOutcome,
 } from "@maple/domain/http/v2"
-import type { DashboardShare, DashboardShareMode, ShareWidgetDataOutcome } from "@maple/domain/http"
+import type { DashboardShare, ShareWidgetDataOutcome } from "@maple/domain/http"
 import { DashboardId } from "@maple/primitives"
 import { Clock, DateTime, Effect, Option, Ref, Result, Schema, Array as Arr } from "effect"
 import { Base64Url } from "effect/encoding"
@@ -49,6 +50,7 @@ import {
 	type StoredDashboard,
 } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { timestampMs } from "@maple/backend/platform/time"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
 import { convertGrafanaDashboardToPortable } from "@maple/backend/services/dashboards/grafana-dashboard-import"
@@ -111,6 +113,7 @@ const toV2DashboardSnapshot = (dashboard: DashboardDocument): V2DashboardVersion
 	sections: dashboard.sections ?? [],
 	variables: dashboard.variables ?? [],
 	refreshIntervalSeconds: dashboard.refreshIntervalSeconds ?? null,
+	...(dashboard.importReport === undefined ? undefined : { importReport: dashboard.importReport }),
 	createdAt: dashboard.createdAt,
 	updatedAt: dashboard.updatedAt,
 })
@@ -133,6 +136,7 @@ const toV2DashboardShare =
 		tokenSuffix: share.tokenSuffix,
 		createdAt: share.createdAt,
 		updatedAt: share.updatedAt,
+		...(share.expiresAt === undefined ? undefined : { expiresAt: share.expiresAt }),
 	})
 
 const toV2WidgetDataOutcome = (outcome: ShareWidgetDataOutcome): V2DashboardWidgetDataOutcome =>
@@ -243,6 +247,9 @@ const applyUpdate = (
 		payload.refreshIntervalSeconds === undefined
 			? current.refreshIntervalSeconds
 			: (payload.refreshIntervalSeconds ?? undefined)
+	// Kept across unrelated edits; only an explicit `null` (the board's Dismiss) removes it.
+	const importReport =
+		payload.importReport === undefined ? current.importReport : (payload.importReport ?? undefined)
 
 	return new DashboardDocument({
 		id: current.id,
@@ -255,13 +262,17 @@ const applyUpdate = (
 		...(sections !== undefined ? { sections } : undefined),
 		...(variables !== undefined ? { variables } : undefined),
 		...(refreshIntervalSeconds !== undefined ? { refreshIntervalSeconds } : undefined),
+		...(importReport !== undefined ? { importReport } : undefined),
 		createdAt: current.createdAt,
 		updatedAt,
 	})
 }
 
 /** Update-payload fields diffable through the wire shape; layout blobs get summarized. */
-const dashboardAuditDiff = auditDiff<keyof V2DashboardUpdateParams & keyof V2Dashboard>({
+// The import report is not audited: dismissing it is not a configuration change.
+const dashboardAuditDiff = auditDiff<
+	Exclude<keyof V2DashboardUpdateParams & keyof V2Dashboard, "importReport">
+>({
 	fields: [
 		"name",
 		"description",
@@ -396,7 +407,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		 */
 		const upsertShareIn = (
 			context: Effect.Success<ReturnType<typeof openScope>>,
-			mode: DashboardShareMode,
+			params: V2DashboardShareParams,
 		) =>
 			Effect.gen(function* () {
 				yield* requireShareableScopes(context.tenant.scopes)
@@ -404,7 +415,12 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					context.tenant.orgId,
 					context.tenant.userId,
 					context.scope,
-					mode,
+					params.mode,
+					params.expiresAt === undefined
+						? undefined
+						: params.expiresAt === null
+							? null
+							: timestampMs(params.expiresAt),
 				)
 
 				yield* logShare("dashboard share upserted", context, {
@@ -415,6 +431,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					resourceId: created.id,
 					metadata: {
 						mode: created.mode,
+						...(created.expiresAt === undefined ? undefined : { expires_at: created.expiresAt }),
 						dashboard_id: encodePublicId(PublicIdPrefixes.dashboard, context.scope.dashboardId),
 						...(context.scope.widgetId === null
 							? undefined
@@ -837,7 +854,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 				.handle("retrieveShare", ({ params }) => retrieveShare(params.id, null))
 				.handle("upsertShare", ({ params, payload }) =>
 					openScope(params.id, null).pipe(
-						Effect.flatMap((context) => upsertShareIn(context, payload.mode)),
+						Effect.flatMap((context) => upsertShareIn(context, payload)),
 					),
 				)
 				.handle("rotateShare", ({ params }) => rotateShare(params.id, null))
@@ -857,7 +874,7 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 							})
 						}
 
-						return yield* upsertShareIn(context, payload.mode)
+						return yield* upsertShareIn(context, payload)
 					}),
 				)
 				.handle("rotateWidgetShare", ({ params }) => rotateShare(params.id, params.widget_id))

@@ -20,6 +20,7 @@ const unfaked: ChatSessionStub = {
 	holdsTurn: notFaked("holdsTurn"),
 	endTurn: notFaked("endTurn"),
 	abort: notFaked("abort"),
+	erase: notFaked("erase"),
 }
 
 export const fakeChatSessions = (

@@ -17,7 +17,6 @@ import {
 	emptyMedia,
 	emptyTitle,
 } from "@maple/views/ui/empty"
-import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { heading } from "@maple/views/ui/heading"
@@ -27,6 +26,8 @@ import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { panel } from "@maple/views/ui/panel"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
@@ -35,6 +36,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
 import { formatDaysUptime } from "../../kit/uptime/derive"
+import { monitorHref } from "../../kit/uptime/commands"
 import { uptimeDaysStrip } from "../../kit/uptime/view"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import {
@@ -128,36 +130,14 @@ const emptyState = (h: H, model: Model): Html =>
 		emptyFrameClass("dashed"),
 	)
 
-/** The API's answer for an org outside the rollout: a state of the org, not a failed load. */
-const isNotEnabled = (failure: LoadFailure): boolean => failure.code === "status_pages_disabled"
-
-/** Nothing here retries or creates: the org has to be added to the rollout first. */
-const notEnabledState = (h: H): Html =>
-	empty(
-		h,
-		[
-			emptyHeader(h, [
-				emptyMedia(h, { variant: "icon" }, [icon(h, "WindowChartLineIcon", { size: 18 })]),
-				emptyTitle(h, ["Status pages are not enabled"]),
-				emptyDescription(h, [
-					"Status pages are rolling out one organization at a time, and this one is not in yet. Contact Maple support to turn them on.",
-				]),
-			]),
-		],
-		"py-12",
-	)
-
 // CARD HEADER
 
 /** Who can read each page, at a glance. */
 const VISIBILITY_BADGE = {
-	public: { label: "Public", variant: "outline" },
-	password: { label: "Password", variant: "info" },
-	internal: { label: "Internal", variant: "secondary" },
-} as const satisfies Record<
-	StatusPageVisibility,
-	{ label: string; variant: "outline" | "info" | "secondary" }
->
+	public: { label: "Public", variant: "ok" },
+	password: { label: "Password", variant: "warn" },
+	internal: { label: "Internal", variant: "done" },
+} as const satisfies Record<StatusPageVisibility, { label: string; variant: "ok" | "warn" | "done" }>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
@@ -216,6 +196,33 @@ const pageIcon = (h: H, favicon: string | null): ReadonlyArray<Html> =>
 		? [h.img([h.Src(favicon), h.Alt(""), h.Class("size-4 shrink-0 rounded-2xs object-contain")])]
 		: []
 
+/** The address visitors open, a link while the page is served; an internal page has none. */
+const pageAddress = (h: H, summary: StatusPageSummary, orgKey: string): Html => {
+	const page = summary.page
+	if (page.visibility === "internal")
+		return typography(h, { size: "xs", tone: "muted", truncate: true }, ["Members only, in Maple"])
+	const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, orgKey, page.slug))
+	const address = typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+		publicAddress(orgKey, page.slug),
+	])
+	return link._tag === "Open"
+		? textLink(
+				h,
+				{
+					href: link.url,
+					tone: "muted",
+					className: cn("min-w-0", ROW_LINK_LIFT),
+					attributes: [h.Target("_blank"), h.Rel("noopener")],
+				},
+				[address],
+			)
+		: typography(
+				h,
+				{ size: "xs", tone: "muted", mono: true, truncate: true, attributes: [h.Title(link.reason)] },
+				[publicAddress(orgKey, page.slug)],
+			)
+}
+
 const cardHeader = (
 	h: H,
 	model: Model,
@@ -225,28 +232,50 @@ const cardHeader = (
 ): Html => {
 	const page = summary.page
 	const visibility = VISIBILITY_BADGE[page.visibility]
-	return hstack(h, { gap: "4", align: "start", justify: "between", className: stripClass("header") }, [
-		vstack(h, { gap: "1", className: "min-w-0" }, [
-			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-				...pageIcon(h, page.favicon_url),
-				heading(h, { level: 2, variant: "section", className: "truncate" }, [
-					textLink(h, { href: statusPageHref(page.id), tone: "inherit" }, [page.name]),
+	return hstack(
+		h,
+		{
+			gap: "4",
+			align: "start",
+			justify: "between",
+			className: stripClass(
+				"header",
+				// Tinted while either header link is hovered, not the address or the menu above them.
+				"relative has-[[data-header-link]:hover]:bg-surface-sunken has-[[data-header-link]:active]:bg-surface-sunken",
+			),
+		},
+		[
+			vstack(h, { gap: "1", className: "min-w-0" }, [
+				// The whole header opens the editor (an overlay link), but only the icon and title
+				// react to the pointer; the overlay stays out of the accessibility tree and tab order.
+				rowLink(h, {
+					href: statusPageHref(page.id),
+					attributes: [h.DataAttribute("header-link", ""), h.AriaHidden(true), h.Tabindex(-1)],
+				}),
+				heading(h, { level: 2, variant: "section", className: "min-w-0" }, [
+					textLink(
+						h,
+						{
+							href: statusPageHref(page.id),
+							tone: "inherit",
+							className: cn("max-w-full gap-2", ROW_LINK_LIFT),
+							attributes: [h.DataAttribute("header-link", "")],
+						},
+						[
+							...pageIcon(h, page.favicon_url),
+							typography(h, { truncate: true, as: "span" }, [page.name]),
+						],
+					),
 				]),
+				pageAddress(h, summary, inputs.orgKey),
 			]),
-			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
-				badge(h, { variant: visibility.variant, size: "sm" }, [visibility.label]),
-				typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-					page.visibility === "internal"
-						? "Members only, in Maple"
-						: publicAddress(inputs.orgKey, page.slug),
-				]),
+			hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+				badge(h, { variant: visibility.variant, size: "xs" }, [visibility.label]),
+				lastPublished(h, summary, inputs),
+				h.div([h.Class(ROW_LINK_LIFT)], [pageMenu(h, model, summary, inputs.orgKey, isEditable)]),
 			]),
-		]),
-		hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
-			lastPublished(h, summary, inputs),
-			pageMenu(h, model, summary, inputs.orgKey, isEditable),
-		]),
-	])
+		],
+	)
 }
 
 // STATUS STRIP
@@ -346,10 +375,21 @@ const groupsOf = (
 				: [...groups, { group: component.group, components: [component] }],
 	)
 
+/** A monitored component's row opens its uptime monitor and checks. */
 const componentRow = (h: H, component: SummaryComponent): Html => {
 	const uptime = formatDaysUptime(component.days)
-	return h.div(
-		[h.Key(component.id), h.Class(cn(COMPONENT_GRID, "px-4 py-2"))],
+	return selectableRow(
+		h,
+		{
+			isSelected: false,
+			href: component.monitorId === null ? undefined : monitorHref(component.monitorId),
+			className: cn(
+				COMPONENT_GRID,
+				"px-4 py-2",
+				component.monitorId !== null && "hover:bg-surface-sunken active:bg-surface-sunken",
+			),
+			attributes: [h.Key(component.id)],
+		},
 		[
 			hstack(h, { gap: "2", align: "center", className: "min-w-0" }, [
 				statusDot(h, { tone: COMPONENT_STATUS_TONE[component.status] }),
@@ -443,7 +483,6 @@ const pageCard = (
 
 const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const data = model.pages.data
-	if (AsyncData.isFailure(data) && isNotEnabled(data.error)) return notEnabledState(h)
 	if (AsyncData.isFailure(data))
 		return errorState(h, {
 			failure: data.error,

@@ -3,6 +3,7 @@
 // Mirrors `packages/backend/src/platform/SecretBox.ts`; a backend test pins the two together.
 import { hkdfSync } from "node:crypto"
 import { Array as Arr, Effect, Option, Redacted, Schema, String as Str } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 const SUBKEY_INFO_PREFIX = "maple/secret-box/v2/slot/"
 const KEY_ID_INFO = "maple/secret-box/v2/key-id"
@@ -110,3 +111,49 @@ export const slotKeysFor = (slot: string, masters: SlotKeyMasters) =>
 /** The ingest gateway's slot keys: only `org_clickhouse_settings.ch_password`. */
 export const clickHousePasswordSlotKeys = (masters: SlotKeyMasters) =>
 	slotKeysFor(CLICKHOUSE_PASSWORD_SLOT, masters)
+
+/** The warehouse refused or did not return a scoped token. Carries no token material. */
+export class ScopedTokenLookupError extends Schema.TaggedError<ScopedTokenLookupError>()(
+	"@maple/infra/ScopedTokenLookupError",
+	{ message: Schema.String, tokenName: Schema.String },
+) {}
+
+const TokenBody = Schema.Struct({ token: Schema.String })
+
+/**
+ * The value of the warehouse token `tokenName`, read with the workspace's admin token. The deploy
+ * hands the scoped token on; the admin token stays in the deploy.
+ */
+export const warehouseTokenByName = (host: string, adminToken: Redacted.Redacted, tokenName: string) =>
+	Effect.gen(function* () {
+		const base = yield* HttpClient.HttpClient
+		const client = HttpClient.filterStatusOk(base)
+		const origin = Str.replace(/\/+$/, "")(Str.trim(host))
+		const response = yield* client.execute(
+			HttpClientRequest.get(`${origin}/v0/tokens/${encodeURIComponent(tokenName)}`).pipe(
+				HttpClientRequest.bearerToken(adminToken),
+			),
+		)
+		const body = yield* HttpClientResponse.schemaBodyJson(TokenBody)(response)
+		const token = Str.trim(body.token)
+		return Str.isNonEmpty(token)
+			? new Derived(Redacted.make(token, { label: tokenName }))
+			: yield* new ScopedTokenLookupError({ message: "the token came back empty", tokenName })
+	}).pipe(
+		Effect.catchTags({
+			HttpClientError: (error) =>
+				Effect.fail(
+					new ScopedTokenLookupError({
+						message: `the token lookup failed (${error.reason._tag}${error.response ? ` ${error.response.status}` : ""})`,
+						tokenName,
+					}),
+				),
+			SchemaError: () =>
+				Effect.fail(
+					new ScopedTokenLookupError({
+						message: "the token lookup answered an unexpected shape",
+						tokenName,
+					}),
+				),
+		}),
+	)

@@ -23,7 +23,7 @@ export const AuditResources = {
 	ai_provider_key: { verbs: ["updated", "deleted"] },
 	alert_destination: {
 		prefix: PublicIdPrefixes.alertDestination,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "disabled"],
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
 	alert_silence: { prefix: PublicIdPrefixes.alertSilence, verbs: ["created", "updated", "ended"] },
@@ -73,7 +73,10 @@ export const AuditResources = {
 			"identity_unlinked",
 		],
 	},
-	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
+	dashboard_share: {
+		prefix: PublicIdPrefixes.dashboardShare,
+		verbs: ["created", "rotated", "deleted", "revoked"],
+	},
 	/** A device-held key registered for the mobile widgets (DPoP); keyed by installation. */
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
@@ -139,6 +142,8 @@ export const AuditResources = {
 	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["granted", "revoked"] },
 	/** A `maple auth login` approved in the dashboard; the device name is in `metadata`. */
 	cli_session: { verbs: ["approved"] },
+	/** A session someone else signed in to as this member; the impersonator and session are in `metadata`. */
+	auth: { verbs: ["impersonation"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
@@ -294,6 +299,7 @@ export const AuditResourceLabels = {
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
 	cli_session: "CLI session",
+	auth: "Sign-in",
 	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
@@ -332,6 +338,7 @@ export const AuditActionLabels = {
 	"alert_destination.created": "Created alert destination",
 	"alert_destination.updated": "Updated alert destination",
 	"alert_destination.deleted": "Deleted alert destination",
+	"alert_destination.disabled": "Disabled alert destination",
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
@@ -396,6 +403,7 @@ export const AuditActionLabels = {
 	"dashboard_share.created": "Shared dashboard",
 	"dashboard_share.rotated": "Rotated dashboard share link",
 	"dashboard_share.deleted": "Removed dashboard share link",
+	"dashboard_share.revoked": "Revoked dashboard share link",
 	"device_credential.registered": "Registered device key",
 	"device_credential.revoked": "Revoked device key",
 	"error_issue.created": "Created issue",
@@ -441,6 +449,7 @@ export const AuditActionLabels = {
 	"mcp_connection.granted": "Granted MCP connection",
 	"mcp_connection.revoked": "Revoked MCP connection",
 	"cli_session.approved": "Approved CLI login",
+	"auth.impersonation": "Signed in as this member",
 	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",

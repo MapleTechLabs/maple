@@ -105,8 +105,7 @@ The ingest gateway's credential is declared rather than minted: `Planetscale.Pos
 `alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
 its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
 deletes the old role. A preview's gateway logs in to its Neon branch's pooled endpoint instead.
-`MAPLE_INGEST_PG_URL` in Infisical remains only for a stage that deploys a fleet without a declared
-database, which no profile does today.
+Every stage that deploys a fleet declares its database, so there is no Infisical URL for the gateway.
 
 Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric-db-role", {
 withReplication: true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`).

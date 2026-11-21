@@ -5,6 +5,7 @@ import {
 	ApiKeys,
 	ChatIdentities,
 	CliDeviceAuthorizations,
+	DashboardShares,
 	DeviceCredentials,
 	DigestSubscriptions,
 	McpOAuthAuthorizations,
@@ -14,6 +15,7 @@ import { RoleName, type OrgId, type UserId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import {
 	DestinationPublicConfigSchema,
@@ -31,7 +33,7 @@ import { revokeFamiliesForAccessKeys, revokeRefreshFamiliesForMember } from "./m
  * Nothing ran on removal before this existed, and five separate authorization
  * findings were all the same absence: the membership cache kept answering yes
  * for five minutes, and every *user-bound* credential minted for that person
- * (CLI keys, MCP grants, alert emails, push devices) never re-checked
+ * (CLI keys, MCP grants, alert emails, push devices, share links, webhooks) never re-checked
  * membership at all, so the five-minute window was really "forever".
  *
  * Every step is idempotent and predicate-driven, so a webhook retry converges
@@ -58,6 +60,8 @@ export interface MembershipRevocationSummary {
 	readonly mobileDevicesDeleted: number
 	readonly chatIdentitiesDeleted: number
 	readonly digestSubscriptionsDisabled: number
+	readonly dashboardSharesRevoked: number
+	readonly alertDestinationsDisabled: number
 }
 
 export interface MembershipDemotionSummary {
@@ -121,6 +125,7 @@ const make = Effect.gen(function* () {
 	const database = yield* Database
 	const env = yield* Env
 	const edgeCache = yield* EdgeCacheService
+	const audit = yield* AuditLogService
 	const dbExecute = makeDbExecute(database, "MembershipRevocationService", toRevocationError)
 
 	const keyring = yield* secretKeyringFromEnv(env, (message) => new MembershipRevocationError({ message }))
@@ -320,7 +325,39 @@ const make = Effect.gen(function* () {
 							])
 							.returning("id"),
 					)
+					// A share link serves the board to whoever holds it, with no membership check.
+					// Revoked, not deleted: the row is the audit record of the link.
+					const sharesRevoked = yield* db.run(
+						PG.update(DashboardShares)
+							.set({ revokedAt: now, updatedAt: now })
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.createdBy.eq(userId),
+								$.revokedAt.isNull(),
+							])
+							.returning("id", "orgId"),
+					)
+					// A webhook or chat destination the member pointed somewhere keeps delivering the
+					// org's alerts there. Disabled with a reason so an admin can re-enable it.
+					const destinationsDisabled = yield* db.run(
+						PG.update(AlertDestinations)
+							.set({
+								enabled: false,
+								disabledAt: now,
+								disabledReason: "Creator left the organization",
+								updatedAt: now,
+							})
+							.where(($) => [
+								orgId === null ? undefined : $.orgId.eq(orgId),
+								$.createdBy.eq(userId),
+								$.type.neq("email"),
+								$.enabled.eq(true),
+							])
+							.returning("id", "orgId"),
+					)
 					return {
+						sharesRevoked,
+						destinationsDisabled,
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
 						deviceCredentialsRevoked: revokedDeviceCredentials.length,
@@ -336,7 +373,38 @@ const make = Effect.gen(function* () {
 
 		const emailDestinationsUpdated = yield* stripFromEmailDestinations(orgId, userId)
 
-		const summary = { ...credentials, emailDestinationsUpdated } satisfies MembershipRevocationSummary
+		// After the commit: a retry finds these rows already retired, so nothing is recorded twice.
+		const { sharesRevoked, destinationsDisabled, ...counts } = credentials
+		const removed = { reason: "membership_ended" }
+		yield* Effect.forEach(sharesRevoked, (row) =>
+			audit.record({
+				orgId: row.orgId,
+				actor: { type: "system" },
+				source: "system",
+				action: "dashboard_share.revoked",
+				resourceId: row.id,
+				affectedUserId: userId,
+				metadata: removed,
+			}),
+		)
+		yield* Effect.forEach(destinationsDisabled, (row) =>
+			audit.record({
+				orgId: row.orgId,
+				actor: { type: "system" },
+				source: "system",
+				action: "alert_destination.disabled",
+				resourceId: row.id,
+				affectedUserId: userId,
+				metadata: removed,
+			}),
+		)
+
+		const summary = {
+			...counts,
+			dashboardSharesRevoked: sharesRevoked.length,
+			alertDestinationsDisabled: destinationsDisabled.length,
+			emailDestinationsUpdated,
+		} satisfies MembershipRevocationSummary
 		yield* Effect.annotateCurrentSpan({
 			"maple.membership.api_keys_revoked": summary.apiKeysRevoked,
 			"maple.membership.mcp_families_revoked": summary.mcpFamiliesRevoked,
@@ -347,6 +415,8 @@ const make = Effect.gen(function* () {
 			"maple.membership.mobile_devices_deleted": summary.mobileDevicesDeleted,
 			"maple.membership.chat_identities_deleted": summary.chatIdentitiesDeleted,
 			"maple.membership.digest_subscriptions_disabled": summary.digestSubscriptionsDisabled,
+			"maple.membership.dashboard_shares_revoked": summary.dashboardSharesRevoked,
+			"maple.membership.alert_destinations_disabled": summary.alertDestinationsDisabled,
 		})
 		return summary
 	})

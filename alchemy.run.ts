@@ -19,6 +19,7 @@ import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import { withSecretGuard } from "@maple/infra/secret-guard"
 import {
 	ApiWorker,
+	AuditArchiveBucket,
 	AiWorker,
 	SandboxWorker,
 	declareStatusDomainsOrigin,
@@ -39,6 +40,7 @@ import {
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
+import { IngestRoleMembership, mapleDbProviders } from "@maple/infra/ingest-role-membership"
 import { deployedDomains, type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
@@ -47,12 +49,14 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import OrgEraser from "./apps/org-eraser/src/worker.ts"
 import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
 import ElectricSync from "./apps/electric-sync/src/worker.ts"
 import StatusWorker from "./apps/status/src/worker.ts"
+import AuditArchiveWorker from "./apps/audit-archive/src/worker.ts"
 import { createMapleIngest } from "./apps/ingest/alchemy.run.ts"
 import { createMapleScraper } from "./apps/scraper/alchemy.run.ts"
 import Landing from "./apps/landing/src/worker.ts"
@@ -146,6 +150,29 @@ const declarePreviewDb = ({ stage, region }: MapleDeployment, profile: MapleProf
 	})
 
 /**
+ * The gateway's login with no built-in role, granted `maple_ingest` (its tables only) before the
+ * fleet uses it: the task env carries the id the grant echoes. `MAPLE_INGEST_DB_SCOPED_ROLE=1`
+ * switches to it; turning the switch off brings back the all-tables login (docs/infra.md).
+ */
+const scopedIngestLogin = (database: string, schema: Planetscale.PostgresBranch) =>
+	Effect.gen(function* () {
+		const login = yield* Planetscale.PostgresRole("ingest-gateway-scoped", {
+			database,
+			branch: schema,
+			inheritedRoles: [],
+		})
+		const membership = yield* IngestRoleMembership("ingest-gateway-membership", {
+			database,
+			branch: schema.name,
+			loginId: login.id,
+			login: login.username,
+			url: login.connectionUrlPooled,
+		})
+		// The URL comes back from the grant, so a failed grant never reaches the task secret.
+		return { id: membership.loginId, url: membership.url }
+	})
+
+/**
  * prd's `main` branch (its deploy applies migrations) and the ECS services' roles. On EU, also a
  * role and a Hyperdrive config per consumer on the role's direct origin; US prd looks up its
  * dashboard configs by id.
@@ -160,11 +187,14 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 		}).pipe(RemovalPolicy.retain())
 		// Runtime logins read and write rows but own nothing; migrations run as the branch owner.
 		// Changing roles is a create-first replace (the ingest role's id is in the task env).
-		const ingestRole = yield* Planetscale.PostgresRole("ingest-gateway", {
-			database,
-			branch: schema,
-			inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
-		})
+		const ingest =
+			(yield* optionalPlain("MAPLE_INGEST_DB_SCOPED_ROLE")).MAPLE_INGEST_DB_SCOPED_ROLE === "1"
+				? yield* scopedIngestLogin(database, schema)
+				: yield* Planetscale.PostgresRole("ingest-gateway", {
+						database,
+						branch: schema,
+						inheritedRoles: [...DB_ACCESS_ROLES.readWrite],
+					}).pipe(Effect.map((role) => ({ id: role.id, url: role.connectionUrlPooled })))
 		// Id must not be `"electric"` (the ECS service's id): alchemy keys state by id alone.
 		// Stays on `postgres`: PlanetScale grants REPLICATION only alongside it.
 		const electricRole = profile.deploys.electric
@@ -177,7 +207,7 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 			: undefined
 		const resources = {
 			branch: schema.name,
-			ingest: { id: ingestRole.id, url: ingestRole.connectionUrlPooled },
+			ingest,
 			electric: electricRole && { id: electricRole.id, url: electricRole.connectionUrl },
 		}
 		if (profile.database === "ref")
@@ -287,7 +317,10 @@ const providers =
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
 		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
-		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
+		// The ingest login's membership grant reuses the hosted database's credentials.
+		Layer.provideMerge(
+			isDevServer ? Layer.empty : mapleDbProviders.pipe(Layer.provideMerge(Planetscale.providers())),
+		),
 		// Previews only; prd and dev deploys carry no NEON_API_KEY.
 		Layer.provideMerge(!isDevServer && process.env.NEON_API_KEY ? Neon.providers() : Layer.empty),
 		Layer.provideMerge(Portless.providers()),
@@ -318,15 +351,15 @@ export default Alchemy.Stack(
 			})
 		}
 
-		// Every stage that deploys a fleet has its hostname (`resolveMapleDomains`).
+		// Every stage that deploys a fleet has its hostname and a declared database (profile.test.ts).
 		const ingest =
-			profile.deploys.ingest && domains.ingest
+			profile.deploys.ingest && domains.ingest && db
 				? yield* createMapleIngest({
 						stage,
 						region,
 						hostname: domains.ingest,
 						profile,
-						dbLogin: db?.ingest,
+						dbLogin: db.ingest,
 					})
 				: undefined
 
@@ -352,6 +385,11 @@ export default Alchemy.Stack(
 		yield* serveWorker("ai", ai)
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
+
+		// Sole consumer of the audit queue: writes the write-once copy, then feeds api's
+		// warehouse consumer. The bucket is yielded here so its retention read stays out of Worker init.
+		yield* AuditArchiveBucket
+		yield* AuditArchiveWorker
 
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
@@ -402,6 +440,9 @@ export default Alchemy.Stack(
 		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
+		// Erases deleted orgs' data on a cron; never served, it alone holds the warehouse delete token.
+		const orgEraser = yield* OrgEraser
+
 		// Chat-platform ingress. Its Live layer registers its Durable Object classes.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
@@ -450,6 +491,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			orgEraserWorker: orgEraser.workerName,
 			chatBotWorker: chatBot.workerName,
 		}
 	}).pipe(

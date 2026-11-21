@@ -18,6 +18,9 @@ import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "./collection-l
 
 /** The alert-incident fields service health reads (`rowToAlertIncidentDocument`). */
 export const HealthIncident = Schema.Struct({
+	ruleId: Schema.String,
+	/** The rule's name when the incident opened, so the overview strip can say what fires. */
+	ruleName: Schema.String,
 	status: Schema.String,
 	groupKey: Schema.NullOr(Schema.String),
 	severity: Schema.Literals(["warning", "critical"]),
@@ -69,6 +72,8 @@ export const incidentsStream = <M>(
 			(rows) =>
 				updated(
 					Arr.map(rowsToAlertIncidentDocuments(rows), (incident) => ({
+						ruleId: incident.ruleId,
+						ruleName: incident.ruleName,
 						status: incident.status,
 						groupKey: incident.groupKey,
 						severity: incident.severity,

@@ -90,7 +90,7 @@ When the job pings at its end, the grace period has to cover how long the job ru
 
 ## Create a monitor from an AI assistant, Terraform or Pulumi
 
-On the [MCP server](/docs/reference/mcp), `create_uptime_monitor` with `kind` set to `heartbeat` creates a monitor. It takes:
+On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=create` with `kind` set to `heartbeat` creates a monitor. It takes:
 
 - `heartbeat_interval_seconds` (at least 60), or `cron` with an optional `timezone` (default `UTC`). Pass one, not both.
 - `grace_seconds`: 0 to 86400. The default is 300, not the 30 minutes the app uses.

@@ -7,6 +7,7 @@ import {
 	draftError,
 	newVariable,
 	SOURCE_ITEMS,
+	sourceKeyOf,
 	sourceValueOf,
 	VARIABLE_TYPES,
 	METRIC_TYPES,
@@ -43,8 +44,14 @@ const formFor = (model: Model, drafts: ReadonlyArray<Variable>, index: number | 
 					)
 				: "",
 		),
-		attributeKey: Field.init(source === undefined || source.kind === "facet" ? "" : source.attributeKey),
-		metricNames: Field.init(source?.kind === "metric" ? Arr.join(source.metricNames, ", ") : ""),
+		attributeKey: Field.init(source === undefined ? "" : sourceKeyOf(source)),
+		metricNames: Field.init(
+			source?.kind === "metric"
+				? Arr.join(source.metricNames, ", ")
+				: source?.kind === "promql"
+					? (source.match ?? "")
+					: "",
+		),
 		typeSelect: selectInit(idOf(base, "type"), VARIABLE_TYPES, draft?.type ?? "query"),
 		sourceSelect: selectInit(
 			idOf(base, "source"),
@@ -131,10 +138,16 @@ const applyField = (draft: Variable, field: FormField, value: string): Variable 
 						),
 					}
 		case "attributeKey":
-			return draft.type !== "query" || draft.source.kind === "facet"
-				? draft
+			if (draft.type !== "query" || draft.source.kind === "facet") return draft
+			return draft.source.kind === "promql"
+				? { ...draft, source: { ...draft.source, label: Str.trim(value) } }
 				: { ...draft, source: { ...draft.source, attributeKey: value } }
 		case "metricNames":
+			if (draft.type === "query" && draft.source.kind === "promql") {
+				const { match: _, ...rest } = draft.source
+				const match = Str.trim(value)
+				return { ...draft, source: match === "" ? rest : { ...rest, match } }
+			}
 			return draft.type !== "query" || draft.source.kind !== "metric"
 				? draft
 				: {

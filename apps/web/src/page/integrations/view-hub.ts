@@ -62,10 +62,13 @@ const connectedRow = (h: H, row: ConnectedRow, onSelect: Select, nowMs: number):
 			? entryPlate(h, row.entry, plateOptions)
 			: kindPlate(h, DATA_SOURCE_KIND_ENTRY[row.source.kind], plateOptions)
 	const name = row._tag === "Integration" ? row.entry.name : row.source.name
+	// A connected data integration lives under Sources: its rows there, not its connect flow.
 	const onClick =
-		row._tag === "Integration"
-			? onSelect(row.entry.id)
-			: Message.ClickedDataSource({ source: row.source.id, connect: null })
+		row._tag === "DataSource"
+			? Message.ClickedDataSource({ source: row.source.id, connect: null })
+			: row.sourcesQuery !== null
+				? Message.ClickedConnectedSources({ query: row.sourcesQuery })
+				: onSelect(row.entry.id)
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(
 		h,
@@ -241,7 +244,7 @@ export const hubTitle = (h: H): Html =>
 				"Systems Maple collects telemetry from, queries in place, and sends alerts to. Volume and caps per source are under ",
 				h.a(
 					[
-						h.Href(hrefOf(AppRoute.Sources())),
+						h.Href(hrefOf(AppRoute.Sources({ search: {} }))),
 						h.Class(
 							typographyClass({
 								tone: "foreground",
@@ -263,6 +266,7 @@ const FILTER_LABEL = {
 	query: CAPABILITY_LABEL.query.filter,
 	alerts: CAPABILITY_LABEL.alerts.filter,
 	analytics: CAPABILITY_LABEL.analytics.filter,
+	security: CAPABILITY_LABEL.security.filter,
 	attention: "Needs attention",
 } as const satisfies Record<HubFilter, string>
 

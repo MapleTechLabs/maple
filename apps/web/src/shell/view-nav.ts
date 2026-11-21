@@ -53,7 +53,6 @@ export const shellNavGroups = (clerk: ShellClerk | null = null): ReadonlyArray<N
 			cloudSecurity: flag("cloudSecurity") && canReadSecurity,
 			productAnalytics: flag("productAnalytics"),
 			securityAudit: flag("securityAudit") && canReadSecurity,
-			statusPages: flag("statusPages"),
 		},
 		audience,
 	)
@@ -154,7 +153,9 @@ const subList = (
 						],
 					),
 					...(count === undefined
-						? []
+						? sub.badge === undefined
+							? []
+							: [navBadge(h, sub.badge, "top-1/2 -translate-y-1/2")]
 						: [
 								sidebarMenuBadge(
 									h,

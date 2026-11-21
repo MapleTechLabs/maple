@@ -872,6 +872,26 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		},
 	)
 
+	it.effect("runs a private repository with Maple tools turned off as a public one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ mapleToolAccess: false }),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job({ authorAssociation: "MEMBER" }))
+			assert.equal(started.outcome, "started")
+			const turn = begun[0]
+			assert.equal(turn?.origin?.kind === "autonomous" ? turn.origin.repository : undefined, "public")
+			assert.include(turn?.text ?? "", "Maple's tools are turned off for this repository")
+		}).pipe(Effect.provide(layerFor(testDb, { begun })))
+	})
+
 	it.effect(
 		"reviews a public repository's pull request by an author who can push, whatever association the webhook reports",
 		() => {
@@ -2327,6 +2347,7 @@ describe("buildReviewKickoff", () => {
 			fork: false,
 			body: "Retries GETs.",
 			isPrivate: true,
+			mapleTools: true,
 			...overrides,
 		})
 	const rules = [

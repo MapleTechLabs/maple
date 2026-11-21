@@ -231,6 +231,7 @@ export const PR_REVIEW_MODELS = [
 	{ id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", eu: false },
 	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", eu: true },
 	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", eu: true },
+	{ id: "openai/gpt-6.2-sol", label: "GPT-6.2 Sol", eu: true },
 	{ id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", eu: true },
 	{ id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", eu: true },
 ] as const
@@ -263,6 +264,11 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	 * automatic review per pull request and three per author a day; a maintainer starts more.
 	 */
 	reviewExternalContributors: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * Whether the reviewer and its replies may call Maple's telemetry tools and read telemetry text.
+	 * On by default, and never on a public repository whatever this says: its review is world-readable.
+	 */
+	mapleToolAccess: Schema.optionalKey(Schema.Boolean),
 	/** Reviews this repository may start per UTC day. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/**

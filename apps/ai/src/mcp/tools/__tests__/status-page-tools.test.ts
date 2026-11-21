@@ -10,9 +10,7 @@ import {
 	SetStatusPageDomainOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
-import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { executeSql } from "@maple/backend/testing/test-pglite"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
@@ -117,7 +115,9 @@ describe("status page tools", () => {
 		expect(updated.incident).toMatchObject({ status: "identified", published: true, updateCount: 2 })
 		const liveResult = await runToolDirect(rt, "get_status_page", { page: "Acme Status" })
 		// The follow-up needs public wording, so it is a notice, not a half-filled call.
-		expect(markdown(liveResult)).toContain("To update an open incident, call post_status_page_update")
+		expect(markdown(liveResult)).toContain(
+			"To update an open incident, call manage_status_page action=post_update",
+		)
 		const live = pageOf(liveResult)
 		expect(live.components).toMatchObject([{ name: "API", status: "partial_outage" }])
 		expect(live.overallStatus).toBe("partial_outage")
@@ -496,7 +496,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
+				"manage_status_page would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
 			)
 			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
 
@@ -529,7 +529,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
+				"manage_status_page changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
 			)
 
 			const other = await readConfig(rt, "acme-status")
@@ -546,38 +546,6 @@ describe("status page tools", () => {
 			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
-	})
-})
-
-describe("status page tools outside the statusPages rollout", () => {
-	let off: EvalRuntime
-	beforeAll(() => {
-		off = makeEvalRuntime(OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))
-	})
-	afterAll(async () => {
-		await off.dispose()
-	})
-
-	it("refuses every tool as unavailable, naming the missing capability", async () => {
-		// A real document, so the apply is refused by the gate and not by decoding.
-		const { config } = (await readConfig(rt, "acme-status")).structuredContent
-		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
-		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-			["get_status_page", {}],
-			["get_status_page", { page: "acme-status", include_config: true }],
-			["post_status_page_update", { page: "acme-status", title: "x", message: "y" }],
-			["post_status_page_update", { incident, status: "identified", message: "y" }],
-			["apply_status_page_config", { page: "acme-status", config }],
-			["create_status_page", { name: "Acme Status" }],
-			["publish_status_page", { page: "acme-status" }],
-			["set_status_page_domain", { page: "acme-status", domain: "status.acme.com" }],
-		]
-		for (const [name, params] of calls) {
-			const result: McpToolResult = await runToolDirect(off, name, params)
-			expect(result.isError).toBe(true)
-			expect(result.failureCategory).toBe("unavailable")
-			expect(markdown(result)).toContain("not enabled for this organization")
-		}
 	})
 })
 
@@ -609,7 +577,7 @@ describe("setting a status page up", () => {
 		const created = decode(CreateStatusPageOutput, result)
 		expect(created.page).toMatchObject({ name: "Crème Status!", slug: "creme-status", draft: true })
 		expect(created.page.id).toMatch(/^stp_/)
-		expect(markdown(result)).toContain("publish_status_page")
+		expect(markdown(result)).toContain("manage_status_page action=publish")
 		expect(markdown(result)).toContain('`get_status_page page="creme-status" include_config=true`')
 
 		const config = await readConfig(admin(), "creme-status")
@@ -698,7 +666,10 @@ describe("setting a status page up", () => {
 			page: "domain-page",
 			remove: true,
 		})
-		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({ action: "removed", domain: null })
+		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({
+			action: "removed",
+			domain: null,
+		})
 		const gone = pageOf(await runToolDirect(setup, "get_status_page", { page: "domain-page" }))
 		expect(gone.customDomain).toBeUndefined()
 		const again = await runToolDirect(admin(), "set_status_page_domain", {

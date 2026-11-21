@@ -14,9 +14,11 @@ import {
 	toStructured,
 } from "../audit-setup"
 import type { McpToolRegistrar } from "../types"
+import { ignoreFamily } from "../types"
 
 let render: ((output: typeof AuditSetupOutput.Encoded) => ToolDoc) | undefined
 const registrar: McpToolRegistrar = {
+	family: ignoreFamily,
 	define: (spec) => {
 		render = (output) => spec.render(Schema.decodeSync(McpToolOutputs[spec.name])(output))
 	},

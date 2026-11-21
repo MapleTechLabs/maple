@@ -6,10 +6,12 @@ import { registerSearchTracesTool } from "../search-traces"
 import { registerFindSlowTracesTool } from "../find-slow-traces"
 import { registerDiagnoseServiceTool } from "../diagnose-service"
 import type { McpToolRegistrar } from "../types"
+import { ignoreFamily } from "../types"
 
 /** Each tool's render, fed an encoded output so the test needs no casts. */
 const renders = new Map<string, (output: Schema.Json) => string>()
 const registrar: McpToolRegistrar = {
+	family: ignoreFamily,
 	define: (spec) => {
 		renders.set(spec.name, (output) =>
 			renderToolDoc(spec.render(Schema.decodeUnknownSync(McpToolOutputs[spec.name])(output))),

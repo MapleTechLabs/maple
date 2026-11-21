@@ -103,7 +103,16 @@ export const FetchShares = Command.define("FetchDashboardShares", {
 			return Arr.flatMap(shares, (share) =>
 				share.token === undefined
 					? []
-					: [{ widgetId: share.widgetId ?? null, mode: share.mode, token: share.token }],
+					: [
+							{
+								widgetId: share.widgetId ?? null,
+								mode: share.mode,
+								token: share.token,
+								...(share.expiresAt === undefined
+									? undefined
+									: { expiresAt: share.expiresAt }),
+							},
+						],
 			)
 		}).pipe(
 			settleTo((result) =>
@@ -508,6 +517,19 @@ export const SaveVariables = Command.define("SaveDashboardVariables", {
 				variables,
 				updatedAt: nowIso,
 			})),
+		),
+})
+
+/** Removes the import report, which is what dismissing its notice means. */
+export const DismissImportReport = Command.define("DismissDashboardImportReport", {
+	args: Target,
+	messages: [Message.CompletedWrite],
+	execute: ({ orgId, dashboardId }) =>
+		toWriteMessage(
+			mutateDashboard(orgId, dashboardId, (document, nowIso) => {
+				const { importReport: _, ...rest } = document
+				return { ...rest, updatedAt: nowIso }
+			}),
 		),
 })
 

@@ -1,11 +1,25 @@
 /**
- * The slice of Vercel's REST API the integration uses: teams, projects, deployments and drains.
- * No Effect SDK exists, so this decodes only the fields Maple reads. Failures fold into one
+ * The slice of Vercel's REST API the integration uses: teams, projects, deployments and drains
+ * through `@distilled.cloud/vercel`, and the billing charges over plain HTTP (a JSONL stream the
+ * SDK cannot read). Each call decodes only the fields Maple reads. Failures fold into one
  * {@link VercelApiError} whose `kind` drives the poller (auth failure, back-off, missing drain).
  */
-import { Duration, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
+import * as Vercel from "@distilled.cloud/vercel"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Stream,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
+import * as VendorSdk from "../vendor-sdk"
 
 const BASE_URL = "https://api.vercel.com"
 const REQUEST_TIMEOUT = Duration.seconds(20)
@@ -64,6 +78,7 @@ const toVercelError = (error: VendorHttp.VendorHttpError): VercelApiError => {
 	})
 }
 
+/** The charges stream: plain HTTP, since the SDK reads every answer as one JSON body. */
 const client = (httpClient: HttpClient.HttpClient, token: string) =>
 	VendorHttp.make({
 		httpClient,
@@ -75,18 +90,29 @@ const client = (httpClient: HttpClient.HttpClient, token: string) =>
 		timeout: REQUEST_TIMEOUT,
 	})
 
-type Cursor = string | number
+const STATUS_BY_TAG = {
+	...Rec.fromEntries(
+		Arr.map(Rec.toEntries(Vercel.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+	),
+	PaymentRequired: 402,
+	Gone: 410,
+}
 
-/**
- * The next page of a listing. Vercel pages backwards with `until=<timestamp>`; a listing that
- * answers with a continuation token instead takes it back as `from=<token>`.
- */
-const pageFrom = (next: Option.Option<Cursor>): Readonly<Record<string, string>> =>
-	Option.match(next, {
-		onNone: () => ({}),
-		onSome: (cursor): Readonly<Record<string, string>> =>
-			typeof cursor === "string" ? { from: cursor } : { until: String(cursor) },
+/** Everything else, through the SDK. */
+const sdk = (httpClient: HttpClient.HttpClient, token: string) =>
+	VendorSdk.make({
+		httpClient,
+		peerService: "vercel",
+		sdk: Layer.mergeAll(
+			Vercel.credentials({ token: Redacted.make(token), apiBaseUrl: BASE_URL }),
+			Layer.succeed(Vercel.Retry.Retry, { while: () => false }),
+		),
+		statusByTag: STATUS_BY_TAG,
+		toError: toVercelError,
+		timeout: REQUEST_TIMEOUT,
 	})
+
+type Cursor = string | number
 
 const Pagination = Schema.Struct({
 	next: Schema.optionalKey(Schema.NullOr(Schema.Union([Schema.String, Schema.Number]))),
@@ -94,6 +120,16 @@ const Pagination = Schema.Struct({
 
 const nextOf = (body: { readonly pagination?: typeof Pagination.Type }): Option.Option<Cursor> =>
 	Option.fromNullishOr(body.pagination?.next)
+
+/**
+ * The next page of a listing that pages backwards with `until=<timestamp>`. Teams and deployments
+ * only ever answer a timestamp; a token instead ends the listing rather than re-reading page one.
+ */
+const nextTimestampOf = (body: { readonly pagination?: typeof Pagination.Type }): Option.Option<number> =>
+	Option.filter(nextOf(body), (cursor): cursor is number => typeof cursor === "number")
+
+const untilOf = (next: Option.Option<number>) =>
+	Option.match(next, { onNone: () => ({}), onSome: (until) => ({ until }) })
 
 // Teams
 
@@ -124,11 +160,11 @@ export const listTeams = Effect.fn("VercelApi.listTeams")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,
 ) {
-	const { pages } = yield* client(httpClient, token).paginate({
+	const { pages } = yield* sdk(httpClient, token).paginate({
 		schema: TeamsBody,
 		maxPages: MAX_TEAM_PAGES,
-		next: nextOf,
-		request: (next) => ({ path: "/v2/teams", query: { limit: String(PAGE_SIZE), ...pageFrom(next) } }),
+		next: nextTimestampOf,
+		page: (next) => Vercel.teams.getTeams({ limit: PAGE_SIZE, ...untilOf(next) }),
 	})
 	return Arr.flatMap(pages, (body) =>
 		Arr.map(body.teams, (team): VercelTeamInfo => ({
@@ -179,14 +215,20 @@ export const listProjects = Effect.fn("VercelApi.listProjects")(function* (
 	token: string,
 	teamId: string,
 ) {
-	const { pages, complete } = yield* client(httpClient, token).paginate({
+	const { pages, complete } = yield* sdk(httpClient, token).paginate({
 		schema: ProjectsBody,
 		maxPages: MAX_PROJECT_PAGES,
 		next: nextOf,
-		request: (next) => ({
-			path: "/v10/projects",
-			query: { teamId, limit: String(PAGE_SIZE), ...pageFrom(next) },
-		}),
+		// Projects page backwards with `until=<timestamp>`, or take a continuation token back as `from`.
+		page: (next) =>
+			Vercel.projects.getProjects({
+				teamId,
+				limit: String(PAGE_SIZE),
+				...Option.match(next, {
+					onNone: () => ({}),
+					onSome: (cursor) => (typeof cursor === "string" ? { from: cursor } : { until: cursor }),
+				}),
+			}),
 	})
 	const projects = Arr.flatMap(pages, (body) =>
 		Arr.map(body.projects, (project): VercelProjectInfo => ({
@@ -264,14 +306,12 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 	sinceMs: number,
 	maxPages: number,
 ) {
-	const { pages } = yield* client(httpClient, token).paginate({
+	const { pages } = yield* sdk(httpClient, token).paginate({
 		schema: DeploymentsBody,
 		maxPages,
-		next: nextOf,
-		request: (next) => ({
-			path: "/v7/deployments",
-			query: { teamId, limit: String(PAGE_SIZE), since: String(sinceMs), ...pageFrom(next) },
-		}),
+		next: nextTimestampOf,
+		page: (next) =>
+			Vercel.deployments.getDeployments({ teamId, limit: PAGE_SIZE, since: sinceMs, ...untilOf(next) }),
 	})
 	const deployments = Arr.flatMap(pages, (body) =>
 		Arr.flatMap(body.deployments, (d): Array<VercelDeploymentInfo> =>
@@ -304,6 +344,22 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 
 // Drains
 
+/** Where a drain delivers: an HTTP endpoint (logs and events), or OTLP over HTTP (traces). */
+export type VercelDrainDelivery =
+	| {
+			readonly type: "http"
+			readonly endpoint: string
+			readonly encoding: "json" | "ndjson"
+			readonly compression: "none"
+			readonly headers: Readonly<Record<string, string>>
+	  }
+	| {
+			readonly type: "otlphttp"
+			readonly endpoint: { readonly traces: string }
+			readonly encoding: "proto"
+			readonly headers: Readonly<Record<string, string>>
+	  }
+
 /** The create/update body Maple sends: one drain per data kind, owned by Maple. */
 export interface VercelDrainBody {
 	readonly name: string
@@ -311,7 +367,7 @@ export interface VercelDrainBody {
 	/** Null on an update clears the list a `some` drain had. */
 	readonly projectIds?: ReadonlyArray<string> | null
 	readonly schemas: Readonly<Record<string, { readonly version: string }>>
-	readonly delivery: Readonly<Record<string, unknown>>
+	readonly delivery: VercelDrainDelivery
 	readonly sampling?: ReadonlyArray<{ readonly type: "head_sampling"; readonly rate: number }>
 	/** Update only: re-enables a drain Vercel or the team disabled. */
 	readonly status?: "enabled"
@@ -335,17 +391,31 @@ const toDrainInfo = (drain: typeof DrainBody.Type): VercelDrainInfo => ({
 	disabledReason: drain.disabledReason ?? null,
 })
 
-const drainPath = (drainId?: string) =>
-	`/v1/drains${drainId === undefined ? "" : `/${encodeURIComponent(drainId)}`}`
+/** The fields a create and an update share, with mutable lists as the SDK's request types take them. */
+const sdkDrainBody = (body: VercelDrainBody) => ({
+	name: body.name,
+	projects: body.projects,
+	schemas: body.schemas,
+	delivery: body.delivery,
+	...(body.sampling === undefined
+		? undefined
+		: { sampling: Arr.map(body.sampling, (rule) => ({ ...rule })) }),
+})
 
 export const createDrain = Effect.fnUntraced(
 	function* (httpClient: HttpClient.HttpClient, token: string, teamId: string, body: VercelDrainBody) {
-		const drain = yield* client(httpClient, token).json(DrainBody, {
-			method: "POST",
-			path: drainPath(),
-			query: { teamId },
-			body,
-		})
+		const drain = yield* sdk(httpClient, token).call(
+			DrainBody,
+			// A create has no list to clear: a null `projectIds` is left out.
+			Vercel.drains.createDrain({
+				...sdkDrainBody(body),
+				...(body.projectIds === null || body.projectIds === undefined
+					? undefined
+					: { projectIds: [...body.projectIds] }),
+				teamId,
+			}),
+			{ method: "POST" },
+		)
 		return toDrainInfo(drain)
 	},
 	// A plan or permission refusal is answered to the person connecting as a 400, not our failure.
@@ -360,12 +430,20 @@ export const updateDrain = Effect.fn("VercelApi.updateDrain")(function* (
 	drainId: string,
 	body: VercelDrainBody,
 ) {
-	const drain = yield* client(httpClient, token).json(DrainBody, {
-		method: "PATCH",
-		path: drainPath(drainId),
-		query: { teamId },
-		body,
-	})
+	const drain = yield* sdk(httpClient, token).call(
+		DrainBody,
+		Vercel.drains.updateDrain({
+			...sdkDrainBody(body),
+			// Null clears the list a `some` drain had.
+			...(body.projectIds === undefined
+				? undefined
+				: { projectIds: body.projectIds === null ? null : [...body.projectIds] }),
+			...(body.status === undefined ? undefined : { status: body.status }),
+			id: drainId,
+			teamId,
+		}),
+		{ method: "PATCH" },
+	)
 	return toDrainInfo(drain)
 })
 
@@ -426,10 +504,7 @@ export const listDrains = Effect.fn("VercelApi.listDrains")(function* (
 	token: string,
 	teamId: string,
 ) {
-	const body = yield* client(httpClient, token).json(ListedDrainsBody, {
-		path: drainPath(),
-		query: { teamId },
-	})
+	const body = yield* sdk(httpClient, token).call(ListedDrainsBody, Vercel.drains.getDrains({ teamId }))
 	yield* Effect.annotateCurrentSpan("maple.vercel.drains", body.drains.length)
 	return Arr.map(body.drains, (drain): VercelListedDrain => ({
 		...toDrainInfo(drain),
@@ -448,8 +523,8 @@ export const deleteDrain = Effect.fn("VercelApi.deleteDrain")(function* (
 	teamId: string,
 	drainId: string,
 ) {
-	yield* client(httpClient, token)
-		.json(Schema.Unknown, { method: "DELETE", path: drainPath(drainId), query: { teamId } })
+	yield* sdk(httpClient, token)
+		.call(Schema.Unknown, Vercel.drains.deleteDrain({ id: drainId, teamId }), { method: "DELETE" })
 		.pipe(
 			Effect.catchIf(
 				(error) => error.kind === "not_found",

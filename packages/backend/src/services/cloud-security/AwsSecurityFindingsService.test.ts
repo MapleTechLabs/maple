@@ -2,7 +2,7 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { AwsAccountId, type AwsModule, AwsRegion, OrgId, UserId } from "@maple/primitives"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -49,6 +49,10 @@ const makeWorld = () => {
 	const sts = makeFakeAws()
 	const aws = makeFakeAwsSecurity(sts.client)
 	const rolledOut = new Set<OrgId>([orgId])
+	const flagsOf = (org: OrgId) => ({
+		...ENABLED_ORGANIZATION_FEATURE_FLAGS,
+		cloudSecurity: rolledOut.has(org),
+	})
 	const audit: Array<{ readonly orgId: OrgId; readonly event: AuditTrailEvent }> = []
 	const layer = Layer.mergeAll(
 		Layer.effect(AwsSecurityFindingsService, AwsSecurityFindingsService.make),
@@ -68,11 +72,8 @@ const makeWorld = () => {
 		),
 		Layer.provide(
 			Layer.succeed(OrganizationFeatureFlagsService, {
-				flags: (org) =>
-					Effect.sync(() => ({
-						...ENABLED_ORGANIZATION_FEATURE_FLAGS,
-						cloudSecurity: rolledOut.has(org),
-					})),
+				flags: (org) => Effect.sync(() => flagsOf(org)),
+				known: (org) => Effect.sync(() => Option.some(flagsOf(org))),
 			}),
 		),
 		Layer.provide(testDb.layer),
@@ -88,14 +89,15 @@ type World = ReturnType<typeof makeWorld>
 /** The tests' "now": every fixture is dated before it. */
 const NOW = Date.parse("2026-11-10T00:00:00Z")
 
-const connect = (world: World, granted: ReadonlyArray<AwsModule> = ["security"]) =>
+const connect = (
+	world: World,
+	granted: ReadonlyArray<AwsModule> = ["security", "audit"],
+	modules: ReadonlyArray<AwsModule> = ["security", "audit"],
+) =>
 	Effect.gen(function* () {
 		yield* TestClock.setTime(NOW)
 		const connections = yield* AwsConnectionService
-		const created = yield* connections.create(orgId, userId, {
-			accountId: account,
-			modules: ["security"],
-		})
+		const created = yield* connections.create(orgId, userId, { accountId: account, modules })
 		const setup = yield* connections.setup(orgId, created.id)
 		world.sts.deploy(account, setup.cloudformationTemplate)
 		yield* Effect.promise(() =>
@@ -415,7 +417,7 @@ describe("AwsSecurityFindingsService", () => {
 		}).pipe(Effect.provide(world.layer))
 	})
 
-	it.effect("skips orgs outside the rollout and connections whose role does not grant security", () => {
+	it.effect("reads no findings outside the rollout or without the security grant", () => {
 		const world = makeWorld()
 		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
 		return Effect.gen(function* () {
@@ -434,10 +436,38 @@ describe("AwsSecurityFindingsService", () => {
 				),
 			)
 			world.rolledOut.clear()
-			assert.strictEqual((yield* poll).connections, 0)
-			assert.deepStrictEqual(world.aws.requests, [])
+			// Outside the rollout only the audit log is read, which the security policy also allows.
+			assert.strictEqual((yield* poll).connections, 1)
+			assert.isFalse(Arr.some(world.aws.requests, (request) => request.service === "guardduty"))
+			assert.isTrue(Arr.some(world.aws.requests, (request) => request.service === "cloudtrail"))
 		}).pipe(Effect.provide(world.layer))
 	})
+	it.effect("reads only CloudTrail for the audit module, outside the findings rollout too", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
+		return Effect.gen(function* () {
+			yield* connect(world, ["audit"], ["audit"])
+			world.rolledOut.clear()
+			assert.strictEqual((yield* poll).connections, 1)
+			assert.deepStrictEqual(Arr.dedupe(Arr.map(world.aws.requests, (request) => request.service)), [
+				"account",
+				"cloudtrail",
+			])
+			assert.deepStrictEqual(yield* findingRows(world), [])
+		}).pipe(Effect.provide(world.layer))
+	})
+
+	it.effect("reads no CloudTrail for a security-only connection", () => {
+		const world = makeWorld()
+		world.aws.regions["us-east-1"] = { guardduty: [sshBruteForce()] }
+		return Effect.gen(function* () {
+			yield* connect(world, ["security"], ["security"])
+			yield* poll
+			assert.isFalse(Arr.some(world.aws.requests, (request) => request.service === "cloudtrail"))
+			assert.isTrue(Arr.some(world.aws.requests, (request) => request.service === "guardduty"))
+		}).pipe(Effect.provide(world.layer))
+	})
+
 	it.effect("writes CloudTrail changes to the audit log and leaves out role-session plumbing", () => {
 		const world = makeWorld()
 		const at = Date.parse("2026-11-10T00:00:00Z")

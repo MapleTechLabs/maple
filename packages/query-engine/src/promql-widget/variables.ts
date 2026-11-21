@@ -6,12 +6,13 @@
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { replaceWith } from "@maple/strings"
 import type { VariableValues } from "../dashboard-variables/interpolate"
+import { MAX_PROMQL_READ_WINDOW_SECONDS } from "../limits"
 
 // `${name:format}` and `${name}` before bare `$name`, so a branch consumes its braces.
 const PROMQL_VAR_REF =
 	/\$\{([A-Za-z][A-Za-z0-9_]*)(?::([A-Za-z]+))?\}|\[\[([A-Za-z][A-Za-z0-9_]*)\]\]|\$([A-Za-z][A-Za-z0-9_]*)/g
 
-const REGEX_SPECIALS = /[.*+?^${}()|[\]\\]/g
+const REGEX_SPECIALS = /[.*+?^${}()|[\]\\-]/g
 
 /** A value escaped for a RE2 regex: what `=~` and `!~` matchers take. */
 export const promqlRegexEscape = (value: string): string =>
@@ -19,6 +20,10 @@ export const promqlRegexEscape = (value: string): string =>
 
 /** Where in a query a variable sits: PromQL code, or inside a string with that quote. */
 type QuoteContext = "code" | '"' | "'" | "`"
+
+/** Code that opens a string as the value of a `=~` or `!~` matcher, once its comments are gone. */
+const OPENS_REGEX_MATCHER = /[=!]~\s*["'`]$/
+const PROMQL_COMMENT = /#[^\n]*/g
 
 /** A value escaped for the inside of a double- or single-quoted PromQL string (no raw newline). */
 export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>
@@ -33,6 +38,31 @@ export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): strin
 const SAFE_TOKEN =
 	/^(?:[A-Za-z_:][A-Za-z0-9_:]*|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|(?:\d+(?:ms|s|m|h|d|w|y))+)$/
 
+const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
+const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
+const UNIT_MS = new Map([
+	["ms", 1],
+	["s", 1_000],
+	["m", 60_000],
+	["h", 3_600_000],
+	["d", 86_400_000],
+	["w", 604_800_000],
+	["y", 31_536_000_000],
+])
+
+/** A PromQL duration in ms, as Prometheus reads it (a year is 365 days). */
+export const promqlDurationMs = (duration: string): number =>
+	Arr.reduce(
+		Arr.fromIterable(Str.matchAll(DURATION_PART)(duration)),
+		0,
+		(total, [, count, unit]) => total + Number(count) * (UNIT_MS.get(unit ?? "") ?? 0),
+	)
+
+/** A token for code: whole, and a duration no wider than a query may read. */
+const safeToken = (value: string): boolean =>
+	SAFE_TOKEN.test(value) &&
+	(!DURATION.test(value) || promqlDurationMs(value) <= MAX_PROMQL_READ_WINDOW_SECONDS * 1000)
+
 /**
  * A value as it may appear in `context`, or undefined when it cannot appear there without
  * changing the query's structure (a quote in a raw string, an operator in code).
@@ -45,7 +75,7 @@ const placed = (value: string, context: QuoteContext): string | undefined => {
 		case "`":
 			return Str.includes("`")(value) ? undefined : value
 		case "code":
-			return SAFE_TOKEN.test(value) ? value : undefined
+			return safeToken(value) ? value : undefined
 	}
 }
 
@@ -105,17 +135,22 @@ export const collectPromqlVariableRefs = (query: string): ReadonlyArray<string> 
 /**
  * Dashboard variables substituted into a PromQL query.
  *
- * A single value goes in as itself; an "All" selection becomes a regex alternation of every
- * option, `(a|b)`, as Grafana writes a multi-value Prometheus variable. `:regex` escapes even a
- * single value. A value is escaped for the string it sits in, and one that would change the
- * query's structure (a quote in a raw string, an operator outside a string) is not substituted.
- * An unknown or refused variable stays literal, so it matches nothing rather than everything.
+ * A single value goes in as itself, regex-escaped inside a `=~` / `!~` matcher (or under
+ * `:regex`) so it matches only itself; `:raw` keeps it a pattern. An "All" selection becomes an
+ * escaped regex alternation of every option, `(a|b)`, as Grafana writes a multi-value variable.
+ * A value is escaped for the string it sits in, and one that would change the query's structure
+ * (a quote in a raw string, an operator outside a string) is not substituted. An unknown or
+ * refused variable stays literal, so it matches nothing rather than everything.
  */
 export function interpolatePromqlVariables(query: string, values: VariableValues): string {
 	if (!Str.includes("$")(query) && !Str.includes("[[")(query)) return query
+	const runs = quoteRuns(query)
 	return Arr.join(
-		Arr.map(quoteRuns(query), ({ text, context }) =>
-			replaceWith(
+		Arr.map(runs, ({ text, context }, index) => {
+			const inRegex =
+				context !== "code" &&
+				OPENS_REGEX_MATCHER.test(Str.replace(PROMQL_COMMENT, "")(runs[index - 1]?.text ?? ""))
+			return replaceWith(
 				text,
 				PROMQL_VAR_REF,
 				(
@@ -138,17 +173,18 @@ export function interpolatePromqlVariables(query: string, values: VariableValues
 						const escaped = Arr.filter(options, (o): o is string => o !== undefined)
 						return escaped.length === 1 ? (escaped[0] ?? "") : `(${Arr.join(escaped, "|")})`
 					}
-					const value = format === "regex" ? promqlRegexEscape(variable.value) : variable.value
+					const escape = format === "regex" || (inRegex && format !== "raw")
+					const value = escape ? promqlRegexEscape(variable.value) : variable.value
 					return placed(value, context) ?? match
 				},
-			),
-		),
+			)
+		}),
 		"",
 	)
 }
 
-/** Grafana's assumed scrape interval for `$__rate_interval` when the source names none. */
-export const PROMQL_SCRAPE_INTERVAL_MS = 15_000
+/** The scrape interval `$__rate_interval` assumes: OTel SDKs export every 60s by default. */
+export const PROMQL_SCRAPE_INTERVAL_MS = 60_000
 
 /** A duration as PromQL writes it: whole seconds as `Ns`, anything finer as `Nms`. */
 export const formatPromqlDuration = (ms: number): string =>
@@ -162,14 +198,23 @@ export interface PromqlBuiltinContext {
 
 // Longer names first in the alternation, so `$__interval_ms` never reads as `$__interval`.
 const BUILTIN_REF =
-	/\$\{__(rate_interval|interval_ms|interval|range_ms|range_s|range)\}|\$__(rate_interval|interval_ms|interval|range_ms|range_s|range)(?![A-Za-z0-9_])/g
+	/\$\{__(rate_interval|interval_ms|interval|range_ms|range_s|range|from|to)(?::(date(?::(?:seconds|iso))?))?\}|\$__(rate_interval|interval_ms|interval|range_ms|range_s|range|from|to)(?![A-Za-z0-9_])/g
+
+/** `$__from` / `$__to` in Grafana's formats: epoch ms by default, `:date:seconds`, `:date` / `:date:iso`. */
+const formatTimeMacro = (ms: number, format: string | undefined): string => {
+	if (format === "date:seconds") return String(Math.floor(ms / 1000))
+	if (format === "date" || format === "date:iso") return new Date(ms).toISOString()
+	return String(Math.round(ms))
+}
 
 /**
  * The time built-ins: `$__interval` (the step), `$__rate_interval` (Grafana's
- * max(4 * scrape interval, interval + scrape interval)), `$__range`, plus their `_ms` / `_s` forms.
+ * max(4 * scrape interval, interval + scrape interval)), `$__range`, plus their `_ms` / `_s` forms,
+ * and `$__from` / `$__to` (with Grafana's `:date` formats, for `@` modifiers).
  */
 export function interpolatePromqlBuiltins(query: string, context: PromqlBuiltinContext): string {
 	if (!Str.includes("$")(query)) return query
+	const { startMs, endMs } = context
 	const rangeMs = Math.max(0, context.endMs - context.startMs)
 	const values = new Map([
 		["interval", formatPromqlDuration(context.stepMs)],
@@ -192,8 +237,18 @@ export function interpolatePromqlBuiltins(query: string, context: PromqlBuiltinC
 				: replaceWith(
 						text,
 						BUILTIN_REF,
-						(match, braced: string | undefined, bare: string | undefined) =>
-							values.get(braced ?? bare ?? "") ?? match,
+						(
+							match,
+							braced: string | undefined,
+							format: string | undefined,
+							bare: string | undefined,
+						) => {
+							const name = braced ?? bare ?? ""
+							if (name === "from") return formatTimeMacro(startMs, format)
+							if (name === "to") return formatTimeMacro(endMs, format)
+							// A date format only applies to the time macros; anything else stays as written.
+							return format === undefined ? (values.get(name) ?? match) : match
+						},
 					),
 		),
 		"",

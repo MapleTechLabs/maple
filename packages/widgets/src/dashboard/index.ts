@@ -85,6 +85,7 @@ export { type DashboardParseOutcome, parseStoredDashboard, stampCurrentVersion }
 export { CURRENT_DASHBOARD_SCHEMA_VERSION, DashboardSchemaVersion } from "./version"
 export { makeWidgetDisplayConfigSchema } from "./shared/display"
 export { WidgetLayoutSchema } from "./shared/layout"
+export { DashboardImportReport, MAX_IMPORT_REPORT_ITEMS } from "./shared/document"
 export {
 	DASHBOARD_MAX_SECTIONS,
 	DASHBOARD_MAX_TABS_PER_SECTION,
@@ -118,6 +119,8 @@ export {
 	type DashboardVariable,
 	DashboardVariableName,
 	DashboardVariableSchema,
+	PromqlVariableLabel,
+	PromqlVariableMatch,
 } from "./shared/variables"
 
 // Current-version aliases. When a version is added, these move to it and every

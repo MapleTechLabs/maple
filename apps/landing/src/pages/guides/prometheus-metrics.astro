@@ -257,7 +257,7 @@ const faqs = [
     {
         question: "How do I see Prometheus metrics in Grafana?",
         answer:
-            "Add Prometheus as a data source in Grafana with the address of your Prometheus server, for example http://prometheus:9090. Then create a dashboard panel, choose that data source and enter a PromQL query such as sum(rate(http_requests_total[5m])).",
+            "Add Prometheus as a data source in Grafana with the address of your Prometheus server, for example http://prometheus:9090. Then create a dashboard panel, choose that data source and enter a PromQL query such as sum(rate(http_requests_total[5m])). Maple also serves the Prometheus API, so Grafana can chart metrics stored in Maple the same way: see maple.dev/docs/reference/prometheus.",
     },
 ];
 
@@ -313,7 +313,7 @@ const articleJsonLd = {
                 </p>
                 <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
                     <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
-                        <img src={author.avatar} alt="" width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
                         <span>By {author.name}</span>
                     </a>
                     <time datetime={published}>Updated {updatedLabel}</time>
@@ -654,6 +654,7 @@ const articleJsonLd = {
                         <div class="mt-6 flex flex-wrap gap-3">
                             <a href="/docs/integrations/prometheus" class="guide-button guide-button--primary">Prometheus scraping docs</a>
                             <a href="/docs/explore/metrics" class="guide-button">Metrics explorer</a>
+                            <a href="/docs/reference/prometheus" class="guide-button">Grafana and the Prometheus API</a>
                         </div>
                     </div>
                 </section>

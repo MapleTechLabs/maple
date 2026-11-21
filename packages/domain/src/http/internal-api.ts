@@ -8,6 +8,7 @@ import { CodeReviewApiGroup } from "./code-review"
 import { DemoApiGroup } from "./demo"
 import { AuditTrailApiGroup } from "./audit-trail"
 import { CloudSecurityApiGroup } from "./cloud-security"
+import { DeviceSecurityApiGroup } from "./device-security"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
 import { FeatureRequestApiGroup } from "./feature-requests"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
@@ -30,6 +31,7 @@ import {
 } from "./organizations"
 import { QueryEngineApiGroup } from "./query-engine"
 import { SavedViewsApiGroup } from "./saved-views"
+import { SecurityAuditReadsApiGroup } from "./security-audit"
 import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
@@ -72,6 +74,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(DependencyScanApiGroup)
 	.add(DigestApiGroup)
 	.add(ErrorsApiGroup)
+	.add(DeviceSecurityApiGroup)
 	.add(IntegrationsApiGroup)
 	.add(McpInternalApiGroup)
 	.add(OpenRouterKeyApiGroup)
@@ -92,6 +95,8 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OrganizationRegionApiGroup)
 	.add(QueryEngineApiGroup)
 	.add(SavedViewsApiGroup)
+	// The security audit's reads; its writes stay on the ai Worker (`MapleAiApi`).
+	.add(SecurityAuditReadsApiGroup)
 	.add(ServiceMapWorldApiGroup)
 	.add(SessionReplaysInternalApiGroup)
 	.add(UsersInternalApiGroup)

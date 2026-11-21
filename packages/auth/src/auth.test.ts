@@ -318,6 +318,51 @@ describe("makeResolveTenant", () => {
 	)
 })
 
+describe("impersonated Clerk sessions", () => {
+	const clerkEnv = {
+		...baseEnv,
+		MAPLE_AUTH_MODE: "clerk",
+		CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+		CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+	} as const
+	const resolveWith = (auth: Record<string, unknown>) =>
+		makeResolveTenant(clerkEnv, async () => ({
+			isAuthenticated: true,
+			message: null,
+			toAuth: () => ({
+				isAuthenticated: true,
+				tokenType: "session_token",
+				userId: "user_123",
+				orgId: "org_123",
+				orgRole: "org:admin",
+				...auth,
+			}),
+		}))({ authorization: "Bearer test-token" })
+
+	it.effect("carries the impersonator and session from the act claim", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_1", actor: { sub: "user_support" } })
+			assert.deepStrictEqual(tenant.impersonation, { actorId: "user_support", sessionId: "sess_1" })
+			// Writes stay allowed: the session keeps the member's own role.
+			assert.deepStrictEqual(tenant.roles, [asRoleName("org:admin")])
+		}),
+	)
+
+	it.effect("still flags an act claim with no usable subject", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_2", actor: {} })
+			assert.deepStrictEqual(tenant.impersonation, { actorId: "unknown", sessionId: "sess_2" })
+		}),
+	)
+
+	it.effect("leaves an ordinary session unflagged", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveWith({ sessionId: "sess_3", actor: null })
+			assert.strictEqual(tenant.impersonation, undefined)
+		}),
+	)
+})
+
 describe("pending Clerk sessions (no organization chosen yet)", () => {
 	const clerkEnv = {
 		...baseEnv,
@@ -600,7 +645,7 @@ describe("makeGetCustomerData", () => {
 describe("extractVerifiedPrimaryEmail", () => {
 	const address = (id: string, emailAddress: string, status: "verified" | "unverified") => ({
 		id,
-		emailAddress,
+		email_address: emailAddress,
 		verification: { status },
 	})
 
@@ -608,7 +653,10 @@ describe("extractVerifiedPrimaryEmail", () => {
 		const verified = address("e_1", "ada@acme.test", "verified")
 		const unverified = address("e_2", "someone@else.test", "unverified")
 		const pick = (primaryEmailAddressId: string | null, emailAddresses: ReadonlyArray<typeof verified>) =>
-			extractVerifiedPrimaryEmail({ primaryEmailAddressId, emailAddresses })
+			extractVerifiedPrimaryEmail({
+				primary_email_address_id: primaryEmailAddressId,
+				email_addresses: emailAddresses,
+			})
 
 		assert.strictEqual(pick("e_1", [unverified, verified]), "ada@acme.test")
 		assert.strictEqual(pick("e_2", [verified, unverified]), null)

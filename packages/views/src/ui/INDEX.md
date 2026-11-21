@@ -34,6 +34,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/checkbox.ts` `labelId`, `view` (stateful: Model, init, update): Base UI `Checkbox`: the checked state is the Submodel; `indeterminate` stays a view input, as it is a controlled prop in @maple/ui (it overrides how the box reads, not what a cl...
 - `packages/views/src/ui/choice-card.ts` `choiceCheckClass`, `choiceCard`: `ChoiceCard`: a whole card that picks an option, over a visually hidden native radio or checkbox (the onboarding and connect pickers).
 - `packages/views/src/ui/choice.ts` `labelIdOf`, `toggleKey`, `hiddenInput`: Shared by checkbox, radio, switch, select and combobox: the parts Base UI renders the same way.
+- `packages/views/src/ui/code-editor.ts` `suggestionListId`, `suggestionId`, `codeEditor`: A coloured run of an editor's text: `start` is its offset, `className` its colour (none is plain).
 - `packages/views/src/ui/collapsible.ts` `collapsible`, `collapsibleTrigger`: `Collapsible` whose open state lives in the owner's Model: the trigger button and, while open, its panel (closed, Base UI renders no panel).
 - `packages/views/src/ui/color-hsv.ts` `normalizeHex`, `hsvToHex`, `hexToHsv`: HSV and `#rrggbb` for the colour picker: hue in degrees 0 to 360, saturation and value 0 to 1.
 - `packages/views/src/ui/color-picker.ts` `colorPicker`: `ColorPicker`: a swatch that opens a picker for a `#rrggbb` colour.
@@ -50,7 +51,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
-- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
+- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailStats`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
 - `packages/views/src/ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
 - `packages/views/src/ui/dialog.ts` `popupId`, `triggerId`, `titleId`, `descriptionId`, `open`, `close`, `isDismissedByOutsidePress` (stateful: Model, init, update): Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a Mount that portals the popup to `<body>`, marks the page outside it, locks scroll...
 - `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
@@ -195,6 +196,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 ## apps/web/src/page/kit
 
 - `apps/web/src/page/kit/advanced-filter.ts` `advancedFilterButton`, `appliedWhereClause`, `advancedFilterDialog`, `whereClauseWarnings`: The pieces around a list page's advanced filter dialog (`/traces`, `/logs`).
+- `apps/web/src/page/kit/affected-chips.ts` `affectedChips`: The entities a setup-health check names, as chips with a "+N more" for the rest past the cap.
 - `apps/web/src/page/kit/alert-collections.ts` `ruleRows`, `ruleStateRows`, `incidentRows`, `destinationRows`: The alert rules, incidents and destinations as live streams.
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
 - `apps/web/src/page/kit/alert-test-rows.ts` `hubAt`, `ruleId`, `ruleRow`, `stateRow`, `incidentRow`, `destinationRow`: Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.

@@ -20,6 +20,9 @@ import {
 	datasourceType,
 	type GrafanaVariableConversion,
 	rewriteVariableRefs,
+	noteOnce,
+	promqlPluginNote,
+	speaksPromql,
 } from "./grafana-import-variables"
 
 export interface PanelContext {
@@ -51,8 +54,9 @@ const DATASOURCE_NAMES: ReadonlyMap<string, string> = new Map([
 ])
 
 type Query =
-	| { readonly kind: "promql"; readonly expr: string }
-	| { readonly kind: "clickhouse"; readonly sql: string }
+	// `note` is what to say about how the query was read, once the panel is imported.
+	| { readonly kind: "promql"; readonly expr: string; readonly note?: string }
+	| { readonly kind: "clickhouse"; readonly sql: string; readonly note?: string }
 	| { readonly kind: "unsupported"; readonly datasource: string }
 
 const ASSUMED_PROMQL =
@@ -66,20 +70,18 @@ function classifyTarget(target: UnknownRecord, panel: UnknownRecord, context: Pa
 	const type = datasourceType(target.datasource ?? panel.datasource, context.variables.datasourceTypes)
 	const expr = asString(target.expr)
 	const sql = asString(target.rawSql) ?? asString(target.query)
-	if (type === "prometheus" && expr !== undefined) return { kind: "promql", expr }
-	if (type === undefined && expr !== undefined) {
-		// An unresolvable datasource (the default, or a bare uid) is read as Prometheus; said once.
-		if (!Arr.contains(context.warnings, ASSUMED_PROMQL)) context.warnings.push(ASSUMED_PROMQL)
-		return { kind: "promql", expr }
+	if (expr !== undefined && speaksPromql(type)) {
+		const note = promqlPluginNote(type)
+		return note === undefined ? { kind: "promql", expr } : { kind: "promql", expr, note }
 	}
+	// An unresolvable datasource (the default, or a bare uid) is read as Prometheus.
+	if (type === undefined && expr !== undefined) return { kind: "promql", expr, note: ASSUMED_PROMQL }
 	if (type !== undefined && CLICKHOUSE_TYPES.has(type) && sql !== undefined)
 		return { kind: "clickhouse", sql }
 	const rawSql = asString(target.rawSql)
-	if (type === undefined && rawSql !== undefined) {
-		// Read as ClickHouse, the only SQL Maple runs; said once, like the PromQL guess.
-		if (!Arr.contains(context.warnings, ASSUMED_CLICKHOUSE)) context.warnings.push(ASSUMED_CLICKHOUSE)
-		return { kind: "clickhouse", sql: rawSql }
-	}
+	// Read as ClickHouse, the only SQL Maple runs, like the PromQL guess.
+	if (type === undefined && rawSql !== undefined)
+		return { kind: "clickhouse", sql: rawSql, note: ASSUMED_CLICKHOUSE }
 	return {
 		kind: "unsupported",
 		datasource: DATASOURCE_NAMES.get(type ?? "") ?? type ?? "an unknown datasource",
@@ -115,6 +117,7 @@ function targetFor(panel: UnknownRecord): GrafanaTarget | undefined {
 	if (meta === undefined || meta.panelType === "markdown") return undefined
 	if (meta.panelType === "line") return chartStyle(panel).target
 	switch (meta.panelType) {
+		case "bar":
 		case "stat":
 		case "gauge":
 		case "table":
@@ -289,6 +292,9 @@ function convertQueryPanel(args: {
 			...(transform === undefined ? undefined : { transform }),
 		})
 	}
+	// Said only of a panel Maple charts; a placeholder has no options to lose and ran no query.
+	noteOnce(query.note, context.warnings)
+	panelOptionWarnings(panel, first, target, title, context.warnings)
 	return {
 		placeholder: false,
 		widget: {
@@ -304,6 +310,48 @@ function convertQueryPanel(args: {
 			}),
 			layout: args.layout,
 		},
+	}
+}
+
+/** Panel and target settings Maple has no equivalent for, named instead of dropped. */
+function panelOptionWarnings(
+	panel: UnknownRecord,
+	first: UnknownRecord,
+	target: GrafanaTarget,
+	title: string,
+	warnings: string[],
+) {
+	if (asString(panel.type) === "barchart") {
+		warnings.push(
+			`Bar chart "${title}" groups by a field in Grafana; Maple draws its series as bars over time.`,
+		)
+	}
+	const transformations = Arr.flatMap(asArray(panel.transformations), (item) => {
+		const record = asRecord(item)
+		return record === null || record.disabled === true ? [] : Arr.fromNullishOr(asString(record.id))
+	})
+	if (transformations.length > 0) {
+		warnings.push(
+			`Panel "${title}" applies Grafana transformations (${Arr.join(transformations, ", ")}); Maple shows the query result untransformed.`,
+		)
+	}
+	const overrides = asArray(asRecord(panel.fieldConfig)?.overrides).length
+	if (overrides > 0) {
+		warnings.push(
+			`Panel "${title}" has ${overrides} field override${overrides === 1 ? "" : "s"} in Grafana; Maple applies the panel's defaults to every series.`,
+		)
+	}
+	// Stat, gauge, table and pie rows take each series' latest value, which is what an instant
+	// query returns; only a chart draws differently.
+	if (first.instant === true && first.range !== true && (target === "line" || target === "bar")) {
+		warnings.push(
+			`Panel "${title}" runs an instant query in Grafana; Maple charts it over the time range.`,
+		)
+	}
+	if (asString(first.format) === "table" && target !== "table") {
+		warnings.push(
+			`Panel "${title}" formats its query as a table in Grafana; Maple draws it as a ${target}.`,
+		)
 	}
 }
 

@@ -428,7 +428,7 @@ const chooseStep = (h: H, model: Model): Html => {
 			]),
 			stepCard(
 				h,
-				{ icon: "ChartBarIcon", title: "What to collect", note: CHANGE_LATER_NOTE },
+				{ icon: "ChartBarIcon", title: "Choose what to collect", note: CHANGE_LATER_NOTE },
 				status !== null && status.connected
 					? [
 							planetscaleFeatureChoice(h, model, status),

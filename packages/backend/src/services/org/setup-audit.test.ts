@@ -1025,6 +1025,7 @@ describe("integration checks", () => {
 					awsConnections: [],
 					supabaseConnection: null,
 					supabaseProjects: [],
+					fleetConnection: null,
 					railwayConnection: null,
 					railwayEnvironments: [],
 					vercelConnection: null,
@@ -1411,6 +1412,109 @@ describe("integration checks", () => {
 		expect(result.status).toBe("fail")
 		expect(result.affected[0]?.note).toBe("missing permission (1 minute ago), never succeeded")
 	})
+
+	it.each([{ enabled: false }, { enabled: true, maxDuration: 0 }])(
+		"CFG-INTEG-02 lists unavailable settings %j without counting a stale error as failed",
+		(settings) => {
+			const state = {
+				dataset: "firewall_events",
+				zoneName: "example.com",
+				lastSuccessAt: null,
+				lastErrorAt: NOW - HOUR,
+				lastError: "OAuth request timed out",
+				settingsJson: JSON.stringify(settings),
+			}
+			const result = check(runSetupAudit(inputs({ cloudflareAnalytics: [state] })), "CFG-INTEG-02")
+			expect(result.status).toBe("pass")
+			expect(result.detail).toContain("not included in the Cloudflare plan")
+			expect(result.affected).toEqual([
+				expect.objectContaining({
+					name: "firewall_events · example.com",
+					note: expect.stringContaining("unavailable"),
+				}),
+			])
+		},
+	)
+
+	it("CFG-INTEG-02 caps unavailable entities on a passing result and retains the total", () => {
+		const states = Arr.makeBy(25, (index) => ({
+			dataset: "firewall_events",
+			zoneName: `zone-${index}.example.com`,
+			lastSuccessAt: null,
+			lastErrorAt: null,
+			lastError: null,
+			settingsJson: JSON.stringify({ enabled: false }),
+		}))
+		const result = check(runSetupAudit(inputs({ cloudflareAnalytics: states })), "CFG-INTEG-02")
+		expect(result.status).toBe("pass")
+		expect(result.affected).toHaveLength(20)
+		expect(result.affectedCount).toBe(25)
+	})
+
+	it("CFG-INTEG-02 keeps available failures failing alongside unavailable datasets", () => {
+		const state = {
+			dataset: "firewall_events",
+			zoneName: "example.com",
+			lastSuccessAt: null,
+			lastErrorAt: NOW - HOUR,
+			lastError: "real upstream error",
+		}
+		const result = check(
+			runSetupAudit(
+				inputs({
+					cloudflareAnalytics: [
+						{ ...state, settingsJson: JSON.stringify({ enabled: false }) },
+						{
+							...state,
+							dataset: "http_requests",
+							settingsJson: JSON.stringify({ enabled: true, maxDuration: 3600 }),
+						},
+					],
+				}),
+			),
+			"CFG-INTEG-02",
+		)
+		expect(result.status).toBe("fail")
+		expect(result.detail).toContain("1 Cloudflare dataset has failed")
+		expect(result.detail).toContain("1 dataset not included in the Cloudflare plan")
+		expect(result.affected).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "http_requests · example.com",
+					// The grouped note leads with the error and appends the success age.
+					note: expect.stringContaining("real upstream error"),
+				}),
+				expect.objectContaining({
+					name: "firewall_events · example.com",
+					note: expect.stringContaining("unavailable"),
+				}),
+			]),
+		)
+	})
+
+	it.each([null, "invalid json", "{}", '{"enabled":"false"}', '{"maxDuration":null}'])(
+		"CFG-INTEG-02 does not suppress an error for unknown settings %s",
+		(settingsJson) => {
+			const result = check(
+				runSetupAudit(
+					inputs({
+						cloudflareAnalytics: [
+							{
+								dataset: "http_requests",
+								zoneName: null,
+								lastSuccessAt: null,
+								lastErrorAt: NOW - HOUR,
+								lastError: "real error",
+								settingsJson,
+							},
+						],
+					}),
+				),
+				"CFG-INTEG-02",
+			)
+			expect(result.status).toBe("fail")
+		},
+	)
 
 	it("CFG-INTEG-03 flags a repository whose sync errored", () => {
 		const report = runSetupAudit(

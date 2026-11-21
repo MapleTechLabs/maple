@@ -89,12 +89,13 @@ const formView = (
 	form: RulesForm.Model,
 	model: Pick<Model, "grants">,
 	wrap: (m: RulesForm.Message) => Message,
+	isPublic = false,
 ) =>
 	h.submodel({
 		slotId: `${form.id}-form`,
 		model: form,
 		view: RulesFormView.view,
-		viewInputs: { canEdit: canManage(model), canAutoApprove: canAutoApprove(model) },
+		viewInputs: { canEdit: canManage(model), canAutoApprove: canAutoApprove(model), isPublic },
 		toParentMessage: wrap,
 	})
 
@@ -163,7 +164,17 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onData: () =>
 			model.repoForm === null
 				? h.empty
-				: formView(h, model.repoForm, model, (message) => Message.GotRepoFormMessage({ message })),
+				: formView(
+						h,
+						model.repoForm,
+						model,
+						(message) => Message.GotRepoFormMessage({ message }),
+						// A repository Maple cannot find in its list is treated as public.
+						!Arr.some(
+							activeRepositories(model),
+							(repo) => repo.id === model.configuring && repo.isPrivate,
+						),
+					),
 	})
 
 const repoDialog = (h: H, model: Model): Html => {

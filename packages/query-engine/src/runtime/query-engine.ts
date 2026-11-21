@@ -278,6 +278,7 @@ export function snapWindowForQueryKind(kind: string): number {
 	return Match.value(kind).pipe(
 		Match.when("attributeKeys", () => 300), // 5 min
 		Match.when("attributeValues", () => 60), // 1 min
+		Match.when("promqlLabelValues", () => 60), // a label's values, as attributeValues
 		// 15 min — environments / commit SHAs / service names rarely change,
 		// and the dashboard route reuses this cache for demo-detection + the
 		// environment dropdown (was a heavy `serviceOverview` probe). This is
@@ -301,6 +302,7 @@ export function cacheTtlForQueryKind(kind: string): number {
 	return Match.value(kind).pipe(
 		Match.when("attributeKeys", () => 300),
 		Match.when("attributeValues", () => 60),
+		Match.when("promqlLabelValues", () => 60),
 		Match.when("facets", () => 900), // matches snapWindowForQueryKind — see comment above
 		Match.orElse(() => 15),
 	)
@@ -433,7 +435,7 @@ const normalizeBucket = (bucket: string | Date | DateTime.Utc): string => {
 	return raw
 }
 
-const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (
+export const validateTimeRange = Effect.fn("QueryEngineService.validateTimeRange")(function* (
 	request: {
 		readonly startTime: string
 		readonly endTime: string

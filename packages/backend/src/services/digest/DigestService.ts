@@ -13,7 +13,7 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import type { ClerkClient } from "@clerk/backend"
+import * as Clerk from "@distilled.cloud/clerk"
 import {
 	Clock,
 	Array as Arr,
@@ -45,7 +45,6 @@ import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { EdgeCacheService } from "@maple/cache"
-import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import * as CH from "@maple/query-engine/ch"
@@ -55,7 +54,7 @@ import { verifyUnsubscribeToken } from "./unsubscribe-token"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { runWeeklyDigestTick } from "./weekly-digest-tick"
-import { clerkClientFor } from "@maple/auth"
+import { type ClerkApi, type ClerkApiServices, clerkApiFor } from "@maple/auth"
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
 
 const toPersistenceError = (error: unknown) =>
@@ -871,22 +870,23 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 		// Nine bound parameters per row, far under Postgres's 65535 per statement.
 		const MEMBERSHIP_UPSERT_CHUNK = 500
 
-		const paginateClerk = <T>(
+		const paginateClerk = <T, E>(
+			api: ClerkApi,
 			spanName: string,
 			attributes: Readonly<Record<string, string>>,
 			fetchPage: (params: {
 				limit: number
 				offset: number
-			}) => Promise<{ data: T[]; totalCount: number }>,
+			}) => Effect.Effect<{ data: ReadonlyArray<T>; total_count: number }, E, ClerkApiServices>,
 			errorMessage: string,
 		) =>
 			Stream.paginate(0, (offset: number) =>
-				clerkRequest(spanName, attributes, () => fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
+				api.run(fetchPage({ limit: CLERK_PAGE_SIZE, offset })).pipe(
 					Effect.mapBoth({
 						onFailure: () => new DigestPersistenceError({ message: errorMessage }),
 						onSuccess: (page) => {
 							const next = offset + page.data.length
-							const done = next >= page.totalCount || page.data.length === 0
+							const done = next >= page.total_count || page.data.length === 0
 							return [page.data, done ? Option.none<number>() : Option.some(next)] as const
 						},
 					}),
@@ -894,12 +894,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			).pipe(Stream.runCollect)
 
 		const fetchAllClerkMemberships = Effect.fn("DigestService.fetchAllClerkMemberships")(function* (
-			clerk: ClerkClient,
+			clerk: ClerkApi,
 		) {
 			const orgs = yield* paginateClerk(
+				clerk,
 				"Clerk.organizations.getOrganizationList",
 				{},
-				(params) => clerk.organizations.getOrganizationList(params),
+				(params) => Clerk.listOrganizations(params),
 				"Failed to list Clerk organizations",
 			)
 
@@ -908,19 +909,17 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 				(org) =>
 					Effect.gen(function* () {
 						const members = yield* paginateClerk(
+							clerk,
 							"Clerk.organizations.getOrganizationMembershipList",
 							{ orgId: org.id },
 							(params) =>
-								clerk.organizations.getOrganizationMembershipList({
-									organizationId: org.id,
-									...params,
-								}),
+								Clerk.listOrganizationMemberships({ organization_id: org.id, ...params }),
 							`Failed to list Clerk members for org ${org.id}`,
 						)
 
 						return Arr.flatMap(members, (member) => {
-							const memberEmail = member.publicUserData?.identifier
-							const memberUserId = member.publicUserData?.userId
+							const memberEmail = member.public_user_data?.identifier
+							const memberUserId = member.public_user_data?.user_id
 							if (!memberEmail || !memberUserId) return []
 							return [
 								{
@@ -1025,7 +1024,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/back
 			const now = yield* Clock.currentTimeMillis
 			if (now % 86_400_000 >= SYNC_WINDOW_MS) return
 
-			const clerk = clerkClientFor(env)
+			const clerk = clerkApiFor(env)
 			if (clerk === undefined) return
 
 			const memberships = yield* fetchAllClerkMemberships(clerk)

@@ -15,6 +15,7 @@ import * as m from "../paraglide/messages.js";
 import HeroCta from "./HeroCta.astro";
 import PixelIcon from "./icons/PixelIcon.astro";
 import RegionChip from "./RegionChip.astro";
+import ProductFrame from "./marketing/ProductFrame.astro";
 import { getOffer, isUsageCredit, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
 
 const offer = await getOffer();
@@ -49,7 +50,10 @@ const RETENTION_DAYS = 30;
 	<div class="pricing-hero__inner shell">
 		{/* Inside the shell so the artwork tracks the content column on wide screens
 		    instead of drifting to the viewport edge. */}
-		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="" decoding="async" />
+		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="Engraving of a merchant road winding past fields toward a Roman aqueduct" decoding="async" />
+		{/* Copy beside the product from lg. Under lg the rates follow the buttons: the price comes first here. */}
+		<div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-center lg:gap-14">
+		<div class="min-w-0">
 		<div class="mb-4">
 			<span
 				class="pricing-hero__label"
@@ -115,6 +119,10 @@ const RETENTION_DAYS = 30;
 				{m.pricing_hero_estimate()}
 			</a>
 		</div>
+		</div>
+		{/* The overview's totals row: the three volumes the rate card meters. */}
+		<ProductFrame surface="usage" label={m.pricing_hero_shot()} loading="eager" class="pricing-hero__product hidden lg:block" />
+		</div>
 
 		{/* The rate card. One cell per metered signal: label, rate, then what's
 		    included. This is the whole price list; the offer card below repeats
@@ -172,3 +180,10 @@ const RETENTION_DAYS = 30;
 		</div>
 	</div>
 </section>
+
+<style>
+	/* The pricing page's panels are sharp; the capture's frame follows them. */
+	:global(.pricing-hero__product .live-frame) {
+		border-radius: 0;
+	}
+</style>

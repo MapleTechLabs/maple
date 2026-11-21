@@ -14,11 +14,13 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import { SHAREABLE_WIDGET_KINDS, unsupportedShareWidgets } from "../kit/share-support"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { type Access, boardShareOf, ShareMessage, shareUrl } from "./share"
+import { type Access, boardShareOf, EXPIRY_PRESETS, ShareMessage, type ShareRow, shareUrl } from "./share"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
-import { Array as Arr } from "effect"
+import { Array as Arr, DateTime, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -104,6 +106,47 @@ export const shareLinkRow = (
 	}),
 ]
 
+/** When the board link stops working: a preset picker over the stored expiry. */
+const expiryRow = (h: H, model: Model, board: ShareRow, timeZone: string): Html => {
+	const expiresAt = board.expiresAt
+	const when =
+		expiresAt === undefined
+			? null
+			: formatTimestampInTimezone(expiresAt, { timeZone, style: "range", withYear: true })
+	const expiresMs = expiresAt === undefined ? undefined : Option.getOrUndefined(DateTime.make(expiresAt))
+	const expired =
+		expiresMs !== undefined && model.nowMs !== null && DateTime.toEpochMillis(expiresMs) <= model.nowMs
+	return hstack(h, { gap: "3", justify: "between" }, [
+		vstack(h, { gap: "0.5", className: "min-w-0" }, [
+			typography(h, { size: "sm", weight: "medium", as: "div" }, ["Link expires"]),
+			typography(h, { size: "xs", tone: expired ? "error" : "muted", as: "p" }, [
+				when === null
+					? "The link works until you stop sharing."
+					: expired
+						? `Expired ${when}. Pick a new expiry to bring it back.`
+						: `Stops working ${when}.`,
+			]),
+		]),
+		nativeSelect(
+			h,
+			{
+				size: "sm",
+				className: "w-36 shrink-0",
+				value: expiresAt === undefined ? "never" : "current",
+				isDisabled: model.sharing.isBusy,
+				attributes: [
+					h.AriaLabel("Link expires"),
+					h.OnChange((value) => wrap(ShareMessage.PickedExpiry({ value }))),
+				],
+			},
+			[
+				...(when === null ? [] : [nativeOption("current", expired ? "Expired" : "Scheduled")]),
+				...Arr.map(EXPIRY_PRESETS, (preset) => nativeOption(preset.value, preset.label)),
+			],
+		),
+	])
+}
+
 const accessOption = (
 	h: H,
 	config: RadioGroup.RadioGroupViewConfig<Message>,
@@ -165,6 +208,7 @@ const panelContent = (h: H, model: Model, context: PageContext): ReadonlyArray<H
 					),
 					"Anyone using the current link loses access to this dashboard. Chart embeds keep working.",
 				)),
+		...(boardShare === undefined ? [] : [expiryRow(h, model, boardShare, context.timeZone)]),
 		...(unsupported.length > 0 && boardShare !== undefined
 			? [
 					noticeRow(h, "muted", [

@@ -38,16 +38,38 @@ describe("parse", () => {
 		})
 	})
 
-	it("reads Prometheus 3 quoted metric and label names", () => {
-		const expr = ok('{"http.server.duration", "service.name"="api"}')
+	it("reads Prometheus 3 quoted names: the metric name as written, label names in the underscore form", () => {
+		const expr = ok('{"http.server.duration", "service.name"="api", "1x-y..z"="v"}')
 		expect(expr).toMatchObject({
 			type: "VectorSelector",
 			name: "http.server.duration",
 			matchers: [
 				{ name: "__name__", op: "=", value: "http.server.duration" },
-				{ name: "service.name", op: "=", value: "api" },
+				{ name: "service_name", op: "=", value: "api" },
+				{ name: "_1x_y_z", op: "=", value: "v" },
 			],
 		})
+	})
+
+	it("escapes quoted label names in grouping, matching and label function arguments", () => {
+		expect(ok('sum by ("http.route", __name__) (x)')).toMatchObject({
+			grouping: ["http_route", "__name__"],
+		})
+		expect(ok('a * on ("k.8s") group_left ("x.y") b')).toMatchObject({
+			matching: { labels: ["k_8s"], include: ["x_y"] },
+		})
+		expect(ok('label_replace(x, "dst.a", "$1", "src.b", "(.*)")')).toMatchObject({
+			args: [{}, { value: "dst_a" }, { value: "$1" }, { value: "src_b" }, { value: "(.*)" }],
+		})
+		expect(ok('label_join(x, "d.a", "-", "s.1", "s.2")')).toMatchObject({
+			args: [{}, { value: "d_a" }, { value: "-" }, { value: "s_1" }, { value: "s_2" }],
+		})
+		expect(ok('count_values("v.x", x)')).toMatchObject({ param: { value: "v_x" } })
+		expect(ok('count_values(("v.x"), x)')).toMatchObject({ param: { expr: { value: "v_x" } } })
+		expect(ok('label_replace(x, ("dst.a"), "$1", (("src.b")), "(.*)")')).toMatchObject({
+			args: [{}, { expr: { value: "dst_a" } }, {}, { expr: { expr: { value: "src_b" } } }, {}],
+		})
+		expect(ok('x{foo__bar="1"}')).toMatchObject({ matchers: [{}, { name: "foo__bar" }] })
 	})
 
 	it("takes the metric name from a __name__ equality matcher", () => {
@@ -460,11 +482,9 @@ describe("fourth-review parser regressions", () => {
 		expect(parseDurationMs("1.0006")).toBe(1000)
 	})
 
-	it("refuses limitk and limit_ratio as Prometheus does without experimental functions", () => {
-		const message =
-			"limitk() and limit_ratio() are experimental and must be enabled with --enable-feature=promql-experimental-functions"
-		expect(errorOf("limitk(1, up)")).toBe(message)
-		expect(errorOf("limit_ratio(0.5, up)")).toBe(message)
+	it("parses limitk and limit_ratio", () => {
+		expect(errorOf("limitk(1, up)")).toBe("parsed")
+		expect(errorOf("limit_ratio(0.5, up)")).toBe("parsed")
 	})
 
 	it("skips a comment between @ and its timestamp", () => {

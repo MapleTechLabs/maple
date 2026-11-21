@@ -16,6 +16,7 @@ import {
 import { pageHref, previewIdAttr, type RenderOptions, renderDocument, renderHeader } from "./document"
 import { escapeHtml } from "@maple/strings"
 import { safeUrl } from "./escape"
+import { OG_CARD_HEIGHT, OG_CARD_WIDTH, statusOgAlt, statusOgCard, statusOgCardVersion } from "./og-card"
 import {
 	COMPONENT_STATUS_LABEL,
 	DAY_STATE_LABEL,
@@ -354,20 +355,48 @@ const statusSummary = (
 				", ",
 			)}.`
 
+/** Where the social preview lives, relative to the page. */
+export const OG_IMAGE_PATH = "/og.png"
+
 /**
- * Link previews (Open Graph and Twitter) and the canonical address. The address needs
- * `publicUrl`; the image is the logo, when there is one.
+ * Link previews (Open Graph and Twitter) and the canonical address, both from `publicUrl`. The
+ * image is the drawn card; its `?v=` changes with anything drawn on it, so a chat app that caches
+ * previews by URL fetches the new state.
  */
 const shareTags = (
 	snapshot: StatusPagePublicSnapshot,
+	freshness: StatusPageFreshness,
 	title: string,
 	summary: string,
 	options: RenderOptions,
 ): string => {
 	const url = options.publicUrl === undefined ? null : safeUrl(`${options.publicUrl}/`, ["https:", "http:"])
-	const image = safeUrl(snapshot.page.logoUrl, ["https:"]) ?? safeUrl(snapshot.page.logoDarkUrl, ["https:"])
+	const card = statusOgCard(snapshot, freshness, url === null ? null : new URL(url).host)
+	// A copy with no public address cannot link its card, so it shows the logo, as before cards.
+	const drawn =
+		options.publicUrl === undefined
+			? null
+			: safeUrl(`${options.publicUrl}${OG_IMAGE_PATH}?v=${statusOgCardVersion(card)}`, [
+					"https:",
+					"http:",
+				])
+	const image =
+		drawn ?? safeUrl(snapshot.page.logoUrl, ["https:"]) ?? safeUrl(snapshot.page.logoDarkUrl, ["https:"])
 	const meta = (attr: "property" | "name", key: string, value: string) =>
 		`<meta ${attr}="${key}" content="${escapeHtml(value)}">`
+	const imageTags =
+		drawn === null
+			? image === null
+				? []
+				: [meta("property", "og:image", image), meta("name", "twitter:image", image)]
+			: [
+					meta("property", "og:image", drawn),
+					meta("property", "og:image:type", "image/png"),
+					meta("property", "og:image:width", String(OG_CARD_WIDTH)),
+					meta("property", "og:image:height", String(OG_CARD_HEIGHT)),
+					meta("property", "og:image:alt", statusOgAlt(card)),
+					meta("name", "twitter:image", drawn),
+				]
 	return Arr.join(
 		[
 			url === null ? "" : `<link rel="canonical" href="${escapeHtml(url)}">`,
@@ -376,11 +405,10 @@ const shareTags = (
 			meta("property", "og:title", title),
 			meta("property", "og:description", summary),
 			url === null ? "" : meta("property", "og:url", url),
-			image === null ? "" : meta("property", "og:image", image),
-			meta("name", "twitter:card", "summary"),
+			meta("name", "twitter:card", drawn === null ? "summary" : "summary_large_image"),
 			meta("name", "twitter:title", title),
 			meta("name", "twitter:description", summary),
-			image === null ? "" : meta("name", "twitter:image", image),
+			...imageTags,
 		],
 		"",
 	)
@@ -462,7 +490,7 @@ export const renderPage = (
 		bodyAttrs: ` data-generated-at="${snapshot.generatedAt}" data-updated-at="${freshness.updatedAt}" data-stale-after="${STATUS_PAGE_STALE_AFTER_MS}" data-freshness="${freshness._tag}"`,
 		// Share tags would show a non-public page's status in link previews.
 		head: isPublic
-			? `${shareTags(snapshot, title, summary, options)}<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`
+			? `${shareTags(snapshot, freshness, title, summary, options)}<link rel="alternate" type="application/atom+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.atom")}"><link rel="alternate" type="application/rss+xml" title="${escapeHtml(snapshot.page.name)} status" href="${pageHref(options, "/feed.rss")}">`
 			: `<meta name="robots" content="noindex">`,
 		script: PAGE_SCRIPT,
 	})

@@ -1,8 +1,12 @@
 // BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
-import { Clock, Context, Effect, Layer, Metric, type Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Metric, type Schema, String as Str } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { QueryEngineExecuteRequest, QueryEngineExecuteResponse } from "@maple/domain/query-engine"
-import type { QueryEngineTimeoutError, TenantContext } from "@maple/domain/http"
+import {
+	QueryEngineValidationError,
+	type QueryEngineTimeoutError,
+	type TenantContext,
+} from "@maple/domain/http"
 import {
 	buildCacheKey,
 	buildDirectRouteCacheKey,
@@ -11,6 +15,7 @@ import {
 	makeQueryEngineEvaluateSeries,
 	makeQueryEngineExecute,
 	resolveDirectRouteCachePolicy,
+	validateTimeRange,
 	withTimeout,
 	type BucketGroupObs,
 	type GroupedAlertObservation,
@@ -36,6 +41,7 @@ import {
 } from "@maple/query-engine/registry"
 import { EdgeCacheService } from "@maple/cache"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import * as QueryEngineMetrics from "@maple/backend/observability/QueryEngineMetrics"
 
 // QueryEngineService — caching + orchestration. The pure lowering (validation,
@@ -95,7 +101,55 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const warehouse = yield* WarehouseQueryService
 			const edgeCache = yield* EdgeCacheService
 			const bucketCache = yield* BucketCacheService
-			const executeImpl = makeQueryEngineExecute(warehouse)
+			const runtimeExecute = makeQueryEngineExecute(warehouse)
+			// Stateless over the warehouse, so built here rather than adding a layer requirement.
+			const promql = yield* PromqlQueryService.make
+			// PromQL label discovery answers like an attribute-values scan, cached the same way.
+			const executeImpl = (tenant: TenantContext, request: QueryEngineExecuteRequest) => {
+				const query = request.query
+				if (query.kind !== "promqlLabelValues") return runtimeExecute(tenant, request)
+				// The same range ceiling as every other kind, so a year-wide window is a 400, not a scan.
+				return validateTimeRange(request).pipe(
+					Effect.flatMap(({ startMs, endMs }) =>
+						promql.labelValues(tenant, {
+							name: query.label,
+							// A blank selector is no selector, as an absent one: every value of the label.
+							matches:
+								query.match === undefined || Str.trim(query.match) === ""
+									? []
+									: [query.match],
+							startMs,
+							endMs,
+						}),
+					),
+					Effect.map(
+						({ data: values }) =>
+							new QueryEngineExecuteResponse({
+								result: {
+									kind: "attributeValues",
+									source: "metrics",
+									data: Arr.map(values, (value) => ({ value, count: 0 })),
+								},
+							}),
+					),
+					Effect.catchTags({
+						"@maple/backend/promql/PromqlBadQueryError": (error) =>
+							Effect.fail(
+								new QueryEngineValidationError({
+									message: "Invalid PromQL label values query",
+									details: [error.message],
+								}),
+							),
+						"@maple/backend/promql/PromqlExecutionError": (error) =>
+							Effect.fail(
+								new QueryEngineValidationError({
+									message: "PromQL label values query could not run",
+									details: [error.message],
+								}),
+							),
+					}),
+				)
+			}
 			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
 			const evaluateSeriesImpl = makeQueryEngineEvaluateSeries(warehouse)
 

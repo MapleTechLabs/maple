@@ -12,6 +12,7 @@
 		"./dev-urls": "./src/dev-urls.ts",
 		"./env": "./src/env.ts",
 		"./isolate-age": "./src/cloudflare/isolate-age.ts",
+		"./ingest-role-membership": "./src/planetscale/ingest-role-membership.ts",
 		"./profile": "./src/profile.ts",
 		"./r2-credentials": "./src/cloudflare/r2-credentials.ts",
 		"./secret": "./src/secret.ts",
@@ -32,11 +33,14 @@
 	"dependencies": {
 		"@alchemy.run/aws": "catalog:alchemy",
 		"@alchemy.run/cloudflare": "catalog:alchemy",
+		"@alchemy.run/sql": "2.0.0-beta.87",
 		"@distilled.cloud/aws": "1.0.0-rc.20",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.20",
+		"@distilled.cloud/planetscale": "1.0.0-rc.20",
 		"@maple-dev/alchemy": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/alchemy-portless": "workspace:*",
+		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"

@@ -10,13 +10,15 @@ interface Props {
 	title: string;
 	lede: string;
 	artwork?: string;
+	/** What the artwork shows. Literal English, like the captures' alt text. */
+	artworkAlt?: string;
 }
 
-const { title, lede, artwork } = Astro.props;
+const { title, lede, artwork, artworkAlt = "" } = Astro.props;
 ---
 
 <section class:list={["relative overflow-hidden drenched-amber", { "illustrated-cta": artwork }]}>
-	{artwork && <img class="cta-art" src={artwork} alt="" width="2172" height="724" loading="lazy" decoding="async" />}
+	{artwork && <img class="cta-art" src={artwork} alt={artworkAlt} width="2172" height="724" loading="lazy" decoding="async" />}
 	<div class="relative shell py-24 text-center md:py-32 cta-content">
 		<h2
 			class="mx-auto max-w-[24ch] font-display text-4xl font-medium leading-[1.04] tracking-[-0.02em] sm:text-5xl"

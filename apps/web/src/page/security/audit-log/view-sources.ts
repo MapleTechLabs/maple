@@ -10,6 +10,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
+import { isDataIntegration } from "../../../route/data-integrations"
 import { type IntegrationBrand, integrationIconPlate } from "../../kit/integration-empty"
 import { relativeTime } from "../../kit/relative-time"
 import { providerBrand } from "../kit/audit-brands"
@@ -55,15 +56,21 @@ const COPY = {
 	aws: {
 		brand: providerBrand("aws"),
 		sends: "CloudTrail management changes: IAM, keys, sign-ins, resources",
-		// Holds whether the module is off or on but not granted yet: either way the stack needs it.
-		turnOn: "Run the AWS connection's setup script again with the Security scan module on, so the role grants it.",
-		connect: "Connect an AWS account with the Security scan module on.",
+		// Holds whether the switch is off or on but not granted yet: the flow shows which, and the script.
+		turnOn: "Turn on Audit log on the AWS connection, then update its stack.",
+		connect: "Connect an AWS account with Audit log on.",
 	},
 	github: {
 		brand: providerBrand("github"),
 		sends: "Members, teams, repositories, branch protections, rulesets and deploy keys",
 		turnOn: "Turn on Audit log on the GitHub source in Sources.",
 		connect: "Install the Maple GitHub App on your organization.",
+	},
+	fleet: {
+		brand: providerBrand("fleet"),
+		sends: "Fleet admin activity: users, policies, queries, scripts and settings",
+		turnOn: "",
+		connect: "Connect your Fleet server with a read-only API token.",
 	},
 } satisfies Record<AuditTrailProvider, SourceCopy>
 
@@ -84,7 +91,11 @@ const STATE = {
 	not_connected: { label: "Not connected", tone: "neutral" },
 } as const satisfies Record<AuditTrailSourceState, { label: string; tone: string }>
 
-const setupHref = (provider: string) => hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
+/** Data integrations connect in Sources; the rest (Fleet) on their integrations page. */
+const setupHref = (provider: string) =>
+	isDataIntegration(provider)
+		? hrefOf(AppRoute.SourcesNew({ search: { integration: provider } }))
+		: hrefOf(AppRoute.Integrations({ search: { integration: provider } }))
 
 const eventCount = (events: number) => `${events.toLocaleString("en-US")} event${events === 1 ? "" : "s"}`
 

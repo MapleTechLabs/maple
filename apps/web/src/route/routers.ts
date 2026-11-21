@@ -69,7 +69,7 @@ const routers = {
 	SelectPlan: pipe(path("select-plan"), search(Search.SelectPlanSearch), Route.mapTo(AppRoute.SelectPlan)),
 	ServiceMap: pipe(path("service-map"), search(Search.ServiceMapSearch), Route.mapTo(AppRoute.ServiceMap)),
 	Settings: pipe(settingsUrl, Route.mapTo(AppRoute.Settings)),
-	Sources: pipe(path("sources"), Route.mapTo(AppRoute.Sources)),
+	Sources: pipe(path("sources"), search(Search.SourcesSearch), Route.mapTo(AppRoute.Sources)),
 	SourcesNew: pipe(
 		path("sources", "new"),
 		search(Search.SourcesNewSearch),
@@ -247,6 +247,7 @@ const routers = {
 		search(Search.SecurityCloudSearch),
 		Route.mapTo(AppRoute.SecurityCloud),
 	),
+	SecurityDevices: pipe(path("security", "devices"), Route.mapTo(AppRoute.SecurityDevices)),
 	SecurityAuditLog: pipe(
 		path("security", "audit-log"),
 		search(Search.SecurityAuditLogSearch),

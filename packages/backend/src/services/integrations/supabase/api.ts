@@ -1,10 +1,22 @@
-// Supabase Management API calls made with an OAuth access token. Field names follow the OpenAPI specs
-// (https://api.supabase.com/api/v1-json, v2-json for log drains); extra fields are ignored so
-// additions never break decode.
+// Supabase Management API calls made with an OAuth access token: through `@distilled.cloud/supabase`
+// where its spec has the endpoint, over plain HTTP for the OAuth revoke and the v2 log drains it
+// lacks. Each call decodes only the fields Maple reads, so additions never break decode.
+import * as Supabase from "@distilled.cloud/supabase"
 import { SupabaseProjectRef } from "@maple/primitives"
-import { Duration, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
+import * as VendorSdk from "../vendor-sdk"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 
@@ -55,7 +67,6 @@ const ProjectSchema = Schema.Struct({
 })
 export type SupabaseProject = typeof ProjectSchema.Type
 
-const decodeJsonArray = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 const decodeOrganization = Schema.decodeUnknownOption(OrganizationSchema)
 const decodeProject = Schema.decodeUnknownOption(ProjectSchema)
 
@@ -144,28 +155,26 @@ export const supabaseClient = (
 		rateLimitResetHeader: "x-ratelimit-reset",
 	})
 
-const getArray = (
-	httpClient: HttpClient.HttpClient,
-	baseUrl: string,
-	path: string,
-	accessToken: string,
-	what: string,
-) =>
-	supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
-		.text({ path, operation: what })
-		.pipe(
-			Effect.flatMap((text) =>
-				decodeJsonArray(text).pipe(
-					Effect.mapError(
-						() =>
-							new SupabaseApiError({
-								message: `Supabase returned an unexpected body while ${what}`,
-								kind: "invalid_response",
-							}),
-					),
-				),
-			),
-		)
+const STATUS_BY_TAG = Rec.fromEntries(
+	Arr.map(Rec.toEntries(Supabase.HTTP_STATUS_MAP), ([status, error]) => [error.name, Number(status)]),
+)
+
+/** A Management API client over the SDK, with the access token as its bearer. */
+export const supabaseSdk = (httpClient: HttpClient.HttpClient, baseUrl: string, accessToken: string) =>
+	VendorSdk.make({
+		httpClient,
+		peerService: "supabase",
+		sdk: Layer.mergeAll(
+			Supabase.credentials({ accessToken: Redacted.make(accessToken), apiBaseUrl: baseUrl }),
+			Layer.succeed(Supabase.Retry.Retry, { while: () => false }),
+		),
+		statusByTag: STATUS_BY_TAG,
+		toError: toSupabaseError,
+		timeout: REQUEST_TIMEOUT,
+		rateLimitResetHeader: "x-ratelimit-reset",
+	})
+
+const UnknownArray = Schema.Array(Schema.Unknown)
 
 /** Organizations the token reaches. A Management API OAuth grant covers exactly one. */
 export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(function* (
@@ -173,12 +182,10 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 	baseUrl: string,
 	accessToken: string,
 ) {
-	const items = yield* getArray(
-		httpClient,
-		baseUrl,
-		"/v1/organizations",
-		accessToken,
-		"listing organizations",
+	const items = yield* supabaseSdk(httpClient, baseUrl, accessToken).call(
+		UnknownArray,
+		Supabase.v1ListAllOrganizations({}),
+		{ operation: "listing organizations" },
 	)
 	const organizations = Arr.flatMap(items, (item) => Option.toArray(decodeOrganization(item)))
 	// A dropped org would make a partial listing look complete, so any undecodable item fails.
@@ -200,7 +207,11 @@ export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 	baseUrl: string,
 	accessToken: string,
 ) {
-	const items = yield* getArray(httpClient, baseUrl, "/v1/projects", accessToken, "listing projects")
+	const items = yield* supabaseSdk(httpClient, baseUrl, accessToken).call(
+		UnknownArray,
+		Supabase.v1ListAllProjects({}),
+		{ operation: "listing projects" },
+	)
 	const projects = Arr.flatMap(items, (item) => Option.toArray(decodeProject(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.projects_listed": items.length,

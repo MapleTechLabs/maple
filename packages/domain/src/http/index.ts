@@ -35,6 +35,7 @@ export * from "./device-credentials"
 export * from "./audit-log"
 export * from "./audit-trail"
 export * from "./cloud-security"
+export * from "./device-security"
 export * from "./analyst-access"
 export * from "./alerts"
 export * from "./escalation-chains"
@@ -58,6 +59,7 @@ export {
 	OrganizationAccessDeniedError,
 	OrganizationWrongRegionError,
 	LimitedRoleError,
+	type SessionImpersonation,
 	type TenantContext,
 } from "./current-tenant"
 export * from "./dashboard-sections"

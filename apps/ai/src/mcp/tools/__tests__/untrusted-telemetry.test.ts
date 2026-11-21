@@ -6,6 +6,7 @@ import { registerErrorDetailTool } from "../error-detail"
 import { registerSearchLogsTool } from "../search-logs"
 import { toolDocOf } from "../registry-core"
 import type { McpToolRegistrar } from "../types"
+import { ignoreFamily } from "../types"
 
 type ErrorDetail = typeof ErrorDetailOutput.Type
 type SearchLogs = typeof SearchLogsOutput.Type
@@ -15,6 +16,7 @@ let renderErrorDetail: (output: ErrorDetail) => string = () =>
 	expect.unreachable("error_detail not registered")
 let renderSearchLogs: (output: SearchLogs) => string = () => expect.unreachable("search_logs not registered")
 const registrar: McpToolRegistrar = {
+	family: ignoreFamily,
 	define: (spec) => {
 		if (spec.name === "error_detail") {
 			renderErrorDetail = (output) =>

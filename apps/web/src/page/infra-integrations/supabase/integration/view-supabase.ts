@@ -16,11 +16,11 @@ import type { SupabaseProjectRow } from "../model"
 import { SUPABASE_BRAND, SUPABASE_NOT_CONFIGURED } from "../connect"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
+import { manageLock, type Model } from "../../../integrations/model"
 import { SupabaseMessage, type SupabaseSwitchKind } from "./supabase"
 import { featureAcross, projectSwitches } from "./supabase-features"
 import { INTEGRATION_FEATURES, type IntegrationFeatureId } from "@maple/domain/integration-features"
-import { featureList } from "../../../kit/feature-list"
+import { type FeatureRow, featureList, featurePanel } from "../../../kit/feature-list"
 import {
 	connectedIntegrationCard,
 	disconnectButton,
@@ -275,29 +275,35 @@ const FEATURE_KIND = {
 } as const satisfies Record<IntegrationFeatureId<"supabase">, SupabaseSwitchKind>
 
 /** Each feature across the organization's projects: a switch sets it on every project. */
-export const supabaseFeatures = (h: H, model: Model, status: SupabaseIntegrationStatus): Html =>
-	featureList(h, {
-		idPrefix: "supabase-feature",
-		className: "bg-card",
-		rows: Arr.map(INTEGRATION_FEATURES.supabase, (spec) => {
-			const kind = FEATURE_KIND[spec.id]
-			const across = featureAcross(model.supabaseCard.pending, status.projects, kind)
-			return {
-				spec,
-				isChecked: across.isChecked,
-				isDisabled: across.isSaving || across.targets.length === 0,
-				onToggle: toHub(SupabaseMessage.ToggledFeature({ kind })),
-				note: across.isSaving
-					? { _tag: "Pending", text: "Saving" }
-					: {
-							_tag: "Info",
-							text:
-								across.blockedReason ??
-								`${across.onCount} of ${countLabel(across.total, "project")}`,
-						},
-			}
-		}),
+export const supabaseFeatures = (
+	h: H,
+	model: Model,
+	status: SupabaseIntegrationStatus,
+	place: "card" | "flow" = "card",
+): Html => {
+	const rows: ReadonlyArray<FeatureRow<Message>> = Arr.map(INTEGRATION_FEATURES.supabase, (spec) => {
+		const kind = FEATURE_KIND[spec.id]
+		const across = featureAcross(model.supabaseCard.pending, status.projects, kind)
+		return {
+			spec,
+			isChecked: across.isChecked,
+			isDisabled: across.isSaving || across.targets.length === 0,
+			onToggle: toHub(SupabaseMessage.ToggledFeature({ kind })),
+			note: across.isSaving
+				? { _tag: "Pending", text: "Saving" }
+				: {
+						_tag: "Info",
+						text:
+							across.blockedReason ??
+							`${across.onCount} of ${countLabel(across.total, "project")}`,
+					},
+		}
 	})
+	const lockReason = manageLock(model)
+	return place === "card"
+		? featurePanel(h, { idPrefix: "supabase-feature", rows, error: null, lockReason })
+		: featureList(h, { idPrefix: "supabase-feature", rows, lockReason })
+}
 
 export const SUPABASE_LOGS_NOTE =
 	"Logs are pulled every minute through your grant and count toward ingest. A log drain has Supabase push them instead: it needs a Pro plan and Supabase bills it per drain."

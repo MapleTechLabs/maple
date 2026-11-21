@@ -1190,7 +1190,11 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
-	const connectedRepo = (svc: GithubConnectService["Service"], repo: VcsRepository["Service"]) =>
+	const connectedRepo = (
+		svc: GithubConnectService["Service"],
+		repo: VcsRepository["Service"],
+		isPrivate = true,
+	) =>
 		Effect.gen(function* () {
 			const orgId = asOrgId("org_test")
 			const { state } = yield* svc.startConnect(orgId, asUserId("user_1"), {
@@ -1206,7 +1210,7 @@ describe("GithubConnectService", () => {
 					fullName: "octo/repo",
 					defaultBranch: "main",
 					htmlUrl: "https://github.com/octo/repo",
-					isPrivate: true,
+					isPrivate,
 					isArchived: false,
 				},
 			])
@@ -1272,6 +1276,54 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(stored.dailyLimit, 20)
 			assert.strictEqual(stored.automaticReviewLimit, 3)
 			assert.strictEqual(stored.feedbackScope, "off")
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setPrReviewConfig turns Maple tools off and on for a private repository", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ mapleToolAccess: false }),
+			)
+			assert.strictEqual((yield* svc.getPrReviewConfig(orgId, repository.id)).mapleToolAccess, false)
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ mapleToolAccess: true }),
+			)
+			assert.strictEqual((yield* svc.getPrReviewConfig(orgId, repository.id)).mapleToolAccess, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setPrReviewConfig refuses to turn Maple tools on for a public repository", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo, false)
+			const exit = yield* svc
+				.setPrReviewConfig(
+					orgId,
+					repository.id,
+					new PrReviewRepositoryConfig({ mapleToolAccess: true }),
+				)
+				.pipe(Effect.exit)
+			assert.ok(Schema.is(IntegrationsValidationError)(findError(exit)))
+			assert.isUndefined((yield* svc.getPrReviewConfig(orgId, repository.id)).mapleToolAccess)
+			// Off saves, and so does the rest of the form.
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({ mapleToolAccess: false, dailyLimit: 5 }),
+			)
+			assert.strictEqual((yield* svc.getPrReviewConfig(orgId, repository.id)).dailyLimit, 5)
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 

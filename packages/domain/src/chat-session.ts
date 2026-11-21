@@ -566,15 +566,25 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 export type PullRequestTurnRepository = "public" | "private"
 
 /**
- * A pull request review's or reply's unattended turn. The pull request's author or commenter wrote
- * what it reads, and no Maple user stands behind them.
+ * Whether a pull request pass may read telemetry: only on a private repository, and only while its
+ * settings leave Maple's tools on. A public repository never does, whatever its settings say.
  */
-export const pullRequestTurnOrigin = (repository: {
-	readonly isPrivate: boolean
-}): Extract<ChatTurnOrigin, { readonly kind: "autonomous" }> => ({
+export const pullRequestReadsTelemetry = (
+	repository: { readonly isPrivate: boolean },
+	config: { readonly mapleToolAccess?: boolean },
+): boolean => repository.isPrivate && config.mapleToolAccess !== false
+
+/**
+ * A pull request review's or reply's unattended turn. The pull request's author or commenter wrote
+ * what it reads, and no Maple user stands behind them. With Maple's tools off it runs as public.
+ */
+export const pullRequestTurnOrigin = (
+	repository: { readonly isPrivate: boolean },
+	config: { readonly mapleToolAccess?: boolean },
+): Extract<ChatTurnOrigin, { readonly kind: "autonomous" }> => ({
 	kind: "autonomous",
 	startedBy: { kind: "person", roles: [] },
-	repository: repository.isPrivate ? "private" : "public",
+	repository: pullRequestReadsTelemetry(repository, config) ? "private" : "public",
 })
 
 /** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */

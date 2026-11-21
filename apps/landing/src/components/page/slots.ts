@@ -28,7 +28,9 @@ import LiveStatusPage from "../live/LiveStatusPage.astro"
 import LiveUptime from "../live/LiveUptime.astro"
 import LogsVolume from "./artifacts/LogsVolume.astro"
 import PrReview from "./artifacts/PrReview.astro"
+import StatusPageHero from "./artifacts/StatusPageHero.astro"
 import TraceExplorer from "./artifacts/TraceExplorer.astro"
+import TraceWaterfallHero from "./artifacts/TraceWaterfallHero.astro"
 import K8sConsole from "./sections/K8sConsole.astro"
 import K8sCorrelation from "./sections/K8sCorrelation.astro"
 import K8sInstall from "./sections/K8sInstall.astro"
@@ -38,6 +40,7 @@ import CostExplorer from "./sections/CostExplorer.astro"
 import CostSources from "./sections/CostSources.astro"
 import GitHubAfterMerge from "./sections/GitHubAfterMerge.astro"
 import GitHubCi from "./sections/GitHubCi.astro"
+import ProductEventsPaths from "./sections/ProductEventsPaths.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
 import StatusPageFeeds from "./sections/StatusPageFeeds.astro"
 import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
@@ -70,6 +73,7 @@ export const EXTRA_SECTIONS = {
 	"k8s-views": K8sViews,
 	"k8s-correlation": K8sCorrelation,
 	"k8s-install": K8sInstall,
+	"product-events-paths": ProductEventsPaths,
 	"product-events-sources": ProductEventsSources,
 	"github-ci": GitHubCi,
 	"github-after-merge": GitHubAfterMerge,
@@ -81,7 +85,14 @@ export const EXTRA_SECTIONS = {
 	"cost-budgets": CostBudgets,
 } satisfies Record<SectionId, unknown>
 
-/** Server-rendered islands, so none needs a `client:*` directive or a wrapper. */
+/** The artifact as the hero shows it: the status page is shorter there than in a section. */
+export const HERO_ARTIFACTS = {
+	...ARTIFACTS,
+	"status-page": StatusPageHero,
+} satisfies Record<ArtifactId, unknown>
+
+/** Hero pieces that are not the page's artifact. The island wrappers carry their own `client:*`. */
 export const HERO_ASIDES = {
 	"cost-statement": LiveCostStatement,
+	"trace-waterfall": TraceWaterfallHero,
 } satisfies Record<HeroAsideId, unknown>

@@ -52,6 +52,7 @@ describe("list_integrations", () => {
 		expect(Arr.map(output.available, (a) => a.provider)).toEqual([
 			"gcp",
 			"aws",
+			"fleet",
 			"vercel",
 			"supabase",
 			"chat",

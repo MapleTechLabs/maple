@@ -63,6 +63,20 @@ export const Message = defineMessageUnion({
 	ChangedPromql: { value: Schema.String },
 	ChangedPromqlLegend: { value: Schema.String },
 	ChangedPromqlMinStep: { value: Schema.String },
+	/** The debounce after a keystroke ran out: the query is parsed if `seq` is still the latest edit. */
+	ElapsedPromqlParseDelay: { seq: Schema.Number },
+	/** The caret, read after an edit or a move; `opens` asks for the list (typing, Ctrl+Space). */
+	GotPromqlCaret: { caret: Schema.Number, opens: Schema.Boolean },
+	PressedPromqlKey: { key: Schema.String },
+	ReleasedPromqlKey: { key: Schema.String },
+	ClickedPromqlEditor: {},
+	BlurredPromqlEditor: {},
+	PickedPromqlSuggestion: { index: Schema.Number },
+	CompletedFocusPromql: {},
+	CompletedFetchPromqlDiscovery: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+	},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },
 	CompletedFocusSql: {},

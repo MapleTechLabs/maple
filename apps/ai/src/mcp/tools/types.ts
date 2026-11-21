@@ -1,7 +1,12 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
+import type {
+	McpToolFamilyActions,
+	McpToolFamilyName,
+	McpToolName,
+	McpToolOutputs,
+} from "@maple/domain/mcp-outputs"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
 import * as Policy from "@maple/domain/policy"
@@ -134,6 +139,9 @@ export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 	"reorder_dashboard_widgets",
 	"replace_dashboard_widgets",
 ])
+
+/** The tools that read an org's connected data sources: absent for an org without that feature. */
+export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
 /** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
 export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
@@ -313,6 +321,60 @@ export interface McpToolSpec<
 /** A tool's output schema: the domain catalog's entry for its name. */
 export type McpToolOutput<N extends McpToolName> = (typeof McpToolOutputs)[N]
 
+/**
+ * One action of a tool family: what a tool of its own would declare, less what the family holds
+ * for all of them (name, title, audience, scope, phrases). Every action of a family changes data.
+ */
+export interface McpToolActionSpec<
+	P extends Schema.Codec<unknown, unknown, never, unknown>,
+	O,
+	R extends McpToolRequirements,
+> {
+	/** What this action does, in the family's description after `action=<name>:`. */
+	readonly description: string
+	readonly parameters: P
+	readonly hints: McpToolHints
+	/** In place of the family's, for an action a narrower key may run on its own. */
+	readonly scopeFamily?: string | ReadonlyArray<string>
+	readonly aliases?: Readonly<Record<string, string>>
+	readonly valueAliases?: Readonly<Record<string, Readonly<Record<string, string>>>>
+	readonly rejectUnknownKeys?: true
+	readonly untrustedOutput?: true
+	readonly handler: (params: P["Type"]) => Effect.Effect<O, McpToolError, R>
+	readonly render: (output: O) => ToolDoc
+}
+
+/** What each action of a family returns. */
+export type McpToolFamilyActionOutputs<N extends McpToolFamilyName> = (typeof McpToolFamilyActions)[N]
+
+/**
+ * One resource's write actions as a single tool: `manage_slo` with `action` create, update or
+ * delete, where three tools would each repeat the resource's parameters in `tools/list`.
+ */
+export interface McpToolFamilySpec<N extends McpToolFamilyName> {
+	readonly name: N
+	readonly title: string
+	/** What the family manages, in a sentence. Each action's own description follows it. */
+	readonly description: string
+	readonly audience?: McpToolAudience
+	/** The scope every action needs, unless an action names its own. */
+	readonly scopeFamily?: string | ReadonlyArray<string>
+	/** For every action: a chat status line names the tool, not what it was asked to do. */
+	readonly phrases: McpToolPhrases
+}
+
+export interface McpToolFamilyBuilder<N extends McpToolFamilyName> {
+	/** Adds an action. Every action the domain catalog lists for the family must be added. */
+	action<
+		K extends keyof McpToolFamilyActionOutputs<N> & string,
+		P extends Schema.Codec<unknown, unknown, never, unknown>,
+		R extends McpToolRequirements,
+	>(
+		name: K,
+		spec: McpToolActionSpec<P, Schema.Schema.Type<McpToolFamilyActionOutputs<N>[K]>, R>,
+	): McpToolFamilyBuilder<N>
+}
+
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
@@ -321,4 +383,11 @@ export interface McpToolRegistrar {
 	>(
 		spec: McpToolSpec<P, N, R>,
 	): void
+	family<N extends McpToolFamilyName>(spec: McpToolFamilySpec<N>): McpToolFamilyBuilder<N>
+}
+
+/** `family` for a registrar that captures standalone tools only: a test reading one tool's spec. */
+export const ignoreFamily = <N extends McpToolFamilyName>(): McpToolFamilyBuilder<N> => {
+	const builder: McpToolFamilyBuilder<N> = { action: () => builder }
+	return builder
 }

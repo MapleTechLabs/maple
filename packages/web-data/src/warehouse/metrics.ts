@@ -311,3 +311,35 @@ const getMetricAttributeValuesEffect = Effect.fn("QueryEngine.getMetricAttribute
 		})),
 	}
 })
+
+const GetPromqlLabelValuesInputSchema = Schema.Struct({
+	startTime: WarehouseDateTimeString,
+	endTime: WarehouseDateTimeString,
+	label: Schema.String,
+	match: Schema.optional(Schema.String),
+})
+
+export type GetPromqlLabelValuesInput = Schema.Schema.Type<typeof GetPromqlLabelValuesInputSchema>
+
+/** A Prometheus label's values through PromQL discovery, as the panels read them. */
+export const getPromqlLabelValues = Effect.fn("QueryEngine.getPromqlLabelValues")(function* ({
+	data,
+}: {
+	data: GetPromqlLabelValuesInput
+}) {
+	const input = yield* decodeInput(GetPromqlLabelValuesInputSchema, data, "getPromqlLabelValues")
+	const response = yield* executeQueryEngine(
+		"queryEngine.getPromqlLabelValues",
+		new QueryEngineExecuteRequest({
+			startTime: input.startTime,
+			endTime: input.endTime,
+			query: {
+				kind: "promqlLabelValues",
+				source: "metrics",
+				label: input.label,
+				...(input.match === undefined ? undefined : { match: input.match }),
+			},
+		}),
+	)
+	return { data: Arr.map(extractAttributeValues(response), (row) => row.value) }
+})

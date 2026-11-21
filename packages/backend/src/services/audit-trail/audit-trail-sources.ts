@@ -23,10 +23,12 @@ const FEED_OF = {
 	vercel: (resource: IntegrationResource) => resource.kind === "drain" && resource.name === "audit log",
 	// Admin Activity and Policy Denied ride the log sink the setup script creates.
 	gcp: (resource: IntegrationResource) => resource.kind === "logs",
-	// CloudTrail rides the connection's `security` module, read by the findings poller.
+	// CloudTrail rides the connection's `audit` module, read by the findings poller.
 	aws: (resource: IntegrationResource) => resource.kind === "audit log",
 	// Each active installation's webhooks.
 	github: (resource: IntegrationResource) => resource.kind === "audit log",
+	// The connection's activity feed, read by the Fleet audit poller.
+	fleet: (resource: IntegrationResource) => resource.kind === "audit log",
 } as const satisfies Record<Exclude<AuditTrailProvider, "maple">, (resource: IntegrationResource) => boolean>
 
 type ConnectableProvider = keyof typeof FEED_OF

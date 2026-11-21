@@ -7,6 +7,7 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
+import { infoHint } from "@maple/views/ui/info-hint"
 import { pressable } from "@maple/views/ui/pressable"
 import { isEmptyError, type WidgetDataState } from "./data-state"
 import { NARROW_RANGE_LABEL } from "./widget-data"
@@ -34,6 +35,8 @@ export type ShellOptions = Readonly<{
 	legendItems?: ReadonlyArray<LegendItem> | undefined
 	/** The tile follows its own window, not the board's. */
 	timeRangeLabel?: string | undefined
+	/** What the answer warned about (PromQL hints), behind a warning icon in the header. */
+	warnings?: ReadonlyArray<string> | undefined
 }>
 
 export type LegendItem = Readonly<{ key: string; label: string; color: string; dashed?: boolean }>
@@ -145,6 +148,9 @@ export const widgetShell = <M>(
 						...(options.timeRangeLabel === undefined
 							? []
 							: [timeRangeChip(h, options.timeRangeLabel)]),
+						...(options.warnings === undefined || options.warnings.length === 0
+							? []
+							: [infoHint(h, Arr.join(options.warnings, "\n"), { variant: "warning" })]),
 						...(options.legendItems !== undefined && options.legendItems.length >= 2
 							? [headerLegend(h, options.legendItems)]
 							: []),
@@ -178,14 +184,26 @@ export const widgetShell = <M>(
 		"group/card @container/widget h-full flex flex-col",
 	)
 
-/** The query ran and returned nothing. */
-export const widgetEmptyState = <M>(h: HtmlBuilder<M>): Html =>
+/** The query ran and returned nothing; `hints` say why when the backend knows (PromQL names). */
+export const widgetEmptyState = <M>(h: HtmlBuilder<M>, hints: ReadonlyArray<string> = []): Html =>
 	emptyMessage(h, { className: "flex h-full flex-col items-center justify-center gap-1.5 px-3 py-0" }, [
 		typography(h, { weight: "medium" }, ["No data in this window"]),
-		h.span(
-			[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
-			["Widen the time range or check the query's filters."],
-		),
+		...(hints.length === 0
+			? [
+					h.span(
+						[h.Class("text-3xs text-foreground-subtle max-w-full line-clamp-3")],
+						["Widen the time range or check the query's filters."],
+					),
+				]
+			: Arr.map(hints, (hint) =>
+					h.span(
+						[
+							// Unclamped: the suggested name is the point, and a title hides it from touch and keyboard.
+							h.Class("text-3xs text-foreground-subtle max-w-full break-words"),
+						],
+						[hint],
+					),
+				)),
 	])
 
 const mutedError = <M>(
@@ -315,10 +333,18 @@ export const widgetFrame = <M>(
 			? [options.loadingSkeleton]
 			: state._tag === "Error"
 				? isEmptyError(state)
-					? [widgetEmptyState(h)]
+					? [widgetEmptyState(h, state.warnings)]
 					: state.kind === "range" || state.kind === "config"
 						? [mutedError(h, state, options.configure, options.narrowRange ?? null)]
 						: [failedState(h, state, options)]
 				: content()
-	return widgetShell(h, { ...options, footer: state._tag === "Ready" ? options.footer : undefined }, body)
+	return widgetShell(
+		h,
+		{
+			...options,
+			footer: state._tag === "Ready" ? options.footer : undefined,
+			warnings: state._tag === "Ready" ? state.warnings : undefined,
+		},
+		body,
+	)
 }

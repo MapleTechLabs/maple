@@ -1,5 +1,5 @@
 import { AsyncData, Command } from "foldkit"
-import { Result } from "effect"
+import { Array as Arr, Option, Result } from "effect"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as RadioGroup from "@maple/views/ui/radio-group"
@@ -13,6 +13,7 @@ import {
 	type Access,
 	boardShareOf,
 	chartShareOf,
+	EXPIRY_PRESETS,
 	ShareMessage,
 	type ShareWrite,
 	type SharingState,
@@ -113,6 +114,16 @@ const pickAccess = (model: Model, message: RadioGroup.Message): Return => {
 	return { ...written, commands: [...commands, ...(written.commands ?? [])] }
 }
 
+/** A picked expiry preset rewrites the board link's expiry, keeping its mode. */
+const pickExpiry = (model: Model, value: string): Return => {
+	const board = boardShareOf(sharesOf(model))
+	const preset = Option.getOrUndefined(
+		Arr.findFirst(EXPIRY_PRESETS, (candidate) => candidate.value === value),
+	)
+	if (board === undefined || preset === undefined) return { model }
+	return write(model, model, { _tag: "SetBoardExpiry", mode: board.mode, days: preset.days })
+}
+
 const dialogStep = (
 	model: Model,
 	key: "dialog" | "replaceDialog" | "embedDialog",
@@ -159,6 +170,7 @@ export const shareStep = (model: Model, _context: PageContext, message: ShareMes
 				ShareMessage.GotDialogMessage({ message: m }),
 			),
 		GotAccessMessage: ({ message: inner }) => pickAccess(model, inner),
+		PickedExpiry: ({ value }) => pickExpiry(model, value),
 		ClickedReplace: () =>
 			dialogStep(model, "replaceDialog", Dialog.open(model.sharing.replaceDialog), (m) =>
 				ShareMessage.GotReplaceDialogMessage({ message: m }),

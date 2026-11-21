@@ -29,6 +29,10 @@ Env-level vanilla ClickHouse raw SQL is enabled only when `MAPLE_AUTH_MODE=self_
 
 Maple runs user-authored SQL on a ClickHouse server in the server's read-only mode (`readonly=1`), with its time, memory and thread limits sent beside the statement, and refuses a `SETTINGS` clause in the SQL. An account whose own profile is `readonly=2` keeps that profile and still gets the limits; there the server allows whatever the account's grants allow, table functions included. An account whose profile is `readonly=1` refuses those limits, as it refuses the settings Maple sends with its own queries, so it cannot run Maple at all; use `readonly=2` for a read-only account. Read-only mode is one layer, not the boundary: configure the runtime ClickHouse account as SELECT-only on the Maple database. Apply schema migrations with a separate administrative account, and enforce server-side limits such as maximum execution time, memory, rows, and bytes read. Maple's client-side caps are a final response boundary. They do not replace a least-privilege role and server-side resource controls. See [ClickHouse's guidance for agent-authored queries](https://clickhouse.com/blog/how-to-set-up-clickhouse-for-agentic-analytics) for the corresponding database-side setup.
 
+### ClickHouse behind Cloudflare Access
+
+An env-level ClickHouse can sit behind a Cloudflare Access application, for example one reached through a Cloudflare Tunnel with no public port. Issue a service token for the application and set `CLICKHOUSE_ACCESS_CLIENT_ID` and `CLICKHOUSE_ACCESS_CLIENT_SECRET`: every query to `CLICKHOUSE_URL` then carries the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers beside the ClickHouse credentials. Both must be set together, only with `CLICKHOUSE_PROVIDER=clickhouse` and an `https://` `CLICKHOUSE_URL`; the API refuses to start otherwise. Revoking the token in Access cuts Maple off without touching ClickHouse.
+
 ### Routing precedence
 
 For any given query the API resolves the upstream in this order:

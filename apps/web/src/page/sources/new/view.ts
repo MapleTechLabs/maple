@@ -66,7 +66,9 @@ export const titleContent = (h: H, model: Model, titleId?: string): Html => {
 }
 
 const cancel = (h: H): Html =>
-	linkButton(h, { href: hrefOf(AppRoute.Sources()), size: "sm", variant: "ghost" }, ["Cancel"])
+	linkButton(h, { href: hrefOf(AppRoute.Sources({ search: {} })), size: "sm", variant: "ghost" }, [
+		"Cancel",
+	])
 
 /** The current step: a push source's page (the created one wins), an integration's step, or the picker. */
 export const stepBody = (h: H, model: Model, timeZone: string, host: FlowHost): Html =>
@@ -90,9 +92,11 @@ const notPermitted = (h: H): Html =>
 					"Ask one of them to connect it, or browse the sources already sending data.",
 				]),
 			]),
-			linkButton(h, { href: hrefOf(AppRoute.Sources()), size: "sm", variant: "outline" }, [
-				"View sources",
-			]),
+			linkButton(
+				h,
+				{ href: hrefOf(AppRoute.Sources({ search: {} })), size: "sm", variant: "outline" },
+				["View sources"],
+			),
 		],
 		"py-8",
 	)
@@ -123,7 +127,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 )
 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => [
-	{ label: "Sources", href: hrefOf(AppRoute.Sources()) },
+	{ label: "Sources", href: hrefOf(AppRoute.Sources({ search: {} })) },
 	{
 		label:
 			model.platform !== null

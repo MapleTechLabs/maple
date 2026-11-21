@@ -14,15 +14,18 @@
  * homepage's story frame, where the constant holds while everything else
  * changes.
  *
- * The plate track is the wide one on purpose. At `.shell` width a 2560px
- * capture renders at 1.98× and has no headroom left on a 2× display; at the
- * ~860px this track gives it, every asset in the library clears 2× with margin.
+ * The copy sits beside the plate, not above it: a heading block over the pair
+ * pushed the screen a full viewport down the page. The plate track is the wide
+ * one, and a plate with a `crop` shows the app's main pane without the sidebar,
+ * which is what makes its text readable at this width.
  *
  * The `facts` keys are the top of the page's operator gutter — the same mono
  * column CapabilityLedger continues below. Keys and values are literal product
  * strings and never go through Paraglide.
  */
 import MediaFrame from "../home/MediaFrame.astro";
+import type { Crop } from "../../lib/page-registry";
+import Shot from "./Shot.astro";
 
 interface Props {
 	/** Shown in the frame head, e.g. "/traces". Literal. */
@@ -42,6 +45,8 @@ interface Props {
 	 */
 	width?: number;
 	height?: number;
+	/** A legible window of the capture. Needs `src`. */
+	crop?: Crop;
 	facts: { key: string; value: string }[];
 	eyebrow: string;
 	title: string;
@@ -57,6 +62,7 @@ const {
 	caption,
 	width = 1280,
 	height = 660,
+	crop,
 	facts,
 	eyebrow,
 	title,
@@ -66,49 +72,47 @@ const {
 ---
 
 <section class={`bg-bg ${className}`}>
-	<div class="shell py-16 md:py-32">
-		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
-		<h2
-			class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px] lg:text-[54px]"
-		>
-			{title}
-		</h2>
-		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{lede}</p>
+	<!--
+		Three grid items so phones read copy, plate, facts while `lg` stacks the copy
+		and the facts in the left track with the plate spanning both rows.
+	-->
+	<div class="shell grid gap-x-10 gap-y-8 py-14 md:py-20 lg:grid-cols-[20rem_1fr] lg:grid-rows-[auto_1fr]">
+		<div class="min-w-0">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
+			<h2 class="mt-4 font-display text-3xl font-medium leading-[1.08] tracking-[-0.02em] text-fg lg:text-[34px]">
+				{title}
+			</h2>
+			<p class="mt-4 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{lede}</p>
+		</div>
 
-		<!--
-			The panel takes the LEFT track so its key column starts on the shell's
-			left edge — the same 20rem gutter CapabilityLedger uses below, which is
-			what makes the mono keys read as one rail running down the page. Copy
-			left / media right is also the homepage's own two-column skeleton
-			(KubernetesSection, AgentSection).
+		<!-- min-w-0: a grid item defaults to `min-width: auto`, so a wide plate
+		     would push the track past the viewport instead of scaling into it. -->
+		<div class="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+			{
+				src && crop ? (
+					<Shot src={src} alt={shot} width={width} height={height} crop={crop} />
+				) : (
+					<MediaFrame label={shot} caption={caption} src={src} width={width} height={height} />
+				)
+			}
+		</div>
 
-			DOM order is plate-first so mobile leads with the screenshot; `lg:order-*`
-			swaps them once there are two tracks.
-		-->
-		<div class="mt-12 grid gap-6 md:mt-16 lg:grid-cols-[20rem_1fr] lg:gap-8">
-			<!-- min-w-0: a grid item defaults to `min-width: auto`, so a wide plate
-			     would push the track past the viewport instead of scaling into it. -->
-			<div class="min-w-0 lg:order-2">
-				<MediaFrame label={shot} caption={caption} src={src} width={width} height={height} />
+		<!-- The panel. Its own frame, beside the plate rather than inside it. -->
+		<div class="live-frame flex min-w-0 flex-col self-start">
+			<div class="live-frame__head">
+				<span>{route}</span>
+				<span class="text-fg normal-case tracking-normal">{constant}</span>
 			</div>
-
-			<!-- The panel. Its own frame, beside the plate rather than inside it. -->
-			<div class="live-frame flex min-w-0 flex-col lg:order-1">
-				<div class="live-frame__head">
-					<span>{route}</span>
-					<span class="text-fg normal-case tracking-normal">{constant}</span>
-				</div>
-				<dl class="grid grid-cols-[auto_1fr] content-start gap-x-4 gap-y-3 p-4 md:p-5">
-					{
-						facts.map((fact) => (
-							<>
-								<dt class="op-key pt-px leading-relaxed">{fact.key}</dt>
-								<dd class="min-w-0 break-words text-[12px] leading-relaxed text-fg">{fact.value}</dd>
-							</>
-						))
-					}
-				</dl>
-			</div>
+			<dl class="grid grid-cols-[auto_1fr] content-start gap-x-4 gap-y-2.5 p-4">
+				{
+					facts.map((fact) => (
+						<>
+							<dt class="op-key pt-px leading-relaxed">{fact.key}</dt>
+							<dd class="min-w-0 break-words text-[12px] leading-relaxed text-fg">{fact.value}</dd>
+						</>
+					))
+				}
+			</dl>
 		</div>
 	</div>
 </section>

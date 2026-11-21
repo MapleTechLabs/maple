@@ -69,6 +69,12 @@ type ShareColumns = PG.ColumnAccessor<typeof DashboardShares.columns>
 const scopeMatches = ($: ShareColumns, scope: ShareScope) =>
 	scope.widgetId === null ? $.widgetId.isNull() : $.widgetId.eq(scope.widgetId)
 
+/** Not revoked and not past its expiry: the only rows a link may resolve to. */
+const resolvable = ($: ShareColumns, now: number) => [
+	$.revokedAt.isNull(),
+	PG.or($.expiresAt.isNull(), $.expiresAt.gt(now)),
+]
+
 const toPersistenceError = (error: unknown) =>
 	new SharePersistenceError({
 		message: error instanceof Error ? error.message : "Share persistence failed",
@@ -86,6 +92,9 @@ const toDashboardShare = (row: DashboardShareRow, token: string) => {
 		tokenSuffix: row.tokenSuffix,
 		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		...(row.expiresAt === null
+			? undefined
+			: { expiresAt: decodeIsoDateTimeStringSync(new Date(row.expiresAt).toISOString()) }),
 	}
 
 	return row.widgetId === null
@@ -111,6 +120,7 @@ const shareColumns = ($: ShareColumns) => ({
 	tokenSuffix: $.tokenSuffix,
 	createdAt: $.createdAt,
 	updatedAt: $.updatedAt,
+	expiresAt: $.expiresAt,
 })
 
 export interface SharedDashboardServiceApi {
@@ -129,13 +139,15 @@ export interface SharedDashboardServiceApi {
 	/**
 	 * Create the share for a scope, or change the mode of the one it already
 	 * has. A mode change keeps the existing link, so the token comes back
-	 * unchanged rather than absent.
+	 * unchanged rather than absent. `expiresAt` (epoch ms): `undefined` keeps the
+	 * current expiry (none for a new link), `null` clears it.
 	 */
 	readonly upsert: (
 		orgId: OrgId,
 		userId: UserId,
 		scope: ShareScope,
 		mode: DashboardShareMode,
+		expiresAt?: number | null,
 	) => Effect.Effect<DashboardShare, SharePersistenceError | ShareNotConfiguredError>
 
 	/** Revoke a scope's current link and mint a replacement in one transaction. */
@@ -309,6 +321,7 @@ export class SharedDashboardService extends Context.Service<
 			userId: UserId,
 			scope: ShareScope,
 			mode: DashboardShareMode,
+			expiresAt: number | null,
 			hmacKey: string,
 			now: number,
 		) {
@@ -339,6 +352,7 @@ export class SharedDashboardService extends Context.Service<
 					updatedAt: now,
 					updatedBy: userId,
 					revokedAt: null,
+					expiresAt,
 				},
 			}
 		})
@@ -348,6 +362,7 @@ export class SharedDashboardService extends Context.Service<
 			userId: UserId,
 			scope: ShareScope,
 			mode: DashboardShareMode,
+			expiresAt?: number | null,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId,
@@ -368,7 +383,12 @@ export class SharedDashboardService extends Context.Service<
 					const updated = yield* dbExecute((db) =>
 						db.run(
 							PG.update(DashboardShares)
-								.set({ mode, updatedAt: now, updatedBy: userId })
+								.set({
+									mode,
+									updatedAt: now,
+									updatedBy: userId,
+									...(expiresAt === undefined ? undefined : { expiresAt }),
+								})
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(shareId), $.revokedAt.isNull()])
 								.returning(shareColumns),
 						),
@@ -388,7 +408,15 @@ export class SharedDashboardService extends Context.Service<
 			const existing = existingRows[0]
 			if (existing !== undefined) return yield* updateMode(existing.id)
 
-			const { rawToken, values } = yield* mintRow(orgId, userId, scope, mode, hmacKey, now)
+			const { rawToken, values } = yield* mintRow(
+				orgId,
+				userId,
+				scope,
+				mode,
+				expiresAt ?? null,
+				hmacKey,
+				now,
+			)
 
 			// The read above and this insert are not one transaction, and making them
 			// one would not help: two concurrent creates both read "not shared", both
@@ -451,7 +479,19 @@ export class SharedDashboardService extends Context.Service<
 				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 
-			const { rawToken, values } = yield* mintRow(orgId, userId, scope, existing.mode, hmacKey, now)
+			// A new token for the same link: the mode carries over, and the expiry while it is
+			// still ahead. An expired link comes back with no expiry; the dialog shows it.
+			const carriedExpiry =
+				existing.expiresAt !== null && existing.expiresAt > now ? existing.expiresAt : null
+			const { rawToken, values } = yield* mintRow(
+				orgId,
+				userId,
+				scope,
+				existing.mode,
+				carriedExpiry,
+				hmacKey,
+				now,
+			)
 
 			// One transaction: the old row must stop resolving at the same instant the
 			// new one starts. Revoke first so the partial unique index — one live row
@@ -531,9 +571,10 @@ export class SharedDashboardService extends Context.Service<
 		 * Untraced: a second lookup on the viewer hot path, inside an already-traced
 		 * resolve. The effective mode is annotated on that parent span instead.
 		 */
-		const boardMode = Effect.fnUntraced(function* (orgId: OrgId, dashboardId: DashboardId) {
+		const boardMode = Effect.fnUntraced(function* (orgId: OrgId, dashboardId: DashboardId, now: number) {
 			const [board] = yield* loadLive(orgId, { dashboardId, widgetId: null })
-			if (board === undefined) {
+			// An expired board link ends its chart links the same way unsharing does.
+			if (board === undefined || (board.expiresAt !== null && board.expiresAt <= now)) {
 				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
 			return board.mode
@@ -545,12 +586,13 @@ export class SharedDashboardService extends Context.Service<
 		const resolveByToken = Effect.fn("SharedDashboardService.resolveByToken")(function* (token: string) {
 			const hmacKey = yield* requireHmacKey
 			const tokenHash = hashShareToken(token, hmacKey)
+			const now = yield* Clock.currentTimeMillis
 
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(DashboardShares)
 						.select(shareColumns)
-						.where(($) => [$.tokenHash.eq(tokenHash), $.revokedAt.isNull()]),
+						.where(($) => [$.tokenHash.eq(tokenHash), ...resolvable($, now)]),
 				),
 			)
 
@@ -570,7 +612,7 @@ export class SharedDashboardService extends Context.Service<
 			// would only add a cipher round to the viewer hot path.
 			let mode = row.mode
 			if (row.widgetId !== null) {
-				const board = yield* boardMode(row.orgId, row.dashboardId)
+				const board = yield* boardMode(row.orgId, row.dashboardId, now)
 				mode = capByBoard(row.mode, board)
 			}
 			if (row.widgetId !== null) yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
@@ -587,12 +629,13 @@ export class SharedDashboardService extends Context.Service<
 			if (shareId === undefined) {
 				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}
+			const now = yield* Clock.currentTimeMillis
 
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(DashboardShares)
 						.select("id", "orgId", "dashboardId", "widgetId")
-						.where(($) => [$.id.eq(shareId), $.mode.eq("public"), $.revokedAt.isNull()]),
+						.where(($) => [$.id.eq(shareId), $.mode.eq("public"), ...resolvable($, now)]),
 				),
 			)
 
@@ -608,7 +651,7 @@ export class SharedDashboardService extends Context.Service<
 			})
 
 			// A widget card is only public while its board is.
-			if (row.widgetId !== null && (yield* boardMode(row.orgId, row.dashboardId)) !== "public") {
+			if (row.widgetId !== null && (yield* boardMode(row.orgId, row.dashboardId, now)) !== "public") {
 				yield* Effect.annotateCurrentSpan("maple.share.mode", "org")
 				return yield* new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE })
 			}

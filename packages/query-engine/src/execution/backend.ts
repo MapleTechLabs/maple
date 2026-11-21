@@ -25,6 +25,8 @@ export interface ClickHouseProtocolBackendConfig {
 	readonly username: string
 	readonly password: string
 	readonly database: string
+	/** Extra request headers, e.g. a zero-trust proxy's service token in front of the server. */
+	readonly headers?: Readonly<Record<string, string>>
 }
 
 /** Resolved upstream connection config for a tenant's queries. */

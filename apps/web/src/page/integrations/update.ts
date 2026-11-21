@@ -35,6 +35,7 @@ import {
 	CHAT_PROVIDER,
 	CLOUDFLARE_PROVIDER,
 	everyProvider,
+	FLEET_PROVIDER,
 	LINEAR_PROVIDER,
 	PLANETSCALE_PROVIDER,
 	PROVIDER_MODULES,
@@ -149,6 +150,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			linear: Keyed.idle(),
 			github: Keyed.idle(),
 			searchConsole: Keyed.idle(),
+			fleet: Keyed.idle(),
 			chat: Keyed.idle(),
 			scrapeTargets: Keyed.idle(),
 			dataSources: Keyed.idle(),
@@ -171,6 +173,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		vercelCard: VERCEL_PROVIDER.initial(),
 		supabaseCard: SUPABASE_PROVIDER.initial(),
 		searchConsoleCard: SEARCH_CONSOLE_PROVIDER.initial(),
+		fleetCard: FLEET_PROVIDER.initial(),
 	}
 	const loaded = chain(model, [
 		...Arr.map(
@@ -273,6 +276,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				{ isCurrent: s.linear.key === key, previous: s.linear },
 			),
 		GotLinearMessage: ({ message: child }) => LINEAR_PROVIDER.update(model, child, context),
+		CompletedLoadFleet: ({ key, result }) =>
+			FLEET_PROVIDER.onStatus(
+				accepted(model, { ...s, fleet: Keyed.accept(s.fleet, key, result) }).model,
+				context,
+				{ isCurrent: s.fleet.key === key, previous: s.fleet },
+			),
+		GotFleetMessage: ({ message: child }) => FLEET_PROVIDER.update(model, child, context),
 		CompletedLoadChat: ({ key, result }) =>
 			CHAT_PROVIDER.onStatus(
 				accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }).model,
@@ -332,6 +342,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedTrackDisconnected: () => ({ model }),
 		ClickedIntegration: ({ integration }) =>
 			navigateTo(model, hrefOfSearch(integration === null ? {} : { integration }), false),
+		ClickedConnectedSources: ({ query }) =>
+			navigateTo(model, hrefOf(AppRoute.Sources({ search: { q: query } })), false),
 		ClickedSettingsTab: ({ tab }) => navigateTo(model, `/settings/${encodeURIComponent(tab)}`, false),
 		CompletedChatToast: () => {
 			const callback = chatCallbackOf(model.search)

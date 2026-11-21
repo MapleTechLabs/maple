@@ -58,13 +58,13 @@ describe("logsQueryRequest", () => {
 			endMs: Date.UTC(2026, 9, 21, 17, 59, 30),
 		}
 		const request = logsQueryRequest(REF, window)
-		assert.strictEqual(request.path, "/v1/projects/abcdefghijklmnopqrst/analytics/endpoints/logs")
+		assert.strictEqual(request.ref, "abcdefghijklmnopqrst")
 		assert.strictEqual(
-			request.query.sql,
+			request.sql,
 			"select id, timestamp, source, event_message, log_attributes from logs where timestamp >= '2026-10-21 17:55:00.123000' and timestamp < '2026-10-21 17:59:30.000000' order by timestamp asc, id asc limit 1000",
 		)
-		assert.strictEqual(request.query.iso_timestamp_start, "2026-10-21T17:55:00.000Z")
-		assert.strictEqual(request.query.iso_timestamp_end, "2026-10-21T18:00:00.000Z")
+		assert.strictEqual(request.iso_timestamp_start, "2026-10-21T17:55:00.000Z")
+		assert.strictEqual(request.iso_timestamp_end, "2026-10-21T18:00:00.000Z")
 	})
 })
 

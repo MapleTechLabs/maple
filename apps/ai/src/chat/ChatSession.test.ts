@@ -9,7 +9,7 @@
 import { afterEach, assert, describe, it, vi } from "vitest"
 import { Effect, Array as Arr, Option, String as Str } from "effect"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS } from "./ChatSession"
+import { ChatSession, MAX_TURN_RESUMES, TURN_STALE_MS, chatSessionRpc } from "./ChatSession"
 import type { RunChatSessionTurnInput } from "./turn-runner"
 import { interruptOnAbort, makeTurnObservability, turnSpanAttributes } from "./turn-outcome"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
@@ -1037,5 +1037,62 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		assert.isDefined(message)
 		assert.equal(message.text, "parent text")
 		assert.equal(message.toolCalls[0]?.task?.messages[0]?.text, "the answer")
+	})
+})
+
+describe("ChatSession.erase", () => {
+	const running = () => {
+		const state = makeFakeDurableObjectState()
+		const runs: Array<RunChatSessionTurnInput> = []
+		const session = new ChatSession(state, {}, undefined, (input) => {
+			runs.push(input)
+			return new Promise<void>(() => undefined)
+		})
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
+		return { session, state, runs }
+	}
+
+	const tables = (state: ReturnType<typeof makeFakeDurableObjectState>) =>
+		state.storage.sql
+			.exec<{ name: string }>(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+			)
+			.toArray()
+
+	it("stops the running turn and wipes the transcript and the heartbeat", async () => {
+		const { session, state, runs } = running()
+		assert.isAbove(session.history().length, 0)
+		assert.isAbove(state.alarms.length, 0)
+
+		await session.erase()
+
+		assert.strictEqual(runs[0]?.signal?.reason, "erased")
+		assert.deepStrictEqual(state.alarms, [])
+		assert.deepStrictEqual(tables(state), [])
+	})
+
+	it("lets a turn still draining write nothing, and erases again without failing", async () => {
+		const { session, state } = running()
+		await session.erase()
+
+		assert.strictEqual(session.append({ type: "text-delta", messageId: "a1", text: "late" }), 0)
+		session.alarm()
+		await session.erase()
+		assert.deepStrictEqual(tables(state), [])
+	})
+
+	it("refuses an erase that names another org over RPC", async () => {
+		const { session } = running()
+		const rpc = chatSessionRpc(session)
+
+		assert.isFalse(await Effect.runPromise(rpc.erase({ sessionId: "org_test:tab", orgId: "org_other" })))
+		assert.isAbove(session.history().length, 0)
+		assert.isTrue(await Effect.runPromise(rpc.erase({ sessionId: "org_test:tab", orgId: "org_test" })))
 	})
 })

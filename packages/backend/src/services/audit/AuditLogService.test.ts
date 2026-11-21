@@ -5,7 +5,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
-import { Effect, Layer, Schema, Array as Arr } from "effect"
+import { Effect, Fiber, Layer, Logger, Metric, Schema, Array as Arr } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
@@ -16,6 +16,7 @@ import {
 	AUDIT_ACCESS_ACTION_SUFFIXES,
 	AUDIT_LOG_DATASOURCE,
 	AuditLogService,
+	auditDroppedTotal,
 	recordHttpAudit,
 } from "./AuditLogService"
 
@@ -277,9 +278,12 @@ describe("AuditLogService (warehouse-backed)", () => {
 		}),
 	)
 
-	it.effect("drops the entry rather than writing to the warehouse on the response path", () =>
+	it.effect("retries a failed send once and only then drops the entry, loudly", () =>
 		Effect.gen(function* () {
 			const warehouse = recordingWarehouse()
+			const logs: Array<{ readonly message: string; readonly level: string }> = []
+			let attempts = 0
+			const before = (yield* Metric.value(auditDroppedTotal)).count
 			yield* Effect.gen(function* () {
 				const audit = yield* AuditLogService
 				yield* audit.record({
@@ -289,25 +293,91 @@ describe("AuditLogService (warehouse-backed)", () => {
 					action: "alert_rule.updated",
 				})
 			}).pipe(
-				Effect.provide(
+				Effect.provide([
 					Layer.effect(AuditLogService, AuditLogService.make).pipe(
 						Layer.provide(warehouse.layer),
 						Layer.provide(
 							Layer.succeed(AuditEventsQueueProducer, {
 								sendBatch: () =>
-									Effect.fail(
-										new QueueSendError({ message: "broker down", cause: undefined }),
-									),
+									Effect.suspend(() => {
+										attempts += 1
+										return Effect.fail(
+											new QueueSendError({
+												message: "broker down",
+												cause: undefined,
+											}),
+										)
+									}),
+							}),
+						),
+					),
+					Logger.layer([
+						Logger.make(({ message, logLevel }) => {
+							logs.push({ message: String(message), level: logLevel })
+						}),
+					]),
+				]),
+			)
+			// The caller still succeeds and no direct warehouse write is attempted.
+			expect({
+				attempts,
+				ingested: warehouse.ingested.length,
+				dropped: (yield* Metric.value(auditDroppedTotal)).count - before,
+				errors: Arr.map(
+					Arr.filter(logs, (log) => log.level === "Error"),
+					(log) => log.message,
+				),
+			}).toEqual({
+				attempts: 2,
+				ingested: 0,
+				dropped: 1,
+				errors: ["Audit entry dropped: queue send failed twice"],
+			})
+		}),
+	)
+
+	it.effect("a send that stalls past the timeout is retried, and the retry delivers it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const sent: unknown[] = []
+			let attempts = 0
+			const before = (yield* Metric.value(auditDroppedTotal)).count
+			const fiber = yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(
+						Layer.provide(warehouse.layer),
+						Layer.provide(
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: (messages) =>
+									Effect.suspend(() => {
+										attempts += 1
+										return attempts === 1
+											? Effect.never
+											: Effect.sync(() =>
+													Arr.forEach(messages, (m) => sent.push(m.body)),
+												)
+									}),
 							}),
 						),
 					),
 				),
+				Effect.forkChild,
 			)
-			// The queue owns durability (retries, DLQ). A failed send must not buy a
-			// second network round trip with the caller's response time, which is
-			// exactly when the platform is already degraded — the caller still
-			// succeeds, and the loss is in the logs.
-			expect(warehouse.ingested).toHaveLength(0)
+			yield* TestClock.adjust("2 seconds")
+			yield* Fiber.join(fiber)
+			expect({
+				attempts,
+				sent: sent.length,
+				dropped: (yield* Metric.value(auditDroppedTotal)).count - before,
+			}).toEqual({ attempts: 2, sent: 1, dropped: 0 })
 		}),
 	)
 
