@@ -46,6 +46,9 @@ import { canonicalToolCall, canonicalToolName } from "./tool-name-aliases"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
+import { registerIngestSourceTools } from "./ingest-sources"
+import { registerDeleteDashboardTool } from "./delete-dashboard"
+import { registerAlertDestinationTools } from "./alert-destinations"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
 import { registerSloTools } from "./slos"
 import { registerIngestRuleTools } from "./ingest-rules"
@@ -164,6 +167,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerServiceMapTool,
 	registerListAlertRulesTool,
 	registerListAlertDestinationsTool,
+	registerAlertDestinationTools,
 	registerGetAlertRuleTool,
 	registerListAlertIncidentsTool,
 	registerListAlertChecksTool,
@@ -187,6 +191,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerGetDashboardTool,
 	registerCreateDashboardTool,
 	registerUpdateDashboardTool,
+	registerDeleteDashboardTool,
 	registerAddDashboardWidgetTool,
 	registerDescribeWarehouseTablesTool,
 	registerUpdateDashboardWidgetTool,
@@ -217,6 +222,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerListSecurityAuditRunsTool,
 	registerInspectSecurityAuditRunTool,
 	registerListSourcesTool,
+	registerIngestSourceTools,
 	registerListDataSourcesTool,
 	registerQueryDataSourceTool,
 	registerCiRunsTool,
@@ -279,6 +285,8 @@ export const readToolCall = (
 ):
 	| {
 			readonly args: Readonly<Record<string, unknown>>
+			/** The family action the call resolved to; `args` are that action's alone. */
+			readonly action?: string
 			readonly unknown: ReadonlyArray<string>
 			readonly decodes: boolean
 	  }
@@ -295,6 +303,7 @@ export const readToolCall = (
 	const normalized = normalizeFor(definition, args)
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
+		...("action" in definition ? { action: definition.action } : undefined),
 		unknown: Arr.map(normalized.unknown, (entry) => entry.key),
 		decodes:
 			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===

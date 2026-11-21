@@ -109,28 +109,29 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 
 ### Alerting
 
-| Tool                         | Access | What it does                                                                                                                             |
-| ---------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_alert_rules`           | read   | Alert rules with severity, signal type and condition                                                                                     |
-| `get_alert_rule`             | read   | One rule's full configuration: thresholds, filters, evaluation settings and destinations                                                 |
-| `list_alert_destinations`    | read   | Notification destinations with id, type and delivery health                                                                              |
-| `list_alert_incidents`       | read   | Triggered alert incidents, open and resolved, with the last observed value                                                               |
-| `acknowledge_alert_incident` | write  | Acknowledge an open incident, which pauses its reminders, or clear the acknowledgement                                                   |
-| `get_incident_timeline`      | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'                                                       |
-| `list_alert_checks`          | read   | A rule's recent evaluations with observed value, threshold and sample count                                                              |
-| `preview_alert_rule`         | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason                                                       |
-| `create_alert_rule`          | write  | Create an alert rule from a template or from signal type, comparator and threshold                                                       |
-| `update_alert_rule`          | write  | Change the fields you pass on an alert rule                                                                                              |
-| `delete_alert_rule`          | write  | Delete an alert rule and its incident history. Requires `confirm=true`                                                                   |
-| `list_escalation_chains`     | read   | Escalation chains with their steps, repeats and the rules using them                                                                     |
-| `manage_escalation_chain`    | write  | Create, change or delete an escalation chain: destinations paged step by step, waiting for an acknowledgement between steps              |
-| `list_maintenance_windows`   | read   | One-off and weekly maintenance windows with their schedule, matchers and next occurrence                                                 |
-| `manage_maintenance_window`  | write  | Create or delete a maintenance window that silences matching rules once or every week; can keep those hours out of anomaly baselines     |
-| `list_oncall_schedules`      | read   | On-call schedules with their layers and who is on call now                                                                               |
-| `who_is_on_call`             | read   | Who is on call for a schedule at an instant, why, and who is next                                                                        |
-| `manage_oncall_schedule`     | write  | Create, change or delete a schedule that rotates workspace members in layers, or add and remove an override that puts one member on call |
-| `list_alert_silences`        | read   | Active and scheduled alert silences, or ended ones, with their matchers and window                                                       |
-| `manage_alert_silence`       | write  | Hold back notifications for matching rules for a duration or until a time, or end a silence so they resume                               |
+| Tool                         | Access | What it does                                                                                                                                 |
+| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_alert_rules`           | read   | Alert rules with severity, signal type and condition                                                                                         |
+| `get_alert_rule`             | read   | One rule's full configuration: thresholds, filters, evaluation settings and destinations                                                     |
+| `list_alert_destinations`    | read   | Notification destinations with id, type and delivery health                                                                                  |
+| `manage_alert_destination`   | write  | Run a destination's test, rename, turn off or delete it, or add an email destination                                                         |
+| `list_alert_incidents`       | read   | Triggered alert incidents, open and resolved, with the last observed value                                                                   |
+| `acknowledge_alert_incident` | write  | Acknowledge an open incident, which pauses its reminders, or clear the acknowledgement                                                       |
+| `get_incident_timeline`      | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'                                                           |
+| `list_alert_checks`          | read   | A rule's recent evaluations with observed value, threshold and sample count                                                                  |
+| `preview_alert_rule`         | read   | Replay a saved or draft rule over past data: each window's verdict and skip reason                                                           |
+| `create_alert_rule`          | write  | Create an alert rule from a template or from signal type, comparator and threshold                                                           |
+| `update_alert_rule`          | write  | Change the fields you pass on an alert rule                                                                                                  |
+| `delete_alert_rule`          | write  | Delete an alert rule and its incident history. Requires `confirm=true`                                                                       |
+| `list_escalation_chains`     | read   | Escalation chains with their steps, repeats and the rules using them                                                                         |
+| `manage_escalation_chain`    | write  | Create, change or delete an escalation chain: destinations paged step by step, waiting for an acknowledgement between steps                  |
+| `list_maintenance_windows`   | read   | One-off and weekly maintenance windows with their schedule, matchers and next occurrence                                                     |
+| `manage_maintenance_window`  | write  | Create, change or delete a maintenance window that silences matching rules once or every week; can keep those hours out of anomaly baselines |
+| `list_oncall_schedules`      | read   | On-call schedules with their layers and who is on call now                                                                                   |
+| `who_is_on_call`             | read   | Who is on call for a schedule at an instant, why, and who is next                                                                            |
+| `manage_oncall_schedule`     | write  | Create, change or delete a schedule that rotates workspace members in layers, or add and remove an override that puts one member on call     |
+| `list_alert_silences`        | read   | Active and scheduled alert silences, or ended ones, with their matchers and window                                                           |
+| `manage_alert_silence`       | write  | Hold back notifications for matching rules for a duration or until a time, or end a silence so they resume                                   |
 
 ### SLOs and uptime monitors
 
@@ -161,6 +162,7 @@ The write tools here need the org admin or engineer role.
 | `inspect_chart_data`        | read   | Run a widget's query and report row counts, series statistics and a health verdict       |
 | `create_dashboard`          | write  | Create a dashboard from a template, simplified widget specs or full JSON                 |
 | `update_dashboard`          | write  | Change a dashboard's name, description or time range                                     |
+| `delete_dashboard`          | write  | Delete a dashboard with its widgets and versions                                         |
 | `add_dashboard_widget`      | write  | Add one widget, from the query builder, raw SQL or a funnel                              |
 | `update_dashboard_widget`   | write  | Replace one widget with a full widget object                                             |
 | `remove_dashboard_widget`   | write  | Remove one widget                                                                        |
@@ -197,6 +199,7 @@ The write tools here need the org admin or engineer role.
 | `get_instrumentation_recommendations` | read   | Span and resource attribute problems found in your live data                                           |
 | `list_integrations`                   | read   | Connected integrations, what each one feeds, and which resources are failing or stale                  |
 | `list_ingest_sources`                 | read   | Everything that sends data to the organization, worst health first, and when each last sent data       |
+| `manage_ingest_source`                | write  | Pause, resume, rename, limit or delete an ingest source                                                |
 | `ingest_freshness`                    | read   | Newest received timestamp per signal, with its lag                                                     |
 | `ingest_usage`                        | read   | Spans, log records and metric data points ingested per service, with org totals                        |
 

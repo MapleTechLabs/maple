@@ -63,6 +63,8 @@ export const AlertDestinationRow = Schema.Struct({
 	disabledReason: NullableString,
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
+	/** What routes to it: rules and chains by name, monitors and SLOs counted; set by the list only. */
+	usedBy: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const ListAlertDestinationsOutput = Schema.Struct({
@@ -70,6 +72,27 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 	total: Schema.Number,
 	type: Schema.optionalKey(Schema.String),
 	enabledOnly: Schema.optionalKey(Schema.Boolean),
+	/** Kinds of routing `usedBy` leaves out because the key's scopes cannot read them. */
+	usageNotChecked: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+
+export const AlertDestinationMutationOutput = Schema.Struct({
+	action: Schema.Literals(["created", "updated"]),
+	destination: AlertDestinationRow,
+})
+
+export const TestAlertDestinationOutput = Schema.Struct({
+	destination: AlertDestinationRow,
+	/** The test ran without a delivery error. Not every passing test sends a message: see `message`. */
+	passed: Schema.Boolean,
+	/** What the test did, in the transport's words, or why it failed. */
+	message: Schema.String,
+})
+
+export const DeleteAlertDestinationOutput = Schema.Struct({
+	deleted: Schema.Boolean,
+	id: Schema.String,
+	name: Schema.String,
 })
 
 /** Configuration that saved but probably does not do what the caller meant. */

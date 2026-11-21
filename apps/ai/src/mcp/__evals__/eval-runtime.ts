@@ -1,5 +1,6 @@
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
+import { McpToolPlatformLive, mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
+import { McpRuntimeServicesLive } from "../tools/runtime-services"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
 import type { Database } from "@maple/backend/platform/DatabaseLive"
@@ -74,7 +75,11 @@ export const makeEvalRuntime = (
 		dataSources === undefined
 			? mcpServicesWithFeatureFlags(featureFlags)
 			: Layer.mergeAll(mcpServicesWithFeatureFlags(featureFlags, dataSources), dataSources)
-	const layer = services.pipe(
+	// The tools' own services are served beside the executor, so a world can seed through them.
+	const layer = Layer.mergeAll(
+		services,
+		McpRuntimeServicesLive.pipe(Layer.provide(McpToolPlatformLive)),
+	).pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				configLive,
