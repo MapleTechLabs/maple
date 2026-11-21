@@ -51,7 +51,7 @@ export interface Contributor {
 }
 
 export const CONTRIBUTORS = {
-	makisuo: { name: "Makisuo", github: "Makisuo", avatar: "/changelog/contributors/makisuo.png" },
+	makisuo: { name: "David Granzin", github: "Makisuo", avatar: "/changelog/contributors/makisuo.png" },
 	jeremyfunk: {
 		name: "JeremyFunk",
 		github: "JeremyFunk",
