@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Exit, Order, Schema, Array as Arr, String as Str } from "effect"
 import { mapleToolCatalog, mapleToolPhrase, readToolCall, toInputSchema } from "./registry"
 import * as P from "../lib/params"
+import { DATA_SOURCE_TOOLS } from "./types"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
 
@@ -348,5 +349,17 @@ describe("propose_fix arguments", () => {
 		})
 		expect(call?.unknown).toEqual([])
 		expect(call?.args.patch_summary).toBe("Guard the nil session before reading its user")
+	})
+})
+
+describe("data source tools", () => {
+	it("are all hidden from an org without data sources", () => {
+		const scoped = Arr.map(
+			Arr.filter(mapleToolCatalog, (tool) =>
+				Arr.ensure(tool.scopeFamily ?? []).includes("data_sources"),
+			),
+			(tool) => tool.name,
+		)
+		expect(Arr.sort(scoped, Order.String)).toEqual(Arr.sort([...DATA_SOURCE_TOOLS], Order.String))
 	})
 })

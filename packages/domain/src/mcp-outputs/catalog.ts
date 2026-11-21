@@ -6,10 +6,8 @@ import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { ListSourcesOutput } from "./sources"
 import {
-	DescribeDataSourceOutput,
 	ListDataSourcesOutput,
 	QueryDataSourceOutput,
-	SearchDataSourcesOutput,
 } from "./data-sources"
 import { SearchConsolePagesOutput, SearchConsoleQueriesOutput } from "./search-console"
 import { InspectUserOutput, ListUsersOutput } from "./users"
@@ -251,8 +249,6 @@ export const McpToolOutputs = {
 	list_slos: ListSlosOutput,
 	list_ingest_sources: ListSourcesOutput,
 	list_data_sources: ListDataSourcesOutput,
-	search_data_sources: SearchDataSourcesOutput,
-	describe_data_source: DescribeDataSourceOutput,
 	query_data_source: QueryDataSourceOutput,
 	list_uptime_monitors: ListUptimeMonitorsOutput,
 	list_users: ListUsersOutput,

@@ -17,7 +17,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, String as Str } from "effect"
+import { Clock, Context, type Duration, Effect, Layer, Option, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
 
@@ -30,6 +30,39 @@ const FLAGS_TTL_MS = 60_000
 export interface OrganizationFeatureFlagsServiceApi {
 	/** Never fails: an unreadable organization is an organization with every rollout off. */
 	readonly flags: (orgId: OrgId) => Effect.Effect<OrganizationFeatureFlags>
+	/**
+	 * The flags, or none when they could not be read. For a caller that only decides what to show,
+	 * and so should not hide a feature because the provider was away. With `within`, a read that
+	 * takes longer answers none, and so does the next minute of calls, without waiting again.
+	 */
+	readonly known: (
+		orgId: OrgId,
+		within?: Duration.Duration,
+	) => Effect.Effect<Option.Option<OrganizationFeatureFlags>>
+}
+
+/**
+ * A keyed read with a wait: one that outlasts `within` answers none, and for `quietMs` after so
+ * does every call for that key, at once. A slow provider then costs one wait, not one per request.
+ */
+export const answeringWithin = <K, A>(quietMs: number) => {
+	const unanswered = new Map<K, number>()
+	return Effect.fnUntraced(function* <R>(
+		key: K,
+		within: Duration.Duration,
+		read: Effect.Effect<Option.Option<A>, never, R>,
+	) {
+		const nowMs = yield* Clock.currentTimeMillis
+		const sinceMs = unanswered.get(key)
+		if (sinceMs !== undefined && nowMs - sinceMs < quietMs) return Option.none<A>()
+		const answer = yield* Effect.timeoutOption(read, within)
+		if (Option.isNone(answer)) {
+			unanswered.set(key, nowMs)
+			return Option.none<A>()
+		}
+		unanswered.delete(key)
+		return answer.value
+	})
 }
 
 export class OrganizationFeatureFlagsService extends Context.Service<
@@ -41,31 +74,34 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = clerkApiFor(env)
 
-		const cache = new Map<OrgId, { readonly flags: OrganizationFeatureFlags; readonly atMs: number }>()
+		const cache = new Map<
+			OrgId,
+			{ readonly flags: Option.Option<OrganizationFeatureFlags>; readonly atMs: number }
+		>()
 
 		const read = Effect.fn("OrganizationFeatureFlagsService.read")(function* (orgId: OrgId) {
 			if (clerk === undefined) {
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "no_clerk_secret")
-				return DISABLED_ORGANIZATION_FEATURE_FLAGS
+				return Option.some(DISABLED_ORGANIZATION_FEATURE_FLAGS)
 			}
 			return yield* clerk.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
-				Effect.map((organization) => organizationFeatureFlagsFrom(organization.public_metadata)),
+				Effect.map((organization) =>
+					Option.some(organizationFeatureFlagsFrom(organization.public_metadata)),
+				),
 				Effect.catch((error) =>
 					Effect.logWarning(
 						"Could not read organization feature flags; treating every rollout as off",
 					).pipe(
 						Effect.annotateLogs({ orgId, error: error.message }),
-						Effect.as(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+						Effect.as(Option.none<OrganizationFeatureFlags>()),
 					),
 				),
 			)
 		})
 
-		const flags: OrganizationFeatureFlagsServiceApi["flags"] = Effect.fn(
-			"OrganizationFeatureFlagsService.flags",
-		)(function* (orgId) {
+		const cachedOrRead = Effect.fn("OrganizationFeatureFlagsService.flags")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			if (!clerkMode) return ENABLED_ORGANIZATION_FEATURE_FLAGS
+			if (!clerkMode) return Option.some(ENABLED_ORGANIZATION_FEATURE_FLAGS)
 			const nowMs = yield* Clock.currentTimeMillis
 			const cached = cache.get(orgId)
 			if (cached !== undefined && nowMs - cached.atMs < FLAGS_TTL_MS) {
@@ -77,17 +113,34 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			return fresh
 		})
 
-		return { flags } satisfies OrganizationFeatureFlagsServiceApi
+		const inTime = answeringWithin<OrgId, OrganizationFeatureFlags>(FLAGS_TTL_MS)
+		const known: OrganizationFeatureFlagsServiceApi["known"] = (orgId, within) =>
+			within === undefined ? cachedOrRead(orgId) : inTime(orgId, within, cachedOrRead(orgId))
+
+		const flags: OrganizationFeatureFlagsServiceApi["flags"] = (orgId) =>
+			Effect.map(
+				cachedOrRead(orgId),
+				Option.getOrElse(() => DISABLED_ORGANIZATION_FEATURE_FLAGS),
+			)
+
+		return { flags, known } satisfies OrganizationFeatureFlagsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
 
-	/** Every rollout on, for tests and for callers that are gated elsewhere. */
-	static readonly allEnabled = Layer.succeed(this, {
-		flags: () => Effect.succeed(ENABLED_ORGANIZATION_FEATURE_FLAGS),
-	})
-
 	/** A fixed answer, for tests. */
 	static readonly fixed = (value: OrganizationFeatureFlags) =>
-		Layer.succeed(this, { flags: () => Effect.succeed(value) })
+		Layer.succeed(this, {
+			flags: () => Effect.succeed(value),
+			known: () => Effect.succeedSome(value),
+		})
+
+	/** Every rollout on, for tests and for callers that are gated elsewhere. */
+	static readonly allEnabled = this.fixed(ENABLED_ORGANIZATION_FEATURE_FLAGS)
+
+	/** A provider that does not answer, for tests: every rollout reads off and none is known. */
+	static readonly unreadable = Layer.succeed(this, {
+		flags: () => Effect.succeed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+		known: () => Effect.succeedNone,
+	})
 }

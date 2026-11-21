@@ -57,6 +57,7 @@ import {
 } from "../executor-loader"
 import { McpQueryBudgetError } from "../tools/types"
 import { CurrentMcpRequestTenant } from "../tenant"
+import type { TenantContext } from "@maple/domain/http"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
 import { canonicalToolName } from "../tools/tool-name-aliases"
@@ -140,7 +141,7 @@ const toolsUnavailable = () =>
  * `initialize` states the capability here. Every other field is the server's.
  */
 const withToolsCapability =
-	(initializeIds: ReadonlySet<string | number>) =>
+	(initializeIds: ReadonlySet<string | number>, instructions: string | undefined) =>
 	(response: FromServerEncoded): FromServerEncoded => {
 		if (response._tag !== "Exit" || response.exit._tag !== "Success") return response
 		if (!initializeIds.has(response.requestId)) return response
@@ -150,7 +151,12 @@ const withToolsCapability =
 			...response,
 			exit: {
 				_tag: "Success",
-				value: { ...result, capabilities: { tools: { listChanged: true }, ...result.capabilities } },
+				value: {
+					...result,
+					capabilities: { tools: { listChanged: true }, ...result.capabilities },
+					// The server's own instructions are the same for everyone; these are this caller's.
+					...(instructions === undefined ? undefined : { instructions }),
+				},
 			},
 		}
 	}
@@ -217,6 +223,8 @@ export const layerStatelessMcpHttp = (options: {
 	/** Starts that build in the background on a request with no `tools/call`, so the isolate's
 	 * first call finds it built. */
 	readonly prewarmToolExecutor: Effect.Effect<void>
+	/** The instructions a caller's own `initialize` is answered with, in place of the server's. */
+	readonly instructionsFor?: ((tenant: TenantContext) => Effect.Effect<string>) | undefined
 }): Layer.Layer<RpcServer.Protocol, never, RpcSerialization.RpcSerialization | HttpRouter.HttpRouter> =>
 	Layer.effect(RpcServer.Protocol)(
 		Effect.gen(function* () {
@@ -449,6 +457,12 @@ export const layerStatelessMcpHttp = (options: {
 							message._tag === "Request" && isInitializeMessage(message) ? [message.id] : [],
 						),
 					)
+					const instructions =
+						initializeIds.size === 0 ||
+						tenant === undefined ||
+						options.instructionsFor === undefined
+							? undefined
+							: yield* options.instructionsFor(tenant)
 					const visible = Arr.appendAll(
 						Arr.map(
 							Arr.filter(
@@ -460,7 +474,7 @@ export const layerStatelessMcpHttp = (options: {
 											(response._tag === "Exit" && overdue.has(response.requestId)))
 									),
 							),
-							withToolsCapability(initializeIds),
+							withToolsCapability(initializeIds, instructions),
 						),
 						Arr.map([...overdue], ([requestId, error]): FromServerEncoded => ({
 							_tag: "Exit",

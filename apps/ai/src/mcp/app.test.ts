@@ -23,7 +23,12 @@ import type { RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimit
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import type { McpToolExecutorApi } from "./dispatcher"
 import { McpToolExecutorLoader } from "./executor-loader"
-import { McpLive } from "./app"
+import { McpLive, mcpLiveWithFeatureFlags } from "./app"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+} from "@maple/domain/organization-feature-flags"
 import { McpToolCallDeadline } from "./transport/stateless-http"
 
 const createdDbs: TestDb[] = []
@@ -57,6 +62,7 @@ const McpResponseBody = Schema.Struct({
 			protocolVersion: Schema.optionalKey(Schema.String),
 			serverInfo: Schema.optionalKey(Schema.Struct({ name: Schema.String })),
 			capabilities: Schema.optionalKey(Schema.Unknown),
+			instructions: Schema.optionalKey(Schema.String),
 			tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
 		}),
 	),
@@ -819,6 +825,93 @@ describe("MCP tools/list per credential", () => {
 		} finally {
 			await dispose()
 		}
+	})
+})
+
+describe("MCP data sources per org", () => {
+	it("lists the data source tools and names them in the instructions only for an org with data sources", async () => {
+		const db = createTestDb(createdDbs)
+		const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+		const services = Layer.mergeAll(
+			ApiKeysService.layer,
+			ErrorActorsService.layer,
+			AuthService.layer,
+			makeMcpToolExecutorStubLayer(),
+			makeRateLimiterStubLayer(),
+		).pipe(Layer.provideMerge(base))
+		const key = await Effect.runPromise(
+			Effect.gen(function* () {
+				const apiKeys = yield* ApiKeysService
+				return yield* apiKeys.create(
+					Schema.decodeSync(OrgId)("org_test"),
+					Schema.decodeSync(UserId)("user_test"),
+					{ name: "Data sources test", kind: "mcp" },
+				)
+			}).pipe(Effect.provide(services)),
+		)
+		const seenBy = async (flags: Layer.Layer<OrganizationFeatureFlagsService>) => {
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				mcpLiveWithFeatureFlags(flags).pipe(Layer.provideMerge(services)),
+				{ disableLogger: true },
+			)
+			const post = (body: unknown) =>
+				handler(
+					new Request("https://api.example.com/mcp", {
+						method: "POST",
+						headers: {
+							authorization: `Bearer ${key.secret}`,
+							accept: "application/json, text/event-stream",
+							"content-type": "application/json",
+							host: "api.example.com",
+							"x-forwarded-proto": "https",
+							"mcp-protocol-version": "2025-06-18",
+						},
+						body: JSON.stringify(body),
+					}),
+					Context.empty(),
+				)
+			try {
+				const initialized = await readBody(
+					await post({
+						jsonrpc: "2.0",
+						id: 1,
+						method: "initialize",
+						params: {
+							protocolVersion: "2025-06-18",
+							capabilities: {},
+							clientInfo: { name: "test", version: "1.0.0" },
+						},
+					}),
+				)
+				const listed = await readBody(await post({ jsonrpc: "2.0", id: 2, method: "tools/list" }))
+				const names = Arr.map(listed.result?.tools ?? [], (tool) => tool.name)
+				return {
+					instructed: Str.includes("list_data_sources")(initialized.result?.instructions ?? ""),
+					listed: Arr.filter(names, (name) => Str.includes("data_source")(name)),
+					otherTools: names.includes("inspect_trace"),
+				}
+			} finally {
+				await dispose()
+			}
+		}
+		const fixed = OrganizationFeatureFlagsService.fixed
+		expect(await seenBy(fixed(ENABLED_ORGANIZATION_FEATURE_FLAGS))).toEqual({
+			instructed: true,
+			listed: ["list_data_sources", "query_data_source"],
+			otherTools: true,
+		})
+		expect(await seenBy(fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS))).toEqual({
+			instructed: false,
+			listed: [],
+			otherTools: true,
+		})
+		// Flags that cannot be read hide nothing, since the session would never see the tools again;
+		// the instructions stay silent, and the tools themselves still refuse an org without them.
+		expect(await seenBy(OrganizationFeatureFlagsService.unreadable)).toEqual({
+			instructed: false,
+			listed: ["list_data_sources", "query_data_source"],
+			otherTools: true,
+		})
 	})
 })
 
