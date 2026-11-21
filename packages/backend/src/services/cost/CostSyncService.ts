@@ -39,6 +39,7 @@ import { AnthropicCostProvider } from "./providers/anthropic/AnthropicCostProvid
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
+import { MorphCostProvider } from "./providers/morph/MorphCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
@@ -50,7 +51,7 @@ import {
 	COST_DATASOURCE,
 	type CostSyncPlan,
 	type CostSyncStep,
-	HEAD_INTERVAL_MS,
+	headIntervalMs,
 	historyFloor,
 	nextMonthStartMs,
 	oversizedDay,
@@ -178,6 +179,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				anthropic: yield* AnthropicCostProvider,
 				openai: yield* OpenAiCostProvider,
 				gcp: yield* GcpCostProvider,
+				morph: yield* MorphCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -301,7 +303,13 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								PG.or(
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
-									$.lastSyncedAt.lte(now - HEAD_INTERVAL_MS),
+									// A head due, at each provider's own interval.
+									...Arr.map(CostProvider.literals, (provider) =>
+										PG.and(
+											$.provider.eq(provider),
+											$.lastSyncedAt.lte(now - headIntervalMs(provider)),
+										),
+									),
 									// History left to walk, down to each provider's own floor.
 									...Arr.map(CostProvider.literals, (provider) =>
 										PG.and(
@@ -626,7 +634,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								now + BACKFILL_BUDGET_HOLD_MS,
 								source.lastSyncedAt === null
 									? now + BACKFILL_BUDGET_HOLD_MS
-									: source.lastSyncedAt + HEAD_INTERVAL_MS,
+									: source.lastSyncedAt + headIntervalMs(source.provider),
 							)
 						: null
 				if (!stepped) {
@@ -722,6 +730,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				AnthropicCostProvider.layer,
 				OpenAiCostProvider.layer,
 				GcpCostProvider.layer,
+				MorphCostProvider.layer,
 				WarehouseQueryService.layer,
 			),
 		),
