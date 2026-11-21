@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
@@ -31,10 +31,10 @@ export interface ResolvedAttributeScope {
 export const pickAttributeScope = (
 	key: string,
 	primaryKeys: ReadonlyArray<string>,
-	resourceKeys: ReadonlyArray<string> | "unknown",
+	resourceKeys: ReadonlyArray<string> | "others",
 ): AttributeScope => {
 	if (primaryKeys.includes(key)) return "span"
-	if (resourceKeys === "unknown") return primaryKeys.length > 0 ? "resource" : "span"
+	if (resourceKeys === "others") return "resource"
 	return resourceKeys.includes(key) ? "resource" : "span"
 }
 
@@ -49,7 +49,8 @@ const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: 
 /** The keys seen in the window: on the primary map, and on the resource map where it is catalogued. */
 export interface KnownAttributeKeys {
 	readonly primary: ReadonlyArray<string>
-	readonly resource: ReadonlyArray<string> | "unknown"
+	/** `others`: the primary map's keys are all known, so any other key is the resource's. */
+	readonly resource: ReadonlyArray<string> | "others"
 }
 
 const decodeKeysRequest = Schema.decodeUnknownEffect(QueryEngineExecuteRequest)
@@ -57,7 +58,7 @@ const decodeKeysRequest = Schema.decodeUnknownEffect(QueryEngineExecuteRequest)
 /** The most keys one catalogue read returns: a shorter answer is the whole catalogue. */
 const CATALOGUE_LIMIT = 500
 
-/** The keys the query engine catalogues for one map of a source, most used first. */
+/** The keys the query engine catalogues for one map of a source, most used first; none when the read fails. */
 const cataloguedKeys = (
 	lookup: string,
 	window: { readonly startTime: string; readonly endTime: string },
@@ -71,20 +72,27 @@ const cataloguedKeys = (
 			query: { kind: "attributeKeys", limit: CATALOGUE_LIMIT, ...query },
 		})
 		const { result } = yield* engine.execute(tenant, request)
-		return result.kind === "attributeKeys" ? Arr.map(result.data, (item) => item.key) : []
-	}).pipe(orFallback(lookup, (): ReadonlyArray<string> => []))
+		const keys = result.kind === "attributeKeys" ? Arr.map(result.data, (item) => item.key) : []
+		return Option.some<ReadonlyArray<string>>(keys)
+	}).pipe(orFallback(lookup, () => Option.none<ReadonlyArray<string>>()))
+
+const NO_KEYS = (): ReadonlyArray<string> => []
 
 /**
- * A log's two maps, given its record keys. Log resource keys are not catalogued: a key missing
- * from a complete record catalogue is on the resource, and past the cap the trace resource keys say.
+ * A log's two maps, given its record keys. Log resource keys are not catalogued: with every record
+ * key known, even none, any other key is the resource's. Past the cap, or when the read failed,
+ * the trace resource keys say.
  */
 export const logAttributeKeys = <R>(
-	recordKeys: ReadonlyArray<string>,
+	recordKeys: Option.Option<ReadonlyArray<string>>,
 	traceResourceKeys: Effect.Effect<ReadonlyArray<string>, never, R>,
 ): Effect.Effect<KnownAttributeKeys, never, R> =>
-	recordKeys.length < CATALOGUE_LIMIT
-		? Effect.succeed({ primary: recordKeys, resource: "unknown" })
-		: Effect.map(traceResourceKeys, (resource) => ({ primary: recordKeys, resource }))
+	Option.isSome(recordKeys) && recordKeys.value.length < CATALOGUE_LIMIT
+		? Effect.succeed({ primary: recordKeys.value, resource: "others" })
+		: Effect.map(traceResourceKeys, (resource) => ({
+				primary: Option.getOrElse(recordKeys, NO_KEYS),
+				resource,
+			}))
 
 /** Reads the keys a scope is picked from, off the maps of the source the query reads. */
 export const knownAttributeKeys = Effect.fn("McpTool.knownAttributeKeys")(function* (
@@ -99,7 +107,10 @@ export const knownAttributeKeys = Effect.fn("McpTool.knownAttributeKeys")(functi
 			...metric,
 			scope: "resource",
 		})
-		return { primary, resource } satisfies KnownAttributeKeys
+		return {
+			primary: Option.getOrElse(primary, NO_KEYS),
+			resource: Option.getOrElse(resource, NO_KEYS),
+		} satisfies KnownAttributeKeys
 	}
 	if (params.source === "logs") {
 		const recordKeys = yield* cataloguedKeys("log attribute keys", window, { source: "logs" })
