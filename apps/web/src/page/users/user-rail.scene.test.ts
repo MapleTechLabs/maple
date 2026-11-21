@@ -9,7 +9,7 @@ import { type UserGroupStats, userRail } from "./view-detail"
 // about the user, not a picker.
 
 type Message = Readonly<{ _tag: "Picked"; namespace: string | null }>
-type Model = Readonly<{ profile: UserProfile; stats: UserGroupStats }>
+type Model = Readonly<{ profile: UserProfile; stats: UserGroupStats; active?: string }>
 
 const picked = (namespace: string | null): Message => ({ _tag: "Picked", namespace })
 
@@ -20,7 +20,7 @@ const railView = (model: Model, h: HtmlBuilder<Message>) =>
 		model.profile,
 		{ nowMs: USERS_NOW, timeZone: USERS_TIME_ZONE },
 		{
-			active: null,
+			active: model.active ?? null,
 			isPinned: false,
 			onSelect: picked,
 			onClearPin: picked(null),
@@ -29,14 +29,25 @@ const railView = (model: Model, h: HtmlBuilder<Message>) =>
 		model.stats,
 	)
 
+const ONLY_ACTIVE = "No one else in this group was active in this window"
+
 describe("the user rail", () => {
-	test("a group of one says so instead of repeating the user's own numbers", () => {
+	test("a group with no one else active says so instead of repeating the user's own numbers", () => {
 		scene(
 			{ update, view: railView },
 			given({ profile: SOLO_DETAIL.profile, stats: SOLO_GROUP }),
-			expectView(text("The only user in this group")).toExist(),
+			expectView(text(ONLY_ACTIVE)).toExist(),
 			expectView(text("Sessions per user")).not.toExist(),
 			expectView(text("Group id")).not.toExist(),
+		)
+	})
+
+	test("a namespace picked on the page keeps the group's figures, which cover every namespace", () => {
+		scene(
+			{ update, view: railView },
+			given({ profile: USER_DETAIL.profile, stats: SOLO_GROUP, active: "payments" }),
+			expectView(text(ONLY_ACTIVE)).not.toExist(),
+			expectView(text("Sessions per user")).toExist(),
 		)
 	})
 
@@ -68,6 +79,19 @@ describe("the user rail", () => {
 			given({ profile: USER_DETAIL.profile, stats: null }),
 			expectView(text("Namespaces")).toExist(),
 			expectView(role("button", { name: /payments/ })).toExist(),
+		)
+	})
+
+	test("one named namespace beside an unnamespaced service keeps the picker that narrows to it", () => {
+		const mixed: UserProfile = {
+			...SOLO_DETAIL.profile,
+			services: [...SOLO_DETAIL.profile.services, { service: "worker", namespace: "", signals: 40 }],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: mixed, stats: null }),
+			expectView(text("Namespaces")).toExist(),
+			expectView(role("button", { name: /core/ })).toExist(),
 		)
 	})
 })

@@ -196,7 +196,14 @@ const listPage = (h: H, model: Model, body: Html): Html =>
 	)
 
 /** A user's page over a fixture: Maya, or the solo founder (`?view=solo`) with their group of one. */
-const detailPage = (h: H, model: Model, user: UserDetail, groupStats: UserGroupStats): Html => {
+const detailPage = (
+	h: H,
+	model: Model,
+	user: UserDetail,
+	groupStats: UserGroupStats,
+	/** The directory filtered to the group; the solo founder is not in the directory's rows. */
+	groupHref: string | null,
+): Html => {
 	const clock = { nowMs: USERS_NOW, timeZone: USERS_TIME_ZONE }
 	const active = model.pinnedNamespace ?? model.detailNamespace
 	const detail = scopeDetail(user, active)
@@ -233,14 +240,7 @@ const detailPage = (h: H, model: Model, user: UserDetail, groupStats: UserGroupS
 				],
 			),
 			tabs: userTabs(h, detail, options),
-			rightPanel: userRail(
-				h,
-				detail.profile,
-				clock,
-				namespace,
-				detail.profile.groupId === null ? null : `?view=list&groups=${detail.profile.groupId}`,
-				groupStats,
-			),
+			rightPanel: userRail(h, detail.profile, clock, namespace, groupHref, groupStats),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
 		},
@@ -295,9 +295,10 @@ const view = (model: Model, h: H): Html => {
 					usersGroups(USER_ROWS, USERS_NOW),
 					(group) => group.groupId === USER_DETAIL.profile.groupId,
 				).pipe(Option.getOrNull),
+				`?view=list&groups=${USER_DETAIL.profile.groupId}`,
 			)
 		case "solo":
-			return detailPage(h, model, SOLO_DETAIL, SOLO_GROUP)
+			return detailPage(h, model, SOLO_DETAIL, SOLO_GROUP, null)
 		case "empty":
 			return listPage(
 				h,

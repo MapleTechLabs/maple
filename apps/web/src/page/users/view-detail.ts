@@ -336,15 +336,21 @@ const groupFigures = <M>(
 	label: string,
 	stats: UserGroupStats,
 	groupHref: string | null,
+	/** The group read covers what the page shows: no namespace picked here, or only the org pin. */
+	isPageScope: boolean,
 ): ReadonlyArray<Html> => {
 	if (stats === null) return []
 	if (stats === "loading")
 		return [typography(h, { size: "xs", tone: "subtle" }, ["Loading the group's numbers…"])]
 	if (stats === "failed")
 		return [typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the group's numbers"])]
-	// A group of one is this user: its numbers would only repeat theirs.
-	if (stats.users <= 1)
-		return [typography(h, { size: "xs", tone: "muted" }, ["The only user in this group"])]
+	// The user is the group's only active one here: its numbers would only repeat theirs.
+	if (stats.users <= 1 && isPageScope)
+		return [
+			typography(h, { size: "xs", tone: "muted" }, [
+				"No one else in this group was active in this window",
+			]),
+		]
 	return [
 		detailRailStats(h, [
 			{ label: "Users", value: formatNumber(stats.users) },
@@ -380,6 +386,7 @@ const groupSection = <M>(
 	profile: UserProfile,
 	stats: UserGroupStats,
 	groupHref: string | null,
+	isPageScope: boolean,
 ): ReadonlyArray<Html> =>
 	profile.groupId === null
 		? []
@@ -387,7 +394,13 @@ const groupSection = <M>(
 				detailRailGroup(h, "Group", [
 					vstack(h, { gap: "2.5" }, [
 						groupHeading(h, profile.groupId, profile.groupName, groupHref),
-						...groupFigures(h, profile.groupName ?? profile.groupId, stats, groupHref),
+						...groupFigures(
+							h,
+							profile.groupName ?? profile.groupId,
+							stats,
+							groupHref,
+							isPageScope,
+						),
 					]),
 				]),
 			]
@@ -403,7 +416,13 @@ export const userRail = <M>(
 	groupStats: UserGroupStats = null,
 ): Html => {
 	const namespaces = namespacesOf(profile)
-	const [onlyNamespace] = namespaces.length === 1 ? namespaces : []
+	// One namespace is a fact about the user only when every service is in it; an unnamespaced
+	// service alongside keeps the picker, which narrows the page to the named one.
+	const [onlyNamespace] =
+		namespaces.length === 1 &&
+		Arr.every(profile.services, (service) => service.namespace === namespaces[0]?.name)
+			? namespaces
+			: []
 	return h.aside(
 		[h.AriaLabel("User details"), h.Class("flex flex-col")],
 		[
@@ -439,7 +458,7 @@ export const userRail = <M>(
 					? []
 					: [detailRailRow(h, { label: "Location" }, [railValue(h, profile.location, false)])]),
 			]),
-			...groupSection(h, profile, groupStats, groupHref),
+			...groupSection(h, profile, groupStats, groupHref, scope.active === null || scope.isPinned),
 			...(onlyNamespace === undefined ? [namespacesGroup(h, namespaces, scope)] : []),
 			servicesGroup(h, profile, onlyNamespace !== undefined),
 			detailRailGroup(
