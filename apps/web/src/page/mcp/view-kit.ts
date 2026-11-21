@@ -307,7 +307,8 @@ const INTERNAL_CLIENTS = new Set(
 	),
 )
 
-const clientMarkOf = (name: string): ClientMark => {
+/** The mark and tint a client name gets. */
+export const clientMarkOf = (name: string): ClientMark => {
 	if (INTERNAL_CLIENTS.has(name)) return { icon: "MapleMark", className: "text-primary" }
 	// `Python (httpx)`, `Python-urllib` and `codex-mcp-client` all start with their family's word.
 	const word = Arr.headNonEmpty(Str.split(Str.toLowerCase(name), /[\s(/-]/))
