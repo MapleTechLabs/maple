@@ -47,15 +47,10 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 		const service = yield* IngestRuleService
 
 		// A rule drops or rewrites the whole org's telemetry, so writes need ingest_rules:manage.
-		const requireRuleWrite = (tenant: CurrentTenant.TenantSchema) =>
-			Policy.check(
-				tenant.permissions,
-				"ingest_rules:manage",
-				(denial) =>
-					new IngestRuleForbiddenError({
-						message: denial.message,
-					}),
-			)
+		const requireRuleWrite = Policy.authorize(
+			"ingest_rules:manage",
+			(denial) => new IngestRuleForbiddenError({ message: denial.message }),
+		)
 
 		return handlers
 			.handle("list", ({ query }) =>
@@ -116,7 +111,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("reorder", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleWrite(tenant)
+					yield* requireRuleWrite
 					const rules = yield* service.reorder(tenant.orgId, payload.ids)
 					yield* Effect.forEach(
 						rules,
@@ -140,7 +135,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleWrite(tenant)
+					yield* requireRuleWrite
 					const created = yield* service.create(tenant.orgId, {
 						name: payload.name,
 						enabled: payload.enabled,
@@ -161,7 +156,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleWrite(tenant)
+					yield* requireRuleWrite
 					const current = yield* service.get(tenant.orgId, params.id)
 					const specChanged =
 						payload.signals !== undefined ||
@@ -197,7 +192,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireRuleWrite(tenant)
+					yield* requireRuleWrite
 					const id = yield* service.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("ingest_rule.deleted", { resourceId: id })
 					return { id, object: "ingest_rule" as const, deleted: true as const }

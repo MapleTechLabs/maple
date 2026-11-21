@@ -39,15 +39,10 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 
 		// A mapping rewrites every ingested span for the whole org, so the writes
 		// need attribute_mappings:manage; the reads stay open to any member.
-		const requireMappingWrite = (tenant: CurrentTenant.TenantSchema) =>
-			Policy.check(
-				tenant.permissions,
-				"attribute_mappings:manage",
-				(denial) =>
-					new IngestAttributeMappingForbiddenError({
-						message: denial.message,
-					}),
-			)
+		const requireMappingWrite = Policy.authorize(
+			"attribute_mappings:manage",
+			(denial) => new IngestAttributeMappingForbiddenError({ message: denial.message }),
+		)
 
 		const listMappings = (orgId: OrgId) => service.list(orgId)
 
@@ -84,7 +79,7 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireMappingWrite(tenant)
+					yield* requireMappingWrite
 					const created = yield* service.create(
 						tenant.orgId,
 						new CreateIngestAttributeMappingRequest({
@@ -108,7 +103,7 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireMappingWrite(tenant)
+					yield* requireMappingWrite
 					const current = yield* findMapping(tenant.orgId, params.id)
 					const updated = yield* service.update(
 						tenant.orgId,
@@ -149,7 +144,7 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireMappingWrite(tenant)
+					yield* requireMappingWrite
 					const deleted = yield* service.delete(tenant.orgId, params.id)
 					yield* recordHttpAudit("attribute_mapping.deleted", {
 						resourceId: deleted.id,
