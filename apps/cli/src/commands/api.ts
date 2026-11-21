@@ -106,7 +106,7 @@ const readInput = (source: string): Effect.Effect<string, CliUsageError, FileSys
 
 /** The logged-in workspace; raw API calls never go to a local server. */
 const remoteTarget = Effect.gen(function* () {
-	if (process.argv.includes("--local"))
+	if (Arr.some(process.argv, (arg) => arg === "--local" || /^--local=(?!false$)/.test(arg)))
 		return yield* new CliUsageError({
 			message: "raw API requests go to a remote workspace; --local is not supported",
 			hint: "drop --local",
@@ -191,7 +191,13 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 		)
 	}
 
-	const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
+	// A body that breaks mid-read is a failure, never an empty success; an empty 204 reads as "".
+	const text = yield* response.text.pipe(
+		Effect.mapError(
+			(cause) =>
+				new ApiTransportError({ message: `the response from ${url.origin} was cut off`, cause }),
+		),
+	)
 	// JSON is pretty-printed; anything else (or an empty 204) is passed through as-is.
 	const json = text === "" ? Option.none() : Result.getSuccess(parseJson(text, "the response"))
 	if (Option.isSome(json)) yield* printJson(json.value)
