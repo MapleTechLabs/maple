@@ -235,7 +235,12 @@ const tagValueOf = (schema: unknown): string | undefined => {
 }
 
 /** The keywords a branch may carry and still merge: anything else, a label included, would be lost. */
-const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set(["type", "properties", "required", "additionalProperties"])
+const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set([
+	"type",
+	"properties",
+	"required",
+	"additionalProperties",
+])
 
 /**
  * One object for a union whose branches are the same object under different tag values: shared
@@ -278,6 +283,15 @@ export const mergeTaggedVariants = (
 		const holders = Arr.filter(variants, (variant) => key in (propertiesOf(variant) ?? {}))
 		const schema = propertiesOf(holders[0] ?? first)?.[key]
 		if (key === tag.value) {
+			// The first branch's other constraints on the tag would bind every value: keep the union.
+			const constraintsOf = (variant: Record<string, unknown>) => {
+				const own = propertiesOf(variant)?.[key]
+				const { enum: _enum, description: _text, ...constraints } = isJsonObject(own) ? own : {}
+				return constraints
+			}
+			if (!Arr.every(variants, (variant) => sameJson(constraintsOf(variant), constraintsOf(first)))) {
+				return undefined
+			}
 			// Each branch describes its own tag value: keep them all, named, rather than the first.
 			const described = Arr.flatMap(variants, (variant) => {
 				const own = propertiesOf(variant)?.[key]
