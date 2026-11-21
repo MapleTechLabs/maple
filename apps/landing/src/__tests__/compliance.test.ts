@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { GET as euMd } from "../pages/eu.md"
 import { GET as pricingMd } from "../pages/pricing.md"
+import { GET as securityMd } from "../pages/security.md"
 import { GET as llmsTxt } from "../pages/llms.txt"
 import { euFaqs } from "../lib/eu-region"
 
@@ -10,6 +11,7 @@ describe("compliance in the .md twins", () => {
 	it.each([
 		["/pricing.md", pricingMd],
 		["/eu.md", euMd],
+		["/security.md", securityMd],
 	] as const)("%s lists the DPA as available and the audits as in progress", async (_, route) => {
 		const body = await (await route(context)).text()
 		expect(body).toContain("## Compliance")

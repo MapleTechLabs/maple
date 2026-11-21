@@ -1,8 +1,9 @@
 ---
 /**
  * The bill, as the second beat of the pricing chapter: one row per vendor and the four lines that
- * decide a bill. The other five lines (free plan, retention, OpenTelemetry, licence, self-hosting)
- * are on /compare, which prints the same data with a column per vendor.
+ * decide a bill, then the offer to help a team move. The other five lines (free plan, retention,
+ * OpenTelemetry, licence, self-hosting) are on /compare, which prints the same data with a column
+ * per vendor.
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
 import * as m from "../../paraglide/messages.js";
@@ -57,6 +58,13 @@ const labels = billRowLabels();
 			</table>
 		</div>
 
+		<p class="ledger-bill__migrate">
+			{m.bill_migrate_note()}
+			<a href={l("/contact")} class="ledger-link" data-track="cta_click" data-track-location="home_bill_migrate">
+				{m.bill_migrate_link()}
+				<span aria-hidden="true"> →</span>
+			</a>
+		</p>
 		<p class="ledger-bill__note">{m.bill_footnote()}</p>
 	</div>
 </section>
