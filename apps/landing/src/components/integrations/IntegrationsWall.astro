@@ -24,10 +24,6 @@ const FEATURED = [
 	"Supabase",
 	"GitHub",
 	"Linear",
-	"Next.js",
-	"PlanetScale",
-	"PagerDuty",
-	"Claude Code",
 ];
 
 const locale = Astro.currentLocale ?? "en";
@@ -67,12 +63,15 @@ const cells = Array.from({ length: ROWS * COLS }, (_, i) => {
 const hexes = cells.flatMap((cell, i) => {
 	const tile = i < featured.length ? featured[i] : others[i - featured.length];
 	if (tile === undefined) return [];
-	const fade = Math.max(0, cell.distance - 1.75);
+	// The featured marks are the links; anything past them fades at least a little, so no
+	// unlinked hex looks clickable.
+	const sharp = i < featured.length;
+	const fade = sharp ? 0 : Math.max(0.2, cell.distance - 1.75);
 	return [
 		{
 			tile,
 			name: text(tile.name),
-			sharp: fade === 0,
+			sharp,
 			style: [
 				`left:${pct(cell.x, WIDTH)}`,
 				`top:${pct(cell.y, HEIGHT)}`,
