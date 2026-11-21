@@ -75,11 +75,19 @@ export const barComponents = (
 ): ReadonlyArray<StatusPageSnapshotComponent> =>
 	Arr.filter(components, (component) => component.showUptime && component.days.length > 0)
 
-/** Windows worth paging through: back to the oldest day any component was checked, at least one. */
-export const windowCount = (components: ReadonlyArray<StatusPageSnapshotComponent>): number =>
+/**
+ * Windows worth paging through: back to the oldest day any component was checked or had an
+ * incident marked on it, at least one.
+ */
+export const windowCount = (
+	components: ReadonlyArray<StatusPageSnapshotComponent>,
+	entries: ReadonlyArray<CalendarEntry>,
+	nowMs: number,
+): number =>
 	Arr.reduce(barComponents(components), 1, (count, component) => {
+		const marks = componentMarks(component.id, entries, nowMs)
 		return Option.match(
-			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0),
+			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0 || marks.has(bar.day)),
 			{
 				onNone: () => count,
 				onSome: (oldest) =>

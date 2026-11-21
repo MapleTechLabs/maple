@@ -291,7 +291,7 @@ const pageData = (
 	return {
 		end: longest?.days.at(-1)?.day ?? today,
 		len: longest?.days.length ?? 0,
-		windows: windowCount(snapshot.components),
+		windows: windowCount(snapshot.components, entries, snapshot.generatedAt),
 		bars: Rec.fromEntries(
 			Arr.map(withBars, (component) => [
 				component.id,
