@@ -482,6 +482,11 @@
 	"footer_what_is_observability": "What is observability?",
 	"footer_best_tools": "Best open-source tools",
 	"footer_dash0_alternatives": "Dash0 alternatives",
+	"footer_alternatives": "Alternatives",
+	"footer_datadog_alternatives": "Datadog alternatives",
+	"footer_sentry_alternatives": "Sentry alternatives",
+	"footer_grafana_alternatives": "Grafana alternatives",
+	"footer_new_relic_alternatives": "New Relic alternatives",
 
 	"hero_shot_overview": "Overview",
 	"hero_shot_traces": "Traces",

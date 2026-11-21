@@ -4,6 +4,7 @@
  */
 
 import type { IconName } from "@maple/views/ui/icons.generated"
+import { alternativesPages, alternativesPath } from "./alternatives"
 import { Array as Arr } from "effect"
 
 export type Guide = {
@@ -163,6 +164,12 @@ export const guideCategories: GuideCategory[] = [
 				description:
 					"The leading options compared by architecture, signals, license and operating cost.",
 			},
+			...Arr.map(alternativesPages, (page) => ({
+				href: alternativesPath(page.slug),
+				icon: "UnorderedListIcon" as const,
+				title: `${page.vendor} alternatives`,
+				description: page.blurb,
+			})),
 			{
 				href: "/guides/new-relic-pricing",
 				icon: "CreditCardIcon",
