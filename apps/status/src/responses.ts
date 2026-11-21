@@ -50,6 +50,20 @@ export const asset = (body: string, contentType: string, extra: Record<string, s
 		},
 	})
 
+/**
+ * The link preview. Under the URL the page links (`?v=` the current version) it is cached for a
+ * day; any other `v` gets the current card for as long as the page itself.
+ */
+export const png = (body: Uint8Array<ArrayBuffer>, current: boolean): Response =>
+	new Response(body, {
+		headers: {
+			...COMMON_HEADERS,
+			"content-type": "image/png",
+			"cache-control": current ? "public, max-age=86400" : PUBLIC_CACHE_CONTROL,
+			"content-security-policy": "default-src 'none'",
+		},
+	})
+
 /** A JSON API error, `{ "error": message }`, readable cross-origin like the API itself. */
 export const jsonError = (status: number, message: string): Response =>
 	new Response(encodeJson({ error: message }), {

@@ -6,10 +6,17 @@ import {
 	type StatusPagePublisherHeartbeat,
 	type StatusPageSnapshot,
 } from "@maple/domain/status-page"
+import type { StatusOgCard } from "@maple/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { handleRequest, sharedHostMatcher } from "./handler"
-import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
+import {
+	type CachedValue,
+	type StatusEnv,
+	StatusOgImageError,
+	type StatusStorage,
+	StatusStorageError,
+} from "./ports"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -80,7 +87,10 @@ export const makeFakeStorage = () => {
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
+	// Each card the handler asked to draw, under its key; `fail` makes the renderer error.
+	const og = { renders: new Array<{ key: string; card: StatusOgCard }>(), fail: false, complete: true }
 	return {
+		og,
 		storage,
 		kv,
 		kvReads,
@@ -158,6 +168,13 @@ export const send = (
 		nowMs: options.nowMs ?? FIXTURE_NOW,
 		randomId: () => `id-${++fake.ids.next}`,
 		isSharedHost: sharedHostMatcher(null),
+		ogImage: (key, card) =>
+			fake.og.fail
+				? Effect.fail(new StatusOgImageError({ message: "renderer down" }))
+				: Effect.sync(() => {
+						fake.og.renders.push({ key, card })
+						return { png: new TextEncoder().encode(`png:${key}`), complete: fake.og.complete }
+					}),
 	}
 	return Effect.runPromise(handleRequest(typeof input === "string" ? new Request(input) : input, env))
 }

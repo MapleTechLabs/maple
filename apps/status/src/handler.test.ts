@@ -311,6 +311,51 @@ describe("serving a page", () => {
 		)
 	})
 
+	it("draws the preview the page links, cached for a day under that URL", async () => {
+		const html = await (await send(fake, PAGE)).text()
+		const linked =
+			Option.getOrThrow(Str.match(/<meta property="og:image" content="([^"]+)">/u)(html))[1] ?? ""
+		const version = new URL(linked).searchParams.get("v")
+		const response = await send(fake, linked)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("content-type")).toBe("image/png")
+		expect(response.headers.get("cache-control")).toBe("public, max-age=86400")
+		expect(await response.text()).toBe(`png:${FIXTURE_PAGE_ID}/${version}`)
+		expect(fake.og.renders[0]?.card.host).toBe("status.acme.example")
+	})
+
+	it("draws the current card for an old preview URL, cached only as long as the page", async () => {
+		const response = await send(fake, `${PAGE}og.png?v=old`)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("cache-control")).toBe(
+			(await send(fake, PAGE)).headers.get("cache-control"),
+		)
+	})
+
+	it("draws a break-glass incident into the preview", async () => {
+		putOverlayEntry(fake, entry())
+		await send(fake, `${PAGE}og.png`)
+		expect(fake.og.renders[0]?.card.details).toEqual(["Checkout failing"])
+	})
+
+	it("caches a stand-in preview only as long as the page, even under the linked URL", async () => {
+		fake.og.complete = false
+		const html = await (await send(fake, PAGE)).text()
+		const linked =
+			Option.getOrThrow(Str.match(/<meta property="og:image" content="([^"]+)">/u)(html))[1] ?? ""
+		const response = await send(fake, linked)
+		expect(response.headers.get("cache-control")).toBe(
+			(await send(fake, PAGE)).headers.get("cache-control"),
+		)
+	})
+
+	it("answers an uncached 503 when the preview cannot be drawn", async () => {
+		fake.og.fail = true
+		const response = await send(fake, `${PAGE}og.png`)
+		expect(response.status).toBe(503)
+		expect(response.headers.get("cache-control")).toBe("no-store")
+	})
+
 	it("answers /_health without touching storage", async () => {
 		fake.failing.add("kv")
 		fake.failing.add("r2")
