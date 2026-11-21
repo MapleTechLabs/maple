@@ -32,7 +32,7 @@ export const securitySections: SecuritySection[] = [
 			},
 			{
 				title: "SSO and SCIM",
-				body: "SAML 2.0 or OIDC sign-in with verified domains and an option to require it. SCIM 2.0 provisions and removes members and maps IdP groups to roles. Both are self-serve add-ons on every plan.",
+				body: "SAML 2.0 or OIDC sign-in with verified domains and an option to require it. SCIM 2.0 provisions and removes members and maps IdP groups to roles. Both are self-serve add-ons, $100 a month each, on any plan.",
 				href: "/docs/reference/single-sign-on",
 				link: "SSO and SCIM docs",
 			},
@@ -55,7 +55,7 @@ export const securitySections: SecuritySection[] = [
 			},
 			{
 				title: "Credentials sealed per row",
-				body: "Secrets Maple holds for you, such as OAuth tokens, webhook secrets and warehouse passwords, are sealed with AES-256-GCM. Each one is bound to its organization and row, so a copied value does not open anywhere else.",
+				body: "Secrets Maple holds for you, such as OAuth tokens, webhook secrets and warehouse passwords, are sealed with AES-256-GCM. Each one is bound to its organization and row, so a value copied to another row or organization fails to open.",
 			},
 			{
 				title: "Replays mask inputs by default",
@@ -78,13 +78,13 @@ export const securitySections: SecuritySection[] = [
 		facts: [
 			{
 				title: "United States or European Union",
-				body: "Each organization picks a region when it is created. An EU organization's telemetry is stored and processed in Frankfurt, Germany, at the same price.",
+				body: "Each organization picks a region once, when it is created. An EU organization's telemetry is stored and processed in Frankfurt, Germany, at the same price.",
 				href: "/eu",
 				link: "EU hosting",
 			},
 			{
 				title: "Or your own infrastructure",
-				body: "The source is on GitHub under FSL-1.1, which becomes Apache 2.0 after two years. Self-hosting keeps the data inside your own network and your own audits.",
+				body: "The source is on GitHub under FSL-1.1, which becomes Apache 2.0 after two years. Self-hosting keeps the data inside your own network. The self-hosted version runs for one team, without alerting.",
 				href: "https://github.com/MapleTechLabs/maple",
 				link: "Source on GitHub",
 			},
@@ -95,7 +95,7 @@ export const securitySections: SecuritySection[] = [
 export const securityFaqs = [
 	{
 		question: "Is Maple SOC 2 compliant?",
-		answer: "Not yet. SOC 2 Type II and ISO 27001 audits are in progress. Until they finish, a data processing agreement is available on request, and the audit log, SSO and SCIM are available on every plan.",
+		answer: "Not yet. SOC 2 Type II and ISO 27001 audits are in progress. Until they finish, a data processing agreement is available on request, the audit log is on every plan, and SSO and SCIM are add-ons on any plan.",
 	},
 	{
 		question: "Can I get a DPA?",
