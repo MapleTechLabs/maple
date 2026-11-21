@@ -1,12 +1,13 @@
 ---
 /**
- * The bill, as the second beat of the pricing chapter: one row per vendor and the four lines that
- * decide a bill. The other five lines (free plan, retention, OpenTelemetry, licence, self-hosting)
- * are on /compare, which prints the same data with a column per vendor.
+ * The bill, right after the objections: one row per vendor and the four lines that decide a bill,
+ * then the offer to help a team move. The other five lines (free plan, retention, OpenTelemetry,
+ * licence, self-hosting) are on /compare, which prints the same data with a column per vendor.
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
 import * as m from "../../paraglide/messages.js";
 import { billRowLabels, billVendors, type BillRowKey } from "../../lib/bill-comparison";
+import LedgerHead from "./LedgerHead.astro";
 
 const COLUMNS: ReadonlyArray<BillRowKey> = ["base", "perHost", "perSeat", "ingest"];
 const locale = Astro.currentLocale ?? "en";
@@ -15,12 +16,14 @@ const vendors = billVendors();
 const labels = billRowLabels();
 ---
 
-<section class="ledger ledger--continued">
+<section class="ledger" id="bill">
 	<div class="shell">
-		<div class="ledger-subhead">
-			<h2>{m.bill_title()}</h2>
-			<p>{m.bill_lede()}</p>
-		</div>
+		<LedgerHead title={m.bill_title()} lede={m.bill_lede()} href={l("/compare")} link={m.nav_compare()}>
+			<a href={l("/contact")} class="ledger-link" data-track="cta_click" data-track-location="home_bill_migrate">
+				{m.bill_migrate_link()}
+				<span aria-hidden="true"> →</span>
+			</a>
+		</LedgerHead>
 
 		<div class="ledger-bill__scroll">
 			<table class="ledger-bill">
@@ -57,6 +60,7 @@ const labels = billRowLabels();
 			</table>
 		</div>
 
+		<p class="ledger-bill__migrate">{m.bill_migrate_note()}</p>
 		<p class="ledger-bill__note">{m.bill_footnote()}</p>
 	</div>
 </section>

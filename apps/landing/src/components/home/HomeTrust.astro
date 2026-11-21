@@ -1,0 +1,76 @@
+---
+/**
+ * The second beat of the pricing chapter: what protects the data the plan buys. Four claims a
+ * security reviewer checks first, each backed on /security. Audits stay "in progress" until
+ * lib/compliance.ts changes.
+ */
+import * as m from "../../paraglide/messages.js";
+
+const points = [
+	{ claim: m.home_trust_audit_claim(), detail: m.home_trust_audit_detail() },
+	{ claim: m.home_trust_sso_claim(), detail: m.home_trust_sso_detail() },
+	{ claim: m.home_trust_secrets_claim(), detail: m.home_trust_secrets_detail() },
+	{ claim: m.home_trust_audits_claim(), detail: m.home_trust_audits_detail() },
+];
+---
+
+<section class="ledger ledger--continued" aria-labelledby="home-trust-title">
+	<div class="shell">
+		<div class="ledger-subhead">
+			<h2 id="home-trust-title">{m.home_trust_title()}</h2>
+			<a href="/security" class="ledger-link" data-track="cta_click" data-track-location="home_trust">
+				{m.home_trust_link()}
+				<span aria-hidden="true"> →</span>
+			</a>
+		</div>
+		<ul class="home-trust" role="list">
+			{
+				points.map((point) => (
+					<li class="home-trust__item">
+						<p class="home-trust__claim">{point.claim}</p>
+						<p class="home-trust__detail">{point.detail}</p>
+					</li>
+				))
+			}
+		</ul>
+	</div>
+</section>
+
+<style>
+	.home-trust {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1px;
+		margin: 0;
+		padding: 0;
+		border: 1px solid var(--home-rule);
+		background: var(--home-rule);
+		list-style: none;
+	}
+	@media (min-width: 640px) {
+		.home-trust {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	@media (min-width: 1024px) {
+		.home-trust {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+		}
+	}
+	.home-trust__item {
+		padding: 24px;
+		background: var(--home-paper);
+	}
+	.home-trust__claim {
+		color: var(--home-ink);
+		font-size: 15px;
+		font-weight: 650;
+		letter-spacing: -0.01em;
+	}
+	.home-trust__detail {
+		margin-top: 8px;
+		color: var(--home-muted);
+		font-size: 13px;
+		line-height: 1.55;
+	}
+</style>

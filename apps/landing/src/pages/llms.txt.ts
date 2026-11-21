@@ -71,6 +71,8 @@ export const GET: APIRoute = ({ site }) => {
 			"",
 			`${m.compliance_audit_log()} ${m.compliance_dpa_held()}. ${m.compliance_audits()}`,
 			"",
+			...both("Security and compliance", "/security"),
+			"",
 
 			"## Changelog",
 			"",
