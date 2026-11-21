@@ -6,7 +6,7 @@
  * The spine, and why it is in this order:
  *
  *   00  PageHero          bg-bg        the question: "Maple vs X", beside the
- *                                      pairing and a live trace
+ *                                      two marks
  *   01  CompareNav        sticky       five anchors, the page's wayfinding
  *   01a Surfaces          bg-bg        optional: what the vendor leaves you
  *                                      to build, drawn by the live artifacts.
@@ -42,7 +42,6 @@ import CrossLinks from "../page/CrossLinks.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
 import ProductBand from "../marketing/ProductBand.astro";
-import ProductFrame from "../marketing/ProductFrame.astro";
 import CompareNav from "./CompareNav.astro";
 import ComparePair from "./ComparePair.astro";
 import DifferenceTable from "./DifferenceTable.astro";
@@ -84,12 +83,18 @@ const crossLinks = [
 					href: alternativesPath(alternatives.slug),
 					name: `${alternatives.vendor} alternatives`,
 					desc: `Eight tools compared, and when to stay on ${alternatives.vendor}`,
+					mark: competitor.mark,
 				},
 			]
 		: []),
 	...competitors
 		.filter((entry) => entry.slug !== competitor.slug)
-		.map((entry) => ({ href: comparePath(locale, entry.slug), name: entry.navLabel(), desc: entry.navDesc() })),
+		.map((entry) => ({
+			href: comparePath(locale, entry.slug),
+			name: entry.navLabel(),
+			desc: entry.navDesc(),
+			mark: entry.mark,
+		})),
 ];
 
 // The one surface every comparison can show without a per-vendor claim.
@@ -127,10 +132,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 			{ label: competitor.name },
 		]}
 	>
-		<div slot="aside" class="flex flex-col gap-4">
-			<ComparePair competitor={competitor} compact />
-			<ProductFrame surface="trace" />
-		</div>
+		<ComparePair slot="aside" competitor={competitor} />
 	</PageHero>
 
 	<CompareNav competitorName={competitor.name} surfaces={Boolean(competitor.surfaces)} />

@@ -67,6 +67,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 				{
 					href: comparePath("en", competitor.slug),
 					name: competitor.navLabel(),
+					mark: competitor.mark,
 					desc: alt.ours ? `Every difference from ${page.vendor}, including where ${page.vendor} is ahead.` : `Pick it if: ${alt.pickIf}`,
 				},
 			]
