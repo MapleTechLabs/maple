@@ -175,6 +175,8 @@ describe("toSnapshot", () => {
 						createdAt: NOW - 199 * DAY_MS,
 					},
 				],
+				// An incident too old to list still names its components, for the bars it marks.
+				incidentComponents: [{ incidentId: id(1), componentId: COMPONENT }],
 			}),
 		)
 		assert.deepStrictEqual(snapshot.incidentHistory, [
@@ -185,6 +187,7 @@ describe("toSnapshot", () => {
 				impact: "minor",
 				startedAt: NOW - 3_600_000,
 				resolvedAt: null,
+				componentIds: [],
 			},
 			{
 				id: id(1),
@@ -193,6 +196,7 @@ describe("toSnapshot", () => {
 				impact: "critical",
 				startedAt: NOW - 200 * DAY_MS,
 				resolvedAt: NOW - 199 * DAY_MS,
+				componentIds: [COMPONENT],
 			},
 		])
 		assert.deepStrictEqual(
@@ -378,6 +382,18 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				resolvedAt: NOW - 120 * DAY_MS + 3_600_000,
 				componentIds: [downComponent],
 			})
+			yield* seedIncident(testDb, {
+				id: SecureRandom.uuidV4Unsafe(),
+				pageId,
+				title: "Upgrade",
+				kind: "maintenance",
+				impact: "none",
+				status: "scheduled",
+				startedAt: NOW + DAY_MS,
+				scheduledStart: NOW + DAY_MS,
+				scheduledEnd: NOW + 2 * DAY_MS,
+				componentIds: [downComponent],
+			})
 			const otherPage = newPageId()
 			yield* seedPage(testDb, { id: otherPage, slug: "other-build" })
 			yield* seedIncident(testDb, {
@@ -400,15 +416,19 @@ describe("StatusPageSnapshotBuilder.build", () => {
 					["Docs", "major_outage", 0],
 				],
 			)
+			// Upcoming maintenance is listed but not indexed; both still name their components.
 			assert.deepStrictEqual(
-				Arr.map(snapshot.incidents, (i) => [i.title, i.updates.length]),
-				[["Docs slow", 1]],
+				Arr.map(snapshot.incidents, (i) => [i.title, i.updates.length, i.componentIds]),
+				[
+					["Upgrade", 1, [downComponent]],
+					["Docs slow", 1, [manualComponent]],
+				],
 			)
 			assert.deepStrictEqual(
-				Arr.map(snapshot.incidentHistory, (entry) => [entry.title, entry.impact]),
+				Arr.map(snapshot.incidentHistory, (entry) => [entry.title, entry.impact, entry.componentIds]),
 				[
-					["Docs slow", "critical"],
-					["Old outage", "major"],
+					["Docs slow", "critical", [manualComponent]],
+					["Old outage", "major", [downComponent]],
 				],
 			)
 			assert.strictEqual(snapshot.components[0]?.days[64]?.checks, 7)

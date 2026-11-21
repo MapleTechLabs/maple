@@ -6,7 +6,7 @@
  */
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import {
-	dayState,
+	DAY_STATE_RANK,
 	lastDays,
 	overallStatus,
 	type ResolvedStatusPageThemeTokens,
@@ -22,6 +22,7 @@ import { Array as Arr, Schema } from "effect"
 import { safeImageUrl } from "./escape"
 import { MAPLE_MARK_PATH, STATUS_GLYPH } from "./icons"
 import { COMPONENT_STATUS_LABEL, formatPercent, HERO_SENTENCE } from "./format"
+import { barState, calendarEntries, componentMarks } from "./history"
 import { activeIncidents } from "./select"
 import { resolveSafeTheme, safeTheme } from "./theme"
 
@@ -70,11 +71,6 @@ export interface StatusOgCard {
 	readonly tokens: ResolvedStatusPageThemeTokens
 }
 
-const DAY_RANK = { none: 0, ok: 1, degraded: 2, down: 3 } as const satisfies Record<
-	StatusPageDayState,
-	number
->
-
 /** Each day's worst state across the components that show uptime; empty when none does. */
 const overallDays = (
 	snapshot: StatusPagePublicSnapshot,
@@ -86,19 +82,23 @@ const overallDays = (
 	)
 	if (shown.length === 0) return { days: [], uptime: null }
 	const window = new Set(lastDays(snapshot.generatedAt, STATUS_PAGE_WINDOW_DAYS))
+	const entries = calendarEntries(snapshot)
 	// Snapshots carry a year of days; the card shows and counts only the window.
-	const bars = Arr.filter(
-		Arr.flatMap(shown, (component) => component.days),
-		(bar) => window.has(bar.day),
-	)
-	const worst = Arr.reduce(bars, new Map<string, StatusPageDayState>(), (byDay, bar) => {
-		const state = dayState(bar)
+	const bars = Arr.flatMap(shown, (component) => {
+		const marks = componentMarks(component.id, entries, snapshot.generatedAt)
+		return Arr.flatMap(component.days, (bar) =>
+			window.has(bar.day) ? [{ bar, state: barState(bar, marks.get(bar.day)) }] : [],
+		)
+	})
+	const worst = Arr.reduce(bars, new Map<string, StatusPageDayState>(), (byDay, { bar, state }) => {
 		const seen = byDay.get(bar.day)
-		return seen === undefined || DAY_RANK[state] > DAY_RANK[seen] ? byDay.set(bar.day, state) : byDay
+		return seen === undefined || DAY_STATE_RANK[state] > DAY_STATE_RANK[seen]
+			? byDay.set(bar.day, state)
+			: byDay
 	})
 	return {
 		days: Arr.map([...window], (day) => worst.get(day) ?? "none"),
-		uptime: uptimePercent(bars),
+		uptime: uptimePercent(Arr.map(bars, ({ bar }) => bar)),
 	}
 }
 
@@ -173,6 +173,7 @@ const STATUS_TINT = {
 
 const DAY_COLOR = {
 	ok: "ok",
+	maintenance: "maint",
 	degraded: "degraded",
 	down: "major",
 	none: "line",

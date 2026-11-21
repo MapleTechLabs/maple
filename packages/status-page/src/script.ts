@@ -1,5 +1,16 @@
 // The page's one inline script, written as plain ES5 so it runs anywhere without a build step.
 // `PAGE_SCRIPT_LOGIC` mirrors `history.ts` and `format.ts`; `script.test.ts` runs it against them.
+import type { StatusPageDayState } from "@maple/domain/status-page"
+import { Array as Arr, Record as Rec } from "effect"
+
+/** A day state as one letter in the page's data: the server decides states, the script reads them. */
+export const DAY_STATE_LETTER = {
+	none: "n",
+	ok: "o",
+	maintenance: "m",
+	degraded: "g",
+	down: "d",
+} as const satisfies Record<StatusPageDayState, string>
 
 /** Pure helpers: dates, labels, window bounds and month grids. Declares functions only. */
 export const PAGE_SCRIPT_LOGIC = `var M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -9,8 +20,12 @@ function shift(d,o){return new Date(dms(d)+o*864e5).toISOString().slice(0,10)}
 function mlabel(d){var p=d.split("-");return M[p[1]-1]+" "+p[0]}
 function fday(d){var p=d.split("-");return M[p[1]-1]+" "+(+p[2])+", "+p[0]}
 function bounds(len,pg){var to=len-pg*90;return{from:to-90,to:to}}
-function state(c){return!c||c[0]===0?"none":c[2]>0?"down":c[1]>0?"degraded":"ok"}
-function tip(d,c){var s=state(c);return fday(d)+": "+(s==="none"?"No data":s==="ok"?"No downtime, "+c[0]+" checks":s==="degraded"?c[1]+" of "+c[0]+" checks failed":"Down during "+c[2]+" of "+c[0]+" checks")}
+var SL={${Arr.join(
+	Arr.map(Rec.toEntries(DAY_STATE_LETTER), ([state, letter]) => `${letter}:"${state}"`),
+	",",
+)}};
+function state(l){return SL[l]||"none"}
+function tip(d,c,e){return fday(d)+": "+(!c||c[0]===0?"No data":c[2]>0?"Down during "+c[2]+" of "+c[0]+" checks":c[1]>0?c[1]+" of "+c[0]+" checks failed":"No downtime, "+c[0]+" checks")+(e?" \\u00b7 "+(e.tone==="maintenance"?"Maintenance":"Incident")+": "+e.title:"")}
 function pct(p){return(Math.floor(+(p*100).toFixed(6))/100).toFixed(2).replace(/\\.?0+$/,"")+"%"}
 function cells(y,m){var lead=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,n=new Date(Date.UTC(y,m,0)).getUTCDate(),t=Math.ceil((lead+n)/7)*7,r=[];for(var i=0;i<t;i++){var d=i-lead+1;r.push(d>=1&&d<=n?d:0)}return r}
 function mback(d,b){var p=d.split("-"),i=p[0]*12+(p[1]-1)-b;return Math.floor(i/12)+"-"+pad(i%12+1)}
@@ -42,7 +57,7 @@ var src=document.getElementById("sp-data");if(!src)return;var D=JSON.parse(src.t
 function mk(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function nav(n,pos,max){document.querySelectorAll('[data-nav="'+n+'"]').forEach(function(a){a.hidden=false;a.disabled=a.getAttribute("data-dir")==="older"?pos>=max-1:pos<=0})}
 function drawWindow(){var r=bounds(D.len,W),first=shift(D.end,r.from-D.len+1),last=shift(D.end,r.to-D.len),l=document.getElementById("window-label");if(l)l.textContent=mlabel(first)+" - "+mlabel(last);
-document.querySelectorAll("[data-component]").forEach(function(row){var bars=D.bars[row.getAttribute("data-component")],ol=row.querySelector(".bars");if(!bars||!ol)return;ol.textContent="";var ch=0,dn=0;for(var i=r.from;i<r.to;i++){var c=i>=0?bars[i]:0,d=shift(D.end,i-D.len+1),st=state(c),li=mk("li","d-"+st);li.setAttribute("data-day",d);li.setAttribute("data-state",st);li.title=tip(d,c);ol.appendChild(li);if(c){ch+=c[0];dn+=c[2]}}
+document.querySelectorAll("[data-component]").forEach(function(row){var id=row.getAttribute("data-component"),bars=D.bars[id],ls=D.states[id]||"",ms=D.marks[id]||{},ol=row.querySelector(".bars");if(!bars||!ol)return;ol.textContent="";var ch=0,dn=0;for(var i=r.from;i<r.to;i++){var c=i>=0?bars[i]:0,d=shift(D.end,i-D.len+1),st=state(ls.charAt(i)),e=i>=0&&i in ms?D.entries[ms[i]]:null,li=mk("li","d-"+st);li.setAttribute("data-day",d);li.setAttribute("data-state",st);li.title=tip(d,c,e);ol.appendChild(li);if(c){ch+=c[0];dn+=c[2]}}
 ol.setAttribute("aria-label","Uptime, "+fday(first)+" to "+fday(last));var up=row.querySelector(".uptime");if(up)up.textContent=ch?pct((ch-dn)/ch*100)+" uptime":"No data"});nav("window",W,D.windows)}
 function closePanel(){var p=document.getElementById("cal-panel");if(p){p.hidden=true;p.textContent=""}document.querySelectorAll('#cal-body [aria-expanded="true"]').forEach(function(a){a.setAttribute("aria-expanded","false")})}
 function dayNode(day,n){var k=D.days[day],e;if(k){e=mk("button","day t-"+k[0],String(n));e.type="button";e.setAttribute("data-day",day);e.setAttribute("aria-label",k[2]);e.title=k[2];e.setAttribute("aria-expanded","false");e.setAttribute("aria-controls","cal-panel")}else e=mk("span","day",String(n));if(day===D.today){e.className+=" today";e.setAttribute("aria-current","date")}return e}

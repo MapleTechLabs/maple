@@ -97,6 +97,7 @@ export const previewSnapshot = (input: {
 				impact: incident.impact,
 				startedAt: incident.startedAt,
 				resolvedAt: incident.resolvedAt,
+				componentIds: incident.componentIds,
 			}),
 		),
 	}

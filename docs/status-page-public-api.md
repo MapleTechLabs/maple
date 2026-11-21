@@ -45,8 +45,11 @@ monitor, or with uptime hidden, are left out.
 
 Uptime is the share of checks not taken while the monitor was down, floored to 4 decimals, so
 a day with any downtime never reads 100. `uptime_percent` is `null` and `status` is `no_data`
-for a day without checks; `status` is otherwise `operational`, `degraded` (some checks failed)
-or `down`. A bad `days` is a 400 with `{ "error": "…" }`.
+for a day without checks and no incident; `status` is otherwise `operational`, `maintenance`,
+`degraded` or `down`, by the same rule as the page's bars (`classifyDay` in
+`@maple/domain/status-page`): an incident or maintenance naming the component sets the day,
+otherwise downtime of 1% of the day's checks is `down`, and shorter downtime or 5% of checks
+failing is `degraded`. A bad `days` is a 400 with `{ "error": "…" }`.
 
 ## Other routes
 

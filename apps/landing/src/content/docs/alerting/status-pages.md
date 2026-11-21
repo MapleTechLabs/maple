@@ -48,7 +48,17 @@ A component's status is the worst of three inputs:
 
 The banner at the top of the page shows the worst component status.
 
-Each uptime bar is one UTC day of the monitor's checks. A day with checks taken while the monitor was down shows as down. A day with failed checks that never added up to the monitor's **Down after** count shows as degraded. A day without checks shows as empty. The uptime percentage is the share of checks taken while the monitor was up.
+Each uptime bar is one UTC day of the component, coloured by what happened that day:
+
+| That day                                                                                        | Bar         |
+| ----------------------------------------------------------------------------------------------- | ----------- |
+| A Major or Critical incident on the component, or the monitor down for 1% of its checks or more | Outage      |
+| A Minor incident, any shorter downtime, or 5% of checks or more failing without going down      | Degraded    |
+| Maintenance on the component, with no other incident on it that day                             | Maintenance |
+| Checks with no downtime (a few scattered failed checks included)                                | Operational |
+| No checks and no incident                                                                       | No data     |
+
+A day's tooltip gives the exact count of failed checks and names the incident or maintenance. Maintenance replaces what the checks say, since downtime it announced was planned. The uptime percentage is the share of checks taken while the monitor was up.
 
 When no publish has reached the page for 5 minutes, or a page with monitored components has had no new check result for 5 minutes, it shows "Live checks are delayed" with the time of the last known state, rather than looking green.
 

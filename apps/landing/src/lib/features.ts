@@ -659,7 +659,7 @@ export const features: Feature[] = [
 				src: "/screenshots/gallery-status-page-uptime.webp",
 				width: 2880,
 				height: 1620,
-				alt: "System status with a 90-day bar per component, the days with failed checks or downtime marked, above the incident calendar",
+				alt: "System status with a 90-day bar per component, degraded days and outages marked, above the incident calendar",
 				// The page's own column, without the empty margins either side.
 				crop: { x: 0.14, y: 0, zoom: 1.39, aspect: 1.28, hardRight: true },
 			},

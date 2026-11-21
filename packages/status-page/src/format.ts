@@ -95,20 +95,31 @@ export const formatPercent = (percent: number): string => {
 
 export const DAY_STATE_LABEL = {
 	none: "No data",
-	ok: "No downtime",
-	degraded: "Some checks failed",
-	down: "Downtime recorded",
+	ok: "Operational",
+	maintenance: "Maintenance",
+	degraded: "Degraded",
+	down: "Outage",
 } as const satisfies Record<StatusPageDayState, string>
 
-/** The tooltip of one bar: the day and what happened on it. */
-export const dayTitle = (bar: StatusPageDayBar, state: StatusPageDayState): string => {
-	const detail =
-		state === "none"
+/**
+ * The tooltip of one bar: the day, what its checks recorded, and the incident or maintenance
+ * marked on it. The counts are stated as they are; the colour carries the verdict.
+ */
+export const dayTitle = (
+	bar: StatusPageDayBar,
+	entry: { readonly tone: string; readonly title: string } | undefined,
+): string => {
+	const checks =
+		bar.checks === 0
 			? DAY_STATE_LABEL.none
-			: state === "ok"
-				? `${DAY_STATE_LABEL.ok}, ${bar.checks} checks`
-				: state === "degraded"
+			: bar.downChecks > 0
+				? `Down during ${bar.downChecks} of ${bar.checks} checks`
+				: bar.failures > 0
 					? `${bar.failures} of ${bar.checks} checks failed`
-					: `Down during ${bar.downChecks} of ${bar.checks} checks`
-	return `${formatDay(bar.day)}: ${detail}`
+					: `No downtime, ${bar.checks} checks`
+	const marked =
+		entry === undefined
+			? ""
+			: ` · ${entry.tone === "maintenance" ? "Maintenance" : "Incident"}: ${entry.title}`
+	return `${formatDay(bar.day)}: ${checks}${marked}`
 }

@@ -15,7 +15,7 @@ import {
 } from "./derive"
 import { Array as Arr } from "effect"
 import { medianOf } from "@maple/ui/lib/number"
-import { dayState, type StatusPageDayBar, type StatusPageDayState } from "@maple/domain/status-page"
+import { classifyDay, type StatusPageDayBar, type StatusPageDayState } from "@maple/domain/status-page"
 
 // The uptime marks: the status chip, the status square, the recent-checks strip and the daily strip.
 
@@ -109,9 +109,10 @@ export const recentChecksStrip = <M>(
 export const uptimePanelBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	panelBody(h, children, "px-4 py-3")
 
-/** Fill per day: green, amber with failed checks, red with downtime, muted without checks. */
+/** Fill per day by `classifyDay` from the checks only: unlike the public page, incidents are not marked here. */
 const DAY_FILL = {
 	ok: TONE_FILL.ok,
+	maintenance: TONE_FILL.done,
 	degraded: TONE_FILL.warn,
 	down: TONE_FILL.crit,
 	none: "bg-muted",
@@ -122,7 +123,7 @@ const dayTitle = (day: StatusPageDayBar): string => {
 	return uptime === null ? `${day.day}: no checks` : `${day.day}: ${uptime} uptime`
 }
 
-/** One bar per UTC day, oldest first, coloured by `dayState`: a status page component's daily uptime. */
+/** One bar per UTC day, oldest first, coloured by `classifyDay`: a status page component's daily uptime. */
 export const uptimeDaysStrip = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ days: ReadonlyArray<StatusPageDayBar>; label: string; className?: string }>,
@@ -138,7 +139,7 @@ export const uptimeDaysStrip = <M>(
 				[
 					h.Key(day.day),
 					h.Title(dayTitle(day)),
-					h.Class(cn("min-w-0 flex-1 rounded-2xs", DAY_FILL[dayState(day)])),
+					h.Class(cn("min-w-0 flex-1 rounded-2xs", DAY_FILL[classifyDay(day)])),
 				],
 				[],
 			),
