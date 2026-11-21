@@ -11,6 +11,8 @@ interface Props {
 }
 
 const { items, shell = false, split = false } = Astro.props;
+// An `aside` slot (the compare pages) sits beside the questions from lg, in the width they leave empty.
+const hasAside = Astro.slots.has("aside");
 
 const faqJsonLd = {
     "@context": "https://schema.org",
@@ -31,6 +33,7 @@ const faqJsonLd = {
         {!split && <span class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.faq_badge()}</span>}
         <h2 class="mt-4 mb-12 font-display text-3xl font-medium tracking-[-0.02em] text-fg md:text-4xl">{m.faq_heading()}</h2>
 
+        <div class:list={[hasAside && "grid gap-10 lg:grid-cols-[minmax(0,1fr)_30rem] lg:items-start lg:gap-16"]}>
         <div class:list={["divide-y divide-border border-t border-border", shell && !split && "max-w-3xl"]}>
             {items.map(item => (
                 <details class="faq-item">
@@ -50,6 +53,8 @@ const faqJsonLd = {
                     </div>
                 </details>
             ))}
+        </div>
+        {hasAside && <slot name="aside" />}
         </div>
     </div>
 </section>

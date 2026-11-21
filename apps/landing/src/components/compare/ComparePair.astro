@@ -17,22 +17,13 @@ import type { Competitor } from "../../lib/competitors";
 
 interface Props {
 	competitor: Competitor;
-	/** A single short row, for the hero where a product frame sits under the pairing. */
-	compact?: boolean;
 }
 
-const { competitor, compact = false } = Astro.props;
-// Compact puts the mark beside the name; the full cell stacks them.
-const cell = compact
-	? "pair-cell flex items-center justify-center gap-3 px-4 py-4 text-left"
-	: "pair-cell flex flex-col items-center gap-4 px-6 py-10 text-center md:py-12";
-const tile = compact
-	? "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-bg-elevated"
-	: "flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-bg-elevated";
-const name = compact
-	? "font-display text-[15px] font-medium tracking-[-0.01em] text-fg"
-	: "font-display text-lg font-medium tracking-[-0.01em] text-fg md:text-xl";
-const site = compact ? "font-mono text-[10.5px] text-fg-muted" : "mt-1 font-mono text-[11px] text-fg-muted";
+const { competitor } = Astro.props;
+const cell = "pair-cell flex flex-col items-center gap-4 px-6 py-10 text-center md:py-12";
+const tile = "flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-bg-elevated";
+const name = "font-display text-lg font-medium tracking-[-0.01em] text-fg md:text-xl";
+const site = "mt-1 font-mono text-[11px] text-fg-muted";
 // The vendor's brand color drives its cell's dither; near-black marks tint
 // with the muted foreground so the field stays visible on the dark ground.
 const vendorColor = markTint(brandMark(competitor.mark));
@@ -41,7 +32,7 @@ const vendorColor = markTint(brandMark(competitor.mark));
 <div class="relative grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border">
 	<div class={cell} style="--pair: var(--primary)">
 		<span class={tile}>
-			<Icon name="MapleMark" size={compact ? 22 : 34} class="text-primary" />
+			<Icon name="MapleMark" size={34} class="text-primary" />
 		</span>
 		<div class="min-w-0">
 			<div class={name}>Maple</div>
@@ -50,7 +41,7 @@ const vendorColor = markTint(brandMark(competitor.mark));
 	</div>
 	<div class={cell} style={`--pair: ${vendorColor}`}>
 		<span class={tile}>
-			<BrandMarkIcon id={competitor.mark} class={compact ? "h-5 w-5" : "h-8 w-8"} />
+			<BrandMarkIcon id={competitor.mark} class="h-8 w-8" />
 		</span>
 		<div class="min-w-0">
 			<div class:list={[name, "truncate"]}>{competitor.name}</div>
