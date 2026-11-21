@@ -66,7 +66,7 @@ const pro = {
 // Retain is charged only for 30-day increments beyond the 30 days Pro includes.
 const signalCost = (gb: number, freeGb: number) => gb * pro.gbProcess + Math.max(0, gb - freeGb) * pro.gbWrite;
 const signalCalc = (gb: number, freeGb: number) =>
-    `${num(gb)} GB × $${pro.gbProcess.toFixed(2)} process + (${num(gb)} − ${freeGb} included) = ${num(Math.max(0, gb - freeGb))} GB × $${pro.gbWrite.toFixed(2)} write`;
+    `${num(gb)} GB × $${pro.gbProcess.toFixed(2)} process + max(0, ${num(gb)} − ${freeGb} included) = ${num(Math.max(0, gb - freeGb))} GB × $${pro.gbWrite.toFixed(2)} write`;
 const free = { seriesK: 10, logsGb: 50, tracesGb: 50, users: 3 };
 const HOURS = 720; // a 30-day month, as Grafana's "$18/host" uses
 
@@ -372,7 +372,7 @@ const articleJsonLd = {
 
                     <h3 id="small-team" class="scroll-mt-24">Small team: {usd(small.total)} a month</h3>
                     <p>
-                        Three engineers, 8,000 active series at a 60-second scrape, 30 GB of logs and 20 GB of traces. Everything fits the free allowance, so on Pro they pay only the {usd(pro.fee)} platform fee for 30 days of logs and traces instead of 14. On the free tier the same team pays nothing.
+                        Three engineers, 8,000 active series at a 60-second scrape, 30 GB of logs and 20 GB of traces. Every write fits the free allowance, so on Pro they pay the {usd(pro.fee)} platform fee plus processing on all 50 GB, {usd(small.total)} in total, for 30 days of logs and traces instead of 14. On the free tier the same team pays nothing.
                     </p>
 
                     <h3 id="mid-team" class="scroll-mt-24">Mid-sized team: {usd(mid.total)} a month</h3>
