@@ -2,7 +2,7 @@
 // path, `-d` fields and `-H` headers turn into one request against the
 // logged-in workspace's API, never another host.
 
-import { Array as Arr, Option, Predicate, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, Result, Schema, String as Str } from "effect"
 import { encodeJson } from "@maple/local-server/json"
 import { CliUsageError } from "../lib/errors"
 
@@ -101,7 +101,10 @@ const setAt = (
 			: Result.void
 	}
 	if (head === "") return conflict
-	const existing = target[head]
+	// `__proto__` would assign through to Object.prototype; inherited names are not fields.
+	if (head === "__proto__")
+		return Result.fail(new CliUsageError({ message: `-d ${rawKey} uses a reserved key name` }))
+	const existing = Rec.has(target, head) ? target[head] : undefined
 	if (rest.length === 0) {
 		if (existing !== undefined) return conflict
 		target[head] = value

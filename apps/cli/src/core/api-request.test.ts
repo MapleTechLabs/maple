@@ -66,6 +66,13 @@ describe("-d fields", () => {
 		expect(body("meta=a", "meta[x]=b")).toContain("conflicts")
 	})
 
+	test("__proto__ is refused and leaves Object.prototype untouched; inherited names are plain keys", () => {
+		expect(body("__proto__[team]=core")).toContain("reserved")
+		expect(body("__proto__=x")).toContain("reserved")
+		expect("team" in {}).toBe(false)
+		expect(body("constructor=x", "toString[a]=b")).toEqual({ constructor: "x", toString: { a: "b" } })
+	})
+
 	test("malformed fields and bad JSON are refused", () => {
 		expect(Result.isFailure(parseField("novalue"))).toBe(true)
 		expect(Result.isFailure(parseField("=x"))).toBe(true)
