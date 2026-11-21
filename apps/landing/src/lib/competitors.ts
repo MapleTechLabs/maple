@@ -24,6 +24,7 @@
 import * as m from "../paraglide/messages.js"
 import type { BrandMarkId } from "./brand-marks"
 import type { Vendor } from "./vendor-pricing"
+import { featurePath } from "./page-registry"
 import { Array as Arr } from "effect"
 
 type Locale = "en" | "ja" | "ko"
@@ -90,8 +91,8 @@ export interface Surface {
 	id: SurfaceId
 	name: Msg
 	body: Msg
-	/** Link to the feature page that owns this surface. */
-	href: string
+	/** Link to the page that owns this surface, in the visitor's locale where that page is translated. */
+	href: (locale: string) => string
 }
 
 export const MAPLE_SURFACES = {
@@ -99,61 +100,62 @@ export const MAPLE_SURFACES = {
 		id: "service-map",
 		name: m.cmp_surface_map_name,
 		body: m.cmp_surface_map_body,
-		href: "/features/service-catalog",
+		href: (locale) => featurePath(locale, "service-catalog"),
 	},
 	sessions: {
 		id: "sessions",
 		name: m.cmp_surface_sessions_name,
 		body: m.cmp_surface_sessions_body,
-		href: "/features/browser-sessions",
+		href: (locale) => featurePath(locale, "browser-sessions"),
 	},
 	analytics: {
 		id: "analytics",
 		name: m.cmp_surface_analytics_name,
 		body: m.cmp_surface_analytics_body,
-		href: "/features/browser-sessions",
+		href: (locale) => featurePath(locale, "browser-sessions"),
 	},
 	kubernetes: {
 		id: "kubernetes",
 		name: m.cmp_surface_k8s_name,
 		body: m.cmp_surface_k8s_body,
-		href: "/features/kubernetes-monitoring",
+		href: (locale) => featurePath(locale, "kubernetes-monitoring"),
 	},
 	trace: {
 		id: "trace",
 		name: m.cmp_surface_trace_name,
 		body: m.cmp_surface_trace_body,
-		href: "/features/distributed-tracing",
+		href: (locale) => featurePath(locale, "distributed-tracing"),
 	},
 	logs: {
 		id: "logs",
 		name: m.cmp_surface_logs_name,
 		body: m.cmp_surface_logs_body,
-		href: "/features/log-management",
+		href: (locale) => featurePath(locale, "log-management"),
 	},
 	issues: {
 		id: "issues",
 		name: m.cmp_surface_issues_name,
 		body: m.cmp_surface_issues_body,
-		href: "/features/error-tracking",
+		href: (locale) => featurePath(locale, "error-tracking"),
 	},
 	agent: {
 		id: "agent",
 		name: m.cmp_surface_agent_name,
 		body: m.cmp_surface_agent_body,
-		href: "/features/ai-mcp-integration",
+		href: (locale) => featurePath(locale, "ai-mcp-integration"),
 	},
 	local: {
 		id: "local",
 		name: m.cmp_surface_local_name,
 		body: m.cmp_surface_local_body,
-		href: "/local",
+		// Maple Local has no ja or ko page.
+		href: () => "/local",
 	},
 	uptime: {
 		id: "uptime",
 		name: m.cmp_surface_uptime_name,
 		body: m.cmp_surface_uptime_body,
-		href: "/features/uptime-monitoring",
+		href: (locale) => featurePath(locale, "uptime-monitoring"),
 	},
 } satisfies Record<SurfaceId, Surface>
 
