@@ -72,6 +72,12 @@ const pricingSource = (slug: string): Source[] => {
 	return source ? [{ ...source, checked: PRICES_CHECKED }] : []
 }
 
+/** A vendor page with no `/compare` entry behind it, cited on the roundup itself. */
+const checkedNow = (label: string, url: string): Source => ({ label, url, checked: PRICES_CHECKED })
+
+/** Maple's own prices and retention, held to the same citation rule as everyone else's. */
+const MAPLE_SOURCE = checkedNow("Maple pricing and retention", "https://maple.dev/pricing")
+
 const dash0: AlternativesPage = {
 	slug: "dash0",
 	vendor: "Dash0",
@@ -341,14 +347,9 @@ const dash0: AlternativesPage = {
 		...pricingSource("axiom"),
 		...pricingSource("datadog"),
 		...pricingSource("new-relic"),
+		MAPLE_SOURCE,
 	],
 }
-
-/** A vendor page with no `/compare` entry behind it, cited on the roundup itself. */
-const checkedNow = (label: string, url: string): Source => ({ label, url, checked: PRICES_CHECKED })
-
-/** Maple's own prices and retention, held to the same citation rule as everyone else's. */
-const MAPLE_SOURCE = checkedNow("Maple pricing and retention", "https://maple.dev/pricing")
 
 const CLICKSTACK_SOURCES = [
 	checkedNow(
