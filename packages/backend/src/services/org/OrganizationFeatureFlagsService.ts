@@ -17,7 +17,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
 
@@ -30,6 +30,11 @@ const FLAGS_TTL_MS = 60_000
 export interface OrganizationFeatureFlagsServiceApi {
 	/** Never fails: an unreadable organization is an organization with every rollout off. */
 	readonly flags: (orgId: OrgId) => Effect.Effect<OrganizationFeatureFlags>
+	/**
+	 * The flags, or none when they could not be read. For a caller that only decides what to show,
+	 * and so should not hide a feature because the provider was away.
+	 */
+	readonly known: (orgId: OrgId) => Effect.Effect<Option.Option<OrganizationFeatureFlags>>
 }
 
 export class OrganizationFeatureFlagsService extends Context.Service<
@@ -41,31 +46,36 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = clerkApiFor(env)
 
-		const cache = new Map<OrgId, { readonly flags: OrganizationFeatureFlags; readonly atMs: number }>()
+		const cache = new Map<
+			OrgId,
+			{ readonly flags: Option.Option<OrganizationFeatureFlags>; readonly atMs: number }
+		>()
 
 		const read = Effect.fn("OrganizationFeatureFlagsService.read")(function* (orgId: OrgId) {
 			if (clerk === undefined) {
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "no_clerk_secret")
-				return DISABLED_ORGANIZATION_FEATURE_FLAGS
+				return Option.some(DISABLED_ORGANIZATION_FEATURE_FLAGS)
 			}
 			return yield* clerk.run(Clerk.getOrganization({ organization_id: orgId })).pipe(
-				Effect.map((organization) => organizationFeatureFlagsFrom(organization.public_metadata)),
+				Effect.map((organization) =>
+					Option.some(organizationFeatureFlagsFrom(organization.public_metadata)),
+				),
 				Effect.catch((error) =>
 					Effect.logWarning(
 						"Could not read organization feature flags; treating every rollout as off",
 					).pipe(
 						Effect.annotateLogs({ orgId, error: error.message }),
-						Effect.as(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+						Effect.as(Option.none<OrganizationFeatureFlags>()),
 					),
 				),
 			)
 		})
 
-		const flags: OrganizationFeatureFlagsServiceApi["flags"] = Effect.fn(
+		const known: OrganizationFeatureFlagsServiceApi["known"] = Effect.fn(
 			"OrganizationFeatureFlagsService.flags",
 		)(function* (orgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			if (!clerkMode) return ENABLED_ORGANIZATION_FEATURE_FLAGS
+			if (!clerkMode) return Option.some(ENABLED_ORGANIZATION_FEATURE_FLAGS)
 			const nowMs = yield* Clock.currentTimeMillis
 			const cached = cache.get(orgId)
 			if (cached !== undefined && nowMs - cached.atMs < FLAGS_TTL_MS) {
@@ -77,17 +87,30 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			return fresh
 		})
 
-		return { flags } satisfies OrganizationFeatureFlagsServiceApi
+		const flags: OrganizationFeatureFlagsServiceApi["flags"] = (orgId) =>
+			Effect.map(
+				known(orgId),
+				Option.getOrElse(() => DISABLED_ORGANIZATION_FEATURE_FLAGS),
+			)
+
+		return { flags, known } satisfies OrganizationFeatureFlagsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
 
-	/** Every rollout on, for tests and for callers that are gated elsewhere. */
-	static readonly allEnabled = Layer.succeed(this, {
-		flags: () => Effect.succeed(ENABLED_ORGANIZATION_FEATURE_FLAGS),
-	})
-
 	/** A fixed answer, for tests. */
 	static readonly fixed = (value: OrganizationFeatureFlags) =>
-		Layer.succeed(this, { flags: () => Effect.succeed(value) })
+		Layer.succeed(this, {
+			flags: () => Effect.succeed(value),
+			known: () => Effect.succeedSome(value),
+		})
+
+	/** Every rollout on, for tests and for callers that are gated elsewhere. */
+	static readonly allEnabled = this.fixed(ENABLED_ORGANIZATION_FEATURE_FLAGS)
+
+	/** A provider that does not answer, for tests: every rollout reads off and none is known. */
+	static readonly unreadable = Layer.succeed(this, {
+		flags: () => Effect.succeed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+		known: () => Effect.succeedNone,
+	})
 }

@@ -66,7 +66,7 @@ const queryDataSchema = Schema.Struct({
 		"'traces' for request/span analysis (latency, errors, throughput); 'logs' for log volume; " +
 			"'metrics' for a custom metric (needs metric_name and metric_type from list_metrics); " +
 			"'product_events' for track() events, page views and server events (names from list_product_events). " +
-			"Signups and accounts in a connected system (Clerk, a database) are data sources: search_data_sources.",
+			"Signups and accounts in a connected system (Clerk, a database) are data sources: list_data_sources, listed when the org has any.",
 	),
 	kind: P.oneOf(
 		["timeseries", "breakdown"] as const satisfies ReadonlyArray<QueryResultContract>,

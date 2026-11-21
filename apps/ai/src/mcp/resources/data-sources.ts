@@ -17,7 +17,7 @@ export const dataSourcesResourceText = (sources: ReadonlyArray<ExternalDataSourc
 	return Arr.join(
 		[
 			`# Connected data sources (${sources.length})`,
-			"Query with `query_data_source`; read an entry's fields first with `describe_data_source`. `search_data_sources` finds a table by topic.",
+			"Query with `query_data_source`. `list_data_sources` finds a table by topic (`query`) and gives a source's tables and an entry's fields (`data_source`, `entries`).",
 			...Arr.map(shown, (source) => `- ${dataSourceLine(source)}`),
 			...(sources.length > shown.length
 				? [`(${sources.length - shown.length} more; use \`list_data_sources\` with an offset.)`]

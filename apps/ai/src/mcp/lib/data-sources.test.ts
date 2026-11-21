@@ -58,7 +58,7 @@ describe("dataSourcesPromptSection", () => {
 	it("switches to a count and search past the cap", () => {
 		const text = dataSourcesPromptSection(Arr.makeBy(MAX_PROMPT_SOURCES + 1, source)) ?? ""
 		expect(text).toContain(
-			`There are ${MAX_PROMPT_SOURCES + 1} data sources; use \`search_data_sources\``,
+			`There are ${MAX_PROMPT_SOURCES + 1} data sources; use \`list_data_sources\` with a \`query\``,
 		)
 		expect(text).not.toContain("src-0 (")
 	})
@@ -70,7 +70,7 @@ describe("dataSourcesPromptSection for a turn that cannot query", () => {
 		const withoutQuery = dataSourcesPromptSection([source(0)], false) ?? ""
 		expect(withQuery).toContain("`query_data_source`")
 		expect(withoutQuery).not.toContain("query_data_source")
-		expect(withoutQuery).toContain("`describe_data_source`")
+		expect(withoutQuery).toContain("`list_data_sources`")
 		expect(withoutQuery).toContain("engineer or admin role")
 		expect(withoutQuery).toContain("- src-0 (")
 	})

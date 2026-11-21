@@ -234,7 +234,7 @@ const runSqlDescription =
 	"Rollups (*_hourly/*_minutely) keep time in Hour/Minute and counts in SpanCount; merge their AggregateFunction columns. " +
 	"Compare timestamps to 'YYYY-MM-DD HH:MM:SS', not ISO T/Z strings; bucket with toStartOfInterval. " +
 	"Call describe_warehouse_tables for a table's columns, units and enum casing before guessing names. " +
-	"It cannot reach databases or APIs the org connected as data sources: query those with query_data_source."
+	"It cannot reach databases or APIs the org connected as data sources: query_data_source does, for an org that has them."
 
 /** Twelve significant digits: hides binary float noise (8282.599999999999) without losing real precision. */
 const roundFloat = (value: number): number =>
