@@ -37,7 +37,7 @@ export const userAvatar = <M>(
 
 /**
  * The name over its detail: the email, else the id, then the group where the directory's Group
- * column is hidden (a panel under 880px), so a narrow row still says which group it is.
+ * column is hidden (a panel under 960px), so a narrow row still says which group it is.
  */
 export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 	const label = userLabel(user)
@@ -65,7 +65,7 @@ export const userNameBlock = <M>(h: HtmlBuilder<M>, user: UserRow): Html => {
 								truncate: true,
 								as: "span",
 								className: cn(
-									"max-w-full shrink-0 @min-[880px]/panel:hidden",
+									"max-w-full shrink-0 @min-[960px]/panel:hidden",
 									detail.length > 0 && "max-w-1/2",
 								),
 							},
