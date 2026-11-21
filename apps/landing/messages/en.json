@@ -1507,7 +1507,7 @@
 	"feat_status_cap_7_title": "Post when Maple is down",
 	"feat_status_cap_7_body": "Each page has a break-glass link to a form on the hosted page itself. Open an incident or post an update even if the Maple dashboard is unreachable.",
 	"feat_status_cap_8_title": "Run it from the API or an AI agent",
-	"feat_status_cap_8_body": "Pages, components and incidents are all in API v2. Over MCP, an agent creates a page with create_status_page, sets it up with apply_status_page_config, adds a custom domain with set_status_page_domain, publishes it with publish_status_page and posts updates with post_status_page_update.",
+	"feat_status_cap_8_body": "Pages, components and incidents are all in API v2. Over MCP, an agent does it all with one tool, manage_status_page: it creates a page, sets it up, adds a custom domain, publishes it and posts updates.",
 	"status_feeds_eyebrow": "Subscriptions and API",
 	"status_feeds_title": "Follow along from Slack, a feed reader or a script",
 	"status_feeds_lede": "Every public page has RSS and Atom feeds, a status badge, and a status.json in the statuspage.io summary format, so tools that already read statuspage.io pages can read yours.",

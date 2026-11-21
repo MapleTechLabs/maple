@@ -5,9 +5,11 @@ import { assert, describe, it } from "vitest"
 import { renderToolDoc, type ToolDoc } from "../../lib/tool-doc"
 import { registerListServicesTool } from "../list-services"
 import type { McpToolRegistrar } from "../types"
+import { ignoreFamily } from "../types"
 
 let render: ((output: typeof ListServicesOutput.Encoded) => ToolDoc) | undefined
 const registrar: McpToolRegistrar = {
+	family: ignoreFamily,
 	define: (spec) => {
 		render = (output) => spec.render(Schema.decodeSync(McpToolOutputs[spec.name])(output))
 	},

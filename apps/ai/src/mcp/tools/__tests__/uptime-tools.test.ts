@@ -31,6 +31,11 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
+/** What a family action returned: its tool's output is `{ action, result }`. */
+const ActionOutput = Schema.Struct({ result: Schema.Unknown })
+const decodeAction = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeUnknownSync(schema)(Schema.decodeUnknownSync(ActionOutput)(result.structuredContent).result)
+
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 
 describe("create_uptime_monitor", () => {
@@ -51,7 +56,7 @@ describe("create_uptime_monitor", () => {
 			url: "https://api.acme.dev/health",
 			service: "checkout",
 		})
-		const output = decode(UptimeMonitorMutationOutput, result)
+		const output = decodeAction(UptimeMonitorMutationOutput, result)
 		expect(output.monitor).toMatchObject({
 			kind: "http",
 			target: "GET https://api.acme.dev/health",
@@ -70,7 +75,7 @@ describe("create_uptime_monitor", () => {
 			kind: "heartbeat",
 			heartbeat_interval_seconds: 86400,
 		})
-		const output = decode(UptimeMonitorMutationOutput, result)
+		const output = decodeAction(UptimeMonitorMutationOutput, result)
 		expect(output.monitor.heartbeatUrl).toMatch(/\/hb\/[\w-]+$/u)
 		expect(output.pingCommand).toBe(`curl -fsS -m 10 --retry 3 ${output.monitor.heartbeatUrl}`)
 		expect(output.monitor.target).toBe("ping every 24h, 5m grace")
@@ -161,7 +166,7 @@ describe("create_uptime_monitor", () => {
 
 describe("list_uptime_monitors", () => {
 	it("puts a down monitor first with its error, uptime share and failing trace", async () => {
-		const created = decode(
+		const created = decodeAction(
 			UptimeMonitorMutationOutput,
 			await runToolDirect(admin, "create_uptime_monitor", {
 				name: "payments-db",
@@ -213,7 +218,7 @@ describe("list_uptime_monitors", () => {
 	})
 
 	it("hides a heartbeat's ping URL from members and shows it to admins", async () => {
-		const created = decode(
+		const created = decodeAction(
 			UptimeMonitorMutationOutput,
 			await runToolDirect(admin, "create_uptime_monitor", {
 				name: "weekly-report",
@@ -270,7 +275,7 @@ describe("list_uptime_monitors", () => {
 
 describe("update_uptime_monitor", () => {
 	it("pauses a monitor by name, then resumes it from pending", async () => {
-		const paused = decode(
+		const paused = decodeAction(
 			UptimeMonitorMutationOutput,
 			await runToolDirect(admin, "update_uptime_monitor", { monitor: "checkout-api", enabled: false }),
 		)
@@ -281,7 +286,7 @@ describe("update_uptime_monitor", () => {
 			enabled: true,
 			interval_seconds: 300,
 		})
-		expect(decode(UptimeMonitorMutationOutput, resumed).monitor).toMatchObject({
+		expect(decodeAction(UptimeMonitorMutationOutput, resumed).monitor).toMatchObject({
 			enabled: true,
 			status: "pending",
 			intervalSeconds: 300,
@@ -303,7 +308,7 @@ describe("update_uptime_monitor", () => {
 		expect(both.isError).toBe(true)
 		expect(markdown(both)).toContain("not both")
 
-		const cleared = decode(
+		const cleared = decodeAction(
 			UptimeMonitorMutationOutput,
 			await runToolDirect(admin, "update_uptime_monitor", {
 				monitor: "linked-api",
@@ -348,7 +353,7 @@ describe("delete_uptime_monitor", () => {
 			monitor: "nightly-backup",
 			confirm: true,
 		})
-		expect(decode(DeleteUptimeMonitorOutput, result)).toMatchObject({
+		expect(decodeAction(DeleteUptimeMonitorOutput, result)).toMatchObject({
 			deleted: true,
 			name: "nightly-backup",
 		})

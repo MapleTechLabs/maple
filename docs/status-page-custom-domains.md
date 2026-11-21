@@ -97,6 +97,6 @@ The zone holds each hostname once, so a hostname used by prd cannot be added on 
 - A hostname longer than 236 characters is refused: its `_maple-challenge` name would not fit
   in DNS.
 - The domain is not part of the config document (`GET/PUT .../config`, MCP
-  `apply_status_page_config`): it has its own asynchronous lifecycle and failure modes. Over
-  MCP it is `set_status_page_domain`: set, remove, or the page's current domain again to check
+  `manage_status_page action=apply_config`): it has its own asynchronous lifecycle and failure modes. Over
+  MCP it is `manage_status_page action=set_domain`: set, remove, or the page's current domain again to check
   it now (`POST .../custom_domain/check`); `get_status_page` shows it on the page.

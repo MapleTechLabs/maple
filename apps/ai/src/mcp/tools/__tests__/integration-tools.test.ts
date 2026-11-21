@@ -38,6 +38,11 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
+/** What a family action returned: its tool's output is `{ action, result }`. */
+const ActionOutput = Schema.Struct({ result: Schema.Unknown })
+const decodeAction = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeUnknownSync(schema)(Schema.decodeUnknownSync(ActionOutput)(result.structuredContent).result)
+
 describe("list_integrations", () => {
 	it("names every broken resource in one call, with unhealthy of total per provider", async () => {
 		const result = await runToolDirect(member, "list_integrations", {})
@@ -249,7 +254,7 @@ describe("update_scrape_target", () => {
 			target: INTEGRATION_WORLD.failingScrapeTarget,
 			enabled: false,
 		})
-		expect(decode(ScrapeTargetMutationOutput, result).target.enabled).toBe(false)
+		expect(decodeAction(ScrapeTargetMutationOutput, result).target.enabled).toBe(false)
 		expect(markdown(result)).toContain("Scraping is paused")
 	})
 
@@ -258,7 +263,9 @@ describe("update_scrape_target", () => {
 			target: "node-exporter",
 			interval_seconds: 30,
 		})
-		expect(decode(ScrapeTargetMutationOutput, result).target.url).toBe("https://metrics.acme.dev/node")
+		expect(decodeAction(ScrapeTargetMutationOutput, result).target.url).toBe(
+			"https://metrics.acme.dev/node",
+		)
 		expect(markdown(result)).not.toContain("fixture-secret")
 	})
 

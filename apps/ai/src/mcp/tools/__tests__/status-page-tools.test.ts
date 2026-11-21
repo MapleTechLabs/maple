@@ -51,6 +51,11 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
+/** What a family action returned: its tool's output is `{ action, result }`. */
+const ActionOutput = Schema.Struct({ result: Schema.Unknown })
+const decodeAction = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeUnknownSync(schema)(Schema.decodeUnknownSync(ActionOutput)(result.structuredContent).result)
+
 /** The page detail of a get_status_page call that named a page. */
 const pageOf = (result: McpToolResult) => {
 	const { page } = decode(GetStatusPageOutput, result)
@@ -78,7 +83,7 @@ describe("status page tools", () => {
 	})
 
 	it("opens an agent incident as a draft that the page does not show", async () => {
-		const created = decode(
+		const created = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				page: "acme-status",
@@ -103,7 +108,7 @@ describe("status page tools", () => {
 		expect(page.freshness.publishPending).toBe(true)
 
 		// Publishing with the next update puts it on the page.
-		const updated = decode(
+		const updated = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				incident: created.incident.id,
@@ -115,12 +120,14 @@ describe("status page tools", () => {
 		expect(updated.incident).toMatchObject({ status: "identified", published: true, updateCount: 2 })
 		const liveResult = await runToolDirect(rt, "get_status_page", { page: "Acme Status" })
 		// The follow-up needs public wording, so it is a notice, not a half-filled call.
-		expect(markdown(liveResult)).toContain("To update an open incident, call post_status_page_update")
+		expect(markdown(liveResult)).toContain(
+			"To update an open incident, call manage_status_page action=post_update",
+		)
 		const live = pageOf(liveResult)
 		expect(live.components).toMatchObject([{ name: "API", status: "partial_outage" }])
 		expect(live.overallStatus).toBe("partial_outage")
 
-		const resolved = decode(
+		const resolved = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				incident: created.incident.id,
@@ -134,7 +141,7 @@ describe("status page tools", () => {
 	})
 
 	it("publishes straight away when asked", async () => {
-		const created = decode(
+		const created = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				page: "acme-status",
@@ -161,7 +168,7 @@ describe("status page tools", () => {
 			message: "Some sign-ins are slow.",
 			publish: true,
 		})
-		const created = decode(StatusPageIncidentMutationOutput, result)
+		const created = decodeAction(StatusPageIncidentMutationOutput, result)
 		expect(created.incident.published).toBe(true)
 		expect(created.pageDraft).toBe(true)
 		expect(markdown(result)).toContain("The page is a draft")
@@ -176,7 +183,7 @@ describe("status page tools", () => {
 			ends_at: "2099-08-01T03:00:00Z",
 			components: ["API"],
 		})
-		const output = decode(StatusPageIncidentMutationOutput, result)
+		const output = decodeAction(StatusPageIncidentMutationOutput, result)
 		expect(output.action).toBe("scheduled")
 		expect(output.incident).toMatchObject({
 			kind: "maintenance",
@@ -188,7 +195,7 @@ describe("status page tools", () => {
 		expect(markdown(result)).toContain("draft")
 
 		// `completed` and `resolved` both close: maintenance stores `completed`.
-		const closed = decode(
+		const closed = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				incident: output.incident.id,
@@ -237,7 +244,7 @@ describe("status page tools", () => {
 
 	it("resolves a draft and publishes it in the same call, or says it stayed a draft", async () => {
 		const open = async (title: string) =>
-			decode(
+			decodeAction(
 				StatusPageIncidentMutationOutput,
 				await runToolDirect(rt, "post_status_page_update", {
 					page: "acme-status",
@@ -250,14 +257,14 @@ describe("status page tools", () => {
 			status: "resolved",
 			message: "Never mind.",
 		})
-		expect(decode(StatusPageIncidentMutationOutput, kept).incident).toMatchObject({
+		expect(decodeAction(StatusPageIncidentMutationOutput, kept).incident).toMatchObject({
 			status: "resolved",
 			published: false,
 		})
 		expect(markdown(kept)).toContain("closed as a draft")
 		expect(markdown(kept)).not.toContain("publish=true")
 
-		const shown = decode(
+		const shown = decodeAction(
 			StatusPageIncidentMutationOutput,
 			await runToolDirect(rt, "post_status_page_update", {
 				incident: await open("Public draft"),
@@ -367,7 +374,7 @@ describe("status page tools", () => {
 				config: JSON.stringify(edited),
 			})
 			expect(result.isError).not.toBe(true)
-			const output = decode(ApplyStatusPageConfigOutput, result)
+			const output = decodeAction(ApplyStatusPageConfigOutput, result)
 			expect(output.changes).toEqual({
 				fields: ["description"],
 				created: ["API"],
@@ -382,7 +389,7 @@ describe("status page tools", () => {
 
 			const again = await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
-				config: result.structuredContent.config,
+				config: result.structuredContent.result.config,
 			})
 			expect(markdown(again)).toContain("Nothing changed")
 		})
@@ -403,7 +410,7 @@ describe("status page tools", () => {
 				},
 			})
 			expect(result.isError).not.toBe(true)
-			expect(decode(ApplyStatusPageConfigOutput, result).changes).toEqual({
+			expect(decodeAction(ApplyStatusPageConfigOutput, result).changes).toEqual({
 				fields: [],
 				created: [],
 				updated: [],
@@ -494,7 +501,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
+				"manage_status_page would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
 			)
 			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
 
@@ -527,7 +534,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
+				"manage_status_page changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
 			)
 
 			const other = await readConfig(rt, "acme-status")
@@ -572,10 +579,10 @@ describe("setting a status page up", () => {
 			name: " Crème Status! ",
 			description: "How our services are doing.",
 		})
-		const created = decode(CreateStatusPageOutput, result)
+		const created = decodeAction(CreateStatusPageOutput, result)
 		expect(created.page).toMatchObject({ name: "Crème Status!", slug: "creme-status", draft: true })
 		expect(created.page.id).toMatch(/^stp_/)
-		expect(markdown(result)).toContain("publish_status_page")
+		expect(markdown(result)).toContain("manage_status_page action=publish")
 		expect(markdown(result)).toContain('`get_status_page page="creme-status" include_config=true`')
 
 		const config = await readConfig(admin(), "creme-status")
@@ -585,12 +592,12 @@ describe("setting a status page up", () => {
 		})
 
 		const published = await runToolDirect(admin(), "publish_status_page", { page: "creme-status" })
-		expect(decode(PublishStatusPageOutput, published)).toMatchObject({
+		expect(decodeAction(PublishStatusPageOutput, published)).toMatchObject({
 			action: "published",
 			page: { draft: false },
 		})
 		const again = await runToolDirect(admin(), "publish_status_page", { page: created.page.id })
-		expect(decode(PublishStatusPageOutput, again).action).toBe("already_public")
+		expect(decodeAction(PublishStatusPageOutput, again).action).toBe("already_public")
 		expect(markdown(again)).toContain("nothing changed")
 	})
 
@@ -629,7 +636,7 @@ describe("setting a status page up", () => {
 			page: "domain-page",
 			domain: " Status.Domain-Page.com ",
 		})
-		const output = decode(SetStatusPageDomainOutput, set)
+		const output = decodeAction(SetStatusPageDomainOutput, set)
 		expect(output.action).toBe("set")
 		expect(output.domain).toMatchObject({ hostname: "status.domain-page.com", status: "pending_dns" })
 		expect(Arr.map(output.domain?.dnsRecords ?? [], (r) => [r.type, r.name, r.purpose])).toEqual([
@@ -642,7 +649,7 @@ describe("setting a status page up", () => {
 		expect(text).toContain("_maple-challenge.status.domain-page.com")
 		expect(text).toContain("The page is a draft")
 
-		const checked = decode(
+		const checked = decodeAction(
 			SetStatusPageDomainOutput,
 			await runToolDirect(admin(), "set_status_page_domain", {
 				page: "domain-page",
@@ -664,14 +671,17 @@ describe("setting a status page up", () => {
 			page: "domain-page",
 			remove: true,
 		})
-		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({ action: "removed", domain: null })
+		expect(decodeAction(SetStatusPageDomainOutput, removed)).toMatchObject({
+			action: "removed",
+			domain: null,
+		})
 		const gone = pageOf(await runToolDirect(setup, "get_status_page", { page: "domain-page" }))
 		expect(gone.customDomain).toBeUndefined()
 		const again = await runToolDirect(admin(), "set_status_page_domain", {
 			page: "domain-page",
 			remove: true,
 		})
-		expect(decode(SetStatusPageDomainOutput, again).action).toBe("unchanged")
+		expect(decodeAction(SetStatusPageDomainOutput, again).action).toBe("unchanged")
 	})
 
 	it("names `domain` or `remove` for a domain it cannot set", async () => {

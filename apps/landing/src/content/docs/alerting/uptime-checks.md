@@ -85,7 +85,7 @@ The monitor page links each failed check to its trace, and charts response time 
 
 The same check, an HTTP monitor on a health endpoint with a JSON assertion, created four ways.
 
-On the [MCP server](/docs/reference/mcp), `create_uptime_monitor` creates a monitor, `update_uptime_monitor` changes or pauses it, and `list_uptime_monitors` shows every monitor with its last check and trace id:
+On the [MCP server](/docs/reference/mcp), `manage_uptime_monitor action=create` creates a monitor, `manage_uptime_monitor action=update` changes or pauses it, and `list_uptime_monitors` shows every monitor with its last check and trace id:
 
 ```json
 {

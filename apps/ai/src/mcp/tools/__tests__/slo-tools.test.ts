@@ -90,6 +90,11 @@ afterAll(async () => {
 const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
 	Schema.decodeSync(schema)(result.structuredContent)
 
+/** What a family action returned: its tool's output is `{ action, result }`. */
+const ActionOutput = Schema.Struct({ result: Schema.Unknown })
+const decodeAction = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeUnknownSync(schema)(Schema.decodeUnknownSync(ActionOutput)(result.structuredContent).result)
+
 const DENIED = "only org admins and engineers"
 
 describe("create_slo", () => {
@@ -112,7 +117,7 @@ describe("create_slo", () => {
 			target_percent: 99.9,
 			environments: ["production"],
 		})
-		const output = decode(SloMutationOutput, result)
+		const output = decodeAction(SloMutationOutput, result)
 		expect(output).toMatchObject({
 			action: "created",
 			slo: {
@@ -130,7 +135,7 @@ describe("create_slo", () => {
 	})
 
 	it("creates a latency SLO on a threshold from the ladder", async () => {
-		const output = decode(
+		const output = decodeAction(
 			SloMutationOutput,
 			await runToolDirect(admin, "create_slo", {
 				name: "Search latency",
@@ -298,7 +303,7 @@ describe("update_slo", () => {
 			alerting_enabled: false,
 			target_percent: 99.5,
 		})
-		const output = decode(SloMutationOutput, result)
+		const output = decodeAction(SloMutationOutput, result)
 		expect(output.slo).toMatchObject({
 			targetPercent: 99.5,
 			serviceName: "checkout",
@@ -309,7 +314,7 @@ describe("update_slo", () => {
 	})
 
 	it("changes a latency threshold alone and refuses one on an availability SLI", async () => {
-		const latency = decode(
+		const latency = decodeAction(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", { slo: "Search latency", threshold_ms: 1000 }),
 		)
@@ -324,7 +329,7 @@ describe("update_slo", () => {
 	})
 
 	it("sets a description, and clear_description removes it", async () => {
-		const described = decode(
+		const described = decodeAction(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", {
 				slo: "Search latency",
@@ -332,7 +337,7 @@ describe("update_slo", () => {
 			}),
 		)
 		expect(described.slo.description).toBe("Search stays fast")
-		const cleared = decode(
+		const cleared = decodeAction(
 			SloMutationOutput,
 			await runToolDirect(admin, "update_slo", { slo: "Search latency", clear_description: true }),
 		)
@@ -356,12 +361,45 @@ describe("delete_slo", () => {
 		expect(unconfirmed.isError).toBe(true)
 		expect(markdown(unconfirmed)).toContain("confirm=true")
 
-		const deleted = decode(
+		const deleted = decodeAction(
 			DeleteSloOutput,
 			await runToolDirect(admin, "delete_slo", { slo: "Search latency", confirm: true }),
 		)
 		expect(deleted).toMatchObject({ deleted: true, name: "Search latency" })
 		const listed = decode(ListSlosOutput, await runToolDirect(member, "list_slos", {}))
 		expect(Arr.map(listed.slos, (row) => row.name)).toEqual(["Checkout availability"])
+	})
+})
+
+describe("manage_slo", () => {
+	it("runs the action it is given and says which one ran", async () => {
+		const result = await runToolDirect(admin, "manage_slo", {
+			action: "update",
+			slo: "Checkout availability",
+			description: "Checkout stays up.",
+		})
+		expect(result.structuredContent).toMatchObject({
+			action: "update",
+			result: { action: "updated", slo: { description: "Checkout stays up." } },
+		})
+		expect(markdown(result)).toContain("SLO updated")
+	})
+
+	it("names its actions when the call gives none, or one it does not have", async () => {
+		const missing = await runToolDirect(admin, "manage_slo", { slo: "Checkout availability" })
+		expect(missing.failureCategory).toBe("invalid_parameters")
+		expect(markdown(missing)).toContain("Missing required `action`: one of create, update, delete.")
+		const unknown = await runToolDirect(admin, "manage_slo", {
+			action: "archive",
+			slo: "Checkout availability",
+		})
+		expect(markdown(unknown)).toContain('`action` "archive" is not one of create, update, delete.')
+	})
+
+	it("says which parameter the action is missing, not the family's whole list", async () => {
+		const result = await runToolDirect(admin, "manage_slo", { action: "create", name: "Search" })
+		expect(result.failureCategory).toBe("invalid_parameters")
+		expect(markdown(result)).toContain("Missing required `service`")
+		expect(markdown(result)).not.toContain("confirm")
 	})
 })

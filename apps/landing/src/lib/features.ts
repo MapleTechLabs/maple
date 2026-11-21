@@ -624,7 +624,7 @@ export const features: Feature[] = [
 			{ op: "/hb/<token>", title: m.feat_uptime_cap_4_title, body: m.feat_uptime_cap_4_body },
 			{ op: "failures_to_down", title: m.feat_uptime_cap_5_title, body: m.feat_uptime_cap_5_body },
 			{
-				op: "create_uptime_monitor()",
+				op: "manage_uptime_monitor()",
 				title: m.feat_uptime_cap_6_title,
 				body: m.feat_uptime_cap_6_body,
 			},
@@ -704,7 +704,7 @@ export const features: Feature[] = [
 			{ op: "password · internal", title: m.feat_status_cap_6_title, body: m.feat_status_cap_6_body },
 			{ op: "break glass", title: m.feat_status_cap_7_title, body: m.feat_status_cap_7_body },
 			{
-				op: "post_status_page_update()",
+				op: "manage_status_page()",
 				title: m.feat_status_cap_8_title,
 				body: m.feat_status_cap_8_body,
 			},

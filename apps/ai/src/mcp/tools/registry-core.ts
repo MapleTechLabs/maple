@@ -3,11 +3,13 @@ import * as Policy from "@maple/domain/policy"
 import { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { scopeAllows } from "@maple/domain/http/v2"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { McpToolOutputs } from "@maple/domain/mcp-outputs"
+import { McpToolFamilyActions, McpToolOutputs } from "@maple/domain/mcp-outputs"
 import {
 	Clock,
 	Effect,
 	Option,
+	Predicate,
+	Result,
 	Schema,
 	type SchemaAST,
 	Array as Arr,
@@ -18,8 +20,10 @@ import { CurrentMcpTenant } from "../tenant"
 import {
 	surfaceAdmits,
 	McpAuthInvalidError,
+	McpInvalidInputError,
 	type McpToolAudience,
 	type McpToolError,
+	type McpToolFamilySpec,
 	type McpToolHints,
 	type McpToolPhrases,
 	type McpToolRegistrar,
@@ -27,6 +31,7 @@ import {
 	refusalFor,
 	refusesReadOnlyCredential,
 } from "./types"
+import { canonicalToolCall } from "./tool-name-aliases"
 import { unknownToolMessage } from "../lib/tool-suggestions"
 import {
 	argumentWarnings,
@@ -49,6 +54,12 @@ interface ToolRun {
 
 export interface MapleToolDefinition extends MapleToolCatalogEntry {
 	readonly run: (params: unknown) => Effect.Effect<ToolRun, McpToolError, McpToolRequirements>
+	readonly actions?: ReadonlyArray<MapleToolDefinition & MapleToolActionEntry>
+}
+
+/** One action of a family: decoded, gated and run as a tool of its own under the family's name. */
+export interface MapleToolActionEntry extends MapleToolCatalogEntry {
+	readonly action: string
 }
 
 export interface MapleToolCatalogEntry {
@@ -65,6 +76,10 @@ export interface MapleToolCatalogEntry {
 	readonly audience: McpToolAudience
 	readonly scopeFamily?: string | ReadonlyArray<string>
 	readonly phrases: McpToolPhrases
+	/** A family's actions. Its own `schema` then only names the action: each action decodes its call. */
+	readonly actions?: ReadonlyArray<MapleToolActionEntry>
+	/** The input schema to publish, where it is not `schema`'s own: a family's, merged from its actions. */
+	readonly publishedInputSchema?: () => Record<string, unknown>
 }
 
 class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/errors/McpDecodeError", {
@@ -421,12 +436,12 @@ export const collectToolDefinitions = (
 	registers: ReadonlyArray<McpToolRegister>,
 	keep: (name: string) => boolean = () => true,
 ): ReadonlyArray<MapleToolDefinition> => {
-	const definitions: MapleToolDefinition[] = []
+	// In registration order. A family is built once every register has run, with all its actions.
+	const pending: Array<() => MapleToolDefinition> = []
 	const define: McpToolRegistrar["define"] = (spec) => {
 		if (!keep(spec.name)) return
 		const outputSchema: Schema.Codec<unknown, unknown> = McpToolOutputs[spec.name]
-		const encode = Schema.encodeUnknownEffect(outputSchema)
-		definitions.push({
+		const definition: MapleToolDefinition = {
 			name: spec.name,
 			title: spec.title,
 			description: spec.description,
@@ -442,26 +457,235 @@ export const collectToolDefinitions = (
 			run: (params) =>
 				Effect.gen(function* () {
 					const output = yield* spec.handler(params)
-					// A result that does not match its own schema is a bug, but the text is still right:
-					// the model gets its answer and the UI falls back to the text.
-					const structured = yield* encode(output).pipe(
-						Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
-						Effect.catch((error) =>
-							Effect.logError("MCP tool output does not match its output schema").pipe(
-								Effect.annotateLogs({
-									"maple.mcp.tool": spec.name,
-									"error.message": error.message,
-								}),
-								Effect.as(undefined),
-							),
-						),
-					)
+					const structured = yield* encodeOutput(spec.name, outputSchema, output)
 					return { doc: toolDocOf(spec, output), structured }
 				}),
-		})
+		}
+		pending.push(() => definition)
 	}
-	Arr.forEach(registers, (register) => register({ define }))
-	return definitions
+	const family: McpToolRegistrar["family"] = (spec) => {
+		const actions: Array<MapleToolDefinition & MapleToolActionEntry> = []
+		const builder: ReturnType<McpToolRegistrar["family"]> = {
+			action: (name, action) => {
+				const resultSchema = FAMILY_RESULTS[spec.name]?.[name]
+				if (resultSchema === undefined) {
+					throw new Error(`${spec.name} has no action "${name}" in the domain catalog`)
+				}
+				const scopeFamily = action.scopeFamily ?? spec.scopeFamily
+				actions.push({
+					name: spec.name,
+					action: name,
+					title: spec.title,
+					description: action.description,
+					schema: action.parameters,
+					parseOptions: {
+						onExcessProperty: action.rejectUnknownKeys === true ? "error" : "ignore",
+					},
+					outputSchema: resultSchema,
+					hints: action.hints,
+					aliases: action.aliases ?? {},
+					valueAliases: action.valueAliases ?? {},
+					audience: spec.audience ?? "public",
+					...(scopeFamily === undefined ? undefined : { scopeFamily }),
+					phrases: spec.phrases,
+					run: (params) =>
+						Effect.gen(function* () {
+							const output = yield* action.handler(params)
+							const result = yield* encodeOutput(spec.name, resultSchema, output)
+							return {
+								doc: toolDocOf(action, output),
+								structured: result === undefined ? undefined : { action: name, result },
+							}
+						}),
+				})
+				return builder
+			},
+		}
+		if (keep(spec.name)) pending.push(() => toFamilyDefinition(spec, actions))
+		return builder
+	}
+	Arr.forEach(registers, (register) => register({ define, family }))
+	return Arr.map(pending, (build) => build())
+}
+
+/** Each family action's result schema, by family then action. */
+const FAMILY_RESULTS: Readonly<Record<string, Readonly<Record<string, Schema.Codec<unknown, unknown>>>>> =
+	McpToolFamilyActions
+
+/**
+ * A handler's output as its schema encodes it. A result that does not match its own schema is a
+ * bug, but the text is still right: the model gets its answer and the UI falls back to the text.
+ */
+const encodeOutput = (tool: string, schema: Schema.Codec<unknown, unknown>, output: unknown) =>
+	Schema.encodeUnknownEffect(schema)(output).pipe(
+		Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+		Effect.catch((error) =>
+			Effect.logError("MCP tool output does not match its output schema").pipe(
+				Effect.annotateLogs({ "maple.mcp.tool": tool, "error.message": error.message }),
+				Effect.as(undefined),
+			),
+		),
+	)
+
+/** What a family's own call decodes to: only the action. Each action decodes the rest itself. */
+const FamilyCall = Schema.Struct({ action: Schema.String })
+
+const listOf = (names: ReadonlyArray<string>): string => Arr.join(names, ", ")
+
+/** A family's published properties: every action's, once, each saying which actions take it. */
+const familyInputSchema = (
+	family: string,
+	actions: ReadonlyArray<MapleToolActionEntry>,
+): Record<string, unknown> => {
+	const schemas = Arr.map(actions, (entry) => {
+		const properties = inputSchemaOf(entry).properties
+		return { action: entry.action, properties: isJsonObject(properties) ? properties : {} }
+	})
+	const keys = Arr.dedupe(Arr.flatMap(schemas, (schema) => Rec.keys(schema.properties)))
+	// The family reads `action` as which action to run, so an action's own would never arrive.
+	if (keys.includes("action") || Arr.some(actions, (entry) => "action" in entry.aliases)) {
+		throw new Error(`${family}: an action takes a parameter or alias named \`action\`. Rename it.`)
+	}
+	const merged = Arr.map(keys, (key) => {
+		const holders = Arr.flatMap(schemas, (schema) => {
+			const property = schema.properties[key]
+			if (!isJsonObject(property)) return []
+			const { description, ...typing } = property
+			return [
+				{
+					action: schema.action,
+					description: typeof description === "string" ? description : "",
+					typing,
+				},
+			]
+		})
+		const first = holders[0]
+		if (first === undefined || !Arr.every(holders, (holder) => sameJson(holder.typing, first.typing))) {
+			throw new Error(`${family}: its actions give \`${key}\` different types. Name them apart.`)
+		}
+		const sameText = Arr.every(holders, (holder) => holder.description === first.description)
+		const takenBy =
+			holders.length === actions.length ? "" : `(${listOf(Arr.map(holders, (h) => h.action))}) `
+		const description = sameText
+			? `${takenBy}${first.description}`
+			: Arr.join(
+					Arr.map(holders, (holder) => `${holder.action}: ${holder.description}`),
+					"; ",
+				)
+		return [key, { ...first.typing, description }] as const
+	})
+	return {
+		type: "object",
+		properties: Rec.fromEntries([
+			[
+				"action",
+				{
+					type: "string",
+					enum: Arr.map(actions, (entry) => entry.action),
+					description: "What to do.",
+				},
+			],
+			...merged,
+		]),
+		required: ["action"],
+		additionalProperties: false,
+	}
+}
+
+/** The family's sentence, then each action with what it does and the parameters it cannot go without. */
+const familyDescription = (summary: string, actions: ReadonlyArray<MapleToolActionEntry>): string =>
+	Arr.join(
+		[
+			summary,
+			...Arr.map(actions, (entry) => {
+				const required = inputSchemaOf(entry).required
+				const needs = Arr.isArray(required) ? Arr.filter(required, Predicate.isString) : []
+				return `- action=${entry.action}: ${entry.description}${needs.length === 0 ? "" : ` Requires ${listOf(needs)}.`}`
+			}),
+		],
+		"\n",
+	)
+
+const toFamilyDefinition = (
+	spec: McpToolFamilySpec<keyof typeof McpToolFamilyActions>,
+	actions: ReadonlyArray<MapleToolDefinition & MapleToolActionEntry>,
+): MapleToolDefinition => {
+	const names = Arr.map(actions, (entry) => entry.action)
+	const listed = Rec.keys(FAMILY_RESULTS[spec.name] ?? {})
+	if (names.length !== listed.length || !Arr.every(listed, (name) => names.includes(name))) {
+		throw new Error(`${spec.name} registers ${listOf(names)}; the domain catalog lists ${listOf(listed)}`)
+	}
+	// One name is gated one way: a read beside the writes would be refused to every read-only key.
+	if (Arr.some(actions, (entry) => entry.hints.readOnly)) {
+		throw new Error(`${spec.name}: every action of a family changes data. A read is a tool of its own.`)
+	}
+	const scopes = Arr.dedupe(Arr.flatMap(actions, (entry) => Arr.ensure(entry.scopeFamily ?? [])))
+	let description: string | undefined
+	let published: Record<string, unknown> | undefined
+	return {
+		name: spec.name,
+		title: spec.title,
+		// Both read every action's input schema, which a call to one action has no use for.
+		get description() {
+			description ??= familyDescription(spec.description, actions)
+			return description
+		},
+		publishedInputSchema: () => {
+			published ??= familyInputSchema(spec.name, actions)
+			return published
+		},
+		schema: FamilyCall,
+		parseOptions: { onExcessProperty: "ignore" },
+		outputSchema: McpToolOutputs[spec.name],
+		hints: {
+			readOnly: false,
+			destructive: Arr.some(actions, (entry) => entry.hints.destructive === true),
+			idempotent: Arr.every(actions, (entry) => entry.hints.idempotent === true),
+			openWorld: Arr.some(actions, (entry) => entry.hints.openWorld === true),
+		},
+		aliases: {},
+		valueAliases: {},
+		audience: spec.audience ?? "public",
+		// Every scope an action may ask for: what a key needs to run all of the family.
+		...(scopes.length === 0 ? undefined : { scopeFamily: scopes }),
+		phrases: spec.phrases,
+		actions,
+		run: () =>
+			Effect.fail(
+				new McpInvalidInputError({
+					message: `\`${spec.name}\` runs one of its actions: ${listOf(names)}.`,
+					parameter: "action",
+				}),
+			),
+	}
+}
+
+/**
+ * What a call is decoded and run as: the tool itself, or the action of a family its `action`
+ * argument names, with the rest of the arguments. Fails with what to send instead.
+ */
+export const resolveToolCall = <
+	D extends { readonly name: string; readonly actions?: ReadonlyArray<MapleToolActionEntry> },
+>(
+	definition: D,
+	input: unknown,
+): Result.Result<
+	{ readonly target: D | NonNullable<D["actions"]>[number]; readonly input: unknown },
+	string
+> => {
+	if (definition.actions === undefined) return Result.succeed({ target: definition, input })
+	const names = listOf(Arr.map(definition.actions, (entry) => entry.action))
+	const { action, ...rest } = isArgumentRecord(input) ? input : {}
+	const asked = typeof action === "string" ? enumSpelling(action) : undefined
+	const target = definition.actions.find((entry) => entry.action === asked)
+	if (target !== undefined) return Result.succeed({ target, input: rest })
+	return Result.fail(
+		`Invalid parameters for \`${definition.name}\`:\n- ${
+			asked === undefined
+				? `Missing required \`action\`: one of ${names}.`
+				: `\`action\` "${asked}" is not one of ${names}.`
+		}`,
+	)
 }
 
 /** One entry of `tool-modules.generated.ts`: a callable name and the module that defines it. */
@@ -488,14 +712,18 @@ export interface McpToolLookup {
 	readonly namesFor: (surface: McpToolSurface) => ReadonlyArray<string>
 }
 
-const inputSchemas = new Map<string, Record<string, unknown>>()
+const inputSchemas = new WeakMap<object, Record<string, unknown>>()
 
-/** The published input schema, computed on first use and kept: a hot path, and deterministic. */
+/**
+ * The published input schema, computed on first use and kept: a hot path, and deterministic. Kept
+ * per schema, not per name: a family's actions share its name and each has its own.
+ */
 export const inputSchemaOf = (entry: MapleToolCatalogEntry): Record<string, unknown> => {
-	const cached = inputSchemas.get(entry.name)
+	if (entry.publishedInputSchema !== undefined) return entry.publishedInputSchema()
+	const cached = inputSchemas.get(entry.schema)
 	if (cached !== undefined) return cached
 	const schema = toInputSchema(entry.schema)
-	inputSchemas.set(entry.name, schema)
+	inputSchemas.set(entry.schema, schema)
 	return schema
 }
 
@@ -556,10 +784,14 @@ const checkNextCall = Effect.fnUntraced(function* (
 	call: NextCall,
 	surface: McpToolSurface,
 ) {
-	const target = yield* lookup.find(call.tool)
-	if (target === undefined) return { call, valid: false, hidden: false }
-	if (!surfaceAdmits(target, surface)) return { call, valid: false, hidden: true }
-	const normalized = normalizeFor(target, call.args)
+	const canonical = canonicalToolCall(call.tool, call.args)
+	const found = yield* lookup.find(canonical.name)
+	if (found === undefined) return { call, valid: false, hidden: false }
+	if (!surfaceAdmits(found, surface)) return { call, valid: false, hidden: true }
+	const resolved = resolveToolCall(found, canonical.input)
+	if (Result.isFailure(resolved)) return { call, valid: false, hidden: false }
+	const { target, input } = resolved.success
+	const normalized = normalizeFor(target, input)
 	const valid =
 		normalized.unknown.length === 0 &&
 		Schema.decodeUnknownOption(target.schema)(normalized.args, target.parseOptions)._tag === "Some"
@@ -624,12 +856,14 @@ const finish = Effect.fnUntraced(function* (
 export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(function* (
 	lookup: McpToolLookup,
 	name: string,
-	input: unknown,
+	rawInput: unknown,
 	surface: McpToolSurface,
 ) {
-	const definition = yield* lookup.find(name)
-	if (!definition || !surfaceAdmits(definition, surface)) {
-		if (definition) {
+	// A retired name is the tool that replaced it, called with what the old name stood for.
+	const call = canonicalToolCall(name, rawInput)
+	const found = yield* lookup.find(call.name)
+	if (!found || !surfaceAdmits(found, surface)) {
+		if (found) {
 			yield* Effect.logWarning("MCP tool is not exposed on this surface").pipe(
 				Effect.annotateLogs({ "maple.mcp.tool": name, "maple.mcp.surface": surface }),
 			)
@@ -639,20 +873,27 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 			message: unknownToolMessage(name, lookup.namesFor(surface)),
 		})
 	}
-
-	if (refusesReadOnlyCredential(definition.name, definition.hints.readOnly)) {
+	// Refused on the tool's name, before its arguments are read: a family's actions all change data.
+	if (refusesReadOnlyCredential(found.name, found.hints.readOnly)) {
 		const tenant = yield* CurrentMcpTenant
-		const refusal = refusalFor(tenant, definition.name, definition.hints.readOnly)
+		const refusal = refusalFor(tenant, found.name, found.hints.readOnly)
 		if (refusal !== undefined) {
 			return yield* new McpAuthInvalidError({
 				message:
 					refusal === "analyst"
-						? `\`${definition.name}\` changes data. ${Policy.analystMessage}`
-						: `\`${definition.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
+						? `\`${found.name}\` changes data. ${Policy.analystMessage}`
+						: `\`${found.name}\` changes data, and this API key is read-only. Use a key with write access, or connect with OAuth.`,
 				reason: "insufficient_scope",
 			})
 		}
 	}
+
+	const resolved = resolveToolCall(found, call.input)
+	if (Result.isFailure(resolved)) {
+		yield* Effect.annotateCurrentSpan({ "maple.mcp.tool": found.name })
+		return yield* new McpDecodeError({ message: resolved.failure })
+	}
+	const { target: definition, input } = resolved.success
 
 	if (definition.scopeFamily !== undefined) {
 		const access = definition.hints.readOnly ? "read" : "write"
@@ -673,6 +914,7 @@ export const executeRegisteredTool = Effect.fn("McpToolRegistry.execute")(functi
 	const normalized = normalizeFor(definition, input ?? {}, nowMs)
 	yield* Effect.annotateCurrentSpan({
 		"maple.mcp.tool": definition.name,
+		...("action" in definition ? { "maple.mcp.tool.action": definition.action } : undefined),
 		"maple.mcp.tool.arguments": Arr.join(
 			Object.keys(typeof input === "object" && input !== null ? input : {}).sort(),
 			",",

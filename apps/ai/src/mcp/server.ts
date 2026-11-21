@@ -1,5 +1,5 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
-import { Context, Duration, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
+import { Context, Duration, Effect, Layer, Option, Predicate, Array as Arr, String as Str } from "effect"
 import type { OrgId } from "@maple/domain/http"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
@@ -42,6 +42,13 @@ export const flagsInTime = (
 	featureFlags: Context.Service.Shape<typeof OrganizationFeatureFlagsService>,
 	orgId: OrgId,
 ) => featureFlags.known(orgId).pipe(Effect.timeoutOption(FLAGS_WAIT), Effect.map(Option.flatten))
+
+/** The values a tool publishes for an `action` parameter: a family's actions, and so a bounded set. */
+const publishedActionsOf = (descriptor: McpToolDescriptor): ReadonlyArray<unknown> => {
+	const properties = descriptor.inputSchema.properties
+	const action = Predicate.isObject(properties) ? properties.action : undefined
+	return Predicate.isObject(action) && Arr.isArray(action.enum) ? action.enum : []
+}
 
 /** Long enough to tell failures apart in the MCP hub's error groups, short enough for a span. */
 const MAX_ERROR_MESSAGE_CHARS = 300
@@ -151,8 +158,9 @@ export class McpToolRegistration extends Context.Service<
 			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
 			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
 		}
-		const addTool = (descriptor: McpToolDescriptor) =>
-			server.addTool({
+		const addTool = (descriptor: McpToolDescriptor) => {
+			const actions = publishedActionsOf(descriptor)
+			return server.addTool({
 				...gateFor(descriptor.name, descriptor.annotations?.readOnlyHint === true),
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
@@ -181,6 +189,11 @@ export class McpToolRegistration extends Context.Service<
 						if (tenant.mcpClientName !== undefined) {
 							yield* Effect.annotateCurrentSpan("maple.mcp.client.name", tenant.mcpClientName)
 						}
+						// The hub groups on this span: a family's name alone merges its actions.
+						const action = Predicate.isObject(payload) ? payload.action : undefined
+						if (typeof action === "string" && actions.includes(action)) {
+							yield* Effect.annotateCurrentSpan("maple.mcp.tool.action", action)
+						}
 						// Already built by the transport before the call; this reads the cached executor.
 						const executor = yield* loader.load
 						return yield* executor
@@ -202,6 +215,7 @@ export class McpToolRegistration extends Context.Service<
 						),
 					),
 			})
+		}
 		const register = Effect.tryPromise({
 			try: () => import("./tool-descriptors.generated"),
 			catch: (cause) =>

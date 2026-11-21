@@ -11,6 +11,7 @@ import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incide
 import { renderToolDoc } from "../lib/tool-doc"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
@@ -29,6 +30,7 @@ type Invoke = (
 const acknowledgeTool = (rendered = false): Invoke => {
 	let invoke: Invoke = () => Effect.die("unregistered")
 	const registrar: McpToolRegistrar = {
+		family: ignoreFamily,
 		define: (spec) => {
 			invoke = (params) =>
 				Schema.decodeEffect(spec.parameters)(params).pipe(

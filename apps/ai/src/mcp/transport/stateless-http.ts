@@ -60,7 +60,7 @@ import { CurrentMcpRequestTenant } from "../tenant"
 import type { TenantContext } from "@maple/domain/http"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
-import { canonicalToolName } from "../tools/tool-name-aliases"
+import { canonicalToolCall } from "../tools/tool-name-aliases"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -172,14 +172,18 @@ const toolNameOf = (message: RequestEncoded): string =>
 		? message.payload.name
 		: "unknown"
 
-/** A `tools/call` naming a retired tool, renamed to its replacement before the server looks it up. */
-const withCanonicalToolName = (message: FromClientEncoded): FromClientEncoded => {
+/**
+ * A `tools/call` naming a retired tool, turned into the call it means before the server looks the
+ * tool up: its replacement's name, with the arguments the old name stood for.
+ */
+const withCanonicalToolCall = (message: FromClientEncoded): FromClientEncoded => {
 	if (message._tag !== "Request" || message.tag !== "tools/call") return message
+	if (!Predicate.isObject(message.payload)) return message
 	const name = toolNameOf(message)
-	const canonical = canonicalToolName(name)
-	return canonical === name || !Predicate.isObject(message.payload)
+	const call = canonicalToolCall(name, message.payload.arguments)
+	return call.name === name
 		? message
-		: { ...message, payload: { ...message.payload, name: canonical } }
+		: { ...message, payload: { ...message.payload, name: call.name, arguments: call.input } }
 }
 
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
@@ -395,7 +399,7 @@ export const layerStatelessMcpHttp = (options: {
 							Effect.suspend(() => {
 								// The caller's span in `params._meta` parents the server span; `RpcServer`
 								// links the HTTP request's span instead.
-								const message = withCanonicalToolName(withMetaTraceContext(received))
+								const message = withCanonicalToolCall(withMetaTraceContext(received))
 								if (message._tag === "Request") {
 									requestIds.push(RequestId(message.id))
 									;(
