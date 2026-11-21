@@ -492,23 +492,25 @@ go run .`,
 			},
 			{
 				title: "Start the JVM with the agent attached",
-				code: `java \\
+				code: `# The key goes in the environment, not on the command line, where ps would show it
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+
+java \\
   -javaagent:opentelemetry-javaagent.jar \\
   -Dotel.service.name=my-java-app \\
   -Dotel.exporter.otlp.endpoint=https://ingest.maple.dev \\
   -Dotel.exporter.otlp.protocol=http/protobuf \\
-  -Dotel.exporter.otlp.headers="Authorization=Bearer YOUR_INGEST_KEY" \\
   -Dotel.resource.attributes="deployment.environment.name=production" \\
   -jar app.jar`,
 				language: "bash",
 			},
 			{
 				title: "Or set it from the environment in a container",
-				code: `JAVA_TOOL_OPTIONS="-javaagent:/opt/opentelemetry-javaagent.jar"
-OTEL_SERVICE_NAME="my-java-app"
-OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"`,
+				code: `export JAVA_TOOL_OPTIONS="-javaagent:/opt/opentelemetry-javaagent.jar"
+export OTEL_SERVICE_NAME="my-java-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"`,
 				language: "bash",
 			},
 		],
@@ -692,7 +694,7 @@ dotnet run`,
 		related: ["laravel", "python", "nodejs"],
 		steps: [
 			{
-				title: "Add the gems",
+				title: "Add the gems, then run bundle install",
 				code: `# Gemfile
 gem "opentelemetry-sdk"
 gem "opentelemetry-exporter-otlp"
@@ -987,13 +989,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/api/orders", get(handle_orders))
-        .layer(TraceLayer::new_for_http());
+        // Request spans default to DEBUG, below the INFO filter, so raise them
+        .layer(TraceLayer::new_for_http().make_span_with(
+            tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
+        ));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    // Reached on Ctrl-C or SIGTERM: send the last batch
     let _ = tracer_provider.shutdown();
     let _ = logger_provider.shutdown();
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sigterm) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            sigterm.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }`,
 				language: "rust",
 			},

@@ -8,6 +8,7 @@
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
 import { integrations } from "../../lib/integrations";
+import { EU_INGEST_URL, US_INGEST_URL } from "../../lib/eu-region";
 import Layout from "../../layouts/Layout.astro";
 import * as m from "../../paraglide/messages.js";
 import BottomCTA from "../BottomCTA.astro";
@@ -102,6 +103,12 @@ const linkClass = "text-fg underline decoration-border underline-offset-4 hover:
 		<QuickStartCode steps={integration.steps} title={runtime === "nextjs" ? undefined : `Set up ${integration.name}`} />
 		<p class="mx-auto -mt-8 max-w-4xl px-6 pb-16 text-sm text-fg-muted md:-mt-12 md:pb-24">
 			This is the short path. The <a href={integration.docsHref} class={linkClass}>full {integration.name} guide</a> covers the rest.
+		</p>
+		{/* Ingest keys only work in the region that issued them. */}
+		<p class="mx-auto -mt-12 max-w-4xl px-6 pb-16 text-sm text-fg-muted md:-mt-20 md:pb-24">
+			{runtime === "react"
+				? <>Organization in the EU region? Pass <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">region: "eu"</code> to <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">MapleBrowser.init</code>. An ingest key only works in its own region.</>
+				: <>Organization in the EU region? Send to <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">{EU_INGEST_URL}</code> instead of <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">{US_INGEST_URL}</code>. An ingest key only works in its own region.</>}
 		</p>
 	</div>
 
