@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import {
 	capBusiestLogSeries,
 	blendGoldenHours,
+	errorSpikeBaselineKey,
 	evaluateErrorSpike,
 	excludeMaintenanceHours,
 	isBaselineHourExcluded,
+	issueErrorSpikeBaselines,
 	evaluateGoldenSignals,
 	evaluateLogVolume,
 	goldenWindowFromHours,
@@ -361,6 +363,105 @@ describe("evaluateErrorSpike", () => {
 	it("skips when no baseline row exists", () => {
 		const e = evaluateErrorSpike(observation(100), undefined, spikeConfig)
 		expect(e.status).toBe("skipped")
+	})
+})
+
+describe("issueErrorSpikeBaselines", () => {
+	const nowMs = Date.parse("2026-06-11T12:00:00Z")
+	const monthAgo = nowMs - 30 * 24 * 60 * 60 * 1000
+	const observed = (fingerprintHash: string, count: number, deploymentEnv = "production") => ({
+		fingerprintHash,
+		serviceName: "api",
+		deploymentEnv,
+		count,
+	})
+	const row = (fingerprintHash: string, totalCount: number, deploymentEnv = "production") => ({
+		fingerprintHash,
+		deploymentEnv,
+		totalCount,
+	})
+
+	// A steady 100 per half hour. `old` was re-keyed to `new` an hour ago: 334 half hours on the
+	// old hash, 2 on the new one, and both belong to issue A.
+	const rekeyedRows = [row("old", 33_400), row("new", 200)]
+	const issueByHash = new Map([
+		["old", "A"],
+		["new", "A"],
+	])
+	const hashesByIssue = new Map([["A", ["old", "new"]]])
+	// The alias resolves to the old issue, so the "too young" guard does not apply.
+	const spikeConfig = {
+		sensitivity: SENSITIVITY.normal,
+		issueFirstSeenAt: new Map([["new", monthAgo]]),
+		nowMs,
+	}
+	const evaluate = (count: number) => {
+		const observation = observed("new", count)
+		const baselines = issueErrorSpikeBaselines([observation], rekeyedRows, issueByHash, hashesByIssue)
+		return evaluateErrorSpike(
+			observation,
+			baselines.get(errorSpikeBaselineKey("new", "production")),
+			spikeConfig,
+		)
+	}
+
+	it("holds a re-keyed hash at its steady rate against the whole issue's history", () => {
+		const e = evaluate(100)
+		// λ = (33400 + 200) / 336 = 100; threshold = max(100 + 30, 400, 20) = 400.
+		expect(e).toMatchObject({ status: "healthy", value: 100, baselineMedian: 100, threshold: 400 })
+		// Its own hour of history alone reads the same rate as a critical spike.
+		expect(evaluateErrorSpike(observed("new", 100), row("new", 200), spikeConfig)).toMatchObject({
+			status: "breached",
+			severity: "critical",
+		})
+	})
+
+	it("still breaches a re-keyed hash on a real 10x spike", () => {
+		expect(evaluate(1000)).toMatchObject({ status: "breached", value: 1000, threshold: 400 })
+	})
+
+	it("uses the issue's history for a re-keyed hash that has no row of its own yet", () => {
+		const baselines = issueErrorSpikeBaselines(
+			[observed("new", 100)],
+			[row("old", 33_600)],
+			issueByHash,
+			hashesByIssue,
+		)
+		expect(baselines.get(errorSpikeBaselineKey("new", "production"))).toEqual({ totalCount: 33_600 })
+	})
+
+	it("gives two observed hashes of one issue the same baseline, each row counted once", () => {
+		const baselines = issueErrorSpikeBaselines(
+			[observed("old", 40), observed("new", 60)],
+			rekeyedRows,
+			issueByHash,
+			new Map([["A", ["old", "new", "old"]]]),
+		)
+		expect(baselines.get(errorSpikeBaselineKey("old", "production"))).toEqual({ totalCount: 33_600 })
+		expect(baselines.get(errorSpikeBaselineKey("new", "production"))).toEqual({ totalCount: 33_600 })
+	})
+
+	it("keeps a hash with no issue on its own row", () => {
+		const baselines = issueErrorSpikeBaselines(
+			[observed("orphan", 50), observed("unseen", 50)],
+			[row("orphan", 672), ...rekeyedRows],
+			issueByHash,
+			hashesByIssue,
+		)
+		expect(baselines.get(errorSpikeBaselineKey("orphan", "production"))).toEqual({ totalCount: 672 })
+		// No row and no issue: nothing to compare against, so the evaluator skips it as before.
+		expect(baselines.has(errorSpikeBaselineKey("unseen", "production"))).toBe(false)
+	})
+
+	it("does not mix environments", () => {
+		const baselines = issueErrorSpikeBaselines(
+			[observed("new", 100), observed("new", 100, "staging")],
+			[...rekeyedRows, row("old", 3_360, "staging")],
+			issueByHash,
+			hashesByIssue,
+		)
+		expect(baselines.get(errorSpikeBaselineKey("new", "production"))).toEqual({ totalCount: 33_600 })
+		expect(baselines.get(errorSpikeBaselineKey("new", "staging"))).toEqual({ totalCount: 3_360 })
 	})
 })
 

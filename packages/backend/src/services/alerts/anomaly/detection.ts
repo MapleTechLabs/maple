@@ -304,6 +304,55 @@ export interface ErrorSpikeBaseline {
 	readonly totalCount: number
 }
 
+/** One warehouse baseline row: a raw fingerprint hash's 7 day count in one environment. */
+export interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
+	readonly fingerprintHash: string
+	readonly deploymentEnv: string
+}
+
+/** Key of one fingerprint hash in one environment, as `issueErrorSpikeBaselines` keys its result. */
+export const errorSpikeBaselineKey = (fingerprintHash: string, deploymentEnv: string): string =>
+	`${fingerprintHash}\u0000${deploymentEnv}`
+
+/**
+ * The baseline of each observation: the summed history, in its environment, of every hash its
+ * issue owns. A hash re-keyed by a fingerprint version bump has no history of its own, the hash
+ * it replaced has it. A hash with no issue keeps its own row.
+ */
+export const issueErrorSpikeBaselines = <IssueId>(
+	observations: ReadonlyArray<ErrorSpikeObservation>,
+	baselineRows: ReadonlyArray<ErrorSpikeBaselineEntry>,
+	issueByHash: ReadonlyMap<string, IssueId>,
+	hashesByIssue: ReadonlyMap<IssueId, ReadonlyArray<string>>,
+): ReadonlyMap<string, ErrorSpikeBaseline> => {
+	const rows = new Map(
+		Arr.map(
+			baselineRows,
+			(row) => [errorSpikeBaselineKey(row.fingerprintHash, row.deploymentEnv), row] as const,
+		),
+	)
+	return new Map(
+		Arr.flatMap(observations, (observation) => {
+			const { fingerprintHash, deploymentEnv } = observation
+			const issueId = issueByHash.get(fingerprintHash)
+			const owned = issueId === undefined ? [] : (hashesByIssue.get(issueId) ?? [])
+			// Deduped with the observed hash first, so each row counts once and its own is never lost.
+			const history = Arr.flatMap(Arr.dedupe([fingerprintHash, ...owned]), (hash) => {
+				const row = rows.get(errorSpikeBaselineKey(hash, deploymentEnv))
+				return row === undefined ? [] : [row]
+			})
+			return history.length === 0
+				? []
+				: [
+						[
+							errorSpikeBaselineKey(fingerprintHash, deploymentEnv),
+							{ totalCount: Arr.reduce(history, 0, (sum, row) => sum + row.totalCount) },
+						] as const,
+					]
+		}),
+	)
+}
+
 export interface DetectionConfig {
 	readonly sensitivity: SensitivityConfig
 }

@@ -70,19 +70,21 @@ import {
 	capBusiestLogSeries,
 	CURRENT_WINDOW_MINUTES,
 	ERROR_SPIKE_MIN_COUNT,
+	errorSpikeBaselineKey,
 	excludeMaintenanceHours,
 	evaluateErrorSpike,
 	evaluateGoldenSignals,
 	evaluateLogVolume,
 	goldenWindowFromHours,
 	healthyErrorSpikeRecovery,
+	issueErrorSpikeBaselines,
 	isWatchedEnvironment,
 	logWindowFromHours,
 	SENSITIVITY,
 	windowBaseline,
 	type AnomalyEvaluation,
 	type BaselineExclusion,
-	type ErrorSpikeBaseline,
+	type ErrorSpikeBaselineEntry,
 	type GoldenHour,
 	type GoldenSignalSeries,
 	type LogVolumeSeries,
@@ -97,6 +99,7 @@ import {
 } from "./anomaly/detector-state-batch"
 import { rollingCountBuckets } from "./anomaly/rolling-counts"
 import { hysteresisConfigFor } from "./anomaly/hysteresis-config"
+import { spikeIssueHashes } from "./anomaly/spike-issue-hashes"
 import { foldObservation } from "@maple/alerting-core/hysteresis"
 import {
 	attachKeyFor,
@@ -184,11 +187,6 @@ const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry
 		firstTriggeredAt: row.firstTriggeredAt,
 		fingerprintsJson: encodeJson(row.fingerprintsJson),
 	})
-
-interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
-	readonly fingerprintHash: string
-	readonly deploymentEnv: string
-}
 
 /** Cached as JSON, so hours are epoch ms rather than `DateTime.Utc`. */
 interface GoldenBaselineRow {
@@ -1322,7 +1320,7 @@ const make: Effect.Effect<
 		)
 
 		if (observations.length === 0) {
-			return { observations, baselines: new Map<string, ErrorSpikeBaselineEntry>() }
+			return { observations, baselineRows: Arr.empty<ErrorSpikeBaselineEntry>() }
 		}
 
 		// The 7d baseline blob is expensive relative to the tick cadence, so it
@@ -1352,11 +1350,8 @@ const make: Effect.Effect<
 			}),
 		)
 
-		const baselines = new Map<string, ErrorSpikeBaselineEntry>()
-		for (const row of baselineRows) {
-			baselines.set(`${row.fingerprintHash}\u0000${row.deploymentEnv}`, row)
-		}
-		return { observations, baselines }
+		// Raw rows: the tick joins them to issues, whose history spans several hashes.
+		return { observations, baselineRows }
 	})
 
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
@@ -1508,6 +1503,17 @@ const make: Effect.Effect<
 		const owners = yield* dbExecute((db) => issuesOwningHashes(db, orgId, fingerprints))
 		const issueFirstSeenAt = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.firstSeenAt]))
 		const issueIdByFingerprint = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.issueId]))
+		// A hash re-keyed by a fingerprint version bump only has history since the bump, so the
+		// baseline is its issue's: every hash the issue owns, summed.
+		const issueHashes = yield* dbExecute((db) =>
+			spikeIssueHashes(db, orgId, Arr.dedupe([...issueIdByFingerprint.values()])),
+		)
+		const spikeBaselines = issueErrorSpikeBaselines(
+			spikes.observations,
+			spikes.baselineRows,
+			issueIdByFingerprint,
+			issueHashes,
+		)
 
 		const evaluations: AnomalyEvaluation[] = []
 		for (const series of goldenSeries) {
@@ -1521,8 +1527,8 @@ const make: Effect.Effect<
 		for (const observation of spikes.observations) {
 			const detectorKey = `error_spike:${observation.deploymentEnv}:${observation.fingerprintHash}`
 			observedSpikeKeys.add(detectorKey)
-			const baseline = spikes.baselines.get(
-				`${observation.fingerprintHash}\u0000${observation.deploymentEnv}`,
+			const baseline = spikeBaselines.get(
+				errorSpikeBaselineKey(observation.fingerprintHash, observation.deploymentEnv),
 			)
 			const state = stateByKey.get(detectorKey)
 			evaluations.push(
