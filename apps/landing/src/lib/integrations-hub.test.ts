@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import { GUIDE_SECTIONS } from "./instrumentation-guides"
 import { HUB_CATEGORIES, text, tileHref } from "./integrations-hub"
+import { integrations } from "./integrations"
 import { Array as Arr, String as Str } from "effect"
 
 const tiles = Arr.flatMap(HUB_CATEGORIES, (category) => category.tiles)
@@ -33,10 +34,19 @@ describe("HUB_CATEGORIES", () => {
 
 	it("prefixes only landing pages with the locale, since docs are English-only", () => {
 		const node = tiles.find((tile) => tile.href === "/integrations/nodejs")
-		const go = tiles.find((tile) => tile.href === "/docs/guides/instrumentation-go")
+		const kotlin = tiles.find((tile) => tile.href === "/docs/guides/instrumentation-kotlin")
 		expect(node && tileHref("ja", node)).toBe("/ja/integrations/nodejs")
 		expect(node && tileHref("en", node)).toBe("/integrations/nodejs")
-		expect(go && tileHref("ko", go)).toBe("/docs/guides/instrumentation-go")
+		expect(kotlin && tileHref("ko", kotlin)).toBe("/docs/guides/instrumentation-kotlin")
+	})
+
+	it("opens a guide's integration page instead of the guide, when it has one", () => {
+		const go = tiles.find((tile) => text(tile.name) === "Go")
+		const langchain = tiles.find((tile) => text(tile.name) === "LangChain & LangGraph")
+		expect(go?.href).toBe("/integrations/go")
+		expect(langchain?.href).toBe("/integrations/langchain")
+		// English-only pages keep their English URL from /ja and /ko.
+		expect(go && tileHref("ja", go)).toBe("/integrations/go")
 	})
 
 	it("ships every localized landing page in ja and ko too", () => {
@@ -53,10 +63,8 @@ describe("HUB_CATEGORIES", () => {
 	it("covers every page the instrumentation index links to", () => {
 		// Pages the hub reaches another way, or leaves out on purpose.
 		const elsewhere = new Set([
-			// Node.js, Next.js and Python tiles open their localized landing pages instead.
-			"/docs/guides/instrumentation-nodejs",
-			"/docs/guides/instrumentation-nextjs",
-			"/docs/guides/instrumentation-python",
+			// Guides with an /integrations page are reached through it; the page links the guide.
+			...Arr.map(Object.values(integrations), (i) => i.docsHref),
 			// One Effect tile stands for the SDK's runtime-specific pages.
 			"/docs/sdks/effect-cloudflare",
 			"/docs/sdks/effect-client",
