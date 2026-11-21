@@ -276,7 +276,7 @@ describe("cost page", () => {
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
 			expectView(
 				text(
-					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Morph requests are free/,
 				),
 			).toExist(),
 			expectView(role("button", { name: /^Vercel/ })).toExist(),
@@ -793,7 +793,7 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^GitHub/ })).toExist(),
 			expectView(
 				text(
-					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Morph requests are free/,
 				),
 			).toExist(),
 		)
