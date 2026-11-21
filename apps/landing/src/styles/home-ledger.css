@@ -501,7 +501,7 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 }
 .ledger-bill__migrate {
 	margin-top: 24px;
-	max-width: 62ch;
+	max-width: 88ch;
 	color: var(--home-ink);
 	font-size: 15px;
 }

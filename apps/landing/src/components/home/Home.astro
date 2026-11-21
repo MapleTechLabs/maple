@@ -60,9 +60,6 @@ const homeFaqs = [
              fold, one scroll from the hero CTA. -->
         <HomeObjections />
 
-        <!-- The bill, one scroll from the hero: what each vendor charges for the same four lines. -->
-        <HomeBill />
-
         <!-- The hero's product screenshots, as their own section. -->
         <HomeProductPlate />
 
@@ -88,8 +85,10 @@ const homeFaqs = [
         <!-- The same investigation as the incident story, run by an agent instead of a human. -->
         <AgentSection />
 
-        <!-- The money chapter: the one plan, then what protects the data it buys. -->
+        <!-- The money chapter: the one plan, everyone else's list price under it, then what
+             protects the data it buys. -->
         <PricingTable variant="home" title={m.pricing_home_title()} lede={m.pricing_home_lede()} />
+        <HomeBill />
         <HomeTrust />
 
         <FAQ items={homeFaqs} split />
