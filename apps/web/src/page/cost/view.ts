@@ -140,6 +140,10 @@ const FIRST_SYNC = {
 		alone: "It brings in this month and the last, then the two months before.",
 		named: "OpenAI brings in this month and the last, then the two months before.",
 	},
+	morph: {
+		alone: "It reads this month's spend so far, and every hour from here on.",
+		named: "Morph reads this month's spend so far, and every hour from here on.",
+	},
 	gcp: {
 		alone: "It brings in this month and the last, and older months the export holds fill in after that.",
 		named: "Google Cloud brings in this month and the last, and older months the export holds fill in after that.",

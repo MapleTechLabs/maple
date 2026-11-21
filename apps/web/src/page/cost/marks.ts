@@ -34,6 +34,7 @@ const MODEL_PROVIDERS: ReadonlySet<CostProvider> = new Set<CostProvider>([
 	"openrouter",
 	"anthropic",
 	"openai",
+	"morph",
 ])
 
 /** The org's providers that bill services and regions of their own. */

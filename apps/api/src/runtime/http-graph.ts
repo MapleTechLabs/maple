@@ -15,6 +15,7 @@ import { HttpAnthropicCostLive } from "@/routes/internal/anthropic-cost.http"
 import { HttpFeatureRequestsLive } from "@/routes/internal/feature-requests.http"
 import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpOpenAiCostLive } from "@/routes/internal/openai-cost.http"
+import { HttpMorphCostLive } from "@/routes/internal/morph-cost.http"
 import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpCostBudgetsLive } from "@/routes/internal/cost-budgets.http"
@@ -194,6 +195,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAnthropicCostLive,
 			HttpFeatureRequestsLive,
 			HttpOpenAiCostLive,
+			HttpMorphCostLive,
 			HttpGithubCostLive,
 			HttpPlanetScaleCostLive,
 			HttpOpenRouterCostLive,
