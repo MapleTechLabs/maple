@@ -654,6 +654,8 @@ describe("SourcesService", () => {
 				readonly stream: boolean
 				readonly streamChangedAt?: number
 				readonly receivedAt?: number
+				/** The gateway's stamp on the source row; the delivery time unless it lags. */
+				readonly lastUsedAt?: number
 				readonly error?: string
 			},
 		) =>
@@ -663,7 +665,7 @@ describe("SourcesService", () => {
 				yield* Effect.promise(() =>
 					executeSql(testDb, `UPDATE sources SET last_used_at = $2 WHERE id = $1;`, [
 						id,
-						iso(connection.receivedAt ?? null),
+						iso(connection.lastUsedAt ?? connection.receivedAt ?? null),
 					]),
 				)
 				yield* Effect.promise(() =>
@@ -726,6 +728,13 @@ describe("SourcesService", () => {
 				stream: true,
 				receivedAt: now - 3_600_000,
 			})
+			// Deliveries arrive, but the source row's stamp stopped an hour and a half ago.
+			yield* insertAws("6a1e2f3a-0000-4000-8000-000000000008", "streaming, row lags", {
+				verifiedAt: now - 3_600_000,
+				stream: true,
+				receivedAt: now - 2 * 60_000,
+				lastUsedAt: now - 90 * 60_000,
+			})
 
 			const sources = yield* ownSources(keys, orgA)
 			assert.deepStrictEqual(
@@ -745,6 +754,7 @@ describe("SourcesService", () => {
 					["refused", "failing", "This Maple organization is over its plan limit"],
 					["stopped", "stale", "No data in the last 30 minutes"],
 					["stream just added", "pending", null],
+					["streaming, row lags", "healthy", null],
 					["streaming", "healthy", null],
 				],
 			)

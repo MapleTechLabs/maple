@@ -167,6 +167,19 @@ describe("sourceHealth for AWS", () => {
 		})
 	})
 
+	it("is healthy on the connection's own last delivery while the source row's stamp lags", () => {
+		const lagging = aws({ lastUsedAt: now - 30 * HOUR, deliveredAt: now - 2 * MINUTE })
+		expect(sourceHealth(lagging, now)).toEqual({
+			status: "healthy",
+			lastDataAt: now - 2 * MINUTE,
+			problem: null,
+		})
+		expect(sourceHealth({ ...lagging, deliveredAt: now - HOUR }, now)).toMatchObject({
+			status: "stale",
+			lastDataAt: now - HOUR,
+		})
+	})
+
 	it("fails on a refused delivery even while others arrive, and on a failed role check once they stop", () => {
 		const refused = aws({ lastUsedAt: now - MINUTE, failing: "A delivery was refused" })
 		expect(sourceHealth(refused, now)).toMatchObject({
