@@ -1,5 +1,20 @@
 # @maple/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- f794daa: `maple promql '<query>'` runs PromQL over your metrics from the terminal, against the local store or a hosted workspace. `--since` / `--start` / `--end` pick the window, `--step` the resolution and `--instant` evaluates once at its end. `--format table` prints each series with its last value, min, average, max and a sparkline; a syntax error points at its position. `maple promql metrics [filter]` lists the Prometheus metric names a query can select.
+- 151ff30: Add `maple get`, `maple post`, `maple put`, `maple patch` and `maple api <method>` to call any Maple API endpoint as the logged-in user. `-d key=value` (or `key:=<json>`, with `a[b]` nesting) builds the query string or JSON body, `-H` adds headers, `--input` sends a raw JSON body, and `-i` prints the response status and headers.
+
+### Patch Changes
+
+- Updated dependencies [817980c]
+- Updated dependencies [e604502]
+- Updated dependencies [b7842dd]
+- Updated dependencies [dcb4277]
+    - @maple-dev/effect-sdk@0.15.0
+
 ## 0.3.6
 
 ### Patch Changes
