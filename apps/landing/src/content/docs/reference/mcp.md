@@ -230,9 +230,7 @@ The write tools here need the org admin or engineer role.
 
 | Tool                   | Access | What it does                                                                                        |
 | ---------------------- | ------ | --------------------------------------------------------------------------------------------------- |
-| `list_data_sources`    | read   | The external databases and APIs the organization connected for Maple to query in place              |
-| `search_data_sources`  | read   | Find which data source, table or field holds a topic, such as failed payments or signups            |
-| `describe_data_source` | read   | One data source's tables or resources, their fields and sample values, and its query language       |
+| `list_data_sources`    | read   | The connected databases and APIs; `query` finds a topic, `data_source` gives its tables and fields  |
 | `query_data_source`    | read   | Run one read-only SQL or resource query against a data source; `explain=true` returns only the plan |
 
 ### Infrastructure

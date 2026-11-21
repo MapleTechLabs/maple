@@ -49,8 +49,6 @@ import { registerListSecurityAuditRunsTool } from "./list-security-audit-runs"
 import { registerInspectSecurityAuditRunTool } from "./inspect-security-audit-run"
 import { registerListSourcesTool } from "./list-sources"
 import { registerListDataSourcesTool } from "./list-data-sources"
-import { registerSearchDataSourcesTool } from "./search-data-sources"
-import { registerDescribeDataSourceTool } from "./describe-data-source"
 import { registerQueryDataSourceTool } from "./query-data-source"
 import { canonicalToolName } from "./tool-name-aliases"
 import { registerCiRunsTool } from "./ci-runs"
@@ -235,8 +233,6 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerInspectSecurityAuditRunTool,
 	registerListSourcesTool,
 	registerListDataSourcesTool,
-	registerSearchDataSourcesTool,
-	registerDescribeDataSourceTool,
 	registerQueryDataSourceTool,
 	registerCiRunsTool,
 	registerCompareCommitsTool,

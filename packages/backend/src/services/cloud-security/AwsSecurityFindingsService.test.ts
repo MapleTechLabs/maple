@@ -2,7 +2,7 @@ import * as Retry from "@distilled.cloud/aws/Retry"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { AwsAccountId, type AwsModule, AwsRegion, OrgId, UserId } from "@maple/primitives"
-import { Array as Arr, ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -49,6 +49,10 @@ const makeWorld = () => {
 	const sts = makeFakeAws()
 	const aws = makeFakeAwsSecurity(sts.client)
 	const rolledOut = new Set<OrgId>([orgId])
+	const flagsOf = (org: OrgId) => ({
+		...ENABLED_ORGANIZATION_FEATURE_FLAGS,
+		cloudSecurity: rolledOut.has(org),
+	})
 	const audit: Array<{ readonly orgId: OrgId; readonly event: AuditTrailEvent }> = []
 	const layer = Layer.mergeAll(
 		Layer.effect(AwsSecurityFindingsService, AwsSecurityFindingsService.make),
@@ -68,11 +72,8 @@ const makeWorld = () => {
 		),
 		Layer.provide(
 			Layer.succeed(OrganizationFeatureFlagsService, {
-				flags: (org) =>
-					Effect.sync(() => ({
-						...ENABLED_ORGANIZATION_FEATURE_FLAGS,
-						cloudSecurity: rolledOut.has(org),
-					})),
+				flags: (org) => Effect.sync(() => flagsOf(org)),
+				known: (org) => Effect.sync(() => Option.some(flagsOf(org))),
 			}),
 		),
 		Layer.provide(testDb.layer),

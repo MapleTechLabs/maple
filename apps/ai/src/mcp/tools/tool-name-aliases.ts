@@ -7,6 +7,8 @@ import { Record as Rec } from "effect"
  */
 export const TOOL_NAME_ALIASES = {
 	list_sources: "list_ingest_sources",
+	search_data_sources: "list_data_sources",
+	describe_data_source: "list_data_sources",
 } as const satisfies Readonly<Record<string, string>>
 
 const ALIASES: ReadonlyMap<string, string> = new Map(Rec.toEntries(TOOL_NAME_ALIASES))

@@ -26,15 +26,19 @@ export const DataSourceSummary = Schema.Struct({
 	lastError: Schema.NullOr(Schema.String),
 })
 
-export const ListDataSourcesOutput = Schema.Struct({
+/** A page of the org's connected sources. */
+export const DataSourceListing = Schema.Struct({
 	sources: Schema.Array(DataSourceSummary),
 	/** Every agent-visible source, across pages. */
 	total: Schema.Number,
 	offset: Schema.Number,
 })
 
-export const SearchDataSourcesOutput = Schema.Struct({
+/** Where a topic lives across every source's stored catalog. */
+export const DataSourceSearch = Schema.Struct({
 	query: Schema.String,
+	/** The one source the search was narrowed to. */
+	dataSource: Schema.optionalKey(Schema.String),
 	/** Visible sources whose catalog failed, was never captured or was cut at the cap: search cannot vouch for them. */
 	incompleteSources: Schema.optionalKey(Schema.Array(Schema.String)),
 	hits: Schema.Array(
@@ -69,7 +73,8 @@ export const DescribedDataSourceEntry = Schema.Struct({
 	fields: Schema.Array(CatalogField),
 })
 
-export const DescribeDataSourceOutput = Schema.Struct({
+/** One source's catalog: its entries, or the fields of the entries asked for. */
+export const DataSourceCatalog = Schema.Struct({
 	source: DataSourceSummary,
 	/** The overview page, when no entries were asked for. */
 	entries: Schema.optionalKey(Schema.Array(DataSourceEntryOverview)),
@@ -84,6 +89,15 @@ export const DescribeDataSourceOutput = Schema.Struct({
 	cheatSheet: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** A runnable query over the described entries, in the source's language. */
 	exampleQuery: Schema.optionalKey(Schema.String),
+})
+
+/** `list_data_sources`: exactly the part its `view` names is present. */
+export const ListDataSourcesOutput = Schema.Struct({
+	/** What the call asked: every source, a topic across them, or one source's catalog. */
+	view: Schema.Literals(["sources", "search", "catalog"]),
+	listing: Schema.optionalKey(DataSourceListing),
+	search: Schema.optionalKey(DataSourceSearch),
+	catalog: Schema.optionalKey(DataSourceCatalog),
 })
 
 export const QueryDataSourceOutput = Schema.Struct({
