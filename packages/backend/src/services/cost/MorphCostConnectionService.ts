@@ -111,6 +111,7 @@ export class MorphCostConnectionService extends Context.Service<
 				return yield* refused("That is not a Morph API key. They start with sk-.")
 			}
 			const secret = Redacted.make(apiKey)
+			const readAt = yield* Clock.currentTimeMillis
 			const list = yield* MorphBudgets.listMemberSpend(httpClient, secret).pipe(
 				Effect.mapError(toKeyError),
 				Effect.timeoutOrElse({
@@ -144,7 +145,6 @@ export class MorphCostConnectionService extends Context.Service<
 				.pipe(Effect.mapError(toPersistenceError))
 			// The account id is the same for every Morph key, so `other_account` cannot come back.
 			// The check's reading is kept: Morph never serves it again once its month has ended.
-			const now = yield* Clock.currentTimeMillis
 			yield* dbExecute((db) =>
 				Effect.gen(function* () {
 					const [connection] = yield* db.run(
@@ -159,7 +159,7 @@ export class MorphCostConnectionService extends Context.Service<
 						{ orgId, connectionRef: connection.id },
 						list.month,
 						readings,
-						now,
+						readAt,
 					)
 				}),
 			)

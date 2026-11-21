@@ -78,7 +78,7 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 		sourceNote:
-			"Morph reports only this month's spend so far, so Maple reads it every hour and counts each day's change. What was spent before Maple's first reading shows on the month's first day, and spend in a month's last hour can land on the next. Morph has no split by model.",
+			"Morph reports only this month's spend so far, so Maple reads it every hour and counts each day's change. What was spent before Maple's first reading shows on the month's first day, and spend after a month's last reading, up to an hour, is not counted. Morph has no split by model.",
 	},
 	// Read from the org's BigQuery billing export: no per-request price, but each sync's query
 	// scans bytes BigQuery bills to the connection's host project.

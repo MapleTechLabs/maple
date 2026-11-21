@@ -78,53 +78,75 @@ export const toMemberReadings = (
 	)
 
 /**
- * Keeps `readings` as their day's last, and as its first when the day has none yet, then drops the
- * months below the floor: only the months the sync can still pull are ever read again.
+ * Keeps `readings`, taken at `readAt`, as their day's first and last where they are earlier or
+ * later than what is stored, all members or none. Then drops the months the sync no longer pulls,
+ * keeping one more for a pull that started before the floor moved.
  */
 export const writeReadings = Effect.fnUntraced(function* (
 	db: MapleDb,
 	source: CostPullSource,
 	month: string,
 	readings: ReadonlyArray<MemberReading>,
-	now: number,
+	readAt: number,
 ) {
-	const day = readingDay(month, utcToday(now))
-	yield* Effect.forEach(
-		readings,
-		(reading) =>
-			db.run(
+	const day = readingDay(month, utcToday(readAt))
+	const keyOf = (reading: MemberReading) =>
+		({ connectionId: source.connectionRef, month, memberId: reading.memberId, day }) as const
+	const write = (reading: MemberReading) =>
+		Effect.gen(function* () {
+			const key = keyOf(reading)
+			yield* db.run(
 				PG.insertInto(MorphSpendReadings)
 					.values({
 						orgId: source.orgId,
-						connectionId: source.connectionRef,
-						month,
-						day,
-						memberId: reading.memberId,
+						...key,
 						memberLabel: reading.memberLabel,
 						openingMicros: reading.micros,
 						closingMicros: reading.micros,
-						firstReadAt: now,
-						lastReadAt: now,
+						firstReadAt: readAt,
+						lastReadAt: readAt,
 					})
-					.onConflictDoUpdate({
-						target: ["connectionId", "month", "memberId", "day"],
-						set: {
-							memberLabel: reading.memberLabel,
-							closingMicros: reading.micros,
-							lastReadAt: now,
-						},
-						// A pull that read earlier but writes later must not undo a newer reading.
-						where: ($) => $.lastReadAt.lte(now),
-					}),
-			),
-		{ discard: true },
-	)
-	yield* db.run(
-		PG.deleteFrom(MorphSpendReadings).where(($) => [
-			$.orgId.eq(source.orgId),
-			$.connectionId.eq(source.connectionRef),
-			$.month.lt(Str.slice(0, 7)(historyFloor("morph", utcToday(now)))),
-		]),
+					.onConflictDoNothing(),
+			)
+			// Readings can land out of order: each end of the day moves only to a reading beyond it.
+			yield* db.run(
+				PG.update(MorphSpendReadings)
+					.set({
+						memberLabel: reading.memberLabel,
+						closingMicros: reading.micros,
+						lastReadAt: readAt,
+					})
+					.where(($) => [
+						$.connectionId.eq(key.connectionId),
+						$.month.eq(key.month),
+						$.memberId.eq(key.memberId),
+						$.day.eq(key.day),
+						$.lastReadAt.lt(readAt),
+					]),
+			)
+			yield* db.run(
+				PG.update(MorphSpendReadings)
+					.set({ openingMicros: reading.micros, firstReadAt: readAt })
+					.where(($) => [
+						$.connectionId.eq(key.connectionId),
+						$.month.eq(key.month),
+						$.memberId.eq(key.memberId),
+						$.day.eq(key.day),
+						$.firstReadAt.gt(readAt),
+					]),
+			)
+		})
+	yield* db.transaction(
+		Effect.gen(function* () {
+			yield* Effect.forEach(readings, write, { discard: true })
+			yield* db.run(
+				PG.deleteFrom(MorphSpendReadings).where(($) => [
+					$.orgId.eq(source.orgId),
+					$.connectionId.eq(source.connectionRef),
+					$.month.lt(Str.slice(0, 7)(monthStart(historyFloor("morph", utcToday(readAt)), -1))),
+				]),
+			)
+		}),
 	)
 	return day
 })
@@ -145,6 +167,8 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 				source: CostPullSource,
 				secret: Redacted.Redacted,
 			) {
+				// Taken before the request: a slow answer must not pass for a newer reading.
+				const readAt = yield* Clock.currentTimeMillis
 				const list = yield* MorphBudgets.listMemberSpend(httpClient, secret).pipe(
 					Effect.mapError(toCostProviderError),
 				)
@@ -153,12 +177,11 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 						failed("invalid_response", "Morph reported a spend Maple cannot read."),
 					),
 				)
-				const now = yield* Clock.currentTimeMillis
 				yield* Effect.annotateCurrentSpan({
 					"maple.cost.morph.month": list.month,
 					"maple.cost.morph.members": readings.length,
 				})
-				return yield* dbExecute((db) => writeReadings(db, source, list.month, readings, now))
+				return yield* dbExecute((db) => writeReadings(db, source, list.month, readings, readAt))
 			})
 
 			const pull = Effect.fn("MorphCostProvider.pull")(

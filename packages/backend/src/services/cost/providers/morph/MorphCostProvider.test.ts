@@ -123,6 +123,16 @@ describe("MorphCostProvider", () => {
 					),
 				)
 				assert.strictEqual(day?.closing_micros, "9000000")
+				// A reading taken before the day's first one, written last, moves only the day's start.
+				world.members = [{ userId: "user_dev", spent: "4.00" }]
+				yield* pullAt("2026-11-21T13:00:00Z", ref, NOVEMBER)
+				const ends = yield* Effect.promise(() =>
+					queryFirstRow<{ opening_micros: string; closing_micros: string }>(
+						testDb,
+						"SELECT opening_micros::text, closing_micros::text FROM morph_spend_readings WHERE day = '2026-11-21'",
+					),
+				)
+				assert.deepStrictEqual(ends, { opening_micros: "4000000", closing_micros: "9000000" })
 			}),
 		)
 	})
