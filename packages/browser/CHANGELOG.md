@@ -1,5 +1,16 @@
 # @maple-dev/browser
 
+## 0.15.0
+
+### Minor Changes
+
+- 3302d01: Requests that a reload or redirect cancels a moment before the page unloads are no longer reported as errors: their spans stay `Unset` with `maple.connection_lost: "page_unload"`, and their unhandled `fetch()` rejections are dropped. An unhandled `fetch()` rejection is also no longer reported when its request span already stays `Unset` because the page was hidden or went offline while it was in flight. New `errors.ignoreNetworkFailuresFor` lists request URLs (a string is an absolute URL prefix, a RegExp is tested against the full URL) whose network failures are not errors, such as third-party beacons an ad blocker stops; their spans stay `Unset` with `maple.network_failure_ignored`.
+
+### Patch Changes
+
+- cad8a08: The OpenTelemetry browser packages now require 3.1.1 / 0.301.2, and `rrweb` requires 2.2.2. These are patch releases, and the SDK's behavior does not change.
+- 817980c: Session replay and session events stop sending to an endpoint that answers 404 (one without those routes, such as an older Maple Local) instead of retrying on every flush for the rest of the page.
+
 ## 0.14.2
 
 ### Patch Changes
