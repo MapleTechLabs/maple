@@ -19,10 +19,14 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.                       |
 | Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.                      |
 
-The exception comes from the first OTel `exception` event, or the status message when
-there is no event. Only spans missing both fall back to `exception.*` span attributes,
-then `error.type` / `error.message`, then `Unknown Error`. This keeps existing fingerprints
-stable while separating previously unlabelled errors. The SQL in `error_events_mv`
+The type and stack come from the first OTel `exception` event; the message is the span's
+status message, else that event's. Only spans missing both fall back to `exception.*` span
+attributes, then `error.type` / `error.message`. A span with no message or stack, and no
+type beyond a status code (`500`, `_OTHER`), is keyed and titled by its span
+(`POST /queue/run (no exception)`, `GET /orders (500)`), and is `Unknown Error` only when
+the span has no name either. Such an error has no previous hash: the hash every one of
+them shared was a bucket, so they open as their own issues and the bucket goes quiet. The
+SQL in `error_events_mv`
 (`packages/domain/src/tinybird/materializations.ts`) owns this precedence.
 
 **An incident is a flare-up. An issue is the bug.** An issue can flare up ten times; it gets
@@ -246,7 +250,18 @@ loop in verification without a human ever seeing it.
 - **Every change that moves a fingerprint bumps `FINGERPRINT_VERSION`.** A bump keeps issues:
   while it settles, `error_fingerprint_lineage` records each new hash's previous one and the tick
   re-keys the issue onto it. `fingerprint-version.test.ts` fails when the hash inputs move
-  without a bump.
+  without a bump. The views compute the previous version's hash from the `PREVIOUS_*` rules in
+  `fingerprint.ts`: a bump first resets those to the rules it replaces, then adds its own.
+  Where a bump folds several old issues into one hash, the tick merges them and keeps the one
+  being worked. Their old hashes need not arrive together: every tick checks each new hash's
+  current owner against the owners of its previous hashes, so an old issue that shows up in a
+  later tick, or a new hash that opened its own issue while lineage could not be read, is folded
+  then. Once they agree the check writes nothing. Two issues a bump folded share one hash, so
+  unmerging them does not hold: the next tick folds them again. A bump that splits a hash does
+  not split an issue that already exists: every new hash whose previous hash has an owner joins
+  that owner, so only errors first seen after the bump get the finer grouping. The error-spike detector
+  adds to a re-keyed hash's 7 day baseline the history of its previous hashes, read from
+  lineage, so it is judged against its history and not against the hours since the bump.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs

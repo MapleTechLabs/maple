@@ -62,5 +62,6 @@
 			"@/*": ["./apps/api/src/*"]
 		}
 	},
-	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "test/alchemy/**/*.ts"]
+	// The status Worker's font module declaration; imports alone never pull a .d.ts in.
+	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "apps/status/src/og-fonts.d.ts", "test/alchemy/**/*.ts"]
 }

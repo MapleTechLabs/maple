@@ -10,7 +10,10 @@ import {
 	ERROR_MSG_REDACTIONS,
 	FINGERPRINT_HASH_SALT,
 	LIBRARY_FRAME_PATTERN,
+	PREVIOUS_ERROR_MSG_REDACTIONS,
 	PREVIOUS_FINGERPRINT_HASH_SALT,
+	PREVIOUS_FRAME_LINE_PATTERN,
+	PREVIOUS_FRAME_REDACTIONS,
 	FRAME_LINE_PATTERN,
 	FRAME_REDACTIONS,
 	JSON_LABEL_KEYS,
@@ -25,7 +28,12 @@ import {
 	NAMESPACED_TYPE_MAX_FRAMES,
 	PYTHON_FRAME_PATTERN,
 	SCHEMA_PATH_LINE_PATTERN,
+	SPAN_LABEL_CHARS,
+	SPAN_LABEL_NO_TYPE,
 	SPAN_NAME_FRAME_PATTERN,
+	SPAN_SIGNATURE_PREFIX,
+	STATUS_ONLY_TYPE_PATTERN,
+	type Redactions,
 } from "./fingerprint"
 import {
 	serviceUsage,
@@ -149,7 +157,7 @@ import {
 	SPAN_USER_NAME_STATE_SQL,
 	WEB_REQUEST_SQL,
 } from "./user-activity-sql"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { SLO_LATENCY_THRESHOLDS_MS } from "@maple/primitives"
 
 export const serviceUsageLogsMv = defineMaterializedView("service_usage_logs_mv", {
@@ -964,8 +972,9 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
 /**
  * Materialized view populating error_events from traces where StatusCode='Error'.
  * Unwraps the first OTel `exception` event. When both the event and StatusMessage
- * are absent, reads `exception.*` then `error.*` span attributes. Computes a
- * cityHash64 FingerprintHash used to group occurrences into Issues.
+ * are absent, reads `exception.*` then `error.*` span attributes, and when those are
+ * absent too, keys the error on its span. Computes a cityHash64 FingerprintHash used
+ * to group occurrences into Issues.
  *
  * Fingerprint inputs: (OrgId, ServiceName, ExceptionType, top-3 normalized frames
  * (1 for a namespaced type), message signature, FINGERPRINT_HASH_SALT), or
@@ -1011,11 +1020,61 @@ export { errorEventsSelectSql as ERROR_EVENTS_MV_SQL }
 const jsonStringIsSet = (key: string) =>
 	`JSONType(_msgText, '${key}') = 'String' AND JSONExtractString(_msgText, '${key}') != ''`
 
+/**
+ * The frames one FINGERPRINT_VERSION hashes, as WITH entries. Lines are matched by SHAPE
+ * (the old "contains :NUMBER" rule let Drizzle's `params:` line and `Type: message`
+ * headers in: 23,035 fingerprints for six real call sites), then stripped of volatile
+ * tokens, read from the raise site, collapsed where they repeat, and cut to the
+ * application's own. `alias` names each entry, so two versions can sit in one query.
+ */
+const hashedFramesSql = (
+	alias: (name: string) => string,
+	rules: { readonly linePattern: string; readonly redactions: Redactions; readonly msgSig: string },
+) => {
+	const [lines, norm, distinct, app, max, top] = Arr.map(
+		["frameLines", "normFrames", "distinctFrames", "appFrames", "maxFrames", "topFrames"],
+		alias,
+	)
+	return `
+          arrayFilter(
+            line -> match(line, ${chPattern(rules.linePattern)})
+              AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
+              AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
+              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})
+              AND NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)}),
+            splitByChar('\\n', _exStack)
+          ) AS ${lines},
+          arrayMap(
+            line -> ${chRedactChain("line", rules.redactions)},
+            arraySlice(
+              -- Python prints the outermost frame first: read it from the raise site.
+              if(match(${lines}[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(${lines}), ${lines}),
+              1, ${MAX_NORMALIZED_FRAMES}
+            )
+          ) AS ${norm},
+          -- A repeat (two anonymous closures in one bundle, or recursion) collapses
+          -- so it does not use up the frames the hash keeps.
+          arrayFilter((frame, i) -> i = 1 OR frame != ${norm}[i - 1], ${norm}, arrayEnumerate(${norm})) AS ${distinct},
+          -- The application's own frames: a dependency's or a runtime's frames vary with
+          -- its internals and version. A stack with none keeps every frame.
+          arrayFilter(frame -> NOT match(frame, ${chPattern(LIBRARY_FRAME_PATTERN)}), ${distinct}) AS ${app},
+          -- A namespaced type plus its message names one failure: keep only the
+          -- throw site. With no message the frames are all that is left; keep 3.
+          if(position(_exType, '/') > 0 AND ${rules.msgSig} != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES}) AS ${max},
+          arraySlice(if(length(${app}) > 0, ${app}, ${distinct}), 1, ${max}) AS ${top}`
+}
+
+/** The redacted prefix of a plain-text message, under one version's redactions. */
+const textSignatureSql = (text: string, redactions: Redactions) => `substringUTF8(
+              ${chRedactChain(`substringUTF8(${text}, 1, ${MSG_SCAN_CHARS})`, redactions)},
+              1, ${MSG_SIGNATURE_CHARS}
+            )`
+
 const errorEventsWithSql = `
         WITH
           arrayFirstIndex(n -> n = 'exception', EventsName) AS _ei,
-          -- Only fill the old Unknown Error bucket. Event values (including
-          -- empty fields) and spans with StatusMessage keep every hash input.
+          -- Span attributes are read only when the span has neither an exception
+          -- event nor a status message.
           _ei = 0 AND StatusMessage = '' AS _useAttrs,
           if(
             _ei > 0, EventsAttributes[_ei]['exception.type'],
@@ -1029,7 +1088,14 @@ const errorEventsWithSql = `
             _ei > 0, EventsAttributes[_ei]['exception.stacktrace'],
             if(_useAttrs, SpanAttributes['exception.stacktrace'], '')
           ) AS _exStack,
-          if(_useAttrs, _exMsg, StatusMessage) AS _msgText,
+          -- The status message, else the exception's own: an event's message went
+          -- unread, so one throw site with four different failures was one issue.
+          if(StatusMessage = '', _exMsg, StatusMessage) AS _msgText,
+          -- Nothing names this failure but its span (a status code in the type is a
+          -- class, not a name). Without it every such error in a service hashed alike.
+          (_exType = '' OR match(_exType, ${chPattern(STATUS_ONLY_TYPE_PATTERN)}))
+            AND _msgText = '' AND _exStack = '' AND SpanName != '' AS _spanKeyed,
+          if(_spanKeyed, SpanName, _msgText) AS _sigText,
           -- A user key replaces type, frames, message and salt in the hash: the
           -- exception event's value unless blank after trimming, then the span's.
           -- Trimmed and capped.
@@ -1065,76 +1131,44 @@ const errorEventsWithSql = `
           -- frames. Bundled runtimes minify every module into one file, so the top
           -- three frames of a Worker error are \`toDatabaseError (worker.js)\` for
           -- every failing query alike: on frames alone, 25 distinct DatabaseError
-          -- bugs (316k occurrences) collapse into a single issue. The signature
-          -- restores that discrimination, and it cannot reinflate cardinality the
-          -- way a raw prefix would because everything variable is redacted first:
-          -- emails, URL origins, home directories, query strings, quoted values,
-          -- then ids and every digit run. See ERROR_MSG_REDACTIONS for the order,
-          -- what is deliberately kept, and the one residual it cannot reach.
+          -- bugs (316k occurrences) collapse into a single issue. Everything
+          -- variable is redacted first, so it cannot reinflate cardinality. See
+          -- ERROR_MSG_REDACTIONS for the order and what is deliberately kept.
           multiIf(
             _isJsonObj, _jsonSig,
-            substringUTF8(
-              ${chRedactChain(`substringUTF8(_msgText, 1, ${MSG_SCAN_CHARS})`, ERROR_MSG_REDACTIONS)},
-              1, ${MSG_SIGNATURE_CHARS}
+            concat(
+              if(_spanKeyed, concat(${chPattern(SPAN_SIGNATURE_PREFIX)}, SpanKind, ' '), ''),
+              ${textSignatureSql("_sigText", ERROR_MSG_REDACTIONS)}
             )
           ) AS _msgSig,
-          -- Frame lines are matched by SHAPE, not by "contains :NUMBER". The old
-          -- rule accepted any line with a colon-digit, which let non-frame lines
-          -- in: Drizzle's \`params: <row values>\` line, and the \`Type: message\`
-          -- header (\`Code: 62\`, \`position 1628\`, embedded timestamps). Row values
-          -- and message text then entered the hash and split one bug into
-          -- thousands of issues — 23,035 fingerprints for six real
-          -- AnomalyPersistenceError call sites, 15,051 for thirteen DatabaseError
-          -- ones.
-          --
-          -- The pattern is rendered from FRAME_LINE_PATTERN in fingerprint.ts,
-          -- as is every redaction below. They used to be hand-copied here, which
-          -- let the reference implementation the tests exercise drift away from
-          -- the SQL that actually runs, silently.
-          arrayFilter(
-            line -> match(line, ${chPattern(FRAME_LINE_PATTERN)})
-              AND position(line, ${chPattern(EFFECT_SPAN_FRAME_MARKER)}) = 0
-              AND NOT match(line, ${chPattern(SCHEMA_PATH_LINE_PATTERN)})
-              AND NOT match(line, ${chPattern(SPAN_NAME_FRAME_PATTERN)})
-              AND NOT match(line, ${chPattern(INTERNAL_FRAME_PATTERN)}),
-            splitByChar('\\n', _exStack)
-          ) AS _frameLines,
-          -- Redact every volatile token a frame line can carry: the URL origin
-          -- (so preview hosts share one fingerprint), Vite's 8-char bundle
-          -- content hash (so a deploy does not re-split every triaged browser and
-          -- Worker issue), then line numbers, hex pointers and long id runs. See
-          -- FRAME_REDACTIONS for the order and the reasoning.
-          arrayMap(
-            line -> ${chRedactChain("line", FRAME_REDACTIONS)},
-            arraySlice(
-              -- Python prints the outermost frame first: read it from the raise site.
-              if(match(_frameLines[1], ${chPattern(PYTHON_FRAME_PATTERN)}), arrayReverse(_frameLines), _frameLines),
-              1, ${MAX_NORMALIZED_FRAMES}
-            )
-          ) AS _normFrames,
-          -- A repeat (two anonymous closures in one bundle, or recursion) collapses
-          -- so it does not use up the frames the hash keeps.
-          arrayFilter((frame, i) -> i = 1 OR frame != _normFrames[i - 1], _normFrames, arrayEnumerate(_normFrames)) AS _distinctFrames,
-          -- The application's own frames: a dependency's or a runtime's frames vary with
-          -- its internals and version. A stack with none keeps every frame.
-          arrayFilter(frame -> NOT match(frame, ${chPattern(LIBRARY_FRAME_PATTERN)}), _distinctFrames) AS _appFrames,
-          -- A namespaced type plus its message names one failure: keep only the
-          -- throw site. With no message the frames are all that is left; keep 3.
-          if(position(_exType, '/') > 0 AND _msgSig != '', ${NAMESPACED_TYPE_MAX_FRAMES}, ${MAX_FINGERPRINT_FRAMES}) AS _maxFrames,
-          arraySlice(if(length(_appFrames) > 0, _appFrames, _distinctFrames), 1, _maxFrames) AS _topFrames,
+          -- The previous version's signature, for the re-key: it read no message
+          -- from an exception event, and nothing from the span.
+          multiIf(
+            _ei > 0 AND StatusMessage = '', '',
+            _isJsonObj, _jsonSig,
+            ${textSignatureSql("_msgText", PREVIOUS_ERROR_MSG_REDACTIONS)}
+          ) AS _prevMsgSig,${hashedFramesSql((name) => `_${name}`, {
+				linePattern: FRAME_LINE_PATTERN,
+				redactions: FRAME_REDACTIONS,
+				msgSig: "_msgSig",
+			})},${hashedFramesSql((name) => `_prev${Str.capitalize(name)}`, {
+				linePattern: PREVIOUS_FRAME_LINE_PATTERN,
+				redactions: PREVIOUS_FRAME_REDACTIONS,
+				msgSig: "_prevMsgSig",
+			})},
           if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
           arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
-          -- The previous version's frames, for the issue evaluator's re-key while a bump settles.
-          arrayStringConcat(arraySlice(_distinctFrames, 1, _maxFrames), '\\n') AS _prevFpFrames,
+          arrayStringConcat(_prevTopFrames, '\\n') AS _prevFpFrames,
           if(
             _customFp != '',
             cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
             cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
           ) AS _hash,
+          -- A span-keyed error leaves a bucket that held every span: no previous hash.
           if(
-            _customFp != '',
+            _customFp != '' OR _spanKeyed,
             _hash,
-            cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _msgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})
+            cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _prevMsgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})
           ) AS _prevHash,
           -- Display-only, best-effort human label (decoupled from the fingerprint:
           -- many labels may map to one hash). The broad key list here is a DISPLAY
@@ -1153,6 +1187,10 @@ const errorEventsWithSql = `
             'JSON error'
           ) AS _jsonLabel,
           multiIf(
+            _spanKeyed, concat(
+              leftUTF8(SpanName, ${SPAN_LABEL_CHARS}),
+              ' (', if(_exType = '', ${chPattern(SPAN_LABEL_NO_TYPE)}, _exType), ')'
+            ),
             _msgText = '', 'Unknown Error',
             position(_msgText, '{ readonly') = 1 OR position(_msgText, '└─') > 0,
               if(
@@ -1170,7 +1208,7 @@ const errorEventsWithSql = `
               150
             ))
           ) AS _statusLabel,
-          if(_exType != '', _exType, _statusLabel) AS _errorLabel,
+          if(_exType != '' AND NOT _spanKeyed, _exType, _statusLabel) AS _errorLabel,
           -- Both semconv spellings; the current key wins when both are present.
           toUInt16OrZero(
             if(

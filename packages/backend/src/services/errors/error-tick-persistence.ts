@@ -403,9 +403,19 @@ const aliasOwners = (tx: ErrorTickTransaction, orgId: OrgId, hashes: ReadonlyArr
 		Effect.map((rows) => new Map<string, Owner>(Arr.map(rows, ({ alias, ...owner }) => [alias, owner]))),
 	)
 
+/** The hashes a bump replaced with this row's, without the row's own. */
+const previousHashesOf = (row: ErrorTickScanRow) =>
+	Arr.filter(row.previousFingerprintHashes ?? [], (hash) => hash !== row.fingerprintHash)
+
+/** Each row's hash and its previous ones, once. A set, as a wide window holds thousands. */
+const hashesWithPrevious = (rows: ReadonlyArray<ErrorTickScanRow>): Array<string> => [
+	...new Set(Arr.flatMap(rows, (row) => [row.fingerprintHash, ...previousHashesOf(row)])),
+]
+
 /**
  * Which of several old issues a bump folds into one keeps the new hash: the one
- * somebody is working, then the busiest, then the oldest.
+ * somebody is working, then the busiest, then the oldest. The id settles a tie,
+ * so the keeper never depends on the order the rows were read in.
  */
 const REKEY_STATE_RANK = {
 	in_progress: 0,
@@ -422,71 +432,69 @@ const rekeyOrder = (a: ErrorIssueRow, b: ErrorIssueRow) => {
 	const byState = REKEY_STATE_RANK[a.workflowState] - REKEY_STATE_RANK[b.workflowState]
 	if (byState !== 0) return byState
 	if (b.occurrenceCount !== a.occurrenceCount) return b.occurrenceCount - a.occurrenceCount
-	return a.firstSeenAt - b.firstSeenAt
+	if (a.firstSeenAt !== b.firstSeenAt) return a.firstSeenAt - b.firstSeenAt
+	return Order.String(a.id, b.id)
 }
 
 /**
  * Hand a fingerprint version bump's new hashes to the issues their previous hashes
  * belong to, recording each as a `rekey` alias, so a bump carries every issue's
  * state instead of opening new ones. Where the bump folds several old issues into
- * one hash, the first by `rekeyOrder` keeps it and the rest are folded into it.
+ * one hash, the first by `rekeyOrder` keeps it and the rest are folded into it,
+ * whether their previous hashes arrive in one tick or over several.
+ * Takes the aliases of the rows' hashes and of their previous hashes, and returns
+ * the issue each row's hash belongs to through an alias once the pass is done.
  */
 const rekeyOwners = (
 	tx: ErrorTickTransaction,
 	input: PersistErrorTickWindowInput,
 	rows: ReadonlyArray<ErrorTickScanRow>,
-	owned: ReadonlyMap<string, Owner>,
+	aliased: ReadonlyMap<string, Owner>,
 ): Effect.Effect<ReadonlyMap<string, Owner>, MapleDbError> =>
 	Effect.gen(function* () {
 		const orgId = input.orgId
-		const previousOf = (row: ErrorTickScanRow) =>
-			Arr.filter(row.previousFingerprintHashes ?? [], (hash) => hash !== row.fingerprintHash)
-		const bumped = Arr.filter(
-			rows,
-			(row) => !owned.has(row.fingerprintHash) && previousOf(row).length > 0,
-		)
-		if (bumped.length === 0) return new Map()
-		// A hash that already has its own issue keeps it.
-		const ownIssues = yield* inChunks(bumped, (chunk) =>
+		const bumped = Arr.filter(rows, (row) => previousHashesOf(row).length > 0)
+		if (bumped.length === 0) return aliased
+		// An alias wins over a primary: a merged-away issue's old hash belongs to the issue it was merged into.
+		const unaliased = Arr.filter(hashesWithPrevious(bumped), (hash) => !aliased.has(hash))
+		const byPrimary = yield* inChunks(unaliased, (chunk) =>
 			tx.run(
 				PG.from(ErrorIssues)
-					.select("fingerprintHash")
-					.where(($) => [
-						$.orgId.eq(orgId),
-						$.fingerprintHash.in_(...Arr.map(chunk, (row) => row.fingerprintHash)),
-					]),
-			),
-		)
-		const unowned = Arr.filter(
-			bumped,
-			(row) => !Arr.some(ownIssues, (issue) => issue.fingerprintHash === row.fingerprintHash),
-		)
-		const previous = Arr.dedupe(Arr.flatMap(unowned, previousOf))
-		if (previous.length === 0) return new Map()
-		const byPrimary = yield* inChunks(previous, (chunk) =>
-			tx.run(
-				PG.from(ErrorIssues)
-					.select(($) => ownerColumns($))
+					.select("id", "fingerprintHash")
 					.where(($) => [$.orgId.eq(orgId), $.kind.eq("error"), $.fingerprintHash.in_(...chunk)]),
 			),
 		)
-		// An alias wins over a primary: a merged-away issue's old hash belongs to the issue it was merged into.
-		const previousOwners = new Map<string, Owner>([
-			...Arr.map(byPrimary, (owner): [string, Owner] => [owner.fingerprintHash, owner]),
-			...(yield* aliasOwners(tx, orgId, previous)),
-		])
-		const candidateIds = Arr.dedupe(
-			Arr.flatMap(previous, (hash) => {
-				const owner = previousOwners.get(hash)
-				return owner === undefined ? [] : [owner.id]
-			}),
+		const primaryOwners = new Map(Arr.map(byPrimary, (issue) => [issue.fingerprintHash, issue.id]))
+		const ownerIdOf = (hash: string) => aliased.get(hash)?.id ?? primaryOwners.get(hash)
+		const groups = Arr.map(bumped, (row) => {
+			const ownId = ownerIdOf(row.fingerprintHash)
+			const previousIds = Arr.flatMap(previousHashesOf(row), (hash) => {
+				const id = ownerIdOf(hash)
+				return id === undefined ? [] : [id]
+			})
+			return {
+				row,
+				ownId,
+				// An issue the new hash opened in a tick that had no lineage.
+				strayId: aliased.has(row.fingerprintHash) ? undefined : ownId,
+				issueIds: Arr.dedupe(ownId === undefined ? previousIds : [ownId, ...previousIds]),
+			}
+		})
+		// Once a bump has landed, a hash and its previous hashes resolve to one issue on
+		// every tick: nothing to load and nothing to write.
+		const unsettled = Arr.filter(
+			groups,
+			(group) => group.issueIds.length > (group.ownId === undefined ? 0 : 1),
 		)
-		const candidates = yield* inChunks(candidateIds, (chunk) =>
-			tx.run(
-				PG.from(ErrorIssues)
-					.select()
-					.where(($) => [$.orgId.eq(orgId), $.id.in_(...chunk), $.mergedIntoIssueId.isNull()]),
-			),
+		if (unsettled.length === 0) return aliased
+		const candidates = yield* inChunks(
+			[...new Set(Arr.flatMap(unsettled, (group) => group.issueIds))],
+			(chunk) =>
+				tx.run(
+					PG.from(ErrorIssues)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.in_(...chunk), $.mergedIntoIssueId.isNull()]),
+				),
 		)
 		const issueById = new Map(Arr.map(candidates, (issue) => [issue.id, issue]))
 		// An issue folded earlier in this pass is reached through the one it was folded into.
@@ -495,15 +503,17 @@ const rekeyOwners = (
 			const next = foldedInto.get(id)
 			return next === undefined ? id : survivor(next)
 		}
-		const rekeyedTo = yield* Effect.forEach(unowned, (row) =>
+		const rekeyedTo = yield* Effect.forEach(unsettled, ({ row, ownId, strayId, issueIds }) =>
 			Effect.gen(function* () {
-				const issues = Arr.dedupe(
-					Arr.flatMap(previousOf(row), (hash) => {
-						const owner = previousOwners.get(hash)
-						const issue = owner === undefined ? undefined : issueById.get(survivor(owner.id))
-						return issue === undefined ? [] : [issue]
-					}),
-				).sort(rekeyOrder)
+				// The stray goes last whatever its state: the old issue is the one somebody
+				// triaged, and an ignored one must stay ignored.
+				const strayLast = (issue: ErrorIssueRow) => (issue.id === strayId ? 1 : 0)
+				const order = (a: ErrorIssueRow, b: ErrorIssueRow) =>
+					strayLast(a) === strayLast(b) ? rekeyOrder(a, b) : strayLast(a) - strayLast(b)
+				const issues = Arr.flatMap(Arr.dedupe(Arr.map(issueIds, survivor)), (id) => {
+					const issue = issueById.get(id)
+					return issue === undefined ? [] : [issue]
+				}).sort(order)
 				const [keeper, ...rest] = issues
 				if (keeper === undefined) return []
 				if (rest.length > 0) {
@@ -518,7 +528,11 @@ const rekeyOwners = (
 					})
 					issueById.set(folded.id, folded)
 				}
-				return [[row.fingerprintHash, keeper.id] as const]
+				// A hash that had a live issue already resolves to the keeper: the fold moved
+				// that issue's aliases and made its primary hash one.
+				return ownId !== undefined && issueById.has(ownId)
+					? []
+					: [[row.fingerprintHash, keeper.id] as const]
 			}),
 		).pipe(Effect.map(Arr.flatten))
 		// A later row may have folded an earlier row's keeper away: alias to the survivor.
@@ -545,7 +559,14 @@ const rekeyOwners = (
 				),
 			{ discard: true },
 		)
-		return new Map(rekeyed)
+		if (foldedInto.size === 0) return new Map([...rekeyed, ...aliased])
+		// A fold moved its sources' hashes to the keeper, and any row in the window may
+		// resolve through one of them: read the aliases as they now stand.
+		return yield* aliasOwners(
+			tx,
+			orgId,
+			Arr.map(rows, (row) => row.fingerprintHash),
+		)
 	})
 
 const ownerOf = (issue: ErrorIssueRow): Owner => ({
@@ -571,15 +592,11 @@ const canonicalizeScanRows = (
 	Effect.gen(function* () {
 		const orgId = input.orgId
 		if (rows.length === 0) return rows
-		const aliased = yield* aliasOwners(
-			tx,
-			orgId,
-			Arr.map(rows, (row) => row.fingerprintHash),
-		)
-		const rekeyed = yield* rekeyOwners(tx, input, rows, aliased)
-		if (aliased.size === 0 && rekeyed.size === 0) return rows
-		const ownerOfRow = (row: ErrorTickScanRow) =>
-			aliased.get(row.fingerprintHash) ?? rekeyed.get(row.fingerprintHash)
+		// One read covers the rows' hashes and the previous hashes a bump resolves them through.
+		const aliased = yield* aliasOwners(tx, orgId, hashesWithPrevious(rows))
+		const owners = yield* rekeyOwners(tx, input, rows, aliased)
+		const ownerOfRow = (row: ErrorTickScanRow) => owners.get(row.fingerprintHash)
+		if (!Arr.some(rows, (row) => ownerOfRow(row) !== undefined)) return rows
 		// The merge keeps the last row's display fields, so redirected rows go first and an
 		// issue's own observation in this window wins over its stored fields.
 		return mergeScanRows([

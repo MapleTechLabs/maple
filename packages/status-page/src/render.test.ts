@@ -1047,7 +1047,10 @@ describe("branding", () => {
 	})
 
 	it("renders an uploaded logo and favicon, but never a non-image data URL", () => {
-		const html = withPage({ logoUrl: "data:image/png;base64,iVBORw0KGgo=", faviconUrl: "data:image/png;base64,iVBORw0KGgo=" })
+		const html = withPage({
+			logoUrl: "data:image/png;base64,iVBORw0KGgo=",
+			faviconUrl: "data:image/png;base64,iVBORw0KGgo=",
+		})
 		expect(headerOf(html)).toContain(`<img src="data:image/png;base64,iVBORw0KGgo=" alt="Acme">`)
 		expect(html).toContain(`<link rel="icon" href="data:image/png;base64,iVBORw0KGgo=">`)
 		const unsafe = withPage({ faviconUrl: "data:text/html;base64,PHNjcmlwdD4=" })
@@ -1086,7 +1089,7 @@ describe("link previews", () => {
 			"We&#39;re experiencing a partial outage. Active incident: API errors.",
 		)
 		expect(metaOf(html, "twitter:description")).toBe(metaOf(html, "og:description"))
-		expect(metaOf(html, "twitter:card")).toBe("summary")
+		expect(metaOf(html, "twitter:card")).toBe("summary_large_image")
 		expect(metaOf(html, "og:url")).toBe("https://status.acme.example/")
 		expect(html).toContain(`<link rel="canonical" href="https://status.acme.example/">`)
 		// The page's own description stays the search snippet.

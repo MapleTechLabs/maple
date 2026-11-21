@@ -67,23 +67,77 @@ const CORPUS = [
 		statusMessage: "card declined",
 		customFingerprint: "checkout-payment-declined",
 	},
+	// What v5 reads differently: minified names, path values, an event's message and
+	// Go's one-line frames.
+	{
+		exceptionType: "TypeError",
+		exceptionStacktrace:
+			"TypeError: x\n    at Kt.render (https://app.dev/assets/index.js:1:100)\n    at e3 (https://app.dev/assets/index.js:1:9)\n    at a.b.c (https://app.dev/assets/vendor.js:2:7)",
+		statusMessage: "t is not a function",
+	},
+	{
+		exceptionType: "TypeError",
+		exceptionStacktrace:
+			"Bx</o<@https://app.dev/assets/nav.js:7:67883\ne.render@https://app.dev/assets/nav.js:9:12",
+		statusMessage: "e.props is undefined",
+	},
+	{
+		exceptionType: "StatusCodeError",
+		exceptionStacktrace: "",
+		statusMessage:
+			"StatusCode error (503 GET https://api.dev/v3/applications/com.acme.app/offers/7d-trial/tokens/PZN8GVZLF8/v1beta1/app.min.js)",
+	},
+	{
+		exceptionType: "Error",
+		exceptionStacktrace: "    at deliver (/app/src/notify.ts:1:1)",
+		statusMessage: "delivery rejected: telegram credentials unavailable",
+		messageFromEvent: true,
+	},
+	{
+		exceptionType: "*errors.errorString",
+		exceptionStacktrace:
+			"github.com/acme/api/mysql.(*Store).Insert (store.go:3541)\nmain.run (cron.go:206)",
+		statusMessage: "context deadline exceeded",
+	},
+] as const
+
+/** Failures only their span names. They have no previous hash, so only the current digest reads them. */
+const SPAN_KEYED = [
+	{
+		exceptionType: "",
+		exceptionStacktrace: "",
+		statusMessage: "",
+		span: { kind: "Server", name: "POST /queue/run" },
+	},
+	{
+		exceptionType: "500",
+		exceptionStacktrace: "",
+		statusMessage: "",
+		span: { kind: "Server", name: "GET /orders/42" },
+	},
 ] as const
 
 /**
  * Every fingerprint version and the digest of the corpus's hash inputs under it.
  * Versions only increase, so inputs that move cannot be recorded without a bump.
- * v3's entry was computed by the v3 code itself, before the bump.
+ * v4's entry was computed by the v4 code itself over `CORPUS`, before the bump to v5,
+ * with an event's message left unread as v4 left it; v3's predates the rows added with v5.
  */
 const HISTORY: ReadonlyArray<{ readonly version: number; readonly digest: string }> = [
 	{ version: 3, digest: "2b1083177f1c21fe168908eb4db9f228ebfcbaa6a4c03412d4ce83441d6a3173" },
-	{ version: 4, digest: "63ea63b3ef048e9e2ab9fe320609b7f0ed529ad935112653147883ad4654585f" },
+	{ version: 4, digest: "076d5ae21f4eff906611e3144f1e1f8f8b306ddf5c890607719d8ed213474d05" },
+	{ version: 5, digest: "7a19ef45f01a172ccdc861cc8195ac05c09158023545bb93142ffb12c41b2df0" },
 ]
 
-const digestOf = (inputs: (event: (typeof CORPUS)[number]) => ReadonlyArray<string>) =>
+type CorpusEvent = (typeof CORPUS)[number] | (typeof SPAN_KEYED)[number]
+const digestOf = (
+	events: ReadonlyArray<CorpusEvent>,
+	inputs: (event: CorpusEvent) => ReadonlyArray<string>,
+) =>
 	createHash("sha256")
-		.update(JSON.stringify(Arr.map(CORPUS, inputs)))
+		.update(JSON.stringify(Arr.map(events, inputs)))
 		.digest("hex")
-const digest = digestOf((event) => computeFingerprintInputs(event).hashInputs)
+const digest = digestOf([...CORPUS, ...SPAN_KEYED], (event) => computeFingerprintInputs(event).hashInputs)
 
 describe("FINGERPRINT_VERSION", () => {
 	it("is bumped whenever the hash inputs move", () => {
@@ -104,7 +158,7 @@ describe("FINGERPRINT_VERSION", () => {
 			Arr.findFirst(HISTORY, (entry) => entry.version === FINGERPRINT_VERSION - 1),
 		)
 		expect(
-			digestOf((event) => computeFingerprintInputs(event).previousHashInputs),
+			digestOf(CORPUS, (event) => computeFingerprintInputs(event).previousHashInputs),
 			"previousHashInputs no longer reproduces the previous version's hash inputs.",
 		).toBe(previous?.digest)
 	})
