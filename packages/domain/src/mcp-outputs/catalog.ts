@@ -5,7 +5,7 @@
 import { familyOutput } from "./shared"
 import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
-import { ListSourcesOutput } from "./sources"
+import { DeleteSourceOutput, ListSourcesOutput, SourceMutationOutput } from "./sources"
 import { ListDataSourcesOutput, QueryDataSourceOutput } from "./data-sources"
 import { SearchConsolePagesOutput, SearchConsoleQueriesOutput } from "./search-console"
 import { InspectUserOutput, ListUsersOutput } from "./users"
@@ -57,6 +57,9 @@ import {
 	ListAlertIncidentsOutput,
 	ListAlertRulesOutput,
 	UpdateAlertRuleOutput,
+	AlertDestinationMutationOutput,
+	DeleteAlertDestinationOutput,
+	TestAlertDestinationOutput,
 } from "./alerts"
 import {
 	DeleteEscalationChainOutput,
@@ -83,6 +86,7 @@ import {
 	ReplaceDashboardWidgetsOutput,
 	UpdateDashboardOutput,
 	UpdateDashboardWidgetOutput,
+	DeleteDashboardOutput,
 } from "./dashboards"
 import { ErrorDetailOutput, FindErrorsOutput } from "./errors"
 import { QueryPromqlOutput } from "./promql"
@@ -166,6 +170,12 @@ import {
  * returns. A family's output is `{ action, result }` (see {@link familyOutput}).
  */
 export const McpToolFamilyActions = {
+	manage_alert_destination: {
+		create: AlertDestinationMutationOutput,
+		update: AlertDestinationMutationOutput,
+		delete: DeleteAlertDestinationOutput,
+		test: TestAlertDestinationOutput,
+	},
 	manage_alert_silence: {
 		create: AlertSilenceMutationOutput,
 		end: AlertSilenceMutationOutput,
@@ -180,8 +190,15 @@ export const McpToolFamilyActions = {
 		update: IngestRuleMutationOutput,
 		delete: DeleteIngestRuleOutput,
 	},
+	manage_ingest_source: {
+		pause: SourceMutationOutput,
+		resume: SourceMutationOutput,
+		update: SourceMutationOutput,
+		delete: DeleteSourceOutput,
+	},
 	manage_maintenance_window: {
 		create: MaintenanceWindowMutationOutput,
+		update: MaintenanceWindowMutationOutput,
 		delete: DeleteMaintenanceWindowOutput,
 	},
 	manage_oncall_schedule: {
@@ -230,6 +247,7 @@ export const McpToolOutputs = {
 	create_dashboard: CreateDashboardOutput,
 	db_query_volume: DbQueryVolumeOutput,
 	delete_alert_rule: DeleteAlertRuleOutput,
+	delete_dashboard: DeleteDashboardOutput,
 	acknowledge_alert_incident: AcknowledgeAlertIncidentOutput,
 	describe_dashboard_schema: DescribeDashboardSchemaOutput,
 	describe_warehouse_tables: DescribeWarehouseTablesOutput,
@@ -326,9 +344,11 @@ export const McpToolOutputs = {
 	sync_railway: SyncRailwayOutput,
 	sync_vercel: SyncVercelOutput,
 	set_issue_severity: SetIssueSeverityOutput,
+	manage_alert_destination: familyOutput(McpToolFamilyActions.manage_alert_destination),
 	manage_alert_silence: familyOutput(McpToolFamilyActions.manage_alert_silence),
 	manage_escalation_chain: familyOutput(McpToolFamilyActions.manage_escalation_chain),
 	manage_ingest_rule: familyOutput(McpToolFamilyActions.manage_ingest_rule),
+	manage_ingest_source: familyOutput(McpToolFamilyActions.manage_ingest_source),
 	manage_maintenance_window: familyOutput(McpToolFamilyActions.manage_maintenance_window),
 	manage_oncall_schedule: familyOutput(McpToolFamilyActions.manage_oncall_schedule),
 	manage_scrape_target: familyOutput(McpToolFamilyActions.manage_scrape_target),

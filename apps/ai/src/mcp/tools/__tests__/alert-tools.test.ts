@@ -19,6 +19,7 @@ import {
 	AlertValidationError,
 	EscalationChainDocument,
 	EscalationChainsListResponse,
+	ErrorNotificationPolicyDocument,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
@@ -41,6 +42,10 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
+import { ERROR_NOTIFICATION_POLICY_DEFAULTS } from "@maple/db/tables"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
@@ -366,6 +371,35 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		}),
+		// What else may route to a destination: error notifications do here, no monitor or SLO does.
+		Layer.mock(ErrorPolicyService)({
+			defaultNotificationPolicy: (orgId, timestamp) => ({
+				orgId,
+				...ERROR_NOTIFICATION_POLICY_DEFAULTS,
+				updatedAt: timestamp,
+				updatedBy: "system",
+			}),
+			parseNotificationDestinationIds: () => [],
+			getNotificationPolicy: () =>
+				Effect.succeed(
+					Schema.decodeSync(ErrorNotificationPolicyDocument)({
+						enabled: true,
+						destinationIds: [DEST_ID],
+						notifyOnFirstSeen: true,
+						notifyOnRegression: true,
+						notifyOnResolve: false,
+						notifyOnTransitionInReview: false,
+						notifyOnTransitionDone: false,
+						notifyOnClaim: false,
+						minOccurrenceCount: 1,
+						severity: "warning",
+						updatedAt: NOW,
+						updatedBy: "user_tools",
+					}),
+				),
+		}),
+		Layer.mock(UptimeMonitorsService)({ list: () => Effect.succeed([]) }),
+		Layer.mock(SlosService)({ list: () => Effect.succeed([]) }),
 		Layer.succeed(AlertReadModelsService, {
 			getIncident: (_org: unknown, incidentId: string) => {
 				seen.incidentOptions ??= { incidentId }
@@ -508,6 +542,15 @@ describe("alert tools", () => {
 		const output = Schema.decodeUnknownSync(ListAlertDestinationsOutput)(result.structuredContent)
 		expect(output.destinations[0]?.id).toBe(DEST_ID)
 		expect(text(result)).toContain("On-call")
+		// Everything that routes to it, so whether it can be deleted needs no further lookup.
+		expect(output.destinations[0]?.usedBy).toEqual([
+			'rule "Checkout errors"',
+			'rule "Latency"',
+			'rule "Raw api"',
+			'rule "Raw web"',
+			'escalation chain "Checkout on-call"',
+			"error notifications",
+		])
 	})
 
 	it("get_alert_rule renders the full config, and a missing id is invalid input on rule_id", async () => {

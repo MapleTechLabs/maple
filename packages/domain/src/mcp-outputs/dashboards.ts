@@ -128,6 +128,14 @@ export const UpdateDashboardOutput = Schema.Struct({
 	renderWarnings: Schema.Array(Schema.String),
 })
 
+export const DeleteDashboardOutput = Schema.Struct({
+	deleted: Schema.Boolean,
+	id: Schema.String,
+	name: Schema.String,
+	/** How many widgets went with it. */
+	widgetCount: Schema.Number,
+})
+
 export const AddDashboardWidgetOutput = Schema.Struct({
 	dashboard: DashboardRow,
 	widgetId: Schema.String,

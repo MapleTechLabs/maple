@@ -48,6 +48,16 @@ describe("eval targets", () => {
 		).toBe(true)
 	})
 
+	it("reads a family call's action as an argument a target can name", () => {
+		const ended = [observeCall("manage_alert_silence", { action: "END", silence_id: "s1" }, false)]
+		expect(grade([calls(call("manage_alert_silence", { action: "end" }))], ended, "").pass).toBe(true)
+		expect(grade([calls(call("manage_alert_silence", { action: "create" }))], ended, "").pass).toBe(false)
+		// With no action the call resolves to none, so no action target matches it.
+		const bare = [observeCall("manage_alert_silence", { silence_id: "s1" }, false)]
+		expect(grade([calls(call("manage_alert_silence", { action: "end" }))], bare, "").pass).toBe(false)
+		expect(bare[0]?.invalid).toBe(true)
+	})
+
 	it("flags unknown tools and unknown keys as invalid calls", () => {
 		expect(observeCall("not_a_tool", {}, false).invalid).toBe(true)
 		expect(observeCall("find_errors", { servce: "api" }, false).invalid).toBe(true)

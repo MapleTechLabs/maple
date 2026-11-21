@@ -133,6 +133,7 @@ export const refusesReadOnlyCredential = (name: string, readOnly: boolean): bool
 export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 	"create_dashboard",
 	"update_dashboard",
+	"delete_dashboard",
 	"add_dashboard_widget",
 	"update_dashboard_widget",
 	"remove_dashboard_widget",

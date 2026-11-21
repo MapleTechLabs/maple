@@ -1,19 +1,92 @@
-import type { McpToolRegistrar } from "./types"
+import { McpQueryError, type McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema, Array as Arr } from "effect"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
+import type { OrgId } from "@maple/primitives"
 import { CurrentMcpTenant } from "../tenant"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { ALERT_DESTINATION_TYPES } from "../lib/alert-rules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+
+const TOOL = "list_alert_destinations"
+
+const unavailable = (error: { readonly message: string }) =>
+	new McpQueryError({ message: error.message, pipeName: TOOL, cause: error })
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
+
+/**
+ * What routes to each destination, so "is it still used" is this one call. Rules and chains are
+ * named; monitors and SLOs are counted, since their names belong to scopes this tool does not ask for.
+ */
+const destinationUsers = Effect.fnUntraced(function* (orgId: OrgId) {
+	const [rules, chains, policy, monitors, slos] = yield* Effect.all(
+		[
+			AlertRulesService.pipe(
+				Effect.flatMap((service) => service.listRules(orgId)),
+				Effect.mapError(toMcpHttpError(TOOL)),
+			),
+			EscalationChainsService.pipe(
+				Effect.flatMap((service) => service.list(orgId)),
+				Effect.mapError(toMcpHttpError(TOOL)),
+			),
+			ErrorPolicyService.pipe(
+				Effect.flatMap((service) => service.getNotificationPolicy(orgId)),
+				Effect.mapError(unavailable),
+			),
+			UptimeMonitorsService.pipe(
+				Effect.flatMap((service) => service.list(orgId)),
+				Effect.mapError(unavailable),
+			),
+			SlosService.pipe(
+				Effect.flatMap((service) => service.list(orgId)),
+				Effect.mapError(unavailable),
+			),
+		],
+		{ concurrency: 5 },
+	)
+	return (destinationId: string): ReadonlyArray<string> => {
+		const names = (id: string) => id === destinationId
+		const monitorCount = Arr.filter(monitors, (monitor) => Arr.some(monitor.destinationIds, names)).length
+		const sloCount = Arr.filter(
+			slos,
+			(slo) =>
+				Arr.some(slo.alerting.criticalDestinationIds, names) ||
+				Arr.some(slo.alerting.warningDestinationIds, names),
+		).length
+		return [
+			...Arr.flatMap(rules.rules, (rule) =>
+				Arr.some(rule.destinationIds, names) ? [`rule "${rule.name}"`] : [],
+			),
+			...Arr.flatMap(chains.chains, (chain) =>
+				Arr.some(chain.steps, (step) =>
+					Arr.some(
+						step.targets,
+						(target) => target.type === "destination" && target.destinationId === destinationId,
+					),
+				)
+					? [`escalation chain "${chain.name}"`]
+					: [],
+			),
+			...(Arr.some(policy.destinationIds, names) ? ["error notifications"] : []),
+			...(monitorCount === 0 ? [] : [plural(monitorCount, "uptime monitor")]),
+			...(sloCount === 0 ? [] : [plural(sloCount, "SLO")]),
+		]
+	}
+})
 
 export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_destinations",
 		title: "List Alert Destinations",
 		description:
-			"List the notification destinations a rule can deliver to, with id, type and delivery health. Pass the ids as destination_ids to create_alert_rule / update_alert_rule.",
+			"List the notification destinations a rule can deliver to, with id, type, delivery health and what routes to each (alert rules, escalation chains, error notifications, uptime monitors, SLOs). One that nothing uses can be deleted without further checks. Pass the ids as destination_ids to create_alert_rule / update_alert_rule.",
 		parameters: Schema.Struct({
 			type: P.optionalOneOf(ALERT_DESTINATION_TYPES, "Only destinations of this type"),
 			enabled_only: P.optionalFlag("Only enabled destinations"),
@@ -27,6 +100,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 			const result = yield* destinationsService
 				.listDestinations(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_alert_destinations")))
+			const usedBy = yield* destinationUsers(tenant.orgId)
 
 			const destinations = Arr.filter(
 				result.destinations,
@@ -55,6 +129,7 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 					disabledReason: d.disabledReason ?? null,
 					createdAt: d.createdAt,
 					updatedAt: d.updatedAt,
+					usedBy: usedBy(d.id),
 				})),
 				total: destinations.length,
 				...(params.type === undefined ? undefined : { type: params.type }),
@@ -76,7 +151,16 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 					: [
 							doc.text(`Total: ${output.total} destination${output.total !== 1 ? "s" : ""}`),
 							doc.table(
-								["ID", "REST id", "Name", "Type", "Target", "Enabled", "Last error"],
+								[
+									"ID",
+									"REST id",
+									"Name",
+									"Type",
+									"Target",
+									"Enabled",
+									"Used by",
+									"Last error",
+								],
 								Arr.map(output.destinations, (d) => [
 									d.id,
 									d.publicId,
@@ -84,6 +168,9 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 									d.type,
 									d.channelLabel ?? d.summary,
 									d.enabled ? "Yes" : d.disabledReason ? `No (${d.disabledReason})` : "No",
+									d.usedBy === undefined || d.usedBy.length === 0
+										? "nothing"
+										: Arr.join(d.usedBy, ", "),
 									d.lastTestError ?? "-",
 								]),
 							),

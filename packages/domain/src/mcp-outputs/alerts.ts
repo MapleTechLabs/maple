@@ -63,6 +63,8 @@ export const AlertDestinationRow = Schema.Struct({
 	disabledReason: NullableString,
 	createdAt: Schema.String,
 	updatedAt: Schema.String,
+	/** The alert rules and escalation chains that route to it, by name; set by the list only. */
+	usedBy: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 
 export const ListAlertDestinationsOutput = Schema.Struct({
@@ -70,6 +72,25 @@ export const ListAlertDestinationsOutput = Schema.Struct({
 	total: Schema.Number,
 	type: Schema.optionalKey(Schema.String),
 	enabledOnly: Schema.optionalKey(Schema.Boolean),
+})
+
+export const AlertDestinationMutationOutput = Schema.Struct({
+	action: Schema.Literals(["created", "updated"]),
+	destination: AlertDestinationRow,
+})
+
+export const TestAlertDestinationOutput = Schema.Struct({
+	destination: AlertDestinationRow,
+	/** Whether the provider accepted the test notification. */
+	delivered: Schema.Boolean,
+	/** The provider's answer, or why delivery failed. */
+	message: Schema.String,
+})
+
+export const DeleteAlertDestinationOutput = Schema.Struct({
+	deleted: Schema.Boolean,
+	id: Schema.String,
+	name: Schema.String,
 })
 
 /** Configuration that saved but probably does not do what the caller meant. */

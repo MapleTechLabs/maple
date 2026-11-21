@@ -17,6 +17,38 @@ Pin `EVAL_MODEL`. Unset, it tracks the production triage model, which moves.
 
 ---
 
+## Config suite: 2026-11-21, before and after the configuration writes
+
+33 configuration tasks (`src/evals/config/`), k=5, `deepseek/deepseek-v4.1-flash-1017:nitro` (the
+production triage model that day). "Before" is the 115-tool catalog at `d4b83412db` with only the
+suite added; "after" adds `manage_ingest_source`, `manage_alert_destination`, `delete_dashboard`,
+`manage_maintenance_window action=update` and the "Used by" column of `list_alert_destinations`.
+
+| Group         | Tasks | Before         | After           |
+| ------------- | ----- | -------------- | --------------- |
+| control       | 16    | 97.5% (78/80)  | 97.5% (78/80)   |
+| gap           | 13    | 0.0% (0/65)    | 100.0% (65/65)  |
+| negative      | 4     | 100.0% (20/20) | 100.0% (20/20)  |
+| all           | 33    | 59.4% (98/165) | 98.8% (163/165) |
+| calls / trial |       | 3.38           | 2.41            |
+| input tokens  |       | 172k           | 149k            |
+
+Both misses after are `drop-noise` (3/5 on both sides): the agent keeps looking for `/ready` spans
+that the world does not hold. Without the tools the agent's fallbacks were the finding: it filed
+`send_maple_feedback` feature requests for the source and dashboard changes, and to change a
+maintenance window it created a second window under the same name.
+
+Catalog cost (`measure-tokens`): 50,678 to 52,374 tokens, 115 to 118 public tools. The tools suite
+on the same two catalogs, k=3: 96.4% before, 93.5% after (paired −3.0 pts, 95% CI −6.8 to +0.8, not
+significant); the four tasks that moved, rerun at k=10, score 27/40 before and 29/40 after.
+
+Two wordings were measured, not guessed. "Only for a destination the user named" on the delete
+actions took `ambiguous-destination-delete` from 4/5 to 10/10. Listing what routes to each
+destination took `delete-destination` from 1/5 to 5/5: before it, the agent spent the 8-call budget
+proving the destination unused.
+
+---
+
 ## Data source world (tool playground): 2026-11-08, Haiku
 
 Agents playing the Maple agent through `scripts/tool-playground.sh` against the 18-source data

@@ -64,9 +64,10 @@ export interface ObservedCall {
 
 export const observeCall = (tool: string, raw: unknown, isError: boolean): ObservedCall => {
 	const read = readToolCall(tool, raw)
-	return read === undefined
-		? { tool, raw, args: {}, invalid: true, isError }
-		: { tool, raw, args: read.args, invalid: !read.decodes || read.unknown.length > 0, isError }
+	if (read === undefined) return { tool, raw, args: {}, invalid: true, isError }
+	// The registry resolves a family's `action` away; a target names it like any other argument.
+	const args = read.action === undefined ? read.args : { action: read.action, ...read.args }
+	return { tool, raw, args, invalid: !read.decodes || read.unknown.length > 0, isError }
 }
 
 export interface CheckResult {
