@@ -99,6 +99,14 @@ describe("cost key marks", () => {
 		expect(keyMark("cloud_service", "", [])).toBeNull()
 	})
 
+	test("Morph's one service wears Morph's mark, never the platform beside it", () => {
+		const morph = keyMark("provider", "morph", [])?.icon
+		expect(morph).toBe("MorphBrandIcon")
+		const withAws = [source("aws", "123456789012"), source("morph", "organization")]
+		expect(keyMark("cloud_service", "morph", withAws)?.icon).toBe(morph)
+		expect(keyMark("cloud_service", "morph", [])?.icon).toBe(morph)
+	})
+
 	test("a Cloudflare product wears the Cloudflare mark, also beside an AWS source", () => {
 		const cloudflare = keyMark("provider", "cloudflare", [])?.icon
 		const both = [...sources, source("cloudflare", "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d")]

@@ -5,6 +5,7 @@ import {
 	CostBreakdownSortBy,
 	GcpCostAddRequest,
 	OpenAiCostKeyRequest,
+	MorphCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,
 	VercelCostAddRequest,
@@ -223,6 +224,27 @@ export const RemoveOpenAiCostKey = Command.define("RemoveOpenAiCostKey", {
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openaiCost.remove()).pipe(
 		Effect.asVoid,
 		settleTo((result) => Message.CompletedRemoveCredential({ provider: "openai", result })),
+	),
+})
+
+/** Saves the org's Morph API key, which makes (or keeps) its cost source. */
+export const SaveMorphCostKey = Command.define("SaveMorphCostKey", {
+	args: { apiKey: Schema.String },
+	messages: [Message.CompletedSaveCredential],
+	execute: ({ apiKey }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.morphCost.set({ payload: new MorphCostKeyRequest({ apiKey }) }),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "morph", result })),
+		),
+})
+
+export const RemoveMorphCostKey = Command.define("RemoveMorphCostKey", {
+	messages: [Message.CompletedRemoveCredential],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.morphCost.remove()).pipe(
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "morph", result })),
 	),
 })
 
