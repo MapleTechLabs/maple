@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { Stdio } from "effect/Stdio"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
 import {
 	API_METHODS,
@@ -151,8 +151,8 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 	const url = sendsBody(method) ? baseUrl : withQuery(baseUrl, fields)
 
 	const request = HttpClientRequest.make(method)(url.toString()).pipe(
-		HttpClientRequest.setHeaders(Rec.fromEntries(headers)),
 		HttpClientRequest.setHeader("accept", "application/json"),
+		HttpClientRequest.setHeaders(Rec.fromEntries(headers)),
 		HttpClientRequest.bearerToken(token),
 		(req) =>
 			Option.match(body, {
@@ -162,13 +162,13 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 	)
 
 	const client = yield* HttpClient.HttpClient
-	const response = yield* client
-		.execute(request)
-		.pipe(
-			Effect.mapError(
-				(cause) => new ApiTransportError({ message: `could not reach ${url.origin}`, cause }),
-			),
-		)
+	// A redirect is the endpoint's answer: report it, never follow it to another page.
+	const response = yield* client.execute(request).pipe(
+		Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+		Effect.mapError(
+			(cause) => new ApiTransportError({ message: `could not reach ${url.origin}`, cause }),
+		),
+	)
 	if (a.include) {
 		yield* Effect.sync(() => {
 			process.stderr.write(`HTTP ${response.status}\n`)
@@ -179,6 +179,18 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 		})
 	}
 
+	const ok = response.status >= 200 && response.status < 300
+	// Server-sent events stay open while they arrive, so pass them through as they come.
+	if (ok && Str.includes("text/event-stream")(response.headers["content-type"] ?? "")) {
+		return yield* response.stream.pipe(
+			Stream.runForEach((chunk) => Effect.sync(() => process.stdout.write(chunk))),
+			Effect.mapError(
+				(cause) =>
+					new ApiTransportError({ message: `the event stream from ${url.origin} broke`, cause }),
+			),
+		)
+	}
+
 	const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""))
 	// JSON is pretty-printed; anything else (or an empty 204) is passed through as-is.
 	const json = text === "" ? Option.none() : Result.getSuccess(parseJson(text, "the response"))
@@ -186,7 +198,7 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 	else if (text !== "")
 		yield* Effect.sync(() => process.stdout.write(Str.endsWith("\n")(text) ? text : `${text}\n`))
 
-	if (response.status < 200 || response.status >= 300) {
+	if (!ok) {
 		const detail = Option.getOrElse(
 			Option.flatMap(json, errorMessageOf).pipe(Option.map((m) => `: ${m}`)),
 			() => "",
