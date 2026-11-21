@@ -49,6 +49,13 @@ Catalog cost (`measure-tokens`): 50,678 to 52,374 tokens, 115 to 118 public tool
 on the same two catalogs, k=3: 96.4% before, 93.5% after (paired −3.0 pts, 95% CI −6.8 to +0.8, not
 significant); the four tasks that moved, rerun at k=10, score 27/40 before and 29/40 after.
 
+Regression check on the final branch (`de50c8ca7b`) against main (`4dd3eedeba`), k=5. Tools suite,
+56 tasks: 95.4% (267/280) on main, 94.6% (265/280) on the branch (paired −0.7 pts, 95% CI −2.4 to
++1.0, not significant). Six tasks moved, each by one trial, and no trial called a tool this change
+adds. `failed-span-in-trace` fails the regression gate on both (1/5 and 0/5). Config suite on the
+branch: 95.8% (158/165), control 73/80, gap 65/65, negative 20/20; besides `drop-noise` (0/5),
+`availability-slo` and `service-dashboard` each lost one trial to the call budget.
+
 Two wordings were measured, not guessed. "Only for a destination the user named" on the delete
 actions took `ambiguous-destination-delete` from 4/5 to 10/10. Listing what routes to each
 destination took `delete-destination` from 1/5 to 5/5: before it, the agent spent the 8-call budget
