@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { afterEach } from "vitest"
-import { AnomalyIncidentId, OrgId } from "@maple/domain/http"
+import { AnomalyIncidentId, OrgId, WarehouseQueryError } from "@maple/domain/http"
 import {
 	Clock,
 	ConfigProvider,
@@ -932,43 +932,50 @@ describe("AnomalyDetectionService.runTick baseline resolve races", () => {
 describe("AnomalyDetectionService.runTick re-keyed fingerprint baseline", () => {
 	const REKEYED_KEY = "error_spike:production:52"
 
-	/** An issue a month old on hash 51, re-keyed to 52, whose detector is one breach from opening. */
-	const seedRekeyedIssue = (testDb: TestDb) =>
-		Effect.promise(async () => {
-			// A settings row is what makes the tick consider an org with no open incident.
-			await executeSql(
-				testDb,
-				`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
+	/** An issue a month old on hash 51, re-keyed to 52, whose detector is one breach from opening. */ const seedRekeyedIssue =
+		(testDb: TestDb) =>
+			Effect.promise(async () => {
+				// A settings row is what makes the tick consider an org with no open incident.
+				await executeSql(
+					testDb,
+					`INSERT INTO anomaly_detector_settings (org_id, enabled, sensitivity, muted_signals_json, created_at, updated_at)
 				 VALUES ($1, true, 'normal', '[]'::jsonb, now(), now())`,
-				[ORG],
-			)
-			await executeSql(
-				testDb,
-				`INSERT INTO error_issues
+					[ORG],
+				)
+				await executeSql(
+					testDb,
+					`INSERT INTO error_issues
 				   (id, org_id, fingerprint_hash, service_name, exception_type, exception_message, top_frame,
 				    first_seen_at, last_seen_at, created_at, updated_at)
 				 VALUES ('00000000-0000-4000-8000-000000000051', $1, '51', 'payments', 'Boom', 'boom', '',
 				         now() - interval '30 days', now(), now() - interval '30 days', now())`,
-				[ORG],
-			)
-			await executeSql(
-				testDb,
-				`INSERT INTO error_issue_fingerprints (org_id, fingerprint_hash, issue_id, source, created_at)
+					[ORG],
+				)
+				await executeSql(
+					testDb,
+					`INSERT INTO error_issue_fingerprints (org_id, fingerprint_hash, issue_id, source, created_at)
 				 VALUES ($1, '52', '00000000-0000-4000-8000-000000000051', 'rekey', now() - interval '1 hour')`,
-				[ORG],
-			)
-			await executeSql(
-				testDb,
-				`INSERT INTO anomaly_detector_states
+					[ORG],
+				)
+				await executeSql(
+					testDb,
+					`INSERT INTO anomaly_detector_states
 				   (org_id, detector_key, signal_type, service_name, deployment_env, fingerprint_hash,
 				    consecutive_breaches, last_evaluated_at, updated_at)
 				 VALUES ($1, $2, 'error_spike', 'payments', 'production', '52', 1, now(), now())`,
-				[ORG, REKEYED_KEY],
-			)
-		})
+					[ORG, REKEYED_KEY],
+				)
+			})
 
-	/** A steady 100 per half hour for a week: 334 half hours on hash 51, the last 2 on hash 52. */
-	const makeRekeyedLayer = (testDb: TestDb, currentCount: number) => {
+	/**
+	 * A steady 100 per half hour for a week: 334 half hours on hash 51, the last 2 on hash 52.
+	 * `lineage` is what the warehouse answers about 52's previous hash.
+	 */
+	const makeRekeyedLayer = (
+		testDb: TestDb,
+		currentCount: number,
+		lineage: "paired" | "empty" | "failed" = "paired",
+	) => {
 		const baseline = (fingerprintHash: string, totalCount: number) => ({
 			fingerprintHash,
 			deploymentEnv: "production",
@@ -982,6 +989,22 @@ describe("AnomalyDetectionService.runTick re-keyed fingerprint baseline", () => 
 					.decodeRows([{ orgId: ORG }])
 					.pipe(Effect.orDie),
 			compiledQuery: (_tenant, compiled, options) => {
+				if (options?.context === "anomalyErrorSpikeLineage") {
+					return lineage === "failed"
+						? Effect.fail(
+								new WarehouseQueryError({
+									message: "lineage read failed",
+									pipeName: "anomalyErrorSpikeLineage",
+								}),
+							)
+						: compiledQueryOf(compiled)
+								.decodeRows(
+									lineage === "paired"
+										? [{ fingerprintHash: "52", previousFingerprintHash: "51" }]
+										: [],
+								)
+								.pipe(Effect.orDie)
+				}
 				const rows =
 					options?.context === "anomalyErrorSpikeCurrent"
 						? [
@@ -1031,7 +1054,7 @@ describe("AnomalyDetectionService.runTick re-keyed fingerprint baseline", () => 
 
 	const runTick = AnomalyDetectionService.pipe(Effect.flatMap((service) => service.runTick))
 
-	it.live("does not open an incident for a re-keyed hash firing at its issue's steady rate", () => {
+	it.live("does not open an incident for a re-keyed hash firing at its previous hash's steady rate", () => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			yield* seedRekeyedIssue(testDb)
@@ -1046,7 +1069,7 @@ describe("AnomalyDetectionService.runTick re-keyed fingerprint baseline", () => 
 		}).pipe(Effect.provide(makeRekeyedLayer(testDb, 100)))
 	})
 
-	it.live("opens an incident for a re-keyed hash at ten times its issue's steady rate", () => {
+	it.live("opens an incident for a re-keyed hash at ten times its previous hash's steady rate", () => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			yield* seedRekeyedIssue(testDb)
@@ -1057,4 +1080,21 @@ describe("AnomalyDetectionService.runTick re-keyed fingerprint baseline", () => 
 			expect((yield* readRekeyedState(testDb))?.open_incident_id).not.toBeNull()
 		}).pipe(Effect.provide(makeRekeyedLayer(testDb, 1000)))
 	})
+
+	// Without lineage the hash is judged on its own hour of history (200, a threshold near 21),
+	// so the steady 100 breaches: the tick still evaluates, it only loses the carry-over.
+	it.live.each(["failed", "empty"] as const)(
+		"evaluates a re-keyed hash against its own row when the lineage read is %s",
+		(lineage) => {
+			const testDb = createTestDb(createdDbs)
+			return Effect.gen(function* () {
+				yield* seedRekeyedIssue(testDb)
+
+				const result = yield* runTick
+
+				expect(result.incidentsOpened).toBe(1)
+				expect((yield* readRekeyedState(testDb))?.open_incident_id).not.toBeNull()
+			}).pipe(Effect.provide(makeRekeyedLayer(testDb, 100, lineage)))
+		},
+	)
 })

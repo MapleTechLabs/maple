@@ -310,20 +310,19 @@ export interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly deploymentEnv: string
 }
 
-/** Key of one fingerprint hash in one environment, as `issueErrorSpikeBaselines` keys its result. */
+/** Key of one fingerprint hash in one environment, as `rekeyedErrorSpikeBaselines` keys its result. */
 export const errorSpikeBaselineKey = (fingerprintHash: string, deploymentEnv: string): string =>
 	`${fingerprintHash}\u0000${deploymentEnv}`
 
 /**
- * The baseline of each observation: the summed history, in its environment, of every hash its
- * issue owns. A hash re-keyed by a fingerprint version bump has no history of its own, the hash
- * it replaced has it. A hash with no issue keeps its own row.
+ * The baseline of each observation: its own row plus, in the same environment, the rows of the
+ * hashes a fingerprint version bump replaced with it (`previousByHash`, from lineage). Only that
+ * predecessor history carries over, so the baseline stays the series the observation counts.
  */
-export const issueErrorSpikeBaselines = <IssueId>(
+export const rekeyedErrorSpikeBaselines = (
 	observations: ReadonlyArray<ErrorSpikeObservation>,
 	baselineRows: ReadonlyArray<ErrorSpikeBaselineEntry>,
-	issueByHash: ReadonlyMap<string, IssueId>,
-	hashesByIssue: ReadonlyMap<IssueId, ReadonlyArray<string>>,
+	previousByHash: ReadonlyMap<string, ReadonlyArray<string>>,
 ): ReadonlyMap<string, ErrorSpikeBaseline> => {
 	const rows = new Map(
 		Arr.map(
@@ -334,10 +333,9 @@ export const issueErrorSpikeBaselines = <IssueId>(
 	return new Map(
 		Arr.flatMap(observations, (observation) => {
 			const { fingerprintHash, deploymentEnv } = observation
-			const issueId = issueByHash.get(fingerprintHash)
-			const owned = issueId === undefined ? [] : (hashesByIssue.get(issueId) ?? [])
+			const previous = previousByHash.get(fingerprintHash) ?? []
 			// Deduped with the observed hash first, so each row counts once and its own is never lost.
-			const history = Arr.flatMap(Arr.dedupe([fingerprintHash, ...owned]), (hash) => {
+			const history = Arr.flatMap(Arr.dedupe([fingerprintHash, ...previous]), (hash) => {
 				const row = rows.get(errorSpikeBaselineKey(hash, deploymentEnv))
 				return row === undefined ? [] : [row]
 			})

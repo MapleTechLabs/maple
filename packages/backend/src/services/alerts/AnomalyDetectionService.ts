@@ -49,6 +49,7 @@ import {
 	Layer,
 	MutableHashMap,
 	Option,
+	Record,
 	Ref,
 	Schema,
 	Semaphore,
@@ -77,9 +78,9 @@ import {
 	evaluateLogVolume,
 	goldenWindowFromHours,
 	healthyErrorSpikeRecovery,
-	issueErrorSpikeBaselines,
 	isWatchedEnvironment,
 	logWindowFromHours,
+	rekeyedErrorSpikeBaselines,
 	SENSITIVITY,
 	windowBaseline,
 	type AnomalyEvaluation,
@@ -99,7 +100,6 @@ import {
 } from "./anomaly/detector-state-batch"
 import { rollingCountBuckets } from "./anomaly/rolling-counts"
 import { hysteresisConfigFor } from "./anomaly/hysteresis-config"
-import { spikeIssueHashes } from "./anomaly/spike-issue-hashes"
 import { foldObservation } from "@maple/alerting-core/hysteresis"
 import {
 	attachKeyFor,
@@ -130,6 +130,7 @@ const BASELINE_WINDOW_MS = 7 * 24 * HOUR_MS
 /** The earliest hour a baseline window reads: 7 days back, shifted an hour earlier, straddling two hours. */
 const BASELINE_LOOKBACK_MS = BASELINE_WINDOW_MS + 3 * HOUR_MS
 const SPIKE_WINDOW_MS = 30 * 60 * 1000
+const MINUTE_MS = 60 * 1000
 /** Org-level claim lock TTL — slightly under the 5-minute tick cadence. */
 const ORG_LOCK_TTL_MS = 4 * 60 * 1000
 const NO_DATA_RESOLVE_MS = 60 * 60 * 1000
@@ -1320,8 +1321,48 @@ const make: Effect.Effect<
 		)
 
 		if (observations.length === 0) {
-			return { observations, baselineRows: Arr.empty<ErrorSpikeBaselineEntry>() }
+			return {
+				observations,
+				baselineRows: Arr.empty<ErrorSpikeBaselineEntry>(),
+				previousByHash: new Map<string, ReadonlyArray<string>>(),
+			}
 		}
+
+		// The hashes a fingerprint version bump replaced: a re-keyed hash only has history since
+		// the bump. A failed read costs that carry-over for one tick, never the evaluation.
+		const windowStartMs = nowMs - SPIKE_WINDOW_MS
+		const lineageCompiled = CH.compile(
+			CH.errorFingerprintLineageQuery({
+				fingerprintHashes: Arr.dedupe(Arr.map(observations, (o) => o.fingerprintHash)),
+			}),
+			{
+				orgId: tenant.orgId,
+				// Lineage rows are stamped with their minute; the window starts mid-minute.
+				startTime: DateTime.makeUnsafe(windowStartMs - (windowStartMs % MINUTE_MS)),
+				endTime: DateTime.makeUnsafe(nowMs),
+			},
+		)
+		const lineage = yield* withOutboundPermit(
+			warehouse.compiledQuery(tenant, lineageCompiled, {
+				profile: "list",
+				context: "anomalyErrorSpikeLineage",
+			}),
+		).pipe(
+			Effect.catch((error) =>
+				Effect.as(
+					Effect.logWarning("Anomaly error spike lineage read failed").pipe(
+						Effect.annotateLogs({ orgId: tenant.orgId, error: error.message }),
+					),
+					[],
+				),
+			),
+		)
+		const previousByHash = new Map(
+			Arr.map(
+				Record.toEntries(Arr.groupBy(lineage, (row) => row.fingerprintHash)),
+				([hash, rows]) => [hash, Arr.map(rows, (row) => row.previousFingerprintHash)] as const,
+			),
+		)
 
 		// The 7d baseline blob is expensive relative to the tick cadence, so it
 		// is computed once per hour per org and shared from the edge cache (one query, one
@@ -1350,8 +1391,8 @@ const make: Effect.Effect<
 			}),
 		)
 
-		// Raw rows: the tick joins them to issues, whose history spans several hashes.
-		return { observations, baselineRows }
+		// Raw rows: the tick adds each hash's predecessors to its own.
+		return { observations, baselineRows, previousByHash }
 	})
 
 	const claimOrg = (orgId: OrgId, nowMs: number) =>
@@ -1503,16 +1544,11 @@ const make: Effect.Effect<
 		const owners = yield* dbExecute((db) => issuesOwningHashes(db, orgId, fingerprints))
 		const issueFirstSeenAt = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.firstSeenAt]))
 		const issueIdByFingerprint = new Map(Arr.map([...owners], ([hash, owner]) => [hash, owner.issueId]))
-		// A hash re-keyed by a fingerprint version bump only has history since the bump, so the
-		// baseline is its issue's: every hash the issue owns, summed.
-		const issueHashes = yield* dbExecute((db) =>
-			spikeIssueHashes(db, orgId, Arr.dedupe([...issueIdByFingerprint.values()])),
-		)
-		const spikeBaselines = issueErrorSpikeBaselines(
+		// Per hash, not per issue: a user can merge two live errors, and each keeps its own rate.
+		const spikeBaselines = rekeyedErrorSpikeBaselines(
 			spikes.observations,
 			spikes.baselineRows,
-			issueIdByFingerprint,
-			issueHashes,
+			spikes.previousByHash,
 		)
 
 		const evaluations: AnomalyEvaluation[] = []
