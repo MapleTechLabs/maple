@@ -66,6 +66,9 @@ const cacheCall = <A>(run: () => Promise<A>) =>
 /** A refused logo (wrong type, too big) may be fixed in place, so its stand-in is kept an hour. */
 const REFUSED_CACHE_SECONDS = 60 * 60
 
+/** Marks a cached stand-in, so a hit keeps the short HTTP cache it was first served with. */
+const STAND_IN_HEADER = "x-maple-og-stand-in"
+
 /** Cached in `cache` under a synthetic URL per page and card version; no cache is only a miss. */
 export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClient) =>
 	Effect.fn("status.og_image")(function* (key: string, card: StatusOgCard) {
@@ -80,7 +83,8 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 				: yield* cacheCall(() => cached.arrayBuffer()).pipe(Effect.option)
 		yield* Effect.annotateCurrentSpan("maple.status_page.og.cache_hit", Option.isSome(body))
 		if (Option.isSome(body)) {
-			const hit: StatusOgImage = { png: new Uint8Array(body.value), complete: true }
+			const standIn = cached?.headers.get(STAND_IN_HEADER) === "1"
+			const hit: StatusOgImage = { png: new Uint8Array(body.value), complete: !standIn }
 			return hit
 		}
 		// An uploaded logo is a `data:` URL; both kinds are held to the same size and pixel limits.
@@ -114,6 +118,7 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 						headers: {
 							"content-type": "image/png",
 							"cache-control": `public, max-age=${refused ? REFUSED_CACHE_SECONDS : CACHE_SECONDS}`,
+							[STAND_IN_HEADER]: refused ? "1" : "0",
 						},
 					}),
 				),
