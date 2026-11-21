@@ -88,7 +88,7 @@ export const makeFakeStorage = () => {
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
 	// Each card the handler asked to draw, under its key; `fail` makes the renderer error.
-	const og = { renders: new Array<{ key: string; card: StatusOgCard }>(), fail: false }
+	const og = { renders: new Array<{ key: string; card: StatusOgCard }>(), fail: false, complete: true }
 	return {
 		og,
 		storage,
@@ -173,7 +173,7 @@ export const send = (
 				? Effect.fail(new StatusOgImageError({ message: "renderer down" }))
 				: Effect.sync(() => {
 						fake.og.renders.push({ key, card })
-						return new TextEncoder().encode(`png:${key}`)
+						return { png: new TextEncoder().encode(`png:${key}`), complete: fake.og.complete }
 					}),
 	}
 	return Effect.runPromise(handleRequest(typeof input === "string" ? new Request(input) : input, env))

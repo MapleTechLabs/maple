@@ -81,17 +81,19 @@ const overallDays = (
 ): { readonly days: ReadonlyArray<StatusPageDayState>; readonly uptime: number | null } => {
 	const shown = Arr.filter(snapshot.components, (component) => component.showUptime)
 	if (shown.length === 0) return { days: [], uptime: null }
-	const bars = Arr.flatMap(shown, (component) => component.days)
+	const window = new Set(lastDays(snapshot.generatedAt, STATUS_PAGE_WINDOW_DAYS))
+	// Snapshots carry a year of days; the card shows and counts only the window.
+	const bars = Arr.filter(
+		Arr.flatMap(shown, (component) => component.days),
+		(bar) => window.has(bar.day),
+	)
 	const worst = Arr.reduce(bars, new Map<string, StatusPageDayState>(), (byDay, bar) => {
 		const state = dayState(bar)
 		const seen = byDay.get(bar.day)
 		return seen === undefined || DAY_RANK[state] > DAY_RANK[seen] ? byDay.set(bar.day, state) : byDay
 	})
 	return {
-		days: Arr.map(
-			lastDays(snapshot.generatedAt, STATUS_PAGE_WINDOW_DAYS),
-			(day) => worst.get(day) ?? "none",
-		),
+		days: Arr.map([...window], (day) => worst.get(day) ?? "none"),
 		uptime: uptimePercent(bars),
 	}
 }

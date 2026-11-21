@@ -338,6 +338,17 @@ describe("serving a page", () => {
 		expect(fake.og.renders[0]?.card.details).toEqual(["Checkout failing"])
 	})
 
+	it("caches a stand-in preview only as long as the page, even under the linked URL", async () => {
+		fake.og.complete = false
+		const html = await (await send(fake, PAGE)).text()
+		const linked =
+			Option.getOrThrow(Str.match(/<meta property="og:image" content="([^"]+)">/u)(html))[1] ?? ""
+		const response = await send(fake, linked)
+		expect(response.headers.get("cache-control")).toBe(
+			(await send(fake, PAGE)).headers.get("cache-control"),
+		)
+	})
+
 	it("answers an uncached 503 when the preview cannot be drawn", async () => {
 		fake.og.fail = true
 		const response = await send(fake, `${PAGE}og.png`)

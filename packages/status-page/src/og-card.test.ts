@@ -67,6 +67,12 @@ describe("the status card", () => {
 		expect(card.uptime).toBe("99.98%")
 	})
 
+	it("counts uptime over the 90 days it shows, not the year the snapshot carries", () => {
+		const year = makeDays(FIXTURE_NOW, { 0: "down", 1: "down" }, 365)
+		const snapshot = makeSnapshot({ components: [makeComponent(0, { days: year })] })
+		expect(statusOgCard(snapshot, live, null).uptime).toBe("100%")
+	})
+
 	it("draws no uptime strip when no component shows uptime", () => {
 		const snapshot = makeSnapshot({ components: [makeComponent(0, { showUptime: false })] })
 		const card = statusOgCard(snapshot, live, null)

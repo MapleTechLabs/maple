@@ -204,7 +204,8 @@ const serveOgImage = (env: StatusEnv, url: URL, view: PageView, target: Target, 
 	const card = statusOgCard(view.snapshot, view.freshness, new URL(pageUrl).host)
 	const version = statusOgCardVersion(card)
 	return env.ogImage(`${target.pageId}/${version}`, card).pipe(
-		Effect.map((body) => png(body, url.searchParams.get("v") === version)),
+		// A stand-in card is never kept for long: the next fetch may draw the logo.
+		Effect.map((image) => png(image.png, image.complete && url.searchParams.get("v") === version)),
 		Effect.catchTag("@maple/status/OgImageError", (error) =>
 			Effect.logWarning("Status page preview image failed", error).pipe(
 				Effect.as(plain("Preview unavailable", 503)),

@@ -17,7 +17,7 @@ import serifCyrillic from "./og-fonts/serif-cyrillic.ttf"
 import serifLatinExt from "./og-fonts/serif-latin-ext.ttf"
 import serifLatin from "./og-fonts/serif-latin.ttf"
 import { makeOgRenderer, type OgFonts, type OgLogo, type OgRender } from "./og-render"
-import { StatusOgImageError } from "./ports"
+import { type StatusOgImage, StatusOgImageError } from "./ports"
 
 const FONTS: OgFonts = {
 	sans: { latin: sansLatin, "latin-ext": sansLatinExt, cyrillic: sansCyrillic },
@@ -101,7 +101,8 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 		yield* Effect.annotateCurrentSpan("maple.status_page.og.cache_hit", cached !== undefined)
 		if (cached !== undefined) {
 			const body = yield* cacheCall(() => cached.arrayBuffer())
-			return new Uint8Array(body)
+			const hit: StatusOgImage = { png: new Uint8Array(body), complete: true }
+			return hit
 		}
 		// An uploaded logo is a `data:` URL takumi decodes itself; only a remote one is fetched.
 		const fetched: LogoFetch =
@@ -124,7 +125,8 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 			),
 		)
 		// Only the card as intended is kept; a stand-in is drawn again by the next request.
-		if (drawn.complete && fetched._tag !== "unavailable") {
+		const complete = drawn.complete && fetched._tag !== "unavailable"
+		if (complete) {
 			yield* cacheCall(() =>
 				store.put(
 					cacheKey,
@@ -137,5 +139,6 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 				),
 			).pipe(Effect.ignore)
 		}
-		return drawn.png
+		const image: StatusOgImage = { png: drawn.png, complete }
+		return image
 	})

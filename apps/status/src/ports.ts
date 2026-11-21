@@ -53,8 +53,11 @@ export interface StatusEnv {
 	/** Maple's own hosts for this Worker (its domain, workers.dev, local dev), which serve `/s/<org key>/<slug>`. */
 	readonly isSharedHost: (hostname: string) => boolean
 	/** The PNG for a card; `key` names one page's card version, so equal keys may share a render. */
-	readonly ogImage: (
-		key: string,
-		card: StatusOgCard,
-	) => Effect.Effect<Uint8Array<ArrayBuffer>, StatusOgImageError>
+	readonly ogImage: (key: string, card: StatusOgCard) => Effect.Effect<StatusOgImage, StatusOgImageError>
+}
+
+/** `complete: false` is a stand-in (the logo was unreachable or undrawable) that must not be cached. */
+export interface StatusOgImage {
+	readonly png: Uint8Array<ArrayBuffer>
+	readonly complete: boolean
 }
