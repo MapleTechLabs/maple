@@ -385,7 +385,7 @@ const groupCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 			tone: label === null ? "subtle" : "soft",
 			truncate: true,
 			as: "span",
-			className: "hidden w-36 shrink-0 @min-[880px]/panel:block",
+			className: "hidden w-36 shrink-0 @min-[960px]/panel:block",
 			...(row.groupId !== null && row.groupName !== null && { attributes: [h.Title(row.groupId)] }),
 		},
 		[label ?? EMPTY_VALUE],
@@ -403,7 +403,7 @@ const channelCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 		{
 			gap: "1.5",
 			as: "span",
-			className: `hidden ${CHANNEL_LANE} @min-[960px]/panel:flex`,
+			className: `hidden ${CHANNEL_LANE} @min-[1088px]/panel:flex`,
 			...(summary !== null && { attributes: [h.Title(summary.split)] }),
 		},
 		summary === null
@@ -480,7 +480,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 			),
 			numberCell(h, formatNumber(row.errors), "w-14", row.errors > 0 ? "error" : "subtle"),
 			h.span(
-				[h.Class("hidden w-28 shrink-0 items-center justify-end gap-2 @min-[760px]/panel:flex")],
+				[h.Class("hidden w-28 shrink-0 items-center justify-end gap-2 @min-[816px]/panel:flex")],
 				[
 					...(row.activity.length === 0
 						? []
@@ -497,11 +497,11 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 			channelCell(h, row),
 			hstack(
 				h,
-				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
+				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1240px]/panel:flex" },
 				signalCell(h, row.signals),
 			),
 			h.span(
-				[h.Class("hidden w-20 shrink-0 text-right @min-[1100px]/panel:block")],
+				[h.Class("hidden w-20 shrink-0 text-right @min-[1336px]/panel:block")],
 				[
 					listRelativeTime(h, {
 						value: row.firstSeenMs,
@@ -525,7 +525,11 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 		],
 	)
 
-/** The directory: the summary strip, the search, then one row per user (already filtered). */
+/**
+ * The directory: the summary strip, the search, then one row per user (already filtered).
+ * Each `@min-[N]/panel` is the width of the columns shown at N (lanes, gap-3, row and section
+ * padding), so a column appears only once it fits; past that the table would scroll sideways.
+ */
 export const usersListBody = <M>(
 	h: HtmlBuilder<M>,
 	shown: ReadonlyArray<UserRow>,
@@ -544,7 +548,7 @@ export const usersListBody = <M>(
 						th(h, {
 							label: "Group",
 							width: "w-36 shrink-0",
-							hidden: "hidden @min-[880px]/panel:flex",
+							hidden: "hidden @min-[960px]/panel:flex",
 						}),
 						th(h, {
 							label: "Namespace",
@@ -558,23 +562,23 @@ export const usersListBody = <M>(
 							label: "Requests",
 							width: "w-28 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
+							hidden: "hidden @min-[816px]/panel:flex",
 						}),
 						th(h, {
 							label: "Channel",
 							width: CHANNEL_LANE,
-							hidden: "hidden @min-[960px]/panel:flex",
+							hidden: "hidden @min-[1088px]/panel:flex",
 						}),
 						th(h, {
 							label: "Signals",
 							width: "w-36 shrink-0",
-							hidden: "hidden @min-[1000px]/panel:flex",
+							hidden: "hidden @min-[1240px]/panel:flex",
 						}),
 						th(h, {
 							label: "First seen",
 							width: "w-20 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[1100px]/panel:flex",
+							hidden: "hidden @min-[1336px]/panel:flex",
 						}),
 						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
 					]),
@@ -644,24 +648,24 @@ const groupRow = <M>(h: HtmlBuilder<M>, row: UsersGroupRow, options: UsersGroups
 				],
 			),
 			numberCell(h, formatNumber(row.users), "w-16"),
-			shareCell(h, row.activeToday, row.users, "hidden w-24 @min-[680px]/panel:block"),
+			shareCell(h, row.activeToday, row.users, "hidden w-24 @min-[688px]/panel:block"),
 			shareCell(h, row.withErrors, row.users, "w-24", "error"),
 			numberCell(
 				h,
 				formatNumber(row.sessions),
-				"hidden w-16 @min-[760px]/panel:block",
+				"hidden w-16 @min-[832px]/panel:block",
 				row.sessions === 0 ? "subtle" : undefined,
 			),
 			numberCell(
 				h,
 				formatNumber(row.errors),
-				"hidden w-14 @min-[760px]/panel:block",
+				"hidden w-14 @min-[832px]/panel:block",
 				row.errors > 0 ? "error" : "subtle",
 			),
 			numberCell(
 				h,
 				formatNumber(row.requests),
-				"hidden w-20 @min-[880px]/panel:block",
+				"hidden w-20 @min-[928px]/panel:block",
 				row.requests === 0 ? "subtle" : undefined,
 			),
 			h.span(
@@ -717,26 +721,26 @@ export const usersGroupsBody = <M>(
 							label: "Active 24h",
 							width: "w-24 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[680px]/panel:flex",
+							hidden: "hidden @min-[688px]/panel:flex",
 						}),
 						th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
 						th(h, {
 							label: "Sessions",
 							width: "w-16 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
+							hidden: "hidden @min-[832px]/panel:flex",
 						}),
 						th(h, {
 							label: "Errors",
 							width: "w-14 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
+							hidden: "hidden @min-[832px]/panel:flex",
 						}),
 						th(h, {
 							label: "Requests",
 							width: "w-20 shrink-0",
 							align: "right",
-							hidden: "hidden @min-[880px]/panel:flex",
+							hidden: "hidden @min-[928px]/panel:flex",
 						}),
 						th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
 						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
