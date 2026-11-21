@@ -29,7 +29,7 @@ export const warehouseErrorText = (error: WarehouseError): string =>
 const BUDGET_GUIDANCE = {
 	max_execution_time:
 		"The query ran past its time limit. Narrow start_time/end_time, filter by service or another attribute, " +
-		"or aggregate with `query_data` instead of scanning raw rows.",
+		"or aggregate instead of listing raw rows.",
 	max_memory_usage:
 		"The query needed more memory than it is allowed. Add filters, or group by fewer and lower-cardinality keys.",
 	max_threads: "The query needed more parallelism than it is allowed. Scan less data.",

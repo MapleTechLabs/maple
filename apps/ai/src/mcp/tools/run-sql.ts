@@ -223,7 +223,8 @@ const runSqlSchema = Schema.Struct({
 const runSqlDescription =
 	"Run one read-only ClickHouse SELECT against Maple's own telemetry warehouse (this org's traces, logs, metrics) and return its rows: " +
 	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the count reported. ` +
-	"Use it for what query_data cannot express, to spot-check data, or to test SQL for a raw_sql widget. For trends and top-N prefer query_data. " +
+	"The general way to ask the warehouse a question: aggregates over several attributes, conditional counts, text matching, joins, row listings, and testing SQL for a raw_sql widget. " +
+	"query_data answers a plain timeseries or top-N without SQL. " +
 	"The SQL must AND in `$__orgFilter`; macros are listed on `sql`. " +
 	"Spans are in `traces` (no otel_spans/spans table), log lines in `logs`; also metrics_sum/metrics_gauge/metrics_histogram, " +
 	"error_events, session_replays, product_events and *_hourly/*_minutely rollups. " +

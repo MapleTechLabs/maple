@@ -104,7 +104,8 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
 - Error investigation: find_errors -> error_detail -> inspect_trace
 - Acting on an error (claiming, fixing, closing): see **Error Issue Lifecycle** above
 - Performance analysis: find_slow_traces -> inspect_trace -> get_service_top_operations
-- Trend analysis: query_data (timeseries or breakdown)
+- Ad hoc questions: run_sql answers anything the warehouse holds (describe_warehouse_tables gives a table's columns and the rollups to read first)
+- A plain trend or top-N without SQL: query_data (timeseries or breakdown)
 - Service discovery: list_services -> diagnose_service
 - Sources: list_ingest_sources is everything that sends data (SDKs, collectors, clusters, scrape targets, integrations) with whether data is arriving; its \`src_\` ids match the \`maple_source_id\` resource attribute.
 - Data sources: databases and APIs the org connected to query in place (orders, payments, user accounts), separate from its telemetry. \`search_data_sources\` finds the table by topic, \`describe_data_source\` gives its fields and query language, \`query_data_source\` runs SQL or a resource query. \`run_sql\` never reaches them.

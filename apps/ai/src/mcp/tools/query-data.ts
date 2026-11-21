@@ -97,9 +97,10 @@ const queryDataSchema = Schema.Struct({
 type Params = typeof queryDataSchema.Type
 
 const queryDataDescription =
-	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
-	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
-	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result. " +
+	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown without writing SQL: " +
+	"one metric, one group_by, and filters on service, environment and one attribute. " +
+	"For anything else (several group keys, conditional aggregates, text matching, joins) use run_sql; " +
+	"for errors prefer find_errors and error_detail. Applied defaults are listed in the result. " +
 	"A traces breakdown by span_name or attribute reads raw spans: set `service` and keep the window short " +
 	"(a window too large is narrowed, with a note). For endpoint volume over days use route_usage."
 

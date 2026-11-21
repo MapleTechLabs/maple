@@ -223,26 +223,156 @@ const canonicalBranch = (branches: ReadonlyArray<unknown>): unknown => {
 		: undefined
 }
 
-const publishCanonical = (node: unknown): unknown => {
-	if (Arr.isArray(node)) return Arr.map(node, publishCanonical)
-	if (!isJsonObject(node)) return node
-	const anyOf = node.anyOf
-	if (Arr.isArray(anyOf)) {
-		const canonical = canonicalBranch(anyOf)
-		if (isJsonObject(canonical)) {
-			const { anyOf: _anyOf, ...siblings } = node
-			return publishCanonical({ ...canonical, ...siblings })
-		}
-	}
-	// `format: "uuid"` says what the UUID regex says, in a word instead of ~200 characters.
-	const { pattern: _pattern, ...unpatterned } = node
-	const published = node.format === "uuid" ? unpatterned : node
-	return Rec.fromEntries(
-		Arr.map(Rec.toEntries(published), ([key, value]) => [key, publishCanonical(value)]),
-	)
+const sameJson = (a: unknown, b: unknown): boolean => stringifyJson(a) === stringifyJson(b)
+
+const jsonLength = (value: unknown): number => stringifyJson(value)?.length ?? 0
+
+/** The one value a branch pins a key to (`dataSource: "logs"`), when it does. */
+const tagValueOf = (schema: unknown): string | undefined => {
+	if (!isJsonObject(schema) || !Arr.isArray(schema.enum) || schema.enum.length !== 1) return undefined
+	const value = schema.enum[0]
+	return typeof value === "string" ? value : undefined
 }
 
-export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
+/** The keywords a branch may carry and still merge: anything else, a label included, would be lost. */
+const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set([
+	"type",
+	"properties",
+	"required",
+	"additionalProperties",
+])
+
+/**
+ * One object for a union whose branches are the same object under different tag values: shared
+ * keys once, the tag as an enum, each optional key of some branches marked with their tag values.
+ * Undefined where it would say something else: a key required under one tag only has no place in
+ * one object. What it gives up is the union forbidding one tag's key under another, in prose only.
+ */
+export const mergeTaggedVariants = (
+	branches: ReadonlyArray<unknown>,
+): Record<string, unknown> | undefined => {
+	const variants = Arr.filter(branches, isJsonObject)
+	const first = variants[0]
+	if (first === undefined || variants.length < 2 || variants.length !== branches.length) return undefined
+	const propertiesOf = (variant: Record<string, unknown>) =>
+		isJsonObject(variant.properties) ? variant.properties : undefined
+	if (
+		!Arr.every(
+			variants,
+			(variant) =>
+				variant.type === "object" &&
+				propertiesOf(variant) !== undefined &&
+				Arr.every(Rec.keys(variant), (keyword) => MERGEABLE_KEYWORDS.has(keyword)) &&
+				sameJson(variant.additionalProperties, first.additionalProperties),
+		)
+	) {
+		return undefined
+	}
+	const tag = Arr.findFirst(Rec.keys(propertiesOf(first) ?? {}), (key) => {
+		const values = Arr.map(variants, (variant) => tagValueOf(propertiesOf(variant)?.[key]))
+		return Arr.every(values, (value) => value !== undefined) && new Set(values).size === values.length
+	})
+	if (Option.isNone(tag)) return undefined
+	const tagOf = (variant: Record<string, unknown>) => tagValueOf(propertiesOf(variant)?.[tag.value]) ?? ""
+	const tagsOf = (some: ReadonlyArray<Record<string, unknown>>) =>
+		`${tag.value}=${Arr.join(Arr.map(some, tagOf), "|")}`
+	const requires = (variant: Record<string, unknown>, key: string): boolean =>
+		Arr.isArray(variant.required) && variant.required.includes(key)
+	const keys = Arr.dedupe(Arr.flatMap(variants, (variant) => Rec.keys(propertiesOf(variant) ?? {})))
+	const merged: Array<readonly [string, unknown]> = []
+	for (const key of keys) {
+		const holders = Arr.filter(variants, (variant) => key in (propertiesOf(variant) ?? {}))
+		const schema = propertiesOf(holders[0] ?? first)?.[key]
+		if (key === tag.value) {
+			// The first branch's other constraints on the tag would bind every value: keep the union.
+			const constraintsOf = (variant: Record<string, unknown>) => {
+				const own = propertiesOf(variant)?.[key]
+				const { enum: _enum, description: _text, ...constraints } = isJsonObject(own) ? own : {}
+				return constraints
+			}
+			if (!Arr.every(variants, (variant) => sameJson(constraintsOf(variant), constraintsOf(first)))) {
+				return undefined
+			}
+			// Each branch describes its own tag value: keep them all, named, rather than the first.
+			const described = Arr.flatMap(variants, (variant) => {
+				const own = propertiesOf(variant)?.[key]
+				return isJsonObject(own) && typeof own.description === "string"
+					? [`${tagOf(variant)}: ${own.description}`]
+					: []
+			})
+			const { description: _description, ...tagSchema } = isJsonObject(schema) ? schema : {}
+			merged.push([
+				key,
+				{
+					...tagSchema,
+					enum: Arr.map(variants, tagOf),
+					...(described.length === 0 ? undefined : { description: Arr.join(described, " ") }),
+				},
+			])
+			continue
+		}
+		if (!Arr.every(holders, (holder) => sameJson(propertiesOf(holder)?.[key], schema))) return undefined
+		// One `required` list cannot say "under this tag only": such a union stays a union.
+		const requiring = Arr.filter(holders, (holder) => requires(holder, key))
+		if (requiring.length > 0 && requiring.length < variants.length) return undefined
+		if (holders.length === variants.length) {
+			merged.push([key, schema])
+			continue
+		}
+		// A key that is not an object schema has nowhere to say whose it is: keep the union.
+		if (!isJsonObject(schema)) return undefined
+		const only = `Only for ${tagsOf(holders)}.`
+		merged.push([
+			key,
+			{
+				...schema,
+				description: typeof schema.description === "string" ? `${schema.description} ${only}` : only,
+			},
+		])
+	}
+	const required = Arr.filter(keys, (key) => Arr.every(variants, (variant) => requires(variant, key)))
+	const object = {
+		type: "object",
+		properties: Rec.fromEntries(merged),
+		...(required.length === 0 ? undefined : { required }),
+		...("additionalProperties" in first
+			? { additionalProperties: first.additionalProperties }
+			: undefined),
+	}
+	// Merging is for the repetition it removes: where it removes none, the union stays as written.
+	return jsonLength(object) < jsonLength(branches) ? object : undefined
+}
+
+/**
+ * `mergeVariants` is off for a tool that refuses keys a variant does not declare: one merged
+ * object would publish, under every tag, a key such a tool accepts under one.
+ */
+const publishCanonical =
+	(mergeVariants: boolean) =>
+	(node: unknown): unknown => {
+		const publish = publishCanonical(mergeVariants)
+		if (Arr.isArray(node)) return Arr.map(node, publish)
+		if (!isJsonObject(node)) return node
+		const anyOf = node.anyOf
+		if (Arr.isArray(anyOf)) {
+			const canonical =
+				canonicalBranch(anyOf) ?? (mergeVariants ? mergeTaggedVariants(anyOf) : undefined)
+			if (isJsonObject(canonical)) {
+				const { anyOf: _anyOf, ...siblings } = node
+				return publish({ ...canonical, ...siblings })
+			}
+		}
+		// `format: "uuid"` says what the UUID regex says, in a word instead of ~200 characters.
+		const { pattern: _pattern, ...unpatterned } = node
+		const published = node.format === "uuid" ? unpatterned : node
+		return Rec.fromEntries(Arr.map(Rec.toEntries(published), ([key, value]) => [key, publish(value)]))
+	}
+
+export const toInputSchema = (
+	schema: Schema.Top,
+	/** How the tool decodes: `rejectUnknownKeys` tools publish their unions as written. */
+	parseOptions?: SchemaAST.ParseOptions,
+): Record<string, unknown> => {
 	// `onExcessProperty: "error"` keeps `additionalProperties: false` on every
 	// published tool. rc.116 made the emitted value follow this option and
 	// defaults it to the decoder's behaviour, which would have loosened the
@@ -252,7 +382,9 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 		Rec.keys(document.definitions).length > 0
 			? { ...document.schema, $defs: document.definitions }
 			: document.schema
-	const base = publishCanonical(collapseNullableUnions(inlineDefinitions(rawBase))) as typeof rawBase
+	const base = publishCanonical(parseOptions?.onExcessProperty !== "error")(
+		collapseNullableUnions(inlineDefinitions(rawBase)),
+	) as typeof rawBase
 	// MCP requires the top-level inputSchema to be an object schema (`type: "object"`).
 	// An empty `Struct({})` (a no-parameter tool) comes out untyped, which strict MCP
 	// clients reject: the Vercel AI SDK's `tools/list` Zod validator fails on
@@ -374,7 +506,7 @@ const inputSchemas = new Map<string, Record<string, unknown>>()
 export const inputSchemaOf = (entry: MapleToolCatalogEntry): Record<string, unknown> => {
 	const cached = inputSchemas.get(entry.name)
 	if (cached !== undefined) return cached
-	const schema = toInputSchema(entry.schema)
+	const schema = toInputSchema(entry.schema, entry.parseOptions)
 	inputSchemas.set(entry.name, schema)
 	return schema
 }
