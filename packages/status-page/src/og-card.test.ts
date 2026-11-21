@@ -80,6 +80,13 @@ describe("the status card", () => {
 		expect(statusOgCard(snapshot, live, null).uptime).toBe("100%")
 	})
 
+	it("draws no uptime strip for components that record no days, as the page does", () => {
+		const snapshot = makeSnapshot({ components: [makeComponent(0, { monitored: false, days: [] })] })
+		const card = statusOgCard(snapshot, live, null)
+		expect(card.days).toEqual([])
+		expect(card.uptime).toBeNull()
+	})
+
 	it("draws no uptime strip when no component shows uptime", () => {
 		const snapshot = makeSnapshot({ components: [makeComponent(0, { showUptime: false })] })
 		const card = statusOgCard(snapshot, live, null)

@@ -79,7 +79,11 @@ const DAY_RANK = { none: 0, ok: 1, degraded: 2, down: 3 } as const satisfies Rec
 const overallDays = (
 	snapshot: StatusPagePublicSnapshot,
 ): { readonly days: ReadonlyArray<StatusPageDayState>; readonly uptime: number | null } => {
-	const shown = Arr.filter(snapshot.components, (component) => component.showUptime)
+	// The page's own rule: only a component with uptime shown and days recorded draws bars.
+	const shown = Arr.filter(
+		snapshot.components,
+		(component) => component.showUptime && component.days.length > 0,
+	)
 	if (shown.length === 0) return { days: [], uptime: null }
 	const window = new Set(lastDays(snapshot.generatedAt, STATUS_PAGE_WINDOW_DAYS))
 	// Snapshots carry a year of days; the card shows and counts only the window.
