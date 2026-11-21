@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Result, Schema, Array as Arr } from "effect"
+import { Effect, Exit, Option, Result, Schema, Array as Arr } from "effect"
 import { QuerySpec } from "@maple/domain/query-engine"
 import {
 	buildRawSpec,
@@ -239,16 +239,16 @@ describe("pickAttributeScope", () => {
 		expect(pickAttributeScope("nope", ["http.route"], ["service.version"])).toBe("span")
 	})
 
-	it("treats a key missing from a metric's own labels as a resource attribute", () => {
-		expect(pickAttributeScope("k8s.pod.name", ["mountpoint"], "unknown")).toBe("resource")
-		expect(pickAttributeScope("k8s.pod.name", [], "unknown")).toBe("span")
+	it("puts every other key on the resource once the primary map's keys are all known", () => {
+		expect(pickAttributeScope("k8s.pod.name", ["mountpoint"], "others")).toBe("resource")
+		expect(pickAttributeScope("mountpoint", ["mountpoint"], "others")).toBe("span")
 	})
 })
 
 describe("logAttributeKeys", () => {
 	const scopeOf = (
 		key: string,
-		recordKeys: ReadonlyArray<string>,
+		recordKeys: Option.Option<ReadonlyArray<string>>,
 		traceResourceKeys: ReadonlyArray<string>,
 	) => {
 		const known = Effect.runSync(logAttributeKeys(recordKeys, Effect.succeed(traceResourceKeys)))
@@ -256,14 +256,23 @@ describe("logAttributeKeys", () => {
 	}
 
 	it("puts a key the log records lack on the resource, for a service that sends no traces", () => {
-		expect(scopeOf("host.name", ["http.route", "user.id"], [])).toBe("resource")
-		expect(scopeOf("http.route", ["http.route", "user.id"], [])).toBe("span")
+		expect(scopeOf("host.name", Option.some(["http.route", "user.id"]), [])).toBe("resource")
+		expect(scopeOf("http.route", Option.some(["http.route", "user.id"]), [])).toBe("span")
+	})
+
+	it("does the same when the logs carry no record attributes at all", () => {
+		expect(scopeOf("host.name", Option.some([]), [])).toBe("resource")
 	})
 
 	it("asks the trace resource keys once the record catalogue is cut at its cap", () => {
-		const many = Arr.makeBy(500, (index) => `key.${index}`)
+		const many = Option.some(Arr.makeBy(500, (index) => `key.${index}`))
 		expect(scopeOf("host.name", many, ["host.name"])).toBe("resource")
 		// Past the cap an absent key may be a rare record key: it stays on the record map.
 		expect(scopeOf("rare.key", many, ["host.name"])).toBe("span")
+	})
+
+	it("asks the trace resource keys when the record catalogue could not be read", () => {
+		expect(scopeOf("host.name", Option.none(), ["host.name"])).toBe("resource")
+		expect(scopeOf("http.route", Option.none(), ["host.name"])).toBe("span")
 	})
 })
