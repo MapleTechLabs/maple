@@ -31,7 +31,7 @@ export type DashboardPageOptions = Readonly<{
 	/** A plain page title, drawn as the page `<h1>` when there is no `titleContent`. */
 	title?: string
 	/** One line under the `title`, in the header so it sits tight to the `<h1>`. */
-	description?: string
+	description?: Html | string
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
 	/** Page tabs pinned under the header. */
