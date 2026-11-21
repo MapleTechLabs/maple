@@ -5,8 +5,8 @@
 import init from "@takumi-rs/wasm"
 import wasmModule from "@takumi-rs/wasm/auto"
 import type { StatusOgCard } from "@maple/status-page"
-import { Duration, Effect, String as Str } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/http"
+import { Effect, String as Str } from "effect"
+import { HttpClient } from "effect/http"
 import monoCyrillic from "./og-fonts/mono-cyrillic.ttf"
 import monoLatinExt from "./og-fonts/mono-latin-ext.ttf"
 import monoLatin from "./og-fonts/mono-latin.ttf"
@@ -16,6 +16,7 @@ import sansLatin from "./og-fonts/sans-latin.ttf"
 import serifCyrillic from "./og-fonts/serif-cyrillic.ttf"
 import serifLatinExt from "./og-fonts/serif-latin-ext.ttf"
 import serifLatin from "./og-fonts/serif-latin.ttf"
+import { fetchLogo, type LogoFetch, NO_LOGO } from "./og-logo"
 import { makeOgRenderer, type OgFonts, type OgLogo, type OgRender } from "./og-render"
 import { type StatusOgImage, StatusOgImageError } from "./ports"
 
@@ -25,15 +26,8 @@ const FONTS: OgFonts = {
 	mono: { latin: monoLatin, "latin-ext": monoLatinExt, cyrillic: monoCyrillic },
 }
 
-/** A logo slower or larger than this is drawn as the page name instead. */
-const LOGO_TIMEOUT = Duration.seconds(2)
-const LOGO_MAX_BYTES = 1024 * 1024
-const LOGO_TYPES = /^image\/(png|jpeg|webp|gif|svg\+xml)\b/u
-
 /** Long, because the key changes whenever the card does. */
 const CACHE_SECONDS = 7 * 24 * 60 * 60
-
-const NO_LOGO: OgLogo = { _tag: "none" }
 
 /** One renderer per isolate. takumi's wasm initialises once, so only a failed init is retried. */
 let renderer: Promise<OgRender> | undefined
@@ -62,27 +56,6 @@ const render = (card: StatusOgCard, logo: OgLogo) =>
 		),
 		Effect.withSpan("status.og_image.render"),
 	)
-
-/** A remote logo's outcome: drawn, refused by policy (cacheable), or unreachable this time (not). */
-type LogoFetch = OgLogo | { readonly _tag: "unavailable" }
-
-const UNAVAILABLE: LogoFetch = { _tag: "unavailable" }
-
-/** An image type with a declared length under the cap, within the timeout; anything else draws the name. */
-const fetchLogo = Effect.fn("status.og_image.logo")(
-	function* (url: string) {
-		const client = yield* HttpClient.HttpClient
-		const response = yield* client.get(url).pipe(Effect.flatMap(HttpClientResponse.filterStatusOk))
-		const type = response.headers["content-type"] ?? ""
-		const length = Number(response.headers["content-length"] ?? "NaN")
-		if (!LOGO_TYPES.test(type) || !(length > 0 && length <= LOGO_MAX_BYTES)) return NO_LOGO
-		const body = yield* response.arrayBuffer
-		const logo: LogoFetch = { _tag: "fetched", src: url, data: new Uint8Array(body) }
-		return logo
-	},
-	Effect.timeout(LOGO_TIMEOUT),
-	Effect.orElseSucceed(() => UNAVAILABLE),
-)
 
 const cacheCall = <A>(run: () => Promise<A>) =>
 	Effect.tryPromise({
