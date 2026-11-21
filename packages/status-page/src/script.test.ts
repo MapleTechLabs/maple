@@ -1,8 +1,9 @@
-import { dayState, type StatusPageDayBar } from "@maple/domain/status-page"
+import type { StatusPageDayBar } from "@maple/domain/status-page"
 import { describe, expect, it } from "vitest"
-import { FIXTURE_NOW, makeComponent, makeDays, makeSnapshot } from "./fixtures"
+import { FIXTURE_NOW, fixtureComponentId, makeComponent, makeDays, makeSnapshot } from "./fixtures"
 import { dayTitle, formatDateTime, formatDay, formatPercent } from "./format"
 import {
+	calendarEntries,
 	calendarMonthCount,
 	monthBefore,
 	monthCells,
@@ -11,7 +12,7 @@ import {
 	windowBounds,
 	windowCount,
 } from "./history"
-import { PAGE_SCRIPT_LOGIC } from "./script"
+import { DAY_STATE_LETTER, PAGE_SCRIPT_LOGIC } from "./script"
 import { Array as Arr, Record as Rec } from "effect"
 
 interface ScriptLogic {
@@ -19,8 +20,12 @@ interface ScriptLogic {
 	readonly mlabel: (day: string) => string
 	readonly fday: (day: string) => string
 	readonly bounds: (length: number, page: number) => { from: number; to: number }
-	readonly state: (counts: ReadonlyArray<number> | 0) => string
-	readonly tip: (day: string, counts: ReadonlyArray<number> | 0) => string
+	readonly state: (letter: string) => string
+	readonly tip: (
+		day: string,
+		counts: ReadonlyArray<number> | 0,
+		entry: { readonly tone: string; readonly title: string } | null,
+	) => string
 	readonly pct: (percent: number) => string
 	readonly cells: (year: number, month: number) => ReadonlyArray<number>
 	readonly mback: (day: string, back: number) => string
@@ -64,17 +69,29 @@ describe("page script logic", () => {
 		}
 	})
 
-	it("titles and colours each bar, and rounds uptime, as the server does", () => {
+	it("titles each bar, with the incident or maintenance marked on it, and rounds uptime, as the server does", () => {
 		const bars = makeDays(FIXTURE_NOW, { 0: "none", 1: "degraded", 2: "down" })
+		const marked = [
+			undefined,
+			{ tone: "maintenance", title: "Database upgrade" },
+			{ tone: "partial_outage", title: "Elevated API errors" },
+		]
 		for (const bar of bars.slice(0, 4)) {
-			const state = dayState(bar)
-			expect(logic.state(counts(bar))).toBe(state)
-			expect(logic.tip(bar.day, counts(bar))).toBe(dayTitle(bar, state))
+			for (const entry of marked) {
+				expect(logic.tip(bar.day, counts(bar), entry ?? null)).toBe(dayTitle(bar, entry))
+			}
 		}
 		// 624 of 625 up is 99.84, which float error puts just below it.
 		for (const percent of [100, 99.999, 99.97, 99.9, (624 / 625) * 100, 50, 0]) {
 			expect(logic.pct(percent)).toBe(formatPercent(percent))
 		}
+	})
+
+	it("reads back every day state the server writes, and a day before the history as no data", () => {
+		for (const [state, letter] of Rec.toEntries(DAY_STATE_LETTER)) {
+			expect(logic.state(letter)).toBe(state)
+		}
+		expect(logic.state("")).toBe("none")
 	})
 
 	it("lays out Monday-first month grids and steps back through months as the server does", () => {
@@ -123,18 +140,35 @@ describe("local times", () => {
 })
 
 describe("history bounds", () => {
-	it("pages back only as far as the oldest checked day", () => {
+	it("pages back only as far as the oldest day checked or marked by an incident", () => {
 		const unchecked = (count: number) =>
 			Rec.fromEntries(Array.from({ length: count }, (_, index) => [String(index), "none" as const]))
 		const withDays = (blank: number) =>
 			makeSnapshot({
 				components: [makeComponent(0, { days: makeDays(FIXTURE_NOW, unchecked(blank), 365) })],
 			}).components
-		expect(windowCount([])).toBe(1)
-		expect(windowCount(withDays(365))).toBe(1)
-		expect(windowCount(withDays(275))).toBe(1)
-		expect(windowCount(withDays(274))).toBe(2)
-		expect(windowCount(withDays(0))).toBe(5)
+		expect(windowCount([], [], FIXTURE_NOW)).toBe(1)
+		expect(windowCount(withDays(365), [], FIXTURE_NOW)).toBe(1)
+		expect(windowCount(withDays(275), [], FIXTURE_NOW)).toBe(1)
+		expect(windowCount(withDays(274), [], FIXTURE_NOW)).toBe(2)
+		expect(windowCount(withDays(0), [], FIXTURE_NOW)).toBe(5)
+		// Checked only lately, but an incident 200 days ago colours a bar three windows back.
+		const oldIncident = makeSnapshot({
+			components: [makeComponent(0, { days: makeDays(FIXTURE_NOW, unchecked(335), 365) })],
+			incidentHistory: [
+				{
+					id: "old",
+					title: "Old outage",
+					kind: "incident",
+					impact: "major",
+					startedAt: FIXTURE_NOW - 200 * 86_400_000,
+					resolvedAt: FIXTURE_NOW - 200 * 86_400_000 + 3_600_000,
+					componentIds: [fixtureComponentId(0)],
+				},
+			],
+		})
+		expect(windowCount(oldIncident.components, [], FIXTURE_NOW)).toBe(1)
+		expect(windowCount(oldIncident.components, calendarEntries(oldIncident), FIXTURE_NOW)).toBe(3)
 	})
 
 	it("offers the months back to the one holding the oldest day of history", () => {

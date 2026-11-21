@@ -1,7 +1,6 @@
 import type { StatusPageComponentStatus } from "@maple/primitives"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
-	dayState,
 	incidentComponentStatus,
 	overallStatus,
 	STATUS_PAGE_STALE_AFTER_MS,
@@ -34,11 +33,14 @@ import {
 } from "./format"
 import {
 	barComponents,
+	type BarMark,
+	barState,
 	type CalendarDay,
 	type CalendarEntry,
 	calendarDays,
 	calendarEntries,
 	calendarMonthCount,
+	componentMarks,
 	monthCells,
 	rangeLabel,
 	windowCount,
@@ -46,7 +48,7 @@ import {
 } from "./history"
 import { chevron, MAPLE_MARK, statusIcon } from "./icons"
 import { renderUpdateBody } from "./markdown"
-import { PAGE_SCRIPT } from "./script"
+import { DAY_STATE_LETTER, PAGE_SCRIPT } from "./script"
 import { activeIncidents, groupComponents, pastIncidents, upcomingMaintenance } from "./select"
 import { pageStyles } from "./styles"
 import { renderSubscribeDialog, SUBSCRIBE_LINK } from "./subscribe"
@@ -131,7 +133,7 @@ const pager = (name: "window" | "month", label: string, unit: string): string =>
 const statusName = (name: string, status: StatusPageComponentStatus): string =>
 	`<span class="name"><span class="st" title="${COMPONENT_STATUS_LABEL[status]}">${statusIcon(status)}</span><span>${escapeHtml(name)}</span><span class="sr">: ${COMPONENT_STATUS_LABEL[status]}</span></span>`
 
-const renderBars = (days: ReadonlyArray<StatusPageDayBar>): string => {
+const renderBars = (days: ReadonlyArray<StatusPageDayBar>, marks: ReadonlyMap<string, BarMark>): string => {
 	const first = days[0]
 	const last = days.at(-1)
 	const label =
@@ -140,8 +142,9 @@ const renderBars = (days: ReadonlyArray<StatusPageDayBar>): string => {
 			: `Uptime, ${formatDay(first.day)} to ${formatDay(last.day)}`
 	const bars = Arr.join(
 		Arr.map(days, (bar) => {
-			const state = dayState(bar)
-			return `<li class="d-${state}" data-day="${escapeHtml(bar.day)}" data-state="${state}" title="${escapeHtml(dayTitle(bar, state))}"></li>`
+			const mark = marks.get(bar.day)
+			const state = barState(bar, mark)
+			return `<li class="d-${state}" data-day="${escapeHtml(bar.day)}" data-state="${state}" title="${escapeHtml(dayTitle(bar, mark?.entry))}"></li>`
 		}),
 		"",
 	)
@@ -151,13 +154,23 @@ const renderBars = (days: ReadonlyArray<StatusPageDayBar>): string => {
 /** What each bar colour means, under the bars. */
 const BAR_LEGEND = `<ul class="legend" aria-label="Bar colours">${Arr.join(
 	Arr.map(
-		["ok", "degraded", "down", "none"] as const,
+		["ok", "maintenance", "degraded", "down", "none"] as const,
 		(state) => `<li><span class="key d-${state}"></span>${DAY_STATE_LABEL[state]}</li>`,
 	),
 	"",
 )}</ul>`
 
-const renderComponent = (component: StatusPageSnapshotComponent, options: RenderOptions): string => {
+/** What the bars need beyond the component: the incidents to mark, and the snapshot's time, where the bars end. */
+interface BarContext {
+	readonly entries: ReadonlyArray<CalendarEntry>
+	readonly nowMs: number
+}
+
+const renderComponent = (
+	component: StatusPageSnapshotComponent,
+	bars: BarContext,
+	options: RenderOptions,
+): string => {
 	const description =
 		component.description === null ? "" : `<p class="desc">${escapeHtml(component.description)}</p>`
 	const showsBars = component.showUptime && component.days.length > 0
@@ -166,12 +179,13 @@ const renderComponent = (component: StatusPageSnapshotComponent, options: Render
 	const uptime = !showsBars
 		? ""
 		: `<span class="uptime">${percent === null ? "No data" : `${formatPercent(percent)} uptime`}</span>`
-	return `<div class="component" data-component="${escapeHtml(component.id)}"${previewIdAttr(options, "component", component.id)}><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days) : ""}</div>`
+	return `<div class="component" data-component="${escapeHtml(component.id)}"${previewIdAttr(options, "component", component.id)}><div class="row">${statusName(component.name, component.status)}${uptime}</div>${description}${showsBars ? renderBars(days, componentMarks(component.id, bars.entries, bars.nowMs)) : ""}</div>`
 }
 
 /** The System status panel; with `onlyId`, just that component under its group's head. */
 const renderSystemStatus = (
 	snapshot: StatusPagePublicSnapshot,
+	bars: BarContext,
 	options: RenderOptions,
 	onlyId?: string,
 ): string => {
@@ -194,7 +208,7 @@ const renderSystemStatus = (
 					: `<div class="group-head"${previewIdAttr(options, "group", first.id)}>${statusName(group.name, group.status)}</div>`
 			return [
 				`<div class="group">${groupHead}${Arr.join(
-					Arr.map(shown, (component) => renderComponent(component, options)),
+					Arr.map(shown, (component) => renderComponent(component, bars, options)),
 					"",
 				)}</div>`,
 			]
@@ -252,7 +266,11 @@ const renderCalendar = (
 	return `<section class="panel" aria-labelledby="h-calendar"><div class="panel-head"><h2 id="h-calendar">Calendar <small>(UTC)</small></h2>${pager("month", `${MONTHS[month - 1] ?? ""} ${year}`, "month")}</div><table class="cal"><thead><tr>${head}</tr></thead><tbody id="cal-body">${rows}</tbody></table><div class="cal-panel" id="cal-panel" role="region" aria-label="Incidents on the chosen day" hidden></div></section>`
 }
 
-/** What the script pages through. Bars are `[checks, failures, downChecks]`, or 0 for no data. */
+/**
+ * What the script pages through. Bars are `[checks, failures, downChecks]`, or 0 for no data;
+ * `states` holds each day's state as a letter, decided here so the script never re-derives it;
+ * `marks` maps a day's index to the entry marked on it.
+ */
 const pageData = (
 	snapshot: StatusPagePublicSnapshot,
 	today: string,
@@ -260,6 +278,10 @@ const pageData = (
 	days: ReadonlyMap<string, CalendarDay>,
 ) => {
 	const withBars = barComponents(snapshot.components)
+	const withMarks = Arr.map(withBars, (component) => ({
+		component,
+		marks: componentMarks(component.id, entries, snapshot.generatedAt),
+	}))
 	const longest = Arr.reduce<StatusPageSnapshotComponent, StatusPageSnapshotComponent | undefined>(
 		withBars,
 		undefined,
@@ -269,12 +291,34 @@ const pageData = (
 	return {
 		end: longest?.days.at(-1)?.day ?? today,
 		len: longest?.days.length ?? 0,
-		windows: windowCount(snapshot.components),
+		windows: windowCount(snapshot.components, entries, snapshot.generatedAt),
 		bars: Rec.fromEntries(
 			Arr.map(withBars, (component) => [
 				component.id,
 				Arr.map(component.days, (bar) =>
 					bar.checks === 0 ? 0 : [bar.checks, bar.failures, bar.downChecks],
+				),
+			]),
+		),
+		states: Rec.fromEntries(
+			Arr.map(withMarks, ({ component, marks }) => [
+				component.id,
+				Arr.join(
+					Arr.map(component.days, (bar) => DAY_STATE_LETTER[barState(bar, marks.get(bar.day))]),
+					"",
+				),
+			]),
+		),
+		marks: Rec.fromEntries(
+			Arr.map(withMarks, ({ component, marks }) => [
+				component.id,
+				Rec.fromEntries(
+					Arr.flatMap(component.days, (bar, index) => {
+						const mark = marks.get(bar.day)
+						return mark === undefined
+							? []
+							: [[String(index), entries.indexOf(mark.entry)] as const]
+					}),
 				),
 			]),
 		),
@@ -460,7 +504,7 @@ export const renderPage = (
 							"",
 						),
 					),
-			renderSystemStatus(snapshot, options),
+			renderSystemStatus(snapshot, { entries, nowMs: snapshot.generatedAt }, options),
 			renderCalendar(today, days, entries),
 			renderSection(
 				"past",

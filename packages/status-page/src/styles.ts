@@ -129,7 +129,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--link);outline-offse
 .desc{font-size:13px;color:var(--muted);margin:2px 0 0 24px}
 .bars{display:flex;gap:2px;height:24px;margin:10px 0 0;padding:0;list-style:none}
 .bars li{flex:1;min-width:0;border-radius:calc(var(--radius)/4)}
-.d-ok{background:var(--ok)}.d-degraded{background:var(--degraded)}.d-down{background:var(--major)}.d-none{background:var(--none)}
+.d-ok{background:var(--ok)}.d-maintenance{background:var(--maint)}.d-degraded{background:var(--degraded)}.d-down{background:var(--major)}.d-none{background:var(--none)}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;padding:10px 16px;list-style:none;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
 .legend li{display:flex;align-items:center;gap:6px}
 .key{width:8px;height:8px;border-radius:2px;flex:none}

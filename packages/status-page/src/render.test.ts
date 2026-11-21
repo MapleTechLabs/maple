@@ -24,6 +24,7 @@ import {
 	renderRssFeed,
 	renderStatusJson,
 } from "./index"
+import { DAY_STATE_LETTER } from "./script"
 
 /** The text after the first `open`, up to the next `close`; "" when `open` is absent. */
 const between = (text: string, open: string, close: string): string =>
@@ -135,7 +136,7 @@ describe("renderPage", () => {
 		expect(bars[88]).toEqual({
 			state: "degraded",
 			day: "2026-10-27",
-			title: "Oct 27, 2026: 3 of 1440 checks failed",
+			title: "Oct 27, 2026: 72 of 1440 checks failed",
 		})
 		expect(bars[89]).toEqual({
 			state: "down",
@@ -293,6 +294,92 @@ describe("incident update text", () => {
 	})
 })
 
+describe("bar states", () => {
+	const day = (index: number) => Date.UTC(2026, 9, 28) - (89 - index) * DAY_MS
+	const quiet = { checks: 1431, failures: 3, downChecks: 0 }
+	const snapshot = makeSnapshot({
+		components: [
+			makeComponent(0, {
+				days: Arr.map(makeDays(FIXTURE_NOW), (bar, index) =>
+					index === 80
+						? { ...bar, ...quiet }
+						: index === 81
+							? { ...bar, checks: 1424, failures: 9, downChecks: 1 }
+							: bar,
+				),
+			}),
+			makeComponent(1),
+		],
+		incidentHistory: [
+			{
+				id: "api-errors",
+				title: "Elevated API errors",
+				kind: "incident",
+				impact: "major",
+				startedAt: day(85) + 3_600_000,
+				resolvedAt: day(85) + 7_200_000,
+				componentIds: [fixtureComponentId(0)],
+			},
+			{
+				id: "db",
+				title: "Database upgrade",
+				kind: "maintenance",
+				impact: "none",
+				startedAt: day(87) + 3_600_000,
+				resolvedAt: day(87) + 5_400_000,
+				componentIds: [fixtureComponentId(0)],
+			},
+		],
+	})
+	const html = renderPage(snapshot, live, FIXTURE_NOW)
+	const api = barsOf(html, fixtureComponentId(0))
+
+	it("keeps a day with a few scattered failed checks operational, and says how many failed", () => {
+		expect(api[80]).toEqual({
+			state: "ok",
+			day: "2026-10-19",
+			title: "Oct 19, 2026: 3 of 1431 checks failed",
+		})
+	})
+
+	it("marks a day with a minute of downtime degraded, not an outage", () => {
+		expect(api[81]).toEqual({
+			state: "degraded",
+			day: "2026-10-20",
+			title: "Oct 20, 2026: Down during 1 of 1424 checks",
+		})
+	})
+
+	it("colours the days an incident or maintenance touched on the components it names, and only those", () => {
+		expect(api[85]).toEqual({
+			state: "down",
+			day: "2026-10-24",
+			title: "Oct 24, 2026: 2 of 1440 checks failed \u00b7 Incident: Elevated API errors",
+		})
+		expect(api[87]?.state).toBe("maintenance")
+		expect(api[87]?.title).toBe(
+			"Oct 26, 2026: 2 of 1440 checks failed \u00b7 Maintenance: Database upgrade",
+		)
+		expect(Arr.map(barsOf(html, fixtureComponentId(1)), (bar) => bar.state)).toEqual(
+			Arr.replicate("ok", 90),
+		)
+	})
+
+	it("hands the script the same states and marks the server drew, so paging redraws them alike", () => {
+		const data = pageDataOf(html)
+		const stateOf = Rec.fromEntries(
+			Arr.map(Rec.toEntries(DAY_STATE_LETTER), ([state, letter]) => [letter, state] as const),
+		)
+		const letters = Arr.takeRight(Str.split("")(data.states[fixtureComponentId(0)] ?? ""), 90)
+		expect(Arr.map(letters, (letter) => stateOf[letter])).toEqual(Arr.map(api, (bar) => bar.state))
+		const marks = data.marks[fixtureComponentId(0)] ?? {}
+		expect(Rec.map(marks, (index) => data.entries[index]?.title)).toEqual({
+			[String(data.len - 90 + 85)]: "Elevated API errors",
+			[String(data.len - 90 + 87)]: "Database upgrade",
+		})
+	})
+})
+
 describe("bar legend", () => {
 	it("explains the bar colours under the bars, and only when some component draws them", () => {
 		const withBars = renderPage(makeSnapshot({ components: [makeComponent(0)] }), live, FIXTURE_NOW)
@@ -301,7 +388,7 @@ describe("bar legend", () => {
 				allMatches(between(withBars, `<ul class="legend"`, "</ul>"), /<\/span>([^<]+)</gu),
 				(m) => m[1],
 			),
-		).toEqual(["No downtime", "Some checks failed", "Downtime recorded", "No data"])
+		).toEqual(["Operational", "Maintenance", "Degraded", "Outage", "No data"])
 		const without = renderPage(
 			makeSnapshot({ components: [makeComponent(0, { showUptime: false })] }),
 			live,
@@ -323,6 +410,8 @@ const PageData = Schema.Struct({
 			Schema.Union([Schema.Literal(0), Schema.Tuple([Schema.Number, Schema.Number, Schema.Number])]),
 		),
 	),
+	states: Schema.Record(Schema.String, Schema.String),
+	marks: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number)),
 	today: Schema.String,
 	entries: Schema.Array(
 		Schema.Struct({

@@ -6,7 +6,14 @@ import {
 } from "@maple/domain/status-page"
 import { Option, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { FIXTURE_NOW, makeComponent, makeDays, makeIncident, makeSnapshot } from "./fixtures"
+import {
+	FIXTURE_NOW,
+	fixtureComponentId,
+	makeComponent,
+	makeDays,
+	makeIncident,
+	makeSnapshot,
+} from "./fixtures"
 import { statusOgAlt, statusOgCard, statusOgCardVersion } from "./og-card"
 import { renderPage } from "./page"
 
@@ -65,6 +72,25 @@ describe("the status card", () => {
 		expect(card.days.at(-1)).toBe("down")
 		expect(card.days.at(0)).toBe("ok")
 		expect(card.uptime).toBe("99.98%")
+	})
+
+	it("marks the days a component's incidents touched, as the page's bars do", () => {
+		const snapshot = makeSnapshot({
+			components: [makeComponent(0), makeComponent(1)],
+			incidentHistory: [
+				{
+					id: "db",
+					title: "Database upgrade",
+					kind: "maintenance",
+					impact: "none",
+					startedAt: Date.UTC(2026, 9, 27, 2),
+					resolvedAt: Date.UTC(2026, 9, 27, 3),
+					componentIds: [fixtureComponentId(1)],
+				},
+			],
+		})
+		const card = statusOgCard(snapshot, live, null)
+		expect(card.days.slice(-3)).toEqual(["ok", "maintenance", "ok"])
 	})
 
 	it("reads uptime as the page does, without a float error costing a hundredth", () => {
