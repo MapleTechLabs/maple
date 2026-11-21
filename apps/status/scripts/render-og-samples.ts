@@ -15,6 +15,7 @@ import {
 } from "@maple/domain/status-page"
 import { statusOgCard } from "@maple/status-page"
 import { FIXTURE_NOW, makeComponent, makeDays, makeIncident, makeSnapshot } from "@maple/status-page/fixtures"
+import { inlineLogo } from "../src/og-logo"
 import { makeOgRenderer } from "../src/og-render"
 
 const out = process.argv[2] ?? "og-samples"
@@ -163,4 +164,4 @@ const uploaded = statusOgCard(
 	live,
 	"status.acme.dev",
 )
-writeFileSync(join(out, "uploaded-logo.png"), await render(uploaded, { _tag: "inline" }))
+writeFileSync(join(out, "uploaded-logo.png"), await render(uploaded, inlineLogo(uploaded.logoUrl ?? "")))

@@ -7,7 +7,7 @@ import {
 import { Option, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { FIXTURE_NOW, makeComponent, makeDays, makeIncident, makeSnapshot } from "./fixtures"
-import { statusOgCard, statusOgCardVersion } from "./og-card"
+import { statusOgAlt, statusOgCard, statusOgCardVersion } from "./og-card"
 import { renderPage } from "./page"
 
 const live: StatusPageFreshness = { _tag: "live", updatedAt: FIXTURE_NOW }
@@ -94,9 +94,11 @@ describe("the status card", () => {
 		expect(card.uptime).toBeNull()
 	})
 
-	it("says when live checks are delayed", () => {
+	it("says when live checks are delayed, in the image and its alt text", () => {
 		const card = statusOgCard(makeSnapshot(), { _tag: "delayed", updatedAt: FIXTURE_NOW }, null)
 		expect(card.delayed).toBe(true)
+		expect(statusOgAlt(card)).toContain("Live checks delayed")
+		expect(statusOgAlt(statusOgCard(makeSnapshot(), live, null))).not.toContain("delayed")
 	})
 
 	it("draws a forced dark theme in its dark colours and dark logo, and auto in light", () => {

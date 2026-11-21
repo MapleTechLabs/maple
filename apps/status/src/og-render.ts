@@ -21,10 +21,9 @@ export type OgFonts = Readonly<
 	Record<StatusPageThemeFont, Readonly<Record<OgFontSubset, ArrayBuffer | Uint8Array>>>
 >
 
-/** How the card gets its logo: none, drawn from its own `data:` URL, or bytes the caller fetched. */
+/** The card's logo: none (draw the name), or bytes the caller loaded and checked. */
 export type OgLogo =
 	| { readonly _tag: "none" }
-	| { readonly _tag: "inline" }
 	| { readonly _tag: "fetched"; readonly src: string; readonly data: Uint8Array }
 
 /** Instantiates takumi's wasm; how depends on the runtime. */

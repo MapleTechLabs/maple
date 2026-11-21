@@ -5,7 +5,7 @@
 import init from "@takumi-rs/wasm"
 import wasmModule from "@takumi-rs/wasm/auto"
 import type { StatusOgCard } from "@maple/status-page"
-import { Effect, String as Str } from "effect"
+import { Effect, Option, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import monoCyrillic from "./og-fonts/mono-cyrillic.ttf"
 import monoLatinExt from "./og-fonts/mono-latin-ext.ttf"
@@ -16,7 +16,7 @@ import sansLatin from "./og-fonts/sans-latin.ttf"
 import serifCyrillic from "./og-fonts/serif-cyrillic.ttf"
 import serifLatinExt from "./og-fonts/serif-latin-ext.ttf"
 import serifLatin from "./og-fonts/serif-latin.ttf"
-import { fetchLogo, type LogoFetch, NO_LOGO } from "./og-logo"
+import { fetchLogo, inlineLogo, type LogoFetch, NO_LOGO } from "./og-logo"
 import { makeOgRenderer, type OgFonts, type OgLogo, type OgRender } from "./og-render"
 import { type StatusOgImage, StatusOgImageError } from "./ports"
 
@@ -63,26 +63,32 @@ const cacheCall = <A>(run: () => Promise<A>) =>
 		catch: (cause) => new StatusOgImageError({ message: "The preview cache failed", cause }),
 	})
 
-/** Cached in `cache` under a synthetic URL per page and card version. */
+/** A refused logo (wrong type, too big) may be fixed in place, so its stand-in is kept an hour. */
+const REFUSED_CACHE_SECONDS = 60 * 60
+
+/** Cached in `cache` under a synthetic URL per page and card version; no cache is only a miss. */
 export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClient) =>
 	Effect.fn("status.og_image")(function* (key: string, card: StatusOgCard) {
 		const cacheKey = `https://status-og.invalid/${encodeURIComponent(key)}`
-		const store = yield* cacheCall(() => cache)
-		const cached = yield* cacheCall(() => store.match(cacheKey)).pipe(
-			Effect.orElseSucceed(() => undefined),
-		)
-		yield* Effect.annotateCurrentSpan("maple.status_page.og.cache_hit", cached !== undefined)
-		if (cached !== undefined) {
-			const body = yield* cacheCall(() => cached.arrayBuffer())
-			const hit: StatusOgImage = { png: new Uint8Array(body), complete: true }
+		const store = yield* cacheCall(() => cache).pipe(Effect.option)
+		const cached = Option.isSome(store)
+			? yield* cacheCall(() => store.value.match(cacheKey)).pipe(Effect.orElseSucceed(() => undefined))
+			: undefined
+		const body =
+			cached === undefined
+				? Option.none<ArrayBuffer>()
+				: yield* cacheCall(() => cached.arrayBuffer()).pipe(Effect.option)
+		yield* Effect.annotateCurrentSpan("maple.status_page.og.cache_hit", Option.isSome(body))
+		if (Option.isSome(body)) {
+			const hit: StatusOgImage = { png: new Uint8Array(body.value), complete: true }
 			return hit
 		}
-		// An uploaded logo is a `data:` URL takumi decodes itself; only a remote one is fetched.
+		// An uploaded logo is a `data:` URL; both kinds are held to the same size and pixel limits.
 		const fetched: LogoFetch =
 			card.logoUrl === null
 				? NO_LOGO
 				: Str.startsWith("data:")(card.logoUrl)
-					? { _tag: "inline" }
+					? inlineLogo(card.logoUrl)
 					: yield* fetchLogo(card.logoUrl).pipe(
 							Effect.provideService(HttpClient.HttpClient, client),
 						)
@@ -97,21 +103,22 @@ export const nativeOgImage = (cache: Promise<Cache>, client: HttpClient.HttpClie
 					: render(card, NO_LOGO).pipe(Effect.map((png) => ({ png, complete: false }))),
 			),
 		)
-		// Only the card as intended is kept; a stand-in is drawn again by the next request.
-		const complete = drawn.complete && fetched._tag !== "unavailable"
-		if (complete) {
+		// A stand-in for a logo that failed this time is not kept; one for a refused logo briefly.
+		const refused = card.logoUrl !== null && fetched._tag === "none"
+		const keep = drawn.complete && fetched._tag !== "unavailable"
+		if (keep && Option.isSome(store)) {
 			yield* cacheCall(() =>
-				store.put(
+				store.value.put(
 					cacheKey,
 					new Response(drawn.png, {
 						headers: {
 							"content-type": "image/png",
-							"cache-control": `public, max-age=${CACHE_SECONDS}`,
+							"cache-control": `public, max-age=${refused ? REFUSED_CACHE_SECONDS : CACHE_SECONDS}`,
 						},
 					}),
 				),
 			).pipe(Effect.ignore)
 		}
-		const image: StatusOgImage = { png: drawn.png, complete }
+		const image: StatusOgImage = { png: drawn.png, complete: keep && !refused }
 		return image
 	})

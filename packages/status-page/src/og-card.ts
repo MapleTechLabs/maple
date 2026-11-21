@@ -411,4 +411,4 @@ export const statusOgCardNode = (card: StatusOgCard, logoLoaded: boolean): Node 
 
 /** The card in words, for `og:image:alt`. */
 export const statusOgAlt = (card: StatusOgCard): string =>
-	`${card.name} status: ${card.headline}${card.details.length === 0 ? "" : `. ${Arr.join(card.details, ", ")}`}`
+	`${card.name} status: ${card.headline}${card.details.length === 0 ? "" : `. ${Arr.join(card.details, ", ")}`}${card.delayed ? ". Live checks delayed, last known state" : ""}`
