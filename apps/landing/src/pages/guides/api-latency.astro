@@ -8,6 +8,12 @@ import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import GuideBody from "../../components/guides/GuideBody.astro";
 import LatencyClockDiagram from "../../components/guides/LatencyClockDiagram.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { authorByName, authorHref, authorPerson } from "../../lib/authors";
+import { Option } from "effect";
+
+// The blog author page, when the contributor has one.
+const author = authorByName(CONTRIBUTORS.makisuo.name);
 
 const pageTitle = "API Latency: Debug p99 with OpenTelemetry | Maple";
 const pageDescription =
@@ -57,7 +63,10 @@ const articleJsonLd = {
     description: pageDescription,
     datePublished: published,
     dateModified: published,
-    author: { "@type": "Person", name: "Makisuo" },
+    author: Option.match(author, {
+        onNone: () => ({ "@type": "Person", name: CONTRIBUTORS.makisuo.name }),
+        onSome: (person) => authorPerson(person, Astro.site),
+    }),
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -101,7 +110,10 @@ const articleJsonLd = {
                         Pick the right clock, isolate the slow requests, and follow one OpenTelemetry trace to the release and operation that caused the regression.
                     </p>
                     <div class="mt-7 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
-                        <span>By Makisuo</span>
+                        {Option.match(author, {
+                            onNone: () => <span>By {CONTRIBUTORS.makisuo.name}</span>,
+                            onSome: (person) => <span>By <a href={authorHref(person)} class="underline underline-offset-2 transition-colors hover:text-fg">{person.name}</a></span>,
+                        })}
                         <time datetime={published}>Updated {updatedLabel}</time>
                     </div>
                 </div>

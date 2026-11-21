@@ -1,12 +1,11 @@
 ---
 /**
- * Surfaces: the build-it-yourself section, for vendors that are a store with
- * a dashboard builder on top.
+ * Surfaces: what Maple looks like, on every comparison page.
  *
  * The difference table says *what* differs, row by row. This says what the
- * difference looks like: four surfaces Maple ships built, each drawn by the
- * same live artifact the feature pages use, each answered by one line of what
- * assembling it costs on the other tool. That line is the section. A reader
+ * difference looks like: the views Maple ships, each drawn by the same live
+ * artifact or capture the feature pages use, each answered by one line of what
+ * the other tool does instead. That line restates a sourced table row. A reader
  * who skims the artifacts and reads only the `On <vendor>` rules still leaves
  * with the argument.
  *
@@ -25,7 +24,11 @@ import { MAPLE_SURFACES, type SurfaceId, type Surfaces } from "../../lib/competi
 import MediaFrame from "../home/MediaFrame.astro";
 import LiveBrowserSessions from "../live/LiveBrowserSessions.astro";
 import LiveK8sWorkloads from "../live/LiveK8sWorkloads.astro";
+import LiveLocalTerminal from "../live/LiveLocalTerminal.astro";
+import LiveMcpTranscript from "../live/LiveMcpTranscript.astro";
 import LiveServiceMap from "../live/LiveServiceMap.astro";
+import LiveUptime from "../live/LiveUptime.astro";
+import ProductFrame, { type ProductSurface } from "../marketing/ProductFrame.astro";
 
 interface Props {
 	competitorName: string;
@@ -33,18 +36,43 @@ interface Props {
 }
 
 const { competitorName, surfaces } = Astro.props;
+const locale = Astro.currentLocale ?? "en";
 
 // `analytics` is null on purpose: it renders the capture below, not a plate.
+// The rest that are null render through ProductFrame, which owns their sizing
+// and phone crops.
 const ARTIFACTS = {
 	"service-map": LiveServiceMap,
 	sessions: LiveBrowserSessions,
 	kubernetes: LiveK8sWorkloads,
+	agent: LiveMcpTranscript,
+	local: LiveLocalTerminal,
+	uptime: LiveUptime,
 	analytics: null,
+	trace: null,
+	logs: null,
+	issues: null,
 } satisfies Record<SurfaceId, unknown>;
+
+const FRAMES = {
+	trace: "trace",
+	logs: "logs",
+	issues: "issue",
+	"service-map": null,
+	sessions: null,
+	analytics: null,
+	kubernetes: null,
+	agent: null,
+	local: null,
+	uptime: null,
+} satisfies Record<SurfaceId, ProductSurface | null>;
+
+const title = (surfaces.title ?? m.cmp_surfaces_title_side)({ name: competitorName });
 
 const rows = surfaces.rows.map((row) => ({
 	surface: MAPLE_SURFACES[row.surface],
 	instead: row.instead(),
+	frame: FRAMES[row.surface],
 }));
 ---
 
@@ -54,13 +82,13 @@ const rows = surfaces.rows.map((row) => ({
 		<h2
 			class="mt-4 max-w-[22ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
 		>
-			{m.cmp_surfaces_title({ name: competitorName })}
+			{title}
 		</h2>
-		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{surfaces.lede}</p>
+		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{surfaces.lede()}</p>
 
 		<div class="mt-10 border-t border-border md:mt-14">
 			{
-				rows.map(({ surface, instead }, i) => {
+				rows.map(({ surface, instead, frame }, i) => {
 					const Artifact = ARTIFACTS[surface.id];
 					return (
 						<div
@@ -90,7 +118,7 @@ const rows = surfaces.rows.map((row) => ({
 								</p>
 
 								<a
-									href={surface.href}
+									href={surface.href(locale)}
 									class="group mt-5 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors hover:text-fg"
 								>
 									{m.cmp_surfaces_link()}
@@ -101,6 +129,8 @@ const rows = surfaces.rows.map((row) => ({
 							<div class="min-w-0">
 								{Artifact ? (
 									<Artifact />
+								) : frame ? (
+									<ProductFrame surface={frame} size="wide" />
 								) : (
 									<MediaFrame
 										label={m.cmp_surface_analytics_shot()}

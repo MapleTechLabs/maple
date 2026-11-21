@@ -9,6 +9,7 @@ import * as m from "../paraglide/messages.js"
 import { AGENT_FRAMEWORK_GUIDES, AGENT_GATEWAY_GUIDES, AGENT_GUIDE_LANGUAGES } from "./agent-tracing-guides"
 import type { AgentGuide } from "./agent-tracing-guides"
 import { FRONTEND_GUIDES } from "./instrumentation-guides"
+import { integrations } from "./integrations"
 import type { BrandMarkId } from "./brand-marks"
 import type { LanguageId } from "./docs-languages"
 import { Array as Arr } from "effect"
@@ -53,7 +54,12 @@ export const text = (value: string | Msg): string => (typeof value === "string" 
 export const tileHref = (locale: string, tile: HubTile): string =>
 	tile.localized && locale !== "en" ? `/${locale}${tile.href}` : tile.href
 
-const doc = (path: string) => `/docs/${path}`
+// A docs guide with its own /integrations page is linked there; the page links back to the guide.
+const LANDING_PAGES = new Map(
+	Arr.map(Object.values(integrations), (i): [string, string] => [i.docsHref, `/integrations/${i.slug}`]),
+)
+const landing = (href: string) => LANDING_PAGES.get(href) ?? href
+const doc = (path: string) => landing(`/docs/${path}`)
 
 const languages: HubTile[] = [
 	{ name: "Effect", hint: "Node, Bun, Deno, Workers", href: doc("sdks/effect"), icon: { lang: "effect" } },
@@ -144,7 +150,7 @@ const languages: HubTile[] = [
 		name: g.name,
 		keywords: "frontend browser tracing",
 		hint: m.intg_hint_frontend,
-		href: g.href,
+		href: landing(g.href),
 		icon: g.icon,
 	})),
 ]

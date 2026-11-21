@@ -7,6 +7,7 @@
  * value lists), and a call anywhere in the trajectory can satisfy them, not only the first.
  */
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { stringifyJson } from "../mcp/lib/json"
 import { readToolCall } from "../mcp/tools/registry"
 
 const encodeJson = Schema.encodeOption(Schema.fromJsonString(Schema.Unknown))
@@ -21,7 +22,7 @@ export type ArgExpectation =
 	| { readonly oneOf: ReadonlyArray<Scalar> }
 	/** Equal to this, or omitted because this is the tool's default. */
 	| { readonly orDefault: Scalar }
-	/** Case-insensitive substring, for free text such as a search phrase. */
+	/** Case-insensitive substring of free text, or of a structured argument as JSON. */
 	| { readonly includes: string }
 	| { readonly absent: true }
 	| { readonly present: true }
@@ -64,9 +65,10 @@ export interface ObservedCall {
 
 export const observeCall = (tool: string, raw: unknown, isError: boolean): ObservedCall => {
 	const read = readToolCall(tool, raw)
-	return read === undefined
-		? { tool, raw, args: {}, invalid: true, isError }
-		: { tool, raw, args: read.args, invalid: !read.decodes || read.unknown.length > 0, isError }
+	if (read === undefined) return { tool, raw, args: {}, invalid: true, isError }
+	// The registry resolves a family's `action` away; a target names it like any other argument.
+	const args = read.action === undefined ? read.args : { action: read.action, ...read.args }
+	return { tool, raw, args, invalid: !read.decodes || read.unknown.length > 0, isError }
 }
 
 export interface CheckResult {
@@ -92,10 +94,9 @@ const argMatches = (expectation: ArgExpectation, actual: unknown): boolean => {
 	if ("oneOf" in expectation)
 		return present && Arr.some(expectation.oneOf, (value) => scalarEquals(value, actual))
 	if ("orDefault" in expectation) return !present || scalarEquals(expectation.orDefault, actual)
-	return (
-		typeof actual === "string" &&
-		Str.includes(Str.toLowerCase(expectation.includes))(Str.toLowerCase(actual))
-	)
+	// A JSON-typed parameter arrives as a string or already structured; both read as text here.
+	const text = typeof actual === "string" ? actual : present ? (stringifyJson(actual) ?? "") : ""
+	return present && Str.includes(Str.toLowerCase(expectation.includes))(Str.toLowerCase(text))
 }
 
 const callMatches = (expectation: CallExpectation, observed: ObservedCall): boolean =>

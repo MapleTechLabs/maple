@@ -1,0 +1,445 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import FAQ from "../../components/FAQ.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import "../../styles/pricing-guide.css";
+import GuideBody from "../../components/guides/GuideBody.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+import { highlight } from "../../lib/guide-highlight";
+import { getOffer, money, rateLabel } from "../../lib/pricing-offer";
+
+const pageTitle = "Honeycomb Pricing 2026: Event Tiers, Free Plan and Limits | Maple";
+const pageDescription =
+    "Honeycomb pricing for 2026: the free plan, the new $3.00 per million Pro rate, what counts as an event, how throttling works, and three worked monthly bills.";
+const published = "2026-11-21";
+const updated = "2026-11-21";
+const updatedLabel = "November 21, 2026";
+const verified = "2026-11-21";
+const author = CONTRIBUTORS.jeremyfunk;
+const authorUrl = `https://github.com/${author.github}`;
+
+const offer = await getOffer();
+const gb = offer.allotments.find((a) => a.unit === "gb");
+
+const toc = [
+    { depth: 2, slug: "how-it-works", text: "How Honeycomb pricing works" },
+    { depth: 3, slug: "events", text: "What counts as an event" },
+    { depth: 3, slug: "pro-2026", text: "The 2026 Pro change" },
+    { depth: 2, slug: "limits", text: "Limits instead of overage" },
+    { depth: 2, slug: "surprises", text: "What surprises teams" },
+    { depth: 2, slug: "examples", text: "What a month costs" },
+    { depth: 3, slug: "small-team", text: "Small team" },
+    { depth: 3, slug: "mid-team", text: "Mid-sized team" },
+    { depth: 3, slug: "large-team", text: "Larger team" },
+    { depth: 2, slug: "reduce", text: "Cutting the bill" },
+    { depth: 2, slug: "maple", text: "Maple pricing" },
+];
+
+// Honeycomb's published figures, verified on the date above.
+const RATE = 3; // 2026 Pro, $ per million events
+const LEGACY_RATE = 1.3;
+const PRO_MIN = { events: 50, price: 150, points: 250 }; // millions, $
+const PRO_TOP = 750; // millions of events
+const FREE = { events: 20, points: 100 }; // millions
+
+const usd = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const num = (n: number) => n.toLocaleString("en-US");
+
+// Each workload in millions per month. Spans, span events and links each count as one event.
+const workloads = [
+    { id: "small", label: "Small team", spans: 15, spanEvents: 0, logs: 3, points: 60 },
+    { id: "mid", label: "Mid-sized team", spans: 38, spanEvents: 2, logs: 8, points: 200 },
+    { id: "large", label: "Larger team", spans: 500, spanEvents: 50, logs: 100, points: 1_000 },
+].map((w) => {
+    const events = w.spans + w.spanEvents + w.logs;
+    const plan = events <= FREE.events && w.points <= FREE.points ? "Free" : events <= PRO_MIN.events ? "Pro, 50M tier" : `Pro, ${PRO_TOP}M tier (estimated)`;
+    const cost = plan === "Free" ? 0 : events <= PRO_MIN.events ? PRO_MIN.price : PRO_TOP * RATE;
+    return { ...w, events, plan, cost, atRate: events * RATE, atLegacy: events * LEGACY_RATE };
+});
+const [small, mid, large] = workloads;
+
+// The same workloads on Maple: 1 KB per span or log record, 0.1 KB per metric data point.
+const mapleRate = gb?.rate ?? 0.3;
+const mapleIncluded = gb?.included ?? 100;
+const over = (gbs: number) => Math.max(0, gbs - mapleIncluded) * mapleRate;
+const maple = workloads.map((w) => {
+    const traceGb = w.spans + w.spanEvents; // a span event adds about 1 KB to its span
+    const logGb = w.logs;
+    const metricGb = w.points * 0.1;
+    return { id: w.id, traceGb, logGb, metricGb, cost: offer.price + over(traceGb) + over(logGb) + over(metricGb) };
+});
+// Event size at which $3.00 per million events equals Maple's per-GB rate.
+const breakEvenKb = Math.round((RATE / mapleRate) * 1_000) / 1_000;
+
+const filterConfig = `receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  filter/noise:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["url.path"] == "/healthz"
+    logs:
+      log_record:
+        - severity_number > SEVERITY_NUMBER_UNSPECIFIED and severity_number < SEVERITY_NUMBER_INFO
+
+exporters:
+  otlp/honeycomb:
+    endpoint: api.honeycomb.io:443
+    headers:
+      x-honeycomb-team: \${env:HONEYCOMB_API_KEY}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [filter/noise]
+      exporters: [otlp/honeycomb]
+    logs:
+      receivers: [otlp]
+      processors: [filter/noise]
+      exporters: [otlp/honeycomb]`;
+
+const faqs = [
+    {
+        question: "Is Honeycomb free?",
+        answer:
+            "Yes. The Free plan costs nothing with no time limit and includes up to 20 million events and 100 million metrics data points a month, unlimited seats and 2 triggers. It has no SLOs. Events are kept for 60 days.",
+    },
+    {
+        question: "How much does Honeycomb Pro cost?",
+        answer:
+            `Pro starts at $150 a month for 50 million events and 250 million metrics data points, and goes up to 750 million events. Honeycomb's docs give the 2026 Pro rate as $3.00 per million events, up from $1.30 on legacy plans. Above 750 million events a month you need Enterprise, which is priced by sales (verified ${verified}).`,
+    },
+    {
+        question: "What counts as an event in Honeycomb?",
+        answer:
+            "Each span in a trace is one event, so a trace with 150 spans is 150 events. Each OpenTelemetry span event and each span link is also one event, and so is each structured log. Events can be up to 1 MB with up to 2,000 attributes, and a large event costs the same as a small one.",
+    },
+    {
+        question: "What happens if I go over my Honeycomb event limit?",
+        answer:
+            "Free and Pro plans are not billed for overage. After a first month over the limit, Honeycomb emails a warning. After a second consecutive month it gives 10 days' notice, then throttles: the API accepts one event in ten and rejects the rest until your daily rate stays under target for 72 hours. Enterprise plans are exempt from throttling.",
+    },
+    {
+        question: "Can I keep Honeycomb's legacy Pro pricing?",
+        answer:
+            "Until December 31, 2026, a team on a legacy Pro plan can commit to an annual term on its current tier and keep legacy pricing for that year at a 20% increase. There is no monthly option at legacy pricing. Teams that do nothing move to the closest 2026 tier at their next billing boundary after the grace period.",
+    },
+];
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: "Honeycomb pricing in 2026",
+    description: pageDescription,
+    datePublished: published,
+    dateModified: updated,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}/guides/honeycomb-pricing`,
+};
+---
+
+<Layout title={pageTitle} description={pageDescription} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={pageDescription} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        class="shell pt-4"
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: "Honeycomb pricing" },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="shell relative pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">Pricing</span>
+                    <span>9 min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[18ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    Honeycomb pricing in 2026
+                </h1>
+                <p class="mt-7 max-w-[54ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">
+                    What the free plan covers, what an event is, what changed on Pro this year, and three monthly bills worked out.
+                </p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={updated}>Updated {updatedLabel}</time>
+                    <span>Prices verified {verified}</span>
+                </div>
+            </div>
+        </header>
+
+        <GuideBody headings={toc} class="pricing-guide">
+                <section class="guide-lead">
+                    <p>
+                        <strong>Honeycomb</strong> is an observability platform built around querying wide events: spans and structured logs with many attributes. It bills by the number of events and metrics data points you send each month, with unlimited seats and unlimited queries on every plan.
+                    </p>
+                    <p>
+                        This guide covers the plans, what counts as an event, the Pro price change that takes effect for legacy plans after December 31, 2026, what happens when you send too much, and three worked monthly bills.
+                    </p>
+                    <p class="guide-disclosure">
+                        Maple publishes this guide and competes with Honeycomb. Section 06 compares the two; every Honeycomb figure comes from Honeycomb's own pages, linked at the end.
+                    </p>
+                    <div class="guide-takeaways">
+                        <p class="guide-kicker">Key takeaways</p>
+                        <ul>
+                            <li>Free includes 20 million events and 100 million metrics data points a month.</li>
+                            <li>Pro starts at $150 a month for 50 million events and tops out at 750 million.</li>
+                            <li>The 2026 Pro rate is $3.00 per million events, up from $1.30 on legacy plans.</li>
+                            <li>Every span, span event, span link and log is one event, whatever its size.</li>
+                            <li>Free and Pro never bill overage. Two months over the limit leads to throttling.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="how-it-works" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>01</span> · Plans</p>
+                    <h2>How Honeycomb pricing works</h2>
+                    <p>
+                        Honeycomb meters two things: <strong>events</strong> (spans and logs) and <strong>metrics data points</strong> (time series measurements). Each plan sets a monthly limit for both, tracked separately.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th></th><th>Free</th><th>Pro</th><th>Enterprise</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr class="row-price"><td>Price</td><td>$0</td><td>From $150 a month</td><td>Custom</td></tr>
+                                <tr><td>Events a month</td><td>Up to 20M</td><td>50M to 750M</td><td>From 10B a year</td></tr>
+                                <tr><td>Metrics data points</td><td>Up to 100M</td><td>250M to 3.75B</td><td>Variable</td></tr>
+                                <tr><td>Seats and queries</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+                                <tr><td>Triggers</td><td>2</td><td>100</td><td>From 300</td></tr>
+                                <tr><td>SLOs</td><td>None</td><td>2</td><td>From 100</td></tr>
+                                <tr><td>Event retention</td><td>60 days</td><td>60 days</td><td>60 days, longer as an add-on</td></tr>
+                                <tr><td>Billing</td><td></td><td>Monthly or annual</td><td>Annual</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        Pro is sold in fixed tiers. The pricing page states the entry tier, $150 for 50 million events, and the top, 750 million. The docs put the 2026 Pro rate at <strong>$3.00 per million events</strong> across four tiers. You pick a tier and pay its price whether you use all of it or not; unused events do not roll over, and the counter resets on the 1st of each calendar month. Enterprise starts at 10 billion events a year with volume discounts that sales quotes.
+                    </p>
+
+                    <h3 id="events" class="scroll-mt-24">What counts as an event</h3>
+                    <p>
+                        A span is one event. A trace with 150 spans is 150 events. In OpenTelemetry terms, each <strong>span event</strong> (an exception recorded on a span, for example) and each <strong>span link</strong> is also one event. A structured log line is one event. An event can be up to 1 MB with up to 2,000 attributes, and a 1 MB event costs the same as a 200-byte one.
+                    </p>
+                    <p>
+                        Events dropped before they reach Honeycomb, by sampling or a Collector filter, do not count. Neither do events Honeycomb rejects for size or rate limits. Metrics sent as time series bill as data points; metrics sent as events bill as events.
+                    </p>
+
+                    <h3 id="pro-2026" class="scroll-mt-24">The 2026 Pro change</h3>
+                    <p>
+                        As of July 1, 2026, Pro includes time series metrics and Honeycomb Intelligence features such as Canvas and the Honeycomb MCP server. The new generation of Pro plans moves from three tiers to four and raises the rate from <strong>$1.30 to $3.00 per million events</strong>. Teams already on Pro keep their legacy plan until a grace period ends on <strong>December 31, 2026</strong>.
+                    </p>
+                    <p>
+                        During the grace period, a legacy team can commit to an annual term on its current tier and keep legacy pricing for that year at a 20% increase. There is no monthly option at legacy pricing. A team that does nothing moves to the 2026 tier closest to its current plan at the next billing boundary. Honeycomb notes that it picks that tier from your plan, not your actual usage.
+                    </p>
+                    <p class="guide-verified">
+                        Verified {verified} against <a href="https://www.honeycomb.io/pricing" target="_blank" rel="noopener noreferrer">honeycomb.io/pricing</a>, <a href="https://docs.honeycomb.io/get-started/honeycomb/2026-pro-plan-changes" target="_blank" rel="noopener noreferrer">2026 Pro Plan Changes</a> and <a href="https://docs.honeycomb.io/get-started/manage-costs/how-honeycomb-calculates-usage" target="_blank" rel="noopener noreferrer">How Honeycomb Calculates Usage</a>.
+                    </p>
+                </section>
+
+                <section id="limits" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>02</span> · Limits</p>
+                    <h2>Limits instead of overage</h2>
+                    <p>
+                        On Free and Pro, sending more than your tier allows does not add a line to the invoice. Honeycomb divides the monthly limit by 30.4 to set a daily target and escalates in steps:
+                    </p>
+                    <ol class="flow" aria-label="How Honeycomb handles a team over its monthly event limit: an email after the first month over, a 10-day warning after the second consecutive month, then throttling to one event in ten.">
+                        <li class="flow__step flow__step--included"><strong>Trending over</strong><span>Email to team owners</span></li>
+                        <li class="flow__step flow__step--reserved"><strong>One month over</strong><span>Email at the start of the next month</span></li>
+                        <li class="flow__step flow__step--payg"><strong>Two months over</strong><span>10 days to upgrade or send less</span></li>
+                        <li class="flow__step flow__step--dropped"><strong>Throttled</strong><span>1 event in 10 accepted, the rest rejected</span></li>
+                    </ol>
+                    <p>
+                        Throttling ends once your incoming rate stays under the daily target for 72 hours. Data points follow the same steps on their own limit, and either one can trigger throttling. Enterprise plans are exempt; their overage terms are in the order form.
+                    </p>
+                    <div class="guide-grid">
+                        <div>
+                            <p class="guide-kicker">Burst protection</p>
+                            <h4>Spikes above 2x the daily target are forgiven</h4>
+                            <p>On a day you send more than twice the daily target, the excess does not count toward the monthly limit. The data is still stored and queryable. It applies up to three times a calendar month, separately for events and data points.</p>
+                        </div>
+                        <div>
+                            <p class="guide-kicker">No rollover</p>
+                            <h4>Unused events expire monthly</h4>
+                            <p>The counter resets on the 1st of each calendar month, whatever your billing date. A quiet month does not bank headroom for a busy one.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="surprises" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>03</span> · Surprises</p>
+                    <h2>What surprises teams on Honeycomb</h2>
+                    <ul class="guide-list">
+                        <li><strong>Span count, not request count, sets the bill.</strong> One request through a gateway, three services and a database can be 20 spans. Auto-instrumentation adds a span for every client call it wraps.</li>
+                        <li><strong>Span events and links are events too.</strong> An exception recorded on a span adds a second event. Instrumentation that records many span events can double the count without adding a single span.</li>
+                        <li><strong>The price is per event, not per byte.</strong> This favors wide events: a span with 300 attributes costs the same as one with 3. It penalizes many small spans and short log lines.</li>
+                        <li><strong>The limit is enforced with throttling.</strong> There is no surprise invoice, but a team that stays over the limit loses nine events in ten until it upgrades or sends less.</li>
+                        <li><strong>Legacy plans reprice after 2026.</strong> At $3.00 instead of $1.30 per million, the same event volume costs about 2.3 times as much on the 2026 rate, or about 1.9 times a legacy plan locked in for a year at the 20% increase ($1.56 per million).</li>
+                        <li><strong>Pro includes 2 SLOs.</strong> Teams that run SLOs per service reach the limit on Pro quickly; Enterprise starts at 100.</li>
+                    </ul>
+                </section>
+
+                <section id="examples" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>04</span> · Examples</p>
+                    <h2>What a month of Honeycomb costs</h2>
+                    <p>
+                        Three workloads at the prices checked {verified}, in millions per month. The Pro price is the tier you need, at the 2026 rate.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Workload</th><th>Spans</th><th>Span events</th><th>Logs</th><th>Events</th><th>Data points</th><th>Plan</th><th>Per month</th></tr>
+                            </thead>
+                            <tbody>
+                                {workloads.map((w) => (
+                                    <tr><td>{w.label}</td><td class="num">{num(w.spans)}M</td><td class="num">{num(w.spanEvents)}M</td><td class="num">{num(w.logs)}M</td><td class="num">{num(w.events)}M</td><td class="num">{num(w.points)}M</td><td>{w.plan}</td><td class="num">{usd(w.cost)}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 id="small-team" class="scroll-mt-24">Small team: {usd(small.cost)} a month</h3>
+                    <p>
+                        A service handling 100,000 requests a day at 5 spans each sends 15 million spans a month. With 3 million log lines that is {num(small.events)} million events, under Free's 20 million, and {num(small.points)} million data points, under its 100 million. The team pays nothing. The limits that bite first are 2 triggers and no SLOs, and a 12% traffic increase takes it past 20 million events.
+                    </p>
+
+                    <h3 id="mid-team" class="scroll-mt-24">Mid-sized team: {usd(mid.cost)} a month</h3>
+                    <p>
+                        {num(mid.spans)} million spans, {num(mid.spanEvents)} million span events and {num(mid.logs)} million logs make {num(mid.events)} million events, which fits the 50 million entry tier. The {num(mid.points)} million data points fit its 250 million. The bill is <strong>{usd(mid.cost)}</strong>, which works out to $3.00 per million events at full use of the tier. At the legacy rate of $1.30 per million, the same events price at {usd(mid.atLegacy)}, though legacy plans were also sold in tiers.
+                    </p>
+
+                    <h3 id="large-team" class="scroll-mt-24">Larger team: about {usd(large.cost)} a month</h3>
+                    <p>
+                        {num(large.spans)} million spans, {num(large.spanEvents)} million span events and {num(large.logs)} million logs make {num(large.events)} million events. At $3.00 per million that is {usd(large.atRate)}, but Pro is sold in tiers, so the team buys the smallest one that covers it. The page text names only the 50 million and 750 million tiers. If no tier sits between 650 and 750 million, the team buys the top one, about <strong>{usd(large.cost)}</strong> at the published rate. At the legacy rate the same events price at {usd(large.atLegacy)}. Growth past 750 million moves the team to Enterprise, which has no published price.
+                    </p>
+                    <p>
+                        Seats are not in any of these bills. A 5-person team and a 50-person team pay the same for the same events.
+                    </p>
+                </section>
+
+                <section id="reduce" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>05</span> · Cutting the bill</p>
+                    <h2>How to cut a Honeycomb bill</h2>
+                    <ol class="guide-steps">
+                        <li>
+                            <span>01</span>
+                            <div><h4>Find the events nobody queries</h4><p>The <strong>Usage</strong> page under <strong>Team Settings</strong> breaks event volume down by environment and dataset. Health checks, readiness probes and debug logs are usually the first to go.</p></div>
+                        </li>
+                        <li>
+                            <span>02</span>
+                            <div><h4>Filter in the Collector</h4><p>Events dropped before they leave your network do not count. The config below drops health-check spans and logs below <code>INFO</code>, keeping logs that set no severity.</p></div>
+                        </li>
+                        <li>
+                            <span>03</span>
+                            <div><h4>Sample with Refinery</h4><p>Refinery is Honeycomb's tail-based sampling proxy. It decides once a trace is complete, so its rules can keep every error and slow trace and sample the rest. Honeycomb weights query results by each event's sample rate, so counts stay correct.</p></div>
+                        </li>
+                        <li>
+                            <span>04</span>
+                            <div><h4>Move metrics off events</h4><p>Metrics sent as events count against the event limit. Honeycomb's own migration notes suggest sending them as time series instead, which bill against the separate data point allowance.</p></div>
+                        </li>
+                        <li>
+                            <span>05</span>
+                            <div><h4>Choose your 2026 tier yourself</h4><p>On a legacy plan, look at the last few months of usage before December 31, 2026. Either lock in legacy pricing with an annual term at a 20% increase, or pick the 2026 tier that fits. The automatic move uses your plan, not your usage.</p></div>
+                        </li>
+                    </ol>
+                    <div class="code-file">
+                        <p class="code-file__name">collector.yaml</p>
+                        <pre><code set:html={highlight(filterConfig, "yaml")} /></pre>
+                    </div>
+                    <p>
+                        Set <code>HONEYCOMB_API_KEY</code> in the Collector's environment. The same <code>filter</code> processor can drop span events by name if one library records more of them than you need.
+                    </p>
+                </section>
+
+                <section id="maple" class="scroll-mt-24">
+                    <p class="guide-eyebrow"><span>06</span> · Maple</p>
+                    <h2>Maple pricing for the same workloads</h2>
+                    <p>
+                        Maple is an OpenTelemetry observability platform. Like Honeycomb it charges nothing per seat. It meters bytes instead of events: one plan at <strong>{money(offer.price)}{offer.interval}</strong> with {mapleIncluded} GB each of logs, traces and metrics included, then {rateLabel(mapleRate)} per GB for each signal. Logs and traces are kept 30 days and metrics 90.
+                    </p>
+                    <p>
+                        To compare, this table assumes 1 KB per span or log record and 0.1 KB per metric data point. Span events and links travel inside their span, so this table adds 1 KB for each span event instead of counting it as a separate event. Maple meters uncompressed OTLP bytes.
+                    </p>
+                    <div class="guide-table">
+                        <table>
+                            <thead>
+                                <tr><th>Workload</th><th>Traces</th><th>Logs</th><th>Metrics</th><th>Maple</th><th>Honeycomb</th></tr>
+                            </thead>
+                            <tbody>
+                                {workloads.map((w, i) => (
+                                    <tr><td>{w.label}</td><td class="num">{num(maple[i].traceGb)} GB</td><td class="num">{num(maple[i].logGb)} GB</td><td class="num">{num(maple[i].metricGb)} GB</td><td class="num">{usd(maple[i].cost)}</td><td class="num">{usd(w.cost)}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        The larger team's Maple bill is {money(offer.price)} plus {num(maple[2].traceGb - mapleIncluded)} GB of traces over the included {mapleIncluded} at {rateLabel(mapleRate)}. Its logs and metrics stay inside their allowances.
+                    </p>
+                    <p>
+                        The size of an event decides which model is cheaper. At $3.00 per million events and {rateLabel(mapleRate)} per GB, the two rates meet at an average of <strong>{breakEvenKb} KB per event</strong>. Teams that send fewer, wider events of more than {breakEvenKb} KB pay less per event on Honeycomb; teams with many small spans and log lines pay less on Maple. The included allowances shift that line at low volume.
+                    </p>
+                    <p>
+                        Honeycomb is the better fit in several cases. The small team pays nothing on Honeycomb's Free plan and {money(offer.price)} on Maple, which has no free cloud plan. Honeycomb keeps events for 60 days against Maple's 30, and BubbleUp is built for finding what sets a slow slice of requests apart. Maple adds session replay and an error inbox on the same plan, and its source is available to self-host.
+                    </p>
+
+                    <div class="guide-maple">
+                        <p class="guide-kicker">Maple</p>
+                        <h3>Send the same OpenTelemetry data to both</h3>
+                        <p>Add a second exporter to the Collector above and compare a few days of usage on each.</p>
+                        <div class="mt-6 flex flex-wrap gap-3">
+                            <a href="/pricing" class="guide-button guide-button--primary">See Maple pricing</a>
+                            <a href="/compare/honeycomb" class="guide-button">Maple vs Honeycomb</a>
+                            <a href="/docs/reference/ingest" class="guide-button">Ingest API docs</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="guide-sources">
+                    <p class="guide-eyebrow">Sources and further reading</p>
+                    <ul>
+                        <li><a href="https://www.honeycomb.io/pricing" target="_blank" rel="noopener noreferrer">Honeycomb: Pricing (verified {verified})</a></li>
+                        <li><a href="https://docs.honeycomb.io/get-started/honeycomb/2026-pro-plan-changes" target="_blank" rel="noopener noreferrer">Honeycomb docs: 2026 Pro Plan Changes (verified {verified})</a></li>
+                        <li><a href="https://docs.honeycomb.io/get-started/manage-costs/how-honeycomb-calculates-usage" target="_blank" rel="noopener noreferrer">Honeycomb docs: How Honeycomb Calculates Usage (verified {verified})</a></li>
+                        <li><a href="https://docs.honeycomb.io/manage-data-volume/" target="_blank" rel="noopener noreferrer">Honeycomb docs: Manage Data Volume</a></li>
+                        <li><a href="/compare/honeycomb">Maple vs Honeycomb</a></li>
+                        <li><a href="/pricing">Maple pricing</a></li>
+                        <li><a href="/docs/reference/ingest">Maple docs: Ingest API</a></li>
+                    </ul>
+                </section>
+        </GuideBody>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>

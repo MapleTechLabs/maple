@@ -33,9 +33,11 @@ interface Props {
 	/** Body height of a live trace or log frame, to line frames up in a row. */
 	height?: string;
 	class?: string;
+	/** For the trace surface: an integration page's example trace instead of the checkout. */
+	demo?: string;
 }
 
-const { surface, size = "aside", label, caption, loading = "lazy", height, class: className = "" } = Astro.props;
+const { surface, size = "aside", label, caption, loading = "lazy", height, class: className = "", demo } = Astro.props;
 const wide = size === "wide";
 
 // Windows of the 2880 x 1620 captures: each starts on a layout edge past the app sidebar.
@@ -100,7 +102,7 @@ const shot = capture ? capture[wide ? "wide" : "aside"] : null;
 				loading={loading}
 			/>
 		) : surface === "trace" ? (
-			<LiveTraceFrame height={height ?? (wide ? "17rem" : "18.5rem")} />
+			<LiveTraceFrame height={height ?? (wide ? "17rem" : "18.5rem")} demo={demo} />
 		) : surface === "logs" ? (
 			<LiveLogs volume={false} streamHeight={height ?? (wide ? "19rem" : "21rem")} />
 		) : surface === "service-map" ? (
