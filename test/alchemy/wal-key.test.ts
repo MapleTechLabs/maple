@@ -9,7 +9,8 @@ const DATA_ACTIONS: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
 	["kms:Decrypt", [TASK_ROLE, DEPLOY_ROLE]],
 	["kms:GenerateDataKey", [TASK_ROLE, DEPLOY_ROLE]],
 	["kms:CreateGrant", []],
-	["kms:ReEncrypt*", []],
+	["kms:ReEncryptFrom", []],
+	["kms:ReEncryptTo", []],
 	["kms:Encrypt", []],
 ]
 
