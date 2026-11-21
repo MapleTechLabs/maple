@@ -13,7 +13,6 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { AppRoute, hrefOf } from "../../route"
-import { isDataIntegration } from "../../route/data-integrations"
 import { CAPABILITY_LABEL, type CatalogEntry, type HubFilter, type IntegrationId } from "./catalog"
 import { DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import {
@@ -67,11 +66,8 @@ const connectedRow = (h: H, row: ConnectedRow, onSelect: Select, nowMs: number):
 	const onClick =
 		row._tag === "DataSource"
 			? Message.ClickedDataSource({ source: row.source.id, connect: null })
-			: overview.kind === "connected" && isDataIntegration(row.entry.id)
-				? Message.ClickedConnectedSources({
-						// WarpStream clusters are scraped as Prometheus targets.
-						query: row.entry.id === "warpstream" ? "Prometheus" : row.entry.name,
-					})
+			: row.sourcesQuery !== null
+				? Message.ClickedConnectedSources({ query: row.sourcesQuery })
 				: onSelect(row.entry.id)
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(

@@ -44,10 +44,9 @@ const load = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	return { model: usage.model, commands: [...(list.commands ?? []), ...(usage.commands ?? [])] }
 }
 
-export const init = (
-	route: Readonly<{ search: Readonly<{ q?: string | undefined }> }>,
-	context: PageContext,
-): Return => {
+type SourcesListRoute = Readonly<{ search: Readonly<{ q?: string | undefined }> }>
+
+export const init = (route: SourcesListRoute, context: PageContext): Return => {
 	const loaded = load(
 		{
 			nowMs: null,
@@ -69,6 +68,11 @@ export const init = (
 		],
 	}
 }
+
+/** Another `/sources` link on the open list (the sidebar's, a hub row's): its `?q=` replaces the search. */
+export const routeChanged = (model: Model, route: SourcesListRoute): Return => ({
+	model: { ...model, search: route.search.q ?? "" },
+})
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {

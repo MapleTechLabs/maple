@@ -29,7 +29,7 @@ import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { FetchSourcesList, ResumeSource } from "./command"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const context: PageContext = {
@@ -180,6 +180,16 @@ describe("sources list", () => {
 			given(loaded([defaultSource, billing, checkout], "billing")),
 			expectView(role("link", { name: "Billing" })).toExist(),
 			expectView(role("link", { name: "Checkout" })).not.toExist(),
+		)
+		// The sidebar's plain `/sources` on the open list drops the hub row's search.
+		const cleared = routeChanged(
+			loaded([defaultSource, billing, checkout], "billing"),
+			AppRoute.Sources({ search: {} }),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(cleared.model),
+			expectView(role("link", { name: "Checkout" })).toExist(),
 		)
 	})
 
