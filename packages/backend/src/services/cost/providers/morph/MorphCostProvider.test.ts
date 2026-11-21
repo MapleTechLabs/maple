@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr } from "effect"
+import { DateTime, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { MorphCostConnectionService } from "../../MorphCostConnectionService"
@@ -133,6 +133,49 @@ describe("MorphCostProvider", () => {
 					),
 				)
 				assert.deepStrictEqual(ends, { opening_micros: "4000000", closing_micros: "9000000" })
+			}),
+		)
+	})
+
+	it.effect("an older answer that arrives after a newer one leaves the newer reading", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeMorph({ members: [{ userId: "user_dev", spent: "5.00" }] })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* TestClock.setTime(at("2026-11-21T14:00:00Z"))
+				const ref = yield* saveKey(testDb, world)
+				// Seconds apart, inside the request timeout. Pull A asks at 15:00:00 and its answer ($7) is held.
+				let release = () => {}
+				world.holdNext = new Promise<void>((resolve) => {
+					release = resolve
+				})
+				world.members = [{ userId: "user_dev", spent: "7.00" }]
+				yield* TestClock.setTime(at("2026-11-21T15:00:00Z"))
+				const older = yield* Effect.forkChild(
+					MorphCostProvider.use((provider) =>
+						provider.pull({ orgId: ORG, connectionRef: ref }, NOVEMBER),
+					),
+				)
+				yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
+				// Pull B asks at 15:00:05, gets $9 and finishes first.
+				world.members = [{ userId: "user_dev", spent: "9.00" }]
+				yield* pullAt("2026-11-21T15:00:05Z", ref, NOVEMBER)
+				// A's answer lands later still.
+				yield* TestClock.setTime(at("2026-11-21T15:00:10Z"))
+				const asked = world.urls.length
+				release()
+				yield* Fiber.join(older)
+				// A was answered once, not retried after a timeout.
+				assert.strictEqual(world.urls.length, asked)
+				const day = yield* Effect.promise(() =>
+					queryFirstRow<{ closing_micros: string }>(
+						testDb,
+						"SELECT closing_micros::text FROM morph_spend_readings WHERE day = '2026-11-21'",
+					),
+				)
+				assert.strictEqual(day?.closing_micros, "9000000")
 			}),
 		)
 	})

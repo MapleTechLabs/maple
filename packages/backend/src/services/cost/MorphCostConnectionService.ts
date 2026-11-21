@@ -24,8 +24,6 @@ const VALIDATE_TIMEOUT = Duration.seconds(20)
  */
 const ACCOUNT_ID = "organization"
 const ACCOUNT_LABEL = "Organization"
-/** Rows the replacement check reads: far more members than one reading holds. */
-const KNOWN_MEMBERS_SCAN = 1000
 
 const refused = (message: string) => new CostConnectionValidationError({ message })
 
@@ -82,24 +80,19 @@ export class MorphCostConnectionService extends Context.Service<
 		 * at the same instant. Readings go with their connection, so these are its.
 		 */
 		const knownMembers = Effect.fnUntraced(function* (orgId: OrgId) {
-			// One statement, so the newest reading's time and its members come from one snapshot.
+			// One statement, so the newest reading's time and all its members come from one snapshot.
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(MorphSpendReadings)
-						.select(($) => ({ memberId: $.memberId, lastReadAt: $.lastReadAt }))
-						.where(($) => [$.orgId.eq(orgId)])
-						.orderBy(["lastReadAt", "desc"])
-						.limit(KNOWN_MEMBERS_SCAN),
+						.select(($) => ({ memberId: $.memberId }))
+						.where(($) => [
+							$.orgId.eq(orgId),
+							PG.sql
+								.cond`${$.lastReadAt} = (select max(last_read_at) from morph_spend_readings where org_id = ${orgId})`,
+						]),
 				),
 			)
-			const [newest] = rows
-			if (newest === undefined) return []
-			return Arr.dedupe(
-				Arr.map(
-					Arr.filter(rows, (row) => row.lastReadAt === newest.lastReadAt),
-					(row) => row.memberId,
-				),
-			)
+			return Arr.dedupe(Arr.map(rows, (row) => row.memberId))
 		})
 
 		const set = Effect.fn("MorphCostConnectionService.set")(function* (

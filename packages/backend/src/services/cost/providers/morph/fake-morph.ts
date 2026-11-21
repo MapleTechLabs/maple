@@ -19,6 +19,8 @@ export interface FakeMorph {
 	month: string
 	/** The organization's members, or raw text for a malformed answer. */
 	members: ReadonlyArray<FakeMorphMember> | string
+	/** The next answer waits for this, with the members as they were when it was asked. */
+	holdNext: Promise<void> | undefined
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
@@ -27,6 +29,7 @@ export const makeFakeMorph = (overrides: Partial<FakeMorph> = {}): FakeMorph => 
 	status: 200,
 	month: "2026-11",
 	members: [],
+	holdNext: undefined,
 	urls: [],
 	authorizations: [],
 	...overrides,
@@ -45,10 +48,15 @@ const fetchStub =
 				{ status: world.status },
 			)
 		}
-		if (typeof world.members === "string") return new Response(world.members, { status: 200 })
+		const members = world.members
+		const month = world.month
+		const hold = world.holdNext
+		world.holdNext = undefined
+		if (hold !== undefined) await hold
+		if (typeof members === "string") return new Response(members, { status: 200 })
 		return Response.json({
-			month: world.month,
-			members: Arr.map(world.members, (member) => ({
+			month,
+			members: Arr.map(members, (member) => ({
 				userId: member.userId,
 				monthlyLimit: null,
 				spent: member.spent,
