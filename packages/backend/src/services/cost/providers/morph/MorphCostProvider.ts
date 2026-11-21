@@ -4,6 +4,7 @@
  * readings are the history: a re-pulled day comes out the same.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb } from "@maple/db/client"
 import { MorphSpendReadings } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, type Redacted, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
@@ -76,6 +77,58 @@ export const toMemberReadings = (
 		),
 	)
 
+/**
+ * Keeps `readings` as their day's last, and as its first when the day has none yet, then drops the
+ * months below the floor: only the months the sync can still pull are ever read again.
+ */
+export const writeReadings = Effect.fnUntraced(function* (
+	db: MapleDb,
+	source: CostPullSource,
+	month: string,
+	readings: ReadonlyArray<MemberReading>,
+	now: number,
+) {
+	const day = readingDay(month, utcToday(now))
+	yield* Effect.forEach(
+		readings,
+		(reading) =>
+			db.run(
+				PG.insertInto(MorphSpendReadings)
+					.values({
+						orgId: source.orgId,
+						connectionId: source.connectionRef,
+						month,
+						day,
+						memberId: reading.memberId,
+						memberLabel: reading.memberLabel,
+						openingMicros: reading.micros,
+						closingMicros: reading.micros,
+						firstReadAt: now,
+						lastReadAt: now,
+					})
+					.onConflictDoUpdate({
+						target: ["connectionId", "month", "memberId", "day"],
+						set: {
+							memberLabel: reading.memberLabel,
+							closingMicros: reading.micros,
+							lastReadAt: now,
+						},
+						// A pull that read earlier but writes later must not undo a newer reading.
+						where: ($) => $.lastReadAt.lte(now),
+					}),
+			),
+		{ discard: true },
+	)
+	yield* db.run(
+		PG.deleteFrom(MorphSpendReadings).where(($) => [
+			$.orgId.eq(source.orgId),
+			$.connectionId.eq(source.connectionRef),
+			$.month.lt(Str.slice(0, 7)(historyFloor("morph", utcToday(now)))),
+		]),
+	)
+	return day
+})
+
 export class MorphCostProvider extends Context.Service<MorphCostProvider, CostProviderAdapter>()(
 	"@maple/backend/services/cost/MorphCostProvider",
 	{
@@ -101,54 +154,11 @@ export class MorphCostProvider extends Context.Service<MorphCostProvider, CostPr
 					),
 				)
 				const now = yield* Clock.currentTimeMillis
-				const day = readingDay(list.month, utcToday(now))
 				yield* Effect.annotateCurrentSpan({
 					"maple.cost.morph.month": list.month,
 					"maple.cost.morph.members": readings.length,
 				})
-				yield* dbExecute((db) =>
-					Effect.forEach(
-						readings,
-						(reading) =>
-							db.run(
-								PG.insertInto(MorphSpendReadings)
-									.values({
-										orgId: source.orgId,
-										connectionId: source.connectionRef,
-										month: list.month,
-										day,
-										memberId: reading.memberId,
-										memberLabel: reading.memberLabel,
-										openingMicros: reading.micros,
-										closingMicros: reading.micros,
-										firstReadAt: now,
-										lastReadAt: now,
-									})
-									.onConflictDoUpdate({
-										target: ["connectionId", "month", "memberId", "day"],
-										set: {
-											memberLabel: reading.memberLabel,
-											closingMicros: reading.micros,
-											lastReadAt: now,
-										},
-										// A pull that read earlier but writes later must not undo a newer reading.
-										where: ($) => $.lastReadAt.lte(now),
-									}),
-							),
-						{ discard: true },
-					),
-				)
-				// Only the months the sync can still pull are ever read again.
-				yield* dbExecute((db) =>
-					db.run(
-						PG.deleteFrom(MorphSpendReadings).where(($) => [
-							$.orgId.eq(source.orgId),
-							$.connectionId.eq(source.connectionRef),
-							$.month.lt(Str.slice(0, 7)(historyFloor("morph", utcToday(now)))),
-						]),
-					),
-				)
-				return day
+				return yield* dbExecute((db) => writeReadings(db, source, list.month, readings, now))
 			})
 
 			const pull = Effect.fn("MorphCostProvider.pull")(

@@ -106,6 +106,28 @@ describe("Morph readings as daily cost", () => {
 		)
 	})
 
+	it("keeps two members apart when one takes over the other's email", () => {
+		const rows = toCostRows(
+			[
+				reading("2026-11-16", "alex", 0, 4),
+				reading("2026-11-16", "sam", 0, 9),
+				// Alex left; Sam took Alex's address.
+				{ ...reading("2026-11-17", "sam", 9, 10), memberLabel: "alex@example.com" },
+			],
+			"organization",
+			NOVEMBER,
+			"2026-11-17",
+		)
+		const monday = Arr.filter(rows, (row) => row.day === "2026-11-16")
+		assert.deepStrictEqual(
+			Arr.map(monday, (row) => [row.resourceId, row.billedCost]),
+			[
+				["alex@example.com (alex)", 4],
+				["alex@example.com (sam)", 9],
+			],
+		)
+	})
+
 	it("starts every month over, and returns only the window's days", () => {
 		const rows = toCostRows(
 			[

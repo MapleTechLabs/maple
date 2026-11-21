@@ -72,11 +72,27 @@ const monthRows = (
 	)
 	// Read on the month's first day, nothing came before: the day counts from zero.
 	const lumpDay = firstDay === monthStart(firstDay) ? undefined : firstDay
-	const members = Arr.groupBy(readings, (reading) => reading.memberId)
-	return Arr.flatMap(Rec.values(members), (memberReadings) => {
+	const members = Rec.values(Arr.groupBy(readings, (reading) => reading.memberId))
+	// One name per member on every day: the newest one Morph gave. A name two members end up with
+	// (an email moved on) takes the member's id, so their rows never merge into one.
+	const newestLabels = Arr.map(
+		members,
+		(memberReadings) => Arr.lastNonEmpty(Arr.sort(memberReadings, byDay)).memberLabel,
+	)
+	const shared = new Set(
+		Rec.keys(
+			Rec.filter(
+				Arr.groupBy(newestLabels, (label) => label),
+				(same) => same.length > 1,
+			),
+		),
+	)
+	return Arr.flatMap(members, (memberReadings) => {
 		const sorted = Arr.sort(memberReadings, byDay)
-		// One name per member on every day: the newest one Morph gave.
-		const label = Arr.lastNonEmpty(sorted).memberLabel
+		const newest = Arr.lastNonEmpty(sorted)
+		const label = shared.has(newest.memberLabel)
+			? `${newest.memberLabel} (${newest.memberId})`
+			: newest.memberLabel
 		const days = Arr.map(sorted, (reading) => ({ ...reading, memberLabel: label }))
 		return Arr.flatMap(days, (reading, index): ReadonlyArray<CostPullRow> => {
 			const previous = index === 0 ? undefined : days[index - 1]

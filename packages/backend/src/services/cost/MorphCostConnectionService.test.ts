@@ -1,6 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, String as Str } from "effect"
+import { DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { MorphCostConnectionService } from "./MorphCostConnectionService"
@@ -68,6 +68,46 @@ describe("MorphCostConnectionService", () => {
 		)
 	})
 
+	it.effect(
+		"keeps the reading the key check took, so a month ending before the first sync is not lost",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const world = makeFakeMorph({
+				month: "2026-11",
+				members: [{ userId: "user_dev", spent: "300.00" }],
+			})
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					yield* TestClock.setTime(
+						DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-30T23:58:00Z")),
+					)
+					yield* set(KEY)
+					const ref = (yield* stored(testDb))?.id ?? ""
+					// The first sync runs after Morph rolled over to December.
+					yield* TestClock.setTime(
+						DateTime.toEpochMillis(DateTime.makeUnsafe("2026-12-01T00:05:00Z")),
+					)
+					world.month = "2026-12"
+					world.members = [{ userId: "user_dev", spent: "0.00" }]
+					const pulled = yield* MorphCostProvider.use((provider) =>
+						provider.pull(
+							{ orgId: ORG, connectionRef: ref },
+							{ startDay: "2026-11-01", endDay: "2026-12-01" },
+						),
+					)
+					const november = Arr.reduce(
+						Arr.filter(pulled.rows, (row) => row.day < "2026-12-01"),
+						0,
+						(total, row) => total + row.billedCost,
+					)
+					assert.strictEqual(november, 300)
+				}),
+			)
+		},
+	)
+
 	it.effect("refuses text that is not a key without calling Morph, and says why Morph refused one", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeMorph()
@@ -118,9 +158,21 @@ describe("MorphCostConnectionService", () => {
 				world.members = [
 					{ userId: "user_dev", spent: "1.00" },
 					{ userId: "user_ops", spent: "0.00" },
+					{ userId: "user_qa", spent: "0.00" },
 				]
 				yield* set(OTHER_KEY)
 				assert.strictEqual((yield* stored(testDb))?.id, first?.id)
+
+				// The organization shrinks to one member, and a sync sees it: rotating its key still works.
+				world.members = [{ userId: "user_ops", spent: "0.50" }]
+				yield* TestClock.setTime(NOW + 60 * 60_000)
+				yield* MorphCostProvider.use((provider) =>
+					provider.pull(
+						{ orgId: ORG, connectionRef: first?.id ?? "" },
+						{ startDay: "2026-11-01", endDay: "2026-11-21" },
+					),
+				)
+				yield* set(KEY)
 
 				world.members = [{ userId: "user_stranger", spent: "9.00" }]
 				const other = yield* set(KEY).pipe(Effect.flip)
