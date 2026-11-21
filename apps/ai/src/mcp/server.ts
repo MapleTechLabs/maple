@@ -37,11 +37,11 @@ const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 /** How long a `tools/list` or an `initialize` waits for an org's rollout flags. */
 const FLAGS_WAIT = Duration.seconds(2)
 
-/** An org's rollout flags, when they are known within {@link FLAGS_WAIT}. */
+/** An org's rollout flags, when known within {@link FLAGS_WAIT}; a slow read is not waited on twice. */
 export const flagsInTime = (
 	featureFlags: Context.Service.Shape<typeof OrganizationFeatureFlagsService>,
 	orgId: OrgId,
-) => featureFlags.known(orgId).pipe(Effect.timeoutOption(FLAGS_WAIT), Effect.map(Option.flatten))
+) => featureFlags.known(orgId, FLAGS_WAIT)
 
 /** Long enough to tell failures apart in the MCP hub's error groups, short enough for a span. */
 const MAX_ERROR_MESSAGE_CHARS = 300

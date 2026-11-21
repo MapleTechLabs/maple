@@ -17,7 +17,7 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, String as Str } from "effect"
+import { Clock, Context, type Duration, Effect, Layer, Option, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
 
@@ -32,9 +32,37 @@ export interface OrganizationFeatureFlagsServiceApi {
 	readonly flags: (orgId: OrgId) => Effect.Effect<OrganizationFeatureFlags>
 	/**
 	 * The flags, or none when they could not be read. For a caller that only decides what to show,
-	 * and so should not hide a feature because the provider was away.
+	 * and so should not hide a feature because the provider was away. With `within`, a read that
+	 * takes longer answers none, and so does the next minute of calls, without waiting again.
 	 */
-	readonly known: (orgId: OrgId) => Effect.Effect<Option.Option<OrganizationFeatureFlags>>
+	readonly known: (
+		orgId: OrgId,
+		within?: Duration.Duration,
+	) => Effect.Effect<Option.Option<OrganizationFeatureFlags>>
+}
+
+/**
+ * A keyed read with a wait: one that outlasts `within` answers none, and for `quietMs` after so
+ * does every call for that key, at once. A slow provider then costs one wait, not one per request.
+ */
+export const answeringWithin = <K, A>(quietMs: number) => {
+	const unanswered = new Map<K, number>()
+	return Effect.fnUntraced(function* <R>(
+		key: K,
+		within: Duration.Duration,
+		read: Effect.Effect<Option.Option<A>, never, R>,
+	) {
+		const nowMs = yield* Clock.currentTimeMillis
+		const sinceMs = unanswered.get(key)
+		if (sinceMs !== undefined && nowMs - sinceMs < quietMs) return Option.none<A>()
+		const answer = yield* Effect.timeoutOption(read, within)
+		if (Option.isNone(answer)) {
+			unanswered.set(key, nowMs)
+			return Option.none<A>()
+		}
+		unanswered.delete(key)
+		return answer.value
+	})
 }
 
 export class OrganizationFeatureFlagsService extends Context.Service<
@@ -71,9 +99,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			)
 		})
 
-		const known: OrganizationFeatureFlagsServiceApi["known"] = Effect.fn(
-			"OrganizationFeatureFlagsService.flags",
-		)(function* (orgId) {
+		const cachedOrRead = Effect.fn("OrganizationFeatureFlagsService.flags")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			if (!clerkMode) return Option.some(ENABLED_ORGANIZATION_FEATURE_FLAGS)
 			const nowMs = yield* Clock.currentTimeMillis
@@ -87,9 +113,13 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			return fresh
 		})
 
+		const inTime = answeringWithin<OrgId, OrganizationFeatureFlags>(FLAGS_TTL_MS)
+		const known: OrganizationFeatureFlagsServiceApi["known"] = (orgId, within) =>
+			within === undefined ? cachedOrRead(orgId) : inTime(orgId, within, cachedOrRead(orgId))
+
 		const flags: OrganizationFeatureFlagsServiceApi["flags"] = (orgId) =>
 			Effect.map(
-				known(orgId),
+				cachedOrRead(orgId),
 				Option.getOrElse(() => DISABLED_ORGANIZATION_FEATURE_FLAGS),
 			)
 
