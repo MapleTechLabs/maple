@@ -123,7 +123,13 @@ export const CONFIG_TASKS: ReadonlyArray<ToolTask> = [
 		["control", "ingest"],
 		"Stop storing spans for the /ready route. They're just noise and we pay for them.",
 		// A preview first is what the tool recommends, but only the proposed rule is the change.
-		calls(call("manage_ingest_rule", { action: "create" })),
+		calls(
+			call("manage_ingest_rule", {
+				action: "create",
+				conditions: { includes: "/ready" },
+				rule_action: { includes: "drop" },
+			}),
+		),
 	),
 	task(
 		"disable-ingest-rule",
