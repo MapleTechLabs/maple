@@ -8,16 +8,19 @@
  *   00  PageHero          bg-bg        the question: "Maple vs X", beside the
  *                                      two marks
  *   01  CompareNav        sticky       five anchors, the page's wayfinding
- *   01a Surfaces          bg-bg        optional: what the vendor leaves you
- *                                      to build, drawn by the live artifacts.
- *                                      Before the table: product ahead of prose
+ *   01a Surfaces          bg-bg        Maple's views, drawn by the live
+ *                                      artifacts, each with what the vendor
+ *                                      does instead. Before the table: product
+ *                                      ahead of prose
  *   02  DifferenceTable   bg-bg-deep   the evidence, difference-first
- *   02a ProductBand       bg-bg        the service map, on pages with no
- *                                      Surfaces section
- *   03  Receipts          bg-bg        the same month billed twice, then the
+ *   02a ProductBand       bg-bg        the service map, when Surfaces
+ *                                      doesn't draw it
+ *   03  Receipts          bg-bg        the overview's metered totals, the same
+ *                                      month billed twice, then the
  *                                      calculator for the visitor's numbers
  *   04  Migration         bg-bg-deep   three steps + the exporter change
  *   05  FAQ               bg-bg        only what the table didn't answer
+ *                                      beside the services page
  *   06  Sources           bg-bg        the vendor pages, dated
  *   07  CrossLinks        bg-bg-deep   the other comparisons
  *   08  PageCta           amber        the one peak
@@ -42,6 +45,7 @@ import CrossLinks from "../page/CrossLinks.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
 import ProductBand from "../marketing/ProductBand.astro";
+import ProductFrame from "../marketing/ProductFrame.astro";
 import CompareNav from "./CompareNav.astro";
 import ComparePair from "./ComparePair.astro";
 import DifferenceTable from "./DifferenceTable.astro";
@@ -97,8 +101,10 @@ const crossLinks = [
 		})),
 ];
 
-// The one surface every comparison can show without a per-vendor claim.
+// The one surface every comparison can show without a per-vendor claim. It
+// gets a band of its own under the table unless Surfaces already draws it.
 const serviceMap = MAPLE_SURFACES["service-map"];
+const showsServiceMap = competitor.surfaces.rows.some((row) => row.surface === "service-map");
 
 const faqItems = competitor.faqs.map((faq) => ({ question: faq.question(), answer: faq.answer() }));
 
@@ -135,9 +141,9 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		<ComparePair slot="aside" competitor={competitor} />
 	</PageHero>
 
-	<CompareNav competitorName={competitor.name} surfaces={Boolean(competitor.surfaces)} />
+	<CompareNav competitorName={competitor.name} />
 
-	{competitor.surfaces && <Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />}
+	<Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />
 
 	<DifferenceTable
 		competitorName={competitor.name}
@@ -147,7 +153,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 	/>
 
 	{
-		!competitor.surfaces && (
+		!showsServiceMap && (
 			<ProductBand
 				class="border-t border-border"
 				eyebrow={m.cmp_surfaces_eyebrow()}
@@ -168,7 +174,9 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 	/>
 
 	<div id="faq" class="scroll-mt-28">
-		<FAQ items={faqItems} shell />
+		<FAQ items={faqItems} shell>
+			<ProductFrame slot="aside" surface="services" caption={m.cmp_faq_shot_caption()} />
+		</FAQ>
 	</div>
 
 	<Sources competitorName={competitor.name} sources={competitor.sources} />

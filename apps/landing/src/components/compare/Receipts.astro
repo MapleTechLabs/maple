@@ -14,6 +14,7 @@
  */
 import * as m from "../../paraglide/messages.js";
 import { PricingCalculator } from "../PricingCalculator";
+import ProductFrame from "../marketing/ProductFrame.astro";
 import {
 	defaultValues,
 	describeWorkload,
@@ -59,13 +60,19 @@ const money = (amount: number) => (amount === 0 ? m.cmp_price_free() : formatLin
 
 <section id="price" class="scroll-mt-28 border-t border-border bg-bg">
 	<div class="shell py-16 md:py-24">
-		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cmp_price_eyebrow()}</p>
-		<h2
-			class="mt-4 max-w-[22ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
-		>
-			{m.cmp_price_title()}
-		</h2>
-		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{m.cmp_price_lede()}</p>
+		{/* The heading shares its row with the overview's totals: the volumes the plan meters, as the app shows them. */}
+		<div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_30rem] lg:items-start lg:gap-16">
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cmp_price_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[22ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.cmp_price_title()}
+				</h2>
+				<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{m.cmp_price_lede()}</p>
+			</div>
+			<ProductFrame surface="usage" caption={m.cmp_price_shot_caption()} />
+		</div>
 
 		<p class="mt-8 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[12.5px]">
 			<span class="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-fg-muted">{m.cmp_price_workload()}</span>
