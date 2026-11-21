@@ -478,7 +478,8 @@ export const collectToolDefinitions = (
 	const family: McpToolRegistrar["family"] = (spec) => {
 		const actions: Array<MapleToolDefinition & MapleToolActionEntry> = []
 		const builder: ReturnType<McpToolRegistrar["family"]> = {
-			action: (name, action) => {
+			// Typed here as a string: the families share no action name, so the inferred key is `never`.
+			action: (name: string, action) => {
 				const resultSchema = FAMILY_RESULTS[spec.name]?.[name]
 				if (resultSchema === undefined) {
 					throw new Error(`${spec.name} has no action "${name}" in the domain catalog`)
