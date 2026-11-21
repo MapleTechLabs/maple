@@ -51,7 +51,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
-- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
+- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailStats`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
 - `packages/views/src/ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
 - `packages/views/src/ui/dialog.ts` `popupId`, `triggerId`, `titleId`, `descriptionId`, `open`, `close`, `isDismissedByOutsidePress` (stateful: Model, init, update): Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a Mount that portals the popup to `<body>`, marks the page outside it, locks scroll...
 - `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
