@@ -22,9 +22,6 @@ const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 
 const invalid = (message: string, parameter: string) => new McpInvalidInputError({ message, parameter })
 
-const windowNotFound = deleteWindowErrors["@maple/http/errors/AlertMaintenanceWindowNotFoundError"]
-const windowUnavailable = deleteWindowErrors["@maple/http/errors/AlertPersistenceError"]
-
 interface ScheduleChange {
 	readonly starts_at?: string | undefined
 	readonly ends_at?: string | undefined
@@ -128,14 +125,6 @@ export const updateMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 			)(params.maintenance_window_id)
 			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
-			const current = yield* windows.get(tenant.orgId, windowId).pipe(
-				Effect.catchTags({
-					"@maple/http/errors/AlertMaintenanceWindowNotFoundError": windowNotFound,
-					"@maple/http/errors/AlertPersistenceError": windowUnavailable,
-				}),
-			)
-
-			const schedule = yield* scheduleWith(current.schedule, params)
 			const ruleIds =
 				params.rule_ids === undefined
 					? undefined
@@ -145,50 +134,57 @@ export const updateMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 				params.tags !== undefined ||
 				params.services !== undefined ||
 				params.environments !== undefined
-			// The service replaces matchers whole, so the ones not named are carried over.
-			const merged = {
-				ruleIds: ruleIds ?? current.matchers.ruleIds ?? [],
-				tags: params.tags ?? current.matchers.tags ?? [],
-				services: params.services ?? current.matchers.services ?? [],
-				environments: params.environments ?? current.matchers.environments ?? [],
-			}
-			const matchers = {
-				...(merged.ruleIds.length === 0 ? undefined : { ruleIds: merged.ruleIds }),
-				...(merged.tags.length === 0 ? undefined : { tags: merged.tags }),
-				...(merged.services.length === 0 ? undefined : { services: merged.services }),
-				...(merged.environments.length === 0 ? undefined : { environments: merged.environments }),
-			}
-			if (matchersGiven && Object.keys(matchers).length === 0) {
-				return yield* invalid(
-					"A maintenance window needs at least one matcher: rule_ids, tags, services or environments. To stop it, pass enabled=false or delete it.",
-					"services",
-				)
-			}
 
-			const change = {
-				...(params.name === undefined ? undefined : { name: params.name }),
-				...(params.reason === undefined ? undefined : { reason: params.reason }),
-				...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
-				...(schedule === undefined ? undefined : { schedule }),
-				...(matchersGiven ? { matchers } : undefined),
-				...(params.exclude_from_baselines === undefined
-					? undefined
-					: { excludeFromBaselines: params.exclude_from_baselines }),
-			}
-			if (Object.keys(change).length === 0) {
-				return yield* invalid(
-					"Nothing to change: pass at least one field besides maintenance_window_id.",
-					"name",
+			// Built from the window the write lands on: the service replaces schedule and matchers
+			// whole, so merging into an earlier read would undo an edit saved in between.
+			const changeFor = Effect.fnUntraced(function* (current: AlertMaintenanceWindowDocument) {
+				const schedule = yield* scheduleWith(current.schedule, params)
+				const merged = {
+					ruleIds: ruleIds ?? current.matchers.ruleIds ?? [],
+					tags: params.tags ?? current.matchers.tags ?? [],
+					services: params.services ?? current.matchers.services ?? [],
+					environments: params.environments ?? current.matchers.environments ?? [],
+				}
+				const matchers = {
+					...(merged.ruleIds.length === 0 ? undefined : { ruleIds: merged.ruleIds }),
+					...(merged.tags.length === 0 ? undefined : { tags: merged.tags }),
+					...(merged.services.length === 0 ? undefined : { services: merged.services }),
+					...(merged.environments.length === 0 ? undefined : { environments: merged.environments }),
+				}
+				if (matchersGiven && Object.keys(matchers).length === 0) {
+					return yield* invalid(
+						"A maintenance window needs at least one matcher: rule_ids, tags, services or environments. To stop it, pass enabled=false or delete it.",
+						"services",
+					)
+				}
+
+				const change = {
+					...(params.name === undefined ? undefined : { name: params.name }),
+					...(params.reason === undefined ? undefined : { reason: params.reason }),
+					...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
+					...(schedule === undefined ? undefined : { schedule }),
+					...(matchersGiven ? { matchers } : undefined),
+					...(params.exclude_from_baselines === undefined
+						? undefined
+						: { excludeFromBaselines: params.exclude_from_baselines }),
+				}
+				if (Object.keys(change).length === 0) {
+					return yield* invalid(
+						"Nothing to change: pass at least one field besides maintenance_window_id.",
+						"name",
+					)
+				}
+				return yield* decodeUpdateRequest(change).pipe(
+					Effect.mapError(
+						(error) =>
+							new McpInvalidInputError({
+								message: `Invalid maintenance window: ${error.message}`,
+							}),
+					),
 				)
-			}
-			const request = yield* decodeUpdateRequest(change).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpInvalidInputError({ message: `Invalid maintenance window: ${error.message}` }),
-				),
-			)
+			})
 			const window = yield* windows
-				.update(tenant.orgId, tenant.userId, tenant.roles, windowId, request)
+				.revise(tenant.orgId, tenant.userId, tenant.roles, windowId, changeFor)
 				.pipe(Effect.catchTags({ ...createWindowErrors, ...deleteWindowErrors }))
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

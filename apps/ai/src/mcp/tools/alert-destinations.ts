@@ -348,7 +348,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 		})
 		.action("test", {
 			description:
-				"Send one test notification to a destination and report whether its provider accepted it; the result is also recorded on the destination (last test error). Sends a real message to a real channel. Email destinations are tested from Alerts > Destinations.",
+				"Run a destination's test and report what it did; the result is also recorded on the destination (last test error). For most types this sends a real message to a real channel. A Linear test only checks access to the team, and a chat workspace with alert notifications off posts nothing: Result says which happened, so relay it and do not say a message was sent unless it does. Email destinations are tested from Alerts > Destinations.",
 			parameters: Schema.Struct({
 				destination: P.text("The destination's name or id"),
 			}),
@@ -372,31 +372,31 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				const outcome = yield* destinations
 					.testDestination(tenant.orgId, tenant.userId, tenant.roles, current.id)
 					.pipe(
-						Effect.map((sent) => ({ delivered: sent.success, message: sent.message })),
+						Effect.map((sent) => ({ passed: sent.success, message: sent.message })),
 						Effect.catchTags({
 							"@maple/http/errors/AlertDeliveryError": (error) =>
-								Effect.succeed({ delivered: false, message: error.message }),
+								Effect.succeed({ passed: false, message: error.message }),
 							"@maple/http/errors/AlertDeliveryAuthError": (error) =>
-								Effect.succeed({ delivered: false, message: error.message }),
+								Effect.succeed({ passed: false, message: error.message }),
 							"@maple/http/errors/AlertDeliveryTargetMissingError": (error) =>
-								Effect.succeed({ delivered: false, message: error.message }),
+								Effect.succeed({ passed: false, message: error.message }),
 							"@maple/http/errors/AlertDeliveryRejectedError": (error) =>
-								Effect.succeed({ delivered: false, message: error.message }),
+								Effect.succeed({ passed: false, message: error.message }),
 						}),
 						Effect.mapError(toMcpError),
 					)
-				yield* Effect.annotateCurrentSpan({ "maple.alert.test_delivered": outcome.delivered })
+				yield* Effect.annotateCurrentSpan({ "maple.alert.test_passed": outcome.passed })
 				return {
 					destination: {
 						...toRow(current),
-						lastTestError: outcome.delivered ? null : outcome.message,
+						lastTestError: outcome.passed ? null : outcome.message,
 					},
 					...outcome,
 				}
 			}),
 			render: (output) => ({
-				title: output.delivered ? "Test notification sent" : "Test notification failed",
-				notices: output.delivered
+				title: output.passed ? "Destination test passed" : "Destination test failed",
+				notices: output.passed
 					? []
 					: [
 							`"${output.destination.name}" did not accept the test. Alerts routed to it are failing the same way until its target or credential is fixed in Alerts > Destinations.`,

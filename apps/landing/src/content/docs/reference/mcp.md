@@ -114,7 +114,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `list_alert_rules`           | read   | Alert rules with severity, signal type and condition                                                                                         |
 | `get_alert_rule`             | read   | One rule's full configuration: thresholds, filters, evaluation settings and destinations                                                     |
 | `list_alert_destinations`    | read   | Notification destinations with id, type and delivery health                                                                                  |
-| `manage_alert_destination`   | write  | Send a test notification, rename, turn off or delete a destination, or add an email destination                                              |
+| `manage_alert_destination`   | write  | Run a destination's test, rename, turn off or delete it, or add an email destination                                                         |
 | `list_alert_incidents`       | read   | Triggered alert incidents, open and resolved, with the last observed value                                                                   |
 | `acknowledge_alert_incident` | write  | Acknowledge an open incident, which pauses its reminders, or clear the acknowledgement                                                       |
 | `get_incident_timeline`      | read   | Trigger, notification and resolution times for one rule's incidents, or all rules'                                                           |

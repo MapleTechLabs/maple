@@ -3,7 +3,7 @@
  * typed output on `structuredContent`, the rendered text, and input errors naming the parameter.
  */
 import { describe, expect, it } from "vitest"
-import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
@@ -175,6 +175,8 @@ interface Seen {
 	queryTiming?: Record<string, unknown>
 	/** The calling key's scopes; unset is a full-access caller. */
 	scopes?: ReadonlyArray<string>
+	/** Filled with the scope family of each monitor or SLO listing a tool reads. */
+	routingReads?: Array<string>
 	/** A raw-SQL preview whose range was too heavy to chart: no series. */
 	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
@@ -398,8 +400,12 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		}),
-		Layer.mock(UptimeMonitorsService)({ list: () => Effect.succeed([]) }),
-		Layer.mock(SlosService)({ list: () => Effect.succeed([]) }),
+		Layer.mock(UptimeMonitorsService)({
+			list: () => Effect.sync(() => seen.routingReads?.push("uptime_monitors")).pipe(Effect.as([])),
+		}),
+		Layer.mock(SlosService)({
+			list: () => Effect.sync(() => seen.routingReads?.push("slos")).pipe(Effect.as([])),
+		}),
 		Layer.succeed(AlertReadModelsService, {
 			getIncident: (_org: unknown, incidentId: string) => {
 				seen.incidentOptions ??= { incidentId }
@@ -551,6 +557,22 @@ describe("alert tools", () => {
 			'escalation chain "Checkout on-call"',
 			"error notifications",
 		])
+	})
+
+	it("list_alert_destinations reads monitor and SLO routing only for a key that may read them", async () => {
+		const baseline = Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`)
+		const narrow: Seen = { scopes: baseline, routingReads: [] }
+		const withheld = await ok("list_alert_destinations", {}, narrow)
+		expect(narrow.routingReads).toEqual([])
+		expect(
+			Schema.decodeUnknownSync(ListAlertDestinationsOutput)(withheld.structuredContent).usageNotChecked,
+		).toEqual(["uptime monitors", "SLOs"])
+		expect(text(withheld)).toContain('"Used by" leaves out uptime monitors and SLOs')
+
+		const wide: Seen = { scopes: [...baseline, "uptime_monitors:read", "slos:read"], routingReads: [] }
+		const complete = await ok("list_alert_destinations", {}, wide)
+		expect(Arr.sort(wide.routingReads ?? [], Order.String)).toEqual(["slos", "uptime_monitors"])
+		expect(text(complete)).not.toContain("leaves out")
 	})
 
 	it("get_alert_rule renders the full config, and a missing id is invalid input on rule_id", async () => {

@@ -229,13 +229,15 @@ describe("manage_alert_destination", () => {
 		webhookStatus = 200
 		const sent = await run("manage_alert_destination", { action: "test", destination: W.destination })
 		expect(sent.isError).not.toBe(true)
+		expect(markdown(sent)).toContain("Destination test passed")
+		// The transport's own words say a message went out; the headline never claims it.
 		expect(markdown(sent)).toContain("Test notification sent")
 		expect(delivered).toEqual(["https://hooks.example.com/maple/ops"])
 
 		webhookStatus = 500
 		const failed = await run("manage_alert_destination", { action: "test", destination: W.destination })
 		expect(failed.isError).not.toBe(true)
-		expect(markdown(failed)).toContain("Test notification failed")
+		expect(markdown(failed)).toContain("Destination test failed")
 		// The failure is recorded on the destination, where the next list shows it.
 		expect(rowOf(await text("list_alert_destinations"), W.destination)).not.toMatch(/\| - \|$/)
 		webhookStatus = 200
