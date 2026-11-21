@@ -79,6 +79,8 @@ const makeRecordingTracer = () => {
 describe("familyActionOf", () => {
 	it("names the action a family call asks for, under its own name or a retired one", () => {
 		expect(familyActionOf("manage_slo", { action: "Update", slo: "Checkout" })).toBe("update")
+		// Spelled as the call itself forgives it.
+		expect(familyActionOf("manage_oncall_schedule", { action: "Add Override" })).toBe("add_override")
 		expect(familyActionOf("delete_slo", { slo: "Checkout", confirm: true })).toBe("delete")
 	})
 

@@ -31,7 +31,7 @@ import {
 	refusalFor,
 	refusesReadOnlyCredential,
 } from "./types"
-import { canonicalToolCall, retiredOutputKey } from "./tool-name-aliases"
+import { canonicalToolCall, enumSpelling, retiredOutputKey } from "./tool-name-aliases"
 import { unknownToolMessage } from "../lib/tool-suggestions"
 import {
 	argumentWarnings,
@@ -730,8 +730,6 @@ const parameterNames = (entry: MapleToolCatalogEntry): ReadonlyArray<string> => 
 	const properties = inputSchemaOf(entry).properties
 	return typeof properties === "object" && properties !== null ? Rec.keys(properties) : []
 }
-
-const enumSpelling = (value: string): string => Str.replace(/[\s-]+/g, "_")(Str.toLowerCase(Str.trim(value)))
 
 /**
  * An enum value as the model spelled it, read as the published one it means: `Feature Request`

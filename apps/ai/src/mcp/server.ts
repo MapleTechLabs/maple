@@ -16,6 +16,7 @@ import {
 } from "./tools/types"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import { enumSpelling } from "./tools/tool-name-aliases"
 import * as Policy from "@maple/domain/policy"
 
 /**
@@ -190,8 +191,9 @@ export class McpToolRegistration extends Context.Service<
 							yield* Effect.annotateCurrentSpan("maple.mcp.client.name", tenant.mcpClientName)
 						}
 						// The hub groups on this span: a family's name alone merges its actions.
-						const action = Predicate.isObject(payload) ? payload.action : undefined
-						if (typeof action === "string" && actions.includes(action)) {
+						const asked = Predicate.isObject(payload) ? payload.action : undefined
+						const action = typeof asked === "string" ? enumSpelling(asked) : undefined
+						if (action !== undefined && actions.includes(action)) {
 							yield* Effect.annotateCurrentSpan("maple.mcp.tool.action", action)
 						}
 						// Already built by the transport before the call; this reads the cached executor.

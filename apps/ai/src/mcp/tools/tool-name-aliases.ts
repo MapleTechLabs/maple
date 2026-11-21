@@ -1,4 +1,8 @@
-import { Array as Arr, Predicate, Record as Rec } from "effect"
+import { Array as Arr, Predicate, Record as Rec, String as Str } from "effect"
+
+/** An enum value or a family's action as it is read: case, spaces and hyphens are forgiven. */
+export const enumSpelling = (value: string): string =>
+	Str.replace(/[\s-]+/g, "_")(Str.toLowerCase(Str.trim(value)))
 
 /** What a retired name means now: a registered tool, and the arguments the old name stood for. */
 export interface ToolNameAlias {

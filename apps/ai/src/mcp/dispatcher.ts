@@ -10,14 +10,14 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer, Predicate, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Context, Effect, Layer, Predicate, Array as Arr, Record as Rec } from "effect"
 import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
 import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools/runtime-services"
 import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { mayReadDataSources } from "./lib/data-sources"
 import { executeRegisteredTool, type McpToolLookup } from "./tools/registry-core"
-import { canonicalToolCall } from "./tools/tool-name-aliases"
+import { canonicalToolCall, enumSpelling } from "./tools/tool-name-aliases"
 import { McpToolFamilyActions } from "@maple/domain/mcp-outputs"
 import { makeModuleToolLookup, mcpToolTitle } from "./tools/tool-lookup"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
@@ -203,7 +203,7 @@ export const familyActionOf = (name: string, input: unknown): string | undefined
 	const actions = FAMILY_ACTIONS[call.name]
 	const asked = Predicate.isObject(call.input) ? call.input.action : undefined
 	if (actions === undefined || typeof asked !== "string") return undefined
-	const action = Str.toLowerCase(Str.trim(asked))
+	const action = enumSpelling(asked)
 	return Rec.has(actions, action) ? action : undefined
 }
 
