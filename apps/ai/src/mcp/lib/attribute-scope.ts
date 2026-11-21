@@ -47,18 +47,17 @@ const traceKeys = (scope: AttributeScope, window: { startTime: string; endTime: 
 		orFallback("trace attribute keys", (): ReadonlyArray<string> => []),
 	)
 
-export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(function* (
-	params: AttributeScopeRequest,
+/** The keys seen in the window: on the primary map, and on the resource map where it is catalogued. */
+export interface KnownAttributeKeys {
+	readonly primary: ReadonlyArray<string>
+	readonly resource: ReadonlyArray<string> | "unknown"
+}
+
+/** Reads the keys a scope is picked from. Two warehouse reads, so a caller with several keys shares one. */
+export const knownAttributeKeys = Effect.fn("McpTool.knownAttributeKeys")(function* (
+	params: Pick<AttributeScopeRequest, "source" | "metric_name" | "metric_type">,
 	window: { readonly startTime: string; readonly endTime: string },
 ) {
-	const fixed = (scope: AttributeScope): ResolvedAttributeScope => ({ scope })
-	const key = params.attribute_key
-	if (key === undefined) return fixed("span")
-	if (params.attribute_scope !== undefined) return fixed(params.attribute_scope)
-	if (params.group_by === "resource_attribute") return fixed("resource")
-	if (params.source === "product_events") return fixed("span")
-
-	let scope: AttributeScope
 	if (params.source === "metrics") {
 		// A metric's own label set; resource keys of metrics are not catalogued.
 		const metricKeys = yield* queryWarehouse<KeyRow>("metric_attribute_keys", {
@@ -71,12 +70,28 @@ export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(
 			Effect.map(({ data }) => Arr.map(data, (r) => r.attributeKey)),
 			orFallback("metric attribute keys", (): ReadonlyArray<string> => []),
 		)
-		scope = pickAttributeScope(key, metricKeys, "unknown")
-	} else {
-		const spanKeys = yield* traceKeys("span", window)
-		const resourceKeys = yield* traceKeys("resource", window)
-		scope = pickAttributeScope(key, spanKeys, resourceKeys)
+		return { primary: metricKeys, resource: "unknown" } satisfies KnownAttributeKeys
 	}
+	const primary = yield* traceKeys("span", window)
+	const resource = yield* traceKeys("resource", window)
+	return { primary, resource } satisfies KnownAttributeKeys
+})
+
+export const resolveAttributeScope = Effect.fn("McpTool.resolveAttributeScope")(function* (
+	params: AttributeScopeRequest,
+	window: { readonly startTime: string; readonly endTime: string },
+	/** The window's keys, when the caller already reads them for other keys. */
+	known?: ReturnType<typeof knownAttributeKeys>,
+) {
+	const fixed = (scope: AttributeScope): ResolvedAttributeScope => ({ scope })
+	const key = params.attribute_key
+	if (key === undefined) return fixed("span")
+	if (params.attribute_scope !== undefined) return fixed(params.attribute_scope)
+	if (params.group_by === "resource_attribute") return fixed("resource")
+	if (params.source === "product_events") return fixed("span")
+
+	const keys = yield* known ?? knownAttributeKeys(params, window)
+	const scope = pickAttributeScope(key, keys.primary, keys.resource)
 	return scope === "resource"
 		? ({
 				scope,
