@@ -235,19 +235,21 @@ describe("toInputSchema tagged-variant merge", () => {
 		Schema.decodeUnknownSync(Schema.Struct({ properties: Schema.Struct({ range: Published }) }))(schema)
 			.properties.range
 
-	it("publishes one object for variants that differ by a tag and its own keys", () => {
+	const shared = { id: Schema.String, name: Schema.String, comment: Schema.optionalKey(Schema.String) }
+
+	it("publishes one object for variants that differ by a tag and their own optional keys", () => {
 		const schema = toInputSchema(
 			Schema.Struct({
 				range: Schema.Union([
 					Schema.Struct({
+						...shared,
 						type: Schema.Literal("relative"),
-						label: Schema.String,
-						value: Schema.String,
+						value: Schema.optionalKey(Schema.String),
 					}),
 					Schema.Struct({
+						...shared,
 						type: Schema.Literal("absolute"),
-						label: Schema.String,
-						start: Schema.String,
+						start: Schema.optionalKey(Schema.String),
 					}),
 				]),
 			}),
@@ -255,63 +257,46 @@ describe("toInputSchema tagged-variant merge", () => {
 		const range = rangeOf(schema)
 		expect(range.anyOf).toBeUndefined()
 		expect(range.properties?.type?.enum).toEqual(["relative", "absolute"])
-		expect(range.properties?.label?.description).toBeUndefined()
-		expect(range.properties?.value?.description).toBe("Only for type=relative, and required there.")
-		expect(range.properties?.start?.description).toBe("Only for type=absolute, and required there.")
-		expect(range.required).toEqual(["type", "label"])
-	})
-
-	it("says which tag a key is required under, since one required list cannot", () => {
-		const shared = { id: Schema.String, name: Schema.String, comment: Schema.optionalKey(Schema.String) }
-		const schema = toInputSchema(
-			Schema.Struct({
-				range: Schema.Union([
-					Schema.Struct({
-						...shared,
-						type: Schema.Literal("drop"),
-						note: Schema.String,
-						percent: Schema.Number,
-					}),
-					Schema.Struct({
-						...shared,
-						type: Schema.Literal("redact"),
-						note: Schema.optionalKey(Schema.String),
-						keys: Schema.Array(Schema.String),
-						method: Schema.optionalKey(Schema.String),
-					}),
-				]),
-			}),
-		)
-		const range = rangeOf(schema)
+		expect(range.properties?.name?.description).toBeUndefined()
+		expect(range.properties?.value?.description).toBe("Only for type=relative.")
+		expect(range.properties?.start?.description).toBe("Only for type=absolute.")
 		expect(range.required).toEqual(["id", "name", "type"])
-		expect(range.properties?.note?.description).toBe("Required for type=drop.")
-		expect(range.properties?.percent?.description).toBe("Only for type=drop, and required there.")
-		expect(range.properties?.keys?.description).toBe("Only for type=redact, and required there.")
-		expect(range.properties?.method?.description).toBe("Only for type=redact.")
 	})
 
-	it("keeps the union where merging would not make the schema shorter", () => {
-		const S = Schema.String
+	it("keeps the union when a key is required under one tag only, which one object cannot say", () => {
 		const schema = toInputSchema(
 			Schema.Struct({
 				range: Schema.Union([
-					// Nothing shared but the tag: a note on every key outweighs the second object.
-					Schema.Struct({ type: Schema.Literal("a"), p: S, q: S, r: S, s: S }),
-					Schema.Struct({ type: Schema.Literal("b"), t: S, u: S, v: S, w: S }),
+					Schema.Struct({ ...shared, type: Schema.Literal("weekly"), weekday: Schema.String }),
+					Schema.Struct({ ...shared, type: Schema.Literal("daily") }),
 				]),
 			}),
 		)
 		expect(rangeOf(schema).anyOf).toHaveLength(2)
 	})
 
-	it("keeps the union when a branch carries a keyword the merged object could not", () => {
+	it("keeps the union when its branches are labelled", () => {
 		const schema = toInputSchema(
 			Schema.Struct({
 				range: Schema.Union([
-					Schema.Struct({ type: Schema.Literal("relative"), value: Schema.String }),
-					Schema.Struct({ type: Schema.Literal("absolute"), start: Schema.String }).annotate({
-						examples: [{ type: "absolute", start: "2026-11-20" }],
+					Schema.Struct({ ...shared, type: Schema.Literal("drop") }).annotate({ title: "Drop" }),
+					Schema.Struct({ ...shared, type: Schema.Literal("redact") }).annotate({
+						title: "Redact",
 					}),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union where merging would not make the schema shorter", () => {
+		const O = Schema.optionalKey(Schema.String)
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					// Nothing shared but the tag: a note on every key outweighs the second object.
+					Schema.Struct({ type: Schema.Literal("a"), p: O, q: O, r: O, s: O }),
+					Schema.Struct({ type: Schema.Literal("b"), t: O, u: O, v: O, w: O }),
 				]),
 			}),
 		)

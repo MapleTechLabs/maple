@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Exit, Result, Schema } from "effect"
+import { Effect, Exit, Result, Schema, Array as Arr } from "effect"
 import { QuerySpec } from "@maple/domain/query-engine"
 import {
 	buildRawSpec,
@@ -9,7 +9,7 @@ import {
 	type ResolvedQuery,
 } from "./query-data"
 import { renderToolDoc } from "../lib/tool-doc"
-import { pickAttributeScope } from "../lib/attribute-scope"
+import { logAttributeKeys, pickAttributeScope } from "../lib/attribute-scope"
 
 type Params = Parameters<typeof buildRawSpec>[0]
 
@@ -242,5 +242,28 @@ describe("pickAttributeScope", () => {
 	it("treats a key missing from a metric's own labels as a resource attribute", () => {
 		expect(pickAttributeScope("k8s.pod.name", ["mountpoint"], "unknown")).toBe("resource")
 		expect(pickAttributeScope("k8s.pod.name", [], "unknown")).toBe("span")
+	})
+})
+
+describe("logAttributeKeys", () => {
+	const scopeOf = (
+		key: string,
+		recordKeys: ReadonlyArray<string>,
+		traceResourceKeys: ReadonlyArray<string>,
+	) => {
+		const known = Effect.runSync(logAttributeKeys(recordKeys, Effect.succeed(traceResourceKeys)))
+		return pickAttributeScope(key, known.primary, known.resource)
+	}
+
+	it("puts a key the log records lack on the resource, for a service that sends no traces", () => {
+		expect(scopeOf("host.name", ["http.route", "user.id"], [])).toBe("resource")
+		expect(scopeOf("http.route", ["http.route", "user.id"], [])).toBe("span")
+	})
+
+	it("asks the trace resource keys once the record catalogue is cut at its cap", () => {
+		const many = Arr.makeBy(500, (index) => `key.${index}`)
+		expect(scopeOf("host.name", many, ["host.name"])).toBe("resource")
+		// Past the cap an absent key may be a rare record key: it stays on the record map.
+		expect(scopeOf("rare.key", many, ["host.name"])).toBe("span")
 	})
 })
