@@ -234,20 +234,13 @@ const tagValueOf = (schema: unknown): string | undefined => {
 	return typeof value === "string" ? value : undefined
 }
 
-/** The keywords a branch may carry and still merge: anything else would be lost or misapplied. */
-const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set([
-	"type",
-	"properties",
-	"required",
-	"additionalProperties",
-	"title",
-	"description",
-])
+/** The keywords a branch may carry and still merge: anything else, a label included, would be lost. */
+const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set(["type", "properties", "required", "additionalProperties"])
 
 /**
  * One object for a union whose branches are the same object under different tag values: shared
- * keys once, the tag as an enum, and each key marked with the tag values it is for or required
- * under. Undefined when the branches disagree on a shared key, so merging loses nothing.
+ * keys once, the tag as an enum, each optional key of some branches marked with their tag values.
+ * Undefined unless nothing is lost: a key required under one tag only has no place in one object.
  */
 export const mergeTaggedVariants = (
 	branches: ReadonlyArray<unknown>,
@@ -304,29 +297,21 @@ export const mergeTaggedVariants = (
 			continue
 		}
 		if (!Arr.every(holders, (holder) => sameJson(propertiesOf(holder)?.[key], schema))) return undefined
-		// One `required` list cannot say "for this tag only", so the key's own description does.
+		// One `required` list cannot say "under this tag only": such a union stays a union.
 		const requiring = Arr.filter(holders, (holder) => requires(holder, key))
-		const everywhere = holders.length === variants.length
-		const note = everywhere
-			? requiring.length === 0 || requiring.length === variants.length
-				? undefined
-				: `Required for ${tagsOf(requiring)}.`
-			: requiring.length === 0
-				? `Only for ${tagsOf(holders)}.`
-				: requiring.length === holders.length
-					? `Only for ${tagsOf(holders)}, and required there.`
-					: `Only for ${tagsOf(holders)}; required for ${tagsOf(requiring)}.`
-		if (note === undefined) {
+		if (requiring.length > 0 && requiring.length < variants.length) return undefined
+		if (holders.length === variants.length) {
 			merged.push([key, schema])
 			continue
 		}
-		// A key that is not an object schema has nowhere to say it: keep the union.
+		// A key that is not an object schema has nowhere to say whose it is: keep the union.
 		if (!isJsonObject(schema)) return undefined
+		const only = `Only for ${tagsOf(holders)}.`
 		merged.push([
 			key,
 			{
 				...schema,
-				description: typeof schema.description === "string" ? `${schema.description} ${note}` : note,
+				description: typeof schema.description === "string" ? `${schema.description} ${only}` : only,
 			},
 		])
 	}
