@@ -14,6 +14,7 @@ import { competitors } from "../lib/competitors"
 import { features } from "../lib/features"
 import { useCases } from "../lib/use-cases"
 import { allGuides } from "../lib/guides"
+import { alternativesPages, alternativesPath } from "../lib/alternatives"
 import { absolute, plainText } from "../lib/page-markdown"
 import { scaleProofMarkdown } from "../lib/scale-proof"
 import { enterpriseOfferMarkdown } from "../lib/enterprise-offer"
@@ -122,12 +123,27 @@ export const GET: APIRoute = ({ site }) => {
 			),
 			"",
 
+			"## Alternatives roundups",
+			"",
+			`Hand-written "<vendor> alternatives" pages: why teams leave that vendor, the tools that answer those reasons with their prices and licenses, when to stay, and dated sources. Maple is listed first and labelled as ours. ${CONVENTION("alternatives")}`,
+			"",
+			...Arr.map(
+				alternativesPages,
+				(page) =>
+					`- [${page.vendor} alternatives](${url(`${alternativesPath(page.slug)}.md`)}): ${page.blurb}`,
+			),
+			"",
+
 			"## Guides",
 			"",
 			"Evergreen explanations of application performance monitoring, observability, OpenTelemetry, and the tools used to operate production software.",
 			"",
 			`- [Guides index](${url("/guides")})`,
-			...Arr.map(allGuides, (guide) => `- [${guide.title}](${url(guide.href)})`),
+			// The roundups are listed above with their markdown twins.
+			...Arr.map(
+				Arr.filter(allGuides, (guide) => !guide.href.startsWith("/alternatives/")),
+				(guide) => `- [${guide.title}](${url(guide.href)})`,
+			),
 			"",
 
 			"## Maple API",
