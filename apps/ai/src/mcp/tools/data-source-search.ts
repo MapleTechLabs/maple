@@ -80,19 +80,31 @@ export const renderDataSourceSearch = (output: typeof DataSourceSearch.Type): To
 	const top = output.hits[0]
 	if (top === undefined) {
 		const incomplete = output.incompleteSources ?? []
+		const within = output.dataSource
+		// A miss in one source says nothing about the others: say so, and offer the wider search.
+		const where = within === undefined ? "No data source table" : `No table of "${within}"`
+		const cannotVouch =
+			incomplete.length === 0
+				? undefined
+				: `search cannot vouch for ${Arr.join(incomplete, ", ")}: ${within === undefined ? "their catalog is" : "its catalog is"} incomplete (it failed, was never read, or holds more tables than Maple stores). Check ${within === undefined ? "them" : "it"} with list_data_sources data_source=<name> before concluding the data is not there.`
 		return {
 			title: `Data source search: "${output.query}"`,
 			empty: {
 				message:
-					incomplete.length === 0
-						? `No data source table, resource or field matches. Search matches whole words and word prefixes in every table, field, note and sample value you can see, so a different word for the same thing can miss; list_data_sources data_source=<name> lists a source's tables by name if you want to browse.${PII_NOTE}`
-						: `No data source table, resource or field matches, but search cannot vouch for ${Arr.join(incomplete, ", ")}: their catalog is incomplete (it failed, was never read, or holds more tables than Maple stores). Check them with list_data_sources data_source=<name> before concluding the data is not there.${PII_NOTE}`,
+					cannotVouch === undefined
+						? `${where}, resource or field matches. Search matches whole words and word prefixes in every table, field, note and sample value you can see, so a different word for the same thing can miss; list_data_sources data_source=<name> lists a source's tables by name if you want to browse.${PII_NOTE}`
+						: `${where}, resource or field matches, but ${cannotVouch}${PII_NOTE}`,
 				hints: [
-					"Try a synonym once; if that also misses, tell the user the data is not in a connected source you can see (an admin can hide sources from agents).",
+					within === undefined
+						? "Try a synonym once; if that also misses, tell the user the data is not in a connected source you can see (an admin can hide sources from agents)."
+						: `Only "${within}" was searched. Search every source before telling the user the data is not connected.`,
 				],
 			},
 			blocks: [],
-			next: [doc.next(TOOL, {}, "every connected data source")],
+			next:
+				within === undefined
+					? [doc.next(TOOL, {}, "every connected data source")]
+					: [doc.next(TOOL, { query: output.query }, "the same search across every data source")],
 		}
 	}
 	return {
