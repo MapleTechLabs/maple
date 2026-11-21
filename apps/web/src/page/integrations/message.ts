@@ -127,6 +127,8 @@ export const Message = defineMessageUnion({
 	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
 	/** A catalog row or card, or the header's back button. */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
+	/** A connected data integration's hub row: its sources, where a failing one heads the list. */
+	ClickedConnectedSources: { query: Schema.String },
 	/** A settings nav tab. */
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */

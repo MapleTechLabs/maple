@@ -247,7 +247,7 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 
 const failureToast = (title: string, failure: LoadFailure) => toast("error", title, failure.message)
 
-const SOURCES_HREF = hrefOf(AppRoute.Sources())
+const SOURCES_HREF = hrefOf(AppRoute.Sources({ search: {} }))
 
 const liftMenu = (model: Model, step: ReturnType<typeof Menu.update>): Return => {
 	const lifted: Return = {

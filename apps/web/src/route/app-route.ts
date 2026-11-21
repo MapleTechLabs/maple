@@ -21,7 +21,7 @@ export const AppRoute = defineRouteUnion({
 	SelectPlan: { search: Search.SelectPlanSearch },
 	ServiceMap: { search: Search.ServiceMapSearch },
 	Settings: { search: Search.SettingsSearch },
-	Sources: {},
+	Sources: { search: Search.SourcesSearch },
 	SourcesNew: { search: Search.SourcesNewSearch },
 	Source: { sourceId: Schema.String, search: Search.SourceSearch },
 	SignIn: { search: Search.SignInSearch },

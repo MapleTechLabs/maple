@@ -1,8 +1,9 @@
 import type { V2DataSource } from "@maple/domain/http/v2"
 import { countLabel } from "@maple/ui/lib/format"
 import * as Policy from "@maple/domain/policy"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { AsyncData } from "foldkit"
+import { isDataIntegration } from "../../route/data-integrations"
 import { ENVIRONMENT_LABEL } from "../settings/data-sources/view-parts"
 import {
 	type AvailableOverview,
@@ -29,6 +30,8 @@ export type ConnectedRow =
 			capability: Capability
 			entry: CatalogEntry
 			overview: ConnectedOverview | UnavailableOverview
+			/** The Sources search a connected data integration's row opens; null opens its own page. */
+			sourcesQuery: string | null
 	  }>
 	| Readonly<{ _tag: "DataSource"; capability: "query"; source: V2DataSource; overview: ConnectedOverview }>
 
@@ -71,6 +74,28 @@ export const dataSourceOverview = (source: V2DataSource): ConnectedOverview => {
 		issue: source.catalog_error === null ? null : "Catalog refresh failed",
 	}
 }
+
+/** PlanetScale without its OAuth connection is shown from standalone scrape targets. */
+const isPlanetscaleConnected = (statuses: Model["statuses"]): boolean =>
+	Option.match(AsyncData.getData(statuses.planetscale.data), {
+		onNone: () => false,
+		onSome: (status) => status.connected,
+	})
+
+/**
+ * Scrape targets are stored as Prometheus sources, so standalone PlanetScale targets are found under
+ * that platform; every other data integration under its own name. (WarpStream is never a connected row.)
+ */
+const sourcesQueryOf = (
+	model: Model,
+	entry: CatalogEntry,
+	overview: ConnectedOverview | UnavailableOverview,
+) =>
+	overview.kind !== "connected" || !isDataIntegration(entry.id)
+		? null
+		: entry.id === "planetscale" && !isPlanetscaleConnected(model.statuses)
+			? "Prometheus"
+			: entry.name
 
 export const needsAttention = (row: ConnectedRow): boolean =>
 	row.overview.kind === "connected" && row.overview.health === "attention"
@@ -115,7 +140,15 @@ export const hubRowsOf = (model: Model): HubRows => {
 				overview !== null &&
 				overview.kind !== "available" &&
 				!(overview.kind === "unavailable" && overview.reason === "not-configured")
-					? [{ _tag: "Integration", capability: capabilityOf(entry.category), entry, overview }]
+					? [
+							{
+								_tag: "Integration",
+								capability: capabilityOf(entry.category),
+								entry,
+								overview,
+								sourcesQuery: sourcesQueryOf(model, entry, overview),
+							},
+						]
 					: [],
 			),
 			...Arr.map(sources ?? [], (source): ConnectedRow => ({
