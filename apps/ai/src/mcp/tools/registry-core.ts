@@ -223,12 +223,132 @@ const canonicalBranch = (branches: ReadonlyArray<unknown>): unknown => {
 		: undefined
 }
 
+const sameJson = (a: unknown, b: unknown): boolean => stringifyJson(a) === stringifyJson(b)
+
+const jsonLength = (value: unknown): number => stringifyJson(value)?.length ?? 0
+
+/** The one value a branch pins a key to (`dataSource: "logs"`), when it does. */
+const tagValueOf = (schema: unknown): string | undefined => {
+	if (!isJsonObject(schema) || !Arr.isArray(schema.enum) || schema.enum.length !== 1) return undefined
+	const value = schema.enum[0]
+	return typeof value === "string" ? value : undefined
+}
+
+/** The keywords a branch may carry and still merge: anything else would be lost or misapplied. */
+const MERGEABLE_KEYWORDS: ReadonlySet<string> = new Set([
+	"type",
+	"properties",
+	"required",
+	"additionalProperties",
+	"title",
+	"description",
+])
+
+/**
+ * One object for a union whose branches are the same object under different tag values: shared
+ * keys once, the tag as an enum, and each key marked with the tag values it is for or required
+ * under. Undefined when the branches disagree on a shared key, so merging loses nothing.
+ */
+export const mergeTaggedVariants = (
+	branches: ReadonlyArray<unknown>,
+): Record<string, unknown> | undefined => {
+	const variants = Arr.filter(branches, isJsonObject)
+	const first = variants[0]
+	if (first === undefined || variants.length < 2 || variants.length !== branches.length) return undefined
+	const propertiesOf = (variant: Record<string, unknown>) =>
+		isJsonObject(variant.properties) ? variant.properties : undefined
+	if (
+		!Arr.every(
+			variants,
+			(variant) =>
+				variant.type === "object" &&
+				propertiesOf(variant) !== undefined &&
+				Arr.every(Rec.keys(variant), (keyword) => MERGEABLE_KEYWORDS.has(keyword)) &&
+				sameJson(variant.additionalProperties, first.additionalProperties),
+		)
+	) {
+		return undefined
+	}
+	const tag = Arr.findFirst(Rec.keys(propertiesOf(first) ?? {}), (key) => {
+		const values = Arr.map(variants, (variant) => tagValueOf(propertiesOf(variant)?.[key]))
+		return Arr.every(values, (value) => value !== undefined) && new Set(values).size === values.length
+	})
+	if (Option.isNone(tag)) return undefined
+	const tagOf = (variant: Record<string, unknown>) => tagValueOf(propertiesOf(variant)?.[tag.value]) ?? ""
+	const tagsOf = (some: ReadonlyArray<Record<string, unknown>>) =>
+		`${tag.value}=${Arr.join(Arr.map(some, tagOf), "|")}`
+	const requires = (variant: Record<string, unknown>, key: string): boolean =>
+		Arr.isArray(variant.required) && variant.required.includes(key)
+	const keys = Arr.dedupe(Arr.flatMap(variants, (variant) => Rec.keys(propertiesOf(variant) ?? {})))
+	const merged: Array<readonly [string, unknown]> = []
+	for (const key of keys) {
+		const holders = Arr.filter(variants, (variant) => key in (propertiesOf(variant) ?? {}))
+		const schema = propertiesOf(holders[0] ?? first)?.[key]
+		if (key === tag.value) {
+			// Each branch describes its own tag value: keep them all, named, rather than the first.
+			const described = Arr.flatMap(variants, (variant) => {
+				const own = propertiesOf(variant)?.[key]
+				return isJsonObject(own) && typeof own.description === "string"
+					? [`${tagOf(variant)}: ${own.description}`]
+					: []
+			})
+			const { description: _description, ...tagSchema } = isJsonObject(schema) ? schema : {}
+			merged.push([
+				key,
+				{
+					...tagSchema,
+					enum: Arr.map(variants, tagOf),
+					...(described.length === 0 ? undefined : { description: Arr.join(described, " ") }),
+				},
+			])
+			continue
+		}
+		if (!Arr.every(holders, (holder) => sameJson(propertiesOf(holder)?.[key], schema))) return undefined
+		// One `required` list cannot say "for this tag only", so the key's own description does.
+		const requiring = Arr.filter(holders, (holder) => requires(holder, key))
+		const everywhere = holders.length === variants.length
+		const note = everywhere
+			? requiring.length === 0 || requiring.length === variants.length
+				? undefined
+				: `Required for ${tagsOf(requiring)}.`
+			: requiring.length === 0
+				? `Only for ${tagsOf(holders)}.`
+				: requiring.length === holders.length
+					? `Only for ${tagsOf(holders)}, and required there.`
+					: `Only for ${tagsOf(holders)}; required for ${tagsOf(requiring)}.`
+		if (note === undefined) {
+			merged.push([key, schema])
+			continue
+		}
+		// A key that is not an object schema has nowhere to say it: keep the union.
+		if (!isJsonObject(schema)) return undefined
+		merged.push([
+			key,
+			{
+				...schema,
+				description: typeof schema.description === "string" ? `${schema.description} ${note}` : note,
+			},
+		])
+	}
+	const required = Arr.filter(keys, (key) => Arr.every(variants, (variant) => requires(variant, key)))
+	const object = {
+		type: "object",
+		properties: Rec.fromEntries(merged),
+		...(required.length === 0 ? undefined : { required }),
+		...("additionalProperties" in first
+			? { additionalProperties: first.additionalProperties }
+			: undefined),
+	}
+	// Merging is for the repetition it removes: where it removes none, the union stays as written.
+	return jsonLength(object) < jsonLength(branches) ? object : undefined
+}
+
 const publishCanonical = (node: unknown): unknown => {
 	if (Arr.isArray(node)) return Arr.map(node, publishCanonical)
 	if (!isJsonObject(node)) return node
 	const anyOf = node.anyOf
 	if (Arr.isArray(anyOf)) {
-		const canonical = canonicalBranch(anyOf)
+		const canonical = canonicalBranch(anyOf) ?? mergeTaggedVariants(anyOf)
 		if (isJsonObject(canonical)) {
 			const { anyOf: _anyOf, ...siblings } = node
 			return publishCanonical({ ...canonical, ...siblings })

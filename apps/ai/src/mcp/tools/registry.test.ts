@@ -207,3 +207,128 @@ describe("enum values as models spell them", () => {
 		expect(feedback("telepathy")?.decodes).toBe(false)
 	})
 })
+
+describe("toInputSchema tagged-variant merge", () => {
+	const Published = Schema.Struct({
+		anyOf: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+		required: Schema.optionalKey(Schema.Array(Schema.String)),
+		properties: Schema.optionalKey(
+			Schema.Record(
+				Schema.String,
+				Schema.Struct({
+					enum: Schema.optionalKey(Schema.Array(Schema.String)),
+					description: Schema.optionalKey(Schema.String),
+				}),
+			),
+		),
+	})
+	const rangeOf = (schema: Record<string, unknown>) =>
+		Schema.decodeUnknownSync(Schema.Struct({ properties: Schema.Struct({ range: Published }) }))(schema)
+			.properties.range
+
+	it("publishes one object for variants that differ by a tag and its own keys", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({
+						type: Schema.Literal("relative"),
+						label: Schema.String,
+						value: Schema.String,
+					}),
+					Schema.Struct({
+						type: Schema.Literal("absolute"),
+						label: Schema.String,
+						start: Schema.String,
+					}),
+				]),
+			}),
+		)
+		const range = rangeOf(schema)
+		expect(range.anyOf).toBeUndefined()
+		expect(range.properties?.type?.enum).toEqual(["relative", "absolute"])
+		expect(range.properties?.label?.description).toBeUndefined()
+		expect(range.properties?.value?.description).toBe("Only for type=relative, and required there.")
+		expect(range.properties?.start?.description).toBe("Only for type=absolute, and required there.")
+		expect(range.required).toEqual(["type", "label"])
+	})
+
+	it("says which tag a key is required under, since one required list cannot", () => {
+		const shared = { id: Schema.String, name: Schema.String, comment: Schema.optionalKey(Schema.String) }
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({
+						...shared,
+						type: Schema.Literal("drop"),
+						note: Schema.String,
+						percent: Schema.Number,
+					}),
+					Schema.Struct({
+						...shared,
+						type: Schema.Literal("redact"),
+						note: Schema.optionalKey(Schema.String),
+						keys: Schema.Array(Schema.String),
+						method: Schema.optionalKey(Schema.String),
+					}),
+				]),
+			}),
+		)
+		const range = rangeOf(schema)
+		expect(range.required).toEqual(["id", "name", "type"])
+		expect(range.properties?.note?.description).toBe("Required for type=drop.")
+		expect(range.properties?.percent?.description).toBe("Only for type=drop, and required there.")
+		expect(range.properties?.keys?.description).toBe("Only for type=redact, and required there.")
+		expect(range.properties?.method?.description).toBe("Only for type=redact.")
+	})
+
+	it("keeps the union where merging would not make the schema shorter", () => {
+		const S = Schema.String
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					// Nothing shared but the tag: a note on every key outweighs the second object.
+					Schema.Struct({ type: Schema.Literal("a"), p: S, q: S, r: S, s: S }),
+					Schema.Struct({ type: Schema.Literal("b"), t: S, u: S, v: S, w: S }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union when a branch carries a keyword the merged object could not", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ type: Schema.Literal("relative"), value: Schema.String }),
+					Schema.Struct({ type: Schema.Literal("absolute"), start: Schema.String }).annotate({
+						examples: [{ type: "absolute", start: "2026-11-20" }],
+					}),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union when the variants disagree on a shared key", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ type: Schema.Literal("relative"), value: Schema.String }),
+					Schema.Struct({ type: Schema.Literal("absolute"), value: Schema.Number }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+})
+
+describe("propose_fix arguments", () => {
+	it("reads `summary` as the patch summary", () => {
+		const call = readToolCall("propose_fix", {
+			issue_id: "0190a8f2-7c3e-7d4a-9b1c-2f6e5d4c3b2a",
+			summary: "Guard the nil session before reading its user",
+		})
+		expect(call?.unknown).toEqual([])
+		expect(call?.args.patch_summary).toBe("Guard the nil session before reading its user")
+	})
+})
