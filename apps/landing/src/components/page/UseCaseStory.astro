@@ -27,7 +27,6 @@ interface StoryStep {
 }
 
 interface Props {
-	eyebrow: string;
 	title: string;
 	lede: string;
 	breadcrumb: { label: string; href?: string }[];
@@ -45,7 +44,6 @@ interface Props {
 }
 
 const {
-	eyebrow,
 	title,
 	lede,
 	breadcrumb,
@@ -77,7 +75,6 @@ const INLINE_CROP = { x: 0.18, y: 0, zoom: 1.22 };
 
 		<div class="uc-grid shell pb-14 pt-8 md:pb-20 lg:pt-14">
 			<div class="uc-lead min-w-0" data-lead>
-				<p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>
 				<h1
 					class="uc-title max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl xl:text-[3.25rem]"
 				>

@@ -29,7 +29,14 @@ export interface HubTile {
 }
 
 /** `PixelIcon` glyphs the rail uses, spelled out so this module stays free of `.astro`. */
-type RailIcon = "brackets-curly-dots" | "sparkle-2" | "cloud" | "stack-perspective-2" | "bell" | "laptop"
+type RailIcon =
+	| "brackets-curly-dots"
+	| "sparkle-2"
+	| "cloud"
+	| "stack-perspective-2"
+	| "bell"
+	| "laptop"
+	| "dashboard"
 
 export interface HubCategory {
 	/** Anchor id and rail key. */
@@ -186,6 +193,13 @@ const cloud: HubTile[] = [
 		icon: { mark: "railway" },
 	},
 	{
+		name: "Vercel",
+		keywords: "drains ai gateway speed insights",
+		hint: m.intg_hint_vercel,
+		href: doc("integrations/vercel"),
+		icon: { mark: "vercel" },
+	},
+	{
 		name: "Kubernetes",
 		keywords: "k8s helm eks gke",
 		hint: m.intg_hint_kubernetes,
@@ -255,6 +269,34 @@ const alerts: HubTile[] = [
 		icon: { mark: "pagerduty" },
 	},
 	{
+		name: "incident.io",
+		keywords: "incidentio on-call oncall incident",
+		hint: m.intg_hint_incidentio,
+		href: `${destinations}#incidentio`,
+		icon: { mark: "incidentio" },
+	},
+	{
+		name: "Linear",
+		keywords: "issues tickets",
+		hint: m.intg_hint_linear,
+		href: `${destinations}#linear`,
+		icon: { mark: "linear" },
+	},
+	{
+		name: "Microsoft Teams",
+		keywords: "msteams teams",
+		hint: m.intg_hint_teams,
+		href: `${destinations}#microsoft-teams`,
+		icon: { mark: "microsoftteams" },
+	},
+	{
+		name: "Google Chat",
+		keywords: "gchat workspace",
+		hint: m.intg_hint_googlechat,
+		href: `${destinations}#google-chat`,
+		icon: { mark: "googlechat" },
+	},
+	{
 		name: "Telegram",
 		hint: m.intg_hint_telegram,
 		href: `${destinations}#telegram`,
@@ -292,6 +334,23 @@ const code: HubTile[] = [
 	{ name: "Pulumi", hint: m.intg_hint_iac, href: doc("iac/pulumi"), icon: { mark: "pulumi" } },
 ]
 
+const more: HubTile[] = [
+	{
+		name: "Google Search Console",
+		keywords: "seo google search",
+		hint: m.intg_hint_search_console,
+		href: `${doc("product-events/web-analytics")}#search`,
+		icon: { mark: "google" },
+	},
+	{
+		name: "Fleet",
+		keywords: "fleetdm osquery mdm devices vulnerabilities",
+		hint: m.intg_hint_fleet,
+		href: doc("integrations/fleet"),
+		icon: { mark: "fleet" },
+	},
+]
+
 export const HUB_CATEGORIES: readonly HubCategory[] = [
 	{
 		id: "languages",
@@ -323,4 +382,5 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
 		tiles: alerts,
 	},
 	{ id: "code", icon: "laptop", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
+	{ id: "more", icon: "dashboard", title: m.intg_cat_more_title, lede: m.intg_cat_more_lede, tiles: more },
 ]
