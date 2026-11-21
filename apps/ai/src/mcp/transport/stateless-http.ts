@@ -60,7 +60,7 @@ import { CurrentMcpRequestTenant } from "../tenant"
 import type { TenantContext } from "@maple/domain/http"
 import { MCP_TOOLS_BUILT_HEADER } from "@maple/infra/isolate-age"
 import { mcpCaller, mcpMessageTracer, withMetaTraceContext } from "./span-conventions"
-import { canonicalToolName } from "../tools/tool-name-aliases"
+import { canonicalToolCall, retiredOutputKey } from "../tools/tool-name-aliases"
 
 /**
  * JSON-RPC id for the `initialize` this transport synthesises. Namespaced so it
@@ -161,6 +161,25 @@ const withToolsCapability =
 		}
 	}
 
+/**
+ * A retired tool's answer in the shape its name published. The call ran as its replacement, whose
+ * structured output holds the old answer under one key.
+ */
+const withRetiredOutput =
+	(toolCalls: ReadonlyMap<string | number, string>) =>
+	(response: FromServerEncoded): FromServerEncoded => {
+		if (response._tag !== "Exit" || response.exit._tag !== "Success") return response
+		const key = retiredOutputKey(toolCalls.get(response.requestId) ?? "")
+		const result = response.exit.value
+		if (key === undefined || !Predicate.isObject(result)) return response
+		const structured = result.structuredContent
+		if (!Predicate.isObject(structured) || !(key in structured)) return response
+		return {
+			...response,
+			exit: { _tag: "Success", value: { ...result, structuredContent: structured[key] } },
+		}
+	}
+
 /** The answer for a `tools/call` the deadline stopped, rendered as the dispatcher renders a budget failure. */
 const deadlineExceededResult = (error: McpQueryBudgetError) => ({
 	content: [{ type: "text", text: `Query too expensive: ${error.message}` }],
@@ -172,14 +191,18 @@ const toolNameOf = (message: RequestEncoded): string =>
 		? message.payload.name
 		: "unknown"
 
-/** A `tools/call` naming a retired tool, renamed to its replacement before the server looks it up. */
-const withCanonicalToolName = (message: FromClientEncoded): FromClientEncoded => {
+/**
+ * A `tools/call` naming a retired tool, turned into the call it means before the server looks the
+ * tool up: its replacement's name, with the arguments the old name stood for.
+ */
+const withCanonicalToolCall = (message: FromClientEncoded): FromClientEncoded => {
 	if (message._tag !== "Request" || message.tag !== "tools/call") return message
+	if (!Predicate.isObject(message.payload)) return message
 	const name = toolNameOf(message)
-	const canonical = canonicalToolName(name)
-	return canonical === name || !Predicate.isObject(message.payload)
+	const call = canonicalToolCall(name, message.payload.arguments)
+	return call.name === name
 		? message
-		: { ...message, payload: { ...message.payload, name: canonical } }
+		: { ...message, payload: { ...message.payload, name: call.name, arguments: call.input } }
 }
 
 const jsonRpcError = (id: string | number | null, code: number, message: string) =>
@@ -395,7 +418,7 @@ export const layerStatelessMcpHttp = (options: {
 							Effect.suspend(() => {
 								// The caller's span in `params._meta` parents the server span; `RpcServer`
 								// links the HTTP request's span instead.
-								const message = withCanonicalToolName(withMetaTraceContext(received))
+								const message = withCanonicalToolCall(withMetaTraceContext(received))
 								if (message._tag === "Request") {
 									requestIds.push(RequestId(message.id))
 									;(
@@ -474,7 +497,10 @@ export const layerStatelessMcpHttp = (options: {
 											(response._tag === "Exit" && overdue.has(response.requestId)))
 									),
 							),
-							withToolsCapability(initializeIds, instructions),
+							(response) =>
+								withRetiredOutput(toolCalls)(
+									withToolsCapability(initializeIds, instructions)(response),
+								),
 						),
 						Arr.map([...overdue], ([requestId, error]): FromServerEncoded => ({
 							_tag: "Exit",

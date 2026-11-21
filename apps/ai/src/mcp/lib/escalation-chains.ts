@@ -296,18 +296,18 @@ const invalidChain = (error: AlertValidationError) =>
 
 export const createChainErrors = {
 	"@maple/http/errors/AlertValidationError": invalidChain,
-	"@maple/http/errors/AlertForbiddenError": failWith("create_escalation_chain"),
-	"@maple/http/errors/AlertPersistenceError": failWith("create_escalation_chain"),
-	"@maple/http/errors/AlertMemberDirectoryUnavailableError": failWith("create_escalation_chain"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_escalation_chain"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_escalation_chain"),
+	"@maple/http/errors/AlertMemberDirectoryUnavailableError": failWith("manage_escalation_chain"),
 }
 
 export const updateChainErrors = {
 	"@maple/http/errors/AlertValidationError": invalidChain,
 	"@maple/http/errors/EscalationChainNotFoundError": (error: EscalationChainNotFoundError) =>
 		Effect.fail(chainNotFound(error.chainId)),
-	"@maple/http/errors/AlertForbiddenError": failWith("update_escalation_chain"),
-	"@maple/http/errors/AlertPersistenceError": failWith("update_escalation_chain"),
-	"@maple/http/errors/AlertMemberDirectoryUnavailableError": failWith("update_escalation_chain"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_escalation_chain"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_escalation_chain"),
+	"@maple/http/errors/AlertMemberDirectoryUnavailableError": failWith("manage_escalation_chain"),
 }
 
 export const deleteChainErrors = {
@@ -323,6 +323,6 @@ export const deleteChainErrors = {
 				parameter: "chain_id",
 			}),
 		),
-	"@maple/http/errors/AlertForbiddenError": failWith("delete_escalation_chain"),
-	"@maple/http/errors/AlertPersistenceError": failWith("delete_escalation_chain"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_escalation_chain"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_escalation_chain"),
 }

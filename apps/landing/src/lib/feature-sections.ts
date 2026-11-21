@@ -36,7 +36,8 @@ export const UPTIME_SETUP_WAYS = [
 		code: `> Add an uptime check for https://api.example.com/health,
   every minute, linked to the checkout service.
 
-create_uptime_monitor({
+manage_uptime_monitor({
+  action: "create",
   kind: "http",
   name: "checkout-api",
   url: "https://api.example.com/health",

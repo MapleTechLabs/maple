@@ -2,10 +2,16 @@ import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/primitives"
-import { McpToolExecutor } from "./dispatcher"
+import { familyActionOf, McpToolExecutor } from "./dispatcher"
 import { listMcpTools } from "./tool-descriptors-render"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
-import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
+import {
+	inputSchemaOf,
+	mapleToolCatalog,
+	mapleToolCatalogFor,
+	toInputSchema,
+	toOutputSchema,
+} from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-services"
 import type { TenantContext } from "@maple/domain/http"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
@@ -70,6 +76,21 @@ const makeRecordingTracer = () => {
 	return { spans, tracer }
 }
 
+describe("familyActionOf", () => {
+	it("names the action a family call asks for, under its own name or a retired one", () => {
+		expect(familyActionOf("manage_slo", { action: "Update", slo: "Checkout" })).toBe("update")
+		// Spelled as the call itself forgives it.
+		expect(familyActionOf("manage_oncall_schedule", { action: "Add Override" })).toBe("add_override")
+		expect(familyActionOf("delete_slo", { slo: "Checkout", confirm: true })).toBe("delete")
+	})
+
+	it("names nothing a family does not have, since the value is the caller's text", () => {
+		expect(familyActionOf("manage_slo", { action: "drop everything" })).toBeUndefined()
+		expect(familyActionOf("manage_slo", { slo: "Checkout" })).toBeUndefined()
+		expect(familyActionOf("run_sql", { action: "create" })).toBeUndefined()
+	})
+})
+
 describe("MCP dispatcher", () => {
 	it("publishes an object input schema for every tool", () => {
 		// Strict MCP clients (the Vercel AI SDK's `tools/list` validator) drop the
@@ -99,7 +120,7 @@ describe("MCP dispatcher", () => {
 				Arr.map(mapleToolCatalogFor("mcp"), (definition) => ({
 					name: definition.name,
 					description: definition.description,
-					inputSchema: toInputSchema(definition.schema),
+					inputSchema: inputSchemaOf(definition),
 				})),
 			)
 		}),

@@ -115,7 +115,9 @@ describe("status page tools", () => {
 		expect(updated.incident).toMatchObject({ status: "identified", published: true, updateCount: 2 })
 		const liveResult = await runToolDirect(rt, "get_status_page", { page: "Acme Status" })
 		// The follow-up needs public wording, so it is a notice, not a half-filled call.
-		expect(markdown(liveResult)).toContain("To update an open incident, call post_status_page_update")
+		expect(markdown(liveResult)).toContain(
+			"To update an open incident, call manage_status_page action=post_update",
+		)
 		const live = pageOf(liveResult)
 		expect(live.components).toMatchObject([{ name: "API", status: "partial_outage" }])
 		expect(live.overallStatus).toBe("partial_outage")
@@ -494,7 +496,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
+				"manage_status_page would change who can read the page. Only org admins can change who can view status pages. Leave `visibility` as it is, or ask someone who can.",
 			)
 			expect((await readConfig(rt, "config-page")).structuredContent.config).toEqual(config)
 
@@ -527,7 +529,7 @@ describe("status page tools", () => {
 			})
 			expect(refused.isError).toBe(true)
 			expect(markdown(refused)).toContain(
-				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
+				"manage_status_page changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or do it in Maple under Status pages.",
 			)
 
 			const other = await readConfig(rt, "acme-status")
@@ -575,7 +577,7 @@ describe("setting a status page up", () => {
 		const created = decode(CreateStatusPageOutput, result)
 		expect(created.page).toMatchObject({ name: "Crème Status!", slug: "creme-status", draft: true })
 		expect(created.page.id).toMatch(/^stp_/)
-		expect(markdown(result)).toContain("publish_status_page")
+		expect(markdown(result)).toContain("manage_status_page action=publish")
 		expect(markdown(result)).toContain('`get_status_page page="creme-status" include_config=true`')
 
 		const config = await readConfig(admin(), "creme-status")
@@ -664,7 +666,10 @@ describe("setting a status page up", () => {
 			page: "domain-page",
 			remove: true,
 		})
-		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({ action: "removed", domain: null })
+		expect(decode(SetStatusPageDomainOutput, removed)).toMatchObject({
+			action: "removed",
+			domain: null,
+		})
 		const gone = pageOf(await runToolDirect(setup, "get_status_page", { page: "domain-page" }))
 		expect(gone.customDomain).toBeUndefined()
 		const again = await runToolDirect(admin(), "set_status_page_domain", {

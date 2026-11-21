@@ -11,11 +11,11 @@ describe("status page agent prompt", () => {
 
 	test("walks the agent through every MCP step from a draft to the publish", () => {
 		const tools = [
-			"create_uptime_monitor",
-			"create_status_page",
-			"apply_status_page_config",
-			"set_status_page_domain",
-			"publish_status_page",
+			"manage_uptime_monitor action=create",
+			"manage_status_page action=create",
+			"manage_status_page action=apply_config",
+			"manage_status_page action=set_domain",
+			"manage_status_page action=publish",
 		]
 		const order = Arr.map(tools, (tool) => Option.getOrElse(Str.indexOf(tool)(prompt), () => -1))
 		expect(Arr.every(order, (index) => index >= 0)).toBe(true)

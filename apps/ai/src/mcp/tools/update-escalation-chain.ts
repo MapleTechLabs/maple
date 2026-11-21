@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Effect, Schema, String as Str } from "effect"
 import { EscalationChainUpdateRequest } from "@maple/domain/http"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -18,10 +18,8 @@ import { doc } from "../lib/tool-doc"
 
 const decodeUpdateRequest = Schema.decodeUnknownEffect(EscalationChainUpdateRequest)
 
-export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
-	server.define({
-		name: "update_escalation_chain",
-		title: "Update Escalation Chain",
+export const updateEscalationChainAction = (family: McpToolFamilyBuilder<"manage_escalation_chain">) =>
+	family.action("update", {
 		description:
 			"Change an escalation chain's name, steps, repeats or description. Pass only what changes; steps replaces every step. " +
 			"Escalations already running finish on the steps they started with. Ids from list_escalation_chains.",
@@ -33,7 +31,6 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			description: P.optionalText('New notes, or "none" to clear them'),
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
-		phrases: ["Updating an escalation chain"],
 		handler: Effect.fn("McpTool.updateEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
 			const steps = params.steps === undefined ? undefined : yield* toStepsRequest(params.steps)
@@ -76,4 +73,3 @@ export function registerUpdateEscalationChainTool(server: McpToolRegistrar) {
 			next: [doc.next("list_escalation_chains", {}, "every chain and the rules using it")],
 		}),
 	})
-}

@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Order, Schema, Array as Arr, String as Str } from "effect"
-import { mapleToolCatalog, mapleToolPhrase, readToolCall, toInputSchema } from "./registry"
+import { Effect, Exit, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	inputSchemaOf,
+	mapleCallEntries,
+	mapleToolCatalog,
+	mapleToolPhrase,
+	readToolCall,
+	toInputSchema,
+} from "./registry"
 import * as P from "../lib/params"
 import { DATA_SOURCE_TOOLS } from "./types"
+import { TOOL_NAME_ALIASES, type ToolNameAlias } from "./tool-name-aliases"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
 
@@ -20,7 +28,7 @@ describe("toInputSchema nullable-union collapse", () => {
 		// collapsing that would narrow the contract. None exist today; this fails if
 		// one is ever added.
 		const nullableRequired: string[] = []
-		for (const definition of mapleToolCatalog) {
+		for (const definition of mapleCallEntries) {
 			const document = Schema.toJsonSchemaDocument(definition.schema)
 			const schema = document.schema as {
 				required?: ReadonlyArray<string>
@@ -38,7 +46,7 @@ describe("toInputSchema nullable-union collapse", () => {
 
 	it("publishes no null branch on any tool", () => {
 		const withNull = Arr.map(
-			Arr.filter(mapleToolCatalog, (d) =>
+			Arr.filter(mapleCallEntries, (d) =>
 				Str.includes('"type":"null"')(jsonOf(toInputSchema(d.schema))),
 			),
 			(d) => d.name,
@@ -103,7 +111,7 @@ describe("P.optionalNumber", () => {
 
 	it("publishes no non-finite enum branch on any tool in the catalog", () => {
 		const withEnum = Arr.map(
-			Arr.filter(mapleToolCatalog, (d) => Str.includes('"-Infinity"')(jsonOf(toInputSchema(d.schema)))),
+			Arr.filter(mapleCallEntries, (d) => Str.includes('"-Infinity"')(jsonOf(toInputSchema(d.schema)))),
 			(d) => d.name,
 		)
 		expect(withEnum).toEqual([])
@@ -180,7 +188,7 @@ describe("enum values as models spell them", () => {
 	})
 
 	it("maps every declared value alias to a value its parameter publishes", () => {
-		const broken = Arr.flatMap(mapleToolCatalog, (tool) =>
+		const broken = Arr.flatMap(mapleCallEntries, (tool) =>
 			Arr.flatMap(Object.entries(tool.valueAliases), ([parameter, aliases]) => {
 				const properties = toInputSchema(tool.schema).properties
 				const property =
@@ -361,5 +369,100 @@ describe("data source tools", () => {
 			(tool) => tool.name,
 		)
 		expect(Arr.sort(scoped, Order.String)).toEqual(Arr.sort([...DATA_SOURCE_TOOLS], Order.String))
+	})
+})
+
+describe("tool families", () => {
+	const family = mapleToolCatalog.find((tool) => tool.name === "manage_slo")
+	const Published = Schema.Struct({
+		required: Schema.Array(Schema.String),
+		properties: Schema.Record(
+			Schema.String,
+			Schema.Struct({
+				enum: Schema.optionalKey(Schema.Array(Schema.String)),
+				description: Schema.String,
+			}),
+		),
+	})
+	const published = Schema.decodeUnknownSync(Published)(family === undefined ? {} : inputSchemaOf(family))
+
+	it("publish one tool whose only required parameter is the action", () => {
+		expect(published.required).toEqual(["action"])
+		expect(published.properties.action?.enum).toEqual(["create", "update", "delete"])
+	})
+
+	it("publish each parameter once, saying which actions take it", () => {
+		expect(published.properties.confirm?.description).toMatch(/^\(delete\) /)
+		expect(published.properties.window_days?.description).toMatch(/^\(create, update\) /)
+		// The same name with a different meaning per action keeps each action's words.
+		expect(published.properties.name?.description).toBe(
+			"create: A label for the SLO, unique among the org's SLOs; update: A new name",
+		)
+	})
+
+	it("say in the description what each action cannot go without", () => {
+		expect(family?.description).toContain("- action=create: ")
+		expect(family?.description).toContain("Requires name, service, sli, target_percent.")
+		expect(family?.description).toContain("Requires slo, confirm.")
+	})
+
+	it("decode a call as the action it names, with that action's own required parameters", () => {
+		const create = { name: "Checkout", service: "checkout", sli: "availability", target_percent: 99.9 }
+		expect(readToolCall("manage_slo", { action: "create", ...create })?.decodes).toBe(true)
+		expect(readToolCall("manage_slo", { action: "Create", ...create })?.decodes).toBe(true)
+		expect(readToolCall("manage_slo", { action: "delete", ...create })?.decodes).toBe(false)
+		expect(readToolCall("manage_slo", create)?.decodes).toBe(false)
+		expect(readToolCall("manage_slo", { action: "archive", slo: "Checkout" })?.decodes).toBe(false)
+	})
+
+	it("report a parameter of another action as one this action does not take", () => {
+		const call = readToolCall("manage_slo", {
+			action: "delete",
+			slo: "Checkout",
+			confirm: true,
+			name: "x",
+		})
+		expect(call?.unknown).toEqual(["name"])
+	})
+
+	it("still answer to the names they replaced", () => {
+		const retired = readToolCall("delete_slo", { slo: "Checkout", confirm: true })
+		expect(retired?.decodes).toBe(true)
+		expect(retired?.args).toEqual({ slo: "Checkout", confirm: true })
+		// The retired name is the action: one sent with it cannot pick another.
+		expect(
+			readToolCall("delete_slo", { action: "create", slo: "Checkout", confirm: true })?.decodes,
+		).toBe(true)
+	})
+
+	it("keep an ingest rule's own action apart from which action to run", () => {
+		const rule = {
+			name: "Drop debug logs",
+			signals: ["logs"],
+			conditions: [{ field: "severity", op: "lt", value: "info" }],
+		}
+		const drop = { type: "drop", keep_percent: 0 }
+		const created = readToolCall("manage_ingest_rule", { action: "create", ...rule, rule_action: drop })
+		expect(created?.decodes).toBe(true)
+		// Under its retired name the rule's spec was `action`: it arrives as the spec, not as what to do.
+		const retired = readToolCall("create_ingest_rule", { ...rule, action: drop })
+		expect(retired?.decodes).toBe(true)
+		expect(retired?.args.rule_action).toEqual(created?.args.rule_action)
+		expect(
+			readToolCall("update_ingest_rule", { rule: "Drop debug logs", action: drop })?.unknown,
+		).toEqual([])
+	})
+
+	it("give every retired name a tool, and an action of it where it names one", () => {
+		const aliases: Readonly<Record<string, ToolNameAlias>> = TOOL_NAME_ALIASES
+		const broken = Arr.filter(Rec.toEntries(aliases), ([, alias]) => {
+			const tool = mapleToolCatalog.find((candidate) => candidate.name === alias.tool)
+			const action = alias.args?.action
+			return (
+				tool === undefined ||
+				(action !== undefined && !Arr.some(tool.actions ?? [], (entry) => entry.action === action))
+			)
+		})
+		expect(Arr.map(broken, ([name]) => name)).toEqual([])
 	})
 })

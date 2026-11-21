@@ -1414,7 +1414,7 @@
 	"feat_status_cap_7_title": "Maple이 다운되어도 게시 가능",
 	"feat_status_cap_7_body": "각 페이지에는 호스팅된 페이지의 양식으로 바로 연결되는 비상용 링크가 있습니다. Maple 대시보드에 접속할 수 없어도 인시던트를 열거나 업데이트를 게시할 수 있습니다.",
 	"feat_status_cap_8_title": "API나 AI 에이전트로 운영",
-	"feat_status_cap_8_body": "페이지, 컴포넌트, 인시던트는 모두 API v2로 다룰 수 있습니다. MCP를 통해 에이전트가 create_status_page로 페이지를 만들고, apply_status_page_config로 설정하고, set_status_page_domain으로 커스텀 도메인을 추가하고, publish_status_page로 공개하고, post_status_page_update로 업데이트를 게시합니다.",
+	"feat_status_cap_8_body": "페이지, 컴포넌트, 인시던트는 모두 API v2로 다룰 수 있습니다. MCP를 통해 에이전트가 manage_status_page 도구 하나로 페이지를 만들고, 설정하고, 커스텀 도메인을 추가하고, 공개하고, 업데이트를 게시합니다.",
 	"status_feeds_eyebrow": "구독과 API",
 	"status_feeds_title": "Slack, 피드 리더, 스크립트로 따라가세요",
 	"status_feeds_lede": "모든 공개 페이지에는 RSS와 Atom 피드, 상태 배지, statuspage.io 요약 형식의 status.json이 있습니다. statuspage.io 페이지를 읽는 도구라면 여러분의 페이지도 읽을 수 있습니다.",
