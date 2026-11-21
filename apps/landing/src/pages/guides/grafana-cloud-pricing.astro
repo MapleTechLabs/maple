@@ -62,8 +62,12 @@ const pro = {
     user: 8,
     appHostHour: 0.025,
 };
-const perGb = pro.gbProcess + pro.gbWrite + pro.gbRetain;
-const free = { seriesK: 10, logsGb: 50, tracesGb: 50, users: 3, appHostHours: 2_232 };
+// The free allotment offsets written GB only; processing is charged on everything received.
+// Retain is charged only for 30-day increments beyond the 30 days Pro includes.
+const signalCost = (gb: number, freeGb: number) => gb * pro.gbProcess + Math.max(0, gb - freeGb) * pro.gbWrite;
+const signalCalc = (gb: number, freeGb: number) =>
+    `${num(gb)} GB × $${pro.gbProcess.toFixed(2)} process + (${num(gb)} − ${freeGb} included) = ${num(Math.max(0, gb - freeGb))} GB × $${pro.gbWrite.toFixed(2)} write`;
+const free = { seriesK: 10, logsGb: 50, tracesGb: 50, users: 3 };
 const HOURS = 720; // a 30-day month, as Grafana's "$18/host" uses
 
 const cents = (n: number) => Math.round(n * 100 + 1e-6) / 100;
@@ -78,9 +82,9 @@ const bill = (u: Usage) => {
         { cat: "base", label: "Pro platform fee", calc: "Monthly", cost: pro.fee },
         { cat: "users", label: "Active users", calc: `${u.users} − ${free.users} included = ${u.users - free.users} × $${pro.user}`, cost: Math.max(0, u.users - free.users) * pro.user },
         { cat: "metrics", label: "Metrics", calc: `${u.dpm > 1 ? `${num(u.seriesK)}k series × ${u.dpm} DPM = ` : ""}${num(billableK)}k − ${free.seriesK}k included = ${num(billableK - free.seriesK)}k × $${pro.seriesPer1k.toFixed(2)}`, cost: Math.max(0, billableK - free.seriesK) * pro.seriesPer1k },
-        { cat: "logs", label: "Logs", calc: `${num(u.logsGb)} GB − ${free.logsGb} included = ${num(u.logsGb - free.logsGb)} GB × $${perGb.toFixed(2)}`, cost: Math.max(0, u.logsGb - free.logsGb) * perGb },
-        { cat: "traces", label: "Traces", calc: `${num(u.tracesGb)} GB − ${free.tracesGb} included = ${num(u.tracesGb - free.tracesGb)} GB × $${perGb.toFixed(2)}`, cost: Math.max(0, u.tracesGb - free.tracesGb) * perGb },
-        { cat: "app", label: "Application Observability", calc: `${u.appHosts} hosts × ${HOURS} h = ${num(appHours)} − ${num(free.appHostHours)} included = ${num(appHours - free.appHostHours)} host-hours × $${pro.appHostHour}`, cost: Math.max(0, appHours - free.appHostHours) * pro.appHostHour },
+        { cat: "logs", label: "Logs", calc: signalCalc(u.logsGb, free.logsGb), cost: signalCost(u.logsGb, free.logsGb) },
+        { cat: "traces", label: "Traces", calc: signalCalc(u.tracesGb, free.tracesGb), cost: signalCost(u.tracesGb, free.tracesGb) },
+        { cat: "app", label: "Application Observability", calc: `${u.appHosts} hosts × ${HOURS} h = ${num(appHours)} host-hours × $${pro.appHostHour}`, cost: appHours * pro.appHostHour },
     ]
         .map((l) => ({ ...l, cost: cents(l.cost) }))
         .filter((l) => l.cost > 0);
@@ -101,8 +105,8 @@ const billBars = [
     { label: "Mid-sized team, 60-second scrape", bill: mid },
     { label: "Mid-sized team, 30-second scrape", bill: midScrape },
 ];
-// If retain is billed only beyond the default 30 days, the mid bill drops by this much.
-const retainShare = cents((midUsage.logsGb - free.logsGb + midUsage.tracesGb - free.tracesGb) * pro.gbRetain);
+// Keeping logs and traces 60 days instead of 30: one retain increment on the written GB.
+const retainShare = cents((midUsage.logsGb + midUsage.tracesGb) * pro.gbRetain);
 
 // The mid-sized workload on Maple: metrics estimated at 0.1 KB per data point.
 const mapleRate = gb?.rate ?? 0.3;
@@ -131,7 +135,7 @@ const faqs = [
     {
         question: "How much does Grafana Cloud Pro cost?",
         answer:
-            `Pro is a $19 monthly platform fee plus usage above the free allowance: $6.50 per 1,000 active metric series, up to $0.55 per GB of logs or traces ($0.05 process, $0.40 write, $0.10 retain), and $8 per active user. A 12-person team with 40,000 series, 700 GB of logs and traces and Application Observability on 10 hosts pays about ${usd(mid.total)} a month, or ${usd(cents(mid.total - retainShare))} if retain is not charged at the default 30 days (prices verified ${verified}).`,
+            `Pro is a $19 monthly platform fee plus usage above the free allowance: $6.50 per 1,000 active metric series, $0.05 per GB processed and $0.40 per GB written for logs or traces (the 50 GB allowance offsets writes only), $0.10 per GB for each 30 days kept beyond the included 30, and $8 per active user. A 12-person team with 40,000 series, 700 GB of logs and traces and Application Observability on 10 hosts pays about ${usd(mid.total)} a month at the default retention (prices verified ${verified}).`,
     },
     {
         question: "What is DPM in Grafana Cloud?",
@@ -228,7 +232,7 @@ const articleJsonLd = {
                             <li>Free includes 10,000 metric series, 50 GB each of logs and traces, 3 users and 14 days of retention.</li>
                             <li>Pro is $19 a month plus usage above the same allowance, with 30 days for logs and traces and 13 months for metrics.</li>
                             <li>Metrics are $6.50 per 1,000 active series. Scraping faster than once a minute multiplies that.</li>
-                            <li>Logs and traces are $0.55 per GB: $0.05 to process, $0.40 to write and $0.10 to retain.</li>
+                            <li>Logs and traces are $0.05 per GB to process and $0.40 per GB to write. Keeping them past 30 days adds $0.10 per GB per 30 days.</li>
                             <li>Every user who logs in during a month counts. Past 3, each is $8.</li>
                         </ul>
                     </div>
@@ -245,12 +249,12 @@ const articleJsonLd = {
                             <tbody>
                                 <tr class="row-price"><td>Price</td><td>$0</td><td>$19 + usage</td><td>From $25,000 a year</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.metrics.color}`}>Metrics</span></td><td>10k series</td><td>10k, then $6.50 per 1k</td><td>From $3 per 1k</td></tr>
-                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>50 GB</td><td>50 GB, then $0.55 per GB</td><td>Custom</td></tr>
-                                <tr><td><span class="cat-badge" style={`--cat: ${cats.traces.color}`}>Traces</span></td><td>50 GB</td><td>50 GB, then $0.55 per GB</td><td>Custom</td></tr>
-                                <tr><td>Profiles</td><td>50 GB</td><td>50 GB, then $0.55 per GB</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.logs.color}`}>Logs</span></td><td>50 GB</td><td>$0.05 per GB processed, 50 GB written, then $0.40 per GB</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.traces.color}`}>Traces</span></td><td>50 GB</td><td>$0.05 per GB processed, 50 GB written, then $0.40 per GB</td><td>Custom</td></tr>
+                                <tr><td>Profiles</td><td>50 GB</td><td>$0.05 per GB processed, 50 GB written, then $0.40 per GB</td><td>Custom</td></tr>
                                 <tr><td><span class="cat-badge" style={`--cat: ${cats.users.color}`}>Active users</span></td><td>3</td><td>3, then $8 each</td><td>Custom</td></tr>
                                 <tr><td>Frontend Observability</td><td>50k sessions</td><td>50k, then $0.75 per 1k</td><td>Custom</td></tr>
-                                <tr><td><span class="cat-badge" style={`--cat: ${cats.app.color}`}>Application Observability</span></td><td>2,232 host-hours</td><td>Then $0.025 per host-hour</td><td>Custom</td></tr>
+                                <tr><td><span class="cat-badge" style={`--cat: ${cats.app.color}`}>Application Observability</span></td><td>2,232 host-hours</td><td>$0.025 per host-hour, none included</td><td>Custom</td></tr>
                                 <tr><td>Kubernetes Monitoring</td><td>2,232 host-hours, 37,944 container-hours</td><td>Then $0.01 per host-hour, $0.0007 per container-hour</td><td>Custom</td></tr>
                                 <tr><td>Synthetics</td><td>100k API, 10k browser runs</td><td>Then $5 per 10k API, $50 per 10k browser</td><td>Custom</td></tr>
                                 <tr><td>IRM</td><td>3 active users</td><td>Then $20 each</td><td>Custom</td></tr>
@@ -285,12 +289,12 @@ const articleJsonLd = {
 
                     <h3 id="logs-traces" class="scroll-mt-24">Logs and traces: process, write, retain</h3>
                     <p>
-                        Logs, traces and profiles bill per GB in three parts on Pro: <strong>$0.05 to process</strong>, <strong>$0.40 to write</strong> and <strong>$0.10 to retain</strong>, $0.55 in total. Process is measured on everything Grafana receives. Write is measured on what is kept after Adaptive Telemetry features such as Adaptive Logs drop data, so dropping cuts the write charge but not the process charge.
+                        Logs, traces and profiles bill per GB in three parts on Pro: <strong>$0.05 to process</strong>, <strong>$0.40 to write</strong> and <strong>$0.10 to retain</strong>. The 50 GB allowance offsets the write charge only, so processing is billed from the first GB. Process is measured on everything Grafana receives. Write is measured on what is kept after Adaptive Telemetry features such as Adaptive Logs drop data, so dropping cuts the write charge but not the process charge.
                     </p>
                     <div class="guide-callout">
-                        <p class="guide-kicker">An ambiguity in the published terms</p>
+                        <p class="guide-kicker">When retain applies</p>
                         <p>
-                            The pricing page lists retain as a third per-GB rate on Pro. The logs invoice docs describe retention as billed "for each additional retention increment beyond the minimum" of 30 days. This guide takes the higher reading and counts all three parts, $0.55 per GB, so its totals are an upper bound. If your invoice shows no retain charge at the default 30 days, the rate is $0.45 per GB; the mid-sized example gives both totals.
+                            The pricing page lists retain as a third per-GB rate on Pro. The logs invoice docs bill it "for each additional retention increment beyond the minimum": paid accounts keep 30 days at no retain charge, and each further 30 days costs $0.10 per GB. The worked bills below use the default 30 days, so they carry no retain charge.
                         </p>
                     </div>
                     <p>
@@ -389,7 +393,7 @@ const articleJsonLd = {
                         </table>
                     </div>
                     <p>
-                        Logs and traces are the largest share. If retain is not charged at the default 30 days, those two lines fall by {usd(retainShare)} and the total is {usd(cents(mid.total - retainShare))}.
+                        Logs and traces are the largest share. Keeping them 60 days instead of 30 adds one retain increment, about {usd(retainShare)}, for a total of {usd(cents(mid.total + retainShare))}.
                     </p>
 
                     <h3 id="scrape" class="scroll-mt-24">Same team, 30-second scrape: {usd(midScrape.total)} a month</h3>
