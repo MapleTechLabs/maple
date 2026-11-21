@@ -401,7 +401,7 @@ const groupCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 /** The name: the widest lane, and the first to give way, down to its floor. */
 const NAME_LANE = "min-w-28 grow basis-48"
 const GROUP_LANE = "w-36 min-w-20"
-const NAMESPACE_LANE = "w-32 min-w-20"
+const NAMESPACE_LANE = "w-32 min-w-16"
 const LAST_SEEN_LANE = "w-24 min-w-20 whitespace-nowrap"
 const CHANNEL_LANE = columnClass({ width: "28", inset: "4", className: "min-w-24" })
 /** Tags cannot truncate, so the lane keeps its width. */
