@@ -255,6 +255,26 @@ describe("toInputSchema tagged-variant merge", () => {
 		expect(range.required).toEqual(["id", "name", "type"])
 	})
 
+	it("keeps the union for a tool that refuses keys a variant does not declare", () => {
+		const union = Schema.Struct({
+			range: Schema.Union([
+				Schema.Struct({
+					...shared,
+					type: Schema.Literal("relative"),
+					value: Schema.optionalKey(Schema.String),
+				}),
+				Schema.Struct({
+					...shared,
+					type: Schema.Literal("absolute"),
+					start: Schema.optionalKey(Schema.String),
+				}),
+			]),
+		})
+		// Such a tool rejects `start` under `relative`; one merged object would publish it as allowed.
+		expect(rangeOf(toInputSchema(union, { onExcessProperty: "error" })).anyOf).toHaveLength(2)
+		expect(rangeOf(toInputSchema(union, { onExcessProperty: "ignore" })).anyOf).toBeUndefined()
+	})
+
 	it("keeps the union when a key is required under one tag only, which one object cannot say", () => {
 		const schema = toInputSchema(
 			Schema.Struct({
