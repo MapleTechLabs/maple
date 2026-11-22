@@ -3,6 +3,7 @@ import {
 	MAX_METRICS_GROUP_BY_KEYS,
 	METRICS_PERCENTILES,
 	type MetricsMetric,
+	type ProductEventsMetric,
 	type QuerySpec,
 	TRACES_NUMERIC_AGGREGATION_FNS,
 	TRACES_NUMERIC_ATTRIBUTE_KEY_MAX_LENGTH,
@@ -135,6 +136,7 @@ export const AGGREGATIONS_BY_SOURCE: Record<
 		{ label: "uniq(persons)", value: "persons" },
 		{ label: "uniq(users)", value: "users" },
 		{ label: "uniq(visitors)", value: "visitors" },
+		{ label: "uniq(groups)", value: "groups" },
 	],
 } satisfies Record<QueryBuilderDataSource, Arr.NonEmptyArray<{ label: string; value: string }>>
 
@@ -1648,7 +1650,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			query: {
 				kind: "timeseries",
 				source: "product_events",
-				metric: query.aggregation as "count" | "sessions" | "persons" | "users" | "visitors",
+				metric: query.aggregation as ProductEventsMetric,
 				groupBy,
 				filters: buildProductEventsSpecFilters(filters),
 				bucketSeconds,

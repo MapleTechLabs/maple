@@ -595,9 +595,11 @@ const results = (h: H, model: Model): Html =>
 						return emptyPanel(h, "Nobody reached step 1 in this window", [
 							keyBy === "user"
 								? "Count by User only counts identified users. Try Person, or check the first step's name."
-								: keyBy === "session"
-									? "Count by Session leaves out server-side events. Try Person, or check the first step's name."
-									: "Check the first step's name, widen the time range, or clear the filters.",
+								: keyBy === "group"
+									? "Count by Group only counts events that carry a group. Try Person, or check the first step's name."
+									: keyBy === "session"
+										? "Count by Session leaves out server-side events. Try Person, or check the first step's name."
+										: "Check the first step's name, widen the time range, or clear the filters.",
 						])
 					return vstack(h, { gap: "4" }, [
 						stats(h, model, rows, keyBy),

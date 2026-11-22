@@ -5,6 +5,7 @@ import { WarehouseExecutor } from "./WarehouseExecutor"
 export type {
 	ProductEventNamesOutput,
 	ProductEventsFunnelBreakdownOutput,
+	ProductEventsFunnelCoverageOutput,
 	ProductEventsFunnelOutput,
 } from "../ch/queries/product-events"
 
@@ -62,6 +63,25 @@ export const productEventsFunnelBreakdown = Effect.fn("Observability.productEven
 		})
 	},
 )
+
+/** Per step, the matching events in range and how many carry each identity a funnel can count by. */
+export const productEventsFunnelCoverage = Effect.fn("Observability.productEventsFunnelCoverage")(function* (
+	input: ProductEventsFunnelInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({
+		orgId: executor.orgId,
+		"maple.funnel.steps": input.steps.length,
+		"maple.funnel.key_by": input.keyBy,
+	})
+	const { startTime, endTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsFunnelCoverageQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
+	return yield* executor.compiledQuery(compiled, {
+		profile: "aggregation",
+		context: "productEventsFunnelCoverage",
+	})
+})
 
 /** The event names in range, most frequent first: `{ eventName, kind, count, sessions, persons }`. */
 export const productEventNames = Effect.fn("Observability.productEventNames")(function* (

@@ -38,6 +38,11 @@ export const FUNNEL_KEY_BY_OPTIONS: ReadonlyArray<{
 	{ value: "visitor", label: "Visitor", description: "The browser's anonymous visitor id." },
 	{ value: "user", label: "User", description: "Identified users only." },
 	{
+		value: "group",
+		label: "Group",
+		description: "The account or team your app identifies users into. Events without one take no part.",
+	},
+	{
 		value: "session",
 		label: "Session",
 		description: "Each session on its own; server events take no part.",

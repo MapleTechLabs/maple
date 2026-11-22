@@ -122,10 +122,13 @@ export type FunnelStep =
  *   visit and the same person's post-signup (or server-side) events collapse
  *   into one person.
  * - `visitor` / `user`: the raw column, non-empty.
+ * - `group`: `GroupId`, the account or team the app identified the user into. The
+ *   only key that follows an event a backend sends for the account alone (a
+ *   billing webhook's `plan_started`) through to the users' own events.
  * - `session`: `SessionId` — a per-session funnel; server events (no session)
  *   never take part.
  */
-export type FunnelKeyBy = "person" | "visitor" | "user" | "session"
+export type FunnelKeyBy = "person" | "visitor" | "user" | "group" | "session"
 
 export interface ProductEventsFunnelOpts {
 	/** 1–10 steps, in order. A `session` step may only appear first. */
@@ -168,6 +171,19 @@ export const productEventsFunnelBreakdownRowSchema = Schema.Struct({
 	count: CHNumber,
 })
 export type ProductEventsFunnelBreakdownOutput = typeof productEventsFunnelBreakdownRowSchema.Type
+
+export const productEventsFunnelCoverageRowSchema = Schema.Struct({
+	step: CHNumber,
+	/** Events in range that match the step, whoever they belong to. */
+	events: CHNumber,
+	/** Of those, the ones that carry a user id or a visitor id: what `person` counts. */
+	withPerson: CHNumber,
+	withUser: CHNumber,
+	withVisitor: CHNumber,
+	withGroup: CHNumber,
+	withSession: CHNumber,
+})
+export type ProductEventsFunnelCoverageOutput = typeof productEventsFunnelCoverageRowSchema.Type
 
 export const productEventNamesRowSchema = Schema.Struct({
 	eventName: Schema.String,
@@ -240,6 +256,7 @@ type IdentityAccessor = {
 	readonly SessionId: CH.Expr<string>
 	readonly VisitorId: CH.Expr<string>
 	readonly UserId: CH.Expr<string>
+	readonly GroupId: CH.Expr<string>
 }
 // The `identity_links` join alias — a typed accessor when the join is declared
 // statically, an open one under `OpenJoinQuery`.
@@ -290,6 +307,8 @@ export function personKey(keyBy: FunnelKeyBy, $: IdentityAccessor, link?: LinkAc
 			return $.VisitorId
 		case "user":
 			return $.UserId
+		case "group":
+			return $.GroupId
 		case "person": {
 			// join_use_nulls=0 (the default) yields '' for an unmatched LEFT JOIN;
 			// coalesce covers a cluster that flips it on and yields NULL instead.
@@ -782,6 +801,72 @@ export function productEventsFunnelBreakdownQuery(
 				count: CH.arrayElement($.counts, CH.dynamicColumn<number>("step")),
 			}))
 			.orderBy(["group", "asc"], ["step", "asc"])
+			.format("JSON"),
+	)
+}
+
+/**
+ * Per step, how many matching events the range holds and how many of them carry each identity.
+ *
+ * A funnel drops every row whose key is empty, so a step whose events lack the key (a billing
+ * webhook's event has an account and no user) can never be reached under it and reads as a 0%
+ * conversion. This is what tells that apart from nobody converting. A `session` step matches no
+ * event row and answers zeros. The caller runs it only when a step came back empty.
+ */
+export function productEventsFunnelCoverageQuery(
+	opts: ProductEventsFunnelOpts,
+): Result.Result<CHQuery<ColumnDefs, ProductEventsFunnelCoverageOutput>, ProductEventsFunnelError> {
+	const invalid = validate(opts)
+	if (invalid !== undefined) return Result.fail(invalid)
+	const n = opts.steps.length
+
+	const totals = from(Datasources.productEvents)
+		.select(($) => {
+			const conditions = Arr.map(opts.steps, (step) => eventStepCondition($, step))
+			const counts = (carries?: CH.Condition): CH.Expr<ReadonlyArray<number>> =>
+				CH.arrayOf(
+					...Arr.map(conditions, (cond) =>
+						cond === undefined
+							? CH.toUInt64(CH.lit(0))
+							: CH.countIf(carries === undefined ? cond : cond.and(carries)),
+					),
+				)
+			return {
+				events: counts(),
+				withPerson: counts($.UserId.neq("").or($.VisitorId.neq(""))),
+				withUser: counts($.UserId.neq("")),
+				withVisitor: counts($.VisitorId.neq("")),
+				withGroup: counts($.GroupId.neq("")),
+				withSession: counts($.SessionId.neq("")),
+			}
+		})
+		.where(($) => {
+			const conditions = Arr.filter(
+				Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+				(cond): cond is CH.Condition => cond !== undefined,
+			)
+			return [
+				$.OrgId.eq(orgIdParam),
+				$.Timestamp.gte(param.dateTime("startTime")),
+				$.Timestamp.lte(param.dateTime("endTime")),
+				// Only session steps: no event can match, so read nothing.
+				conditions.length === 0 ? $.Kind.eq("").and($.Kind.neq("")) : CH.or(...conditions),
+			]
+		})
+
+	const step = CH.dynamicColumn<number>("step")
+	return Result.succeed(
+		fromQuery(totals, "totals")
+			.select(($) => ({
+				step: stepIndex(n),
+				events: CH.arrayElement($.events, step),
+				withPerson: CH.arrayElement($.withPerson, step),
+				withUser: CH.arrayElement($.withUser, step),
+				withVisitor: CH.arrayElement($.withVisitor, step),
+				withGroup: CH.arrayElement($.withGroup, step),
+				withSession: CH.arrayElement($.withSession, step),
+			}))
+			.orderBy(["step", "asc"])
 			.format("JSON"),
 	)
 }

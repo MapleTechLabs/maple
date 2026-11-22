@@ -180,8 +180,10 @@ export const QueryFunnelOutput = Schema.Struct({
 	),
 	/** The steps as given, so a follow-up call can repeat the funnel. */
 	definition: Schema.Array(FunnelStep),
-	/** Set when the identity `keyBy` counts by is empty on the events, so the funnel collapses. */
+	/** Set when a step's events lack the identity `keyBy` counts by, so the step reads as empty. */
 	identityNote: Schema.optionalKey(Schema.String),
+	/** The key every step's events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
 })
 
 export const ProductEventKind = Schema.Literals(["custom", "navigation", "screen"])

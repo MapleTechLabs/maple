@@ -69,11 +69,13 @@ export {
 export {
 	productEventsFunnel,
 	productEventsFunnelBreakdown,
+	productEventsFunnelCoverage,
 	productEventNames,
 	type ProductEventsFunnelInput,
 	type ProductEventsFunnelBreakdownInput,
 	type ProductEventNamesInput,
 	type ProductEventsFunnelOutput,
 	type ProductEventsFunnelBreakdownOutput,
+	type ProductEventsFunnelCoverageOutput,
 	type ProductEventNamesOutput,
 } from "./product-events"

@@ -49,7 +49,7 @@ const page = (pagePath: string, host?: string): CH.FunnelStep =>
 /** The random tests run hundreds of queries; a CI runner takes about three times a laptop. */
 const RANDOM_TEST_TIMEOUT_MS = 120_000
 
-const KEYS: ReadonlyArray<CH.FunnelKeyBy> = ["person", "visitor", "user", "session"]
+const KEYS: ReadonlyArray<CH.FunnelKeyBy> = ["person", "visitor", "user", "group", "session"]
 
 /** One person's span is both quantiles. */
 const both = (ms: number) => ({ p50Ms: ms, p90Ms: ms })
@@ -830,6 +830,8 @@ function randomDatasets(
 			const userId = rng.chance(0.7) ? `u${person}` : ""
 			const visitorId = userId === "" || rng.chance(0.5) ? `v${person}` : ""
 			const sessionId = visitorId === "" ? "" : `s${person}`
+			// Two people can share an account, so a group's history interleaves theirs.
+			const groupId = rng.chance(0.7) ? `g${person % 2}` : ""
 			let previousMs = -1
 			return Arr.makeBy(1 + rng.int(9), (index) => {
 				// One row in five lands in the millisecond of the one before it, and a server row
@@ -842,6 +844,7 @@ function randomDatasets(
 					userId,
 					visitorId,
 					sessionId,
+					groupId,
 					source: sessionId === "" ? "server" : "browser",
 					eventName: rng.pick(names),
 					attributes: rng.chance(0.3) ? { tier: rng.pick(["x", "y"] as const) } : {},
@@ -854,7 +857,7 @@ function randomDatasets(
 					? ev(rng.pick(names), { tier: rng.pick(["x", "y"] as const) })
 					: ev(rng.pick(names)),
 			),
-			keyBy: rng.pick(["person", "visitor", "user", "session"] as const),
+			keyBy: rng.pick(["person", "visitor", "user", "group", "session"] as const),
 			windowSeconds: rng.pick([60, 600, 3_600, 86_400] as const),
 		}))
 		return { dataset: { orgId, events, sessions: [] }, funnels }
