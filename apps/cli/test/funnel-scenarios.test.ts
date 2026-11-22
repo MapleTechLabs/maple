@@ -9,8 +9,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type * as CH from "@maple/query-engine/ch"
-import { Array as Arr } from "effect"
+import * as CH from "@maple/query-engine/ch"
+import { Array as Arr, Result } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { describeWithChdb } from "./libchdb-test-support"
@@ -295,6 +295,44 @@ const ACQUISITION: Dataset = {
 	],
 }
 
+/** Three checkouts: one clean, one with support opened before paying, one with it opened early. */
+const EXCLUSIONS: Dataset = {
+	orgId: "exclusion_cases",
+	sessions: [],
+	events: [
+		...user("clean", [
+			[1_000, "cart"],
+			[2_000, "address"],
+			[3_000, "pay"],
+		]),
+		...user("left", [
+			[1_000, "cart"],
+			[2_000, "address"],
+			[2_500, "support_opened"],
+			[3_000, "pay"],
+		]),
+		...user("early", [
+			[1_000, "cart"],
+			[1_500, "support_opened"],
+			[2_000, "address"],
+			[3_000, "pay"],
+		]),
+	],
+}
+
+/** One checkout that re-enters the address after opening support. */
+const RETRY: Dataset = {
+	orgId: "exclusion_retry",
+	sessions: [],
+	events: user("retry", [
+		[1_000, "cart"],
+		[2_000, "address"],
+		[2_500, "support_opened"],
+		[2_800, "address"],
+		[3_000, "pay"],
+	]),
+}
+
 describeWithChdb("product event funnels over example products", () => {
 	let root = ""
 	let db: Chdb
@@ -316,6 +354,8 @@ describeWithChdb("product event funnels over example products", () => {
 				ACQUISITION,
 				VIEWS,
 				ENTRIES,
+				EXCLUSIONS,
+				RETRY,
 				...Arr.map(
 					[
 						"repeats",
@@ -783,6 +823,113 @@ describeWithChdb("product event funnels over example products", () => {
 				}),
 			)
 			expect(mismatches.slice(0, 2)).toEqual([])
+		},
+		RANDOM_TEST_TIMEOUT_MS,
+	)
+
+	// Exclusions: an event that must not happen part way through.
+
+	const excluding = (
+		eventName: string,
+		after?: number,
+		before?: number,
+	): NonNullable<Opts["exclusions"]>[number] => ({
+		step: { kind: "event", eventName },
+		...(after === undefined ? undefined : { after }),
+		...(before === undefined ? undefined : { before }),
+	})
+
+	test("an excluded event between two steps drops the attempt, and only between them", () => {
+		const funnel = (exclusions: Opts["exclusions"]): Opts => ({
+			steps: [ev("cart"), ev("address"), ev("pay")],
+			keyBy: "user",
+			windowSeconds: 3_600,
+			exclusions,
+		})
+		// `clean` goes straight through; `left` opens support between address and pay;
+		// `early` opens it between cart and address and then finishes.
+		expect(counts(EXCLUSIONS, funnel(undefined))).toEqual([3, 3, 3])
+		expect(counts(EXCLUSIONS, funnel([excluding("support_opened")]))).toEqual([3, 2, 1])
+		expect(counts(EXCLUSIONS, funnel([excluding("support_opened", 2, 3)]))).toEqual([3, 3, 2])
+		expect(counts(EXCLUSIONS, funnel([excluding("support_opened", 1, 2)]))).toEqual([3, 2, 2])
+	})
+
+	test("a dropped attempt can still convert from a step the exclusion did not cover", () => {
+		// address, support, address again, pay: the second address is after the excluded event.
+		expect(
+			counts(RETRY, {
+				steps: [ev("cart"), ev("address"), ev("pay")],
+				keyBy: "user",
+				windowSeconds: 3_600,
+				exclusions: [excluding("support_opened", 2, 3)],
+			}),
+		).toEqual([1, 1, 1])
+		// Covered from the cart on, the attempt is gone and there is no second cart.
+		expect(
+			counts(RETRY, {
+				steps: [ev("cart"), ev("address"), ev("pay")],
+				keyBy: "user",
+				windowSeconds: 3_600,
+				exclusions: [excluding("support_opened")],
+			}),
+		).toEqual([1, 1, 0])
+	})
+
+	test("rejects an exclusion that is not between two steps, and details with any", () => {
+		const built = (exclusions: Opts["exclusions"], steps = [ev("cart"), ev("pay")]) =>
+			CH.productEventsFunnelQuery({ steps, keyBy: "user", windowSeconds: 60, exclusions })
+		expect(Result.isFailure(built([excluding("x", 2, 2)]))).toBe(true)
+		expect(Result.isFailure(built([excluding("x", 1, 3)]))).toBe(true)
+		expect(Result.isFailure(built([excluding("x")], [ev("cart")]))).toBe(true)
+		expect(Result.isSuccess(built([excluding("x")]))).toBe(true)
+		expect(
+			Result.isFailure(
+				CH.productEventsFunnelTimingQuery({
+					steps: [ev("cart"), ev("pay")],
+					keyBy: "user",
+					windowSeconds: 60,
+					exclusions: [excluding("x")],
+				}),
+			),
+		).toBe(true)
+	})
+
+	test(
+		"random small histories with exclusions give the reference's counts",
+		() => {
+			const rng = seeded(613)
+			const names = ["a", "b", "c"] as const
+			const asks = Arr.flatMap(random, ({ dataset, funnels }) =>
+				Arr.flatMap(
+					Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),
+					(opts: Opts) => {
+						const n = opts.steps.length
+						const exclusions = Arr.makeBy(1 + rng.int(2), () => {
+							const after = 1 + rng.int(n - 1)
+							return rng.chance(0.4)
+								? excluding(rng.pick(names))
+								: excluding(rng.pick(names), after, after + 1 + rng.int(n - after))
+						})
+						return [{ dataset, opts: { ...opts, exclusions } }]
+					},
+				),
+			)
+			const mismatches = Arr.flatMap(asks, ({ dataset, opts }) => {
+				const expected = referenceFunnel(dataset, opts)
+				const actual = counts(dataset, opts)
+				return JSON.stringify(expected) === JSON.stringify(actual)
+					? []
+					: [{ org: dataset.orgId, opts, expected, actual, events: dataset.events }]
+			})
+			expect(mismatches.slice(0, 2)).toEqual([])
+			// The exclusions have to bite somewhere, or the suite would pass with them ignored.
+			const bitten = Arr.filter(
+				asks,
+				({ dataset, opts }) =>
+					JSON.stringify(referenceFunnel(dataset, opts)) !==
+					JSON.stringify(referenceFunnel(dataset, { ...opts, exclusions: [] })),
+			)
+			expect(bitten.length).toBeGreaterThan(10)
 		},
 		RANDOM_TEST_TIMEOUT_MS,
 	)

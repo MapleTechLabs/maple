@@ -11,7 +11,12 @@
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { FUNNEL_MAX_STEPS, isPagePathPattern, pagePathLikePattern } from "@maple/query-model"
+import {
+	FUNNEL_MAX_EXCLUSIONS,
+	FUNNEL_MAX_STEPS,
+	isPagePathPattern,
+	pagePathLikePattern,
+} from "@maple/query-model"
 import {
 	param,
 	from,
@@ -132,9 +137,25 @@ export type FunnelStep =
  */
 export type FunnelKeyBy = "person" | "visitor" | "user" | "group" | "session"
 
+/**
+ * Something that must not happen part way through: an attempt that has reached step `after` and
+ * not yet step `before` is dropped the moment the event occurs. With neither bound it is "anywhere
+ * between the first step and the last". Dropping is per attempt: the same person can still convert
+ * on a later attempt, or from an earlier step of this one that the exclusion did not cover.
+ */
+export interface FunnelExclusion {
+	readonly step: Extract<FunnelStep, { kind: "event" | "page" }>
+	/** 1-based; default 1. */
+	readonly after?: number
+	/** 1-based, greater than `after`; default the last step. */
+	readonly before?: number
+}
+
 export interface ProductEventsFunnelOpts {
 	/** 1–10 steps, in order. A `session` step may only appear first. */
 	readonly steps: ReadonlyArray<FunnelStep>
+	/** Up to five. Counts and breakdowns honour them; the drop-off details do not take them. */
+	readonly exclusions?: ReadonlyArray<FunnelExclusion>
 	readonly keyBy: FunnelKeyBy
 	/** The whole chain must complete within this many seconds of the step-1 event. */
 	readonly windowSeconds: number
@@ -207,6 +228,7 @@ export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFu
 			"InvalidWindow",
 			"InvalidLimit",
 			"TooFewSteps",
+			"InvalidExclusion",
 		]),
 		message: Schema.String,
 	},
@@ -249,8 +271,46 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			message: `windowSeconds must be a positive number up to ${FUNNEL_MAX_WINDOW_SECONDS} (${FUNNEL_MAX_WINDOW_SECONDS / 86_400} days), got ${String(opts.windowSeconds)}`,
 		})
 	}
+	const exclusions = opts.exclusions ?? []
+	if (exclusions.length > FUNNEL_MAX_EXCLUSIONS) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message: `a funnel takes at most ${FUNNEL_MAX_EXCLUSIONS} exclusions, got ${exclusions.length}`,
+		})
+	}
+	if (exclusions.length > 0 && opts.steps.length < 2) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message: "an exclusion sits between two steps, so the funnel needs at least two",
+		})
+	}
+	const misplaced = Arr.findFirst(exclusions, (exclusion) => {
+		const { after, before } = exclusionRange(exclusion, opts.steps.length)
+		return (
+			!Number.isInteger(after) ||
+			!Number.isInteger(before) ||
+			after < 1 ||
+			before > opts.steps.length ||
+			after >= before
+		)
+	})
+	if (Option.isSome(misplaced)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message: `an exclusion's after and before must be steps in 1..${opts.steps.length} with after < before, got after=${String(misplaced.value.after ?? 1)} before=${String(misplaced.value.before ?? opts.steps.length)}`,
+		})
+	}
 	return undefined
 }
+
+/** The steps an exclusion sits between, with its defaults filled in. */
+const exclusionRange = (
+	exclusion: FunnelExclusion,
+	stepCount: number,
+): { readonly after: number; readonly before: number } => ({
+	after: exclusion.after ?? 1,
+	before: exclusion.before ?? stepCount,
+})
 
 export type EventsAccessor = ColumnAccessor<typeof Datasources.productEvents.columns>
 type ReplaysAccessor = ColumnAccessor<typeof Datasources.sessionReplays.columns>
@@ -407,6 +467,17 @@ export function matchingPersonsSubquery(keyBy: FunnelKeyBy, filters: ProductEven
 }
 
 const stepColumn = (index: number) => `s${index + 1}`
+const exclusionColumn = (index: number) => `x${index + 1}`
+
+/** `{ x1: …, x2: … }`: one projected flag column per exclusion, in order. Empty with none. */
+function exclusionFlags(
+	exclusions: ReadonlyArray<FunnelExclusion>,
+	value: (exclusion: FunnelExclusion) => CH.Expr<number>,
+): Record<string, CH.Expr<number>> {
+	return Rec.fromEntries(
+		Arr.map(exclusions, (exclusion, index) => [exclusionColumn(index), value(exclusion)]),
+	)
+}
 
 /** `{ s1: …, s2: …, … }` — one projected flag column per step, in order. */
 function stepFlags(
@@ -500,14 +571,21 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				const cond = eventStepCondition($, step)
 				return cond ? flag(cond) : CH.lit(0)
 			})
+			const excluded = exclusionFlags(opts.exclusions ?? [], (exclusion) =>
+				flag(eventStepCondition($, exclusion.step) ?? CH.rawCond("0")),
+			)
 			const d = dimExpr($)
-			const row = { key, ord: orderKey($.Timestamp, $.Seq), ...flags }
+			const row = { key, ord: orderKey($.Timestamp, $.Seq), ...flags, ...excluded }
 			return d ? { ...row, dim: d } : row
 		})
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
+			// An exclusion's rows are read with the steps': the walk has to see them to drop an attempt.
 			const stepConditions = Arr.filter(
-				Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+				[
+					...Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+					...Arr.map(opts.exclusions ?? [], (exclusion) => eventStepCondition($, exclusion.step)),
+				],
 				(cond): cond is CH.Condition => cond !== undefined,
 			)
 			const anyStep = stepConditions.length === 0 ? undefined : CH.or(...stepConditions)
@@ -548,8 +626,10 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 		.select(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			const flags = stepFlags(opts.steps, (_, index) => CH.lit(index === 0 ? 1 : 0))
+			// A session entry is never an excluded event.
+			const excluded = exclusionFlags(opts.exclusions ?? [], () => CH.lit(0))
 			// A session entry has no row order of its own; 0 sorts it first inside its timestamp.
-			const row = { key, ord: orderKey($.StartTime, CH.lit(0)), ...flags }
+			const row = { key, ord: orderKey($.StartTime, CH.lit(0)), ...flags, ...excluded }
 			if (dim === undefined) return row
 			// An attribute breakdown has no value on a session row; the events
 			// branch supplies it. A session dimension is read straight off the row.
@@ -638,11 +718,48 @@ function walkQuery(plan: FunnelPlan) {
 	const { opts } = plan
 	const n = opts.steps.length
 	const window = windowMs(opts)
+	const exclusions = opts.exclusions ?? []
+	// Tuple element 1 is `ord`, k + 1 is step k's flag, n + 1 + j is exclusion j's.
+	const exclusionElement = (index: number) => `x.${n + 2 + index}`
 	const flags = Arr.join(
-		Arr.map(opts.steps, (_, index) => stepColumn(index)),
+		[
+			...Arr.map(opts.steps, (_, index) => stepColumn(index)),
+			...Arr.map(exclusions, (_, index) => exclusionColumn(index)),
+		],
 		", ",
 	)
-	const tieOrder = Arr.join(["x.1", ...Arr.map(opts.steps, (_, index) => `1 - x.${index + 2}`)], ", ")
+	// Rows that tie on the order key sort in step order, an excluded event after the steps.
+	const tieOrder = Arr.join(
+		[
+			"x.1",
+			...Arr.map(opts.steps, (_, index) => `1 - x.${index + 2}`),
+			...Arr.map(exclusions, (_, index) => exclusionElement(index)),
+		],
+		", ",
+	)
+	// An excluded event drops the attempts standing at the steps it covers: on such a row the
+	// state of step k becomes this marker, which is carried forward like a start but is none, so
+	// nothing advances from it until a step-k row arrives again. A real start is an order key,
+	// never 1. Without exclusions the marker is unused and the SQL is what it always was.
+	const DROPPED = "toUInt64(1)"
+	const live = exclusions.length > 0 ? "> 1" : "> 0"
+	/** The rows that drop the attempts standing at `step`, or `undefined` when no exclusion covers it. */
+	const dropsAt = (step: number): string | undefined => {
+		const covering = Arr.filter(
+			Arr.map(exclusions, (exclusion, index) => ({ ...exclusionRange(exclusion, n), index })),
+			(range) => range.after <= step && step < range.before,
+		)
+		return covering.length === 0
+			? undefined
+			: `(${Arr.join(
+					Arr.map(covering, (range) => `${exclusionElement(range.index)} = 1`),
+					" OR ",
+				)})`
+	}
+	const dropping = (step: number, state: string): string => {
+		const drops = dropsAt(step)
+		return drops === undefined ? state : `if(${drops}, ${DROPPED}, ${state})`
+	}
 	const perPerson = funnelSource(plan)
 		.select(($) => {
 			const row = {
@@ -667,23 +784,25 @@ function walkQuery(plan: FunnelPlan) {
 		const row = {
 			key: $.key,
 			evs: $.evs,
-			a1: CH.untypedExpr("arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs))"),
+			a1: CH.untypedExpr(
+				`arrayFill(v -> v > 0, arrayMap(x -> ${dropping(1, "if(x.2 = 1, x.1, toUInt64(0))")}, evs))`,
+			),
 			...Rec.fromEntries(
 				Arr.flatMap(later, (step) => [
 					[
 						`b${step}`,
 						CH.untypedExpr(
-							`arrayMap((x, p) -> if(x.${step + 1} = 1 AND p > 0 AND ${millisOf("x.1")} <= ${millisOf("p")} + ${window}, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a${step - 1}), toUInt64(0)))`,
+							`arrayMap((x, p) -> ${dropping(step, `if(x.${step + 1} = 1 AND p ${live} AND ${millisOf("x.1")} <= ${millisOf("p")} + ${window}, p, toUInt64(0))`)}, evs, arrayPushFront(arrayPopBack(a${step - 1}), toUInt64(0)))`,
 						),
 					],
 					[`a${step}`, CH.untypedExpr(`arrayFill(v -> v > 0, b${step})`)],
 				]),
 			),
-			f1: CH.untypedExpr("arrayFirst(v -> v > 0, a1)"),
+			f1: CH.untypedExpr(`arrayFirst(v -> v ${live}, a1)`),
 			...Rec.fromEntries(
 				Arr.map(later, (step) => [
 					`f${step}`,
-					CH.untypedExpr(`tupleElement(arrayFirst((x, b) -> b > 0, evs, b${step}), 1)`),
+					CH.untypedExpr(`tupleElement(arrayFirst((x, b) -> b ${live}, evs, b${step}), 1)`),
 				]),
 			),
 			level: CH.rawExpr<number>(
@@ -1110,6 +1229,14 @@ function chainQuery(plan: FunnelPlan) {
 function validateDetails(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return invalid
+	// The chain a time or a leaver is read from is rebuilt from the person's rows, and that
+	// rebuild does not know which attempts an exclusion dropped.
+	if ((opts.exclusions ?? []).length > 0) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message: "the time between steps and the leavers are not available for a funnel with exclusions",
+		})
+	}
 	if (opts.steps.length < 2) {
 		return new ProductEventsFunnelError({
 			reason: "TooFewSteps",

@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import {
+	FunnelExclusion,
 	FunnelKeyBy,
 	FunnelStep,
 	PathsAnchor,
@@ -195,6 +196,8 @@ export const QueryFunnelOutput = Schema.Struct({
 	),
 	/** The steps as given, so a follow-up call can repeat the funnel. */
 	definition: Schema.Array(FunnelStep),
+	/** The exclusions as given, when there were any. */
+	exclusions: Schema.optionalKey(Schema.Array(FunnelExclusion)),
 	/** Set when a step's events lack the identity `keyBy` counts by, so the step reads as empty. */
 	identityNote: Schema.optionalKey(Schema.String),
 	/** The key every step's events do carry, when `identityNote` is set and there is one. */
@@ -222,6 +225,29 @@ export const QueryPathsOutput = Schema.Struct({
 			edges: Schema.Array(
 				Schema.Struct({ from: Schema.String, to: Schema.String, count: Schema.Number }),
 			),
+		}),
+	),
+})
+
+export const QueryCohortOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	keyBy: RetentionKeyBy,
+	did: PathsAnchor,
+	didNot: Schema.optionalKey(PathsAnchor),
+	/** `ever`: never, up to the window's end. `window`: not inside the window. Only with `didNot`. */
+	didNotScope: Schema.optionalKey(Schema.Literals(["ever", "window"])),
+	/** Everyone who did `did` in the window, whether they also did `didNot` or not. */
+	didTotal: Schema.Number,
+	/** The cohort's size: those of `didTotal` that did not do `didNot`. */
+	total: Schema.Number,
+	limit: Schema.Number,
+	/** The members listed, the one who did it last first; `total` counts all of them. */
+	members: Schema.Array(
+		Schema.Struct({
+			id: Schema.String,
+			firstAt: Schema.String,
+			lastAt: Schema.String,
+			count: Schema.Number,
 		}),
 	),
 })

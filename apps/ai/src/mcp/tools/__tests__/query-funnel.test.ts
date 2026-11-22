@@ -288,6 +288,61 @@ describe("query_funnel details", () => {
 	})
 })
 
+describe("query_funnel exclusions", () => {
+	const steps = JSON.stringify([
+		{ kind: "page", pagePath: "/pricing" },
+		{ kind: "event", eventName: "signup_completed" },
+	])
+	const exclusions = JSON.stringify([{ step: { kind: "event", eventName: "support_opened" } }])
+
+	it("reads the excluded event with the steps and names it in the result", async () => {
+		const result = await call("query_funnel", { steps_json: steps, exclusions_json: exclusions })
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.exclusions).toEqual([{ step: { kind: "event", eventName: "support_opened" } }])
+		const text = markdown(result)
+		expect(text).toContain("Without: support_opened between steps 1 and 2")
+		// The breakdown it suggests is the same funnel, exclusions included.
+		expect(text).toMatch(
+			/query_funnel [^\n]*exclusions_json=[^\n]*support_opened[^\n]*breakdown_by="utmSource"/,
+		)
+	})
+
+	it("leaves out the details an exclusion makes unavailable, and says so", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: exclusions,
+			details: true,
+		})
+		const text = markdown(result)
+		// The note names the section; the section itself is not there.
+		expect(text).not.toContain("### Time to convert")
+		expect(text).toContain("are not reported with exclusions")
+	})
+
+	it("rejects an exclusion that is not between two steps, naming the parameter", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([
+				{ step: { kind: "event", eventName: "support_opened" }, after: 2, before: 2 },
+			]),
+		})
+		expect(result.isError).toBe(true)
+		const text = markdown(result)
+		expect(text).toContain("`exclusions_json`")
+		expect(text).toContain("after < before")
+	})
+
+	it("rejects an exclusion on a one-step funnel", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([{ kind: "event", eventName: "signup_completed" }]),
+			exclusions_json: exclusions,
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("needs at least two")
+	})
+})
+
 describe("list_product_events output", () => {
 	it("decodes with its output schema and suggests a funnel over the custom events", async () => {
 		const result = await call("list_product_events", {})

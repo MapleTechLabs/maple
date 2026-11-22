@@ -51,6 +51,20 @@ export const FunnelSessionStep = Schema.Struct({
 export const FunnelStep = Schema.Union([FunnelEventStep, FunnelPageStep, FunnelSessionStep])
 export type FunnelStep = typeof FunnelStep.Type
 
+/**
+ * Something that must not happen part way through a funnel: an attempt that has reached step
+ * `after` (default 1) and not yet step `before` (default the last) is dropped when it does.
+ */
+export const FunnelExclusion = Schema.Struct({
+	step: Schema.Union([FunnelEventStep, FunnelPageStep]),
+	after: Schema.optionalKey(Schema.Number),
+	before: Schema.optionalKey(Schema.Number),
+})
+export type FunnelExclusion = typeof FunnelExclusion.Type
+
+/** Mirror `FUNNEL_MAX_EXCLUSIONS` in the query engine. */
+export const FUNNEL_MAX_EXCLUSIONS = 5
+
 const PAGE_WILDCARD = "*"
 
 /** Whether a page step's path is a pattern rather than one exact path. */

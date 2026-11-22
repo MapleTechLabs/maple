@@ -4202,6 +4202,96 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
+-- builder:product-events-cohort:productEventsCohortQuery:did-and-never  [6d9d149d]
+SELECT
+          key AS key,
+          toString(counted.firstAt) AS firstAt,
+          toString(counted.lastAt) AS lastAt,
+          counted.didCount AS count,
+          counted.didTotal AS didTotal,
+          counted.total AS total
+        FROM (SELECT
+          per_key.key AS key,
+          per_key.firstAt AS firstAt,
+          per_key.lastAt AS lastAt,
+          per_key.didCount AS didCount,
+          per_key.notCount AS notCount,
+          count() OVER () AS didTotal,
+          countIf(notCount = 0) OVER () AS total
+        FROM (SELECT
+          cohort_events.key AS key,
+          minIf(ts, isDid = 1) AS firstAt,
+          maxIf(ts, isDid = 1) AS lastAt,
+          countIf(isDid = 1) AS didCount,
+          countIf(isNot = 1) AS notCount
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          e.Timestamp AS ts,
+          toUInt8((e.EventName = 'signup_completed' AND e.Timestamp >= '2026-01-01 10:30:00')) AS isDid,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro')) AS isNot
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND (e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro'))
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS cohort_events
+        GROUP BY key) AS per_key
+        WHERE per_key.didCount > 0) AS counted
+        WHERE counted.notCount = 0
+        ORDER BY lastAt DESC, key ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:product-events-cohort:productEventsCohortQuery:did-in-window-group  [52acf25d]
+SELECT
+          key AS key,
+          toString(counted.firstAt) AS firstAt,
+          toString(counted.lastAt) AS lastAt,
+          counted.didCount AS count,
+          counted.didTotal AS didTotal,
+          counted.total AS total
+        FROM (SELECT
+          per_key.key AS key,
+          per_key.firstAt AS firstAt,
+          per_key.lastAt AS lastAt,
+          per_key.didCount AS didCount,
+          per_key.notCount AS notCount,
+          count() OVER () AS didTotal,
+          countIf(notCount = 0) OVER () AS total
+        FROM (SELECT
+          cohort_events.key AS key,
+          minIf(ts, isDid = 1) AS firstAt,
+          maxIf(ts, isDid = 1) AS lastAt,
+          countIf(isDid = 1) AS didCount,
+          countIf(isNot = 1) AS notCount
+        FROM (SELECT
+          e.GroupId AS key,
+          e.Timestamp AS ts,
+          toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath LIKE '/settings/%') AND e.Timestamp >= '2026-01-01 10:30:00')) AS isDid,
+          0 AS isNot
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND (e.Kind IN ('navigation', 'screen') AND e.PagePath LIKE '/settings/%')
+          AND e.GroupId != '') AS cohort_events
+        GROUP BY key) AS per_key
+        WHERE per_key.didCount > 0) AS counted
+        WHERE counted.notCount = 0
+        ORDER BY lastAt DESC, key ASC
+        LIMIT 25
+        FORMAT JSON
+
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
 SELECT
           arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,

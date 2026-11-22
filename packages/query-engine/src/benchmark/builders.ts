@@ -515,6 +515,45 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		module: "product-events-cohort",
+		name: "productEventsCohortQuery",
+		label: "did-and-never",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsCohortQuery({
+						did: { kind: "event", eventName: "signup_completed" },
+						didNot: {
+							kind: "event",
+							eventName: "plan_started",
+							attributeEquals: { plan: "pro" },
+						},
+						didNotScope: "ever",
+						keyBy: "person",
+						limit: 50,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events-cohort",
+		name: "productEventsCohortQuery",
+		label: "did-in-window-group",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsCohortQuery({
+						did: { kind: "page", pagePath: "/settings/*" },
+						didNotScope: "window",
+						keyBy: "group",
+						limit: 25,
+					}),
+				),
+				window,
+			),
+	},
+	{
 		module: "product-events-retention",
 		name: "productEventsRetentionQuery",
 		label: "weekly-first-ever-person",

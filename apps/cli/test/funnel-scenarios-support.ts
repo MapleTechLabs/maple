@@ -400,16 +400,23 @@ interface FunnelRow {
 	readonly atMs: number
 	readonly seq: number
 	readonly matches: ReadonlyArray<boolean>
+	/** `drops[k - 1]`: this row is an excluded event that drops the attempts standing at step k. */
+	readonly drops: ReadonlyArray<boolean>
+	/** Which exclusions the row is, as `0`/`1` per exclusion: the tie order's last part. */
+	readonly excluded: string
 	readonly name: string
 	readonly dimension: string
 }
 
-/** A row matching an earlier step sorts first among rows of one millisecond and seq. */
+/**
+ * A row matching an earlier step sorts first among rows of one millisecond and seq, and an
+ * excluded event after the rows that are none.
+ */
 const stepRank = (row: FunnelRow): string =>
-	Arr.join(
+	`${Arr.join(
 		Arr.map(row.matches, (matched) => (matched ? "0" : "1")),
 		"",
-	)
+	)}${row.excluded}`
 
 const byOrder: Order.Order<FunnelRow> = Order.combineAll([
 	Order.mapInput(Order.Number, (row: FunnelRow) => row.atMs),
@@ -456,6 +463,34 @@ const attemptFrom = (
 	}
 	return chain
 }
+
+/**
+ * The deepest step any attempt reaches when some events drop attempts part way.
+ *
+ * Every step-1 row starts an attempt, and an attempt is a set of steps it stands at, not one
+ * chain: dropped from step 2, it still stands at step 1 and can take a later step-2 row. A row
+ * moves an attempt one step, from where it stood before the row; a row that is itself an excluded
+ * event for the step it would move the attempt to does not move it there.
+ */
+const levelWithExclusions = (rows: ReadonlyArray<FunnelRow>, stepCount: number, windowMs: number): number =>
+	Arr.reduce(rows, 0, (best, start, startIndex) => {
+		if (start.matches[0] !== true || start.drops[0] === true) return best
+		let standing = Arr.makeBy(stepCount, (index) => index === 0)
+		let depth = 1
+		for (const row of Arr.drop(rows, startIndex + 1)) {
+			if (row.atMs > start.atMs + windowMs) break
+			const before = standing
+			standing = Arr.map(before, (stood, index) => {
+				if (row.drops[index] === true) return false
+				return stood || (index > 0 && row.matches[index] === true && before[index - 1] === true)
+			})
+			depth = Math.max(
+				depth,
+				1 + Arr.findLastIndex(standing, (stood) => stood).pipe(Option.getOrElse(() => 0)),
+			)
+		}
+		return Math.max(best, depth)
+	})
 
 const walk = (
 	rows: ReadonlyArray<FunnelRow>,
@@ -506,16 +541,34 @@ export const referencePersons = (
 		: undefined
 	const admitted = (key: string): boolean => key !== "" && (population === undefined || population.has(key))
 
+	const exclusions = opts.exclusions ?? []
+	const stepCount = opts.steps.length
 	const eventRows = Arr.flatMap(dataset.events, (row): ReadonlyArray<FunnelRow> => {
 		const key = keyOf(opts.keyBy, row, links)
 		const matches = Arr.map(opts.steps, (step) => stepMatches(step, row))
-		if (!inRange(row.atMs, range) || !admitted(key) || !Arr.some(matches, (matched) => matched)) return []
+		const excluding = Arr.map(exclusions, (exclusion) => stepMatches(exclusion.step, row))
+		const relevant = Arr.some(matches, (matched) => matched) || Arr.some(excluding, (matched) => matched)
+		if (!inRange(row.atMs, range) || !admitted(key) || !relevant) return []
 		return [
 			{
 				key,
 				atMs: row.atMs,
 				seq: row.seq,
 				matches,
+				// Step k is covered by an exclusion sitting between `after` and `before` when after <= k < before.
+				drops: Arr.makeBy(stepCount, (index) =>
+					Arr.some(
+						exclusions,
+						(exclusion, at) =>
+							excluding[at] === true &&
+							(exclusion.after ?? 1) <= index + 1 &&
+							index + 1 < (exclusion.before ?? stepCount),
+					),
+				),
+				excluded: Arr.join(
+					Arr.map(excluding, (matched) => (matched ? "1" : "0")),
+					"",
+				),
 				name: displayName(row),
 				dimension: dimensionOfEvent(breakdownBy, row, sessionsById, range),
 			},
@@ -535,6 +588,11 @@ export const referencePersons = (
 							atMs: row.startMs,
 							seq: 0,
 							matches: Arr.map(opts.steps, (_, index) => index === 0),
+							drops: Arr.map(opts.steps, () => false),
+							excluded: Arr.join(
+								Arr.map(exclusions, () => "0"),
+								"",
+							),
 							name: "$session_entry",
 							dimension: dimension === undefined ? "" : row[SESSION_FIELD[dimension]],
 						},
@@ -545,10 +603,14 @@ export const referencePersons = (
 	const byKey = Arr.groupBy([...entryRows, ...eventRows], (row) => row.key)
 	return Arr.map(Rec.toEntries(byKey), ([key, rows]): PersonResult => {
 		const sorted = Arr.sort(rows, byOrder)
-		const chain = walk(sorted, opts.steps.length, opts.windowSeconds * 1_000)
+		// With exclusions only the level is defined: the engine refuses the details too.
+		const chain = exclusions.length > 0 ? [] : walk(sorted, stepCount, opts.windowSeconds * 1_000)
 		return {
 			key,
-			level: chain.length,
+			level:
+				exclusions.length > 0
+					? levelWithExclusions(sorted, stepCount, opts.windowSeconds * 1_000)
+					: chain.length,
 			chain,
 			group: Option.match(
 				Arr.findFirst(sorted, (row) => row.dimension !== ""),

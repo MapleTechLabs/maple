@@ -165,6 +165,27 @@ export const productEventsRetention = Effect.fn("Observability.productEventsRete
 	})
 })
 
+export interface ProductEventsCohortInput extends CH.ProductEventsCohortOpts {
+	readonly startTime: string
+	readonly endTime: string
+}
+
+/** Who did one thing and did not do another: the members, latest first, with both totals on each row. */
+export const productEventsCohort = Effect.fn("Observability.productEventsCohort")(function* (
+	input: ProductEventsCohortInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({
+		orgId: executor.orgId,
+		"maple.cohort.key_by": input.keyBy,
+		"maple.cohort.did_not_scope": input.didNot === undefined ? "none" : input.didNotScope,
+	})
+	const { startTime, endTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsCohortQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
+	return yield* executor.compiledQuery(compiled, { profile: "aggregation", context: "productEventsCohort" })
+})
+
 export interface ProductEventAttributesInput {
 	readonly startTime: string
 	readonly endTime: string
