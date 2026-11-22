@@ -139,7 +139,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 			]
 		},
 	})
-	return h.div([h.Class("hidden w-32 shrink-0 flex-col gap-1 sm:flex")], content)
+	return h.div([h.Class("hidden w-36 shrink-0 flex-col gap-1 sm:flex")], content)
 }
 
 const ruleRow = (
@@ -163,7 +163,7 @@ const ruleRow = (
 			),
 		],
 		[
-			vstack(h, { gap: "1", className: "w-28 shrink-0 md:w-40" }, [
+			vstack(h, { gap: "1", className: "min-w-0 flex-1 sm:w-28 sm:flex-none sm:shrink-0 md:w-40" }, [
 				truncatedText(h, { text: rule.name, className: "text-sm" }),
 				typography(h, { size: "2xs", tone: "muted" }, [
 					Arr.join(
@@ -176,7 +176,10 @@ const ruleRow = (
 				[h.Class("w-16 shrink-0")],
 				[badge(h, { variant: action.variant, size: "sm" }, [action.label])],
 			),
-			hstack(h, { align: "stretch", shrink: true, grow: true }, [summary(h, rule)]),
+			// Below `sm` a row is its name, action and switch; the summary needs the width.
+			hstack(h, { align: "stretch", shrink: true, grow: true, className: "hidden sm:flex" }, [
+				summary(h, rule),
+			]),
 			hitsCell(h, model, rule),
 			hstack(h, { align: "center", className: "w-10 shrink-0" }, [
 				gate(
@@ -214,10 +217,20 @@ const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray
 		[],
 		[
 			hstack(h, { gap: "3", align: "center", className: "px-4 py-1.5" }, [
-				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+				eyebrow(
+					h,
+					{
+						variant: "mono",
+						className: "min-w-0 flex-1 sm:w-28 sm:flex-none sm:shrink-0 md:w-40",
+						as: "div",
+					},
+					["Name"],
+				),
 				eyebrow(h, { variant: "mono", className: "w-16 shrink-0", as: "div" }, ["Action"]),
-				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-				eyebrow(h, { variant: "mono", className: "hidden w-32 shrink-0 sm:block", as: "div" }, [
+				eyebrow(h, { variant: "mono", className: "hidden min-w-0 flex-1 sm:block", as: "div" }, [
+					"Rule",
+				]),
+				eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 sm:block", as: "div" }, [
 					"Last 24h",
 				]),
 				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
