@@ -29,6 +29,7 @@ import {
 } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { registerSandboxTools } from "./sandbox"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 
 /** Every parameter the four tools accept; each test passes the subset its tool reads. */
 interface SandboxToolParams {
@@ -60,6 +61,7 @@ type Run = (
 /** Decode, handle, encode and render, as the registry does; failures stay typed for the assertions. */
 const tools = new Map<string, Run>()
 registerSandboxTools({
+	family: ignoreFamily,
 	define: (spec) => {
 		const run = (params: SandboxToolParams) =>
 			Schema.decodeEffect(spec.parameters)(params).pipe(

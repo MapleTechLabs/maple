@@ -40,7 +40,7 @@ export function registerListOnCallSchedulesTool(server: McpToolRegistrar) {
 				? {
 						empty: {
 							message:
-								"No on-call schedules yet. Create one with create_oncall_schedule from your workspace members.",
+								"No on-call schedules yet. Create one with manage_oncall_schedule action=create from your workspace members.",
 						},
 					}
 				: undefined),

@@ -4,7 +4,7 @@
  * read. A public `tools/call` loads one tool instead (`tool-modules.generated.ts`, `tool-lookup.ts`).
  */
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Result, Schema, Array as Arr } from "effect"
 import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
@@ -14,23 +14,15 @@ import { registerPreviewAlertRuleTool } from "./preview-alert-rule"
 import { registerUpdateAlertRuleTool } from "./update-alert-rule"
 import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
 import { registerListMaintenanceWindowsTool } from "./list-maintenance-windows"
-import { registerCreateMaintenanceWindowTool } from "./create-maintenance-window"
-import { registerDeleteMaintenanceWindowTool } from "./delete-maintenance-window"
 import { registerListAlertSilencesTool } from "./list-alert-silences"
-import { registerCreateAlertSilenceTool } from "./create-alert-silence"
-import { registerEndAlertSilenceTool } from "./end-alert-silence"
+import { registerMaintenanceWindowTools } from "./manage-maintenance-window"
+import { registerAlertSilenceTools } from "./manage-alert-silence"
+import { registerEscalationChainTools } from "./manage-escalation-chain"
+import { registerOnCallScheduleTools } from "./manage-oncall-schedule"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { registerListEscalationChainsTool } from "./list-escalation-chains"
-import { registerCreateEscalationChainTool } from "./create-escalation-chain"
-import { registerUpdateEscalationChainTool } from "./update-escalation-chain"
-import { registerDeleteEscalationChainTool } from "./delete-escalation-chain"
 import { registerListOnCallSchedulesTool } from "./list-oncall-schedules"
 import { registerWhoIsOnCallTool } from "./who-is-on-call"
-import { registerCreateOnCallScheduleTool } from "./create-oncall-schedule"
-import { registerUpdateOnCallScheduleTool } from "./update-oncall-schedule"
-import { registerDeleteOnCallScheduleTool } from "./delete-oncall-schedule"
-import { registerCreateOnCallOverrideTool } from "./create-oncall-override"
-import { registerDeleteOnCallOverrideTool } from "./delete-oncall-override"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDescribeDashboardSchemaTool } from "./describe-dashboard-schema"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
@@ -49,13 +41,14 @@ import { registerListSecurityAuditRunsTool } from "./list-security-audit-runs"
 import { registerInspectSecurityAuditRunTool } from "./inspect-security-audit-run"
 import { registerListSourcesTool } from "./list-sources"
 import { registerListDataSourcesTool } from "./list-data-sources"
-import { registerSearchDataSourcesTool } from "./search-data-sources"
-import { registerDescribeDataSourceTool } from "./describe-data-source"
 import { registerQueryDataSourceTool } from "./query-data-source"
-import { canonicalToolName } from "./tool-name-aliases"
+import { canonicalToolCall, canonicalToolName } from "./tool-name-aliases"
 import { registerCiRunsTool } from "./ci-runs"
 import { registerCompareCommitsTool } from "./compare-commits"
 import { registerIntegrationWriteTools } from "./integration-writes"
+import { registerIngestSourceTools } from "./ingest-sources"
+import { registerDeleteDashboardTool } from "./delete-dashboard"
+import { registerAlertDestinationTools } from "./alert-destinations"
 import { registerUptimeMonitorTools } from "./uptime-monitors"
 import { registerSloTools } from "./slos"
 import { registerIngestRuleTools } from "./ingest-rules"
@@ -138,6 +131,7 @@ import {
 	type McpToolLookup,
 	type McpToolRegister,
 	normalizeFor,
+	resolveToolCall,
 } from "./registry-core"
 
 export { inputSchemaOf, type MapleToolCatalogEntry, toInputSchema, toOutputSchema } from "./registry-core"
@@ -173,6 +167,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerServiceMapTool,
 	registerListAlertRulesTool,
 	registerListAlertDestinationsTool,
+	registerAlertDestinationTools,
 	registerGetAlertRuleTool,
 	registerListAlertIncidentsTool,
 	registerListAlertChecksTool,
@@ -182,28 +177,21 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerUpdateAlertRuleTool,
 	registerDeleteAlertRuleTool,
 	registerListMaintenanceWindowsTool,
-	registerCreateMaintenanceWindowTool,
-	registerDeleteMaintenanceWindowTool,
+	registerMaintenanceWindowTools,
 	registerListAlertSilencesTool,
-	registerCreateAlertSilenceTool,
-	registerEndAlertSilenceTool,
+	registerAlertSilenceTools,
 	registerAcknowledgeAlertIncidentTool,
 	registerListEscalationChainsTool,
-	registerCreateEscalationChainTool,
-	registerUpdateEscalationChainTool,
-	registerDeleteEscalationChainTool,
+	registerEscalationChainTools,
 	registerListOnCallSchedulesTool,
 	registerWhoIsOnCallTool,
-	registerCreateOnCallScheduleTool,
-	registerUpdateOnCallScheduleTool,
-	registerDeleteOnCallScheduleTool,
-	registerCreateOnCallOverrideTool,
-	registerDeleteOnCallOverrideTool,
+	registerOnCallScheduleTools,
 	registerDescribeDashboardSchemaTool,
 	registerListDashboardsTool,
 	registerGetDashboardTool,
 	registerCreateDashboardTool,
 	registerUpdateDashboardTool,
+	registerDeleteDashboardTool,
 	registerAddDashboardWidgetTool,
 	registerDescribeWarehouseTablesTool,
 	registerUpdateDashboardWidgetTool,
@@ -234,9 +222,8 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerListSecurityAuditRunsTool,
 	registerInspectSecurityAuditRunTool,
 	registerListSourcesTool,
+	registerIngestSourceTools,
 	registerListDataSourcesTool,
-	registerSearchDataSourcesTool,
-	registerDescribeDataSourceTool,
 	registerQueryDataSourceTool,
 	registerCiRunsTool,
 	registerCompareCommitsTool,
@@ -276,6 +263,12 @@ export const mapleToolCatalog: ReadonlyArray<MapleToolCatalogEntry> = Arr.map(
 	({ run: _run, ...entry }) => entry,
 )
 
+/** Every entry a call is decoded as: each tool, and a family's actions in the family's place. */
+export const mapleCallEntries: ReadonlyArray<MapleToolCatalogEntry> = Arr.flatMap(
+	mapleToolCatalog,
+	(entry) => entry.actions ?? [entry],
+)
+
 const findDefinition = (name: string): MapleToolDefinition | undefined => {
 	const canonical = canonicalToolName(name)
 	return mapleToolDefinitions.find((candidate) => candidate.name === canonical)
@@ -292,15 +285,25 @@ export const readToolCall = (
 ):
 	| {
 			readonly args: Readonly<Record<string, unknown>>
+			/** The family action the call resolved to; `args` are that action's alone. */
+			readonly action?: string
 			readonly unknown: ReadonlyArray<string>
 			readonly decodes: boolean
 	  }
 	| undefined => {
-	const definition = findDefinition(name)
-	if (definition === undefined) return undefined
-	const normalized = normalizeFor(definition, input ?? {})
+	const call = canonicalToolCall(name, input ?? {})
+	const found = findDefinition(call.name)
+	if (found === undefined) return undefined
+	const resolved = resolveToolCall(found, call.input)
+	// A family call that names no action it has reads as its bare arguments, none of which decode.
+	if (Result.isFailure(resolved)) {
+		return { args: isArgumentRecord(call.input) ? call.input : {}, unknown: [], decodes: false }
+	}
+	const { target: definition, input: args } = resolved.success
+	const normalized = normalizeFor(definition, args)
 	return {
 		args: isArgumentRecord(normalized.args) ? normalized.args : {},
+		...("action" in definition ? { action: definition.action } : undefined),
 		unknown: Arr.map(normalized.unknown, (entry) => entry.key),
 		decodes:
 			Schema.decodeUnknownOption(definition.schema)(normalized.args, definition.parseOptions)._tag ===

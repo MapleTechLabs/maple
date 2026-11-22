@@ -1,9 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type CopyStatus, copyButton } from "./copy-button"
 import { eyebrow } from "./eyebrow"
 import { icon, type IconName } from "./icon"
 import { tooltipTrigger } from "./tooltip-host"
+import { typography } from "./typography"
 
 // The detail page's right rail: eyebrow-titled groups of rows and fields.
 
@@ -82,6 +84,59 @@ export const detailRailRow = <M>(
 			),
 			h.div([h.Class("flex min-w-0 items-center justify-end")], children),
 		],
+	)
+
+export type DetailRailStat = Readonly<{
+	label: string
+	value: string
+	/** A share or unit after the value, quieter than it. */
+	detail?: string
+	tone?: "error"
+}>
+
+/** `DetailRail.Stats`: a group's figures two to a line, value over label, so they read at a glance. */
+export const detailRailStats = <M>(h: HtmlBuilder<M>, stats: ReadonlyArray<DetailRailStat>): Html =>
+	h.dl(
+		[h.DataAttribute("slot", "detail-rail-stats"), h.Class("grid grid-cols-2 gap-x-3 gap-y-3 py-1")],
+		Arr.map(stats, (stat) =>
+			h.div(
+				[h.Class("flex min-w-0 flex-col-reverse gap-0.5")],
+				[
+					h.dt([h.Class("truncate text-2xs text-muted-foreground")], [stat.label]),
+					h.dd(
+						[h.Class("flex min-w-0 items-baseline gap-1.5")],
+						[
+							typography(
+								h,
+								{
+									size: "sm",
+									weight: "medium",
+									numeric: true,
+									tone: stat.tone ?? "foreground",
+									as: "span",
+								},
+								[stat.value],
+							),
+							...(stat.detail === undefined
+								? []
+								: [
+										typography(
+											h,
+											{
+												size: "2xs",
+												numeric: true,
+												tone: "muted",
+												truncate: true,
+												as: "span",
+											},
+											[stat.detail],
+										),
+									]),
+						],
+					),
+				],
+			),
+		),
 	)
 
 /** `DetailRail.Field`: label over value, for values too wide for a row. */

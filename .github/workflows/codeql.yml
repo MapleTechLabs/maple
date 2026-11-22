@@ -50,6 +50,7 @@ jobs:
                         - 'apps/ios/**'
                         - '.github/workflows/codeql.yml'
                       rust:
+                        - '.github/codeql/**'
                         - '**/*.rs'
                         - '**/Cargo.toml'
                         - '**/Cargo.lock'
@@ -100,6 +101,7 @@ jobs:
               with:
                   languages: ${{ matrix.language }}
                   build-mode: ${{ matrix.build-mode }}
+                  config-file: ./.github/codeql/codeql-config.yml
 
             - uses: github/codeql-action/analyze@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
               with:
@@ -122,6 +124,7 @@ jobs:
               with:
                   languages: swift
                   build-mode: autobuild
+                  config-file: ./.github/codeql/codeql-config.yml
 
             - uses: github/codeql-action/analyze@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
               with:

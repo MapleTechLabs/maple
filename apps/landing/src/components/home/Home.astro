@@ -16,6 +16,7 @@ import SurfaceWall from "./SurfaceWall.astro";
 import LocalSection from "./LocalSection.astro";
 import AgentSection from "./AgentSection.astro";
 import HomeBill from "./HomeBill.astro";
+import HomeTrust from "./HomeTrust.astro";
 import HomeMotion from "./HomeMotion.astro";
 import PricingTable from "../PricingTable.astro";
 import FAQ from "../FAQ.astro";
@@ -84,9 +85,11 @@ const homeFaqs = [
         <!-- The same investigation as the incident story, run by an agent instead of a human. -->
         <AgentSection />
 
-        <!-- The money chapter: the one plan first, then everyone else's list price under it. -->
+        <!-- The money chapter: the one plan, everyone else's list price under it, then what
+             protects the data it buys. -->
         <PricingTable variant="home" title={m.pricing_home_title()} lede={m.pricing_home_lede()} />
         <HomeBill />
+        <HomeTrust />
 
         <FAQ items={homeFaqs} split />
 

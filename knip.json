@@ -70,7 +70,13 @@
 			"entry": ["src/worker.ts"]
 		},
 		"apps/status": {
-			"entry": ["src/worker.ts"]
+			"entry": ["src/worker.ts", "scripts/*.ts"],
+			// `og:fonts` reads their woff2 files by path, not by import.
+			"ignoreDependencies": [
+				"@fontsource-variable/geist",
+				"@fontsource-variable/geist-mono",
+				"@fontsource-variable/source-serif-4"
+			]
 		},
 		"apps/audit-archive": {
 			"entry": ["src/worker.ts"]

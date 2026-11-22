@@ -44,7 +44,7 @@ export function registerListEscalationChainsTool(server: McpToolRegistrar) {
 				? {
 						empty: {
 							message:
-								"No escalation chains yet. Create one with create_escalation_chain from destinations in list_alert_destinations.",
+								"No escalation chains yet. Create one with manage_escalation_chain action=create from destinations in list_alert_destinations.",
 						},
 					}
 				: undefined),

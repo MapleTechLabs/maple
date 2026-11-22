@@ -41,6 +41,8 @@ EVAL_MODEL=anthropic/claude-haiku-5.5 EVAL_K=3 bun run eval:tools
 EVAL_TASKS=tag:negative,trace-tree bun run eval:tools
 EVAL_TIER=regression bun run eval:tools        # what CI runs
 bun run eval:compare .evals/runs/<A> .evals/runs/<B>
+bun run eval:config                            # configuration changes, same variables
+EVAL_TASKS=tag:gap EVAL_K=5 bun run eval:config
 ```
 
 | Variable           | Default                 | Meaning                                      |
@@ -60,6 +62,18 @@ failing tasks in `summary.md`.
 - **regression**: saturated tasks. Each must pass a majority of its trials, or the eval fails.
 - **capability**: still hard, or new. Reported, never gating. A task moves to regression once it
   passes every trial on every model we care about across a couple of runs.
+
+## Suites
+
+- **tools** (`tools/`): questions about telemetry and the error issue workflow, in the small world
+  of `world.ts`.
+- **config** (`config/`): requests to change how the org is set up (alert rules, destinations,
+  silences, maintenance windows, ingest sources and rules, SLOs, dashboards), asked by an org admin
+  in the configured org of `config/world.ts`. A change is approval-gated in chat, so the proposal is
+  the call that is graded. Tasks are tagged `control` (the catalog covered the change when the task
+  was written), `gap` (it did not: run the suite on an older catalog to see what the agent does
+  instead) and `negative` (a question, or a change with no named target, that must change nothing).
+  A target names a family's action like any other argument: `call("manage_slo", { action: "create" })`.
 
 ## Adding a task
 
@@ -82,6 +96,7 @@ failing tasks in `summary.md`.
 | `model.ts`     | The evaluated model, unattributed on OpenRouter             |
 | `world.ts`     | The services, attributes and errors the tasks assume exist  |
 | `tools/`       | Tool-use tasks, their schema contract test, and the suite   |
+| `config/`      | Configuration tasks, their configured org, and the suite    |
 
 The fake warehouse and eval runtime live in `src/mcp/__evals__/` beside the deterministic
 renderer tests that share them.

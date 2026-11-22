@@ -13,6 +13,7 @@ import { AnthropicCostApiGroup } from "./anthropic-cost"
 import { FeatureRequestApiGroup } from "./feature-requests"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { OpenAiCostApiGroup } from "./openai-cost"
+import { MorphCostApiGroup } from "./morph-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
@@ -32,6 +33,7 @@ import {
 import { QueryEngineApiGroup } from "./query-engine"
 import { RolesApiGroup } from "./roles"
 import { SavedViewsApiGroup } from "./saved-views"
+import { SecurityAuditReadsApiGroup } from "./security-audit"
 import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
@@ -84,6 +86,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AnthropicCostApiGroup)
 	.add(FeatureRequestApiGroup)
 	.add(OpenAiCostApiGroup)
+	.add(MorphCostApiGroup)
 	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)
 	.add(VercelCostApiGroup)
@@ -96,6 +99,8 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(QueryEngineApiGroup)
 	.add(RolesApiGroup)
 	.add(SavedViewsApiGroup)
+	// The security audit's reads; its writes stay on the ai Worker (`MapleAiApi`).
+	.add(SecurityAuditReadsApiGroup)
 	.add(ServiceMapWorldApiGroup)
 	.add(SessionReplaysInternalApiGroup)
 	.add(UsersInternalApiGroup)

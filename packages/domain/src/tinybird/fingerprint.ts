@@ -145,8 +145,14 @@ export const resolveCustomFingerprint = (
  * on a single token silently excluded every such app from frame matching and left it
  * collapsed on the message hash — the exact failure this alternative exists to fix.
  */
-export const FRAME_LINE_PATTERN =
+export const PREVIOUS_FRAME_LINE_PATTERN =
 	'^[ \\t]*at |^[ \\t]*File "|^[ \\t]+from [^ ]+:[0-9]+|^[^ \\t@{"\\[]+@[^ \\t]*:[0-9]+|^[ \\t]*[^ \\t@{"\\[]*@([a-z][a-z0-9+.-]*:)?/[^ \\t]*:[0-9]+|^[ \\t]+[^ \\t]+\\.(go|rs):[0-9]+|^[0-9]+ +\\S.* +0x[0-9a-fA-F]+'
+
+/**
+ * Go error libraries that record their own stack print `pkg.Func (file.go:42)`, flush
+ * left, where a panic prints the path on its own indented line.
+ */
+export const FRAME_LINE_PATTERN = `${PREVIOUS_FRAME_LINE_PATTERN}|^[^ \\t]+ \\([^ ()]+\\.go:[0-9]+\\)\\r?$`
 
 /**
  * A frame in a dependency or a runtime's standard library, matched after
@@ -171,6 +177,23 @@ export const PYTHON_FRAME_PATTERN = '^[ \\t]*File "'
 
 /** An ordered `[pattern, replacement]` list, applied outermost-first. */
 export type Redactions = ReadonlyArray<readonly [pattern: string, replacement: string]>
+
+/**
+ * A minifier renames functions on every build (`at JB (entry.js)`, then `at x3 (entry.js)`),
+ * so one bug opened a new issue per deploy. A name of one or two characters, or of three
+ * with a digit or `$`, is dropped and the file keeps the frame apart; so is a chain of
+ * them (`i.f.j`, Firefox's `Bx</o<`). A real two-letter name (`at go (`) loses its name
+ * too, which only merges it with its neighbours in one file.
+ */
+const MINIFIED_NAME = "([A-Za-z_$][A-Za-z0-9_$]?|[A-Za-z_$]([0-9$][A-Za-z0-9_$]|[A-Za-z0-9_$][0-9$]))"
+export const MINIFIED_NAME_REDACTIONS: Redactions = [
+	[`^([ \\t]*at (async |new )?)${MINIFIED_NAME}([.]${MINIFIED_NAME})* \\(`, "$1("],
+	// A minified receiver before a real method: `at Kt.render (`, then `at Qz.render (`.
+	// The method and its `(` must follow: `at a.js` is a file, not a receiver.
+	[`^([ \\t]*at (async |new )?)(${MINIFIED_NAME}[.])+([^ ()]+ \\()`, "$1$6"],
+	[`^[</.]*${MINIFIED_NAME}([</.]+${MINIFIED_NAME})*[</.]*@`, "@"],
+	[`^(${MINIFIED_NAME}[</.]+)+([^@ \\t]+@)`, "$4"],
+]
 
 /**
  * Volatile tokens stripped from a frame line, outermost first. Origin and
@@ -204,7 +227,14 @@ export const FRAME_REDACTIONS: Redactions = [
 	["(-[A-Za-z0-9_-]{8})+\\.css", ".css"],
 	["(/_astro/[^/ ).]+)\\.[A-Za-z0-9_-]{8}\\.js", "$1.js"],
 	[":[0-9]+|line [0-9]+|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|[0-9]{6,}", ""],
+	...MINIFIED_NAME_REDACTIONS,
 ]
+
+/** The frame redactions the previous FINGERPRINT_VERSION applied. */
+export const PREVIOUS_FRAME_REDACTIONS: Redactions = Arr.filter(
+	FRAME_REDACTIONS,
+	(redaction) => !Arr.contains(MINIFIED_NAME_REDACTIONS, redaction),
+)
 
 /**
  * Redaction for the plain-text branch, outermost first.
@@ -302,6 +332,43 @@ const FS_ROOTS = "tmp|var|srv|private|opt|mnt|data|Volumes|System|app|work|run"
 const PATH_DELIMS = ` \\t\\r\\n'"\`:,)`
 const PATH_RULE = `(^|[ \\t\\r\\n'"(\`=])/(${FS_ROOTS}|Users/[^/${PATH_DELIMS}]+|home/[^/${PATH_DELIMS}]+)([/.][^${PATH_DELIMS}]*)?([${PATH_DELIMS}]|$)`
 
+const VALUE_DELIMS = `/?<> \\t\\r\\n'"\`:,)`
+/** Stands in for the dot of a file extension, so no value pass reads a file name as a value. */
+const FILE_DOT = "⸱"
+const FILE_EXTENSIONS =
+	"js|mjs|cjs|jsx|ts|tsx|css|map|json|html|htm|xml|txt|md|csv|pdf|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|wasm|zip|gz|ya?ml|php|py|rb|go|rs|java|sql|log"
+const VALUE_SEGMENT = `[^${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_NO_DIGIT = `[^0-9${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_NO_DOT = `[^.${FILE_DOT}${VALUE_DELIMS}]`
+const VALUE_SEGMENT_END = `([${VALUE_DELIMS}]|$)`
+const TWO_DIGIT_RUNS = `/${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT_NO_DIGIT}${VALUE_SEGMENT}*[0-9]${VALUE_SEGMENT}*${VALUE_SEGMENT_END}`
+const DIGIT_LED = `/[0-9]${VALUE_SEGMENT}{4,}${VALUE_SEGMENT_END}`
+/** The last part of a dotted value starts lower case; an RPC service's (`acme.v1.Orders`) does not. */
+const DOTTED_VALUE = `${VALUE_SEGMENT_NO_DOT}+([.]${VALUE_SEGMENT_NO_DOT}+)*[.][^A-Z.${FILE_DOT}${VALUE_DELIMS}]${VALUE_SEGMENT_NO_DOT}*`
+/**
+ * A path segment that reads as a value, not a route name: one with two separate runs of
+ * digits (`PZN8GVZLF8`), one of five or more characters that starts with a digit
+ * (`7d-trial`), or a dotted one (`app.acme.pro.annual`, a host), which needs two dots when
+ * it is the last segment. `oauth2`, `sha256`, `2fa`, a version (`v1beta1`), a file name
+ * (`jquery-3.7.1.min.js`) and an RPC service (`/acme.v1beta1.Orders/Get`) stay names. An
+ * echoed request URL (`StatusCode error (503 GET /v3/applications/<package>/...)`)
+ * otherwise opened one issue per customer, and almost no client span carries a route.
+ */
+export const PATH_VALUE_REDACTIONS: Redactions = [
+	// A version is the one name with two runs: spell it as the number pass would.
+	[`([/.])v[0-9]+(alpha|beta|rc)[0-9]+([.${VALUE_DELIMS}]|$)`, "$1v#$2#$3"],
+	[`[.](${FILE_EXTENSIONS})${VALUE_SEGMENT_END}`, `${FILE_DOT}$1$2`],
+	// Each twice: a match consumes the slash the next segment starts at.
+	[TWO_DIGIT_RUNS, "/#$1"],
+	[TWO_DIGIT_RUNS, "/#$1"],
+	[DIGIT_LED, "/#$1"],
+	[DIGIT_LED, "/#$1"],
+	[`/${VALUE_SEGMENT_NO_DOT}+[.]${DOTTED_VALUE}${VALUE_SEGMENT_END}`, "/#$2"],
+	[`/${DOTTED_VALUE}/`, "/#/"],
+	[`/${DOTTED_VALUE}/`, "/#/"],
+	[FILE_DOT, "."],
+]
+
 /**
  * The error-issue signature: `MSG_TEXT_REDACTIONS` wrapped in the v3 passes. Kept
  * apart from that list because the AI tool-error fingerprint and the web's
@@ -361,6 +428,7 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	// After the origin pass, so a URL's path is reached: a segment holding `~`, `@`, `%`
 	// or `$` is a value (a handle, an encoded string, a slug), never a route literal.
 	[`/${PATH_SEGMENT}*[~@%$]${PATH_SEGMENT}*`, "/#"],
+	...PATH_VALUE_REDACTIONS,
 	// A masked secret (`'rk_live_...DtrK'`, `"sk-****abcd"`) is a value however short.
 	["'[^' ]*([.][.][.]|[*]{3,})[^' ]*'", "'#'"],
 	['"[^" ]*([.][.][.]|[*]{3,})[^" ]*"', '"#"'],
@@ -390,6 +458,12 @@ export const ERROR_MSG_REDACTIONS: Redactions = [
 	["(§[1-4][0-9][0-9]|§500|§5xx)|[0-9a-fA-F-]{6,}|[0-9]+", "$1#"],
 	["§([1-4][0-9][0-9]|500|5xx)#", "$1"],
 ]
+
+/** The message redactions the previous FINGERPRINT_VERSION applied. */
+export const PREVIOUS_ERROR_MSG_REDACTIONS: Redactions = Arr.filter(
+	ERROR_MSG_REDACTIONS,
+	(redaction) => !Arr.contains(PATH_VALUE_REDACTIONS, redaction),
+)
 
 /**
  * Escape a pattern or replacement for embedding in a ClickHouse single-quoted
@@ -431,7 +505,6 @@ const positionCodePoints = (value: string, needle: string): number => {
 	})
 }
 
-const FRAME_LINE_RE = new RegExp(FRAME_LINE_PATTERN, "u")
 /** `  at [2]["params"]`: a schema error's key path, not a stack frame. */
 export const SCHEMA_PATH_LINE_PATTERN = "^[ \\t]*at \\["
 const SCHEMA_PATH_LINE_RE = new RegExp(SCHEMA_PATH_LINE_PATTERN, "u")
@@ -668,32 +741,40 @@ function statusLabel(statusMessage: string): string {
 	return leftCodePoints(statusMessage, 150)
 }
 
-/** Mirrors the nested `replaceRegexpAll` chain applied to each frame line. */
-function normalizeFrame(line: string): string {
-	return applyRedactions(line, FRAME_REDACTIONS)
+/** What one FINGERPRINT_VERSION reads a stack and a message with. */
+interface FingerprintRules {
+	readonly frameLinePattern: string
+	readonly frameRedactions: Redactions
+	readonly msgRedactions: Redactions
 }
+const CURRENT_RULES: FingerprintRules = {
+	frameLinePattern: FRAME_LINE_PATTERN,
+	frameRedactions: FRAME_REDACTIONS,
+	msgRedactions: ERROR_MSG_REDACTIONS,
+}
+const PREVIOUS_RULES: FingerprintRules = {
+	frameLinePattern: PREVIOUS_FRAME_LINE_PATTERN,
+	frameRedactions: PREVIOUS_FRAME_REDACTIONS,
+	msgRedactions: PREVIOUS_ERROR_MSG_REDACTIONS,
+}
+
+/** The redacted prefix of a plain-text message. */
+const textSignature = (text: string, redactions: Redactions): string =>
+	leftCodePoints(applyRedactions(leftCodePoints(text, MSG_SCAN_CHARS), redactions), MSG_SIGNATURE_CHARS)
 
 /** Mirrors the `_msgSig` multiIf: JSON objects take the canonical key signature. */
-function messageSignature(statusMessage: string): string {
+function messageSignature(statusMessage: string, redactions: Redactions): string {
 	const entries = jsonObjectEntries(statusMessage)
-	if (entries !== undefined) return jsonSignature(entries)
-	return leftCodePoints(
-		applyRedactions(leftCodePoints(statusMessage, MSG_SCAN_CHARS), ERROR_MSG_REDACTIONS),
-		MSG_SIGNATURE_CHARS,
-	)
+	return entries !== undefined ? jsonSignature(entries) : textSignature(statusMessage, redactions)
 }
 
-/**
- * `statusMessage` is the MV's resolved `_msgText`, including attribute fallback.
- * `customFingerprint` is the raw `maple.fingerprint` value from `resolveCustomFingerprint`.
- */
-export function computeFingerprintInputs(args: {
-	readonly exceptionType: string
-	readonly exceptionStacktrace: string
-	readonly statusMessage: string
-	readonly customFingerprint?: string
-}): FingerprintInputs {
-	const msgSignature = messageSignature(args.statusMessage)
+/** The frames the hash keeps: matched by shape, normalized, repeats collapsed, the app's own first. */
+function hashedFrames(
+	rules: FingerprintRules,
+	args: { readonly exceptionType: string; readonly exceptionStacktrace: string },
+	msgSignature: string,
+): ReadonlyArray<string> {
+	const frameLineRe = new RegExp(rules.frameLinePattern, "u")
 	// A namespaced type plus its message names the failure, so the throw site is enough.
 	// With no message the frames are the only identity left; keep all three.
 	const maxFrames =
@@ -703,7 +784,7 @@ export function computeFingerprintInputs(args: {
 	const frameLines = Arr.filter(
 		Str.split("\n")(args.exceptionStacktrace),
 		(line) =>
-			FRAME_LINE_RE.test(line) &&
+			frameLineRe.test(line) &&
 			!Str.includes(EFFECT_SPAN_FRAME_MARKER)(line) &&
 			!SCHEMA_PATH_LINE_RE.test(line) &&
 			!SPAN_NAME_FRAME_RE.test(line) &&
@@ -717,17 +798,66 @@ export function computeFingerprintInputs(args: {
 				0,
 				MAX_NORMALIZED_FRAMES,
 			),
-			normalizeFrame,
+			(line) => applyRedactions(line, rules.frameRedactions),
 		),
 		(a, b) => a === b,
 	)
 	const appFrames = Arr.filter(distinctFrames, (frame) => !LIBRARY_FRAME_RE.test(frame))
-	const topFrames = (appFrames.length > 0 ? appFrames : distinctFrames).slice(0, maxFrames)
+	return (appFrames.length > 0 ? appFrames : distinctFrames).slice(0, maxFrames)
+}
+
+/** What a span with no exception at all is keyed and labelled by. */
+export const SPAN_SIGNATURE_PREFIX = "span:"
+export const SPAN_LABEL_NO_TYPE = "no exception"
+export const SPAN_LABEL_CHARS = 150
+/**
+ * An HTTP instrumentation sets `error.type` to the status code, and semconv's fallback
+ * is `_OTHER`: a class of failure, not a name for it, so the span still has to key it.
+ */
+export const STATUS_ONLY_TYPE_PATTERN = "^([0-9]+|_OTHER)$"
+
+/**
+ * `statusMessage` is the view's resolved `_msgText`: the span's status message, else the
+ * exception event's message, else the attribute fallback. `messageFromEvent` says it is
+ * the event's, which the previous version did not read. `customFingerprint` is the raw
+ * `maple.fingerprint` value from `resolveCustomFingerprint`.
+ *
+ * `span` names the failing span. It is read only when the error has no message or stack
+ * and no type beyond a status code: those all hashed alike, so every such failure in a
+ * service was one issue. That issue was a bucket, so a span-keyed error has no previous
+ * hash and opens as its own.
+ */
+export function computeFingerprintInputs(args: {
+	readonly exceptionType: string
+	readonly exceptionStacktrace: string
+	readonly statusMessage: string
+	readonly messageFromEvent?: boolean
+	readonly customFingerprint?: string
+	readonly span?: { readonly kind: string; readonly name: string }
+}): FingerprintInputs {
+	const spanName = args.span?.name ?? ""
+	const spanKeyed =
+		(args.exceptionType === "" || new RegExp(STATUS_ONLY_TYPE_PATTERN).test(args.exceptionType)) &&
+		args.statusMessage === "" &&
+		args.exceptionStacktrace === "" &&
+		spanName !== ""
+	const msgSignature = spanKeyed
+		? `${SPAN_SIGNATURE_PREFIX}${args.span?.kind ?? ""} ${textSignature(spanName, CURRENT_RULES.msgRedactions)}`
+		: messageSignature(args.statusMessage, CURRENT_RULES.msgRedactions)
+	const previousMsgSignature =
+		args.messageFromEvent === true
+			? ""
+			: messageSignature(args.statusMessage, PREVIOUS_RULES.msgRedactions)
+	const topFrames = hashedFrames(CURRENT_RULES, args, msgSignature)
 	const topFrame = topFrames[0] ?? ""
 	const fpFrames = Arr.join(topFrames, "\n")
-	const previousFpFrames = Arr.join(distinctFrames.slice(0, maxFrames), "\n")
+	const previousFpFrames = Arr.join(hashedFrames(PREVIOUS_RULES, args, previousMsgSignature), "\n")
 
-	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)
+	const label = spanKeyed
+		? `${leftCodePoints(spanName, SPAN_LABEL_CHARS)} (${args.exceptionType === "" ? SPAN_LABEL_NO_TYPE : args.exceptionType})`
+		: args.exceptionType !== ""
+			? args.exceptionType
+			: statusLabel(args.statusMessage)
 
 	const custom = leftCodePoints(
 		applyRedactions(args.customFingerprint ?? "", CUSTOM_FINGERPRINT_REDACTIONS),
@@ -738,9 +868,9 @@ export function computeFingerprintInputs(args: {
 			? [CUSTOM_FINGERPRINT_ATTRIBUTE, custom]
 			: [args.exceptionType, fpFrames, msgSignature, FINGERPRINT_HASH_SALT]
 	const previousHashInputs =
-		custom !== ""
+		custom !== "" || spanKeyed
 			? hashInputs
-			: [args.exceptionType, previousFpFrames, msgSignature, PREVIOUS_FINGERPRINT_HASH_SALT]
+			: [args.exceptionType, previousFpFrames, previousMsgSignature, PREVIOUS_FINGERPRINT_HASH_SALT]
 
 	return { topFrame, fpFrames, msgSignature, label, hashInputs, previousHashInputs }
 }
@@ -787,8 +917,13 @@ export function computeFingerprintInputs(args: {
  *
  * v3 → v4: the hash keeps the application's own frames (`LIBRARY_FRAME_PATTERN`),
  * and issues re-key across the bump instead of being archived.
+ *
+ * v4 → v5: minified function names leave the frames, value segments leave an echoed
+ * URL path, Go `pkg.Func (file.go:N)` lines are frames, the exception event's message
+ * is read when the span has no status message, and an error with no type, message or
+ * stack is keyed on its span. The `PREVIOUS_*` rules are v4's, for the re-key.
  */
-export const FINGERPRINT_VERSION = 4
+export const FINGERPRINT_VERSION = 5
 
 /** Hashed into `FingerprintHash` so a version bump rotates every issue. */
 export const FINGERPRINT_HASH_SALT = `fp${FINGERPRINT_VERSION}`

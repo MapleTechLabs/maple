@@ -159,7 +159,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.3.6",
+      "version": "0.4.0",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -337,14 +337,19 @@
         "@maple/infra": "workspace:*",
         "@maple/primitives": "workspace:*",
         "@maple/status-page": "workspace:*",
+        "@takumi-rs/wasm": "2.20.0",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
       },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
+        "@fontsource-variable/geist": "^5.3.0",
+        "@fontsource-variable/geist-mono": "^5.3.0",
+        "@fontsource-variable/source-serif-4": "^5.3.1",
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
+        "woff2-encoder": "2.0.0",
       },
     },
     "apps/web": {
@@ -608,7 +613,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
@@ -717,7 +722,7 @@
     },
     "packages/browser": {
       "name": "@maple-dev/browser",
-      "version": "0.14.2",
+      "version": "0.15.0",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "@opentelemetry/core": "^3.1.1",
@@ -756,7 +761,7 @@
     },
     "packages/browser-session": {
       "name": "@maple/browser-session",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "rrweb": "^2.2.2",
       },
@@ -856,7 +861,7 @@
     },
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
-      "version": "0.14.1",
+      "version": "0.15.0",
       "dependencies": {
         "std-env": "^4.0.0",
       },
@@ -1020,7 +1025,7 @@
     },
     "packages/sdk-core": {
       "name": "@maple/sdk-core",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@maple/browser-session": "workspace:*",
         "web-vitals": "^6.2.3",
@@ -1051,6 +1056,7 @@
         "@maple/domain": "workspace:*",
         "@maple/primitives": "workspace:*",
         "@maple/strings": "workspace:*",
+        "@takumi-rs/helpers": "2.20.0",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -1530,6 +1536,8 @@
     "@fontsource-variable/geist": ["@fontsource-variable/geist@5.3.0", "", {}, "sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA=="],
 
     "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.3.0", "", {}, "sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw=="],
+
+    "@fontsource-variable/source-serif-4": ["@fontsource-variable/source-serif-4@5.3.1", "", {}, "sha512-4Rtay22SC4lMvw11r/+9kxANB6P3M0X8s1NudBC2v0J1KU2y3DcMoNcT3lBoZ/CqLirzf+StlO6UlJilyrvaUg=="],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 

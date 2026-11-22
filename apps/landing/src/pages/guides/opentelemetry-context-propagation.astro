@@ -1,0 +1,332 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-is-context", text: "What context is" },
+    { depth: 2, slug: "traceparent", text: "The traceparent header" },
+    { depth: 2, slug: "automatic", text: "Automatic propagation" },
+    { depth: 2, slug: "manual", text: "Queues and custom transports" },
+    { depth: 2, slug: "baggage", text: "Baggage" },
+    { depth: 2, slug: "logs", text: "Trace IDs in logs" },
+    { depth: 3, slug: "logs-node", text: "Node.js with Pino" },
+    { depth: 3, slug: "logs-python", text: "Python logging" },
+    { depth: 2, slug: "broken-traces", text: "Fixing broken traces" },
+];
+
+const traceparent = String.raw`traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             ^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^ ^^
+             |  trace-id (32 hex)                parent-id (16)   flags
+             version                                              01 = sampled
+tracestate:  ot=th:c,vendor=opaque-value`;
+
+const nodeQueue = String.raw`import { context, propagation, trace, SpanKind } from "@opentelemetry/api";
+
+const tracer = trace.getTracer("orders");
+
+// Producer: copy the current context into the message headers.
+export function publish(body) {
+  return tracer.startActiveSpan("publish orders", { kind: SpanKind.PRODUCER }, (span) => {
+    const headers = {};
+    propagation.inject(context.active(), headers);
+    span.end();
+    return { body, headers };
+  });
+}
+
+// Consumer: continue the trace the message came from.
+export function consume(message) {
+  const parent = propagation.extract(context.active(), message.headers);
+  tracer.startActiveSpan("process orders", { kind: SpanKind.CONSUMER }, parent, (span) => {
+    // handle the message
+    span.end();
+  });
+}`;
+
+const queueHeaders = String.raw`{"traceparent":"00-03bf06ab90d8fc69b27724424bd114d2-f195d892a7e752e5-01"}`;
+
+const pythonQueue = String.raw`from opentelemetry import trace
+from opentelemetry.propagate import extract, inject
+from opentelemetry.trace import SpanKind
+
+tracer = trace.get_tracer("orders")
+
+# Producer: copy the current context into the message headers.
+with tracer.start_as_current_span("publish orders", kind=SpanKind.PRODUCER):
+    headers = {}
+    inject(headers)
+    queue.send(body, headers=headers)
+
+# Consumer: continue the trace the message came from.
+ctx = extract(message.headers)
+with tracer.start_as_current_span("process orders", context=ctx, kind=SpanKind.CONSUMER):
+    handle(message)`;
+
+const baggageHeader = String.raw`baggage: tenant.id=acme,plan=enterprise`;
+
+const pinoSetup = String.raw`const { NodeSDK } = require("@opentelemetry/sdk-node");
+const { PinoInstrumentation } = require("@opentelemetry/instrumentation-pino");
+
+const sdk = new NodeSDK({
+  instrumentations: [new PinoInstrumentation()],
+});
+sdk.start();`;
+
+const pinoApp = String.raw`const { trace } = require("@opentelemetry/api");
+const pino = require("pino");
+
+const logger = pino();
+const tracer = trace.getTracer("checkout");
+
+tracer.startActiveSpan("charge-card", (span) => {
+  logger.info({ orderId: "ord_812" }, "charging card");
+  span.end();
+});`;
+
+const pinoRun = String.raw`OTEL_TRACES_EXPORTER=console node --require ./instrumentation.cjs app.cjs`;
+
+const pinoOutput = String.raw`{"level":30,"time":1795291418372,"pid":12491,"hostname":"web-1","trace_id":"9bacbc55a63dfebdbc6f170321840877","span_id":"d211ecde634c5590","trace_flags":"01","orderId":"ord_812","msg":"charging card"}`;
+
+const esmRegister = String.raw`// register.mjs, loaded with: node --import ./register.mjs app.mjs
+import { register } from "node:module";
+
+register("@opentelemetry/instrumentation/hook.mjs", import.meta.url);
+await import("./instrumentation.mjs");`;
+
+const pythonLogs = String.raw`import logging
+
+from opentelemetry import trace
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+
+trace.set_tracer_provider(TracerProvider())
+LoggingInstrumentor().instrument(
+    set_logging_format=True,
+    logging_format="%(levelname)s %(name)s trace_id=%(otelTraceID)s span_id=%(otelSpanID)s %(message)s",
+)
+
+logger = logging.getLogger("checkout")
+tracer = trace.get_tracer("checkout")
+
+logger.info("outside any span")
+with tracer.start_as_current_span("charge-card"):
+    logger.info("charging card for order %s", "ord_812")`;
+
+const pythonOutput = String.raw`INFO checkout trace_id=0 span_id=0 outside any span
+INFO checkout trace_id=939f79e8bc99c8fd33baae1d5ba49344 span_id=ddb23a049b632335 charging card for order ord_812`;
+
+const faqs = [
+    {
+        question: "What is context propagation in OpenTelemetry?",
+        answer:
+            "Context propagation is how the current trace ID, span ID and sampling decision travel from one service to the next. The caller's SDK writes them into request headers, and the receiving service's SDK reads them and starts its spans as children, so both services' spans join one trace.",
+    },
+    {
+        question: "What is the W3C traceparent header?",
+        answer:
+            "traceparent is the HTTP header the W3C Trace Context standard defines for propagating a trace. It has four dash-separated fields: a version (00), a 32-hex-character trace ID, a 16-hex-character parent span ID, and two hex characters of flags, where 01 means sampled.",
+    },
+    {
+        question: "What is OpenTelemetry baggage?",
+        answer:
+            "Baggage is a set of key-value pairs that travels with the context in a separate baggage header. It is not added to spans, metrics or logs automatically, and it is sent to every downstream service, including third-party APIs, so it must not contain secrets or personal data.",
+    },
+    {
+        question: "How do I add trace_id to my logs?",
+        answer:
+            "Use your language's OpenTelemetry logging instrumentation. In Node.js, @opentelemetry/instrumentation-pino adds trace_id, span_id and trace_flags to Pino records. In Python, opentelemetry-instrumentation-logging adds otelTraceID and otelSpanID when log correlation is enabled. Logs exported over OTLP carry the IDs as fields of the log record.",
+    },
+    {
+        question: "Why are my traces broken into several pieces?",
+        answer:
+            "A hop in the request path is not propagating context. Common causes: an HTTP client or framework without instrumentation, a message queue that drops headers, a proxy that strips traceparent, a browser request blocked by CORS, or work handed to a thread or callback that loses the active context.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="Context propagation: traceparent, baggage and trace IDs in logs | Maple"
+    description="How OpenTelemetry carries a trace across services with W3C traceparent and baggage, and how to put trace_id and span_id on every log line in Node.js and Python."
+    title="Context propagation and trace IDs in logs"
+    lede="How one trace survives a hop between services, what the traceparent and baggage headers carry, and how to stamp every log line with the trace it belongs to."
+    category="OpenTelemetry"
+    readMinutes={11}
+    published="2026-11-21"
+    modified="2026-11-21"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            A distributed trace only works if every service knows which trace a request belongs to. <strong>Context propagation</strong> is the mechanism: the caller writes the trace ID and its own span ID into the request, and the receiver reads them and continues the same trace.
+        </p>
+        <p>
+            When propagation breaks, traces split into disconnected pieces and logs cannot be matched to requests. This guide explains what travels, how it travels, how to propagate through queues by hand, and how to get trace IDs into logs. Every snippet on this page was run: the Node.js ones with <code>@opentelemetry/sdk-node</code> 0.301, <code>@opentelemetry/instrumentation-pino</code> 0.71 and Pino 10.4, the Python ones with <code>opentelemetry-sdk</code> 1.41.1 and <code>opentelemetry-instrumentation-logging</code> 0.62b1.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>The W3C <code>traceparent</code> header carries the trace ID, the parent span ID and the sampled flag. It is the default propagator in every SDK.</li>
+                <li>HTTP and gRPC instrumentation propagate for you. Queues and custom transports need <code>inject</code> and <code>extract</code>.</li>
+                <li>Baggage travels to every downstream service, including third parties. Never put secrets or personal data in it.</li>
+                <li>Logging instrumentation adds <code>trace_id</code> and <code>span_id</code> to each log line written inside a span.</li>
+                <li>A trace that splits in two points at one hop that does not propagate. Find that hop.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-is-context" class="scroll-mt-24">
+        <h2>What context is</h2>
+        <p>
+            Inside one process, OpenTelemetry keeps a <strong>context</strong>: the active span, plus any baggage. When your code starts a span, the SDK makes it a child of whatever span is active. In Node.js that context follows async calls through <code>AsyncLocalStorage</code>; in Python it lives in <code>contextvars</code>.
+        </p>
+        <p>
+            Between processes there is no shared memory, so the context has to be written into the request. A <strong>propagator</strong> does that. It has two operations: <code>inject</code> writes the context into a carrier such as HTTP headers, and <code>extract</code> reads it back on the other side. The SDK's default propagators are set by <code>OTEL_PROPAGATORS</code>, which defaults to <code>tracecontext,baggage</code>: the W3C Trace Context headers plus the W3C Baggage header.
+        </p>
+        <p>
+            Other formats exist for older systems: <code>b3</code> and <code>b3multi</code> for services instrumented with Zipkin libraries, and <code>jaeger</code> for the retired Jaeger clients, which the specification marks deprecated. If part of your system still uses one of them, list both, for example <code>OTEL_PROPAGATORS=tracecontext,baggage,b3multi</code>. The SDK writes every listed format on the way out. On the way in it runs every extractor in order, and a later format that finds its header replaces what an earlier one found, so put the format you trust most last.
+        </p>
+    </section>
+
+    <section id="traceparent" class="scroll-mt-24">
+        <h2>The traceparent header</h2>
+        <p>W3C Trace Context defines two HTTP headers. <code>traceparent</code> is the one that matters for joining spans:</p>
+        <Code code={traceparent} />
+        <ul class="guide-list">
+            <li><strong>Version</strong>: <code>00</code>, the only version in the current standard.</li>
+            <li><strong>Trace ID</strong>: 32 lowercase hex characters (16 bytes). The same in every span of the trace. All zeros is invalid.</li>
+            <li><strong>Parent ID</strong>: 16 hex characters (8 bytes), the span ID of the caller's span. The receiver's first span becomes its child.</li>
+            <li><strong>Flags</strong>: two hex characters. The lowest bit is <em>sampled</em>: <code>01</code> means the caller recorded this trace, <code>00</code> means it did not. Parent-based samplers follow it, as the <a href="/guides/opentelemetry-sampling#parent-based">sampling guide</a> explains. Trace Context Level 2, still a draft, adds a second flag (<code>02</code>), which tells the receiver that at least the trace ID's rightmost 7 bytes are random and safe to sample on.</li>
+        </ul>
+        <p>
+            <code>tracestate</code> is the second header: up to 32 comma-separated <code>key=value</code> entries where tracing systems keep their own data. OpenTelemetry uses the <code>ot</code> key, for example to record a sampling threshold (<code>th</code>). Propagators forward entries they do not understand unchanged.
+        </p>
+        <p>
+            A header that does not parse is ignored, and the receiver starts a new trace. That is the right failure mode, and also why a malformed header produces a split trace instead of an error.
+        </p>
+    </section>
+
+    <section id="automatic" class="scroll-mt-24">
+        <h2>Automatic propagation</h2>
+        <p>
+            For HTTP and gRPC you rarely touch any of this. The instrumentation for HTTP clients (such as <code>fetch</code>, <code>undici</code>, <code>requests</code> or <code>httpx</code>) injects <code>traceparent</code> into outgoing requests, and the instrumentation for servers and frameworks (such as Express, Fastify, Django or FastAPI) extracts it from incoming ones. Install both sides and traces connect.
+        </p>
+        <p>
+            The condition is that <em>both</em> sides are instrumented. A service with server instrumentation but no client instrumentation receives the trace and then starts a new one for every downstream call. The trace in your backend stops at that service, and the downstream service's spans show up as separate traces.
+        </p>
+        <p>
+            In the browser, the fetch and XMLHttpRequest instrumentations only add <code>traceparent</code> to cross-origin requests whose URLs you list in <code>propagateTraceHeaderCorsUrls</code>. The API must also allow the header: include <code>traceparent</code> and <code>tracestate</code> in <code>Access-Control-Allow-Headers</code>, or the browser blocks the request.
+        </p>
+    </section>
+
+    <section id="manual" class="scroll-mt-24">
+        <h2>Queues and custom transports</h2>
+        <p>
+            Message queues are the common gap. Some client libraries have instrumentation that propagates through message headers; many do not, and a custom protocol never does. Propagate by hand: inject into whatever key-value headers the message supports when you publish, and extract when you consume.
+        </p>
+        <Code title="orders.js" code={nodeQueue} lang="javascript" />
+        <p>Span names follow the messaging conventions, <code>&#123;operation&#125; &#123;destination&#125;</code>. Running it with the Node.js SDK put this in the message headers, and the consumer span continued trace <code>03bf06ab…</code>:</p>
+        <Code code={queueHeaders} output />
+        <p>The Python equivalent, where <code>queue</code> and <code>message</code> stand in for your client library:</p>
+        <Code title="orders.py" code={pythonQueue} lang="python" />
+        <p>
+            A consumer that processes a batch of messages from different traces cannot be a child of all of them. Start one span for the batch and add a span <strong>link</strong> to each message's context instead. Links connect related traces without forcing them into one tree.
+        </p>
+    </section>
+
+    <section id="baggage" class="scroll-mt-24">
+        <h2>Baggage</h2>
+        <p>
+            <strong>Baggage</strong> is a second piece of context: key-value pairs your code sets that travel to every downstream service in their own header.
+        </p>
+        <Code code={baggageHeader} />
+        <p>
+            Use it for values that downstream services need and cannot look up cheaply, such as a tenant ID set at the edge that a service four hops away wants on its spans. Three facts about it surprise people:
+        </p>
+        <ul class="guide-list">
+            <li><strong>It is not added to telemetry by itself.</strong> A value in baggage does not appear on spans, metrics or logs unless code copies it there. Several SDKs ship a baggage span processor that copies baggage onto each new span as attributes.</li>
+            <li><strong>It leaves your network.</strong> Instrumented HTTP clients send the baggage header on outgoing requests, including calls to third-party APIs. Never put tokens, emails or other personal data in it.</li>
+            <li><strong>It is not trusted.</strong> Any caller can send a baggage header. A service that makes decisions on baggage values from the public internet can be fed whatever an attacker likes. Strip or ignore incoming baggage at your edge.</li>
+        </ul>
+    </section>
+
+    <section id="logs" class="scroll-mt-24">
+        <h2>Trace IDs in logs</h2>
+        <p>
+            Propagation also solves a logging problem. If every log line written during a request carries that request's trace ID, you can go from an error log to the full trace, and from a slow span to the log lines around it. The trace ID is the join key between the two.
+        </p>
+        <p>
+            There are two ways in. <strong>Log correlation</strong> adds <code>trace_id</code> and <code>span_id</code> to the log lines your logger already writes, to stdout or a file. <strong>Log export</strong> sends log records through the OpenTelemetry SDK over OTLP, where trace and span IDs are fields of every record. Many setups use both. The examples below show correlation, since it works with any log pipeline.
+        </p>
+
+        <h3 id="logs-node" class="scroll-mt-24">Node.js with Pino</h3>
+        <p>Install the Pino instrumentation and register it with the SDK before your app loads:</p>
+        <Code code="npm install @opentelemetry/sdk-node @opentelemetry/instrumentation-pino pino" lang="shell" />
+        <Code title="instrumentation.cjs" code={pinoSetup} lang="javascript" />
+        <Code title="app.cjs" code={pinoApp} lang="javascript" />
+        <Code code={pinoRun} lang="shell" />
+        <Code code={pinoOutput} output />
+        <p>
+            Lines logged inside a span get <code>trace_id</code>, <code>span_id</code> and <code>trace_flags</code>; lines outside any span get none. The <code>logKeys</code> option renames the fields if your log pipeline expects other names. With a logs exporter configured, the same instrumentation also sends each record over OTLP. Two things kept the fields from appearing when we tested this:
+        </p>
+        <ul class="guide-list">
+            <li><strong>No tracer provider.</strong> With <code>OTEL_TRACES_EXPORTER=none</code>, there was no real span to read, so no fields were added. Configure a real exporter, which you need anyway.</li>
+            <li><strong>ES modules.</strong> An app using <code>import</code> instead of <code>require</code> was not patched until the OpenTelemetry module hook was registered first. <code>instrumentation.mjs</code> here is the same file as <code>instrumentation.cjs</code>, written with <code>import</code>:</li>
+        </ul>
+        <Code title="register.mjs" code={esmRegister} lang="javascript" />
+
+        <h3 id="logs-python" class="scroll-mt-24">Python logging</h3>
+        <p>
+            The <code>opentelemetry-instrumentation-logging</code> package adds <code>otelTraceID</code>, <code>otelSpanID</code>, <code>otelServiceName</code> and <code>otelTraceSampled</code> to every <code>LogRecord</code>. Reference them in your format string:
+        </p>
+        <Code code="pip install opentelemetry-sdk opentelemetry-instrumentation-logging" lang="shell" />
+        <Code title="app.py" code={pythonLogs} lang="python" />
+        <Code code={pythonOutput} output />
+        <p>
+            Outside a span the IDs are <code>0</code>. Two details from testing version 0.62b1. The fields are only added when correlation is on, through <code>set_logging_format=True</code> or <code>OTEL_PYTHON_LOG_CORRELATION=true</code>; without either, a format string that references them fails with <code>KeyError: 'otelTraceID'</code>. And correlation calls <code>logging.basicConfig()</code> itself, which only works once per process, so a later <code>basicConfig(format=...)</code> in your code is ignored. Pass your format as <code>logging_format</code>, or set <code>OTEL_PYTHON_LOG_FORMAT</code>, instead. Newer releases of the package may add options for this, so check its docs for the version you install. The example sets up a tracer provider with no exporter because it only shows the log fields; in your app, keep the exporter you already configure.
+        </p>
+        <p>
+            For JSON logs, add the same record attributes as fields in your JSON formatter. Using <a href="/guides/loguru">Loguru</a> instead of the standard library? Its guide shows how to forward Loguru records with their trace context.
+        </p>
+    </section>
+
+    <section id="broken-traces" class="scroll-mt-24">
+        <h2>Fixing broken traces</h2>
+        <p>
+            A broken trace shows up as a trace whose root span is not the real entry point, or as two traces that should be one. Find the last span of the first piece and the first span of the second: the hop between them is where context was lost. Then check, in order:
+        </p>
+        <ol class="guide-list">
+            <li><strong>Missing instrumentation.</strong> The caller's HTTP client or the receiver's framework is not instrumented. Add it.</li>
+            <li><strong>Headers dropped in transit.</strong> A proxy, API gateway or service mesh strips unknown headers. Allow <code>traceparent</code>, <code>tracestate</code> and <code>baggage</code>.</li>
+            <li><strong>A queue in the middle.</strong> Propagate through message headers as shown above.</li>
+            <li><strong>Lost in-process context.</strong> Work handed to a thread pool, a callback-based library or a manually created promise may run without the active context. Pass the context explicitly, or wrap the callback with <code>context.bind()</code> in Node.js.</li>
+            <li><strong>Different propagators.</strong> One side sends <code>b3</code> and the other reads only <code>tracecontext</code>. List both formats in <code>OTEL_PROPAGATORS</code> during a migration.</li>
+            <li><strong>Mixed sampling.</strong> A service ignoring the sampled flag records children of spans that were never kept. Use parent-based samplers.</li>
+        </ol>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>From a log line to its trace</h3>
+            <p>Maple links logs to traces by trace ID, so a log line with <code>trace_id</code> opens the request it came from.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/explore/logs" class="guide-button guide-button--primary">Logs in Maple</a>
+                <a href="/docs/concepts/missing-root-spans" class="guide-button">Missing root spans</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="guide-sources">
+        <h2>Sources and further reading</h2>
+        <ul>
+            <li><a href="https://www.w3.org/TR/trace-context/" target="_blank" rel="noopener noreferrer">W3C Trace Context</a></li>
+            <li><a href="https://www.w3.org/TR/baggage/" target="_blank" rel="noopener noreferrer">W3C Baggage</a></li>
+            <li><a href="https://opentelemetry.io/docs/concepts/context-propagation/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: Context propagation</a></li>
+            <li><a href="https://opentelemetry.io/docs/concepts/signals/baggage/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: Baggage</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-js-contrib/tree/main/packages/instrumentation-pino" target="_blank" rel="noopener noreferrer">OpenTelemetry JS: Pino instrumentation</a></li>
+            <li><a href="https://opentelemetry-python-contrib.readthedocs.io/en/latest/instrumentation/logging/logging.html" target="_blank" rel="noopener noreferrer">OpenTelemetry Python: logging instrumentation</a></li>
+            <li><a href="/docs/concepts/missing-root-spans">Maple docs: Missing root spans</a></li>
+        </ul>
+    </section>
+</GuidePage>

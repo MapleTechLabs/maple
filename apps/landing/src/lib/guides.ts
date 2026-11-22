@@ -4,6 +4,7 @@
  */
 
 import type { IconName } from "@maple/views/ui/icons.generated"
+import { alternativesPages, alternativesPath } from "./alternatives"
 import { Array as Arr } from "effect"
 
 export type Guide = {
@@ -54,6 +55,50 @@ export const guideCategories: GuideCategory[] = [
 				icon: "GaugeIcon",
 				title: "What is Apdex?",
 				description: "How Apdex turns response times into one score, and when it beats a p95 alert.",
+			},
+		],
+	},
+	{
+		// A series: guide-series.ts holds the reading order.
+		id: "opentelemetry",
+		icon: "NetworkNodesIcon",
+		title: "OpenTelemetry",
+		description: "Running OpenTelemetry in production, in five parts.",
+		guides: [
+			{
+				href: "/guides/opentelemetry-collector",
+				icon: "LayersIcon",
+				title: "The OpenTelemetry Collector",
+				description:
+					"Receivers, processors and exporters, a config that runs, and when to deploy an agent or a gateway.",
+			},
+			{
+				href: "/guides/otlp",
+				icon: "ArrowRightFromLineIcon",
+				title: "OTLP explained",
+				description:
+					"gRPC or HTTP, ports 4317 and 4318, protobuf or JSON, auth headers, and the export errors you will hit.",
+			},
+			{
+				href: "/guides/opentelemetry-sampling",
+				icon: "FilterIcon",
+				title: "OpenTelemetry sampling",
+				description:
+					"Head and tail sampling, parent-based ratios, a tail sampling config, and what sampling does to metrics and cost.",
+			},
+			{
+				href: "/guides/opentelemetry-context-propagation",
+				icon: "LinkIcon",
+				title: "Context propagation and trace IDs in logs",
+				description:
+					"How traceparent and baggage cross services, and how to put trace_id and span_id on every log line.",
+			},
+			{
+				href: "/guides/metric-cardinality",
+				icon: "ChartBarTrendUpIcon",
+				title: "Metric cardinality",
+				description:
+					"What a time series is, how one attribute multiplies a bill, and how to find and fix it.",
 			},
 		],
 	},
@@ -163,6 +208,12 @@ export const guideCategories: GuideCategory[] = [
 				description:
 					"The leading options compared by architecture, signals, license and operating cost.",
 			},
+			...Arr.map(alternativesPages, (page) => ({
+				href: alternativesPath(page.slug),
+				icon: "UnorderedListIcon" as const,
+				title: `${page.vendor} alternatives`,
+				description: page.blurb,
+			})),
 			{
 				href: "/guides/new-relic-pricing",
 				icon: "CreditCardIcon",
@@ -183,6 +234,34 @@ export const guideCategories: GuideCategory[] = [
 				title: "Dynatrace pricing, explained",
 				description:
 					"The DPS rate card, cost per host and per GiB, and a worked bill for a small fleet.",
+			},
+			{
+				href: "/guides/datadog-pricing",
+				icon: "CreditCardIcon",
+				title: "Datadog pricing, explained",
+				description:
+					"Per-host prices, log ingest and indexing, custom metric billing, and three worked monthly bills.",
+			},
+			{
+				href: "/guides/honeycomb-pricing",
+				icon: "CreditCardIcon",
+				title: "Honeycomb pricing in 2026",
+				description:
+					"The free plan, the new $3.00 per million Pro rate, what counts as an event, and three worked bills.",
+			},
+			{
+				href: "/guides/grafana-cloud-pricing",
+				icon: "CreditCardIcon",
+				title: "Grafana Cloud pricing, explained",
+				description:
+					"Free tier limits, Pro rates for series, gigabytes and users, and how DPM multiplies a metrics bill.",
+			},
+			{
+				href: "/guides/posthog-pricing",
+				icon: "CreditCardIcon",
+				title: "PostHog pricing, explained",
+				description:
+					"The monthly free tier and the per-unit bands for events, recordings, exceptions and logs.",
 			},
 		],
 	},

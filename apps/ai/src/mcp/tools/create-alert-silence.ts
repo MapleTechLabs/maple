@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertSilenceCreateRequest } from "@maple/domain/http"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
@@ -16,10 +16,8 @@ const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms))
 const nonEmpty = <K extends string>(key: K, values: ReadonlyArray<string> | undefined) =>
 	values === undefined || values.length === 0 ? undefined : { [key]: values }
 
-export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
-	server.define({
-		name: "create_alert_silence",
-		title: "Create Alert Silence",
+export const createAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_alert_silence">) =>
+	family.action("create", {
 		description:
 			"Hold back alert notifications for matching rules during a window (maintenance, a known outage). Incidents still open and resolve; only delivery is held. " +
 			"Matchers AND together, values inside one OR; pass at least one. services/environments must cover a rule's whole scope or the incident's group. " +
@@ -42,7 +40,6 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 		aliases: { service_names: "services" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		permission: "alerts:manage",
-		phrases: ["Creating an alert silence", "Silencing alerts"],
 		handler: Effect.fn("McpTool.createAlertSilence")(function* (params) {
 			if ((params.duration_minutes === undefined) === (params.ends_at === undefined)) {
 				return yield* new McpInvalidInputError({
@@ -117,8 +114,11 @@ export function registerCreateAlertSilenceTool(server: McpToolRegistrar) {
 			blocks: [silenceFields(output.silence)],
 			next: [
 				doc.next("list_alert_silences", {}, "every active and scheduled silence"),
-				doc.next("end_alert_silence", { silence_id: output.silence.id }, "end it early"),
+				doc.next(
+					"manage_alert_silence",
+					{ action: "end", silence_id: output.silence.id },
+					"end it early",
+				),
 			],
 		}),
 	})
-}

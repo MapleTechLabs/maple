@@ -67,6 +67,7 @@ const PICK_GROUP = {
 	openrouter: "ai",
 	anthropic: "ai",
 	openai: "ai",
+	morph: "ai",
 } as const satisfies Record<CostProvider, PickGroup>
 
 const PICKS: ReadonlyArray<CostProvider> = Struct.keys(PICK_GROUP)
@@ -117,6 +118,7 @@ const pickOf = (
 		case "cloudflare":
 		case "anthropic":
 		case "openai":
+		case "morph":
 			return once(
 				CREDENTIAL_SOURCES[provider].pick.meta,
 				Message.PickedProvider({ provider }),
@@ -547,6 +549,7 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 		case "cloudflare":
 		case "anthropic":
 		case "openai":
+		case "morph":
 			return CREDENTIAL_SOURCES[target.provider].remove
 		// An AWS source has no Remove: it leaves with its connection's Cost module. The confirm is closed then.
 		default:

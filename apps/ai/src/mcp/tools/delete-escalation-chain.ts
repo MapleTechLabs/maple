@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import type { McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
 import { CurrentMcpTenant } from "../tenant"
@@ -6,10 +6,8 @@ import { deleteChainErrors, updateChainErrors } from "../lib/escalation-chains"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
-export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
-	server.define({
-		name: "delete_escalation_chain",
-		title: "Delete Escalation Chain",
+export const deleteEscalationChainAction = (family: McpToolFamilyBuilder<"manage_escalation_chain">) =>
+	family.action("delete", {
 		description:
 			"Delete an escalation chain. Refused while a rule tier still names it: detach it first with update_alert_rule escalation_chain_id=\"none\" and escalation_chain_tier naming the tier, so another tier's chain stays; a tier that pages only through the chain needs a destination before that (add_destination_ids for a one-tier rule or the warning tier; a critical tier via the rule's thresholds in the v2 API or dashboard). " +
 			"Escalations already running finish. Ids from list_escalation_chains.",
@@ -18,7 +16,6 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		permission: "oncall:manage",
-		phrases: ["Deleting an escalation chain"],
 		handler: Effect.fn("McpTool.deleteEscalationChain")(function* (params) {
 			const chainId = yield* P.decodeResourceId("escalationChain", "chain_id")(params.chain_id)
 			const tenant = yield* CurrentMcpTenant
@@ -48,4 +45,3 @@ export function registerDeleteEscalationChainTool(server: McpToolRegistrar) {
 			next: [doc.next("list_escalation_chains", {}, "the remaining chains")],
 		}),
 	})
-}

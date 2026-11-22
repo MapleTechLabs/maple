@@ -1,8 +1,7 @@
 /* Chart loading ghosts for `chartSkeleton` (packages/views/src/ui/chart-skeleton.ts).
    Shared because the dashboard and Maple Local both render it; import after tailwindcss. */
 /* One motion for every ghost: the shapes hold still and a soft band of light
-   passes left to right, then rests, in step with every other skeleton. It fades in after
-   `--loading-delay`, like `loading-delay`, so a fast query swaps straight to the chart. */
+   passes left to right, then rests, in step with every other skeleton. It shows at once. */
 @keyframes chart-skeleton-sweep {
 	0% {
 		mask-position: 100% 0;
@@ -13,19 +12,11 @@
 	}
 }
 
-@keyframes chart-skeleton-enter {
-	from {
-		opacity: 0;
-	}
-}
-
 .chart-skeleton {
 	mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.55) 40%, #000 50%, rgb(0 0 0 / 0.55) 60%);
 	mask-size: 300% 100%;
 	mask-position: 100% 0;
-	animation:
-		chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay) backwards,
-		chart-skeleton-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+	animation: chart-skeleton-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -33,7 +24,7 @@
 	.chart-skeleton {
 		mask-image: none;
 		opacity: 0.55;
-		animation: chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay) backwards;
+		animation: none;
 	}
 }
 

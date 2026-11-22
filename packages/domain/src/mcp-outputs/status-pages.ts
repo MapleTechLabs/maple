@@ -107,7 +107,7 @@ export const GetStatusPageOutput = Schema.Struct({
 	/** Every page of the org, when no `page` was asked for. */
 	pages: Schema.optionalKey(Schema.Array(StatusPageRow)),
 	page: Schema.optionalKey(StatusPageDetail),
-	/** With include_config: the document `PUT /v2/status_pages/{id}/config` and apply_status_page_config take. */
+	/** With include_config: the document `PUT /v2/status_pages/{id}/config` and manage_status_page action=apply_config take. */
 	config: Schema.optionalKey(StatusPageConfig),
 })
 
@@ -135,7 +135,7 @@ export const ApplyStatusPageConfigOutput = Schema.Struct({
 })
 
 export const CreateStatusPageOutput = Schema.Struct({
-	/** Always a draft: private until publish_status_page. */
+	/** Always a draft: private until manage_status_page action=publish. */
 	page: StatusPageRow,
 })
 

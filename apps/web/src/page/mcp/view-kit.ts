@@ -1,3 +1,4 @@
+import { KNOWN_MCP_CLIENTS } from "@maple/domain/mcp-clients"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate, formatDurationNs } from "@maple/web-data/lib/tool-analytics"
@@ -283,22 +284,52 @@ export const attr = <M>(h: HtmlBuilder<M>, name: string): Html =>
 export const headingNote = <M>(h: HtmlBuilder<M>, text: string): Html =>
 	typography(h, { size: "2xs", tone: "subtle", mono: true }, [text])
 
-const CLIENT_ICONS = new Map<string, IconName>([
-	["Claude Code", "ClaudeIcon"],
-	["Claude", "ClaudeIcon"],
-	["curl", "SquareTerminalIcon"],
-	["Bun", "BunIcon"],
-	["Node (undici)", "NodejsIcon"],
-	["Codex", "OpenAiIcon"],
-	["VS Code", "VsCodeIcon"],
-])
+type ClientMark = Readonly<{ icon: IconName; className: string }>
 
-/** A client's glyph: its brand mark when known, a globe otherwise. */
-export const clientIcon = <M>(h: HtmlBuilder<M>, name: string, size = 14): Html =>
-	icon(h, CLIENT_ICONS.get(name) ?? "GlobeIcon", {
+/** Ordered, first match wins: the client name's first lower-case word, its mark and brand tint. */
+const CLIENT_MARKS: ReadonlyArray<readonly [string, ClientMark]> = [
+	["claude", { icon: "ClaudeIcon", className: "text-brand-claude" }],
+	["codex", { icon: "OpenAiIcon", className: "text-foreground" }],
+	["cursor", { icon: "CursorIcon", className: "text-foreground" }],
+	["vs code", { icon: "VsCodeIcon", className: "text-brand-vscode" }],
+	["bun", { icon: "BunIcon", className: "text-foreground" }],
+	// The Node mark carries its own green.
+	["node", { icon: "NodejsIcon", className: "" }],
+	["python", { icon: "PythonIcon", className: "text-brand-python" }],
+	["go", { icon: "FrameworkGoIcon", className: "text-brand-go" }],
+	["curl", { icon: "SquareTerminalIcon", className: "text-foreground" }],
+]
+
+const INTERNAL_CLIENTS = new Set(
+	Arr.map(
+		Arr.filter(KNOWN_MCP_CLIENTS, (client) => client.kind === "internal"),
+		(client) => client.name,
+	),
+)
+
+/** The mark and tint a client name gets. */
+export const clientMarkOf = (name: string): ClientMark => {
+	if (INTERNAL_CLIENTS.has(name)) return { icon: "MapleMark", className: "text-primary" }
+	// `Python (httpx)`, `Python-urllib` and `codex-mcp-client` all start with their family's word.
+	const word = Arr.headNonEmpty(Str.split(Str.toLowerCase(name), /[\s(/-]/))
+	const known = Arr.findFirst(
+		CLIENT_MARKS,
+		([family]) => family === word || family === Str.toLowerCase(name),
+	)
+	return Option.isSome(known) ? known.value[1] : { icon: "GlobeIcon", className: "text-muted-foreground" }
+}
+
+/** A client's glyph in its brand colour: Maple's mark for Maple's own callers, a globe otherwise. */
+export const clientIcon = <M>(h: HtmlBuilder<M>, name: string, size = 14): Html => {
+	const mark = clientMarkOf(name)
+	// Decorative beside the name: drop the Maple mark's own `role="img"` label.
+	return icon(h, mark.icon, {
 		size,
-		className: cn("shrink-0", CLIENT_ICONS.has(name) ? "" : "text-muted-foreground"),
+		className: cn("shrink-0", mark.className),
+		removedAttributes: ["role", "aria-label", "aria-hidden"],
+		attributes: [h.AriaHidden(true)],
 	})
+}
 
 /** The client's kind as a quiet uppercase tag; unknown clients carry none. */
 export const kindTag = <M>(h: HtmlBuilder<M>, kind: McpClientKind): ReadonlyArray<Html> =>

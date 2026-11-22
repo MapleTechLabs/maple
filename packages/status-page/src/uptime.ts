@@ -1,5 +1,4 @@
 import {
-	dayState,
 	STATUS_PAGE_HISTORY_DAYS,
 	type StatusPageDayBar,
 	type StatusPageDayState,
@@ -7,7 +6,7 @@ import {
 	uptimePercent,
 } from "@maple/domain/status-page"
 import { Array as Arr } from "effect"
-import { barComponents } from "./history"
+import { barComponents, barState, calendarEntries, componentMarks } from "./history"
 
 /** Most days `/api/v1/uptime.json` returns: all the snapshot carries. */
 export const UPTIME_MAX_DAYS = STATUS_PAGE_HISTORY_DAYS
@@ -15,6 +14,7 @@ export const UPTIME_MAX_DAYS = STATUS_PAGE_HISTORY_DAYS
 const DAY_STATUS = {
 	none: "no_data",
 	ok: "operational",
+	maintenance: "maintenance",
 	degraded: "degraded",
 	down: "down",
 } as const satisfies Record<StatusPageDayState, string>
@@ -40,6 +40,7 @@ export const renderUptimeJson = (
 		(component) => input.componentId === null || component.id === input.componentId,
 	)
 	if (input.componentId !== null && components.length === 0) return null
+	const entries = calendarEntries(snapshot)
 	return {
 		page: {
 			id: snapshot.pageId,
@@ -51,6 +52,7 @@ export const renderUptimeJson = (
 		days: input.days,
 		components: Arr.map(components, (component) => {
 			const days = component.days.slice(-input.days)
+			const marks = componentMarks(component.id, entries, snapshot.generatedAt)
 			return {
 				id: component.id,
 				name: component.name,
@@ -59,7 +61,7 @@ export const renderUptimeJson = (
 				days: Arr.map(days, (bar) => ({
 					date: bar.day,
 					uptime_percent: percentOf([bar]),
-					status: DAY_STATUS[dayState(bar)],
+					status: DAY_STATUS[barState(bar, marks.get(bar.day))],
 				})),
 			}
 		}),

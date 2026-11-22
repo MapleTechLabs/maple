@@ -206,7 +206,7 @@
 		"apps/web/src/page/traces/detail/view-findings.ts": 1,
 		"apps/web/src/page/traces/detail/view.ts": 1,
 		"apps/web/src/page/traces/list/view-row.ts": 1,
-		"apps/web/src/page/users/view-detail.ts": 3,
+		"apps/web/src/page/users/view-detail.ts": 1,
 		"apps/web/src/page/users/view-states.ts": 1,
 		"apps/web/src/shell/clerk-org-switcher-view.ts": 2,
 		"apps/web/src/shell/connect-panel-view.ts": 7,

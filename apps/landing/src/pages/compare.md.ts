@@ -4,6 +4,7 @@
  */
 import type { APIRoute } from "astro"
 import { BILL_ROW_KEYS, billRowLabels, billVendors } from "../lib/bill-comparison"
+import { alternativesPages, alternativesPath } from "../lib/alternatives"
 import { competitors } from "../lib/competitors"
 import { absolute, blocks, docHeader, markdown, table } from "../lib/page-markdown"
 import * as m from "../paraglide/messages.js"
@@ -17,6 +18,18 @@ export const GET: APIRoute = ({ site }) => {
 				competitors,
 				(c) =>
 					`- [${c.navLabel()}](${absolute(site, `/compare/${c.slug}.md`)}): ${c.navDesc()} (HTML: ${absolute(site, `/compare/${c.slug}`)})`,
+			),
+			"\n",
+		),
+	)
+
+	const roundups = blocks(
+		"## Alternatives roundups",
+		Arr.join(
+			Arr.map(
+				alternativesPages,
+				(page) =>
+					`- [${page.vendor} alternatives](${absolute(site, `${alternativesPath(page.slug)}.md`)}): ${page.blurb} (HTML: ${absolute(site, alternativesPath(page.slug))})`,
 			),
 			"\n",
 		),
@@ -38,5 +51,5 @@ export const GET: APIRoute = ({ site }) => {
 		m.bill_footnote(),
 	)
 
-	return markdown(blocks(docHeader(m.cmp_hub_title(), m.cmp_hub_lede()), pages, bill))
+	return markdown(blocks(docHeader(m.cmp_hub_title(), m.cmp_hub_lede()), pages, roundups, bill))
 }

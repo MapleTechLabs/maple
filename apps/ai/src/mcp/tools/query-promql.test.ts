@@ -16,6 +16,7 @@ import { renderToolDoc } from "../lib/tool-doc"
 import { capSeries, defaultStepSeconds, parseStepMs, type PromqlResult } from "../lib/promql-result"
 import { registerQueryPromqlTool } from "./query-promql"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
@@ -37,6 +38,7 @@ type Invoke = (
 const promqlTool = (): Invoke => {
 	let invoke: Invoke = () => Effect.die("unregistered")
 	const registrar: McpToolRegistrar = {
+		family: ignoreFamily,
 		define: (spec) => {
 			invoke = (params) =>
 				Schema.decodeEffect(spec.parameters)(params).pipe(

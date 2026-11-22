@@ -56,7 +56,7 @@ export const parameterOfProblem = (problem: string): string => {
 	if (Str.includes("signal")(problem)) return "signals"
 	if (Str.startsWith("the name")(problem)) return "name"
 	if (Str.startsWith("position")(problem)) return "position"
-	return "action"
+	return "rule_action"
 }
 
 const isValidationError = Schema.is(IngestRuleValidationError)
@@ -126,7 +126,7 @@ const actionDescription =
 const SPEC_FIELDS = {
 	signals: P.list(`Signals the rule applies to: ${Arr.join(SIGNALS, ", ")}`),
 	conditions: conditionsParam,
-	action: P.json(V2IngestRuleAction, actionDescription),
+	rule_action: P.json(V2IngestRuleAction, actionDescription),
 }
 
 const renderRule = (title: string, row: IngestRuleRow) => ({
@@ -303,7 +303,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 							message:
 								"This organization has no ingest rules; all telemetry is stored as sent.",
 							hints: [
-								"create_ingest_rule adds one (org admins and engineers only); preview_ingest_rule tries one first.",
+								"manage_ingest_rule action=create adds one (org admins and engineers only); preview_ingest_rule tries one first.",
 							],
 						},
 					}
@@ -329,12 +329,12 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "preview_ingest_rule",
 		title: "Preview Ingest Rule",
 		description:
-			"Run an ingest rule (an existing one by `rule`, or a draft from signals/conditions/action) over recent stored traces or logs and report how many records it would drop or redact, with examples. Changes nothing. Recent data may already be redacted by existing rules; metrics are not previewed.",
+			"Run an ingest rule (an existing one by `rule`, or a draft from signals/conditions/rule_action) over recent stored traces or logs and report how many records it would drop or redact, with examples. Changes nothing. Recent data may already be redacted by existing rules; metrics are not previewed.",
 		parameters: Schema.Struct({
 			rule: P.optionalText("An existing rule's name or id (list_ingest_rules lists them)"),
 			signals: P.optionalList(`Draft: signals, ${Arr.join(SIGNALS, ", ")}`),
 			conditions: conditionsParam,
-			action: P.optionalJson(V2IngestRuleAction, `Draft: ${actionDescription}`),
+			rule_action: P.optionalJson(V2IngestRuleAction, `Draft: ${actionDescription}`),
 			signal: P.optionalOneOf(
 				["traces", "logs"],
 				"Which signal to sample; defaults to the rule's first of traces/logs",
@@ -343,7 +343,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			...PREVIEW_WINDOW.fields,
 			limit: P.limit({ default: 200, max: 500, noun: "sample records" }),
 		}),
-		aliases: P.SERVICE_ALIASES,
+		aliases: { ...P.SERVICE_ALIASES, action: "rule_action" },
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		permission: "telemetry:read",
 		scopeFamily: "ingest_rules",
@@ -353,14 +353,14 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			const spec: IngestRuleSpec =
 				params.rule !== undefined
 					? (yield* resolveRule("preview_ingest_rule", tenant.orgId, params.rule)).spec
-					: params.signals !== undefined && params.action !== undefined
+					: params.signals !== undefined && params.rule_action !== undefined
 						? {
 								signals: yield* decodeSignals(params.signals),
 								conditions: params.conditions ?? [],
-								action: fromV2IngestRuleAction(params.action),
+								action: fromV2IngestRuleAction(params.rule_action),
 							}
 						: yield* new McpInvalidInputError({
-								message: "Pass `rule`, or a draft with `signals` and `action`.",
+								message: "Pass `rule`, or a draft with `signals` and `rule_action`.",
 								parameter: "rule",
 							})
 			const signal = params.signal ?? spec.signals.find((s) => s === "traces" || s === "logs")
@@ -431,127 +431,124 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		}),
 	})
 
-	server.define({
-		name: "create_ingest_rule",
-		title: "Create Ingest Rule",
-		description:
-			"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Org admins and engineers only. Applies to new data within 30 seconds.",
-		parameters: Schema.Struct({
-			name: P.text("A label for the rule"),
-			...SPEC_FIELDS,
-			enabled: P.optionalFlag("Start disabled with false; default true"),
-			position: P.optionalNumber("Run order among redact rules; default after the last rule"),
-		}),
-		hints: { readOnly: false, destructive: false, idempotent: false },
-		permission: "ingest_rules:manage",
-		scopeFamily: "ingest_rules",
-		phrases: ["Adding an ingest rule"],
-		handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			const service = yield* IngestRuleService
-			const created = yield* service
-				.create(tenant.orgId, {
-					name: params.name,
-					enabled: params.enabled,
-					position: params.position,
-					spec: {
-						signals: yield* decodeSignals(params.signals),
-						conditions: params.conditions ?? [],
-						action: fromV2IngestRuleAction(params.action),
-					},
-				})
-				.pipe(Effect.mapError(toMcpRuleError("create_ingest_rule")))
-			return { action: "created" as const, rule: toRow(created) }
-		}),
-		render: (output) => renderRule("Ingest rule created", output.rule),
-	})
-
-	server.define({
-		name: "update_ingest_rule",
-		title: "Update Ingest Rule",
-		description:
-			"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or action. Fields left out keep their value. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
-			name: P.optionalText("A new name"),
-			enabled: P.optionalFlag("false turns the rule off, true turns it on"),
-			position: P.optionalNumber("New run order among redact rules"),
-			signals: P.optionalList(`Replaces the signals: ${Arr.join(SIGNALS, ", ")}`),
-			conditions: conditionsParam,
-			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
-		}),
-		hints: { readOnly: false, destructive: false, idempotent: true },
-		permission: "ingest_rules:manage",
-		scopeFamily: "ingest_rules",
-		phrases: ["Updating an ingest rule"],
-		handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			const current = yield* resolveRule("update_ingest_rule", tenant.orgId, params.rule)
-			const service = yield* IngestRuleService
-			const specChanged =
-				params.signals !== undefined || params.conditions !== undefined || params.action !== undefined
-			const updated = yield* service
-				.update(tenant.orgId, current.id, {
-					name: params.name,
-					enabled: params.enabled,
-					position: params.position,
-					spec: specChanged
-						? {
-								signals:
-									params.signals === undefined
-										? current.spec.signals
-										: yield* decodeSignals(params.signals),
-								conditions: params.conditions ?? current.spec.conditions,
-								action:
-									params.action === undefined
-										? current.spec.action
-										: fromV2IngestRuleAction(params.action),
-							}
-						: undefined,
-				})
-				.pipe(Effect.mapError(toMcpRuleError("update_ingest_rule")))
-			return { action: "updated" as const, rule: toRow(updated) }
-		}),
-		render: (output) => renderRule("Ingest rule updated", output.rule),
-	})
-
-	server.define({
-		name: "delete_ingest_rule",
-		title: "Delete Ingest Rule",
-		description:
-			"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
-			confirm: P.flag("Must be true"),
-		}),
-		hints: { readOnly: false, destructive: true, idempotent: false },
-		permission: "ingest_rules:manage",
-		scopeFamily: "ingest_rules",
-		phrases: ["Deleting an ingest rule"],
-		handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {
-			if (params.confirm !== true) {
-				return yield* new McpInvalidInputError({
-					message: `Deletion not confirmed. Re-call delete_ingest_rule with confirm=true to delete ${params.rule}.`,
-					parameter: "confirm",
-				})
-			}
-			const tenant = yield* CurrentMcpTenant
-			const rule = yield* resolveRule("delete_ingest_rule", tenant.orgId, params.rule)
-			const service = yield* IngestRuleService
-			yield* service
-				.delete(tenant.orgId, rule.id)
-				.pipe(Effect.mapError(toMcpHttpError("delete_ingest_rule")))
-			return { id: toRow(rule).id, name: rule.name }
-		}),
-		render: (output) => ({
-			title: "Ingest Rule Deleted",
-			blocks: [
-				doc.fields([
-					["ID", output.id],
-					["Name", output.name],
-				]),
-			],
-			next: [doc.next("list_ingest_rules", {}, "the remaining rules")],
-		}),
-	})
+	server
+		.family({
+			name: "manage_ingest_rule",
+			title: "Manage Ingest Rule",
+			description:
+				"Create, change or delete an ingest rule: what Maple drops, samples or redacts from incoming telemetry before storing it. Org admins and engineers only.",
+			phrases: ["Managing an ingest rule"],
+			scopeFamily: "ingest_rules",
+		})
+		.action("create", {
+			description:
+				"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Applies to new data within 30 seconds.",
+			parameters: Schema.Struct({
+				name: P.text("A label for the rule"),
+				...SPEC_FIELDS,
+				enabled: P.optionalFlag("Start disabled with false; default true"),
+				position: P.optionalNumber("Run order among redact rules; default after the last rule"),
+			}),
+			hints: { readOnly: false, destructive: false, idempotent: false },
+			permission: "ingest_rules:manage",
+			handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				const service = yield* IngestRuleService
+				const created = yield* service
+					.create(tenant.orgId, {
+						name: params.name,
+						enabled: params.enabled,
+						position: params.position,
+						spec: {
+							signals: yield* decodeSignals(params.signals),
+							conditions: params.conditions ?? [],
+							action: fromV2IngestRuleAction(params.rule_action),
+						},
+					})
+					.pipe(Effect.mapError(toMcpRuleError("manage_ingest_rule")))
+				return { action: "created" as const, rule: toRow(created) }
+			}),
+			render: (output) => renderRule("Ingest rule created", output.rule),
+		})
+		.action("update", {
+			description:
+				"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or rule_action. Fields left out keep their value.",
+			parameters: Schema.Struct({
+				rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
+				name: P.optionalText("A new name"),
+				enabled: P.optionalFlag("false turns the rule off, true turns it on"),
+				position: P.optionalNumber("New run order among redact rules"),
+				signals: P.optionalList(`Replaces the signals: ${Arr.join(SIGNALS, ", ")}`),
+				conditions: conditionsParam,
+				rule_action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
+			}),
+			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "ingest_rules:manage",
+			handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				const current = yield* resolveRule("manage_ingest_rule", tenant.orgId, params.rule)
+				const service = yield* IngestRuleService
+				const specChanged =
+					params.signals !== undefined ||
+					params.conditions !== undefined ||
+					params.rule_action !== undefined
+				const updated = yield* service
+					.update(tenant.orgId, current.id, {
+						name: params.name,
+						enabled: params.enabled,
+						position: params.position,
+						spec: specChanged
+							? {
+									signals:
+										params.signals === undefined
+											? current.spec.signals
+											: yield* decodeSignals(params.signals),
+									conditions: params.conditions ?? current.spec.conditions,
+									action:
+										params.rule_action === undefined
+											? current.spec.action
+											: fromV2IngestRuleAction(params.rule_action),
+								}
+							: undefined,
+					})
+					.pipe(Effect.mapError(toMcpRuleError("manage_ingest_rule")))
+				return { action: "updated" as const, rule: toRow(updated) }
+			}),
+			render: (output) => renderRule("Ingest rule updated", output.rule),
+		})
+		.action("delete", {
+			description:
+				"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true.",
+			parameters: Schema.Struct({
+				rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
+				confirm: P.flag("Must be true"),
+			}),
+			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "ingest_rules:manage",
+			handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {
+				if (params.confirm !== true) {
+					return yield* new McpInvalidInputError({
+						message: `Deletion not confirmed. Re-call manage_ingest_rule action=delete with confirm=true to delete ${params.rule}.`,
+						parameter: "confirm",
+					})
+				}
+				const tenant = yield* CurrentMcpTenant
+				const rule = yield* resolveRule("manage_ingest_rule", tenant.orgId, params.rule)
+				const service = yield* IngestRuleService
+				yield* service
+					.delete(tenant.orgId, rule.id)
+					.pipe(Effect.mapError(toMcpHttpError("manage_ingest_rule")))
+				return { id: toRow(rule).id, name: rule.name }
+			}),
+			render: (output) => ({
+				title: "Ingest Rule Deleted",
+				blocks: [
+					doc.fields([
+						["ID", output.id],
+						["Name", output.name],
+					]),
+				],
+				next: [doc.next("list_ingest_rules", {}, "the remaining rules")],
+			}),
+		})
 }

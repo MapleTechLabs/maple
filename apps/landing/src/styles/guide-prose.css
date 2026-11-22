@@ -1,0 +1,365 @@
+/*
+ * Article styles for the guides and glossary terms built on GuidePage and
+ * GlossaryTermPage. The same rules the older guides carry in their own pages
+ * (see guides/loguru.astro), under one class.
+ */
+.guide-prose {
+	max-width: 46rem;
+	font-family: var(--font-display);
+}
+.guide-prose > section + section {
+	margin-top: 5rem;
+}
+.guide-prose h2 {
+	margin: 0 0 1.5rem;
+	font-family: var(--font-display);
+	font-size: clamp(1.75rem, 4vw, 2.5rem);
+	font-weight: 500;
+	line-height: 1.08;
+	letter-spacing: -0.03em;
+	color: var(--foreground);
+	text-wrap: balance;
+}
+.guide-prose h3 {
+	margin: 3rem 0 0.8rem;
+	font-family: var(--font-display);
+	font-size: 1.2rem;
+	font-weight: 550;
+	line-height: 1.3;
+	letter-spacing: -0.015em;
+	color: var(--foreground);
+}
+.guide-prose > section > p,
+.guide-prose > p {
+	margin: 0 0 1.15rem;
+	font-size: 17px;
+	line-height: 1.7;
+	font-weight: 430;
+	color: color-mix(in oklab, var(--foreground) 85%, var(--background));
+}
+.guide-prose strong {
+	font-weight: 600;
+	color: var(--foreground);
+}
+.guide-prose code:not(pre code) {
+	border: 1px solid var(--border);
+	background: var(--bg-elevated);
+	padding: 0.1rem 0.35rem;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--foreground);
+	overflow-wrap: anywhere;
+}
+.guide-prose pre {
+	position: relative;
+	margin: 1.25rem 0 1.5rem;
+	overflow-x: auto;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	background: var(--bg-deep);
+	padding: 0.9rem 1.1rem;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.75;
+	color: var(--foreground);
+}
+.guide-prose pre code {
+	overflow-wrap: normal;
+}
+.guide-prose pre[data-copy] {
+	padding-right: 4.5rem;
+}
+.guide-prose .pre-output code {
+	white-space: pre-wrap;
+}
+.guide-prose pre + .pre-output {
+	margin-top: -1rem;
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+	background: color-mix(in oklab, var(--background) 70%, var(--bg-deep));
+}
+.guide-prose .code-title {
+	margin: 1.25rem 0 -1.25rem;
+	border: 1px solid var(--border);
+	border-bottom: 0;
+	border-radius: 0.5rem 0.5rem 0 0;
+	background: var(--bg-deep);
+	padding: 0.5rem 1.1rem;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--muted-foreground);
+}
+.guide-prose .code-title + pre {
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+.guide-prose td code {
+	white-space: nowrap;
+	overflow-wrap: normal;
+}
+.guide-prose a:not(.guide-button) {
+	color: var(--primary);
+	text-decoration: underline;
+	text-decoration-color: color-mix(in oklab, var(--primary) 42%, transparent);
+	text-underline-offset: 3px;
+	transition: color 150ms ease;
+}
+.guide-prose a:not(.guide-button):hover {
+	color: var(--foreground);
+}
+.guide-prose .guide-kicker {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 9px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--primary);
+}
+.guide-prose .guide-takeaways {
+	margin: 2rem 0 0;
+	border-left: 2px solid var(--primary);
+	border-radius: 0 0.5rem 0.5rem 0;
+	background: color-mix(in oklab, var(--primary) 8%, var(--bg-deep));
+	padding: 1.25rem 1.35rem;
+}
+.guide-prose .guide-takeaways ul {
+	display: grid;
+	gap: 0.5rem;
+	margin: 0.8rem 0 0;
+	padding-left: 1.1rem;
+	list-style: disc;
+	font-size: 15px;
+	line-height: 1.6;
+	color: var(--foreground);
+}
+.guide-prose .guide-takeaways li::marker {
+	color: var(--primary);
+}
+.guide-prose .guide-definition {
+	margin: 0 0 2rem;
+	border-left: 2px solid var(--primary);
+	padding: 0.2rem 0 0.2rem 1.25rem;
+	font-size: 19px;
+	line-height: 1.6;
+	font-weight: 450;
+	color: var(--foreground);
+}
+.guide-prose .guide-list {
+	margin: 0 0 1.15rem;
+	padding-left: 1.2rem;
+	list-style: disc;
+	font-size: 17px;
+	line-height: 1.7;
+	font-weight: 430;
+	color: color-mix(in oklab, var(--foreground) 85%, var(--background));
+}
+.guide-prose ol.guide-list {
+	list-style: decimal;
+}
+.guide-prose .guide-list li + li {
+	margin-top: 0.4rem;
+}
+
+/* Code tokens from lib/guide-highlight.ts. */
+.guide-prose .tok-comment {
+	color: var(--muted-foreground);
+}
+.guide-prose .tok-name {
+	color: color-mix(in oklab, var(--primary) 70%, var(--foreground));
+}
+.guide-prose .tok-fn {
+	color: var(--primary);
+}
+.guide-prose .tok-labels {
+	color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground));
+}
+.guide-prose .tok-value {
+	color: var(--foreground);
+}
+
+.guide-prose .guide-table {
+	margin: 1.75rem 0 2rem;
+	overflow-x: auto;
+	border: 1px solid var(--border);
+	border-radius: 0.75rem;
+}
+.guide-prose table {
+	width: 100%;
+	min-width: 560px;
+	border-collapse: collapse;
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--muted-foreground);
+}
+.guide-prose th {
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-deep);
+	padding: 0.7rem 0.9rem;
+	text-align: left;
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--primary);
+}
+.guide-prose td {
+	border-bottom: 1px solid var(--border);
+	padding: 0.75rem 0.9rem;
+	vertical-align: top;
+}
+.guide-prose td + td {
+	border-left: 1px solid var(--border);
+}
+.guide-prose td:first-child {
+	color: var(--foreground);
+}
+.guide-prose tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+.guide-prose .guide-callout {
+	margin: 2rem 0 1.5rem;
+	border: 1px solid var(--border);
+	border-left: 2px solid var(--warning);
+	border-radius: 0.5rem;
+	background: color-mix(in oklab, var(--warning) 6%, var(--bg-deep));
+	padding: 1.25rem 1.35rem;
+}
+.guide-prose .guide-callout .guide-kicker {
+	color: var(--warning);
+}
+.guide-prose .guide-callout p:not(.guide-kicker) {
+	margin: 0.6rem 0 0;
+	font-size: 14px;
+	line-height: 1.75;
+	color: var(--muted-foreground);
+}
+.guide-prose .guide-callout ul {
+	display: grid;
+	gap: 0.5rem;
+	margin: 0.6rem 0 0;
+	padding-left: 1.1rem;
+	list-style: disc;
+	font-size: 14px;
+	line-height: 1.75;
+	color: var(--muted-foreground);
+}
+
+.guide-prose .guide-maple {
+	margin-top: 3rem;
+	border: 1px solid var(--primary);
+	border-radius: 0.75rem;
+	background: var(--bg-deep);
+	padding: 1.5rem;
+}
+.guide-prose .guide-maple h3 {
+	margin: 0.55rem 0 0.6rem;
+	font-size: 1.35rem;
+}
+.guide-prose .guide-maple > p:not(.guide-kicker) {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.7;
+	color: var(--muted-foreground);
+}
+.guide-prose .guide-button {
+	display: inline-flex;
+	min-height: 2.25rem;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	padding: 0.55rem 0.8rem;
+	font-size: 12px;
+	font-weight: 550;
+	color: var(--foreground);
+	text-decoration: none;
+	transition:
+		background-color 150ms ease,
+		border-color 150ms ease;
+}
+.guide-prose .guide-button:hover {
+	border-color: var(--primary);
+}
+.guide-prose .guide-button--primary {
+	border-color: var(--primary);
+	background: var(--primary);
+	color: var(--primary-foreground);
+}
+.guide-prose .guide-button--primary:hover {
+	background: color-mix(in oklab, var(--primary) 82%, black);
+}
+
+.guide-prose .guide-sources {
+	border-top: 1px solid var(--border);
+	padding-top: 2rem;
+}
+.guide-prose .guide-sources h2 {
+	margin: 0 0 1rem;
+	font-size: 13px;
+	font-weight: 550;
+	letter-spacing: 0;
+}
+.guide-prose .guide-sources ul {
+	display: grid;
+	gap: 0.6rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.guide-prose .guide-sources li {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	line-height: 1.6;
+}
+
+/* Copy buttons, injected by GuidePage's script; same look as the docs code blocks. */
+.guide-prose .code-copy {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	cursor: pointer;
+	border: 1px solid var(--border);
+	border-radius: 5px;
+	background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background));
+	padding: 3px 8px;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--muted-foreground);
+	opacity: 0;
+	transition:
+		color 150ms ease,
+		border-color 150ms ease;
+}
+.guide-prose pre:hover .code-copy,
+.guide-prose .code-copy:focus-visible,
+.guide-prose .code-copy.is-done {
+	opacity: 1;
+}
+.guide-prose .code-copy:hover {
+	border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+	color: var(--primary);
+}
+.guide-prose .code-copy.is-done {
+	border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border));
+	color: var(--chart-3);
+}
+@media (hover: none) {
+	.guide-prose .code-copy {
+		opacity: 1;
+	}
+}
+@media (min-width: 640px) {
+	.guide-prose .guide-maple {
+		padding: 2rem;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.guide-prose a,
+	.guide-prose .guide-button {
+		transition: none;
+	}
+}

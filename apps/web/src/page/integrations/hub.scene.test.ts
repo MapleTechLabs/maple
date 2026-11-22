@@ -6,11 +6,23 @@ import {
 	PublicIdPrefixes,
 	V2ChatConnectorList,
 	V2DataSource,
+	V2PlanetScaleIntegration,
 	V2ScrapeTarget,
 } from "@maple/domain/http/v2"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { all, expect as expectView, expectAll, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	click,
+	expect as expectView,
+	expectAll,
+	expectOutMessage,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -418,6 +430,54 @@ describe("telemetry and data sources", () => {
 			expectView(text("Acme Eng")).toExist(),
 			expectView(text("Query in place")).toExist(),
 			expectView(text("Infrastructure")).toExist(),
+		)
+	})
+
+	test("a connected Prometheus row opens its sources, not the connect flow", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(hub()),
+			click(role("button", { name: /^Prometheus/ })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/sources?q=Prometheus", isReplace: false }),
+			),
+		)
+	})
+
+	test("standalone PlanetScale targets are Prometheus sources, so their row searches for those", () => {
+		const standalone = { ...prometheusTarget, name: "acme-prod", target_type: "planetscale" as const }
+		const model = steps(hub(), [
+			Message.CompletedLoadScrapeTargets({
+				key: hub().statuses.scrapeTargets.key ?? "",
+				result: Result.succeed([prometheusTarget, standalone]),
+			}),
+			Message.CompletedLoadPlanetscale({
+				key: hub().statuses.planetscale.key ?? "",
+				result: Result.succeed(
+					Schema.decodeSync(V2PlanetScaleIntegration)({
+						object: "planetscale_integration",
+						connected: false,
+						pending_org_selection: false,
+						organization: null,
+						connected_by_user_id: null,
+						detected_permissions: null,
+						metrics_auth: "api",
+						scrape_target: null,
+						last_inventory_at: null,
+						last_inventory_error: null,
+						revoked_at: null,
+						expires_at: null,
+					}),
+				),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			click(role("button", { name: /^PlanetScale/ })),
+			expectOutMessage(
+				PageOutMessage.RequestedNavigation({ url: "/sources?q=Prometheus", isReplace: false }),
+			),
 		)
 	})
 

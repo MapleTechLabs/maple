@@ -3,19 +3,32 @@
 // Render). The H1 right below names the page, so the trail stops above it.
 // The group links to its overview page when it opens with one.
 import { getNavTree, locate } from "../../lib/docs-order";
+import { docsBreadcrumbLd } from "../../lib/docs-structured-data";
 
 interface Props {
     slug: string;
     group: string;
+    /** The page's own name, the last crumb in the structured data (the H1 shows it on the page). */
+    title: string;
 }
 
-const { slug, group: ownGroup } = Astro.props;
+const { slug, group: ownGroup, title } = Astro.props;
 const tree = await getNavTree();
 const here = locate(tree, slug);
 const group = here?.group ?? ownGroup;
 const first = tree.find((g) => g.group === group)?.rows[0]?.doc;
 const groupHref = first && first.id !== slug && first.data.navLabel === "Overview" ? `/docs/${first.id}` : null;
 const parent = here?.parent ?? null;
+
+const breadcrumbLd = docsBreadcrumbLd(
+    Astro.site?.toString() ?? "https://maple.dev",
+    [
+        { name: "Docs", path: "/docs" },
+        { name: group, path: groupHref ?? undefined },
+        ...(parent ? [{ name: parent.data.navLabel ?? parent.data.title, path: `/docs/${parent.id}` }] : []),
+    ],
+    { name: title, slug },
+);
 
 const linkClass = "whitespace-nowrap transition-colors hover:text-fg";
 ---
@@ -31,3 +44,5 @@ const linkClass = "whitespace-nowrap transition-colors hover:text-fg";
         </>
     )}
 </nav>
+
+<script type="application/ld+json" set:html={JSON.stringify(breadcrumbLd)} />

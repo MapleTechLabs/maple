@@ -1,6 +1,7 @@
 import {
 	ACCESS_PATH,
 	type ManageMessage,
+	OG_IMAGE_PATH,
 	renderAtomFeed,
 	renderBadgeSvg,
 	renderManagePage,
@@ -8,6 +9,8 @@ import {
 	renderRssFeed,
 	renderStatusJson,
 	renderUptimeJson,
+	statusOgCard,
+	statusOgCardVersion,
 	UPTIME_MAX_DAYS,
 } from "@maple/status-page"
 import { STATUS_PAGE_WINDOW_DAYS } from "@maple/domain/status-page"
@@ -24,6 +27,7 @@ import {
 	notFound,
 	PUBLIC_CACHE_CONTROL,
 	plain,
+	png,
 	redirect,
 } from "./responses"
 import { type Lookup, loadView, type PageView, pageIdForHost, pageIdForSlug } from "./snapshot"
@@ -195,6 +199,21 @@ const serveUptime = (url: URL, view: PageView, pageUrl: string): Response => {
 	})
 }
 
+/** The card as the page links it; a renderer failure is a 503 the crawler retries, never cached. */
+const serveOgImage = (env: StatusEnv, url: URL, view: PageView, target: Target, pageUrl: string) => {
+	const card = statusOgCard(view.snapshot, view.freshness, new URL(pageUrl).host)
+	const version = statusOgCardVersion(card)
+	return env.ogImage(`${target.pageId}/${version}`, card).pipe(
+		// A stand-in card is never kept for long: the next fetch may draw the logo.
+		Effect.map((image) => png(image.png, image.complete && url.searchParams.get("v") === version)),
+		Effect.catchTag("@maple/status/OgImageError", (error) =>
+			Effect.logWarning("Status page preview image failed", error).pipe(
+				Effect.as(plain("Preview unavailable", 503)),
+			),
+		),
+	)
+}
+
 const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, target: Target) => {
 	const isRead = request.method === "GET" || request.method === "HEAD"
 	const pageUrl = canonicalUrl(url, view, target)
@@ -226,6 +245,8 @@ const servePage = (env: StatusEnv, request: Request, url: URL, view: PageView, t
 			)
 		case "/api/v1/uptime.json":
 			return Effect.succeed(serveUptime(url, view, pageUrl))
+		case OG_IMAGE_PATH:
+			return serveOgImage(env, url, view, target, pageUrl)
 		case "/badge.svg":
 			return Effect.succeed(
 				asset(renderBadgeSvg(view.snapshot, view.freshness), "image/svg+xml; charset=utf-8"),

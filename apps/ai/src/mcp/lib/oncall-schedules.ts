@@ -194,13 +194,13 @@ const writeErrors = (pipeName: string, parameter: string) => ({
 	"@maple/http/errors/AlertMemberDirectoryUnavailableError": failWith(pipeName),
 })
 
-export const createScheduleErrors = writeErrors("create_oncall_schedule", "layers")
+export const createScheduleErrors = writeErrors("manage_oncall_schedule", "layers")
 export const updateScheduleErrors = {
-	...writeErrors("update_oncall_schedule", "layers"),
+	...writeErrors("manage_oncall_schedule", "layers"),
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,
 }
 export const createOverrideErrors = {
-	...writeErrors("create_oncall_override", "user_id"),
+	...writeErrors("manage_oncall_schedule", "user_id"),
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,
 }
 export const deleteScheduleErrors = {
@@ -210,17 +210,17 @@ export const deleteScheduleErrors = {
 				message: `On-call schedule is still paged by escalation chains: ${Arr.join(
 					Arr.map(error.chainIds, (id, index) => `"${error.chainNames[index] ?? id}" (${id})`),
 					", ",
-				)}. Remove it from their steps first with update_escalation_chain.`,
+				)}. Remove it from their steps first with manage_escalation_chain action=update.`,
 				parameter: "schedule_id",
 			}),
 		),
-	"@maple/http/errors/AlertForbiddenError": failWith("delete_oncall_schedule"),
-	"@maple/http/errors/AlertPersistenceError": failWith("delete_oncall_schedule"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_oncall_schedule"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_oncall_schedule"),
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,
 }
 export const deleteOverrideErrors = {
-	"@maple/http/errors/AlertForbiddenError": failWith("delete_oncall_override"),
-	"@maple/http/errors/AlertPersistenceError": failWith("delete_oncall_override"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_oncall_schedule"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_oncall_schedule"),
 	"@maple/http/errors/OnCallScheduleNotFoundError": notFound,
 	"@maple/http/errors/OnCallOverrideNotFoundError": (error: OnCallOverrideNotFoundError) =>
 		Effect.fail(

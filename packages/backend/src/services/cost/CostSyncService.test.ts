@@ -29,6 +29,7 @@ import { AwsCostProvider } from "./providers/aws/AwsCostProvider"
 import { AnthropicCostProvider } from "./providers/anthropic/AnthropicCostProvider"
 import { CloudflareCostProvider } from "./providers/cloudflare/CloudflareCostProvider"
 import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
+import { MorphCostProvider } from "./providers/morph/MorphCostProvider"
 import { insertInstallation } from "./providers/github/fake-github"
 import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
@@ -274,6 +275,7 @@ const harness = (options: FakeProviderOptions = {}) => {
 				Layer.succeed(VercelCostProvider, vercelAdapter),
 				Layer.succeed(PlanetScaleCostProvider, planetScaleAdapter),
 				Layer.succeed(GcpCostProvider, adapterOf("gcp")),
+				Layer.succeed(MorphCostProvider, adapterOf("morph")),
 				warehouse,
 			),
 		),

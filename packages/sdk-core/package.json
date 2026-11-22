@@ -1,6 +1,6 @@
 {
 	"name": "@maple/sdk-core",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"description": "Framework-free behaviour shared by @maple-dev/browser and @maple-dev/effect-sdk: sampling, error filtering and rendering, the HTTP status policy, header capture, and the browser signal collectors. Private: consumers bundle it. The root export is runtime-agnostic; DOM collectors live behind ./browser/* so consumers can code-split them.",
 	"type": "module",

@@ -9,7 +9,7 @@
 import { writeFileSync } from "node:fs"
 import { Schema, String as Str } from "effect"
 import { encode } from "gpt-tokenizer"
-import { mapleToolCatalog, toInputSchema } from "@/mcp/tools/registry"
+import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
@@ -23,7 +23,7 @@ interface ToolTokens {
 
 const measure = (): { total: number; tools: ToolTokens[] } => {
 	const tools = mapleToolCatalog.map((definition): ToolTokens => {
-		const schema = encodeJson(toInputSchema(definition.schema))
+		const schema = encodeJson(inputSchemaOf(definition))
 		const nameTokens = encode(definition.name).length
 		const descriptionTokens = encode(definition.description).length
 		const schemaTokens = encode(schema).length

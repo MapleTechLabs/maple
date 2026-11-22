@@ -3,7 +3,7 @@
  * opt out of the contract by being registered differently.
  */
 import { describe, expect, it } from "vitest"
-import { mapleToolCatalog, inputSchemaOf, toOutputSchema } from "./registry"
+import { mapleCallEntries, mapleToolCatalog, inputSchemaOf, toOutputSchema } from "./registry"
 import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import * as Policy from "@maple/domain/policy"
 import { FEEDBACK_TOOL } from "./types"
@@ -126,7 +126,7 @@ describe("MCP tool catalog contract", () => {
 
 	it("points every alias at a parameter the tool has", () => {
 		const offenders: Array<string> = []
-		for (const tool of mapleToolCatalog) {
+		for (const tool of mapleCallEntries) {
 			const names = new Set(Arr.map(properties(inputSchemaOf(tool)), ([name]) => name))
 			for (const [from, to] of Rec.toEntries(tool.aliases)) {
 				if (!names.has(to)) offenders.push(`${tool.name}: ${from} -> ${to}`)

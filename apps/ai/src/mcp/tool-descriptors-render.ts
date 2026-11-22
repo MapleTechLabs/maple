@@ -66,7 +66,7 @@ export interface ToolModuleSource {
 	readonly title: string
 	readonly audience: string
 	readonly readOnly: boolean
-	readonly permission: string | null
+	readonly permission: string | ReadonlyArray<string> | null
 	/** The module under `src/mcp/tools`, without extension (`run-sql`). */
 	readonly module: string
 	/** Its registration function (`registerRunSqlTool`). */

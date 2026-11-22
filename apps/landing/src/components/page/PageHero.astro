@@ -3,6 +3,7 @@
  * PageHero: the hero for the feature, compare and other marketing pages. Feature pages fill the
  * `product` slot (the real product beside the copy from `lg`, under it on phones, in front of the
  * engraving). Other pages use the narrower `aside` column over the dot-grid veil.
+ * No eyebrow: the breadcrumb above the title already names the page.
  */
 import { buttonVariants } from "@maple/views/ui/button.styles";
 import * as m from "../../paraglide/messages.js";
@@ -10,8 +11,6 @@ import Breadcrumb from "../Breadcrumb.astro";
 import HeroCta from "../HeroCta.astro";
 
 interface Props {
-	/** Omitted on feature pages, where the breadcrumb already names the page. */
-	eyebrow?: string;
 	title: string;
 	lede: string;
 	illustration?: string;
@@ -20,7 +19,7 @@ interface Props {
 	breadcrumb: { label: string; href?: string }[];
 }
 
-const { eyebrow, title, lede, breadcrumb, illustration, illustrationAlt } = Astro.props;
+const { title, lede, breadcrumb, illustration, illustrationAlt } = Astro.props;
 
 // An optional right-hand column (the /compare logo pairing). Without it the
 // hero keeps its single-column measure; with it, the copy and the aside sit
@@ -52,8 +51,6 @@ const hasProduct = Astro.slots.has("product");
 			]}
 		>
 		<div class:list={["min-w-0", illustration && !hasProduct && "page-hero__copy"]}>
-			{eyebrow && <p class="mb-5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{eyebrow}</p>}
-
 			<h1
 				class:list={[
 					"max-w-[20ch] font-display text-[2.375rem] font-semibold leading-[1.03] tracking-[-0.025em] text-fg sm:text-5xl",

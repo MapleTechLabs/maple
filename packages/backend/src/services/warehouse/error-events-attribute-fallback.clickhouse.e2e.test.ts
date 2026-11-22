@@ -42,6 +42,8 @@ interface ExceptionEvent {
 interface SeedSpan {
 	readonly spanId: string
 	readonly kind: "Client" | "Server"
+	/** Defaults to `GET /`. */
+	readonly spanName?: string
 	readonly statusMessage: string
 	readonly spanAttributes: Readonly<Record<string, string>>
 	readonly exceptionEvent?: ExceptionEvent
@@ -146,12 +148,41 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = [
 		spanAttributes: { "exception.type": "IgnoredError", "error.message": "ignored" },
 		exceptionEvent: { type: "", message: "", stacktrace: "" },
 	},
-	// Nothing carries an exception: still the Unknown Error bucket.
+	// Nothing carries an exception: the span is all that names the failure.
 	{
 		spanId: "unknown",
 		kind: "Server",
 		statusMessage: "",
 		spanAttributes: { "http.request.method": "GET" },
+	},
+	{
+		spanId: "unknown-other-span",
+		kind: "Server",
+		spanName: "POST /queue/run",
+		statusMessage: "",
+		spanAttributes: {},
+	},
+	{
+		spanId: "unknown-nameless",
+		kind: "Server",
+		spanName: "",
+		statusMessage: "",
+		spanAttributes: {},
+	},
+	// HTTP semconv puts the status code in error.type: a class of failure, not a name.
+	{
+		spanId: "status-only-orders",
+		kind: "Server",
+		spanName: "GET /orders",
+		statusMessage: "",
+		spanAttributes: { "http.response.status_code": "500", "error.type": "500" },
+	},
+	{
+		spanId: "status-only-users",
+		kind: "Server",
+		spanName: "GET /users",
+		statusMessage: "",
+		spanAttributes: { "http.response.status_code": "500", "error.type": "500" },
 	},
 	// The 0016 guard: a 4xx client span whose only error.type is the status code
 	// (HTTP semconv sets that on any non-2xx response) is bot noise, not an error.
@@ -185,7 +216,7 @@ const seed = async (): Promise<void> => {
 							"exception.message": row.exceptionEvent.message,
 							"exception.stacktrace": row.exceptionEvent.stacktrace,
 						})}]`
-			return `(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', 'GET /', ${quote(row.kind)}, ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.statusMessage)}, ${chMap(row.spanAttributes)}, ${resource}, ${events})`
+			return `(${quote(ORG_ID)}, ${quote(SEED_TS)}, ${quote(`trace-${row.spanId}`)}, ${quote(row.spanId)}, '', ${quote(row.spanName ?? "GET /")}, ${quote(row.kind)}, ${quote(SERVICE)}, 1000000, 'Error', ${quote(row.statusMessage)}, ${chMap(row.spanAttributes)}, ${resource}, ${events})`
 		}),
 		",\n",
 	)
@@ -278,10 +309,26 @@ describe.skipIf(!clickhouseE2eEnabled)("error_events attribute fallback (ClickHo
 		assert.strictEqual(row.TopFrame, "    at handler (/app/src/routes/user.ts)")
 	})
 
-	it("keeps the StatusMessage and Unknown Error fallbacks for everything else", () => {
+	it("keeps the StatusMessage fallback for everything else", () => {
 		assert.strictEqual(mustGet(rows, "status-only").ErrorLabel, "DatabaseError")
 		assert.strictEqual(mustGet(rows, "status-only").ExceptionMessage, "DatabaseError: connection reset")
-		assert.strictEqual(mustGet(rows, "unknown").ErrorLabel, "Unknown Error")
+	})
+
+	it("keys and labels a span that carries no exception at all by the span", () => {
+		const unknown = mustGet(rows, "unknown")
+		const other = mustGet(rows, "unknown-other-span")
+		assert.strictEqual(unknown.ErrorLabel, "GET / (no exception)")
+		assert.strictEqual(other.ErrorLabel, "POST /queue/run (no exception)")
+		assert.notStrictEqual(unknown.FingerprintHash, other.FingerprintHash)
+		assert.strictEqual(mustGet(rows, "unknown-nameless").ErrorLabel, "Unknown Error")
+	})
+
+	it("keys a span whose only type is a status code by the span as well", () => {
+		const orders = mustGet(rows, "status-only-orders")
+		const users = mustGet(rows, "status-only-users")
+		assert.strictEqual(orders.ErrorLabel, "GET /orders (500)")
+		assert.strictEqual(orders.ExceptionType, "500")
+		assert.notStrictEqual(orders.FingerprintHash, users.FingerprintHash)
 	})
 
 	it("preserves pre-migration hashes and details for events and status messages", async () => {

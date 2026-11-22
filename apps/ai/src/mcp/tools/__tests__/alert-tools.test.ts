@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Policy from "@maple/domain/policy"
-import { Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
@@ -20,6 +20,7 @@ import {
 	AlertValidationError,
 	EscalationChainDocument,
 	EscalationChainsListResponse,
+	ErrorNotificationPolicyDocument,
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
@@ -42,6 +43,10 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
+import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
+import { ERROR_NOTIFICATION_POLICY_DEFAULTS } from "@maple/db/tables"
+import { SlosService } from "@maple/backend/services/slos/SlosService"
+import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
@@ -173,6 +178,8 @@ interface Seen {
 	scopes?: ReadonlyArray<string>
 	/** The caller's permissions; unset holds every one. */
 	permissions?: Policy.Grants
+	/** Filled with the scope family of each monitor or SLO listing a tool reads. */
+	routingReads?: Array<string>
 	/** A raw-SQL preview whose range was too heavy to chart: no series. */
 	seriesFailure?: "query_too_slow" | "query_too_much_memory"
 }
@@ -371,6 +378,39 @@ const layer = (seen: Seen) =>
 					}),
 				),
 		}),
+		// What else may route to a destination: error notifications do here, no monitor or SLO does.
+		Layer.mock(ErrorPolicyService)({
+			defaultNotificationPolicy: (orgId, timestamp) => ({
+				orgId,
+				...ERROR_NOTIFICATION_POLICY_DEFAULTS,
+				updatedAt: timestamp,
+				updatedBy: "system",
+			}),
+			parseNotificationDestinationIds: () => [],
+			getNotificationPolicy: () =>
+				Effect.succeed(
+					Schema.decodeSync(ErrorNotificationPolicyDocument)({
+						enabled: true,
+						destinationIds: [DEST_ID],
+						notifyOnFirstSeen: true,
+						notifyOnRegression: true,
+						notifyOnResolve: false,
+						notifyOnTransitionInReview: false,
+						notifyOnTransitionDone: false,
+						notifyOnClaim: false,
+						minOccurrenceCount: 1,
+						severity: "warning",
+						updatedAt: NOW,
+						updatedBy: "user_tools",
+					}),
+				),
+		}),
+		Layer.mock(UptimeMonitorsService)({
+			list: () => Effect.sync(() => seen.routingReads?.push("uptime_monitors")).pipe(Effect.as([])),
+		}),
+		Layer.mock(SlosService)({
+			list: () => Effect.sync(() => seen.routingReads?.push("slos")).pipe(Effect.as([])),
+		}),
 		Layer.succeed(AlertReadModelsService, {
 			getIncident: (_org: unknown, incidentId: string) => {
 				seen.incidentOptions ??= { incidentId }
@@ -513,6 +553,31 @@ describe("alert tools", () => {
 		const output = Schema.decodeUnknownSync(ListAlertDestinationsOutput)(result.structuredContent)
 		expect(output.destinations[0]?.id).toBe(DEST_ID)
 		expect(text(result)).toContain("On-call")
+		// Everything that routes to it, so whether it can be deleted needs no further lookup.
+		expect(output.destinations[0]?.usedBy).toEqual([
+			'rule "Checkout errors"',
+			'rule "Latency"',
+			'rule "Raw api"',
+			'rule "Raw web"',
+			'escalation chain "Checkout on-call"',
+			"error notifications",
+		])
+	})
+
+	it("list_alert_destinations reads monitor and SLO routing only for a key that may read them", async () => {
+		const baseline = Arr.map(INVESTIGATION_READ_FAMILIES, (family) => `${family}:read`)
+		const narrow: Seen = { scopes: baseline, routingReads: [] }
+		const withheld = await ok("list_alert_destinations", {}, narrow)
+		expect(narrow.routingReads).toEqual([])
+		expect(
+			Schema.decodeUnknownSync(ListAlertDestinationsOutput)(withheld.structuredContent).usageNotChecked,
+		).toEqual(["uptime monitors", "SLOs"])
+		expect(text(withheld)).toContain('"Used by" leaves out uptime monitors and SLOs')
+
+		const wide: Seen = { scopes: [...baseline, "uptime_monitors:read", "slos:read"], routingReads: [] }
+		const complete = await ok("list_alert_destinations", {}, wide)
+		expect(Arr.sort(wide.routingReads ?? [], Order.String)).toEqual(["slos", "uptime_monitors"])
+		expect(text(complete)).not.toContain("leaves out")
 	})
 
 	it("get_alert_rule renders the full config, and a missing id is invalid input on rule_id", async () => {

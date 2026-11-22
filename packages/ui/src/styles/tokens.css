@@ -9,8 +9,6 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* How long a wait stays blank before its skeleton fades in (`loading-delay`, chart ghosts). */
-	--loading-delay: 300ms;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.18 0.006 70);
 	--card: oklch(1 0 0);
@@ -120,6 +118,8 @@
 	--brand-snowflake: #29b5e8;
 	--brand-tinybird: oklch(0.82 0.19 155);
 	--brand-microsoft: #0078d4;
+	--brand-python: #4b8bbe;
+	--brand-go: #00add8;
 	/* The account pages' art panel: Maple's orange and its ink, fixed in both themes. */
 	--brand-maple: #e9831a;
 	--brand-maple-ink: #241d16;
@@ -613,6 +613,8 @@
 	--color-brand-snowflake: var(--brand-snowflake);
 	--color-brand-tinybird: var(--brand-tinybird);
 	--color-brand-microsoft: var(--brand-microsoft);
+	--color-brand-python: var(--brand-python);
+	--color-brand-go: var(--brand-go);
 	--color-brand-maple: var(--brand-maple);
 	--color-brand-maple-ink: var(--brand-maple-ink);
 	--color-media: var(--media);
@@ -885,23 +887,6 @@
 .react-flow__controls-button svg[fill="none"] {
 	fill: none;
 	color: var(--foreground);
-}
-
-/* A wait stays blank for `--loading-delay` before its skeleton fades in, so a fast load never
-   flashes. A page that already waited sets it to 0ms. Charts share it (`chart-skeleton.css`). */
-@keyframes loading-delay {
-	from {
-		opacity: 0;
-	}
-}
-
-@utility loading-delay {
-	animation: loading-delay 150ms var(--ease-out) var(--loading-delay) both;
-}
-
-/* A page shown after a navigation's hold ran out already waited: its skeletons show at once. */
-[data-page-hold="waited"] {
-	--loading-delay: 0ms;
 }
 
 /* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */

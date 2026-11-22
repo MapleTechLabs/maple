@@ -24,6 +24,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { approvalPermission } from "./approval-permission"
+import { canonicalToolName } from "../mcp/tools/tool-name-aliases"
 import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
 import { LinkedUserNotPermitted, linkedUserTenant, toTenantContext } from "./turn-actor"
 
@@ -133,7 +134,8 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		import("./agents"),
 		import("./profiles"),
 	])
-	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
+	// A proposal made under a name since retired is still the change its replacement applies.
+	if (!MUTATING_TOOL_NAMES.has(canonicalToolName(input.tool))) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
 	// A change is only ever applied as a Maple user: a click that names none stops here, before a

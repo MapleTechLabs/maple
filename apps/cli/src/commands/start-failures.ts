@@ -17,7 +17,7 @@ import {
 	ServerStateError,
 } from "@maple/local-server/store-errors"
 import { ProjectorModuleError } from "../server/eventing/projector-modules"
-import { BackgroundServerExitedError } from "./server-errors"
+import { BackgroundServerExitedError, ServerOptionError } from "./server-errors"
 
 /**
  * Deterministic `maple start` refusals under a supervisor (launchd KeepAlive,
@@ -36,6 +36,8 @@ const isDeterministicStartFailure = Predicate.some([
 	Schema.is(LocalStoreFromNewerMapleError),
 	Schema.is(LocalStoreMigrationError),
 	Schema.is(ServerStateError),
+	// A flag or env var the CLI cannot use stays wrong until the config changes.
+	Schema.is(ServerOptionError),
 	// A module that fails to load or register fails identically until it is replaced.
 	Schema.is(ProjectorModuleError),
 ])
@@ -63,10 +65,12 @@ const StartFailureRecord = Schema.Struct({
 })
 export type StartFailureRecord = typeof StartFailureRecord.Type
 
-/** A transient failure reports once per hour while it loops. A non-restartable
- *  refusal reports once per streak: it waits on a person, so repeats add nothing. */
+/** A transient failure reports once per hour while it repeats. */
 export const REPORT_INTERVAL_MS = 60 * 60 * 1000
-/** Failures further apart than this are not a restart loop. */
+/** A non-restartable refusal waits on a person, so it reports once a day while it
+ *  repeats, however far apart the restarts are. A successful start clears it. */
+export const REFUSAL_REPORT_INTERVAL_MS = 24 * 60 * 60 * 1000
+/** Failures further apart than this are not a tight loop: no backoff. */
 export const STREAK_WINDOW_MS = 10 * 60 * 1000
 export const MAX_BACKOFF_MS = 60 * 1000
 
@@ -91,17 +95,17 @@ export const decideStartFailure = (
 	interactive: boolean,
 	reportIntervalMs: number = REPORT_INTERVAL_MS,
 ): StartFailureDecision => {
-	const streak = Option.filter(
-		previous,
-		(record) => record.fingerprint === fingerprint && nowMs - record.lastAtMs < STREAK_WINDOW_MS,
-	)
+	// Reporting follows the same failure across any gap (a supervisor restarting
+	// every half hour is still one problem); the backoff only follows a tight loop.
+	const sameFailure = Option.filter(previous, (record) => record.fingerprint === fingerprint)
+	const streak = Option.filter(sameFailure, (record) => nowMs - record.lastAtMs < STREAK_WINDOW_MS)
 	const consecutive = Option.match(streak, { onNone: () => 1, onSome: (record) => record.consecutive + 1 })
-	const report = Option.match(streak, {
+	const report = Option.match(sameFailure, {
 		onNone: () => true,
 		onSome: (record) => nowMs - record.lastReportedAtMs >= reportIntervalMs,
 	})
 	const lastReportedAtMs = Option.match(
-		Option.filter(streak, () => !report),
+		Option.filter(sameFailure, () => !report),
 		{
 			onNone: () => nowMs,
 			onSome: (record) => record.lastReportedAtMs,
@@ -166,7 +170,7 @@ const handleStartFailure = <E>(
 			startFailureFingerprint(error),
 			nowMs,
 			interactive,
-			final ? Number.POSITIVE_INFINITY : REPORT_INTERVAL_MS,
+			final ? REFUSAL_REPORT_INTERVAL_MS : REPORT_INTERVAL_MS,
 		)
 		yield* writeRecord(dataDir, name, decision.record)
 		if (final) {

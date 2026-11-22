@@ -199,7 +199,7 @@ describe("alert silence tools", () => {
 		expect(endsInMs).toBeGreaterThan(89 * 60_000)
 		expect(endsInMs).toBeLessThanOrEqual(90 * 60_000)
 		expect(text(result)).toContain("Reason: Checkout deploy")
-		expect(text(result)).toContain(`\`end_alert_silence silence_id="${ACTIVE_ID}"\``)
+		expect(text(result)).toContain(`\`manage_alert_silence action="end" silence_id="${ACTIVE_ID}"\``)
 	})
 
 	it("create_alert_silence ends a duration after an explicit start", async () => {

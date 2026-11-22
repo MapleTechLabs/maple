@@ -12,6 +12,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 
 interface Answer {
 	readonly text: string
@@ -24,6 +25,7 @@ type Run = (
 
 const tools = new Map<string, Run>()
 registerSourceCodeTools({
+	family: ignoreFamily,
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
 			Schema.decodeEffect(spec.parameters)(params).pipe(

@@ -4,23 +4,29 @@
  * fixture, with spans that expand, collapse and select as they do on /traces.
  */
 import { LiveTraceWaterfall } from "./LiveTraceWaterfall";
+import { demoTrace, isDemoTraceId } from "./demo-traces";
 
 interface Props {
 	/** The waterfall's height, or `fill` to take the rest of a sized parent. Rows past it scroll. */
 	height?: string;
 	class?: string;
+	/** An integration page's example trace (`demo-traces.ts`). The checkout without one. */
+	demo?: string;
 }
 
-const { height = "17rem", class: className = "" } = Astro.props;
+const { height = "17rem", class: className = "", demo } = Astro.props;
+const example = demo !== undefined && isDemoTraceId(demo) ? demoTrace(demo) : undefined;
+const ms = example ? example.ms : 203;
+const duration = ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`;
 const fill = height === "fill";
 ---
 
 <div class={`live-frame ${fill ? "flex h-full flex-col overflow-hidden" : ""} ${className}`}>
 	<div class="live-frame__head">
-		<span>POST /checkout</span>
-		<span class="tabular-nums">8 spans · 203ms</span>
+		<span>{example ? example.head : "POST /checkout"}</span>
+		<span class="tabular-nums">{example ? example.spans : 8} spans · {duration}</span>
 	</div>
 	<div class={`font-mono ${fill ? "min-h-0 flex-1 overflow-hidden" : ""}`} style={fill ? undefined : `height: ${height};`}>
-		<LiveTraceWaterfall client:visible />
+		<LiveTraceWaterfall client:visible {...(demo !== undefined ? { demo } : {})} />
 	</div>
 </div>

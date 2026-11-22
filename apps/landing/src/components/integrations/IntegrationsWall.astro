@@ -1,0 +1,159 @@
+---
+/**
+ * The `/integrations` hero aside: a honeycomb of marks from the hub. The best-known sit in
+ * the middle, sharp and linked to their docs; the rest fade and blur toward the edges.
+ * Tiles come from `HUB_CATEGORIES`, so a renamed or removed tile drops out here too.
+ */
+import * as m from "../../paraglide/messages.js";
+import { HUB_CATEGORIES, text, tileHref, type HubTile } from "../../lib/integrations-hub";
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+import LanguageLogo from "../docs/LanguageLogo.astro";
+import HazelLogo from "../icons/HazelLogo.astro";
+
+// Nearest the centre first.
+const FEATURED = [
+	"Node.js",
+	"AWS",
+	"Vercel",
+	"Python",
+	"Kubernetes",
+	"Slack",
+	"Go",
+	"Google Cloud",
+	"Cloudflare",
+	"Supabase",
+	"GitHub",
+	"Linear",
+];
+
+const locale = Astro.currentLocale ?? "en";
+const all = HUB_CATEGORIES.flatMap((category) => category.tiles);
+const byName = new Map<string, HubTile>();
+for (const tile of all) if (!byName.has(text(tile.name))) byName.set(text(tile.name), tile);
+const total = byName.size;
+const featured = FEATURED.flatMap((name) => byName.get(name) ?? []);
+// The edges take one tile per distinct mark, so the blur never repeats a logo.
+const seen = new Set(featured.map((tile) => JSON.stringify(tile.icon)));
+const others = [...byName.values()].filter((tile) => {
+	const key = JSON.stringify(tile.icon);
+	if (seen.has(key)) return false;
+	seen.add(key);
+	return true;
+});
+
+// Pointy-top hexes in units of one column step; odd rows shift half a step.
+const COLS = 6;
+const ROWS = 5;
+const STEP_Y = Math.sqrt(3) / 2;
+const HEX_W = 0.92;
+const HEX_H = HEX_W * (2 / Math.sqrt(3));
+const WIDTH = COLS + 0.5;
+const HEIGHT = (ROWS - 1) * STEP_Y + HEX_H;
+const pct = (value: number, of: number) => `${((value / of) * 100).toFixed(3)}%`;
+
+const cells = Array.from({ length: ROWS * COLS }, (_, i) => {
+	const row = Math.floor(i / COLS);
+	const col = i % COLS;
+	const x = col + (row % 2) * 0.5 + (1 - HEX_W) / 2;
+	const y = row * STEP_Y;
+	const distance = Math.hypot(x + HEX_W / 2 - WIDTH / 2, y + HEX_H / 2 - HEIGHT / 2);
+	return { x, y, distance };
+}).sort((a, b) => a.distance - b.distance);
+
+const hexes = cells.flatMap((cell, i) => {
+	const tile = i < featured.length ? featured[i] : others[i - featured.length];
+	if (tile === undefined) return [];
+	// The featured marks are the links; anything past them fades at least a little, so no
+	// unlinked hex looks clickable.
+	const sharp = i < featured.length;
+	const fade = sharp ? 0 : Math.max(0.2, cell.distance - 1.75);
+	return [
+		{
+			tile,
+			name: text(tile.name),
+			sharp,
+			style: [
+				`left:${pct(cell.x, WIDTH)}`,
+				`top:${pct(cell.y, HEIGHT)}`,
+				`width:${pct(HEX_W, WIDTH)}`,
+				`height:${pct(HEX_H, HEIGHT)}`,
+				`opacity:${Math.max(0.12, 1 - fade * 0.55).toFixed(2)}`,
+				fade > 0 ? `filter:blur(${(fade * 3).toFixed(1)}px)` : "",
+			].join(";"),
+		},
+	];
+});
+const rest = total - hexes.filter((hex) => hex.sharp).length;
+---
+
+<figure class="hex-wall">
+	<ul class="relative w-full" style={`aspect-ratio:${WIDTH} / ${HEIGHT}`}>
+		{
+			hexes.map((hex) => {
+				const mark =
+					"lang" in hex.tile.icon ? (
+						<LanguageLogo id={hex.tile.icon.lang} class="hex-mark" />
+					) : "mark" in hex.tile.icon ? (
+						<BrandMarkIcon id={hex.tile.icon.mark} class="hex-mark" />
+					) : (
+						<HazelLogo class="hex-mark" />
+					);
+				return (
+					<li class="absolute" style={hex.style} aria-hidden={hex.sharp ? undefined : "true"}>
+						{hex.sharp ? (
+							<a href={tileHref(locale, hex.tile)} aria-label={hex.name} title={hex.name} class="hex">
+								<span class="hex-face">{mark}</span>
+							</a>
+						) : (
+							<span class="hex">
+								<span class="hex-face">{mark}</span>
+							</span>
+						)}
+					</li>
+				);
+			})
+		}
+	</ul>
+	<figcaption class="mt-4 flex justify-center">
+		<a href="#languages" class="text-[12.5px] text-fg-muted transition-colors hover:text-fg">
+			{m.intg_wall_count({ count: String(total) })} · {m.intg_wall_more({ count: String(rest) })} ↓
+		</a>
+	</figcaption>
+</figure>
+
+<style>
+	.hex {
+		--hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+		display: block;
+		width: 100%;
+		height: 100%;
+		padding: 1px;
+		clip-path: var(--hex);
+		background: var(--color-border);
+		transition: background-color 150ms ease;
+	}
+	.hex-face {
+		display: flex;
+		width: 100%;
+		height: 100%;
+		align-items: center;
+		justify-content: center;
+		clip-path: var(--hex);
+		background: var(--color-bg-elevated);
+		transition: background-color 150ms ease;
+	}
+	a.hex:hover {
+		background: color-mix(in oklab, var(--color-fg) 35%, transparent);
+	}
+	a.hex:hover .hex-face {
+		background: var(--color-bg);
+	}
+	a.hex:focus-visible {
+		outline: none;
+		background: var(--color-primary);
+	}
+	.hex-wall :global(.hex-mark) {
+		width: 36%;
+		height: 36%;
+	}
+</style>

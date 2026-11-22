@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import type { McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { CurrentMcpTenant } from "../tenant"
@@ -6,10 +6,8 @@ import { silenceFields, endSilenceErrors, toAlertSilenceRow } from "../lib/alert
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
-export function registerEndAlertSilenceTool(server: McpToolRegistrar) {
-	server.define({
-		name: "end_alert_silence",
-		title: "End Alert Silence",
+export const endAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_alert_silence">) =>
+	family.action("end", {
 		description:
 			"End an alert silence now so notifications resume; a scheduled one is cancelled. Ids from list_alert_silences.",
 		parameters: Schema.Struct({
@@ -17,7 +15,6 @@ export function registerEndAlertSilenceTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		permission: "alerts:manage",
-		phrases: ["Ending an alert silence"],
 		handler: Effect.fn("McpTool.endAlertSilence")(function* (params) {
 			const silenceId = yield* P.decodeResourceId("alertSilence", "silence_id")(params.silence_id)
 			const tenant = yield* CurrentMcpTenant
@@ -33,4 +30,3 @@ export function registerEndAlertSilenceTool(server: McpToolRegistrar) {
 			next: [doc.next("list_alert_silences", {}, "the silences still active or scheduled")],
 		}),
 	})
-}

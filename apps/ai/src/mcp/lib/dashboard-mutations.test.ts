@@ -28,6 +28,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { registerUpdateDashboardTool } from "../tools/update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "../tools/update-dashboard-widget"
 import type { McpToolError, McpToolRegistrar } from "../tools/types"
+import { ignoreFamily } from "../tools/types"
 import type { McpToolRequirements } from "../tools/runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
@@ -203,6 +204,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		let handler: ToolHandler | null = null
 		const registrar: McpToolRegistrar = {
+			family: ignoreFamily,
 			define: (spec) => {
 				handler = (params) =>
 					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
@@ -234,6 +236,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		let handler: ToolHandler | null = null
 		const registrar: McpToolRegistrar = {
+			family: ignoreFamily,
 			define: (spec) => {
 				handler = (params) =>
 					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
@@ -294,6 +297,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 const handlerOf = (register: (registrar: McpToolRegistrar) => void): ToolHandler => {
 	let handler: ToolHandler = () => Effect.die("tool was not registered")
 	register({
+		family: ignoreFamily,
 		define: (spec) => {
 			handler = (params) =>
 				Schema.decodeUnknownEffect(spec.parameters)(params).pipe(

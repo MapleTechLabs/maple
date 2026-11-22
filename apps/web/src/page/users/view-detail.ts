@@ -6,13 +6,13 @@ import {
 	formatLatency,
 	formatNumber,
 	formatPercent,
-	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
-import { detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
+import { detailRailGroup, detailRailRow, detailRailStats } from "@maple/views/ui/detail-rail"
 import { badge } from "@maple/views/ui/display"
 import {
 	empty,
@@ -25,15 +25,17 @@ import {
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { severityBadge } from "@maple/views/ui/logs/severity-badge"
+import { meter } from "@maple/views/ui/meter"
 import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
 import { pressable } from "@maple/views/ui/pressable"
 import { selectableRow } from "@maple/views/ui/selectable-row"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
+import { toneGlyph } from "@maple/views/ui/tone-glyph"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { serviceLabel } from "@maple/views/ui/service-label"
-import { Array as Arr, Order } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 import {
 	th,
 	toolTable,
@@ -89,35 +91,38 @@ const clockOf = (atMs: number, timeZone: string): string =>
 export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clock): Html =>
 	hstack(h, { gap: "3", align: "start" }, [
 		userAvatar(h, profile, "lg"),
-		vstack(h, { gap: "0.5", className: "min-w-0" }, [
+		vstack(h, { gap: "1", className: "min-w-0" }, [
 			pageTitle(h, { title: userLabel(profile), className: "leading-8" }, [userLabel(profile)]),
 			pageDescription(
 				h,
 				[
-					hstack(h, { gap: "3", wrap: true, as: "span", className: "gap-y-0.5" }, [
+					hstack(h, { gap: "4", wrap: true, as: "span", className: "gap-y-1" }, [
 						...(profile.email === null || profile.email === userLabel(profile)
 							? []
-							: [typography(h, { as: "span" }, [profile.email])]),
-						typography(h, { as: "span" }, [
-							"user.id ",
-							typography(h, { mono: true, tone: "soft", as: "span" }, [profile.userId]),
-						]),
+							: [titleFact(h, "EnvelopeIcon", [profile.email], "Email")]),
+						titleFact(
+							h,
+							"IdBadgeIcon",
+							[typography(h, { mono: true, tone: "soft", as: "span" }, [profile.userId])],
+							"user.id",
+						),
 						...(profile.groupId === null
 							? []
 							: [
-									profile.groupName === null
-										? typography(h, { mono: true, as: "span" }, [profile.groupId])
-										: typography(
-												h,
-												{
-													as: "span",
-													attributes: [h.Title(`group ${profile.groupId}`)],
-												},
-												[profile.groupName],
-											),
+									titleFact(
+										h,
+										"UsersIcon",
+										[
+											profile.groupName === null
+												? typography(h, { mono: true, as: "span" }, [profile.groupId])
+												: profile.groupName,
+										],
+										`group ${profile.groupId}`,
+									),
 								]),
 						hstack(h, { gap: "1.5", as: "span" }, [
 							statusDot(h, { tone: "ok" }),
+							"Seen",
 							listRelativeTime(h, {
 								value: profile.lastSeenMs,
 								nowMs: clock.nowMs,
@@ -130,6 +135,18 @@ export const userTitle = <M>(h: HtmlBuilder<M>, profile: UserProfile, clock: Clo
 				"text-sm",
 			),
 		]),
+	])
+
+/** One fact under the user's name, led by its glyph; `title` names it on hover. */
+const titleFact = <M>(
+	h: HtmlBuilder<M>,
+	iconName: IconName,
+	content: ReadonlyArray<Html | string>,
+	title: string,
+): Html =>
+	hstack(h, { gap: "1.5", as: "span", className: "min-w-0", attributes: [h.Title(title)] }, [
+		icon(h, iconName, { size: 14, className: "shrink-0 text-foreground-subtle" }),
+		...content,
 	])
 
 // --- tabs ---------------------------------------------------------------------------------------
@@ -220,7 +237,7 @@ const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
 }
 
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
-	statRail(h, { columns: 5, isFlush: true }, [
+	statRail(h, { columns: 5, isFlush: true, className: "[&>*]:px-(--page-gutter)" }, [
 		statRailItem(h, {
 			eyebrow: "Sessions",
 			value: formatNumber(profile.sessions),
@@ -270,41 +287,17 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 
 // --- rail ---------------------------------------------------------------------------------------
 
+/** A value in a rail row; the whole of it on hover, since long ids truncate. */
 const railValue = <M>(h: HtmlBuilder<M>, value: string, mono = true): Html =>
-	typography(h, { size: "xs", mono, tone: "soft", truncate: true, as: "span" }, [value])
+	typography(
+		h,
+		{ size: "xs", mono, tone: "soft", truncate: true, as: "span", attributes: [h.Title(value)] },
+		[value],
+	)
 
 /** A count or share in the rail: the UI face with tabular figures. */
 const railNumber = <M>(h: HtmlBuilder<M>, value: string): Html =>
 	typography(h, { size: "xs", numeric: true, tone: "soft", as: "span" }, [value])
-
-/** The group as a link to its users, then its id when the name stands in for it. */
-const groupRows = <M>(
-	h: HtmlBuilder<M>,
-	profile: UserProfile,
-	groupHref: string | null,
-): ReadonlyArray<Html> => {
-	if (profile.groupId === null) return []
-	const label = profile.groupName ?? profile.groupId
-	return [
-		detailRailRow(h, { label: "Group" }, [
-			groupHref === null
-				? railValue(h, label, profile.groupName === null)
-				: textLink(
-						h,
-						{
-							href: groupHref,
-							isMono: profile.groupName === null,
-							className: "min-w-0 truncate text-xs",
-							attributes: [h.Title(`Users in ${label}`)],
-						},
-						[label],
-					),
-		]),
-		...(profile.groupName === null
-			? []
-			: [detailRailRow(h, { label: "Group id" }, [railValue(h, profile.groupId)])]),
-	]
-}
 
 /** The user's group over the window: its users' totals, still loading, failed, or not read. */
 export type UserGroupStats =
@@ -313,60 +306,127 @@ export type UserGroupStats =
 	| "failed"
 	| null
 
-const shareText = (count: number, of: number): string =>
-	count === 0 ? "0" : `${formatNumber(count)} · ${formatPercentColumn(count / Math.max(1, of))}`
+const shareOf = (count: number, of: number): string | undefined =>
+	count === 0 ? undefined : `${formatPercent(count / Math.max(1, of))} of group`
+
+/** The group's name, a link to its users, over its id when the name stands in for it. */
+const groupHeading = <M>(
+	h: HtmlBuilder<M>,
+	groupId: string,
+	groupName: string | null,
+	groupHref: string | null,
+): Html => {
+	const label = groupName ?? groupId
+	const isMono = groupName === null
+	return vstack(h, { gap: "0.5", className: "min-w-0" }, [
+		typography(h, { size: "sm", weight: "medium", mono: isMono, truncate: true }, [
+			groupHref === null
+				? label
+				: textLink(
+						h,
+						{ href: groupHref, tone: "inherit", attributes: [h.Title(`Users in ${label}`)] },
+						[label],
+					),
+		]),
+		...(groupName === null
+			? []
+			: [
+					typography(
+						h,
+						{
+							size: "2xs",
+							mono: true,
+							tone: "muted",
+							truncate: true,
+							attributes: [h.Title(groupId)],
+						},
+						[groupId],
+					),
+				]),
+	])
+}
 
 /** The group's own numbers, so one user reads against the rest of their company. */
-const groupStatsSection = <M>(
+const groupFigures = <M>(
 	h: HtmlBuilder<M>,
-	profile: UserProfile,
+	label: string,
 	stats: UserGroupStats,
 	groupHref: string | null,
+	/** The group read covers what the page shows: no namespace picked here, or only the org pin. */
+	isPageScope: boolean,
 ): ReadonlyArray<Html> => {
-	if (profile.groupId === null || stats === null) return []
-	const label = profile.groupName ?? profile.groupId
-	const title = `Group: ${label}`
+	if (stats === null) return []
 	if (stats === "loading")
-		return [
-			detailRailGroup(h, title, [
-				typography(h, { size: "xs", tone: "subtle" }, ["Loading the group's numbers…"]),
-			]),
-		]
+		return [typography(h, { size: "xs", tone: "subtle" }, ["Loading the group's numbers…"])]
 	if (stats === "failed")
+		return [typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the group's numbers"])]
+	// The user is the group's only active one here: its numbers would only repeat theirs.
+	if (stats.users <= 1 && isPageScope)
 		return [
-			detailRailGroup(h, title, [
-				typography(h, { size: "xs", tone: "muted" }, ["Couldn't load the group's numbers"]),
+			typography(h, { size: "xs", tone: "muted" }, [
+				"No one else in this group was active in this window",
 			]),
 		]
 	return [
-		detailRailGroup(h, title, [
-			detailRailRow(h, { label: "Users" }, [railNumber(h, formatNumber(stats.users))]),
-			detailRailRow(h, { label: "Active 24h" }, [
-				railNumber(h, shareText(stats.activeToday, stats.users)),
-			]),
-			detailRailRow(h, { label: "Hit an error" }, [
-				railNumber(h, shareText(stats.withErrors, stats.users)),
-			]),
-			detailRailRow(h, { label: "Sessions" }, [
-				railNumber(
-					h,
-					`${formatNumber(stats.sessions)} · ${perUserText(stats.sessions / Math.max(1, stats.users))} per user`,
-				),
-			]),
-			detailRailRow(h, { label: "Requests" }, [railNumber(h, formatNumber(stats.requests))]),
-			...(groupHref === null
-				? []
-				: [
-						textLink(h, { href: groupHref, tone: "muted", className: "pt-1 text-xs" }, [
+		detailRailStats(h, [
+			{ label: "Users", value: formatNumber(stats.users) },
+			{
+				label: "Active 24h",
+				value: formatNumber(stats.activeToday),
+				detail: shareOf(stats.activeToday, stats.users),
+			},
+			{
+				label: "Hit an error",
+				value: formatNumber(stats.withErrors),
+				detail: shareOf(stats.withErrors, stats.users),
+				...(stats.withErrors > 0 && { tone: "error" as const }),
+			},
+			{ label: "Sessions per user", value: perUserText(stats.sessions / stats.users) },
+		]),
+		...(groupHref === null
+			? []
+			: [
+					typography(h, { size: "xs", truncate: true }, [
+						textLink(h, { href: groupHref, tone: "muted" }, [
 							`See ${stats.users === 1 ? "the 1 user" : `all ${countLabel(stats.users, "user")}`} in ${label}`,
 							icon(h, "ArrowRightIcon", { size: 12 }),
 						]),
 					]),
-		]),
+				]),
 	]
 }
 
-/** The right rail: identity, the user's group, traits, the services they touched, and their devices. */
+/** The user's group: who it is, then its numbers. Nothing for a user in no group. */
+const groupSection = <M>(
+	h: HtmlBuilder<M>,
+	profile: UserProfile,
+	stats: UserGroupStats,
+	groupHref: string | null,
+	isPageScope: boolean,
+): ReadonlyArray<Html> =>
+	profile.groupId === null
+		? []
+		: [
+				detailRailGroup(h, "Group", [
+					vstack(h, { gap: "2.5" }, [
+						groupHeading(h, profile.groupId, profile.groupName, groupHref),
+						...groupFigures(
+							h,
+							profile.groupName ?? profile.groupId,
+							stats,
+							groupHref,
+							isPageScope,
+						),
+					]),
+				]),
+			]
+
+const MOBILE_OS = /ios|android|ipados/i
+
+/** A phone for a mobile OS, a computer otherwise. */
+const deviceIcon = (os: string): IconName => (MOBILE_OS.test(os) ? "MobileIcon" : "MonitorIcon")
+
+/** The right rail: identity, the user's group, where their activity lives, traits and devices. */
 export const userRail = <M>(
 	h: HtmlBuilder<M>,
 	profile: UserProfile,
@@ -375,18 +435,35 @@ export const userRail = <M>(
 	/** The directory filtered to the user's group; `null` draws the group as plain text. */
 	groupHref: string | null = null,
 	groupStats: UserGroupStats = null,
-): Html =>
-	h.aside(
+): Html => {
+	const namespaces = namespacesOf(profile)
+	// One namespace is a fact about the user only when every service is in it; an unnamespaced
+	// service alongside keeps the picker, which narrows the page to the named one.
+	const [onlyNamespace] =
+		namespaces.length === 1 &&
+		Arr.every(profile.services, (service) => service.namespace === namespaces[0]?.name)
+			? namespaces
+			: []
+	return h.aside(
 		[h.AriaLabel("User details"), h.Class("flex flex-col")],
 		[
-			namespacesGroup(h, profile, scope),
 			detailRailGroup(h, "Identity", [
-				detailRailRow(h, { label: "user.id" }, [railValue(h, profile.userId)]),
+				detailRailRow(h, { icon: "IdBadgeIcon", label: "user.id" }, [railValue(h, profile.userId)]),
 				...(profile.email === null
 					? []
-					: [detailRailRow(h, { label: "Email" }, [railValue(h, profile.email, false)])]),
-				...groupRows(h, profile, groupHref),
-				detailRailRow(h, { label: "First seen" }, [
+					: [
+							detailRailRow(h, { icon: "EnvelopeIcon", label: "Email" }, [
+								railValue(h, profile.email, false),
+							]),
+						]),
+				...(onlyNamespace === undefined
+					? []
+					: [
+							detailRailRow(h, { icon: "LayersIcon", label: "Namespace" }, [
+								railValue(h, onlyNamespace.name),
+							]),
+						]),
+				detailRailRow(h, { icon: "CalendarIcon", label: "First seen" }, [
 					listRelativeTime(h, {
 						value: profile.firstSeenMs,
 						nowMs: clock.nowMs,
@@ -394,59 +471,42 @@ export const userRail = <M>(
 						className: "text-xs text-foreground-soft",
 					}),
 				]),
-				detailRailRow(h, { label: "Visitor ids", hint: "linked before sign-in" }, [
-					railNumber(h, `${profile.visitorIds.length}`),
-				]),
+				...(profile.visitorIds.length === 0
+					? []
+					: [
+							detailRailRow(
+								h,
+								{
+									icon: "FingerprintIcon",
+									label: "Visitor ids",
+									title: "Anonymous visitor ids identify() linked to this user at sign-in",
+								},
+								[railNumber(h, `${profile.visitorIds.length} before sign-in`)],
+							),
+						]),
 				...(profile.location === null
 					? []
-					: [detailRailRow(h, { label: "Location" }, [railValue(h, profile.location, false)])]),
+					: [
+							detailRailRow(h, { icon: "GlobeIcon", label: "Location" }, [
+								railValue(h, profile.location, false),
+							]),
+						]),
 			]),
-			...groupStatsSection(h, profile, groupStats, groupHref),
+			...groupSection(h, profile, groupStats, groupHref, scope.active === null || scope.isPinned),
+			...(onlyNamespace === undefined ? [namespacesGroup(h, namespaces, scope)] : []),
+			servicesGroup(h, profile, onlyNamespace !== undefined),
 			detailRailGroup(
 				h,
 				"Traits",
 				Arr.isReadonlyArrayEmpty(profile.traits)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["No traits recorded for this user"])]
 					: Arr.map(profile.traits, ([key, value]) =>
-							detailRailRow(h, { label: key }, [railValue(h, value)]),
-						),
-			),
-			detailRailGroup(
-				h,
-				"Services touched",
-				Arr.isReadonlyArrayEmpty(profile.services)
-					? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in this window"])]
-					: Arr.map(profile.services, (service) =>
-							hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
-								serviceLabel(h, {
-									serviceName: service.service,
-									size: "xs",
-									className: "flex-1",
-								}),
-								typography(
-									h,
-									{
-										size: "2xs",
-										mono: true,
-										tone: "subtle",
-										as: "span",
-										truncate: true,
-										className: "min-w-0 max-w-24",
-									},
-									[service.namespace],
-								),
-								typography(
-									h,
-									{
-										size: "2xs",
-										mono: true,
-										tone: "muted",
-										numeric: true,
-										className: "shrink-0",
-									},
-									[formatNumber(service.signals)],
-								),
-							]),
+							// A trait key is the user's own name for it: the label sizes to it, the value truncates.
+							detailRailRow(
+								h,
+								{ icon: "TagIcon", label: key, labelWidth: "minmax(88px, max-content)" },
+								[railValue(h, value)],
+							),
 						),
 			),
 			detailRailGroup(
@@ -455,19 +515,71 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.devices)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no recorded sessions"])]
 					: Arr.map(profile.devices, (device) =>
-							detailRailRow(h, { label: device.browser, hint: device.os }, [
-								railValue(h, countLabel(device.sessions, "session"), false),
-							]),
+							detailRailRow(
+								h,
+								{ icon: deviceIcon(device.os), label: device.browser, hint: device.os },
+								[railNumber(h, countLabel(device.sessions, "session"))],
+							),
 						),
 			),
 		],
 	)
+}
+
+/** The services the user reached, busiest first; the namespace column only when there are several. */
+const servicesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, isOneNamespace: boolean): Html =>
+	detailRailGroup(
+		h,
+		"Services touched",
+		Arr.isReadonlyArrayEmpty(profile.services)
+			? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in this window"])]
+			: Arr.map(profile.services, (service) =>
+					hstack(h, { gap: "2", className: "min-h-8 min-w-0" }, [
+						serviceLabel(h, {
+							serviceName: service.service,
+							size: "xs",
+							className: "flex-1",
+						}),
+						...(isOneNamespace
+							? []
+							: [
+									typography(
+										h,
+										{
+											size: "2xs",
+											mono: true,
+											tone: "subtle",
+											as: "span",
+											truncate: true,
+											className: "min-w-0 max-w-24",
+										},
+										[service.namespace],
+									),
+								]),
+						typography(
+							h,
+							{
+								size: "2xs",
+								mono: true,
+								tone: "muted",
+								numeric: true,
+								align: "right",
+								className: "w-10 shrink-0",
+							},
+							[formatNumber(service.signals)],
+						),
+					]),
+				),
+	)
 
 // --- namespaces ---------------------------------------------------------------------------------
 
-/** The rail's Namespaces group: where this user's activity lives; a row scopes the page to it. */
-const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: UserNamespaceScope<M>): Html => {
-	const namespaces = namespacesOf(profile)
+/** The rail's Namespaces group: where this user's activity lives, as shares; a row scopes the page to it. */
+const namespacesGroup = <M>(
+	h: HtmlBuilder<M>,
+	namespaces: ReadonlyArray<Readonly<{ name: string; signals: number }>>,
+	scope: UserNamespaceScope<M>,
+): Html => {
 	const total = Arr.reduce(namespaces, 0, (sum, namespace) => sum + namespace.signals)
 	if (namespaces.length === 0)
 		return detailRailGroup(h, "Namespaces", [
@@ -480,14 +592,19 @@ const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: User
 			const isActive = namespace.name === scope.active
 			const share = total === 0 ? 0 : namespace.signals / total
 			const row = (className?: string): Html =>
-				hstack(h, { gap: "2", as: "span", className: cn("min-h-7 px-1.5", className) }, [
-					icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
-					typography(h, { size: "xs", mono: true, truncate: true, className: "flex-1 text-left" }, [
-						namespace.name,
+				vstack(h, { gap: "1", as: "span", className: cn("px-1.5 py-1.5", className) }, [
+					hstack(h, { gap: "2", as: "span" }, [
+						icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
+						typography(
+							h,
+							{ size: "xs", mono: true, truncate: true, className: "flex-1 text-left" },
+							[namespace.name],
+						),
+						typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [
+							formatPercent(share),
+						]),
 					]),
-					typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [
-						formatPercent(share),
-					]),
+					meter(h, { value: share, className: "ml-5" }),
 				])
 			return scope.isPinned
 				? row("-mx-1.5")
@@ -514,17 +631,25 @@ const namespaceScopeBar = <M>(
 	const all = Arr.map(namespacesOf(profile), (namespace) => namespace.name)
 	if (scope.active === null) {
 		if (all.length < 2) return null
-		return hstack(h, { gap: "2", wrap: true, className: "border-b border-border-subtle px-6 py-2.5" }, [
-			icon(h, "LayersIcon", { size: 14, className: "text-foreground-subtle" }),
-			typography(h, { size: "xs", tone: "muted", as: "span" }, [
-				`Across ${all.length} namespaces: ${Arr.join(all, ", ")}`,
-			]),
-		])
+		return hstack(
+			h,
+			{ gap: "2", wrap: true, className: "border-b border-border-subtle px-(--page-gutter) py-2.5" },
+			[
+				icon(h, "LayersIcon", { size: 14, className: "text-foreground-subtle" }),
+				typography(h, { size: "xs", tone: "muted", as: "span" }, [
+					`Across ${all.length} namespaces: ${Arr.join(all, ", ")}`,
+				]),
+			],
+		)
 	}
 	const hidden = Arr.filter(all, (name) => name !== scope.active)
 	return hstack(
 		h,
-		{ gap: "2", wrap: true, className: "border-b border-border-subtle bg-surface-faint px-6 py-2.5" },
+		{
+			gap: "2",
+			wrap: true,
+			className: "border-b border-border-subtle bg-surface-faint px-(--page-gutter) py-2.5",
+		},
 		[
 			icon(h, "LayersIcon", { size: 14, className: "text-foreground-subtle" }),
 			typography(h, { size: "xs", as: "span" }, ["Namespace"]),
@@ -573,6 +698,25 @@ const KIND_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in ActivityKind]: IconName }
 
+/** Each kind keeps its own colour, so a day of mixed rows reads by kind before any text. */
+const KIND_TONE = {
+	error: "crit",
+	request: "neutral",
+	event: "info",
+	session: "done",
+	log: "neutral",
+	mcp: "live",
+} satisfies { readonly [K in ActivityKind]: Tone }
+
+const KIND_LABEL = {
+	error: "Error",
+	request: "Request",
+	event: "Event",
+	session: "Replay",
+	log: "Log",
+	mcp: "MCP session",
+} satisfies { readonly [K in ActivityKind]: string }
+
 const KIND_ACTION = {
 	error: "Issue",
 	request: "Trace",
@@ -582,7 +726,32 @@ const KIND_ACTION = {
 	mcp: "Open session",
 } satisfies { readonly [K in ActivityKind]: string }
 
-const ACTIVITY_ROW_CLASS = "grid grid-cols-[3rem_1rem_minmax(0,1fr)_auto] items-start gap-3 px-2.5 py-2"
+/** A failing row's tile turns red and a slow request or warning amber; any other keeps its kind's colour. */
+const activityTone = (item: ActivityItem): Tone =>
+	item.tone === "crit" ? "crit" : item.tone === "warn" ? "warn" : KIND_TONE[item.kind]
+
+const ACTIVITY_ROW_CLASS = "grid grid-cols-[3rem_1.5rem_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-2"
+
+/** An event property in a detail line (`tool=run_sql`), kept by `split` as its own part. */
+const PROPERTY = /([\w.-]+=[^,·]+)/
+const PAIR = /^([\w.-]+=)([^,·]+)$/
+
+/** A detail line with its `key=value` properties split, the value in the foreground. */
+const activityDetail = <M>(h: HtmlBuilder<M>, detail: string): Html =>
+	typography(
+		h,
+		{ size: "2xs", tone: "muted", mono: true, truncate: true, attributes: [h.Title(detail)] },
+		Arr.flatMap(Str.split(detail, PROPERTY), (part) => {
+			if (part === "") return []
+			const pair = PAIR.exec(part)
+			return pair === null
+				? [part]
+				: [
+						pair[1] ?? "",
+						typography(h, { size: "2xs", mono: true, tone: "soft", as: "span" }, [pair[2] ?? ""]),
+					]
+		}),
+	)
 
 /** One timeline row; a row with a page (a replay, an MCP session, a trace) is a link to it. */
 const activityRow = <M>(h: HtmlBuilder<M>, item: ActivityItem, timeZone: string): Html =>
@@ -594,34 +763,37 @@ const activityRow = <M>(h: HtmlBuilder<M>, item: ActivityItem, timeZone: string)
 			className:
 				item.href === null
 					? ACTIVITY_ROW_CLASS
-					: `${ACTIVITY_ROW_CLASS} hover:bg-surface-faint active:bg-surface-faint`,
+					: `group ${ACTIVITY_ROW_CLASS} hover:bg-surface-faint active:bg-surface-faint`,
 		},
 		[
-			typography(h, { size: "xs", mono: true, numeric: true, tone: "muted", className: "pt-px" }, [
+			typography(h, { size: "xs", mono: true, numeric: true, tone: "muted" }, [
 				clockOf(item.atMs, timeZone),
 			]),
-			icon(h, KIND_ICON[item.kind], {
-				size: 14,
-				className:
-					item.tone === "crit"
-						? "mt-0.5 text-severity-error"
-						: item.tone === "warn"
-							? "mt-0.5 text-severity-warn"
-							: "mt-0.5 text-muted-foreground",
-			}),
-			vstack(h, { gap: "0.5", className: "min-w-0" }, [
-				typography(
-					h,
-					{ size: "xs", tone: item.tone === "crit" ? "error" : "foreground", truncate: true },
-					[item.title],
-				),
-				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [item.detail]),
+			// The tile turns red on a failure; the tag always names the kind in its own colour.
+			toneGlyph(h, { iconName: KIND_ICON[item.kind], tone: activityTone(item) }),
+			vstack(h, { gap: "1", className: "min-w-0" }, [
+				hstack(h, { gap: "2", className: "min-w-0" }, [
+					badge(h, { variant: "tag", className: cn("shrink-0", TONE_SOFT[KIND_TONE[item.kind]]) }, [
+						KIND_LABEL[item.kind],
+					]),
+					typography(h, { size: "xs", weight: "medium", truncate: true }, [item.title]),
+				]),
+				activityDetail(h, item.detail),
 			]),
 			item.href === null
 				? h.span([h.AriaHidden(true)], [])
-				: typography(h, { size: "xs", tone: "primary", className: "pt-px" }, [
-						KIND_ACTION[item.kind],
-					]),
+				: hstack(
+						h,
+						{
+							gap: "1",
+							as: "span",
+							className: "text-muted-foreground group-hover:text-primary",
+						},
+						[
+							typography(h, { size: "xs", as: "span" }, [KIND_ACTION[item.kind]]),
+							icon(h, "ChevronRightIcon", { size: 12 }),
+						],
+					),
 		],
 	)
 
@@ -1063,6 +1235,9 @@ export const userDetailBody = <M>(
 	return vstack(h, { shrink: true, className: "@container/panel" }, [
 		userStats(h, detail.profile),
 		namespaceScopeBar(h, detail.profile, options.namespace),
-		h.div([h.Class("min-w-0 px-6 py-5")], [options.tabContent ?? tabBody(h, detail, options.tab, clock)]),
+		h.div(
+			[h.Class("min-w-0 px-(--page-gutter) py-5")],
+			[options.tabContent ?? tabBody(h, detail, options.tab, clock)],
+		),
 	])
 }

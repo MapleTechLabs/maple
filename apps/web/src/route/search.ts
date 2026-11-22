@@ -439,7 +439,12 @@ export const DashboardSearch = Schema.StructWithRest(
 	[variableSearchRest],
 )
 
-// Sources: new and detail (`SOURCE_TABS`)
+// Sources: list, new and detail (`SOURCE_TABS`)
+export const SourcesSearch = Schema.Struct({
+	/** Prefills the list's search, e.g. an integration's name from its hub row. */
+	q: StringParam,
+})
+
 export const SourcesNewSearch = Schema.Struct({
 	platform: Schema.optional(PushSourcePlatform),
 	/** A data integration's connect step. A plain string: OAuth callbacks return here, so an unknown id falls back to the picker. */

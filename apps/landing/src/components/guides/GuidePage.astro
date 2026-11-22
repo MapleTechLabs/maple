@@ -1,0 +1,133 @@
+---
+// A whole guide page: head and JSON-LD, the hero with byline and date, the
+// outline and article (GuideBody), then the FAQ and closing CTA. The page
+// supplies the article as the default slot; its styles are guide-prose.css.
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../Nav.astro";
+import Footer from "../Footer.astro";
+import BottomCTA from "../BottomCTA.astro";
+import Breadcrumb from "../Breadcrumb.astro";
+import FAQ from "../FAQ.astro";
+import SeoHead from "../SeoHead.astro";
+import GuideBody from "./GuideBody.astro";
+import type { Contributor } from "../../lib/changelog-meta";
+import "../../styles/guide-prose.css";
+
+interface Props {
+    /** The <title>, with the brand suffix. */
+    pageTitle: string;
+    description: string;
+    /** The h1, also the breadcrumb leaf and the article headline. */
+    title: string;
+    lede: string;
+    category: string;
+    readMinutes: number;
+    /** ISO dates. */
+    published: string;
+    modified: string;
+    author: Contributor;
+    toc: Array<{ depth: number; slug: string; text: string }>;
+    faqs: Array<{ question: string; answer: string }>;
+}
+
+const { pageTitle, description, title, lede, category, readMinutes, published, modified, author, toc, faqs } = Astro.props;
+const authorUrl = `https://github.com/${author.github}`;
+const modifiedLabel = new Date(`${modified}T00:00:00Z`).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+});
+
+const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
+const path = Astro.url.pathname.replace(/\/+$/, "");
+const articleJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    headline: title,
+    description,
+    datePublished: published,
+    dateModified: modified,
+    author: { "@type": "Person", name: author.name, url: authorUrl },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: `${siteUrl}/logo192.png` },
+    },
+    mainEntityOfPage: `${siteUrl}${path}`,
+};
+---
+
+<Layout title={pageTitle} description={description} ogType="article" alternates={["en"]}>
+    <SeoHead title={pageTitle} description={description} type="WebPage" />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(articleJsonLd)} />
+    <Nav />
+    <Breadcrumb
+        class="shell pt-4"
+        items={[
+            { label: "Home", href: "/" },
+            { label: "Guides", href: "/guides" },
+            { label: title },
+        ]}
+    />
+
+    <main>
+        <header class="relative overflow-hidden border-b border-border pt-[19px]">
+            <div
+                class="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+                style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 78% 68% at 22% 26%, black, transparent);"
+            >
+            </div>
+            <div class="shell relative pb-16 pt-20 md:pb-20 md:pt-28">
+                <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
+                    <span class="border border-primary/40 px-2 py-1 text-primary">{category}</span>
+                    <span>{readMinutes} min read</span>
+                </div>
+                <h1 class="mt-6 max-w-[20ch] font-display text-[clamp(40px,6.3vw,72px)] font-medium leading-[0.98] tracking-[-0.045em] text-fg">
+                    {title}
+                </h1>
+                <p class="mt-7 max-w-[56ch] font-display text-[17px] leading-[1.6] text-fg-muted md:text-lg">{lede}</p>
+                <div class="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-fg-muted">
+                    <a href={authorUrl} rel="noopener" class="flex items-center gap-2 transition-colors hover:text-fg">
+                        <img src={author.avatar} alt={author.name} width="20" height="20" class="h-5 w-5 rounded-full ring-1 ring-border" />
+                        <span>By {author.name}</span>
+                    </a>
+                    <time datetime={modified}>Updated {modifiedLabel}</time>
+                </div>
+            </div>
+        </header>
+
+        <GuideBody headings={toc} class="guide-prose">
+            <slot />
+        </GuideBody>
+    </main>
+
+    <FAQ items={faqs} />
+    <BottomCTA />
+    <Footer />
+</Layout>
+
+<script>
+    import { bindCopyButtons } from "../../lib/copy-to-clipboard";
+
+    // A copy button on every code block, as on the docs pages. Output blocks get none.
+    const article = document.querySelector(".guide-prose");
+    if (article) {
+        for (const pre of article.querySelectorAll<HTMLPreElement>("pre:not(.pre-output)")) {
+            pre.dataset.copy = pre.textContent ?? "";
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "code-copy";
+            button.textContent = "copy";
+            button.setAttribute("aria-label", "Copy code");
+            pre.appendChild(button);
+        }
+        bindCopyButtons({
+            root: article,
+            hostSelector: "pre[data-copy]",
+            buttonSelector: ".code-copy",
+            track: { event: "docs_snippet_copied", key: "snippet" },
+        });
+    }
+</script>

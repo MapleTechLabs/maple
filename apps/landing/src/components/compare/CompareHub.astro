@@ -8,6 +8,7 @@
  * Nothing vendor-specific here: that lives on the per-vendor pages.
  */
 import * as m from "../../paraglide/messages.js";
+import { alternativesPages, alternativesPath } from "../../lib/alternatives";
 import { comparePath, competitors } from "../../lib/competitors";
 import Layout from "../../layouts/Layout.astro";
 import BillComparison from "../BillComparison.astro";
@@ -49,7 +50,6 @@ const cards = competitors.map((competitor, i) => ({
 	<Nav />
 
 	<PageHero
-		eyebrow={m.cmp_eyebrow()}
 		title={m.cmp_hub_title()}
 		lede={m.cmp_hub_lede()}
 		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_compare() }]}
@@ -114,6 +114,35 @@ const cards = competitors.map((competitor, i) => ({
 			</div>
 		</div>
 	</section>
+
+	{/* The roundups are English only, so the ja and ko hubs leave them out. */}
+	{
+		locale === "en" && (
+			<section class="border-t border-border bg-bg">
+				<div class="shell py-16 md:py-24">
+					<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Roundups</p>
+					<h2 class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl">
+						Alternatives to one tool
+					</h2>
+					<p class="mt-4 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted md:text-base">
+						Each page starts from why teams leave that tool, lists the ones that answer those reasons with Maple labelled as ours, and says when to stay.
+					</p>
+					<ul class="mt-8 max-w-4xl border-t border-border">
+						{alternativesPages.map((page) => (
+							<li class="border-b border-border">
+								<a href={alternativesPath(page.slug)} class="group grid gap-1 py-4 md:grid-cols-[18rem_1fr] md:gap-6">
+									<span class="text-[13px] font-medium text-fg underline-offset-2 group-hover:underline md:text-sm">
+										{page.vendor} alternatives
+									</span>
+									<span class="text-[13px] leading-relaxed text-fg-muted md:text-sm">{page.blurb}</span>
+								</a>
+							</li>
+						))}
+					</ul>
+				</div>
+			</section>
+		)
+	}
 
 	<BillComparison eyebrow={m.cmp_hub_matrix_eyebrow()} title={m.cmp_hub_matrix_title()} lede={m.bill_lede()} />
 

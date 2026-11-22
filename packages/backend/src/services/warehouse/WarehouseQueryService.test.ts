@@ -228,6 +228,74 @@ describe("WarehouseQueryService raw-SQL provider routing", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("sends a configured Access service token with env-level ClickHouse queries", () => {
+		let captured: ResolvedWarehouseConfig | undefined
+		setClientFactory((config) =>
+			Effect.sync(() => {
+				captured = config
+				return { sql: () => Effect.succeed({ data: [] }), insert: () => Effect.void }
+			}),
+		)
+		const layer = buildLayer(createTestDb(trackedDbs), {
+			CLICKHOUSE_URL: "https://ch.customer.example",
+			CLICKHOUSE_PROVIDER: "clickhouse",
+			CLICKHOUSE_PASSWORD: "readonly-password",
+			CLICKHOUSE_ACCESS_CLIENT_ID: "abc.access",
+			CLICKHOUSE_ACCESS_CLIENT_SECRET: "access-secret",
+		})
+
+		return Effect.gen(function* () {
+			yield* WarehouseQueryService.use((service) =>
+				service.rawSqlQuery(makeTenant(), "SELECT 1 WHERE OrgId = 'org_test'"),
+			)
+			if (captured?.kind !== "clickhouse") throw new Error("expected ClickHouse config")
+			assert.deepStrictEqual(captured.headers, {
+				"CF-Access-Client-Id": "abc.access",
+				"CF-Access-Client-Secret": "access-secret",
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses an Access service token over plain HTTP", () => {
+		setClientFactory(() => Effect.die("must not build a client"))
+		const layer = buildLayer(createTestDb(trackedDbs), {
+			CLICKHOUSE_URL: "http://ch.customer.example:8123",
+			CLICKHOUSE_PROVIDER: "clickhouse",
+			CLICKHOUSE_ACCESS_CLIENT_ID: "abc.access",
+			CLICKHOUSE_ACCESS_CLIENT_SECRET: "access-secret",
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(makeTenant(), "SELECT 1 WHERE OrgId = 'org_test'"),
+				).pipe(Effect.provide(layer)),
+			)
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit)) assert.include(Cause.pretty(exit.cause), "must use https://")
+		})
+	})
+
+	it.effect("refuses an Access client id without its secret", () => {
+		setClientFactory(() => Effect.die("must not build a client"))
+		const layer = buildLayer(createTestDb(trackedDbs), {
+			CLICKHOUSE_URL: "https://ch.customer.example",
+			CLICKHOUSE_PROVIDER: "clickhouse",
+			CLICKHOUSE_ACCESS_CLIENT_ID: "abc.access",
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.rawSqlQuery(makeTenant(), "SELECT 1 WHERE OrgId = 'org_test'"),
+				).pipe(Effect.provide(layer)),
+			)
+			assert.isTrue(Exit.isFailure(exit))
+			if (Exit.isFailure(exit))
+				assert.include(Cause.pretty(exit.cause), "CLICKHOUSE_ACCESS_CLIENT_SECRET")
+		})
+	})
+
 	it.effect("fails closed for env-level vanilla ClickHouse outside self-hosted mode", () => {
 		let constructed = false
 		setClientFactory(() =>
@@ -1084,6 +1152,18 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		assert.strictEqual(req.body, '{"trace_id":"a"}\n{"trace_id":"b"}')
 		// Tinybird ingests raw rows — never an `INSERT … FORMAT` statement (CH only).
 		assert.isFalse(Str.includes("INSERT INTO")(req.body))
+		assert.include(req.url, "wait=false")
+	})
+
+	it("waits for the rows to be stored when the insert is durable", async () => {
+		const urls: Array<string> = []
+		const requestFetch = (async (input: RequestInfo | URL) => {
+			urls.push(String(input instanceof Request ? input.url : input))
+			return new Response("", { status: 200 })
+		}) as typeof fetch
+		const client = makeTinybirdTestClient(tbConfig, requestFetch)
+		await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }], { durable: true }))
+		assert.deepStrictEqual(urls, ["https://api.tinybird.co/v0/events?name=traces&wait=true"])
 	})
 
 	it("no-ops on an empty row set (no request issued)", async () => {

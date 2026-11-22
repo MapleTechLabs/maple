@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime, Array as Arr } from "effect"
+import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime } from "effect"
 import * as CliOutput from "effect/cli/CliOutput"
 import * as Command from "effect/cli/Command"
 import { FetchHttpClient } from "effect/http"
@@ -15,7 +15,7 @@ import {
 	recoverExpected,
 	renderUnexpected,
 } from "./core/outcomes"
-import { TelemetryLayer } from "./core/telemetry"
+import { argvAttribute, TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { maybeNotifyWhatsNew } from "./core/changelog"
 import { LocalAccessHttpClient } from "./core/local-access"
@@ -130,7 +130,7 @@ if (checkpointProbeDataDir !== undefined) {
 		// already-running guard alone). `maple.cli.outcome` still records them.
 		Effect.catchIf(isExpectedFailure, recoverExpected),
 		Effect.ensuring(Effect.sync(help.flush)),
-		Effect.withSpan("maple", { attributes: { "cli.argv": Arr.join(process.argv.slice(2), " ") } }),
+		Effect.withSpan("maple", { attributes: { "cli.argv": argvAttribute(process.argv.slice(2)) } }),
 		// @effect-diagnostics-next-line multipleEffectProvide:off
 		Effect.provide(MainLayer),
 		Effect.provide(TelemetryLayer),

@@ -1,6 +1,6 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../tenant"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { MAX_BREAKDOWN_RANGE_SECONDS, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
@@ -20,12 +20,41 @@ import * as P from "../lib/params"
 import { LOG_SEVERITIES } from "./search-logs"
 import { doc, type NextCall, type ToolDoc } from "../lib/tool-doc"
 import { QUERY_BUILDER_DATA_SOURCES, type QueryResultContract } from "@maple/query-model"
-import { resolveAttributeScope } from "../lib/attribute-scope"
+import { knownAttributeKeys, pickAttributeScope, resolveAttributeScope } from "../lib/attribute-scope"
 import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 const ATTRIBUTE_SCOPES = ["span", "resource"] as const
 type AttributeScope = (typeof ATTRIBUTE_SCOPES)[number]
+
+const ATTRIBUTE_FILTER_MODES = ["equals", "contains", "exists", "gt", "gte", "lt", "lte", "in"] as const
+const MAX_ATTRIBUTE_FILTERS = 8
+
+/** One more attribute condition, as a model writes it: the engine's filter, with its scope beside it. */
+const AttributeFilterParam = Schema.Struct({
+	key: Schema.String,
+	value: Schema.optionalKey(Schema.Union([Schema.String, Schema.Finite, Schema.Boolean])),
+	values: Schema.optionalKey(Schema.Array(Schema.String)),
+	mode: Schema.optionalKey(Schema.Literals(ATTRIBUTE_FILTER_MODES)),
+	negated: Schema.optionalKey(Schema.Boolean),
+	scope: Schema.optionalKey(Schema.Literals(ATTRIBUTE_SCOPES)),
+})
+type AttributeFilterParam = typeof AttributeFilterParam.Type
+
+/** An attribute predicate in the engine's shape. */
+interface EngineAttributeFilter {
+	readonly key: string
+	readonly value?: string
+	readonly values?: ReadonlyArray<string>
+	readonly mode: (typeof ATTRIBUTE_FILTER_MODES)[number]
+	readonly negated?: true
+}
+
+/** A predicate and the attribute map it reads. */
+export interface ScopedAttributeFilter {
+	readonly scope: AttributeScope
+	readonly filter: EngineAttributeFilter
+}
 
 const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
 
@@ -37,7 +66,7 @@ const queryDataSchema = Schema.Struct({
 		"'traces' for request/span analysis (latency, errors, throughput); 'logs' for log volume; " +
 			"'metrics' for a custom metric (needs metric_name and metric_type from list_metrics); " +
 			"'product_events' for track() events, page views and server events (names from list_product_events). " +
-			"Signups and accounts in a connected system (Clerk, a database) are data sources: search_data_sources.",
+			"Signups and accounts in a connected system (Clerk, a database) are data sources: list_data_sources, listed when the org has any.",
 	),
 	kind: P.oneOf(
 		["timeseries", "breakdown"] as const satisfies ReadonlyArray<QueryResultContract>,
@@ -90,6 +119,12 @@ const queryDataSchema = Schema.Struct({
 		ATTRIBUTE_SCOPES,
 		"Where attribute_key lives: 'span' (span, log or metric-datapoint attributes) or 'resource' (deployment.environment, k8s.pod.name...). Resolved from the known keys when omitted",
 	),
+	attribute_filters: P.optionalJson(
+		Schema.Array(AttributeFilterParam),
+		`More attribute conditions, AND-ed with each other and with attribute_key/attribute_value: a JSON array of up to ${MAX_ATTRIBUTE_FILTERS} {key, value}. ` +
+			"`mode` is equals (the default), contains, exists (no value), gt, gte, lt, lte (a numeric value), or in (with `values`, an array of strings, in place of `value`); `negated: true` inverts it; `scope` is span or resource, resolved from the known keys when omitted. " +
+			'Example: [{"key":"http.route","value":"/checkout"},{"key":"http.response.status_code","mode":"gte","value":"500"}]',
+	),
 	bucket_seconds: P.optionalNumber("Bucket width in seconds (timeseries only; auto-computed when omitted)"),
 	limit: P.limit({ default: 10, max: 100, description: "Max rows of a breakdown" }),
 })
@@ -97,9 +132,10 @@ const queryDataSchema = Schema.Struct({
 type Params = typeof queryDataSchema.Type
 
 const queryDataDescription =
-	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
-	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
-	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result. " +
+	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown without writing SQL: " +
+	"one metric, one group_by, and filters on service, environment and attributes (attribute_filters takes several). " +
+	"For anything else (several group keys, conditional aggregates, text matching, joins) use run_sql; " +
+	"for errors prefer find_errors and error_detail. Applied defaults are listed in the result. " +
 	"A traces breakdown by span_name or attribute reads raw spans: set `service` and keep the window short " +
 	"(a window too large is narrowed, with a note). For endpoint volume over days use route_usage."
 
@@ -145,6 +181,8 @@ export interface ResolvedQuery {
 	readonly spanNameContains?: boolean
 	/** Count only error spans (`metric=error_count` on traces). */
 	readonly errorsOnly?: boolean
+	/** `attribute_filters`, each on the map it was resolved to. */
+	readonly attributeFilters?: ReadonlyArray<ScopedAttributeFilter>
 }
 
 const groupsByAttribute = (params: Params) =>
@@ -154,7 +192,7 @@ const groupsByAttribute = (params: Params) =>
  * The attribute predicate. Grouping by the key without a value adds no "exists"
  * filter (spans without it stay in the "all" group); a value always filters.
  */
-const attributeFilterOf = (params: Params) =>
+const attributeFilterOf = (params: Params): EngineAttributeFilter | undefined =>
 	params.attribute_key === undefined || (groupsByAttribute(params) && params.attribute_value === undefined)
 		? undefined
 		: {
@@ -164,11 +202,98 @@ const attributeFilterOf = (params: Params) =>
 					: { value: params.attribute_value, mode: "equals" }),
 			}
 
-/** `{ attributeFilters }` or `{ resourceAttributeFilters }` for the resolved scope. */
-const scopedAttributeFilters = (params: Params, scope: AttributeScope) => {
-	const filter = attributeFilterOf(params)
-	if (filter === undefined) return undefined
-	return scope === "resource" ? { resourceAttributeFilters: [filter] } : { attributeFilters: [filter] }
+const COMPARISON_MODES: ReadonlySet<string> = new Set(["gt", "gte", "lt", "lte"])
+
+/** A filter with the scope and negation its entry asked for. */
+const scoped = (
+	entry: AttributeFilterParam,
+	filter: EngineAttributeFilter,
+): { readonly scope?: AttributeScope; readonly filter: EngineAttributeFilter } => ({
+	...(entry.scope === undefined ? undefined : { scope: entry.scope }),
+	filter: entry.negated === true ? { ...filter, negated: true } : filter,
+})
+
+/**
+ * `attribute_filters` in the engine's shape, or the first entry that cannot be one. A mode left
+ * out is read from what was sent: `values` is `in`, a `value` is `equals`, neither is `exists`.
+ */
+export const engineAttributeFilters = (
+	filters: ReadonlyArray<AttributeFilterParam>,
+): Result.Result<
+	ReadonlyArray<{ readonly scope?: AttributeScope; readonly filter: EngineAttributeFilter }>,
+	string
+> => {
+	if (filters.length > MAX_ATTRIBUTE_FILTERS) {
+		return Result.fail(
+			`attribute_filters takes at most ${MAX_ATTRIBUTE_FILTERS} conditions; got ${filters.length}.`,
+		)
+	}
+	return Result.all(
+		Arr.map(filters, (entry) => {
+			const key = Str.trim(entry.key)
+			const refuse = (why: string) => Result.fail(`attribute_filters "${key}": ${why}`)
+			if (key === "") return Result.fail("An attribute_filters entry has an empty `key`.")
+			if (entry.value !== undefined && entry.values !== undefined) {
+				return refuse("pass `value`, or `values` with mode=in, not both.")
+			}
+			const mode =
+				entry.mode ??
+				(entry.values !== undefined ? "in" : entry.value === undefined ? "exists" : "equals")
+			if (mode === "in") {
+				return entry.values === undefined || entry.values.length === 0
+					? refuse("mode=in needs a non-empty `values` array.")
+					: Result.succeed(scoped(entry, { key, mode, values: entry.values }))
+			}
+			if (entry.values !== undefined)
+				return refuse(`\`values\` is for mode=in; mode=${mode} takes a \`value\`.`)
+			if (mode === "exists") {
+				return entry.value === undefined
+					? Result.succeed(scoped(entry, { key, mode }))
+					: refuse("mode=exists takes no `value`. Use mode=equals to match it.")
+			}
+			if (entry.value === undefined) return refuse(`mode=${mode} needs a \`value\`.`)
+			const value = String(entry.value)
+			// The engine compares these as numbers: text would compare as NaN and match nothing.
+			if (COMPARISON_MODES.has(mode) && (Str.trim(value) === "" || !Number.isFinite(Number(value)))) {
+				return refuse(`mode=${mode} compares numbers, and "${value}" is not one.`)
+			}
+			return Result.succeed(scoped(entry, { key, mode, value }))
+		}),
+	)
+}
+
+/** Every attribute predicate of the query: `attribute_key`'s own, then `attribute_filters`. */
+const allAttributeFilters = (
+	params: Params,
+	resolved: ResolvedQuery,
+): ReadonlyArray<ScopedAttributeFilter> => {
+	const own = attributeFilterOf(params)
+	return [
+		...(own === undefined ? [] : [{ scope: resolved.attributeScope, filter: own }]),
+		...(resolved.attributeFilters ?? []),
+	]
+}
+
+/** `{ attributeFilters, resourceAttributeFilters }`, each present when a predicate reads that map. */
+const scopedAttributeFilters = (params: Params, resolved: ResolvedQuery) => {
+	const filters = allAttributeFilters(params, resolved)
+	const on = (scope: AttributeScope) =>
+		Arr.map(
+			Arr.filter(filters, (entry) => entry.scope === scope),
+			(entry) => entry.filter,
+		)
+	const span = on("span")
+	const resource = on("resource")
+	return {
+		...(span.length > 0 ? { attributeFilters: span } : undefined),
+		...(resource.length > 0 ? { resourceAttributeFilters: resource } : undefined),
+	}
+}
+
+/** Product events have one attribute map: every predicate reads it, whatever scope it resolved to. */
+const eventAttributeFilters = (params: Params, resolved: ResolvedQuery) => {
+	const filters = Arr.map(allAttributeFilters(params, resolved), (entry) => entry.filter)
+	return filters.length > 0 ? { attributeFilters: filters } : undefined
 }
 
 const environmentsOf = (params: Params) =>
@@ -212,7 +337,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 					(attributeScope === "resource"
 						? { groupByResourceAttributeKey: groupKey }
 						: { groupByAttributeKeys: [groupKey] })),
-				...scopedAttributeFilters(params, attributeScope),
+				...scopedAttributeFilters(params, resolved),
 				...((params.apdex_threshold_ms ?? 0) > 0 && { apdexThresholdMs: params.apdex_threshold_ms }),
 			})
 		case "logs":
@@ -224,7 +349,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 						? { groupByResourceAttributeKey: groupKey }
 						: { groupByAttributeKey: groupKey })),
 				...environmentsOf(params),
-				...scopedAttributeFilters(params, attributeScope),
+				...scopedAttributeFilters(params, resolved),
 			})
 		case "product_events":
 			return withFilters({
@@ -234,9 +359,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 				...(params.page_path && { pagePaths: [params.page_path] }),
 				...(params.service && { serviceNames: [params.service] }),
 				...(groupKey !== undefined && { groupByAttributeKey: groupKey }),
-				...(attributeFilterOf(params) !== undefined && {
-					attributeFilters: [attributeFilterOf(params)],
-				}),
+				...eventAttributeFilters(params, resolved),
 			})
 		case "metrics":
 			return {
@@ -250,7 +373,7 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 						(attributeScope === "resource"
 							? { groupByResourceAttributeKey: groupKey }
 							: { groupByAttributeKey: groupKey })),
-					...scopedAttributeFilters(params, attributeScope),
+					...scopedAttributeFilters(params, resolved),
 				},
 			}
 	}
@@ -286,8 +409,8 @@ const metricsWarningsFor = (params: Params, metric: string): Array<string> => {
 	return warnings
 }
 
-const queryContextOf = (params: Params): Output["queryContext"] => {
-	const attributeFilter = attributeFilterOf(params)
+const queryContextOf = (params: Params, resolved: ResolvedQuery): Output["queryContext"] => {
+	const attributeFilters = Arr.map(allAttributeFilters(params, resolved), (entry) => entry.filter)
 	return {
 		source: params.source,
 		...(params.service && { serviceName: params.service }),
@@ -307,7 +430,7 @@ const queryContextOf = (params: Params): Output["queryContext"] => {
 		...((params.apdex_threshold_ms ?? 0) > 0 && { apdexThresholdMs: params.apdex_threshold_ms }),
 		...((params.bucket_seconds ?? 0) > 0 && { bucketSeconds: params.bucket_seconds }),
 		...(params.kind === "breakdown" && { limit: params.limit }),
-		...(attributeFilter && { attributeFilters: [attributeFilter] }),
+		...(attributeFilters.length > 0 && { attributeFilters }),
 	}
 }
 
@@ -363,12 +486,36 @@ const samplingNote = (output: Output): string | undefined => {
 	return undefined
 }
 
+const MODE_OPERATORS: ReadonlyMap<string, string> = new Map([
+	["equals", "="],
+	["contains", "contains"],
+	["gt", ">"],
+	["gte", ">="],
+	["lt", "<"],
+	["lte", "<="],
+])
+
+/** `http.route = /checkout`, `http.response.status_code >= 500`, `NOT user.id exists`. */
+const attributeConditionText = (
+	filter: NonNullable<Output["queryContext"]["attributeFilters"]>[number],
+): string => {
+	const body =
+		filter.mode === "exists"
+			? `${filter.key} exists`
+			: filter.mode === "in"
+				? `${filter.key} in (${Arr.join(filter.values ?? [], ", ")})`
+				: `${filter.key} ${MODE_OPERATORS.get(filter.mode) ?? filter.mode} ${filter.value ?? ""}`
+	return filter.negated === true ? `NOT ${body}` : body
+}
+
 export const renderQueryData = (output: Output): ToolDoc => {
 	const capitalize = (s: string) => Str.toUpperCase(s.charAt(0)) + Str.slice(1)(s)
 	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
+	const conditions = Arr.map(output.queryContext.attributeFilters ?? [], attributeConditionText)
 	const scope: ToolDoc["scope"] = [
 		["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 		["Grouped by", output.groupBy],
+		...(conditions.length > 0 ? [["Attributes", Arr.join(conditions, " AND ")] as const] : []),
 	]
 	const decisions =
 		output.decisions !== undefined && output.decisions.length > 0
@@ -575,9 +722,56 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				decisions.push(`group_by: defaulted to "${defaultGroupBy}" (available: ${availableGroupBys})`)
 			}
 
-			const attributeScope = yield* resolveAttributeScope(params, { startTime: st, endTime: et })
+			const requestedFilters = engineAttributeFilters(params.attribute_filters ?? [])
+			if (Result.isFailure(requestedFilters)) {
+				return yield* new McpInvalidInputError({
+					message: requestedFilters.failure,
+					parameter: "attribute_filters",
+					example: 'attribute_filters=[{"key":"http.route","value":"/checkout"}]',
+				})
+			}
+			const resourceOnEvents = Arr.findFirst(
+				requestedFilters.success,
+				(entry) => params.source === "product_events" && entry.scope === "resource",
+			)
+			if (Option.isSome(resourceOnEvents)) {
+				return yield* new McpInvalidInputError({
+					message: `attribute_filters "${resourceOnEvents.value.filter.key}": product events have no resource attributes. Drop \`scope\`.`,
+					parameter: "attribute_filters",
+				})
+			}
+
+			// One read of the window's keys answers attribute_key and every filter without a scope.
+			const window = { startTime: st, endTime: et }
+			const known = yield* Effect.cached(knownAttributeKeys(params, window))
+			const attributeScope = yield* resolveAttributeScope(params, window, known)
 			if (attributeScope.decision !== undefined) decisions.push(attributeScope.decision)
 			const scope = attributeScope.scope
+			const needsLookup =
+				params.source !== "product_events" &&
+				Arr.some(requestedFilters.success, (entry) => entry.scope === undefined)
+			const keys = needsLookup ? yield* known : undefined
+			const attributeFilters = Arr.map(requestedFilters.success, (entry): ScopedAttributeFilter => ({
+				scope:
+					entry.scope ??
+					(keys === undefined
+						? "span"
+						: pickAttributeScope(entry.filter.key, keys.primary, keys.resource)),
+				filter: entry.filter,
+			}))
+			const onResource = Arr.filter(
+				attributeFilters,
+				(entry, index) =>
+					entry.scope === "resource" && requestedFilters.success[index]?.scope === undefined,
+			)
+			if (onResource.length > 0) {
+				decisions.push(
+					`attribute_filters: ${Arr.join(
+						Arr.map(onResource, (entry) => `"${entry.filter.key}"`),
+						", ",
+					)} matched on resource attributes (\`scope\` overrides)`,
+				)
+			}
 			const baseGroupBy = requestedGroupBy ?? defaultGroupBy
 			const groupBy =
 				(params.source === "metrics" || params.source === "logs") &&
@@ -686,6 +880,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				groupBy,
 				attributeScope: scope,
 				errorsOnly: aliases.errorsOnly,
+				...(attributeFilters.length > 0 ? { attributeFilters } : undefined),
 			}
 			let resolved = yield* run(resolvedQuery)
 			// Exact span names are easy to miss (`resetAudienceAssignments` vs the real
@@ -718,7 +913,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					)
 				: []
 
-			const queryContext = queryContextOf(params)
+			const queryContext = queryContextOf(params, resolvedQuery)
 			const warnings = metricsWarningsFor(params, metric)
 			return {
 				timeRange: { start: st, end: et },

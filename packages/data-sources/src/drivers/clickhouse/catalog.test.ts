@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Effect, Exit, String as Str } from "effect"
-import { clickHouseCatalog, MAX_CATALOG_ENTRIES } from "./catalog"
+import { clickHouseCatalog, escapeString, MAX_CATALOG_ENTRIES } from "./catalog"
 import { connection, fakeFetch, rows } from "./fake-fetch"
 
 const isColumns = (sql: string) => Str.includes("FROM system.columns")(sql)
@@ -107,4 +107,11 @@ describe("clickHouseCatalog", () => {
 			)
 		}),
 	)
+})
+
+describe("escapeString", () => {
+	it("escapes backslashes and quotes so a value cannot close the literal", () => {
+		expect(escapeString("a\\'b")).toBe("a\\\\\\'b")
+		expect(escapeString("x\\")).toBe("x\\\\")
+	})
 })

@@ -13,6 +13,7 @@ import { Command, Mount, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { makeIsland } from "../foldkit-island/island"
+import { brandMark, markColor, type BrandMarkId } from "../lib/brand-marks"
 import { APP_SIGN_IN_URL, APP_SIGN_UP_URL, APP_URL } from "../lib/app-urls"
 import { watchSignedInUser } from "../lib/clerk-session"
 import { features } from "../lib/features"
@@ -30,7 +31,8 @@ import { broadcastSignedIn } from "./auth-signal"
 
 // LINKS
 
-type MenuLink = Readonly<{ href: string; label: () => string; desc: () => string }>
+/** `mark` is a vendor's brand mark, shown beside the label (the compare links). */
+type MenuLink = Readonly<{ href: string; label: () => string; desc: () => string; mark?: BrandMarkId }>
 
 const localized = (locale: string, path: string): string => (locale === "en" ? path : `/${locale}${path}`)
 
@@ -73,15 +75,23 @@ const integrationLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	},
 ]
 
-const compare = (locale: string, slug: string, label: () => string, desc: () => string): MenuLink => ({
+const compare = (
+	locale: string,
+	slug: string,
+	mark: BrandMarkId,
+	label: () => string,
+	desc: () => string,
+): MenuLink => ({
 	href: localized(locale, `/compare/${slug}`),
 	label,
 	desc,
+	mark,
 })
 
 const compareLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	compare(
 		locale,
+		"datadog",
 		"datadog",
 		() => m.nav_vs_datadog(),
 		() => m.nav_desc_vs_datadog(),
@@ -89,17 +99,20 @@ const compareLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	compare(
 		locale,
 		"grafana",
+		"grafana",
 		() => m.nav_vs_grafana(),
 		() => m.nav_desc_vs_grafana(),
 	),
 	compare(
 		locale,
 		"new-relic",
+		"newrelic",
 		() => m.nav_vs_new_relic(),
 		() => m.nav_desc_vs_new_relic(),
 	),
 	compare(
 		locale,
+		"dash0",
 		"dash0",
 		() => m.nav_vs_dash0(),
 		() => m.nav_desc_vs_dash0(),
@@ -107,11 +120,13 @@ const compareLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	compare(
 		locale,
 		"signoz",
+		"signoz",
 		() => m.nav_vs_signoz(),
 		() => m.nav_desc_vs_signoz(),
 	),
 	compare(
 		locale,
+		"axiom",
 		"axiom",
 		() => m.nav_vs_axiom(),
 		() => m.nav_desc_vs_axiom(),
@@ -119,11 +134,13 @@ const compareLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	compare(
 		locale,
 		"better-stack",
+		"betterstack",
 		() => m.nav_vs_better_stack(),
 		() => m.nav_desc_vs_better_stack(),
 	),
 	compare(
 		locale,
+		"honeycomb",
 		"honeycomb",
 		() => m.nav_vs_honeycomb(),
 		() => m.nav_desc_vs_honeycomb(),
@@ -340,6 +357,43 @@ const MENU_ID = "site-nav"
 const SHEET_ID = "site-nav-sheet"
 const LOGO_MENU_ID = "site-logo-menu"
 
+/** `BrandMarkIcon.astro`'s markup, for the menu's compare links. */
+const brandMarkSvg = (h: H, id: BrandMarkId, className: string): Html => {
+	const mark = brandMark(id)
+	const paths =
+		mark.layers === undefined
+			? [
+					h.path(
+						[h.Attribute("d", mark.path), ...(mark.fillRule === undefined ? [] : [h.Attribute("fill-rule", mark.fillRule)])],
+						[],
+					),
+				]
+			: Arr.map(mark.layers, (layer) => h.path([h.Attribute("d", layer.path), h.Attribute("fill", layer.fill)], []))
+	const overlay =
+		mark.overlay === undefined
+			? []
+			: [
+					h.path(
+						[
+							h.Attribute("d", mark.overlay.path),
+							h.Attribute("fill", mark.overlay.fill),
+							...(mark.overlay.fillRule === undefined ? [] : [h.Attribute("fill-rule", mark.overlay.fillRule)]),
+						],
+						[],
+					),
+				]
+	return h.svg(
+		[
+			h.Class(className),
+			h.Attribute("viewBox", mark.viewBox ?? "0 0 24 24"),
+			h.Attribute("fill", "currentColor"),
+			h.Style({ color: markColor(mark) }),
+			h.AriaHidden(true),
+		],
+		[...paths, ...overlay],
+	)
+}
+
 const octocat = (h: H, className: string): Html =>
 	h.svg(
 		[
@@ -427,8 +481,12 @@ const megaLink = (h: H, link: MenuLink): Html =>
 		link.href,
 		[
 			h.span(
-				[h.Class("text-xs font-medium text-fg transition-colors group-hover/link:text-primary")],
-				[link.label()],
+				[
+					h.Class(
+						"inline-flex items-center gap-1.5 text-xs font-medium text-fg transition-colors group-hover/link:text-primary",
+					),
+				],
+				[...(link.mark === undefined ? [] : [brandMarkSvg(h, link.mark, "h-3.5 w-3.5 shrink-0")]), link.label()],
 			),
 			h.span([h.Class("text-[11px] leading-snug text-fg-muted")], [link.desc()]),
 		],
@@ -547,9 +605,9 @@ const sheetGroup = (h: H, title: string, links: ReadonlyArray<MenuLink>): Html =
 						[
 							h.Href(link.href),
 							h.OnClick(Message.ClickedSheetLink()),
-							h.Class("text-xs text-fg-muted hover:text-fg transition-colors py-1.5"),
+							h.Class("inline-flex items-center gap-2 text-xs text-fg-muted hover:text-fg transition-colors py-1.5"),
 						],
-						[link.label()],
+						[...(link.mark === undefined ? [] : [brandMarkSvg(h, link.mark, "h-3.5 w-3.5 shrink-0")]), link.label()],
 					),
 				),
 			),

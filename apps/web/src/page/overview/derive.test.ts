@@ -28,6 +28,8 @@ const anomaly = (fields: Partial<V2AnomalyServiceCount>): V2AnomalyServiceCount 
 })
 
 const incident = (fields: Partial<HealthIncident>): HealthIncident => ({
+	ruleId: "rule-checkout",
+	ruleName: "Checkout errors",
 	status: "open",
 	groupKey: "checkout",
 	severity: "critical",

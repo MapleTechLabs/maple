@@ -136,6 +136,8 @@ export const clickhouseEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("CLICKHOUSE_USER"),
 	optionalPlain("CLICKHOUSE_DATABASE"),
 	Secrets.ClickhousePassword.optional,
+	optionalPlain("CLICKHOUSE_ACCESS_CLIENT_ID"),
+	Secrets.ClickhouseAccessClientSecret.optional,
 )
 
 /** Ingest-key envelope encryption + lookup HMAC. Required wherever ingest keys are read. */

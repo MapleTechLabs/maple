@@ -48,7 +48,17 @@ A component's status is the worst of three inputs:
 
 The banner at the top of the page shows the worst component status.
 
-Each uptime bar is one UTC day of the monitor's checks. A day with checks taken while the monitor was down shows as down. A day with failed checks that never added up to the monitor's **Down after** count shows as degraded. A day without checks shows as empty. The uptime percentage is the share of checks taken while the monitor was up.
+Each uptime bar is one UTC day of the component, coloured by what happened that day:
+
+| That day                                                                                        | Bar         |
+| ----------------------------------------------------------------------------------------------- | ----------- |
+| A Major or Critical incident on the component, or the monitor down for 1% of its checks or more | Outage      |
+| A Minor incident, any shorter downtime, or 5% of checks or more failing without going down      | Degraded    |
+| Maintenance on the component, with no other incident on it that day                             | Maintenance |
+| Checks with no downtime (a few scattered failed checks included)                                | Operational |
+| No checks and no incident                                                                       | No data     |
+
+A day's tooltip gives the exact count of failed checks and names the incident or maintenance. Maintenance replaces what the checks say, since downtime it announced was planned. The uptime percentage is the share of checks taken while the monitor was up.
 
 When no publish has reached the page for 5 minutes, or a page with monitored components has had no new check result for 5 minutes, it shows "Live checks are delayed" with the time of the last known state, rather than looking green.
 
@@ -161,11 +171,11 @@ A password-protected page serves these only to a visitor who entered the passwor
 On the [MCP server](/docs/reference/mcp):
 
 - `get_status_page` lists every page, or with `page` (slug, name or id) shows one as visitors see it, drafts included. `include_config=true` adds the page's config document.
-- `post_status_page_update` opens an incident on `page` with `title` and `message`, or maintenance when you pass `starts_at` and `ends_at`. With `incident`, it posts the next update and moves it to `status`. `impact` and `components` are optional. New posts are drafts unless `publish=true`.
-- `create_status_page` creates a page from a `name` (and optional `slug` and `description`). It starts as a draft with no components.
-- `apply_status_page_config` replaces a page's settings, theme and components with an edited config document. It refuses the write if the config changed since you read it (`if_version`).
-- `set_status_page_domain` serves a page on your own subdomain (`domain`) and returns the DNS records to add. Call it again with the same domain to check them now; `remove=true` removes it.
-- `publish_status_page` makes a draft page public. It goes live within a minute.
+- `manage_status_page action=post_update` opens an incident on `page` with `title` and `message`, or maintenance when you pass `starts_at` and `ends_at`. With `incident`, it posts the next update and moves it to `status`. `impact` and `components` are optional. New posts are drafts unless `publish=true`.
+- `manage_status_page action=create` creates a page from a `name` (and optional `slug` and `description`). It starts as a draft with no components.
+- `manage_status_page action=apply_config` replaces a page's settings, theme and components with an edited config document. It refuses the write if the config changed since you read it (`if_version`).
+- `manage_status_page action=set_domain` serves a page on your own subdomain (`domain`) and returns the DNS records to add. Call it again with the same domain to check them now; `remove=true` removes it.
+- `manage_status_page action=publish` makes a draft page public. It goes live within a minute.
 
 In the [REST API](/docs/reference/api), pages live under `/v2/status_pages` (scopes `status_pages:read` and `status_pages:write`) and incidents under `/v2/status_page_incidents` (scopes `status_page_incidents:read` and `status_page_incidents:write`):
 

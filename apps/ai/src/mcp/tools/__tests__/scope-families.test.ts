@@ -52,8 +52,6 @@ const REQUIRED = [
 	["update_ingest_rule", "ingest_rules:write"],
 	["delete_ingest_rule", "ingest_rules:write"],
 	["list_data_sources", "data_sources:read"],
-	["search_data_sources", "data_sources:read"],
-	["describe_data_source", "data_sources:read"],
 	["query_data_source", "data_sources:read"],
 	["get_status_page", "status_pages:read"],
 	["apply_status_page_config", "status_pages:write"],

@@ -267,7 +267,9 @@ export const QueryDataQueryContextSchema = Schema.Struct({
 			Schema.Struct({
 				key: Schema.String,
 				value: Schema.optionalKey(Schema.String),
+				values: Schema.optionalKey(Schema.Array(Schema.String)),
 				mode: Schema.String,
+				negated: Schema.optionalKey(Schema.Boolean),
 			}),
 		),
 	),

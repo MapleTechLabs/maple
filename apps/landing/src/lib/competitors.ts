@@ -24,6 +24,7 @@
 import * as m from "../paraglide/messages.js"
 import type { BrandMarkId } from "./brand-marks"
 import type { Vendor } from "./vendor-pricing"
+import { featurePath } from "./page-registry"
 import { Array as Arr } from "effect"
 
 type Locale = "en" | "ja" | "ko"
@@ -74,14 +75,24 @@ export interface Faq {
  * `components/compare/Surfaces.astro` resolves the id, the way
  * `components/page/slots.ts` does for the feature pages.
  */
-export type SurfaceId = "service-map" | "sessions" | "analytics" | "kubernetes"
+export type SurfaceId =
+	| "service-map"
+	| "sessions"
+	| "analytics"
+	| "kubernetes"
+	| "trace"
+	| "logs"
+	| "issues"
+	| "agent"
+	| "local"
+	| "uptime"
 
 export interface Surface {
 	id: SurfaceId
 	name: Msg
 	body: Msg
-	/** Link to the feature page that owns this surface. */
-	href: string
+	/** Link to the page that owns this surface, in the visitor's locale where that page is translated. */
+	href: (locale: string) => string
 }
 
 export const MAPLE_SURFACES = {
@@ -89,35 +100,74 @@ export const MAPLE_SURFACES = {
 		id: "service-map",
 		name: m.cmp_surface_map_name,
 		body: m.cmp_surface_map_body,
-		href: "/features/service-catalog",
+		href: (locale) => featurePath(locale, "service-catalog"),
 	},
 	sessions: {
 		id: "sessions",
 		name: m.cmp_surface_sessions_name,
 		body: m.cmp_surface_sessions_body,
-		href: "/features/browser-sessions",
+		href: (locale) => featurePath(locale, "browser-sessions"),
 	},
 	analytics: {
 		id: "analytics",
 		name: m.cmp_surface_analytics_name,
 		body: m.cmp_surface_analytics_body,
-		href: "/features/browser-sessions",
+		href: (locale) => featurePath(locale, "browser-sessions"),
 	},
 	kubernetes: {
 		id: "kubernetes",
 		name: m.cmp_surface_k8s_name,
 		body: m.cmp_surface_k8s_body,
-		href: "/features/kubernetes-monitoring",
+		href: (locale) => featurePath(locale, "kubernetes-monitoring"),
+	},
+	trace: {
+		id: "trace",
+		name: m.cmp_surface_trace_name,
+		body: m.cmp_surface_trace_body,
+		href: (locale) => featurePath(locale, "distributed-tracing"),
+	},
+	logs: {
+		id: "logs",
+		name: m.cmp_surface_logs_name,
+		body: m.cmp_surface_logs_body,
+		href: (locale) => featurePath(locale, "log-management"),
+	},
+	issues: {
+		id: "issues",
+		name: m.cmp_surface_issues_name,
+		body: m.cmp_surface_issues_body,
+		href: (locale) => featurePath(locale, "error-tracking"),
+	},
+	agent: {
+		id: "agent",
+		name: m.cmp_surface_agent_name,
+		body: m.cmp_surface_agent_body,
+		href: (locale) => featurePath(locale, "ai-mcp-integration"),
+	},
+	local: {
+		id: "local",
+		name: m.cmp_surface_local_name,
+		body: m.cmp_surface_local_body,
+		// Maple Local has no ja or ko page.
+		href: () => "/local",
+	},
+	uptime: {
+		id: "uptime",
+		name: m.cmp_surface_uptime_name,
+		body: m.cmp_surface_uptime_body,
+		href: (locale) => featurePath(locale, "uptime-monitoring"),
 	},
 } satisfies Record<SurfaceId, Surface>
 
 /**
- * The section only earns its place against a vendor that is a store plus a
- * dashboard builder, where every row below is a thing the visitor would
- * assemble out of panels, so it is optional, and each row must say what
- * assembling it actually means on that vendor.
+ * Every vendor shows Maple's own views here, each answered by what that vendor
+ * does instead. An `instead` line restates a sourced row of the difference
+ * table; it never makes a claim the table doesn't. `title` defaults to the
+ * neutral "what Maple shows" heading; vendors with a sharper framing (a store
+ * with a dashboard builder, a product per meter) set their own.
  */
 export interface Surfaces {
+	title?: (inputs: { name: string }) => string
 	lede: Msg
 	rows: { surface: SurfaceId; instead: Msg }[]
 }
@@ -140,8 +190,8 @@ export interface Competitor {
 	heroLede: Msg
 	differences: DifferenceRow[]
 	parity: Msg[]
-	/** Vendors that are a warehouse with a dashboard builder get this. */
-	surfaces?: Surfaces
+	/** Maple's own views, each answered by what this vendor does instead. */
+	surfaces: Surfaces
 	migration: MigrationStep[]
 	/**
 	 * The one code block on the page: the Collector exporter change, as the
@@ -308,6 +358,16 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: [...CORE_PARITY, m.cmp_parity_replay],
+		surfaces: {
+			title: m.cmp_dd_surfaces_title,
+			lede: m.cmp_dd_surfaces_lede,
+			rows: [
+				{ surface: "trace", instead: m.cmp_dd_surface_trace_instead },
+				{ surface: "sessions", instead: m.cmp_dd_surface_sessions_instead },
+				{ surface: "kubernetes", instead: m.cmp_dd_surface_k8s_instead },
+				{ surface: "agent", instead: m.cmp_dd_surface_agent_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_dd_mig_1_title, body: m.cmp_dd_mig_1_body },
 			{ title: m.cmp_dd_mig_2_title, body: m.cmp_dd_mig_2_body },
@@ -459,6 +519,15 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: CORE_PARITY,
+		surfaces: {
+			title: m.cmp_surfaces_title,
+			lede: m.cmp_gf_surfaces_lede,
+			rows: [
+				{ surface: "trace", instead: m.cmp_gf_surface_trace_instead },
+				{ surface: "logs", instead: m.cmp_gf_surface_logs_instead },
+				{ surface: "local", instead: m.cmp_gf_surface_local_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_gf_mig_1_title, body: m.cmp_gf_mig_1_body },
 			{ title: m.cmp_gf_mig_2_title, body: m.cmp_gf_mig_2_body },
@@ -602,6 +671,14 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: [...CORE_PARITY, m.cmp_parity_replay],
+		surfaces: {
+			lede: m.cmp_nr_surfaces_lede,
+			rows: [
+				{ surface: "trace", instead: m.cmp_nr_surface_trace_instead },
+				{ surface: "sessions", instead: m.cmp_nr_surface_sessions_instead },
+				{ surface: "agent", instead: m.cmp_nr_surface_agent_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_nr_mig_1_title, body: m.cmp_nr_mig_1_body },
 			{ title: m.cmp_nr_mig_2_title, body: m.cmp_nr_mig_2_body },
@@ -721,6 +798,14 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: [...CORE_PARITY, m.cmp_parity_otel],
+		surfaces: {
+			lede: m.cmp_d0_surfaces_lede,
+			rows: [
+				{ surface: "local", instead: m.cmp_d0_surface_local_instead },
+				{ surface: "uptime", instead: m.cmp_d0_surface_uptime_instead },
+				{ surface: "agent", instead: m.cmp_d0_surface_agent_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_d0_mig_1_title, body: m.cmp_d0_mig_1_body },
 			{ title: m.cmp_d0_mig_2_title, body: m.cmp_d0_mig_2_body },
@@ -851,6 +936,14 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: [...CORE_PARITY, m.cmp_parity_otel],
+		surfaces: {
+			lede: m.cmp_sn_surfaces_lede,
+			rows: [
+				{ surface: "issues", instead: m.cmp_sn_surface_issues_instead },
+				{ surface: "sessions", instead: m.cmp_sn_surface_sessions_instead },
+				{ surface: "local", instead: m.cmp_sn_surface_local_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_sn_mig_1_title, body: m.cmp_sn_mig_1_body },
 			{ title: m.cmp_sn_mig_2_title, body: m.cmp_sn_mig_2_body },
@@ -1049,6 +1142,7 @@ export const competitors: Competitor[] = [
 			m.cmp_parity_otel,
 		],
 		surfaces: {
+			title: m.cmp_surfaces_title,
 			lede: m.cmp_ax_surfaces_lede,
 			rows: [
 				{ surface: "service-map", instead: m.cmp_ax_surface_map_instead },
@@ -1235,6 +1329,14 @@ export const competitors: Competitor[] = [
 			},
 		],
 		parity: [...CORE_PARITY, m.cmp_parity_replay, m.cmp_parity_otel],
+		surfaces: {
+			lede: m.cmp_bs_surfaces_lede,
+			rows: [
+				{ surface: "local", instead: m.cmp_bs_surface_local_instead },
+				{ surface: "issues", instead: m.cmp_bs_surface_issues_instead },
+				{ surface: "agent", instead: m.cmp_bs_surface_agent_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_bs_mig_1_title, body: m.cmp_bs_mig_1_body },
 			{ title: m.cmp_bs_mig_2_title, body: m.cmp_bs_mig_2_body },
@@ -1415,6 +1517,14 @@ export const competitors: Competitor[] = [
 			m.cmp_parity_mcp,
 			m.cmp_parity_otel,
 		],
+		surfaces: {
+			lede: m.cmp_hc_surfaces_lede,
+			rows: [
+				{ surface: "sessions", instead: m.cmp_hc_surface_sessions_instead },
+				{ surface: "issues", instead: m.cmp_hc_surface_issues_instead },
+				{ surface: "local", instead: m.cmp_hc_surface_local_instead },
+			],
+		},
 		migration: [
 			{ title: m.cmp_hc_mig_1_title, body: m.cmp_hc_mig_1_body },
 			{ title: m.cmp_hc_mig_2_title, body: m.cmp_hc_mig_2_body },

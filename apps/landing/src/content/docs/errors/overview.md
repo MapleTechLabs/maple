@@ -32,8 +32,10 @@ The fingerprint combines five things:
 - The organization.
 - The service (`service.name`).
 - The exception type.
-- The top 3 stack frames, with line numbers, URL origins, bundle hashes, and memory addresses removed.
-- A message signature: the first 120 characters of the message after emails, URLs, quoted values, IDs, and numbers are replaced with placeholders. JSON messages are normalized by key.
+- The top 3 stack frames, with line numbers, URL origins, bundle hashes, memory addresses, and minified function names removed.
+- A message signature: the first 120 characters of the message after emails, URLs, quoted values, IDs, and numbers are replaced with placeholders. IDs inside a URL path are replaced too, so one failing endpoint is one issue however many customers hit it. JSON messages are normalized by key.
+
+The message is the span's status message, or the exception's own message when the span has none. An error span with no exception or message, and no type beyond an HTTP status code, is grouped by the span that failed, and its issue is titled with the span name.
 
 The environment is not part of the fingerprint, so the same bug in staging and production is one issue.
 

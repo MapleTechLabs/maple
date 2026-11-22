@@ -1,0 +1,65 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+---
+
+<GlossaryTermPage
+    slug="percentiles"
+    pageTitle="What is p99 latency? Percentiles p50, p95 and p99 explained | Maple Glossary"
+    description="p99 latency is the response time 99% of requests beat. What p50, p95 and p99 mean, why averages hide slow requests, and how percentiles are computed from histograms."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://prometheus.io/docs/practices/histograms/", title: "Prometheus docs: Histograms and summaries" },
+        { href: "https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram", title: "OpenTelemetry spec: Exponential histogram" },
+    ]}
+    readNext={[
+        { href: "/guides/api-latency", title: "When API p99 jumps but p50 doesn't" },
+        { href: "/guides/what-is-apdex", title: "What is Apdex?" },
+        { href: "/guides/metric-cardinality", title: "Metric cardinality" },
+        { href: "/guides/prometheus-metrics", title: "Prometheus metrics, explained" },
+    ]}
+    relatedTerms={["slo", "cardinality", "span", "trace"]}
+>
+    <section>
+        <h2>An example</h2>
+        <p>Ten requests to an endpoint took these times, sorted:</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Request</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th></tr></thead>
+                <tbody><tr><td>ms</td><td>40</td><td>42</td><td>45</td><td>48</td><td>50</td><td>52</td><td>55</td><td>60</td><td>65</td><td>1,900</td></tr></tbody>
+            </table>
+        </div>
+        <p>
+            The <strong>median</strong> (p50) is about 51 ms: half the requests were faster. The <strong>average</strong> is 236 ms, a number no request actually took, pulled up by one slow outlier. The slow request is the one a user complained about, and only the high percentiles show it. With ten samples the nearest-rank p99 is the slowest one (interpolating methods give a value between the two slowest); with real traffic of thousands of requests a minute, p99 is the time that the slowest 1% exceed.
+        </p>
+    </section>
+
+    <section>
+        <h2>p50, p95, p99: what each tells you</h2>
+        <ul class="guide-list">
+            <li><strong>p50</strong> is the typical experience. If it moves, most users are affected.</li>
+            <li><strong>p95</strong> is the slow edge of normal: one request in twenty is slower.</li>
+            <li><strong>p99</strong> is the tail. At 1,000 requests a minute, ten requests every minute are slower than p99. Users who make many requests per page view hit the tail often, so it matters more than "1%" suggests.</li>
+            <li><strong>Max</strong> is one request. It is useful for spotting timeouts and useless as a trend.</li>
+        </ul>
+        <p>
+            When p99 rises and p50 does not, a subset of requests got slower: one route, one customer, one dependency. That calls for traces of the slow requests, as the <a href="/guides/api-latency">API latency guide</a> walks through.
+        </p>
+    </section>
+
+    <section>
+        <h2>How percentiles are computed</h2>
+        <p>
+            Storing every duration and sorting it is exact but expensive. Metrics systems record a <strong>histogram</strong> instead: counts of requests per latency bucket, such as 0 to 50 ms and 50 to 100 ms. The percentile is estimated from the bucket counts, assuming values are spread evenly inside each bucket. The estimate is only as good as the buckets: if p99 falls in a bucket from 1 to 2.5 seconds, the reported value is a guess inside that range. Exponential histograms use buckets that grow by a fixed ratio and rescale to fit the data, which bounds the relative error of the estimate.
+        </p>
+        <p>
+            Percentiles cannot be averaged. The mean of p99 across ten servers is not the p99 of all their requests. Merge the histograms first, then compute the percentile, which is why backends aggregate histogram buckets and not precomputed percentiles. For explicit-bucket histograms, merging only works when they share bucket boundaries, so keep boundaries the same across services that report the same metric. Exponential histograms can be merged across scales.
+        </p>
+    </section>
+
+    <section>
+        <h2>Percentiles in SLOs</h2>
+        <p>
+            Latency <a href="/glossary/slo">SLOs</a> are usually written as a percentile or a threshold: "p99 under 500 ms", or "99% of requests faster than 500 ms". The second form turns directly into an error budget, because it counts requests over the threshold instead of estimating a percentile. It is exact when the threshold is a bucket boundary, so choose boundaries that include your SLO thresholds.
+        </p>
+    </section>
+</GlossaryTermPage>

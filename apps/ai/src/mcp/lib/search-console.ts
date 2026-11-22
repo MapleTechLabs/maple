@@ -112,7 +112,7 @@ export const resolveSearchConsoleSite = Effect.fn("McpSearchConsole.resolveSite"
 		})
 	}
 	const row = chosen.value
-	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.search_console.site": row.siteUrl })
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.search_console.site_url": row.siteUrl })
 	if (row.watermarkDate === null) {
 		return yield* new McpNotReadyError({
 			message:
@@ -182,12 +182,20 @@ export const windowEndingAtDataThrough = <
 	return Number.isNaN(day) ? params : { ...params, end_time: warehouseDateTime(day + DAY_MS - 1000) }
 }
 
-/** The window's days after the last complete day, which the reads leave out. */
-export const daysPastDataThrough = (endTime: string, dataThrough: string | null): number => {
-	if (dataThrough === null) return 0
-	const end = dayStartMs(Str.slice(0, 10)(endTime))
-	const through = dayStartMs(dataThrough)
-	return Number.isNaN(end) || Number.isNaN(through) ? 0 : Math.max(0, Math.round((end - through) / DAY_MS))
+/**
+ * The window's days after the last complete day, which the reads leave out, and how many days the
+ * window has, so a window wholly past the last complete day counts its own days, not the gap.
+ */
+export const daysPastDataThrough = (
+	window: { readonly startTime: string; readonly endTime: string },
+	dataThrough: string | null,
+): { readonly past: number; readonly total: number } => {
+	const start = dayStartMs(Str.slice(0, 10)(window.startTime))
+	const end = dayStartMs(Str.slice(0, 10)(window.endTime))
+	const through = dataThrough === null ? Number.NaN : dayStartMs(dataThrough)
+	if (Number.isNaN(start) || Number.isNaN(end) || Number.isNaN(through)) return { past: 0, total: 0 }
+	const total = Math.max(1, Math.round((end - start) / DAY_MS) + 1)
+	return { past: Math.min(total, Math.max(0, Math.round((end - through) / DAY_MS))), total }
 }
 
 export const searchConsoleReads = Effect.gen(function* () {

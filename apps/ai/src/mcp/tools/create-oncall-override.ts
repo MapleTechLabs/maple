@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import { OnCallOverrideCreateRequest } from "@maple/domain/http"
@@ -20,10 +20,8 @@ const timestamp = (meaning: string) =>
 		Schema.decodeTo(WarehouseTimeInput),
 	)
 
-export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
-	server.define({
-		name: "create_oncall_override",
-		title: "Create On-Call Override",
+export const addOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_oncall_schedule">) =>
+	family.action("add_override", {
 		description:
 			"Put one workspace member on call for a window, over every layer of a schedule: a swap, cover for time off, a holiday. " +
 			"At most 90 days, ending in the future. The newest overlapping override wins. Ids from list_oncall_schedules.",
@@ -35,7 +33,6 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		permission: "oncall:manage",
-		phrases: ["Creating an on-call override"],
 		handler: Effect.fn("McpTool.createOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			const request = yield* decodeCreateRequest({
@@ -88,4 +85,3 @@ export function registerCreateOnCallOverrideTool(server: McpToolRegistrar) {
 			],
 		}),
 	})
-}

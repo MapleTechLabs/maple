@@ -182,6 +182,66 @@ describe("AlertMaintenanceWindowsService", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
+	it.effect("builds a revision again on the window another edit saved first", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const service = yield* AlertMaintenanceWindowsService
+			const window = yield* createWindow()
+			const seen: Array<ReadonlyArray<string>> = []
+
+			// A duration change, merged into the schedule it was shown; the day moves under its first read.
+			const revised = yield* service.revise(orgId, userId, adminGrants, window.id, (current) =>
+				Effect.gen(function* () {
+					if (current.schedule._tag !== "weekly") return new AlertMaintenanceWindowUpdateRequest({})
+					seen.push(current.schedule.days)
+					if (seen.length === 1) {
+						yield* service.update(
+							orgId,
+							userId,
+							adminGrants,
+							window.id,
+							new AlertMaintenanceWindowUpdateRequest({
+								schedule: { ...nightly, days: ["fri"] },
+							}),
+						)
+					}
+					return new AlertMaintenanceWindowUpdateRequest({
+						schedule: { ...current.schedule, durationMinutes: 120 },
+					})
+				}),
+			)
+
+			assert.deepStrictEqual(seen, [["tue", "wed", "thu"], ["fri"]])
+			assert.deepStrictEqual(revised.schedule, { ...nightly, days: ["fri"], durationMinutes: 120 })
+			assert.deepStrictEqual((yield* service.get(orgId, window.id)).schedule, revised.schedule)
+		}).pipe(Effect.provide(layer())),
+	)
+
+	it.effect("gives up a revision that every attempt loses to another edit", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const service = yield* AlertMaintenanceWindowsService
+			const window = yield* createWindow()
+
+			const exit = yield* Effect.exit(
+				service.revise(orgId, userId, adminGrants, window.id, () =>
+					service
+						.update(
+							orgId,
+							userId,
+							adminGrants,
+							window.id,
+							new AlertMaintenanceWindowUpdateRequest({ reason: "moved again" }),
+						)
+						.pipe(Effect.as(new AlertMaintenanceWindowUpdateRequest({ name: "Renamed" }))),
+				),
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual((yield* service.get(orgId, window.id)).name, "Nightly DB")
+		}).pipe(Effect.provide(layer())),
+	)
+
 	it.effect("keeps a running occurrence going with the window's new matchers and end", () =>
 		Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)

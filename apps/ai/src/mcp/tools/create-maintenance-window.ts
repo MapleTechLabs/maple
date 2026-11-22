@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertMaintenanceWindowCreateRequest, MAINTENANCE_WEEKDAYS } from "@maple/domain/http"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
@@ -75,10 +75,8 @@ const scheduleFrom = Effect.fnUntraced(function* (params: ScheduleParams) {
 	return { _tag: "once", startsAt: isoAt(startsAtMs), endsAt: isoAt(endsAtMs) }
 })
 
-export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
-	server.define({
-		name: "create_maintenance_window",
-		title: "Create Maintenance Window",
+export const createMaintenanceWindowAction = (family: McpToolFamilyBuilder<"manage_maintenance_window">) =>
+	family.action("create", {
 		description:
 			"Schedule a maintenance window: alert notifications for matching rules are held back during each occurrence (incidents still open and resolve). " +
 			"schedule_type=once takes starts_at (default now) and ends_at or duration_minutes (max 30 days); " +
@@ -111,7 +109,6 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 		aliases: { service_names: "services", start_time: "start_time_of_day" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		permission: "alerts:manage",
-		phrases: ["Scheduling a maintenance window", "Creating a maintenance window"],
 		handler: Effect.fn("McpTool.createMaintenanceWindow")(function* (params) {
 			const ruleIds = yield* Effect.forEach(
 				params.rule_ids ?? [],
@@ -159,4 +156,3 @@ export function registerCreateMaintenanceWindowTool(server: McpToolRegistrar) {
 			],
 		}),
 	})
-}
