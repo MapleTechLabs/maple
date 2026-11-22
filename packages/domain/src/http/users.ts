@@ -404,6 +404,26 @@ export class UserOverviewResponse extends Schema.Class<UserOverviewResponse>("Us
 	issues: UserIssuesResponse,
 }) {}
 
+/** One UTC day the user was active, for the activity calendar. */
+export const UserCalendarDay = Schema.Struct({
+	/** `YYYY-MM-DD` (UTC). */
+	day: Schema.String,
+	requests: Schema.Number,
+	failedRequests: Schema.Number,
+	errorLogs: Schema.Number,
+	sessions: Schema.Number,
+	events: Schema.Number,
+})
+export type UserCalendarDay = typeof UserCalendarDay.Type
+
+/** The activity calendar's days over the request's window, from `user_activity_daily` and product events. */
+export class UserCalendarResponse extends Schema.Class<UserCalendarResponse>("UserCalendarResponse")({
+	/** Only days with activity, oldest first. */
+	days: Schema.Array(UserCalendarDay),
+	/** `false` on a cluster without `user_activity_daily` (migration 0070): requests and sessions are absent. */
+	indexed: Schema.Boolean,
+}) {}
+
 export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 	.add(
 		HttpApiEndpoint.post("list", "/list", {
@@ -470,6 +490,13 @@ export class UsersInternalApiGroup extends HttpApiGroup.make("usersInternal")
 			success: UserIssuesResponse,
 			// The issue reads resolve fingerprints to issues in Postgres.
 			error: [...warehouseReadHttpErrors, ErrorPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("calendar", "/calendar", {
+			payload: UserDetailRequest,
+			success: UserCalendarResponse,
+			error: warehouseReadHttpErrors,
 		}),
 	)
 	.prefix("/internal/users")

@@ -1,0 +1,57 @@
+/* The command list's sliding highlight (`trackCommandMotion` in @maple/views/ui/command-motion):
+   one pill under the rows, placed on the highlighted option. A list without the Mount keeps the
+   row's own highlight background. */
+
+/* Not inherited, so moving the pill restyles only the pill, never every row. */
+@property --command-highlight-x {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --command-highlight-y {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --command-highlight-width {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --command-highlight-height {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+[data-slot="command-list"][data-highlight] {
+	position: relative;
+	isolation: isolate;
+}
+
+[data-slot="command-list"][data-highlight-shown] [data-slot="command-item"][data-highlighted] {
+	background-color: transparent;
+}
+
+[data-slot="command-list"][data-highlight-shown]::after {
+	--command-highlight-x: inherit;
+	--command-highlight-y: inherit;
+	--command-highlight-width: inherit;
+	--command-highlight-height: inherit;
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: -1;
+	width: var(--command-highlight-width);
+	height: var(--command-highlight-height);
+	translate: var(--command-highlight-x) var(--command-highlight-y);
+	border-radius: var(--radius-lg);
+	background-color: var(--color-surface-highlight);
+	pointer-events: none;
+}
+
+/* Only pointer moves slide; arrow keys snap, so a held key never trails the highlight. */
+[data-slot="command-list"][data-highlight-moving]::after {
+	transition: translate 100ms var(--ease-out);
+}

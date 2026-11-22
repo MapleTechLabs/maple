@@ -106,6 +106,12 @@ const USER_ACTIVITY_HOURLY_BACKFILL = [
 	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) AS UserId, toStartOfHour(TimestampTime) AS Hour, ServiceName, toUInt64(0) AS SpanCount, toUInt64(0) AS ErrorSpanCount, toUInt64(0) AS RequestCount, toUInt64(0) AS FailedRequestCount, uniqIfState(TraceId, toUInt8(0)) AS TraceIds, uniqIfState(LogAttributes['session.id'], LogAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(toUInt64(0), toUInt8(0)) AS RequestDurationQuantiles, approx_top_kState(10)('') AS TopRoutes, count() AS LogCount, countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount, countIf(SeverityNumber >= 17) AS ErrorLogCount, min(TimestampTime) AS FirstSeen, max(TimestampTime) AS LastSeen FROM logs WHERE if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
 ] as const
 
+/** Rebuilds the users' daily rollup from the hourly one; the truncate makes a resumed step converge. */
+const USER_ACTIVITY_DAILY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS user_activity_daily",
+	"INSERT INTO user_activity_daily (OrgId, ServiceNamespace, UserId, Day, ServiceName, RequestCount, FailedRequestCount, ErrorSpanCount, LogCount, ErrorLogCount, SessionIds) SELECT OrgId, ServiceNamespace, UserId, toStartOfDay(Hour) AS Day, ServiceName, sum(RequestCount) AS RequestCount, sum(FailedRequestCount) AS FailedRequestCount, sum(ErrorSpanCount) AS ErrorSpanCount, sum(LogCount) AS LogCount, sum(ErrorLogCount) AS ErrorLogCount, uniqIfMergeState(SessionIds) AS SessionIds FROM user_activity_hourly GROUP BY OrgId, ServiceNamespace, UserId, Day, ServiceName",
+] as const
+
 /** Rebuilds the AWS series rollup from every retained aws.* point; the truncate makes a resumed step converge. */
 const AWS_METRICS_HOURLY_BACKFILL = [
 	"TRUNCATE TABLE IF EXISTS aws_metrics_hourly",
@@ -2110,6 +2116,32 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				...ERROR_RETENTION,
 			},
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
+	{
+		slug: "user-activity-daily",
+		description:
+			"Create user_activity_daily and its view over user_activity_hourly for the activity calendar",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		afterBootstrap: [backfill(...USER_ACTIVITY_DAILY_BACKFILL)],
+		plan: [
+			[
+				"create-user-activity-daily",
+				"Create user_activity_daily and its view via the v62 bootstrap and backfill it from the retained user_activity_hourly",
+			],
+		],
+		dispositions: [
+			{
+				name: "user_activity_daily",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every hour user_activity_hourly retains, then filled forward by its view.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 90,
+				targetRetentionDays: 365,
+			},
 		],
 	},
 	// local-schema:bump appends the next step above this line.

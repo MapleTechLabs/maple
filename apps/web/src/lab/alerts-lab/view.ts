@@ -10,7 +10,7 @@ import { rulesTab } from "../../page/alerts/hub/view-rules"
 import { Message as HubMessageUnion, type Message as HubMessage } from "../../page/alerts/hub/message"
 import type { AlertIncidentId } from "@maple/domain/http"
 import type { Model as HubModel } from "../../page/alerts/hub/model"
-import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../../page/kit/underline-tabs"
 import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import type { Model } from "./model"
@@ -83,14 +83,14 @@ const alertsFrame = <M>(
 							return h.span(
 								[h.Class(underlineTabClass(entry.value === tab))],
 								[
-									entry.label,
+									underlineTabLabel(h, entry.label),
 									...(count > 0
 										? [
 												h.span(
 													[
 														h.Class(
 															cn(
-																"font-mono text-xs tabular-nums",
+																"font-mono text-xs font-normal tabular-nums",
 																entry.value === "inbox"
 																	? "text-severity-error"
 																	: "text-muted-foreground",

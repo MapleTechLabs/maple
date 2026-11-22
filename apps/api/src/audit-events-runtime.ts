@@ -13,6 +13,12 @@ import {
 	type AuditTrailServiceApi,
 } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { mapleAuditTrailEvents } from "@maple/backend/services/audit-trail/providers/maple"
+import { featureUsedEvents } from "@maple/backend/services/audit/audit-product-events"
+import {
+	type ProductEventsApi,
+	ProductEventsService,
+} from "@maple/backend/services/product-events/ProductEventsService"
+import { ProductEventsIngestKey } from "@maple/infra/secrets"
 import {
 	type AuditLogEvent,
 	auditEventToRow,
@@ -26,9 +32,11 @@ import {
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const AuditEventsLive = Layer.mergeAll(WarehouseQueryService.layer, AuditTrailService.layer).pipe(
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
-)
+export const AuditEventsLive = Layer.mergeAll(
+	WarehouseQueryService.layer,
+	AuditTrailService.layer,
+	ProductEventsService.layer,
+).pipe(Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive, ProductEventsIngestKey.layer)))
 
 /**
  * Best-effort identity for the exhaustion log. The body reached us as queue
@@ -92,6 +100,13 @@ const copyToTrail = (trail: AuditTrailServiceApi, orgId: OrgId, events: Readonly
 	)
 
 /**
+ * Feature actions also go out as `feature_used` product events, so adoption is counted from every
+ * client (dashboard, API, MCP, CLI) in one place: one request per org batch. Never fails.
+ */
+const emitFeatureEvents = (productEvents: ProductEventsApi, events: ReadonlyArray<AuditLogEvent>) =>
+	productEvents.trackAll(featureUsedEvents(events))
+
+/**
  * Audit events queue consumer: lowers each event to its `audit_log` row (and, for a change or
  * a refusal, its `audit_trail_events` row) and writes one batch per org through the managed
  * ingest pipeline. The table is a
@@ -105,6 +120,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 ) {
 	const warehouse = yield* WarehouseQueryService
 	const trail = yield* AuditTrailService
+	const productEvents = yield* ProductEventsService
 	const now = yield* Clock.currentTimeMillis
 
 	const decodedPerMessage = yield* Effect.forEach(batch.messages, (message) =>
@@ -145,6 +161,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 				)
 				.pipe(
 					Effect.andThen(copyToTrail(trail, orgId, events)),
+					Effect.andThen(emitFeatureEvents(productEvents, events)),
 					Effect.flatMap(() =>
 						Effect.sync(() => {
 							for (const { message } of group) message.ack()

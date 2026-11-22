@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { beforeEach, describe, expect, it } from "@effect/vitest"
 import { OrgId } from "@maple/primitives"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
@@ -7,6 +7,10 @@ import { makeWarehouseServiceStub } from "@/routes/v2/v2-test-support"
 import { AuditLogEvent, encodeAuditLogEventSync } from "@maple/backend/services/audit/audit-event"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import {
+	type ProductEventInput,
+	ProductEventsService,
+} from "@maple/backend/services/product-events/ProductEventsService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_audit_consumer_test")
@@ -15,7 +19,11 @@ const OTHER_ORG = asOrgId("org_audit_consumer_other")
 const event = (
 	id: string,
 	orgId: OrgId = ORG,
-	what: { readonly action: string; readonly outcome: "allowed" | "denied" } = {
+	what: {
+		readonly action: string
+		readonly outcome: "allowed" | "denied"
+		readonly actorType?: "user" | "system"
+	} = {
 		action: "dashboard.created",
 		outcome: "allowed",
 	},
@@ -51,10 +59,20 @@ const message = (body: unknown, attempts: number) => {
 const batchOf = (...messages: ReadonlyArray<{ readonly message: unknown }>) =>
 	({ messages: Arr.map(messages, (entry) => entry.message) }) as never
 
+/** Product events the consumer emitted in the current test, in order. */
+const emitted: Array<ProductEventInput> = []
+const recordingProductEvents = Layer.succeed(ProductEventsService, {
+	enabled: true,
+	track: (productEvent) => Effect.sync(() => void emitted.push(productEvent)),
+	trackAll: (events) => Effect.sync(() => void emitted.push(...events)),
+})
+
 /** The consumer's services over one warehouse stub: the trail writes through the same `ingest`. */
 const withTrail = (stub: ReturnType<typeof makeWarehouseServiceStub>) =>
 	Layer.effect(AuditTrailService, AuditTrailService.make).pipe(
-		Layer.provideMerge(Layer.succeed(WarehouseQueryService, stub)),
+		Layer.provideMerge(
+			Layer.mergeAll(Layer.succeed(WarehouseQueryService, stub), recordingProductEvents),
+		),
 	)
 
 /** A warehouse whose `ingest` is interrupted — a deploy tearing the isolate down. */
@@ -116,6 +134,68 @@ const warehouse = (failing: ReadonlyArray<string> = [], trailCopy?: "dies" | "in
 }
 
 describe("processAuditEventsBatch", () => {
+	beforeEach(() => {
+		emitted.length = 0
+	})
+
+	it.effect("emits feature_used for a feature action by a person, once its entry is written", () =>
+		Effect.gen(function* () {
+			const store = warehouse()
+			const created = message(event("44444444-4444-4444-8444-444444444444"), 1)
+			const denied = message(
+				event("55555555-5555-4555-8555-555555555555", ORG, {
+					action: "dashboard.created",
+					outcome: "denied",
+				}),
+				1,
+			)
+			const bySystem = message(
+				event("66666666-6666-4666-8666-666666666666", ORG, {
+					action: "error_issue.state_change",
+					outcome: "allowed",
+					actorType: "system",
+				}),
+				1,
+			)
+			const update = message(
+				event("77777777-7777-4777-8777-777777777777", ORG, {
+					action: "dashboard.updated",
+					outcome: "allowed",
+				}),
+				1,
+			)
+			yield* processAuditEventsBatch(batchOf(created, denied, bySystem, update), MAX_RETRIES).pipe(
+				Effect.provide(store.layer),
+			)
+
+			expect(emitted).toEqual([
+				{
+					name: "feature_used",
+					groupId: ORG,
+					timestamp: 1_700_000_000_000,
+					attributes: {
+						feature: "dashboard",
+						action: "created",
+						source: "dashboard",
+						actor_type: "user",
+						audit_entry_id: "44444444-4444-4444-8444-444444444444",
+					},
+				},
+			])
+		}),
+	)
+
+	it.effect("emits nothing for an entry whose write failed, so the retry is the one that counts", () =>
+		Effect.gen(function* () {
+			const failed = message(event("88888888-8888-4888-8888-888888888888"), 1)
+			yield* processAuditEventsBatch(batchOf(failed), MAX_RETRIES).pipe(
+				Effect.provide(warehouse([AUDIT_LOG]).layer),
+			)
+			expect(failed.calls).toEqual(["retry"])
+			expect(emitted).toEqual([])
+		}),
+	)
+
 	it.effect("writes well-formed events through ingest, one batch per org, and acks them", () =>
 		Effect.gen(function* () {
 			const store = warehouse()

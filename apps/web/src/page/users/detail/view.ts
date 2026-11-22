@@ -11,7 +11,7 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { timeControls } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { type UserTab, userLabel } from "../data"
+import { type UserCalendar, type UserTab, userLabel } from "../data"
 import {
 	type UserGroupStats,
 	userDetailBody,
@@ -121,6 +121,12 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 		hrefOf: (next) => userDetailHref(model.userId, { ...model.search, tab: next }),
 		onSelectTab: (next) => Message.ClickedTab({ tab: next }),
 		tabContent,
+		calendar: {
+			calendar: calendarOf(model),
+			// A square scopes the page to its day; the tab stays.
+			dayHref: (range) =>
+				userDetailHref(model.userId, { ...model.search, ...range, timePreset: undefined }),
+		},
 	}
 	return dashboardPage(
 		h,
@@ -142,6 +148,14 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 		[userDetailBody(h, detail, options)],
 	)
 }
+
+/** The calendar's read: its days once in, else loading or failed. */
+const calendarOf = (model: Model): UserCalendar =>
+	AsyncData.matchData(model.calendar.data, {
+		onEmpty: (): UserCalendar => "loading",
+		onFailure: (): UserCalendar => "failed",
+		onData: (data): UserCalendar => data,
+	})
 
 /**
  * The rail's group numbers: none until the overview names a group, then the read's state. Numbers

@@ -329,6 +329,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userActivitySummaryQuery", () =>
 		CH.compileUnsafe(CH.userActivitySummaryQuery(USER_SCOPE), window),
 	),
+	userActivityFixture("userActivityDaysQuery", () =>
+		CH.compileUnsafe(CH.userActivityDaysQuery(USER_SCOPE), window),
+	),
 	userActivityFixture("userActivityServicesQuery", () =>
 		CH.compileUnsafe(CH.userActivityServicesQuery(USER_SCOPE), window),
 	),
@@ -2894,6 +2897,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "userDevicesQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.userDevicesQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userEventDaysQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.userEventDaysQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
 	},
 	{
 		module: "users",

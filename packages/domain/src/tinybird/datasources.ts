@@ -1539,6 +1539,35 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 
 export type UserActivityHourlyRow = InferRow<typeof userActivityHourly>
 
+/**
+ * A year of `user_activity_hourly` at day grain (UTC days), for the user page's activity calendar.
+ * Counts and sessions only: no names, emails, routes or latency, which stay in the 90-day hourly table.
+ */
+export const userActivityDaily = defineDatasource("user_activity_daily", {
+	tenantColumn: "OrgId",
+	description:
+		"Daily (UTC) per end user (user.id, else enduser.id), service and service.namespace: request, failed request, error span and log counts and distinct sessions. Populated by a materialized view from user_activity_hourly; keeps 365 days.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		ServiceNamespace: t.string().lowCardinality(),
+		UserId: t.string(),
+		Day: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		RequestCount: t.simpleAggregateFunction("sum", t.uint64()),
+		FailedRequestCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		LogCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorLogCount: t.simpleAggregateFunction("sum", t.uint64()),
+		SessionIds: t.aggregateFunction("uniqIf", t.string(), t.uint8()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toYYYYMM(Day)",
+		sortingKey: ["OrgId", "ServiceNamespace", "UserId", "Day", "ServiceName"],
+		ttl: "toDate(Day) + INTERVAL 365 DAY",
+	}),
+})
+
 /** `service.name` of the CI traces the GitHub App's workflow webhooks become. */
 export const CI_SERVICE_NAME = "github-actions"
 

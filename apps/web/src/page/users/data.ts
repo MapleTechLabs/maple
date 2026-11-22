@@ -1,4 +1,4 @@
-import type { UserChannel, WorkflowState } from "@maple/domain/http"
+import type { UserCalendarDay, UserChannel, WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr, Order } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
@@ -222,6 +222,15 @@ export type UserMcpSession = Readonly<{
 	lastSeenMs: number
 	href: string
 }>
+
+/** One UTC day the user was active, for the activity calendar. */
+export type UserActivityDay = UserCalendarDay
+
+/** The activity calendar's read: its days (only those with activity), or where it stands. */
+export type UserCalendar =
+	| Readonly<{ days: ReadonlyArray<UserActivityDay>; indexed: boolean }>
+	| "loading"
+	| "failed"
 
 /** Everything the detail page reads for one user. */
 export type UserDetail = Readonly<{

@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import {
 	UserActivityItem,
+	UserCalendarDay,
 	UserEventItem,
 	UserIssueItem,
 	UserLogItem,
@@ -59,6 +60,10 @@ export type GroupStatsData = typeof GroupStatsData.Type
 export const LogsData = Schema.Struct({ logs: Schema.Array(UserLogItem) })
 export type LogsData = typeof LogsData.Type
 
+/** `getUserCalendar`: the user's active days over the last year, read while Activity is open. */
+export const CalendarData = Schema.Struct({ days: Schema.Array(UserCalendarDay), indexed: Schema.Boolean })
+export type CalendarData = typeof CalendarData.Type
+
 export const Model = Schema.Struct({
 	userId: Schema.String,
 	search: UserDetailSearch,
@@ -69,6 +74,7 @@ export const Model = Schema.Struct({
 	issues: KeyedSchema(IssuesData, LoadFailure),
 	traces: KeyedSchema(TracesData, LoadFailure),
 	logs: KeyedSchema(LogsData, LoadFailure),
+	calendar: KeyedSchema(CalendarData, LoadFailure),
 	/** Read once the profile names a group. */
 	groupStats: KeyedSchema(GroupStatsData, LoadFailure),
 	timePicker: TimeRangePicker.Model,

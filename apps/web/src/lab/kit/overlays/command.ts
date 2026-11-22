@@ -1,15 +1,17 @@
+import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Combobox from "@maple/views/ui/combobox"
 import {
 	type CommandGroup,
 	commandFooter,
 	commandHiddenInput,
+	commandHints,
 	commandInput,
 	commandList,
+	MeasureCommandList,
 } from "@maple/views/ui/command"
 import type * as Dialog from "@maple/views/ui/dialog"
 import { view as dialogView } from "@maple/views/ui/dialog-view"
-import { kbd } from "@maple/views/ui/display"
 import { Message } from "./model"
 
 // The command palette, open on mount.
@@ -27,9 +29,6 @@ export const COMMANDS: ReadonlyArray<CommandGroup> = [
 	{ label: "Actions", items: [{ title: "Create dashboard" }, { title: "Invite teammate" }] },
 ]
 
-const hint = (h: H, key: string, text: string): Html =>
-	h.span([h.Class("flex items-center gap-1.5")], [kbd(h, undefined, [key]), text])
-
 export const kitCommand = (h: H, dialog: Dialog.Model, list: Combobox.Model): Html => {
 	const toMessage = (message: Combobox.Message) => Message.GotCommandListMessage({ message })
 	return h.submodel({
@@ -46,8 +45,17 @@ export const kitCommand = (h: H, dialog: Dialog.Model, list: Combobox.Model): Ht
 					{ placeholder: "Search pages, dashboards, actions", groups: COMMANDS },
 					toMessage,
 				),
-				commandList(h, list, COMMANDS, toMessage),
-				commandFooter(h, [hint(h, "Enter", " to open"), hint(h, "Esc", " to close")]),
+				commandList(h, list, COMMANDS, toMessage, {
+					viewportAttributes: [
+						h.OnMount(
+							Mount.mapMessage(MeasureCommandList(), () =>
+								Message.CompletedMeasureCommandList(),
+							),
+						),
+					],
+					hasMeasuredScrollbar: true,
+				}),
+				commandFooter(h, commandHints(h)),
 				commandHiddenInput(h, list),
 			],
 		},

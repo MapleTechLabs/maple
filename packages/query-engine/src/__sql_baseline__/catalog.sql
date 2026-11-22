@@ -11412,6 +11412,23 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
+-- builder:user-activity:userActivityDaysQuery:default  [95f977c3]
+SELECT
+          toString(toDate(Day)) AS day,
+          sum(user_activity_daily.RequestCount) AS requestCount,
+          sum(user_activity_daily.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_daily.ErrorLogCount) AS errorLogCount,
+          uniqIfMerge(SessionIds) AS sessionCount
+        FROM user_activity_daily
+        WHERE user_activity_daily.OrgId = 'org_sql_catalog'
+          AND user_activity_daily.ServiceNamespace IN ('storefront')
+          AND user_activity_daily.UserId = 'user_catalog'
+          AND user_activity_daily.Day >= toStartOfDay(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_daily.Day <= toStartOfDay(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY day
+        ORDER BY day ASC
+        FORMAT JSON
+
 -- builder:user-activity:userActivityIdentityQuery:default  [5c1b7e69]
 SELECT
           argMaxIfMerge(UserName) AS name,
@@ -11668,6 +11685,19 @@ SELECT
         GROUP BY browser, os
         ORDER BY sessions DESC
         LIMIT 10
+        FORMAT JSON
+
+-- builder:users:userEventDaysQuery:default  [3b44e586]
+SELECT
+          toString(toDate(Timestamp)) AS day,
+          count() AS events
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+        GROUP BY day
+        ORDER BY day ASC
         FORMAT JSON
 
 -- builder:users:userEventsQuery:namespaceFiltered  [28a0c0c9]
