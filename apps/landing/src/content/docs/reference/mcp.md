@@ -171,15 +171,18 @@ The write tools here need the org admin or engineer role.
 
 ### Session replays and product events
 
-| Tool                     | Access | What it does                                                                                |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------------- |
-| `search_sessions`        | read   | Find browser session replays by user, client, errors, duration or what happened in them     |
-| `get_session_transcript` | read   | A session replay as a text transcript of navigation, clicks, console, network and errors    |
-| `get_session_traces`     | read   | The backend traces a browser session produced                                               |
-| `list_product_events`    | read   | Product event names with how often each fired and how many sessions and people it reached   |
-| `query_funnel`           | read   | Conversion funnel over product events, with step counts, conversion and drop-off            |
-| `list_users`             | read   | The end users your apps identified, with sessions, requests, errors and their busiest route |
-| `inspect_user`           | read   | One end user: sessions, MCP sessions, the issues they hit and their failed requests         |
+| Tool                     | Access | What it does                                                                                   |
+| ------------------------ | ------ | ---------------------------------------------------------------------------------------------- |
+| `search_sessions`        | read   | Find browser session replays by user, client, errors, duration or what happened in them        |
+| `get_session_transcript` | read   | A session replay as a text transcript of navigation, clicks, console, network and errors       |
+| `get_session_traces`     | read   | The backend traces a browser session produced                                                  |
+| `list_product_events`    | read   | Product event names with how often each fired and how many sessions and people it reached      |
+| `query_cohort`           | read   | Who did one thing and did not do another: how many, out of how many, and who                   |
+| `query_funnel`           | read   | Conversion funnel over product events, per person or per account, with conversion and drop-off |
+| `query_paths`            | read   | What people do in the steps after, or before, one event or page                                |
+| `query_retention`        | read   | Retention cohorts: who first did one thing, and how many came back each day, week or month     |
+| `list_users`             | read   | The end users your apps identified, with sessions, requests, errors and their busiest route    |
+| `inspect_user`           | read   | One end user: sessions, their latest events, MCP sessions, issues and failed requests          |
 
 ### Agent sessions
 

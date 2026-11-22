@@ -316,6 +316,8 @@ export function replaysWhere(
 	$: ReplaysAccessor,
 	filters: WebAnalyticsFilters,
 	exclude?: WebAnalyticsFacetKey,
+	/** Read sessions that started from here on instead of from `startTime`. */
+	sessionsFrom?: CH.Expr<DateTime.Utc>,
 ): Array<CH.Condition | undefined> {
 	// `host` and `pagePath` both narrow through one navigation semi-join rather
 	// than two, so a page filter and a site filter compose into "sessions that
@@ -337,7 +339,7 @@ export function replaysWhere(
 
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.gte(sessionsFrom ?? param.dateTime("startTime")),
 		$.StartTime.lte(param.dateTime("endTime")),
 		navigationFilter,
 		exclude === "referrerHost"

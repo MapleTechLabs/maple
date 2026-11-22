@@ -80,6 +80,8 @@ export const countNoun = (keyBy: FunnelKeyBy, count: number): string => {
 			return pluralize(count, "visitor")
 		case "user":
 			return pluralize(count, "user")
+		case "group":
+			return pluralize(count, "group")
 		case "session":
 			return pluralize(count, "session")
 	}
@@ -87,4 +89,4 @@ export const countNoun = (keyBy: FunnelKeyBy, count: number): string => {
 
 /** A table column header for the same count. */
 export const countHeader = (keyBy: FunnelKeyBy): string =>
-	({ person: "People", visitor: "Visitors", user: "Users", session: "Sessions" })[keyBy]
+	({ person: "People", visitor: "Visitors", user: "Users", group: "Groups", session: "Sessions" })[keyBy]

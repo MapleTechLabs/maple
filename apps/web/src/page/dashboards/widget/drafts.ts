@@ -137,6 +137,7 @@ const PRODUCT_EVENTS_AGGREGATION_TITLES = new Map([
 	["persons", "Persons with events"],
 	["users", "Users with events"],
 	["visitors", "Visitors with events"],
+	["groups", "Groups with events"],
 ])
 
 /** "Error rate by service.name" for a widget saved untitled. */
