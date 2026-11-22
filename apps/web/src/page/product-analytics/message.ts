@@ -30,6 +30,8 @@ export const SlotName = Schema.Literals([
 	"previousFunnel",
 	"funnelBreakdown",
 	"attributeKeys",
+	"userPropertyKeys",
+	"groupPropertyKeys",
 	"pages",
 	"paths",
 ])

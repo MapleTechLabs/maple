@@ -96,6 +96,8 @@ const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["metricAttributeKeys", "getMetricAttributeKeys"],
 	["productEventNames", "productEventNames"],
 	["productEventAttributeKeys", "getProductEventAttributeKeys"],
+	["productUserPropertyKeys", "getProductUserPropertyKeys"],
+	["productGroupPropertyKeys", "getProductGroupPropertyKeys"],
 ])
 
 /** The autocomplete lookups for the window, fired with the page. */

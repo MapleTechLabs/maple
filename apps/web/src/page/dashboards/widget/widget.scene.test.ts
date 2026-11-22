@@ -147,7 +147,7 @@ describe("widget editor", () => {
 
 	test("the first focus in the query editor starts every autocomplete lookup, once", () => {
 		const focused = pageUpdate(opened().model, Message.FocusedQueryEditor())
-		expect(Arr.filter(names(focused.commands), (name) => name === FetchAutocomplete.name)).toHaveLength(7)
+		expect(Arr.filter(names(focused.commands), (name) => name === FetchAutocomplete.name)).toHaveLength(9)
 		expect(names(pageUpdate(focused.model, Message.FocusedQueryEditor()).commands)).toEqual([])
 	})
 })

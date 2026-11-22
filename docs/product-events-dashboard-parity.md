@@ -36,7 +36,8 @@ quarter is a smaller read than a day of them.
 `GroupId`) and the `user_property` / `group_property` group-bys with `groupByUserPropertyKey` /
 `groupByGroupPropertyKey`. Funnels, retention, cohorts and paths take the same filters, matched on
 the stitched key when it is a person or user (`personPropertyConditions`), and funnels break down
-by `user:<key>` / `group:<key>`. The dashboard builder's token lists do not offer them yet.
+by `user:<key>` / `group:<key>`. The dashboard query builder writes them as `person.<key>` and
+`account.<key>`, in the where clause and as group-bys, and completes the keys.
 
 ## Where it stood before this PR
 

@@ -10,7 +10,7 @@ import type { QueryDraft } from "./draft"
 
 type DataSource = QueryDraft["dataSource"]
 
-export type FieldGroup = "common" | "resource" | "attribute"
+export type FieldGroup = "common" | "resource" | "attribute" | "property"
 export type FieldKind = "string" | "number" | "boolean"
 export type ConditionField = Readonly<{ key: string; label: string; group: FieldGroup; kind: FieldKind }>
 
@@ -60,7 +60,9 @@ export const groupLabelOf = (group: FieldGroup, dataSource: DataSource): string 
 		? "Common"
 		: group === "resource"
 			? "Resource attributes"
-			: ATTRIBUTE_GROUP_LABEL[dataSource]
+			: group === "property"
+				? "User and account properties"
+				: ATTRIBUTE_GROUP_LABEL[dataSource]
 
 const NUMERIC_KEY = /(status_code|_ms|duration|\.port|\.count|\.size|_bytes)$/
 
@@ -75,6 +77,12 @@ export const fieldOf = (key: string, dataSource: DataSource): ConditionField => 
 	if (known !== null) return known
 	if (Str.startsWith(RESOURCE_PREFIX)(key))
 		return { key, label: Str.slice(RESOURCE_PREFIX.length)(key), group: "resource", kind: kindOfKey(key) }
+	// A product event's user or account property keeps its prefix: `person.plan` and `account.plan` differ.
+	if (
+		dataSource === "product_events" &&
+		(Str.startsWith("person.")(key) || Str.startsWith("account.")(key))
+	)
+		return { key, label: key, group: "property", kind: kindOfKey(key) }
 	const label = Str.startsWith(ATTRIBUTE_PREFIX)(key) ? Str.slice(ATTRIBUTE_PREFIX.length)(key) : key
 	return { key, label, group: "attribute", kind: kindOfKey(key) }
 }
@@ -108,6 +116,7 @@ export const fieldsOf = (
 			fieldOf(`${RESOURCE_PREFIX}${key}`, dataSource),
 		),
 		...Arr.map(values.attributeKeys ?? [], (key) => fieldOf(`${ATTRIBUTE_PREFIX}${key}`, dataSource)),
+		...Arr.map(values.propertyKeys ?? [], (key) => fieldOf(key, dataSource)),
 	]
 	return Arr.filter(
 		Arr.dedupeWith(known, (a, b) => a.key === b.key),

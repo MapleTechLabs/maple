@@ -84,7 +84,7 @@ describe("metric detail", () => {
 		)
 		expect(names(resolved.commands)).toEqual([
 			"FetchMetricCatalog",
-			...Array.from({ length: 7 }, () => "FetchMetricAutocomplete"),
+			...Array.from({ length: 9 }, () => "FetchMetricAutocomplete"),
 		])
 		const catalog = withCatalog(resolved.model, [row("checkout-api")])
 		expect(names(catalog.commands)).toEqual(

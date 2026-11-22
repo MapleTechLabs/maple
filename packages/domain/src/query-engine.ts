@@ -541,7 +541,8 @@ export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsList
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
-	scope: Schema.optional(Schema.Literals(["span", "resource"])),
+	/** `user` / `group` (product_events only): the users' or accounts' property keys. */
+	scope: Schema.optional(Schema.Literals(["span", "resource", "user", "group"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
 	metricName: Schema.optional(Schema.String),
@@ -606,7 +607,8 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
-	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
+	/** `user` / `group` (product_events only): a user or account property's current values. */
+	scope: Schema.Literals(["span", "resource", "log", "metric", "event", "user", "group"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
 	// or to several metrics of one `metricType` with `metricNames`. Scoped metric
