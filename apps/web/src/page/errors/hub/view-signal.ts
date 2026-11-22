@@ -10,6 +10,7 @@ import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import type { Tone } from "@maple/ui/lib/tone"
 
@@ -102,7 +103,12 @@ const countMark = (
 				tone: tooltip.tone,
 			}),
 		},
-		[icon(h, iconName, { size: 12 }), String(count)],
+		[
+			icon(h, iconName, { size: 12 }),
+			// The tooltip is not announced: a screen reader gets the title in place of the bare count.
+			h.span([h.AriaHidden(true)], [String(count)]),
+			typography(h, { as: "span", className: "sr-only" }, [tooltip.title]),
+		],
 	)
 
 /** Whether the row has any investigation, comment or PR mark to show. */
