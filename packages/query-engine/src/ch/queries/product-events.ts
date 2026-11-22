@@ -220,22 +220,47 @@ const PROPERTY_BREAKDOWN_ALIAS = "bp"
 export function personPropertyConditions(
 	keyBy: FunnelKeyBy,
 	key: CH.Expr<string>,
-	row: { readonly UserId: CH.Expr<string>; readonly GroupId: CH.Expr<string> },
 	filters: {
 		readonly userPropertyFilters?: ReadonlyArray<AttributeFilter> | undefined
 		readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter> | undefined
 	},
 ): Array<CH.Condition> {
-	const userId = keyBy === "person" || keyBy === "user" ? key : row.UserId
-	const groupId = keyBy === "group" ? key : row.GroupId
+	const condition = (kind: PersonPropertyKind, filter: AttributeFilter): CH.Condition => {
+		// The key is the property's own id: match it directly.
+		if (kind === "user" ? keyBy === "person" || keyBy === "user" : keyBy === "group")
+			return propertyFilterCondition(key, kind, filter)
+		// Otherwise a key belongs when any of its events in the window names a matching user or
+		// account, so its anonymous and group-less rows stay with it.
+		const negated = filter.or === undefined && filter.negated === true
+		const members = inSubquery(
+			key,
+			keysWithProperty(keyBy, kind, negated ? { ...filter, negated: false } : filter),
+		)
+		return negated ? CH.not(members) : members
+	}
 	return [
-		...Arr.map(filters.userPropertyFilters ?? [], (filter) =>
-			propertyFilterCondition(userId, "user", filter),
-		),
-		...Arr.map(filters.groupPropertyFilters ?? [], (filter) =>
-			propertyFilterCondition(groupId, "group", filter),
-		),
+		...Arr.map(filters.userPropertyFilters ?? [], (filter) => condition("user", filter)),
+		...Arr.map(filters.groupPropertyFilters ?? [], (filter) => condition("group", filter)),
 	]
+}
+
+/** The keys with an event in the window whose user or account matches `filter`. */
+function keysWithProperty(keyBy: FunnelKeyBy, kind: PersonPropertyKind, filter: AttributeFilter) {
+	let base: OpenJoinQuery<typeof Datasources.productEvents.columns> = from(Datasources.productEvents, "e")
+	if (keyBy === "person") {
+		base = base.leftJoinQuery(identityLinksByVisitor(), LINK_ALIAS, (e, link) =>
+			e.VisitorId.eq(link.VisitorId),
+		)
+	}
+	return base
+		.select(($) => ({ key: personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			propertyFilterCondition(kind === "user" ? $.UserId : $.GroupId, kind, filter),
+		])
+		.groupBy("key")
 }
 
 export interface ProductEventsFunnelBreakdownOpts extends ProductEventsFunnelOpts {
@@ -685,10 +710,18 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 		base = base.leftJoinQuery(sessionDims, "sd", (e, sd) => e.SessionId.eq(sd.SessionId))
 	}
 	if (property !== undefined) {
+		// A person's anonymous rows carry no user id: for `person` they reach the user through the link.
 		base = base.leftJoinQuery(
 			propertyValuesById(property.kind, property.key),
 			PROPERTY_BREAKDOWN_ALIAS,
-			(e, p) => (property.kind === "user" ? e.UserId : e.GroupId).eq(p.Id),
+			(e, p) =>
+				property.kind === "group"
+					? e.GroupId.eq(p.Id)
+					: keyBy === "person"
+						? CH.rawCond(
+								`if(e.UserId != '', e.UserId, ${LINK_ALIAS}.UserId) = ${PROPERTY_BREAKDOWN_ALIAS}.Id`,
+							)
+						: e.UserId.eq(p.Id),
 		)
 	}
 
@@ -749,7 +782,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
-				...personPropertyConditions(keyBy, key, $, opts),
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }
@@ -764,8 +797,11 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 	const { opts, filters, breakdownBy } = plan
 	const keyBy = opts.keyBy
 	const dim = breakdownBy
+	// `host` is on the session row too; only an event property or a user or account property is not.
 	const sessionDimension =
-		dim !== undefined && !isEventDimension(dim) ? (dim as FunnelSessionDimension) : undefined
+		dim !== undefined && (dim === "host" || !isEventDimension(dim))
+			? (dim as FunnelSessionDimension)
+			: undefined
 
 	let base: OpenJoinQuery<typeof Datasources.sessionReplays.columns> = from(Datasources.sessionReplays, "s")
 	if (keyBy === "person") {
@@ -801,7 +837,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
-				...personPropertyConditions(keyBy, key, $, opts),
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }
@@ -1336,7 +1372,7 @@ function personEventsBranch(plan: FunnelPlan) {
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
-				...personPropertyConditions(keyBy, key, $, opts),
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }

@@ -165,7 +165,7 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 		hasPopulationFilter(filters)
 			? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))
 			: undefined,
-		...personPropertyConditions(keyBy, keyOf($), $, opts),
+		...personPropertyConditions(keyBy, keyOf($), opts),
 	]
 
 	// Each person's anchor instant. Rows are read by `idx_event_name` for an

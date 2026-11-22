@@ -5192,7 +5192,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:user-property-filtered  [d6189c81]
+-- builder:product-events:productEventsFunnelBreakdownQuery:user-property-filtered  [c88e85c6]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3]) AS step,
@@ -5253,7 +5253,7 @@ SELECT
         WHERE person_properties.OrgId = 'org_sql_catalog'
           AND person_properties.Kind = 'user'
           AND person_properties.Key = 'plan'
-        GROUP BY Id) AS bp ON e.UserId = bp.Id
+        GROUP BY Id) AS bp ON if(e.UserId != '', e.UserId, link.UserId) = bp.Id
         WHERE e.OrgId = 'org_sql_catalog'
           AND e.Timestamp >= '2026-01-01 10:30:00'
           AND e.Timestamp <= '2026-01-03 14:15:00'
@@ -5271,7 +5271,24 @@ SELECT
     min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
     NULL
   ), '') = 'admin')
-          AND NOT (e.GroupId IN (SELECT
+          AND NOT (multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) IN (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.GroupId IN (SELECT
           person_properties.Id AS Id
         FROM person_properties
         WHERE person_properties.OrgId = 'org_sql_catalog'
@@ -5282,7 +5299,8 @@ SELECT
     max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
     min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
     NULL
-  ), '') = 'gold'))) AS funnel_events
+  ), '') = 'gold')
+        GROUP BY key))) AS funnel_events
         GROUP BY key) AS person_events) AS walked) AS levels
         GROUP BY group
         ORDER BY entered DESC, group ASC

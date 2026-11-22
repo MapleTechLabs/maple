@@ -118,7 +118,7 @@ export function productEventsCohortQuery(
 				readsHistory ? undefined : $.Timestamp.gte(param.dateTime("startTime")),
 				didNot === undefined ? did : did.or(didNot),
 				keyOf($).neq(""),
-				...personPropertyConditions(keyBy, keyOf($), $, opts),
+				...personPropertyConditions(keyBy, keyOf($), opts),
 			]
 		})
 

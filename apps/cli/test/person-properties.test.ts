@@ -309,6 +309,10 @@ describeWithChdb("reads by person and group property", () => {
 			insert({ minute: 2, userId: user, groupId: group, name: "create_project", attributes: {} })
 		}
 		insert({ minute: 3, userId: "a", groupId: "acme", name: "invite", attributes: {} })
+		// A visit referred by google on app.example that never signed up, for a host breakdown.
+		db.exec(
+			`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, ReferrerHost, Host) VALUES (${quote(Q_ORG)}, 'sess-e', ${quote(at(5))}, 'ended', '', 1, 'dev-e', 'google.com', 'app.example')`,
+		)
 	})
 
 	afterAll(() => {
@@ -396,6 +400,88 @@ describeWithChdb("reads by person and group property", () => {
 				groupPropertyFilters: [{ key: "tier", mode: "equals", value: "gold" }],
 			}),
 		).toEqual([1, 1])
+	})
+
+	test("an account filter keeps a person's steps before they joined the account", () => {
+		// a's landing has no account; a is in gold acme, so the step stays.
+		expect(
+			funnel({
+				steps: [event("landing"), event("signup")],
+				keyBy: "person",
+				windowSeconds: 3600,
+				groupPropertyFilters: [{ key: "tier", mode: "equals", value: "gold" }],
+			}),
+		).toEqual([1, 1])
+		expect(
+			funnel({
+				steps: [event("landing"), event("signup")],
+				keyBy: "person",
+				windowSeconds: 3600,
+				groupPropertyFilters: [{ key: "tier", mode: "equals", value: "gold", negated: true }],
+			}),
+		).toEqual([0, 0])
+	})
+
+	const funnelGroups = (opts: CH.ProductEventsFunnelBreakdownOpts) =>
+		Arr.map(
+			decodeGroups(
+				run(
+					db,
+					CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelBreakdownQuery(opts)), WINDOW)
+						.sql,
+				),
+			),
+			(row) => `${row.group}:${row.step}=${row.count}`,
+		)
+
+	test("a person's anonymous steps are grouped under their user's property", () => {
+		expect(
+			funnelGroups({
+				steps: [event("landing")],
+				keyBy: "person",
+				windowSeconds: 3600,
+				breakdownBy: "user:plan",
+			}),
+		).toEqual(["pro:1=1"])
+	})
+
+	test("a host breakdown reads the host of a visit that entered on a session step", () => {
+		expect(
+			funnelGroups({
+				steps: [{ kind: "session", dimension: "referrerHost", value: "google.com" }, event("signup")],
+				keyBy: "visitor",
+				windowSeconds: 3600,
+				breakdownBy: "host",
+			}),
+		).toEqual(["app.example:1=1", "app.example:2=0"])
+	})
+
+	test("a negated filter keeps the people without the value", () => {
+		const rows = decodeCohort(
+			run(
+				db,
+				CH.compileUnsafe(
+					Result.getOrThrow(
+						CH.productEventsCohortQuery({
+							did: event("signup"),
+							didNotScope: "window",
+							keyBy: "user",
+							limit: 10,
+							userPropertyFilters: [
+								{ key: "plan", mode: "equals", value: "pro", negated: true },
+							],
+						}),
+					),
+					WINDOW,
+				).sql,
+			),
+		)
+		expect(
+			Arr.sort(
+				Arr.map(rows, (row) => row.key),
+				Str.Order,
+			),
+		).toEqual(["b", "d"])
 	})
 
 	test("a funnel breaks down by the user's property", () => {

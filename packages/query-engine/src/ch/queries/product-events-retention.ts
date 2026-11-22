@@ -174,7 +174,7 @@ export function productEventsRetentionQuery(
 				hasPopulationFilter(filters)
 					? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))
 					: undefined,
-				...personPropertyConditions(keyBy, keyOf($), $, opts),
+				...personPropertyConditions(keyBy, keyOf($), opts),
 			]
 		})
 

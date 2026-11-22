@@ -146,7 +146,12 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 
 			// `attribute:<key>` is open-ended, so this is checked here rather than published as an enum.
 			const breakdownOption =
-				params.breakdown_by === undefined ? undefined : decodeBreakdownBy(params.breakdown_by)
+				params.breakdown_by === undefined ||
+				Arr.contains(["attribute:", "user:", "group:"], Str.trim(params.breakdown_by))
+					? params.breakdown_by === undefined
+						? undefined
+						: Option.none()
+					: decodeBreakdownBy(params.breakdown_by)
 			if (breakdownOption !== undefined && Option.isNone(breakdownOption)) {
 				return yield* new McpInvalidInputError({
 					message: `breakdown_by must be one of referrerHost, utmSource, utmMedium, utmCampaign, country, host, attribute:<key>, user:<key> or group:<key>; got "${params.breakdown_by}".`,
