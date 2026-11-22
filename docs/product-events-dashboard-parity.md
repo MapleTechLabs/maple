@@ -29,6 +29,15 @@ A breakdown over `product_events` may cover 93 days and needs no narrowing filte
 (`maxBreakdownRangeSeconds`): both limits exist for spans, and an org's whole event table over a
 quarter is a smaller read than a day of them.
 
+## User and account properties (2026-11-23)
+
+`person_properties` holds user and account properties (see `datasources.ts`). The query set takes
+`userPropertyFilters` / `groupPropertyFilters` (current values, matched on the event's `UserId` /
+`GroupId`) and the `user_property` / `group_property` group-bys with `groupByUserPropertyKey` /
+`groupByGroupPropertyKey`. Funnels, retention, cohorts and paths take the same filters, matched on
+the stitched key when it is a person or user (`personPropertyConditions`), and funnels break down
+by `user:<key>` / `group:<key>`. The dashboard builder's token lists do not offer them yet.
+
 ## Where it stood before this PR
 
 Dashboards knew three query-builder sources: `traces`, `logs`, `metrics`

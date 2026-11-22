@@ -72,7 +72,8 @@ A person can try more than once. If their first try runs out of time and a later
 **Break down by** splits the funnel into groups and shows each group's conversion next to everyone's:
 
 - where the session came from: referrer, UTM source, medium, campaign, country or site;
-- an event property your events carry, such as `plan` or `method`.
+- an event property your events carry, such as `method`;
+- a [user or account property](/docs/product-events/overview#user-and-account-properties), such as the user's `plan` or the account's `tier`, at its current value.
 
 A person is counted under the first value seen for them in the range. People with no value are grouped as `(none)`. The table lists up to 20 groups, the ones most people entered first.
 

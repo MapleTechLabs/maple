@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
-import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -261,5 +261,192 @@ describeWithChdb("person properties", () => {
 		expect(props(db, "user", ["u7"])).toEqual(["u7 plan=pro"])
 		expect(props(db, "group", ["initech"])).toEqual(["initech name=Initech"])
 		expect(props(db, "user", ["u1"])).toEqual([])
+	})
+})
+
+// Reads filtered and broken down by property. Four users: a and c on `pro`, b on `free`, d with no
+// plan; a and b in account acme (gold), c in globex (silver). a browsed anonymously on device dev-a
+// before signing in, and the $identify that set a's plan also linked the device.
+const Q_ORG = "org_props_reads"
+const WINDOW = { orgId: OrgId.make(Q_ORG), startTime: "2026-11-20 00:00:00", endTime: "2026-11-21 00:00:00" }
+const decodeNamed = decodeJsonEachRow(Schema.Struct({ name: Schema.String, value: CH.CHNumber }))
+const decodeSteps = decodeJsonEachRow(CH.productEventsFunnelRowSchema)
+const decodeGroups = decodeJsonEachRow(CH.productEventsFunnelBreakdownRowSchema)
+const decodeCohort = decodeJsonEachRow(CH.productEventsCohortRowSchema)
+
+const event = (eventName: string): CH.FunnelStep => ({ kind: "event", eventName })
+
+describeWithChdb("reads by person and group property", () => {
+	let root: string
+	let db: Chdb
+	const insert = (row: EventRow) =>
+		db.exec(
+			`INSERT INTO product_events (OrgId, Timestamp, Source, VisitorId, UserId, GroupId, Kind, EventName, Attributes) VALUES (${quote(Q_ORG)}, ${quote(at(row.minute))}, ${quote(row.source ?? "server")}, ${quote(row.visitorId ?? "")}, ${quote(row.userId ?? "")}, ${quote(row.groupId ?? "")}, 'custom', ${quote(row.name ?? "$identify")}, ${mapLiteral(row.attributes)})`,
+		)
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-person-property-reads-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		insert({ minute: 0, source: "mobile", visitorId: "dev-a", name: "landing", attributes: {} })
+		insert({
+			minute: 0,
+			source: "mobile",
+			visitorId: "dev-a",
+			userId: "a",
+			attributes: { "$set.plan": "pro" },
+		})
+		insert({ minute: 0, userId: "b", attributes: { "$set.plan": "free" } })
+		insert({ minute: 0, userId: "c", attributes: { "$set.plan": "pro" } })
+		insert({ minute: 0, groupId: "acme", attributes: { "$group_set.tier": "gold" } })
+		insert({ minute: 0, groupId: "globex", attributes: { "$group_set.tier": "silver" } })
+		for (const [user, group] of [
+			["a", "acme"],
+			["b", "acme"],
+			["c", "globex"],
+			["d", ""],
+		] as const) {
+			insert({ minute: 1, userId: user, groupId: group, name: "signup", attributes: {} })
+			insert({ minute: 2, userId: user, groupId: group, name: "create_project", attributes: {} })
+		}
+		insert({ minute: 3, userId: "a", groupId: "acme", name: "invite", attributes: {} })
+	})
+
+	afterAll(() => {
+		db?.close()
+		if (root) rmSync(root, { recursive: true, force: true })
+	})
+
+	const breakdown = (opts: CH.ProductEventsBreakdownOpts) =>
+		Arr.map(
+			decodeNamed(run(db, CH.compileUnsafe(CH.productEventsBreakdownQuery(opts), WINDOW).sql)),
+			(row) => `${row.name}=${row.value}`,
+		)
+
+	test("a chart breaks down and filters by the user's and the account's property", () => {
+		expect(
+			breakdown({
+				metric: "users",
+				groupBy: "user_property",
+				groupByUserPropertyKey: "plan",
+				eventNames: ["signup"],
+			}),
+		).toEqual(["pro=2", "=1", "free=1"])
+		expect(
+			breakdown({
+				metric: "count",
+				groupBy: "group_property",
+				groupByGroupPropertyKey: "tier",
+				eventNames: ["create_project"],
+			}),
+		).toEqual(["gold=2", "=1", "silver=1"])
+		const proUsers = {
+			metric: "users",
+			groupBy: "event_name",
+			userPropertyFilters: [{ key: "plan", mode: "equals", value: "pro" }],
+		} as const
+		expect(breakdown({ ...proUsers, eventNames: ["create_project"] })).toEqual(["create_project=2"])
+		// Not pro: b, d, and the anonymous landing with no user at all.
+		expect(
+			breakdown({
+				metric: "count",
+				groupBy: "event_name",
+				eventNames: ["signup", "landing"],
+				userPropertyFilters: [{ key: "plan", mode: "equals", value: "pro", negated: true }],
+			}),
+		).toEqual(["signup=2", "landing=1"])
+		expect(
+			breakdown({
+				metric: "groups",
+				groupBy: "event_name",
+				eventNames: ["signup"],
+				groupPropertyFilters: [{ key: "tier", mode: "in", values: ["gold", "silver"] }],
+				userPropertyFilters: [{ key: "plan", mode: "exists" }],
+			}),
+		).toEqual(["signup=2"])
+	})
+
+	const funnel = (opts: CH.ProductEventsFunnelOpts) =>
+		Arr.map(
+			decodeSteps(
+				run(db, CH.compileUnsafe(Result.getOrThrow(CH.productEventsFunnelQuery(opts)), WINDOW).sql),
+			),
+			(row) => row.count,
+		)
+
+	test("a funnel keeps the persons whose property matches, with their anonymous steps", () => {
+		const steps = [event("signup"), event("create_project"), event("invite")]
+		const pro = [{ key: "plan", mode: "equals", value: "pro" }] as const
+		expect(funnel({ steps, keyBy: "person", windowSeconds: 3600, userPropertyFilters: pro })).toEqual([
+			2, 2, 1,
+		])
+		// dev-a's anonymous landing is a's, so it passes a's filter.
+		expect(
+			funnel({
+				steps: [event("landing"), event("signup")],
+				keyBy: "person",
+				windowSeconds: 3600,
+				userPropertyFilters: pro,
+			}),
+		).toEqual([1, 1])
+		expect(
+			funnel({
+				steps: [event("signup"), event("create_project")],
+				keyBy: "group",
+				windowSeconds: 3600,
+				groupPropertyFilters: [{ key: "tier", mode: "equals", value: "gold" }],
+			}),
+		).toEqual([1, 1])
+	})
+
+	test("a funnel breaks down by the user's property", () => {
+		const rows = decodeGroups(
+			run(
+				db,
+				CH.compileUnsafe(
+					Result.getOrThrow(
+						CH.productEventsFunnelBreakdownQuery({
+							steps: [event("signup"), event("create_project"), event("invite")],
+							keyBy: "person",
+							windowSeconds: 3600,
+							breakdownBy: "user:plan",
+						}),
+					),
+					WINDOW,
+				).sql,
+			),
+		)
+		expect(Arr.map(rows, (row) => `${row.group}:${row.step}=${row.count}`)).toEqual([
+			":1=1",
+			":2=1",
+			":3=0",
+			"free:1=1",
+			"free:2=1",
+			"free:3=0",
+			"pro:1=2",
+			"pro:2=2",
+			"pro:3=1",
+		])
+	})
+
+	test("a cohort keeps the members whose property matches", () => {
+		const rows = decodeCohort(
+			run(
+				db,
+				CH.compileUnsafe(
+					Result.getOrThrow(
+						CH.productEventsCohortQuery({
+							did: event("signup"),
+							didNot: event("invite"),
+							didNotScope: "window",
+							keyBy: "user",
+							limit: 10,
+							userPropertyFilters: [{ key: "plan", mode: "equals", value: "pro" }],
+						}),
+					),
+					WINDOW,
+				).sql,
+			),
+		)
+		expect(Arr.map(rows, (row) => row.key)).toEqual(["c"])
 	})
 })

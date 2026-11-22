@@ -295,6 +295,8 @@ export const PRODUCT_EVENTS_GROUP_BY = [
 	"service",
 	"group",
 	"attribute",
+	"user_property",
+	"group_property",
 	...PRODUCT_EVENTS_SESSION_GROUP_BY,
 ] as const
 export const ProductEventsGroupBy = Schema.Literals(PRODUCT_EVENTS_GROUP_BY)
@@ -332,6 +334,17 @@ export const ProductEventsFilters = Schema.Struct({
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	/** Required when `groupBy` includes `attribute`. */
 	groupByAttributeKey: Schema.optional(Schema.String),
+	/**
+	 * User properties (`identify()` traits, `set` / `set_once` writes), matched on the event's
+	 * user at the property's current value. A negated filter also keeps events with no user.
+	 */
+	userPropertyFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Account properties (`group_set` writes, the group's name), matched on the event's group. */
+	groupPropertyFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Required when `groupBy` includes `user_property`. */
+	groupByUserPropertyKey: Schema.optional(Schema.String),
+	/** Required when `groupBy` includes `group_property`. */
+	groupByGroupPropertyKey: Schema.optional(Schema.String),
 	/** The numeric prop a `sum`/`avg`/`min`/`max`/percentile metric reads; required by those. */
 	valueAttributeKey: Schema.optional(Schema.String),
 	referrerHost: Schema.optional(Schema.String),

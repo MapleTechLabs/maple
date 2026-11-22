@@ -4216,6 +4216,40 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
+-- builder:person-properties:personPropertyKeysQuery:user  [2e94188c]
+SELECT
+          person_properties.Key AS key,
+          uniq(person_properties.Id) AS ids
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+        GROUP BY key
+        ORDER BY ids DESC, key ASC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:person-properties:personPropertyValuesQuery:group  [5d036a63]
+SELECT
+          p.value AS value,
+          count() AS ids
+        FROM (SELECT
+          person_properties.Id AS Id,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'group'
+          AND person_properties.Key = 'tier'
+        GROUP BY Id) AS p
+        WHERE p.value != ''
+        GROUP BY value
+        ORDER BY ids DESC, value ASC
+        LIMIT 100
+        FORMAT JSON
+
 -- builder:pr-review:operationTrafficHourlyQuery:allServices  [e60e4684]
 SELECT
           service_operations_hourly.ServiceName AS serviceName,
@@ -4340,9 +4374,9 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
+-- builder:product-events-explore:productEventAttributeKeysQuery:default  [7e9aee6b]
 SELECT
-          arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,
+          arrayJoin(arrayFilter(k -> NOT (startsWith(k, '$set.') OR startsWith(k, '$set_once.') OR startsWith(k, '$unset.') OR startsWith(k, '$group_set.') OR startsWith(k, '$group_set_once.') OR startsWith(k, '$group_unset.')), mapKeys(Attributes))) AS attributeKey,
           count() AS usageCount
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
@@ -4376,6 +4410,44 @@ SELECT
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
           AND product_events.Host IN ('maple.dev')
+        GROUP BY name
+        ORDER BY value DESC, name ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsBreakdownQuery:users-by-user-property  [93574133]
+SELECT
+          coalesce(up.value, '') AS name,
+          uniqIf(product_events.UserId, product_events.UserId != '') AS value
+        FROM product_events
+        LEFT JOIN (SELECT
+          person_properties.Id AS Id,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+          AND person_properties.Key = 'plan'
+        GROUP BY Id) AS up ON product_events.UserId = up.Id
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.EventName IN ('signup_completed')
+          AND product_events.GroupId IN (SELECT
+          person_properties.Id AS Id
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'group'
+          AND person_properties.Key = 'tier'
+        GROUP BY Id
+        HAVING ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') = 'gold')
         GROUP BY name
         ORDER BY value DESC, name ASC
         LIMIT 10
@@ -5113,6 +5185,104 @@ SELECT
           AND e.Timestamp <= '2026-01-03 14:15:00'
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
+        GROUP BY key) AS person_events) AS walked) AS levels
+        GROUP BY group
+        ORDER BY entered DESC, group ASC
+        LIMIT 10) AS groups
+        ORDER BY group ASC, step ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventsFunnelBreakdownQuery:user-property-filtered  [d6189c81]
+SELECT
+          groups.group AS group,
+          arrayJoin([1, 2, 3]) AS step,
+          arrayElement(groups.counts, step) AS count
+        FROM (SELECT
+          group AS group,
+          [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts,
+          countIf(level >= 1) AS entered
+        FROM (SELECT
+          walked.key AS key,
+          walked.level AS level,
+          group AS group
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt,
+          group AS group
+        FROM (SELECT
+          funnel_events.key AS key,
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs,
+          argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
+          toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
+          toUInt8(e.EventName = 'signup_completed') AS s2,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3,
+          coalesce(bp.value, '') AS dim
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        LEFT JOIN (SELECT
+          person_properties.Id AS Id,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+          AND person_properties.Key = 'plan'
+        GROUP BY Id) AS bp ON e.UserId = bp.Id
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != ''
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) IN (SELECT
+          person_properties.Id AS Id
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+          AND person_properties.Key = 'role'
+        GROUP BY Id
+        HAVING ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') = 'admin')
+          AND NOT (e.GroupId IN (SELECT
+          person_properties.Id AS Id
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'group'
+          AND person_properties.Key = 'tier'
+        GROUP BY Id
+        HAVING ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') = 'gold'))) AS funnel_events
         GROUP BY key) AS person_events) AS walked) AS levels
         GROUP BY group
         ORDER BY entered DESC, group ASC
@@ -20689,9 +20859,9 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- spec:attribute-keys-product-events:baseline  [30a1e945]
+-- spec:attribute-keys-product-events:baseline  [7e9aee6b]
 SELECT
-          arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,
+          arrayJoin(arrayFilter(k -> NOT (startsWith(k, '$set.') OR startsWith(k, '$set_once.') OR startsWith(k, '$unset.') OR startsWith(k, '$group_set.') OR startsWith(k, '$group_set_once.') OR startsWith(k, '$group_unset.')), mapKeys(Attributes))) AS attributeKey,
           count() AS usageCount
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'

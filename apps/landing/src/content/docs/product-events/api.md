@@ -45,7 +45,7 @@ Over-long fields are truncated at the caps above, except `name`: a name over 128
 
 ## User and account properties
 
-Any event can also write properties on its user (`user_id`) and account (`group_id`). They are kept per user and per account, a year past their last write.
+Any event can also write properties on its user (`user_id`) and account (`group_id`). They are kept per user and per account, a year past their last write, and charts, funnels, retention, cohorts and paths can filter and break down by them.
 
 ```json
 {"name":"$identify","user_id":"user_123","visitor_id":"install-8f3…","set":{"plan":"pro","role":"admin"},"set_once":{"first_plan":"free"}}

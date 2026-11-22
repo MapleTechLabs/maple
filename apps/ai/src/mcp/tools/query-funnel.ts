@@ -26,6 +26,7 @@ import { formatDuration } from "@maple/domain/format"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
+import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 import { doc } from "../lib/tool-doc"
 import { orFallback } from "../lib/fallback"
 import { identityNoteFor, isBlankStep, sessionRetentionNote } from "../lib/product-identity"
@@ -84,7 +85,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				"The whole chain must complete within this many seconds of the step-1 event. Default 86400 (24h).",
 			),
 			breakdown_by: P.optionalText(
-				"Group by an acquisition dimension (referrerHost, utmSource, utmMedium, utmCampaign, country, host) or by `attribute:<key>` on the events. Top groups by step-1 count.",
+				"Group by an acquisition dimension (referrerHost, utmSource, utmMedium, utmCampaign, country, host), by `attribute:<key>` on the events, or by the current value of a user property (`user:plan`) or account property (`group:tier`). Top groups by step-1 count.",
 			),
 			breakdown_limit: P.limit({ default: 10, max: BREAKDOWN_MAX_GROUPS, noun: "breakdown groups" }),
 			details: P.optionalFlag(
@@ -102,6 +103,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				"Only persons with a session on this device type (desktop, mobile, tablet).",
 			),
 			browser: P.optionalText("Only persons with a session in this browser (e.g. Chrome)."),
+			...PROPERTY_FILTER_FIELDS,
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
@@ -147,7 +149,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				params.breakdown_by === undefined ? undefined : decodeBreakdownBy(params.breakdown_by)
 			if (breakdownOption !== undefined && Option.isNone(breakdownOption)) {
 				return yield* new McpInvalidInputError({
-					message: `breakdown_by must be one of referrerHost, utmSource, utmMedium, utmCampaign, country, host, or attribute:<key>; got "${params.breakdown_by}".`,
+					message: `breakdown_by must be one of referrerHost, utmSource, utmMedium, utmCampaign, country, host, attribute:<key>, user:<key> or group:<key>; got "${params.breakdown_by}".`,
 					parameter: "breakdown_by",
 					example: '{ "breakdown_by": "attribute:plan" }',
 				})
@@ -177,6 +179,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					utm_campaign: params.utm_campaign,
 					device_type: params.device_type,
 					browser: params.browser,
+					...propertyFilterArgs(params),
 				},
 				(value): value is string => value !== undefined,
 			)
@@ -198,11 +201,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					example: EXCLUSIONS_EXAMPLE,
 				})
 			}
+			const properties = yield* propertyFiltersOf(params)
 			const definition = {
 				steps,
 				keyBy,
 				windowSeconds,
 				filters,
+				...properties,
 				...(exclusions.length > 0 ? { exclusions } : undefined),
 				startTime: st,
 				endTime: et,
@@ -311,6 +316,8 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				Arr.some(steps, (step) => step.kind === "session") ||
 				(breakdownBy !== undefined &&
 					!Str.startsWith("attribute:")(breakdownBy) &&
+					!Str.startsWith("user:")(breakdownBy) &&
+					!Str.startsWith("group:")(breakdownBy) &&
 					breakdownBy !== "host") ||
 				Arr.some(Rec.values(filters), (value) => value !== undefined)
 			const nowMs = yield* Clock.currentTimeMillis

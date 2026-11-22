@@ -10,6 +10,7 @@ import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { type DateTime, Result, Schema } from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import type { AttributeFilter } from "@maple/domain/query-engine"
 import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
@@ -18,6 +19,7 @@ import {
 	flag,
 	identityLinksByVisitor,
 	personKey,
+	personPropertyConditions,
 	type OpenJoinAccessor,
 	type OpenJoinQuery,
 } from "./product-events"
@@ -38,6 +40,9 @@ export interface ProductEventsCohortOpts {
 	readonly keyBy: RetentionKeyBy
 	/** Members listed, latest first, 1..500. The totals count all of them. */
 	readonly limit: number
+	/** User and account property filters, as a funnel takes them (`personPropertyConditions`). */
+	readonly userPropertyFilters?: ReadonlyArray<AttributeFilter>
+	readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter>
 }
 
 export const productEventsCohortRowSchema = Schema.Struct({
@@ -113,6 +118,7 @@ export function productEventsCohortQuery(
 				readsHistory ? undefined : $.Timestamp.gte(param.dateTime("startTime")),
 				didNot === undefined ? did : did.or(didNot),
 				keyOf($).neq(""),
+				...personPropertyConditions(keyBy, keyOf($), $, opts),
 			]
 		})
 
