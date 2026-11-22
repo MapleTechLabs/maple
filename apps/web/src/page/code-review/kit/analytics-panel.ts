@@ -11,10 +11,12 @@ export const analyticsPanel = <M>(
 ): Html =>
 	panel(h, {}, [
 		panelHeader(h, { title: options.title, action: options.control }),
-		panelBody(h, children, "px-4 py-4"),
+		// With a footer, the footer takes a stretched card's spare height, so side-by-side cards keep
+		// their charts and their lists on the same lines.
+		panelBody(h, children, options.footer === undefined ? "px-4 py-4" : "flex-none px-4 py-4"),
 		...(options.footer === undefined
 			? []
-			: [h.footer([h.Class("border-t px-4 py-4")], [options.footer])]),
+			: [h.footer([h.Class("flex-1 border-t px-4 py-4")], [options.footer])]),
 	])
 
 export const chartFrame = <M>(h: HtmlBuilder<M>, isEmpty: boolean, chart: () => Html): Html =>
