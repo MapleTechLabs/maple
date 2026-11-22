@@ -2554,6 +2554,7 @@
                             "person",
                             "visitor",
                             "user",
+                            "group",
                             "session"
                           ],
                           "type": "string"
@@ -2873,6 +2874,7 @@
                             "person",
                             "visitor",
                             "user",
+                            "group",
                             "session"
                           ],
                           "type": "string"
