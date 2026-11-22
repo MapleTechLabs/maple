@@ -1,6 +1,7 @@
 import * as Animation from "@foldkit/ui/animation"
 import { Array as Arr } from "effect"
 import { ingestUrl } from "../platform/ingest-url"
+import { apiBaseUrl } from "../platform/api-base-url"
 import { mcpUrl } from "../platform/mcp-url"
 import { cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
@@ -87,7 +88,10 @@ describe("connect panel scene", () => {
 
 	test("Copy prompt mints a handoff and copies the prompt with its code, never the private key", () => {
 		const handoff = labHandoff()
-		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", handoff.handoff_code)
+		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", {
+			code: handoff.handoff_code,
+			apiUrl: apiBaseUrl,
+		})
 		expectVitest(prompt).toContain("https://maple.dev/SKILL.md")
 		expectVitest(prompt).toContain("maple_ho_")
 		expectVitest(prompt).not.toContain("maple_sk_")

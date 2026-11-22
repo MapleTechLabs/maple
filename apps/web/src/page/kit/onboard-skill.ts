@@ -15,17 +15,25 @@ export const HANDOFF_LINE_LABEL = "Handoff code (single use, 15 min):"
 /** What the page shows in place of a handoff code: the real one exists only once Copy mints it. */
 export const MASKED_HANDOFF_CODE = "••••••••••"
 
+/** A minted handoff: the code and the API it signs the CLI in against (the org's region). */
+export interface PromptHandoff {
+	readonly code: string
+	readonly apiUrl: string
+}
+
 /**
  * The one coding-agent setup prompt. The endpoint carries the org's region; `publicKey` must be the
- * public `maple_pk_` key (it lands in an agent's context). Empty key or handoff code leaves its line out.
+ * public `maple_pk_` key (it lands in an agent's context). An empty key leaves its line out.
  */
-export function agentSetupPrompt(ingestUrl: string, publicKey: string, handoffCode = ""): string {
+export function agentSetupPrompt(ingestUrl: string, publicKey: string, handoff?: PromptHandoff): string {
 	return Arr.join(
 		[
 			`Set up Maple observability in this repo by following ${AGENT_SETUP_GUIDE_URL}`,
 			`Ingest endpoint: ${ingestUrl}`,
 			...(publicKey === "" ? [] : [`Public ingest key: ${publicKey}`]),
-			...(handoffCode === "" ? [] : [`${HANDOFF_LINE_LABEL} ${handoffCode}`]),
+			...(handoff === undefined
+				? []
+				: [`Maple API: ${handoff.apiUrl}`, `${HANDOFF_LINE_LABEL} ${handoff.code}`]),
 		],
 		"\n",
 	)
