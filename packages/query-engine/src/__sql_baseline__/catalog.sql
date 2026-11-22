@@ -4838,13 +4838,14 @@ SELECT
         ORDER BY cohort ASC, period ASC
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:default  [d05b039c]
+-- builder:product-events:productEventNamesQuery:default  [26f202a4]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4854,13 +4855,14 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:filtered  [b9a881b9]
+-- builder:product-events:productEventNamesQuery:filtered  [a4fa1221]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'

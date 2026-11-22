@@ -20,6 +20,7 @@ import { formatNumber, formatPercent } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { eventIdentityNote } from "../lib/product-identity"
 
 const TOOL = "query_retention"
 const DAY_MS = 86_400_000
@@ -195,8 +196,24 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 
+			// No cohort at all: nobody was new, or the start events cannot be counted by this key.
+			const start = params.start_json
+			const identity =
+				rows.length === 0 && start !== undefined
+					? yield* eventIdentityNote({
+							step: start,
+							label: funnelStepLabel(start),
+							keyBy,
+							candidates: RetentionKeyBy.literals,
+							startTime: st,
+							endTime: et,
+						})
+					: undefined
+
 			return {
 				timeRange: { start: st, end: et },
+				...(identity === undefined ? undefined : { identityNote: identity.note }),
+				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				returnsThrough: returnEndTime,
 				keyBy,
 				interval,
@@ -229,20 +246,20 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 						output.firstEver ? "first time ever, over all history" : "first time in this window",
 					],
 				],
+				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
 				...(output.cohorts.length === 0
 					? {
 							empty: {
 								message: `No ${noun} did the start event (${stepLabel(output.start)}) for the first time in this window.`,
-								hints: [
-									output.firstEver
-										? "With first_ever=true only people new to the start event count. Pass first_ever=false to count everyone active in the window, or widen start_time."
-										: "Widen start_time/end_time, or check the event name against `list_product_events`.",
-									...(output.keyBy === "person"
+								// The notice above already says why; a generic hint would only compete with it.
+								hints:
+									output.identityNote !== undefined
 										? []
 										: [
-												`key_by="${output.keyBy}" leaves out events that carry no such id; try key_by="person".`,
-											]),
-								],
+												output.firstEver
+													? "With first_ever=true only people new to the start event count. Pass first_ever=false to count everyone active in the window, or widen start_time."
+													: "Widen start_time/end_time, or check the event name against `list_product_events`.",
+											],
 							},
 						}
 					: undefined),
@@ -288,6 +305,15 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 									: []),
 							],
 				next: [
+					...(output.suggestedKeyBy === undefined
+						? []
+						: [
+								doc.next(
+									TOOL,
+									{ ...steps, ...window, interval: unit, key_by: output.suggestedKeyBy },
+									`the same cohorts counted by ${output.suggestedKeyBy}`,
+								),
+							]),
 					output.keyBy === "group"
 						? doc.next(
 								TOOL,

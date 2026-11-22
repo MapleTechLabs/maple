@@ -76,6 +76,7 @@ export {
 	type ProductEventsPathsInput,
 	productEventsCohort,
 	type ProductEventsCohortInput,
+	productEventsTotal,
 	productEventsRetention,
 	type ProductEventsRetentionInput,
 	type ProductEventsRetentionOutput,

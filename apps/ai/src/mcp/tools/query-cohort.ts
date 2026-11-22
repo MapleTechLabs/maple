@@ -15,6 +15,7 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { eventIdentityNote } from "../lib/product-identity"
 
 const TOOL = "query_cohort"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -129,11 +130,26 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 							),
 						)
 
+			// Nobody did it, or the events cannot be counted by this key: only the coverage tells.
+			const identity =
+				didTotal === 0
+					? yield* eventIdentityNote({
+							step: did,
+							label: funnelStepLabel(did),
+							keyBy,
+							candidates: RetentionKeyBy.literals,
+							startTime: st,
+							endTime: et,
+						})
+					: undefined
+
 			return {
 				timeRange: { start: st, end: et },
 				keyBy,
 				did,
 				...(didNot === undefined ? undefined : { didNot, didNotScope }),
+				...(identity === undefined ? undefined : { identityNote: identity.note }),
+				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				didTotal,
 				total: rows[0]?.total ?? 0,
 				limit: params.limit,
@@ -177,18 +193,18 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 								: "ever, up to the end of the window",
 					],
 				],
+				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
 				...(output.didTotal === 0
 					? {
 							empty: {
 								message: `No ${noun} did ${didLabel} in this window.`,
-								hints: [
-									"Widen start_time/end_time, or check the name against `list_product_events`.",
-									...(output.keyBy === "person"
-										? []
-										: [
-												`key_by="${output.keyBy}" leaves out events that carry no such id; try key_by="person".`,
-											]),
-								],
+								// The notice above already says why; a generic hint would only compete with it.
+								hints:
+									output.identityNote === undefined
+										? [
+												"Widen start_time/end_time, or check the name against `list_product_events`.",
+											]
+										: [],
 							},
 						}
 					: undefined),
@@ -219,6 +235,23 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 									: []),
 							],
 				next: [
+					// The cohort under the key its events carry is the answer the caller was after.
+					...(output.suggestedKeyBy === undefined
+						? []
+						: [
+								doc.next(
+									TOOL,
+									{
+										did_json: stringifyJson(output.did),
+										...(output.didNot === undefined
+											? undefined
+											: { did_not_json: stringifyJson(output.didNot) }),
+										key_by: output.suggestedKeyBy,
+										...window,
+									},
+									`the same cohort counted by ${output.suggestedKeyBy}`,
+								),
+							]),
 					...(first !== undefined && opensUsers
 						? [
 								doc.next(

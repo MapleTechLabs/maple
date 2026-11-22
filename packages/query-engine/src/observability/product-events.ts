@@ -1,5 +1,7 @@
 import { Effect } from "effect"
+import type { ProductEventsFilters, ProductEventsMetric } from "@maple/domain/query-engine"
 import * as CH from "../ch"
+import { productEventsQueryOptions } from "../registry/product-events"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
 export type { ProductEventsRetentionOutput } from "../ch/queries/product-events-retention"
@@ -163,6 +165,38 @@ export const productEventsRetention = Effect.fn("Observability.productEventsRete
 		profile: "aggregation",
 		context: "productEventsRetention",
 	})
+})
+
+export interface ProductEventsTotalInput {
+	readonly startTime: string
+	readonly endTime: string
+	readonly metric: ProductEventsMetric
+	readonly filters?: ProductEventsFilters
+}
+
+/**
+ * One metric over the whole window: a distinct count across it, which is not the sum of a
+ * timeseries' buckets. The window is half-open, `[startTime, endTime)`.
+ */
+export const productEventsTotal = Effect.fn("Observability.productEventsTotal")(function* (
+	input: ProductEventsTotalInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.query.metric": input.metric })
+	const compiled = CH.compile(
+		CH.productEventsTimeseriesQuery({
+			...productEventsQueryOptions(input.filters),
+			metric: input.metric,
+			wholeRange: true,
+		}),
+		// The bucket width is declared by the builder and unused by a whole-range read.
+		{ orgId: executor.orgId, startTime: input.startTime, endTime: input.endTime, bucketSeconds: 60 },
+	)
+	const rows = yield* executor.compiledQuery(compiled, {
+		profile: "aggregation",
+		context: "productEventsTotal",
+	})
+	return rows[0]?.value ?? 0
 })
 
 export interface ProductEventsCohortInput extends CH.ProductEventsCohortOpts {

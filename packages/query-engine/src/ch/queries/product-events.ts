@@ -214,6 +214,7 @@ export const productEventNamesRowSchema = Schema.Struct({
 	count: CHNumber,
 	sessions: CHNumber,
 	persons: CHNumber,
+	groups: CHNumber,
 })
 export type ProductEventNamesOutput = typeof productEventNamesRowSchema.Type
 
@@ -975,7 +976,7 @@ export function productEventsFunnelCoverageQuery(
 				$.Timestamp.gte(param.dateTime("startTime")),
 				$.Timestamp.lte(param.dateTime("endTime")),
 				// Only session steps: no event can match, so read nothing.
-				conditions.length === 0 ? $.Kind.eq("").and($.Kind.neq("")) : CH.or(...conditions),
+				conditions.length === 0 ? CH.rawCond("0") : CH.or(...conditions),
 			]
 		})
 
@@ -998,7 +999,7 @@ export function productEventsFunnelCoverageQuery(
 
 /**
  * Event names in range for the step picker: `{ eventName, kind, count,
- * sessions, persons }`, most frequent first.
+ * sessions, persons, groups }`, most frequent first.
  *
  * `persons` is the visitor id where the row has one, else the user id: a cheap count that needs
  * no `identity_links` join. A browser row keeps its visitor id after sign-in, so a visitor who
@@ -1017,7 +1018,12 @@ export function productEventNamesQuery(
 			kind: $.Kind,
 			count: CH.count(),
 			sessions: CH.uniqIf($.SessionId, $.SessionId.neq("")),
-			persons: CH.uniq(CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId)),
+			// Not `uniq` over the bare expression: an event with neither id would count `''` as one person.
+			persons: CH.uniqIf(
+				CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId),
+				$.VisitorId.neq("").or($.UserId.neq("")),
+			),
+			groups: CH.uniqIf($.GroupId, $.GroupId.neq("")),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

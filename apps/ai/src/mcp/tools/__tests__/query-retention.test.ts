@@ -63,6 +63,21 @@ const fixtures: FixtureRule[] = [
 	},
 	{ match: (sql) => Str.includes("nobody_does_this")(sql), rows: [] },
 	{
+		match: (sql) => Str.includes("account_only")(sql) && Str.includes("withSession")(sql),
+		rows: [
+			{
+				step: 1,
+				events: 15,
+				withPerson: 0,
+				withUser: 0,
+				withVisitor: 0,
+				withGroup: 15,
+				withSession: 0,
+			},
+		],
+	},
+	{ match: (sql) => Str.includes("account_only")(sql), rows: [] },
+	{
 		match: (sql) => Str.includes("retention_events")(sql),
 		rows: [
 			{ cohort: "2026-10-05", period: 0, count: 40 },
@@ -143,6 +158,21 @@ describe("query_retention", () => {
 		const text = markdown(result)
 		expect(text).toContain("for the first time in this window")
 		expect(text).toContain("first_ever=false")
+	})
+
+	it("says when the start event carries an account and no person, and offers cohorts by group", async () => {
+		const result = await call({
+			...window,
+			start_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+		})
+		const output = Schema.decodeUnknownSync(QueryRetentionOutput)(result.structuredContent)
+		expect(output.cohorts).toEqual([])
+		expect(output.suggestedKeyBy).toBe("group")
+		const text = markdown(result)
+		expect(text).toContain("account_only matched 15 events, but none carries a user id or a visitor id")
+		expect(text).toMatch(/Next:\n- `query_retention [^\n]*key_by="group"/)
+		// The generic hint would compete with the reason just given.
+		expect(text).not.toContain("first_ever=false")
 	})
 
 	it("rejects a period count it cannot report", async () => {

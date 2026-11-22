@@ -59,7 +59,9 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) => /product_events/i.test(sql) && Str.includes("collapsed.test")(sql),
-		rows: [{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 1 }],
+		rows: [
+			{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 0, groups: 0 },
+		],
 	},
 	// The breakdown read names the attribute it groups by.
 	{
@@ -95,7 +97,11 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) => /product_events/i.test(sql),
-		rows: [{ eventName: "signup_completed", kind: "custom", count: 12, sessions: 10, persons: 9 }],
+		rows: [
+			{ eventName: "signup_completed", kind: "custom", count: 12, sessions: 10, persons: 9, groups: 4 },
+			// A billing webhook's event: the account, and nobody.
+			{ eventName: "plan_started", kind: "custom", count: 6, sessions: 0, persons: 0, groups: 6 },
+		],
 	},
 ]
 
@@ -351,6 +357,18 @@ describe("list_product_events output", () => {
 		const text = markdown(result)
 		expect(text).toContain("| signup_completed | custom |")
 		expect(text).toContain("`query_funnel steps_json=")
+	})
+
+	it("points out an event that carries an account and no person, and how to count it", async () => {
+		const result = await call("list_product_events", {})
+		const output = Schema.decodeUnknownSync(ListProductEventsOutput)(result.structuredContent)
+		expect(output.events[1]).toMatchObject({ eventName: "plan_started", persons: 0, groups: 6 })
+		const text = markdown(result)
+		expect(text).toContain("| plan_started | custom | 6 | 0 | 0 | 6 |")
+		expect(text).toContain("`plan_started` carries a group (account) id and no user or visitor id")
+		expect(text).toContain('key_by="group"')
+		// An event people did is not called account-only.
+		expect(text).not.toContain("`signup_completed` carries")
 	})
 
 	it("says when every event collapses onto one person", async () => {

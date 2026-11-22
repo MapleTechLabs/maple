@@ -241,6 +241,10 @@ export const QueryCohortOutput = Schema.Struct({
 	/** The cohort's size: those of `didTotal` that did not do `didNot`. */
 	total: Schema.Number,
 	limit: Schema.Number,
+	/** Set when nobody is counted because the events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
 	/** The members listed, the one who did it last first; `total` counts all of them. */
 	members: Schema.Array(
 		Schema.Struct({
@@ -279,6 +283,10 @@ export const QueryRetentionOutput = Schema.Struct({
 	),
 	/** Per period, the share of everyone in a cohort old enough to have finished it; null when none is. */
 	overall: Schema.Array(Schema.NullOr(Schema.Number)),
+	/** Set when there are no cohorts because the start events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
 })
 
 export const ProductEventKind = Schema.Literals(["custom", "navigation", "screen"])
@@ -293,6 +301,8 @@ export const ListProductEventsOutput = Schema.Struct({
 			count: Schema.Number,
 			sessions: Schema.Number,
 			persons: Schema.Number,
+			/** Distinct accounts (`GroupId`) the event fired for; 0 when it carries none. */
+			groups: Schema.Number,
 		}),
 	),
 	/** The kind filter, when one applied. */

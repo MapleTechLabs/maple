@@ -16,7 +16,6 @@ import {
 	productEventsFunnelCoverage,
 	productEventsFunnelLeavers,
 	productEventsFunnelTiming,
-	type ProductEventsFunnelCoverageOutput,
 } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
@@ -30,6 +29,7 @@ import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { orFallback } from "../lib/fallback"
+import { identityNoteFor } from "../lib/product-identity"
 
 const TOOL = "query_funnel"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -55,73 +55,6 @@ const KEY_BY_NOUN = {
 	group: "groups",
 	session: "sessions",
 } satisfies Record<FunnelKeyByType, string>
-
-/** The identity a key reads off an event, as a notice names it. */
-const KEY_BY_IDENTITY = {
-	person: "a user id or a visitor id",
-	visitor: "a visitor id",
-	user: "a user id",
-	group: "a group id",
-	session: "a session id",
-} satisfies Record<FunnelKeyByType, string>
-
-/** How many of a step's events carry the identity `keyBy` counts by. */
-const carried = (row: ProductEventsFunnelCoverageOutput, keyBy: FunnelKeyByType): number => {
-	switch (keyBy) {
-		case "person":
-			return row.withPerson
-		case "visitor":
-			return row.withVisitor
-		case "user":
-			return row.withUser
-		case "group":
-			return row.withGroup
-		case "session":
-			return row.withSession
-	}
-}
-
-/** Keys to suggest, most useful first: the default, then the one that follows account-level events. */
-const KEY_BY_PREFERENCE: ReadonlyArray<FunnelKeyByType> = ["person", "group", "user", "visitor", "session"]
-
-/**
- * Why a step came back empty when its events exist: they lack the identity the funnel counts by.
- * One sentence per such step, then the key every step's events do carry, when there is one.
- */
-export const identityNoteFor = (
-	coverage: ReadonlyArray<ProductEventsFunnelCoverageOutput>,
-	keyBy: FunnelKeyByType,
-	labels: ReadonlyArray<string>,
-): { readonly note: string; readonly keyBy?: FunnelKeyByType } | undefined => {
-	// A session step matches no event row; it says nothing about the events' identity.
-	const matched = Arr.filter(coverage, (row) => row.events > 0)
-	const unreachable = Arr.filter(matched, (row) => carried(row, keyBy) === 0)
-	if (unreachable.length === 0) return undefined
-	const fitting = Arr.findFirst(
-		KEY_BY_PREFERENCE,
-		(candidate) => candidate !== keyBy && Arr.every(matched, (row) => carried(row, candidate) > 0),
-	)
-	const note = Arr.join(
-		[
-			...Arr.map(
-				unreachable,
-				(row) =>
-					`Step ${row.step} (${labels[row.step - 1] ?? "?"}) matched ${formatNumber(row.events)} ${row.events === 1 ? "event" : "events"}, but none carries ${KEY_BY_IDENTITY[keyBy]}, so no ${keyBy} can reach it: its 0 is missing identity, not a missing conversion.`,
-			),
-			Option.match(fitting, {
-				onNone: () =>
-					"No single key is on every step's events; send the same user id or group id with each of them.",
-				onSome: (candidate) =>
-					`Every step's events carry ${KEY_BY_IDENTITY[candidate]}: run it again with key_by="${candidate}".`,
-			}),
-		],
-		" ",
-	)
-	return Option.match(fitting, {
-		onNone: () => ({ note }),
-		onSome: (candidate) => ({ note, keyBy: candidate }),
-	})
-}
 
 /** Share of `denominator`, or null when there is nothing to divide by. */
 const ratio = (numerator: number, denominator: number): number | null =>
@@ -302,7 +235,8 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 								identityNoteFor(
 									coverage,
 									keyBy,
-									Arr.map(stepData, (stat) => stat.label),
+									Arr.map(stepData, (stat) => `Step ${stat.step} (${stat.label})`),
+									FunnelKeyBy.literals,
 								),
 							),
 							orFallback("funnel identity coverage", () => undefined),
