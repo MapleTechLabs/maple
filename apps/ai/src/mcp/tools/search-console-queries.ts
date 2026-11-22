@@ -100,7 +100,7 @@ export const lagNotice = (
 			`Data is complete through ${through}, so none of this window's ${total} day${total === 1 ? " is" : "s are"} counted yet (${lag}); end the window on ${through} or earlier.`,
 		]
 	return [
-		`Data is complete through ${through}, so the last ${past} day${past === 1 ? "" : "s"} of this window are left out (${lag}); ${covered} cover the window up to then.`,
+		`Data is complete through ${through}, so ${past === 1 ? "the last day of this window is" : `the last ${past} days of this window are`} left out (${lag}); ${covered} cover the window up to then.`,
 	]
 }
 
