@@ -2,6 +2,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { hstack, vstack } from "./stack"
 import { typography } from "./typography"
+import { tooltipTrigger, type TriggerOptions } from "./tooltip-host"
 import { Array as Arr, String as Str } from "effect"
 
 // One cell per day, a column per week; levels on the amber heatmap ramp.
@@ -14,6 +15,12 @@ export type ContributionDay = Readonly<{
 	level: ContributionLevel
 	/** The cell's accessible name and native tooltip. */
 	label: string
+	/** Makes the day a link (e.g. to that day's data). */
+	href?: string
+	/** Outlined: the day is in the range the page shows. */
+	isSelected?: boolean
+	/** The app's tooltip on hover: `content` under an optional bold `title`. Without it, `label` is the native tooltip. */
+	tooltip?: Readonly<{ content: string } & TriggerOptions>
 	attributes?: ReadonlyArray<ChildAttribute>
 }>
 
@@ -53,6 +60,8 @@ export const contributionCalendar = <M>(
 		ariaLabel: string
 		/** Left of the legend: a summary line. */
 		summary?: Html | string
+		/** A fixed square size in px for a short range; without it the weeks stretch to the full width. */
+		cellSize?: number
 		className?: string
 	}>,
 ): Html => {
@@ -70,97 +79,123 @@ export const contributionCalendar = <M>(
 	// A label too close to the next one is dropped, as GitHub does for a partial first month.
 	const months = Arr.filter(monthLabels, (label, index) => {
 		const next = monthLabels[index + 1]
-		return next === undefined || next.column - label.column >= 3
+		// The last label needs two weeks of room, or it is cut off at the edge.
+		return next === undefined ? weeks - label.column >= 2 : next.column - label.column >= 3
 	})
+	const size = options.cellSize
 	const at = (column: number, row: number) =>
 		h.Style({ "grid-column-start": String(column + 2), "grid-row-start": String(row + 2) })
-	return vstack(h, { gap: "3", className: cn("w-full", options.className) }, [
-		h.div(
-			// Padded by a day's outline reach (offset 1 + width 2), so the scroller does not clip it.
-			[h.Class("-m-1 overflow-x-auto p-1")],
-			[
-				// One grid: weekday labels in the first column, a month strip in the first row.
-				h.div(
-					[
-						h.Class("grid min-w-[44rem]"),
-						h.Role("grid"),
-						h.AriaLabel(options.ariaLabel),
-						h.Style({
-							"grid-template-columns": `auto repeat(${weeks}, minmax(0, 1fr))`,
-							gap: `${GAP_PX}px`,
-						}),
-					],
-					[
-						...Arr.map(months, (month) =>
-							typography(
-								h,
-								{
-									size: "xs",
-									tone: "muted",
-									className: "whitespace-nowrap pb-1 leading-none",
-									attributes: [
-										h.Key(`month-${month.key}`),
-										h.AriaHidden(true),
-										at(month.column, -1),
-									],
-								},
-								[month.label],
+	const cellClass = cn(
+		"rounded-cell outline-offset-1 hover:outline hover:outline-2 hover:outline-foreground/50 active:outline active:outline-2 active:outline-foreground/50 data-[popup-open]:outline data-[popup-open]:outline-2 data-[popup-open]:outline-foreground/70 data-[selected]:outline data-[selected]:outline-1 data-[selected]:outline-foreground/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+		size === undefined && "aspect-square w-full",
+	)
+	return vstack(
+		h,
+		{ gap: "3", className: cn(size === undefined ? "w-full" : "w-fit max-w-full", options.className) },
+		[
+			h.div(
+				// Padded by a day's outline reach (offset 1 + width 2), so the scroller does not clip it.
+				[h.Class("-m-1 overflow-x-auto p-1")],
+				[
+					// One grid: weekday labels in the first column, a month strip in the first row.
+					h.div(
+						[
+							h.Class(size === undefined ? "grid min-w-[44rem]" : "inline-grid"),
+							h.Role("grid"),
+							h.AriaLabel(options.ariaLabel),
+							h.Style({
+								"grid-template-columns": `auto repeat(${weeks}, ${size === undefined ? "minmax(0, 1fr)" : `${size}px`})`,
+								...(size !== undefined && {
+									"grid-template-rows": `auto repeat(7, ${size}px)`,
+								}),
+								gap: `${GAP_PX}px`,
+							}),
+						],
+						[
+							...Arr.map(months, (month) =>
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "muted",
+										className: "whitespace-nowrap pb-1 leading-none",
+										attributes: [
+											h.Key(`month-${month.key}`),
+											h.AriaHidden(true),
+											at(month.column, -1),
+										],
+									},
+									[month.label],
+								),
 							),
-						),
-						...Arr.map(WEEKDAYS, (label, row) =>
-							typography(
-								h,
-								{
-									size: "xs",
-									tone: "muted",
-									className: "self-center pr-2 leading-none",
-									attributes: [h.Key(`weekday-${row}`), h.AriaHidden(true), at(-1, row)],
-								},
-								[label],
+							...Arr.map(WEEKDAYS, (label, row) =>
+								typography(
+									h,
+									{
+										size: "xs",
+										tone: "muted",
+										className: "self-center pr-2 leading-none",
+										attributes: [
+											h.Key(`weekday-${row}`),
+											h.AriaHidden(true),
+											at(-1, row),
+										],
+									},
+									[label],
+								),
 							),
-						),
-						...Arr.map(options.days, (entry, index) =>
-							h.div(
-								[
+							...Arr.map(options.days, (entry, index) => {
+								const attributes = [
 									h.Key(entry.day),
 									h.Role("gridcell"),
 									h.AriaLabel(entry.label),
+									// A caller with its own trigger (a hover card) gets no native tooltip on top.
+									...(entry.tooltip !== undefined
+										? // Days sit 4px apart: the open tooltip moves from day to day instead of closing.
+											tooltipTrigger(h, entry.tooltip.content, {
+												...entry.tooltip,
+												isGrouped: true,
+											})
+										: entry.attributes === undefined
+											? [h.Title(entry.label)]
+											: []),
 									h.DataAttribute("level", String(entry.level)),
-									h.Class(
-										"aspect-square w-full rounded-sm outline-offset-1 hover:outline hover:outline-2 hover:outline-foreground/50 active:outline active:outline-2 active:outline-foreground/50 data-[popup-open]:outline data-[popup-open]:outline-2 data-[popup-open]:outline-foreground/70",
-									),
+									...(entry.isSelected === true ? [h.DataAttribute("selected", "")] : []),
+									h.Class(cn(cellClass, entry.href !== undefined && "block")),
 									h.Style({
 										"grid-column-start": String(Math.floor((lead + index) / 7) + 2),
 										"grid-row-start": String(((lead + index) % 7) + 2),
 										"background-color": LEVEL_COLOR[entry.level],
 									}),
 									...(entry.attributes ?? []),
-								],
-								[],
-							),
-						),
-					],
-				),
-			],
-		),
-		hstack(h, { gap: "4", justify: "between", wrap: true }, [
-			options.summary === undefined
-				? h.span([], [])
-				: typography(h, { size: "xs", tone: "muted" }, [options.summary]),
-			hstack(h, { gap: "1", attributes: [h.AriaHidden(true)] }, [
-				typography(h, { size: "xs", tone: "muted", className: "mr-1" }, ["Less"]),
-				...Arr.map([0, 1, 2, 3, 4] as const, (level) =>
-					h.div(
-						[
-							h.Key(`legend-${level}`),
-							h.Class("size-3 rounded-xs"),
-							h.Style({ "background-color": LEVEL_COLOR[level] }),
+								]
+								return entry.href === undefined
+									? h.div(attributes, [])
+									: h.a([...attributes, h.Href(entry.href)], [])
+							}),
 						],
-						[],
 					),
-				),
-				typography(h, { size: "xs", tone: "muted", className: "ml-1" }, ["More"]),
+				],
+			),
+			hstack(h, { gap: "4", justify: "between", wrap: true }, [
+				options.summary === undefined
+					? h.span([], [])
+					: typography(h, { size: "xs", tone: "muted" }, [options.summary]),
+				hstack(h, { gap: "1", attributes: [h.AriaHidden(true)] }, [
+					typography(h, { size: "xs", tone: "muted", className: "mr-1" }, ["Less"]),
+					...Arr.map([0, 1, 2, 3, 4] as const, (level) =>
+						h.div(
+							[
+								h.Key(`legend-${level}`),
+								h.Class("size-3 rounded-cell"),
+								h.Style({ "background-color": LEVEL_COLOR[level] }),
+							],
+							[],
+						),
+					),
+					typography(h, { size: "xs", tone: "muted", className: "ml-1" }, ["More"]),
+				]),
 			]),
-		]),
-	])
+		],
+	)
 }

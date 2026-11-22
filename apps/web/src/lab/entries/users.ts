@@ -27,6 +27,7 @@ import { noUsersState, usersLoading } from "../../page/users/view-states"
 import {
 	SOLO_DETAIL,
 	SOLO_GROUP,
+	USER_CALENDAR,
 	USER_DETAIL,
 	USER_ROWS,
 	USERS_NOW,
@@ -220,6 +221,12 @@ const detailPage = (
 		timeZone: USERS_TIME_ZONE,
 		hrefOf: (tab: UserTab) => `?view=${model.view}&tab=${tab}`,
 		onSelectTab: (tab: UserTab) => Message.ClickedTab({ tab }),
+		calendar: {
+			calendar:
+				model.view === "loading" ? ("loading" as const) : { days: USER_CALENDAR, indexed: true },
+			// The real page scopes itself to the day; the lab stays put.
+			dayHref: () => `?view=${model.view}&tab=${model.tab}`,
+		},
 	}
 	return dashboardPage(
 		h,

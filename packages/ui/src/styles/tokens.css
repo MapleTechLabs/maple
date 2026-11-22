@@ -508,6 +508,8 @@
 	/* Concentric corners: a fill inset 1px inside a bordered box (a `before:` layer) takes its
 	   parent's radius minus that 1px. `rounded-2xs` is for hairline bars and ticks. */
 	--radius-2xs: 1px;
+	/* Heatmap and calendar cells (~11px): softened, still read as squares. */
+	--radius-cell: 2.5px;
 	/* Service and severity dots: a rounded square. */
 	--radius-dot: 35%;
 	/* A switch thumb squashing under the press. */

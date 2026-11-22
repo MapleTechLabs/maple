@@ -55,6 +55,7 @@ import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } fro
 import { namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/issue-workflow"
 import { userAvatar } from "./view-kit"
+import { activityCalendar, type ActivityCalendarOptions } from "./activity-calendar"
 
 // `/users/$userId`: one end user's identity, then everything Maple holds for them, by tab.
 
@@ -77,6 +78,8 @@ export type UserDetailOptions<M> = Readonly<{
 	onSelectTab: (tab: UserTab) => M
 	/** Drawn in place of the tab's rows while they load or after their read failed. */
 	tabContent?: Html | undefined
+	/** The Activity tab's calendar over the last year; none draws no card. */
+	calendar?: Omit<ActivityCalendarOptions, "nowMs"> | undefined
 }>
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -1288,12 +1291,21 @@ export const userDetailBody = <M>(
 	options: UserDetailOptions<M>,
 ): Html => {
 	const clock = { nowMs: options.nowMs, timeZone: options.timeZone }
+	const content = options.tabContent ?? tabBody(h, detail, options.tab, clock)
+	const calendar = options.tab === "activity" ? options.calendar : undefined
 	return vstack(h, { shrink: true, className: "@container/panel" }, [
 		userStats(h, detail.profile),
 		namespaceScopeBar(h, detail.profile, options.namespace),
 		h.div(
 			[h.Class("min-w-0 px-(--page-gutter) py-5")],
-			[options.tabContent ?? tabBody(h, detail, options.tab, clock)],
+			[
+				calendar === undefined
+					? content
+					: vstack(h, { gap: "6" }, [
+							activityCalendar(h, { ...calendar, nowMs: clock.nowMs }),
+							content,
+						]),
+			],
 		),
 	])
 }
