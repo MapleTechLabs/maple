@@ -59,7 +59,9 @@ export const effectiveRunStatus = (row: OnboardingAgentRunRow, now: number): Onb
 
 // Control and format characters (bidi overrides, zero-width) go: the note is shown to the person.
 const cleanNote = (note: string | undefined): string | null => {
-	const trimmed = Str.trim(Str.replace(/\s+/g, " ")(Str.replace(/[\p{Cc}\p{Cf}]/gu, "")(note ?? "")))
+	// Whitespace (newlines included) becomes one space first, so "a\nb" stays two words.
+	const spaced = Str.replace(/\s+/g, " ")(note ?? "")
+	const trimmed = Str.trim(Str.replace(/[\p{Cc}\p{Cf}]/gu, "")(spaced))
 	return trimmed === "" ? null : trimmed
 }
 

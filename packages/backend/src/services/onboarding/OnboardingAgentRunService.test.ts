@@ -32,7 +32,7 @@ describe("OnboardingAgentRunService", () => {
 			yield* runs.report(owner, {
 				stage: "instrument_app",
 				status: "active",
-				note: "  Instrumenting\n two\u202e services\u200b ",
+				note: "  Instrumenting\ntwo\u202e services\u200b ",
 				serviceNames: ["api", "web"],
 			})
 			const verified = yield* runs.report(owner, {
