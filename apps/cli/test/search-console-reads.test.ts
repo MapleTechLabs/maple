@@ -23,15 +23,17 @@ const T2 = "2026-11-13 06:00:00.000"
 interface Seed {
 	readonly site: string
 	readonly at: string
+	readonly grain?: "site" | "query"
+	readonly day?: string
 	readonly query?: string
 	readonly clicks?: number
 	readonly marker?: boolean
 }
 
 const row = (seed: Seed) =>
-	`('${ORG}', '${seed.site}', 'query', '${seed.marker === true ? SEARCH_TYPE_WEB_COMPLETE : SEARCH_TYPE_WEB}', '${DAY}', 'https://acme.dev/', '${seed.query ?? ""}', '${seed.marker === true ? "" : "usa"}', '${seed.marker === true ? "" : "desktop"}', ${seed.clicks ?? 0}, ${(seed.clicks ?? 0) * 10}, ${(seed.clicks ?? 0) * 20}, '${seed.at}')`
+	`('${ORG}', '${seed.site}', '${seed.grain ?? "query"}', '${seed.marker === true ? SEARCH_TYPE_WEB_COMPLETE : SEARCH_TYPE_WEB}', '${seed.day ?? DAY}', 'https://acme.dev/', '${seed.query ?? ""}', '${seed.marker === true ? "" : "usa"}', '${seed.marker === true ? "" : "desktop"}', ${seed.clicks ?? 0}, ${(seed.clicks ?? 0) * 10}, ${(seed.clicks ?? 0) * 20}, '${seed.at}')`
 
-const marker = (site: string, at: string): Seed => ({ site, at, marker: true })
+const marker = (site: string, at: string, grain?: "site"): Seed => ({ site, at, grain, marker: true })
 
 const SEEDS: ReadonlyArray<Seed> = [
 	// Written before markers existed: the newest import counts.
@@ -52,6 +54,11 @@ const SEEDS: ReadonlyArray<Seed> = [
 	{ site: "partial", at: T1, query: "b", clicks: 2 },
 	marker("partial", T1),
 	{ site: "partial", at: T2, query: "a", clicks: 9 },
+	// Daily site totals: a day with traffic, a day Google answered empty, a day from before markers.
+	{ site: "chart", grain: "site", day: "2026-11-08 00:00:00", at: T1, clicks: 5 },
+	{ ...marker("chart", T1, "site"), day: "2026-11-08 00:00:00" },
+	{ ...marker("chart", T1, "site"), day: "2026-11-09 00:00:00" },
+	{ site: "chart", grain: "site", day: DAY, at: T1, clicks: 3 },
 ]
 
 describeWithChdb("Search Console reads on chDB", () => {
@@ -88,6 +95,21 @@ describeWithChdb("Search Console reads on chDB", () => {
 		])
 	}
 
+	const daily = decodeJsonEachRow(Schema.Struct({ date: Schema.String, clicks: CH.CHNumber }))
+
+	const timeseries = (site: string) => {
+		const compiled = CH.compileUnsafe(CH.searchConsoleTimeseriesQuery(), {
+			orgId: Schema.decodeSync(OrgId)(ORG),
+			siteUrl: site,
+			startDate: "2026-11-07 00:00:00",
+			endDate: DAY,
+		})
+		return Arr.map(daily(db.query(normalizeSqlForClickHouseClient(compiled.sql))), (entry) => [
+			entry.date,
+			entry.clicks,
+		])
+	}
+
 	const expectations = () => {
 		expect(topQueries("legacy")).toEqual([["a", 12]])
 		expect(topQueries("dropped")).toEqual([["a", 6]])
@@ -95,6 +117,12 @@ describeWithChdb("Search Console reads on chDB", () => {
 		// A filter narrows the rows, never which import is complete: markers hold '' there.
 		expect(topQueries("dropped", { country: "usa", device: "desktop" })).toEqual([["a", 6]])
 		expect(topQueries("dropped", { country: "deu" })).toEqual([])
+		// An imported empty day is a zero point; a day never imported (Nov 7) is no point.
+		expect(timeseries("chart")).toEqual([
+			["2026-11-08 00:00:00", 5],
+			["2026-11-09 00:00:00", 0],
+			["2026-11-10 00:00:00", 3],
+		])
 	}
 
 	test("counts each day's newest complete import before a merge", () => {

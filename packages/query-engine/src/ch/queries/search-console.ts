@@ -178,18 +178,29 @@ export interface SearchConsoleTimeseriesOutput {
 	readonly position: number
 }
 
-/** Daily totals from the site grain. Params: orgId, siteUrl, startDate, endDate. */
+/**
+ * Daily totals from the site grain, one point per imported day: a day whose newest complete import
+ * Google answered empty is a zero point, not a gap. Params: orgId, siteUrl, startDate, endDate.
+ */
 export function searchConsoleTimeseriesQuery() {
-	return fromQuery(latestRows("site"), "latest")
+	const daily = fromQuery(latestRows("site"), "latest")
+		.select(($) => ({
+			date: $.date,
+			clicks: CH.sum($.clicks),
+			impressions: CH.sum($.impressions),
+			positionSum: CH.sum($.positionSum),
+		}))
+		.groupBy("date")
+	return fromQuery(newestImports("site", "startDate"), "days")
+		.leftJoinQuery(daily, "daily", (day, totals) => day.date.eq(totals.date))
 		.select(($) => ({
 			date: $.date,
 			...metrics({
-				clicks: CH.sum($.clicks),
-				impressions: CH.sum($.impressions),
-				positionSum: CH.sum($.positionSum),
+				clicks: $.daily.clicks,
+				impressions: $.daily.impressions,
+				positionSum: $.daily.positionSum,
 			}),
 		}))
-		.groupBy("date")
 		.orderBy(["date", "asc"])
 		.format("JSON")
 		.route("ingest")

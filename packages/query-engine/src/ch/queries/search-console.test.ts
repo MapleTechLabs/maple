@@ -68,12 +68,13 @@ describe("searchConsoleOverviewQuery", () => {
 })
 
 describe("searchConsoleTimeseriesQuery", () => {
-	it("groups the site grain by day and divides position by impressions", () => {
+	it("puts every imported site-grain day on the axis and divides position by impressions", () => {
 		const flat = oneLine(compileUnsafe(searchConsoleTimeseriesQuery(), params).sql)
 		expect(flat).toContain("Grain = 'site'")
-		expect(flat).toContain("GROUP BY date")
+		// Days come from the imports, so a day Google answered empty still has a (zero) point.
+		expect(flat).toContain("AS days LEFT JOIN")
 		expect(flat).toContain("ORDER BY date ASC")
-		expect(flat).toContain("ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0)")
+		expect(flat).toContain("ifNotFinite(daily.positionSum / daily.impressions, 0)")
 	})
 })
 

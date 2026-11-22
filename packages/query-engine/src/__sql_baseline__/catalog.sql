@@ -6072,13 +6072,29 @@ SELECT
         GROUP BY date, page, query, country, device) AS latest
         FORMAT JSON
 
--- builder:search-console:searchConsoleTimeseriesQuery:default  [917e6d9d]
+-- builder:search-console:searchConsoleTimeseriesQuery:default  [9195ee70]
 SELECT
+          days.date AS date,
+          ifNull(daily.clicks, 0) AS clicks,
+          ifNull(daily.impressions, 0) AS impressions,
+          ifNull(ifNotFinite(daily.clicks / daily.impressions, 0), 0) AS ctr,
+          ifNull(ifNotFinite(daily.positionSum / daily.impressions, 0), 0) AS position
+        FROM (SELECT
+          search_console_daily.Date AS date,
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
+        FROM search_console_daily
+        WHERE search_console_daily.OrgId = 'org_sql_catalog'
+          AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
+          AND search_console_daily.Grain = 'site'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
+          AND search_console_daily.Date >= '2026-10-01 00:00:00'
+          AND search_console_daily.Date <= '2026-10-28 00:00:00'
+        GROUP BY date) AS days
+        LEFT JOIN (SELECT
           latest.date AS date,
-          ifNull(sum(latest.clicks), 0) AS clicks,
-          ifNull(sum(latest.impressions), 0) AS impressions,
-          ifNull(ifNotFinite(sum(latest.clicks) / sum(latest.impressions), 0), 0) AS ctr,
-          ifNull(ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0), 0) AS position
+          sum(latest.clicks) AS clicks,
+          sum(latest.impressions) AS impressions,
+          sum(latest.positionSum) AS positionSum
         FROM (SELECT
           search_console_daily.Date AS date,
           search_console_daily.Page AS page,
@@ -6108,7 +6124,7 @@ SELECT
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
           AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
-        GROUP BY date
+        GROUP BY date) AS daily ON days.date = daily.date
         ORDER BY date ASC
         FORMAT JSON
 
