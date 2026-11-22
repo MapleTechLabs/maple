@@ -1,5 +1,5 @@
 import { timestamp, type V2OnboardingAgentRun } from "@maple/domain/http/v2"
-import { Array as Arr, Result } from "effect"
+import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
 	all,
@@ -18,7 +18,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { labAgentRun } from "../../lab/onboarding-agent-fixture"
 import * as AgentHandoff from "../kit/agent-handoff"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
-import { ConnectMessage, initConnect, LoadConnectPresence, updateConnect } from "./quick-start-connect"
+import { ConnectMessage, initConnect, updateConnect } from "./quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, type QuickStartState } from "./quick-start-state"
 import { connectStep } from "./quick-start-view"
 
@@ -57,17 +57,11 @@ const indicatorMeasured = () =>
 		}),
 	)
 
-const poll = Subscription.emit(Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))
+const agentPoll = Subscription.emit(Message.GotConnectMessage({ message: ConnectMessage.ElapsedAgentPoll() }))
 
-const presenceRead = Command.resolve(
-	LoadConnectPresence({ orgId: "org_1" }),
-	ConnectMessage.LoadedPresence({ result: Result.succeed({}) }),
-)
-
-/** One poll whose run read answers `run`. */
+/** One agent poll whose run read answers `run`. */
 const polledRun = (run: V2OnboardingAgentRun) => [
-	poll,
-	presenceRead,
+	agentPoll,
 	Command.resolve(AgentHandoff.LoadAgentRun(), AgentHandoff.Message.SucceededLoadRun({ run })),
 ]
 
@@ -159,13 +153,14 @@ describe("agent run polling", () => {
 		isActive: true,
 		agent: { ...AgentHandoff.init("connect_step"), run },
 	})
-	const reads = (run: V2OnboardingAgentRun | null) =>
+	const readsOn = (message: ConnectMessage, run: V2OnboardingAgentRun | null) =>
 		Arr.filter(
-			updateConnect(withRun(run), ConnectMessage.ElapsedPoll(), "org_1", []).commands,
+			updateConnect(withRun(run), message, "org_1", []).commands,
 			(command) => command.name === AgentHandoff.LoadAgentRun.name,
 		).length
+	const reads = (run: V2OnboardingAgentRun | null) => readsOn(ConnectMessage.ElapsedAgentPoll(), run)
 
-	test("the poll reads an open run and stops once the run is closed", () => {
+	test("the agent poll reads an open run and stops once the run is closed", () => {
 		expect(reads(labAgentRun("waiting"))).toBe(1)
 		expect(reads(labAgentRun("progress"))).toBe(1)
 		expect(reads(labAgentRun("completed"))).toBe(0)
@@ -173,8 +168,9 @@ describe("agent run polling", () => {
 		expect(reads({ ...labAgentRun("progress"), status: "failed" })).toBe(0)
 	})
 
-	test("with no run known yet the poll keeps reading, so a run started elsewhere shows up", () => {
-		expect(reads(null)).toBe(1)
+	test("the step's poll reads only while no run is known, so a run started elsewhere shows up", () => {
+		expect(readsOn(ConnectMessage.ElapsedPoll(), null)).toBe(1)
+		expect(readsOn(ConnectMessage.ElapsedPoll(), labAgentRun("waiting"))).toBe(0)
 	})
 
 	test("after the API says there is no run, polls stop reading until a copy starts one", () => {

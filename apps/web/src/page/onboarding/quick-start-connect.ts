@@ -70,6 +70,7 @@ export const ConnectMessage = defineMessageUnion({
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
 	ElapsedPoll: {},
+	ElapsedAgentPoll: {},
 	ClickedSendTestTrace: { apiKey: Schema.String },
 	SucceededSendTestTrace: {},
 	FailedSendTestTrace: { message: Schema.String },
@@ -350,7 +351,7 @@ const agentShown = (connect: Connect): Step => {
 	return { connect: { ...connect, agent: next.model }, commands: toAgent(next.commands) }
 }
 
-/** The run is read on open (one left open from an earlier visit shows) and on each poll while open. */
+/** The run is read on open (one left open from an earlier visit shows) and on the agent poll while open. */
 const agentReads = (connect: Connect): Step["commands"] =>
 	AgentHandoff.shouldReadRun(connect.agent) ? toAgent([AgentHandoff.LoadAgentRun()]) : []
 
@@ -408,13 +409,15 @@ export const updateConnect = (
 			},
 			commands: [],
 		}),
+		ElapsedAgentPoll: () => ({ connect, commands: connect.isActive ? agentReads(connect) : [] }),
 		ElapsedPoll: () => ({
 			connect,
 			commands: connect.isActive
 				? [
 						...reads(orgId, platforms),
-						// With no run yet too: a failed first read, or a run started in another tab, still shows up.
-						...agentReads(connect),
+						// No run yet: a failed first read, or a run started in another tab, still shows up.
+						// An open run has its own poll, timed from the copy.
+						...(connect.agent.run === null ? agentReads(connect) : []),
 					]
 				: [],
 		}),
@@ -483,6 +486,24 @@ export const updateConnect = (
 export const connectPollTicks = (presence?: Presence): Stream.Stream<void> =>
 	Stream.take(backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence), FAST_POLLS + SLOW_POLLS)
 
+/**
+ * An open run's reads: 5 s for ten minutes, then 30 s for an hour, from the copy that started it,
+ * so an unused code (an hour) is seen to expire even when the copy came late in the step's poll.
+ */
+const AGENT_SLOW_POLLS = 120
+
+export const agentRunPollTicks = (presence?: Presence): Stream.Stream<void> =>
+	Stream.take(
+		backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence),
+		FAST_POLLS + AGENT_SLOW_POLLS,
+	)
+
+/** The open run the agent poll follows: a newer run restarts it. */
+const openRunAt = (connect: Connect): string | null =>
+	connect.isActive && connect.agent.run !== null && AgentHandoff.isRunOpen(connect.agent.run)
+		? connect.agent.run.created_at
+		: null
+
 export const connectSubscriptions = Subscription.make<Connect, ConnectMessage>()((entry) => ({
 	onboardingConnectPoll: entry(
 		{ isActive: Schema.Boolean },
@@ -490,6 +511,16 @@ export const connectSubscriptions = Subscription.make<Connect, ConnectMessage>()
 			modelToDependencies: (connect) => ({ isActive: connect.isActive }),
 			dependenciesToStream: ({ isActive }) =>
 				isActive ? Stream.map(connectPollTicks(), () => ConnectMessage.ElapsedPoll()) : Stream.empty,
+		},
+	),
+	onboardingAgentRunPoll: entry(
+		{ openRunAt: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (connect) => ({ openRunAt: openRunAt(connect) }),
+			dependenciesToStream: ({ openRunAt: runAt }) =>
+				runAt === null
+					? Stream.empty
+					: Stream.map(agentRunPollTicks(), () => ConnectMessage.ElapsedAgentPoll()),
 		},
 	),
 }))

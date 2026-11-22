@@ -17,8 +17,9 @@ import {
 } from "./quick-start-connect"
 import { ingestUrl } from "../../platform/ingest-url"
 import { DEFAULT_QUICK_START_STATE } from "./quick-start-state"
+import { labAgentRun } from "../../lab/onboarding-agent-fixture"
 
-const { onboardingConnectPoll } = connectSubscriptions
+const { onboardingConnectPoll, onboardingAgentRunPoll } = connectSubscriptions
 const run = <A, E>(effect: Effect.Effect<A, E>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(TestClock.layer())))
 
@@ -41,6 +42,36 @@ const counted = <A>(stream: Stream.Stream<A>) =>
 	})
 
 const open = openConnect(initConnect(), "org_1", ["cloudflare"]).connect
+
+describe("onboarding agent run poll", () => {
+	test("a copy late in the step's hour is still read after its code lapses", () =>
+		run(
+			Effect.gen(function* () {
+				// Copied 55 minutes after the step opened: the step's own poll has 5 minutes left.
+				const copied = { ...open, agent: { ...open.agent, run: labAgentRun("waiting") } }
+				const deps = onboardingAgentRunPoll.modelToDependencies(copied)
+				const polls = yield* counted(onboardingAgentRunPoll.dependenciesToStream(deps))
+				yield* TestClock.adjust("61 minutes")
+				const atLapse = yield* Ref.get(polls)
+				yield* TestClock.adjust("8 minutes")
+				expect(yield* Ref.get(polls)).toBeGreaterThan(atLapse)
+			}),
+		))
+
+	test("no open run, no agent poll", () =>
+		run(
+			Effect.gen(function* () {
+				const closed = { ...open, agent: { ...open.agent, run: labAgentRun("completed") } }
+				const polls = yield* counted(
+					onboardingAgentRunPoll.dependenciesToStream(
+						onboardingAgentRunPoll.modelToDependencies(closed),
+					),
+				)
+				yield* TestClock.adjust("10 minutes")
+				expect(yield* Ref.get(polls)).toBe(0)
+			}),
+		))
+})
 
 describe("onboarding connect poll", () => {
 	test("a visible tab left on the step polls 220 times in its first hour, then stops", () =>
