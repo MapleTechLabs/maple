@@ -1,4 +1,4 @@
-// Product-event retention against a real ClickHouse engine (chDB).
+// Product-event retention and cohorts against a real ClickHouse engine (chDB).
 //
 // Every expectation comes from the reference below, a plain TypeScript reading of the same rows:
 // a key's cohort is the interval of its first start event, period 0 is the cohort's size, and
@@ -300,6 +300,137 @@ describeWithChdb("product event retention", () => {
 		expect(Result.isFailure(CH.productEventsRetentionQuery({ ...weekly(true), periods: 0 }))).toBe(true)
 		expect(Result.isFailure(CH.productEventsRetentionQuery({ ...weekly(true), periods: 27 }))).toBe(true)
 	})
+
+	// Cohorts: who did one thing and did not do another.
+
+	const decodeCohort = decodeJsonEachRow(CH.productEventsCohortRowSchema)
+	type Members = {
+		readonly didTotal: number
+		readonly total: number
+		readonly members: ReadonlyArray<readonly [key: string, count: number]>
+	}
+	const sqlCohort = (orgId: string, opts: CH.ProductEventsCohortOpts, range: Range): Members => {
+		const rows = decodeCohort(
+			run(
+				db,
+				CH.compileUnsafe(Result.getOrThrow(CH.productEventsCohortQuery(opts)), params(orgId, range))
+					.sql,
+			),
+		)
+		return {
+			didTotal: rows[0]?.didTotal ?? 0,
+			total: rows[0]?.total ?? 0,
+			members: Arr.map(rows, (row) => [row.key, row.count] as const),
+		}
+	}
+	interface Candidate {
+		readonly key: string
+		readonly count: number
+		readonly lastMs: number
+		readonly excluded: boolean
+	}
+	const latestThenKey: Order.Order<Candidate> = Order.combine(
+		Order.mapInput(Order.flip(Order.Number), (entry: Candidate) => entry.lastMs),
+		Order.mapInput(Order.String, (entry: Candidate) => entry.key),
+	)
+	const referenceCohort = (dataset: Dataset, opts: CH.ProductEventsCohortOpts, range: Range): Members => {
+		const links = linksOf(dataset)
+		const byKey = Arr.groupBy(
+			Arr.filter(dataset.events, (row) => keyOf(opts.keyBy, row, links) !== ""),
+			(row) => keyOf(opts.keyBy, row, links),
+		)
+		const keys = Arr.flatMap(Rec.toEntries(byKey), ([key, rows]): ReadonlyArray<Candidate> => {
+			const did = Arr.filter(rows, (row) => inRange(row.atMs, range) && stepMatches(opts.did, row))
+			if (did.length === 0) return []
+			const excluded = Arr.some(
+				rows,
+				(row) =>
+					opts.didNot !== undefined &&
+					stepMatches(opts.didNot, row) &&
+					row.atMs <= range.toMs &&
+					(opts.didNotScope === "ever" || row.atMs >= range.fromMs),
+			)
+			return [
+				{ key, count: did.length, lastMs: Math.max(...Arr.map(did, (row) => row.atMs)), excluded },
+			]
+		})
+		const members = Arr.sort(
+			Arr.filter(keys, (entry) => !entry.excluded),
+			latestThenKey,
+		)
+		// Nobody left: the query has no row to carry the totals on.
+		return members.length === 0
+			? { didTotal: 0, total: 0, members: [] }
+			: {
+					didTotal: keys.length,
+					total: members.length,
+					members: Arr.map(
+						Arr.take(members, opts.limit),
+						(entry) => [entry.key, entry.count] as const,
+					),
+				}
+	}
+
+	test("a cohort is who did one thing in the window and never the other", () => {
+		const neverBack: CH.ProductEventsCohortOpts = {
+			did: ev("signup"),
+			didNot: ev("visit"),
+			didNotScope: "ever",
+			keyBy: "user",
+			limit: 10,
+		}
+		// `a` signed up and visited; `b` signed up and never came back.
+		expect(sqlCohort(HAND.orgId, neverBack, WHOLE)).toEqual({
+			didTotal: 2,
+			total: 1,
+			members: [["b", 1]],
+		})
+	})
+
+	test("never reaches back before the window, where not-in-the-window does not", () => {
+		const visitedLate: Range = { fromMs: 8 * DAY_MS, toMs: END_MS }
+		const cohort = (didNotScope: "ever" | "window"): CH.ProductEventsCohortOpts => ({
+			did: ev("visit"),
+			didNot: ev("signup"),
+			didNotScope,
+			keyBy: "user",
+			limit: 10,
+		})
+		// `a` visited on day 9 and signed up on day 1, before the window.
+		expect(sqlCohort(HAND.orgId, cohort("ever"), visitedLate).members).toEqual([["old", 2]])
+		expect(sqlCohort(HAND.orgId, cohort("window"), visitedLate).members).toEqual([
+			["old", 2],
+			["a", 1],
+		])
+	})
+
+	test("random histories give the reference's members and totals", () => {
+		const rng = seeded(977)
+		const names = ["a", "b", "c"] as const
+		const asks = Arr.flatMap(random, ({ dataset }) =>
+			Arr.makeBy(5, () => {
+				const fromDay = rng.int(10)
+				const range: Range = { fromMs: fromDay * DAY_MS, toMs: (fromDay + 6 + rng.int(8)) * DAY_MS }
+				const opts: CH.ProductEventsCohortOpts = {
+					did: ev(rng.pick(names)),
+					...(rng.chance(0.7) ? { didNot: ev(rng.pick(names)) } : undefined),
+					didNotScope: rng.pick(["ever", "window"] as const),
+					keyBy: rng.pick(["person", "user", "visitor", "group"] as const),
+					limit: rng.pick([1, 3, 50] as const),
+				}
+				return { dataset, opts, range, expected: referenceCohort(dataset, opts, range) }
+			}),
+		)
+		const mismatches = Arr.flatMap(asks, ({ dataset, opts, range, expected }) => {
+			const actual = sqlCohort(dataset.orgId, opts, range)
+			return JSON.stringify(expected) === JSON.stringify(actual)
+				? []
+				: [{ org: dataset.orgId, opts, range, expected, actual }]
+		})
+		expect(mismatches.slice(0, 2)).toEqual([])
+		// Most asks leave someone in and someone out; an all-empty suite would prove nothing.
+		expect(Arr.filter(asks, (ask) => ask.expected.total > 0).length).toBeGreaterThan(60)
+	}, 120_000)
 
 	const EXAMPLES: ReadonlyArray<{ readonly name: string; readonly dataset: Dataset; readonly opts: Opts }> =
 		[

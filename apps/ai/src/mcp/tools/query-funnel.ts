@@ -1,7 +1,9 @@
 import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
+	FUNNEL_MAX_EXCLUSIONS,
 	FUNNEL_MAX_STEPS,
 	FunnelBreakdownBy,
+	FunnelExclusion,
 	FunnelKeyBy,
 	FunnelStep,
 	funnelStepDetails,
@@ -39,6 +41,12 @@ const BREAKDOWN_MAX_GROUPS = 20
 
 const STEPS_EXAMPLE =
 	'[{"kind":"page","pagePath":"/pricing"},{"kind":"event","eventName":"signup_completed"},{"kind":"event","eventName":"plan_started","attributeEquals":{"plan":"pro"}}]'
+
+const EXCLUSIONS_EXAMPLE = '[{"step":{"kind":"event","eventName":"support_opened"},"after":1,"before":2}]'
+
+/** "support_opened between steps 1 and 3", for the scope line. */
+const exclusionText = (exclusion: FunnelExclusion, stepCount: number): string =>
+	`${funnelStepLabel(exclusion.step)} between steps ${exclusion.after ?? 1} and ${exclusion.before ?? stepCount}`
 
 const KEY_BY_NOUN = {
 	person: "persons",
@@ -126,11 +134,15 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Query Funnel",
 		description:
-			'Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person, or per account with `key_by="group"`. Reports each step\'s count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists; the path of a page step may use `*` for any run of characters (`/dashboards/*`). `details=true` adds time to convert and where the drop-offs went. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.',
+			'Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person, or per account with `key_by="group"`. Reports each step\'s count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists; the path of a page step may use `*` for any run of characters (`/dashboards/*`). `details=true` adds time to convert and where the drop-offs went; `exclusions_json` counts only attempts in which something did not happen in between. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.',
 		parameters: Schema.Struct({
 			steps_json: P.json(
 				Schema.Array(FunnelStep),
 				`JSON array of 1-${FUNNEL_MAX_STEPS} steps, in order. A step is {kind:"event", eventName, attributeEquals?}, {kind:"page", pagePath, host?} (pagePath exact, or with * as a wildcard), or, as step 1 only, {kind:"session", dimension, value} for how the session was acquired (dimension: referrerHost, utmSource, utmMedium, utmCampaign, country or host). Example: ${STEPS_EXAMPLE}`,
+			),
+			exclusions_json: P.optionalJson(
+				Schema.Array(FunnelExclusion),
+				`JSON array of up to ${FUNNEL_MAX_EXCLUSIONS} things that must NOT happen part way through: {step, after?, before?}. \`step\` is {kind:"event", eventName, attributeEquals?} or {kind:"page", pagePath, host?}; an attempt that has reached step \`after\` (default 1) and not yet step \`before\` (default the last) is dropped when it happens. Example, converted without contacting support: [{"step":{"kind":"event","eventName":"support_opened"}}]`,
 			),
 			key_by: P.optionalOneOf(
 				FunnelKeyBy.literals,
@@ -231,7 +243,16 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				"maple.ai.breakdown_by": breakdownBy ?? "none",
 			})
 
-			const definition = { steps, keyBy, windowSeconds, filters, startTime: st, endTime: et }
+			const exclusions = params.exclusions_json ?? []
+			const definition = {
+				steps,
+				keyBy,
+				windowSeconds,
+				filters,
+				...(exclusions.length > 0 ? { exclusions } : undefined),
+				startTime: st,
+				endTime: et,
+			}
 
 			// The builder's own validation is the last word (it also catches what the checks above did
 			// not think of); its rejection is a caller error, not a tool failure.
@@ -239,11 +260,17 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				Effect.catchTags(warehouseToMcpHandlers(TOOL)),
 				Effect.catchTag("@maple/query-engine/ProductEventsFunnelError", (error) =>
 					Effect.fail(
-						new McpInvalidInputError({
-							message: error.message,
-							parameter: "steps_json",
-							example: STEPS_EXAMPLE,
-						}),
+						error.reason === "InvalidExclusion"
+							? new McpInvalidInputError({
+									message: error.message,
+									parameter: "exclusions_json",
+									example: EXCLUSIONS_EXAMPLE,
+								})
+							: new McpInvalidInputError({
+									message: error.message,
+									parameter: "steps_json",
+									example: STEPS_EXAMPLE,
+								}),
 					),
 				),
 			)
@@ -284,7 +311,11 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 
 			// Time to convert and where the drop-offs went: two more reads, only when asked for.
 			const wantsDetails =
-				params.details === true && steps.length >= 2 && breakdownBy === undefined && first > 0
+				params.details === true &&
+				steps.length >= 2 &&
+				breakdownBy === undefined &&
+				exclusions.length === 0 &&
+				first > 0
 			const details = wantsDetails
 				? yield* Effect.all(
 						{
@@ -365,6 +396,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				conversion,
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
+				...(exclusions.length > 0 ? { exclusions } : undefined),
 				...(identity === undefined ? undefined : { identityNote: identity.note }),
 				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				...(sessionNote === undefined ? undefined : { sessionNote }),
@@ -379,7 +411,20 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const stepsJson = stringifyJson(output.definition)
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
-				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
+				scope: [
+					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+					[
+						"Without",
+						output.exclusions === undefined
+							? undefined
+							: Arr.join(
+									Arr.map(output.exclusions, (exclusion) =>
+										exclusionText(exclusion, steps.length),
+									),
+									"; ",
+								),
+					],
+				],
 				...(output.identityNote === undefined && output.sessionNote === undefined
 					? undefined
 					: {
@@ -429,6 +474,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 										? "Add a second step to measure conversion."
 										: `**Conversion: ${formatPercent(output.conversion)}** (${formatNumber(last.count)} of ${formatNumber(first.count)} ${noun}).`,
 								),
+								...(output.exclusions === undefined
+									? []
+									: [
+											doc.text(
+												"An excluded event drops the attempt it interrupts, not the person: someone who starts over afterwards can still convert. Time to convert and the drop-offs' next steps are not reported with exclusions.",
+											),
+										]),
 								...(Arr.some(steps, (stat) => stat.p50Ms !== undefined)
 									? [
 											doc.heading("Time to convert"),
@@ -523,7 +575,14 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					breakdown === undefined
 						? doc.next(
 								TOOL,
-								{ steps_json: stepsJson, breakdown_by: "utmSource", ...window },
+								{
+									steps_json: stepsJson,
+									...(output.exclusions === undefined
+										? undefined
+										: { exclusions_json: stringifyJson(output.exclusions) }),
+									breakdown_by: "utmSource",
+									...window,
+								},
 								"see where the converters came from",
 							)
 						: doc.next("search_sessions", window, "read the sessions behind a group"),

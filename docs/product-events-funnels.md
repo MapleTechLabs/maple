@@ -525,6 +525,16 @@ converted in either order.
   `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way. A `*` in
   the step's path matches any run of characters (`pagePathLikePattern` in `@maple/query-model`,
   compiled to `LIKE` with `%` and `_` escaped); a path without one is compared with `=`.
+- **An exclusion** (`exclusions`, 2026-11-22) is an event or page that must not happen part way
+  through: an attempt that has reached step `after` (default 1) and not yet step `before` (default
+  the last) is dropped when it does. Dropping is per attempt and per step: the person can convert
+  on a later attempt, and an attempt dropped from step 2 still stands at step 1 and can take a
+  later step-2 row. In the walk an excluded row writes a marker (1, which no order key is) into
+  the state of the steps it covers, carried forward like a start; nothing advances from it. A
+  funnel without exclusions compiles to the SQL it always did. Counts and breakdowns honour
+  exclusions; timing and leavers refuse them, because the chain they read is rebuilt from the
+  person's rows without knowing which attempts were dropped. No dashboard surface sets them yet;
+  `query_funnel` does, with `exclusions_json`.
 - **The key** is `person`, `visitor`, `user`, `group` or `session`. A row whose key is empty takes
   no part, so a step whose events lack the key can never be reached: `plan_started` from a billing
   webhook carries `GroupId` and no user, and by `person` reads as 0% however many accounts paid.
@@ -532,6 +542,15 @@ converted in either order.
   account as one history. `productEventsFunnelCoverageQuery` counts, per step, the matching events
   and how many carry each identity; `query_funnel` reads it when a step came back empty and says
   which key every step's events do carry.
+
+## Cohorts (2026-11-22)
+
+`productEventsCohortQuery` (`product-events-cohort.ts`), reached through the MCP tool
+`query_cohort`: the keys that did one event or page view in the window and, optionally, did not do
+another, either ever (all history up to the window's end) or inside the window. One pass per key
+over the rows matching either event; the members (who did it last first) and two totals, everyone
+who did the first thing and those of them who fit, come back from the same read as window
+functions. `retention-scenarios.test.ts` checks it against a TypeScript reference on chDB.
 
 ## How retention is counted (2026-11-22)
 

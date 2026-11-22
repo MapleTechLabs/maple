@@ -74,6 +74,8 @@ export {
 	productEventsFunnelLeavers,
 	productEventsPaths,
 	type ProductEventsPathsInput,
+	productEventsCohort,
+	type ProductEventsCohortInput,
 	productEventsRetention,
 	type ProductEventsRetentionInput,
 	type ProductEventsRetentionOutput,

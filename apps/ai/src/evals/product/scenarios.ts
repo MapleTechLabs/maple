@@ -560,12 +560,39 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			["cohorts", "users"],
 			`How many users created a workspace (workspace_created) ${span(fourWeeks)} but have never created a project (project_created)?`,
 			[answerNumber("users with a workspace and no project", workspaceOnly.length)],
+			[
+				{
+					tool: "query_cohort",
+					args: {
+						did_json: stringifyJson({ kind: "event", eventName: "workspace_created" }),
+						did_not_json: stringifyJson({ kind: "event", eventName: "project_created" }),
+						key_by: "user",
+						...window(fourWeeks),
+					},
+				},
+			],
 		),
 		scenario(
 			"project-without-invite",
 			["funnel", "cohorts"],
 			`${span(fourWeeks)}: how many users went from workspace_created to project_created within 7 days without sending an invite (invite_sent) in between?`,
 			[answerNumber("converted without an invite", withoutInvite)],
+			[
+				funnel(
+					[
+						{ kind: "event", eventName: "workspace_created" },
+						{ kind: "event", eventName: "project_created" },
+					],
+					fourWeeks,
+					{
+						window_seconds: 7 * 86_400,
+						key_by: "user",
+						exclusions_json: stringifyJson([
+							{ step: { kind: "event", eventName: "invite_sent" } },
+						]),
+					},
+				),
+			],
 		),
 		scenario(
 			"paid-users-trap",
