@@ -238,7 +238,8 @@ const previews = all.map(({ feature }) => {
 		});
 
 	const fromHash = () => {
-		const slug = decodeURIComponent(location.hash.slice(1));
+		// Slugs are plain ASCII, so the raw fragment compares as is; decoding could throw on a stray %.
+		const slug = location.hash.slice(1);
 		if (slug !== "" && show(slug) && wide.matches) root?.scrollIntoView({ block: "start" });
 	};
 	fromHash();
