@@ -12,6 +12,7 @@ import {
 	Option,
 	Predicate,
 	Redacted,
+	Ref,
 	Schema,
 	String as Str,
 } from "effect"
@@ -180,6 +181,7 @@ const latestTrace = (
 	service: string,
 	environment: Option.Option<string>,
 	notBefore: Option.Option<string>,
+	unreachable: Ref.Ref<number>,
 ) =>
 	Effect.gen(function* () {
 		const client = yield* makeV2Client(target.apiUrl, target.token)
@@ -211,7 +213,10 @@ const latestTrace = (
 		return Option.map(Arr.head(list.data), (trace) => Str.toLowerCase(trace.id))
 	}).pipe(
 		// Only a transient failure waits for the next tick; a refused key or a bad request never heals.
-		Effect.catchIf(isTransientSearchFailure, () => Effect.succeed(Option.none<string>())),
+		// It is counted, so a timeout can tell "Maple was unreachable" from "no trace arrived".
+		Effect.catchIf(isTransientSearchFailure, () =>
+			Ref.update(unreachable, (n) => n + 1).pipe(Effect.as(Option.none<string>())),
+		),
 	)
 
 /** The later of the window's start and the run's: both ISO-8601 UTC, so they order as strings. */
@@ -270,9 +275,17 @@ const verify = Command.make("verify", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const target = yield* hostedTarget
+			// A failed read is not "no run": without the run's start, an older trace could verify this setup.
 			const run = yield* fetchRun(target).pipe(
-				Effect.orElseSucceed(() => Option.none<V2OnboardingAgentRun>()),
+				Effect.mapError(
+					(error) =>
+						new CliUsageError({
+							message: `could not read your onboarding run, so verify cannot tell new traces from old: ${error.message}`,
+							hint: "Run it again in a moment.",
+						}),
+				),
 			)
+			const unreachable = yield* Ref.make(0)
 			yield* Console.error(`Waiting up to ${a.timeout}s for a trace from ${a.service}…`)
 			const found = yield* waitForTrace({
 				find: latestTrace(
@@ -280,18 +293,25 @@ const verify = Command.make("verify", {
 					a.service,
 					a.env,
 					Option.map(run, (r) => r.created_at),
+					unreachable,
 				),
 				timeout: Duration.seconds(a.timeout),
 				interval: VERIFY_INTERVAL,
 			})
 			if (Option.isNone(found)) {
-				// A verification another call already completed is never downgraded by a later miss.
-				const now = yield* fetchRun(target).pipe(
-					Effect.orElseSucceed(() => Option.none<V2OnboardingAgentRun>()),
-				)
-				if (Option.exists(now, isVerified)) {
+				// Maple, not the user's setup, failed: say so, and report nothing about the stage.
+				const failedPolls = yield* Ref.get(unreachable)
+				if (failedPolls > 0) {
 					return yield* new CliNotFoundError({
-						message: `no trace from ${a.service} reached Maple in ${a.timeout}s (the run's verification stays completed)`,
+						message: `Maple could not be reached on ${failedPolls} of the checks for ${a.service}, so this proves nothing about your setup`,
+						hint: "Run maple onboarding verify again in a minute.",
+					})
+				}
+				// A verification another call already completed is never downgraded by a later miss.
+				const now = yield* fetchRun(target).pipe(Effect.option, Effect.map(Option.flatten))
+				if (Option.isNone(now) || Option.exists(now, isVerified)) {
+					return yield* new CliNotFoundError({
+						message: `no trace from ${a.service} reached Maple in ${a.timeout}s`,
 						hint: verifyHints(target.apiUrl),
 					})
 				}
