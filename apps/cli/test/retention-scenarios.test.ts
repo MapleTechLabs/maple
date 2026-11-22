@@ -231,6 +231,19 @@ const randomDatasets = (
 	})
 }
 
+/**
+ * A signup and a visit 35 days later: in different calendar months whatever day the suite runs,
+ * which the 24-day range the other datasets live in is not.
+ */
+const MONTHS: Dataset = {
+	orgId: "retention_months",
+	sessions: [],
+	events: [
+		event({ atMs: -40 * DAY_MS + HOUR_MS, eventName: "signup", userId: "m", source: "server" }),
+		event({ atMs: -5 * DAY_MS + HOUR_MS, eventName: "visit", userId: "m", source: "server" }),
+	],
+}
+
 describeWithChdb("product event retention", () => {
 	let root: string
 	let db: Chdb
@@ -241,7 +254,7 @@ describeWithChdb("product event retention", () => {
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "maple-retention-scenarios-"))
 		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
-		Arr.forEach([HAND, saas, shop, ...Arr.map(random, (entry) => entry.dataset)], (dataset) =>
+		Arr.forEach([HAND, MONTHS, saas, shop, ...Arr.map(random, (entry) => entry.dataset)], (dataset) =>
 			insertDataset(db, dataset),
 		)
 	})
@@ -295,6 +308,36 @@ describeWithChdb("product event retention", () => {
 			[day(1), 1, 1],
 			[day(1), 8, 1],
 		])
+	})
+
+	test("a monthly period counts calendar months, across a month boundary", () => {
+		const monthly: Opts = {
+			startEvent: ev("signup"),
+			returnEvent: ev("visit"),
+			keyBy: "user",
+			interval: "month",
+			periods: 3,
+			firstEver: true,
+		}
+		const range: Range = { fromMs: -41 * DAY_MS, toMs: -39 * DAY_MS }
+		const signup = new Date(BASE_MS - 40 * DAY_MS + HOUR_MS)
+		const visit = new Date(BASE_MS - 5 * DAY_MS + HOUR_MS)
+		const cohort = Str.slice(
+			0,
+			10,
+		)(chTimestamp(Date.UTC(signup.getUTCFullYear(), signup.getUTCMonth(), 1) - BASE_MS))
+		const monthsLater =
+			(visit.getUTCFullYear() - signup.getUTCFullYear()) * 12 +
+			visit.getUTCMonth() -
+			signup.getUTCMonth()
+		const rows = sqlRetention(db, MONTHS.orgId, monthly, range, END_MS)
+		// 35 days is one month boundary, or two around a short February: never zero.
+		expect(monthsLater).toBeGreaterThanOrEqual(1)
+		expect(rows).toEqual([
+			[cohort, 0, 1],
+			[cohort, monthsLater, 1],
+		])
+		expect(rows).toEqual([...referenceRetention(MONTHS, monthly, range, END_MS)])
 	})
 
 	test("rejects a period count outside 1..26", () => {
