@@ -124,4 +124,21 @@ describe("the user rail", () => {
 			expectView(role("separator")).not.toExist(),
 		)
 	})
+
+	test("a device recorded without versions names its OS beside the mark, so macOS and iOS differ", () => {
+		const bare: UserProfile = {
+			...SOLO_DETAIL.profile,
+			devices: [
+				{ browser: "Chrome", os: "macOS", sessions: 5 },
+				{ browser: "Safari", os: "iOS", sessions: 2 },
+			],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: bare, stats: null }),
+			expectView(text("macOS")).toExist(),
+			expectView(text("iOS")).toExist(),
+			expectView(text("Chrome")).not.toExist(),
+		)
+	})
 })

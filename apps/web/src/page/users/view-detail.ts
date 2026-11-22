@@ -431,16 +431,26 @@ const browserIconOf = (browser: string): IconName | undefined => {
 
 const VERSION = /\s+v?(\d+)[\d.]*$/
 
-/** A browser or OS as its mark and major version ("Chrome 130" is the Chrome mark and 130); the name when it has no mark. */
-const platformMark = <M>(h: HtmlBuilder<M>, mark: IconName | undefined, name: string): Html => {
+/**
+ * A browser or OS as its mark and major version ("Chrome 130" is the Chrome mark and 130); the name
+ * when it has no mark. `isNamedWithoutVersion` puts the name beside a versionless mark, for the OS,
+ * whose Apple mark covers both macOS and iOS.
+ */
+const platformMark = <M>(
+	h: HtmlBuilder<M>,
+	mark: IconName | undefined,
+	name: string,
+	isNamedWithoutVersion: boolean,
+): Html => {
 	if (mark === undefined)
 		return typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [name])
 	const version = VERSION.exec(name)?.[1]
+	const detail = version ?? (isNamedWithoutVersion ? name : undefined)
 	return hstack(h, { gap: "1", as: "span", inline: true }, [
 		icon(h, mark, { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
-		...(version === undefined
+		...(detail === undefined
 			? []
-			: [typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [version])]),
+			: [typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [detail])]),
 	])
 }
 
@@ -450,8 +460,8 @@ const platformMark = <M>(h: HtmlBuilder<M>, mark: IconName | undefined, name: st
  */
 const deviceBadge = <M>(h: HtmlBuilder<M>, device: Readonly<{ browser: string; os: string }>): Html => {
 	const browser =
-		device.browser === "" ? [] : [platformMark(h, browserIconOf(device.browser), device.browser)]
-	const os = device.os === "" ? [] : [platformMark(h, osIconFor(device.os), device.os)]
+		device.browser === "" ? [] : [platformMark(h, browserIconOf(device.browser), device.browser, false)]
+	const os = device.os === "" ? [] : [platformMark(h, osIconFor(device.os), device.os, true)]
 	const name = Arr.join(
 		Arr.filter([device.browser, device.os], (part) => part !== ""),
 		" on ",
