@@ -16,8 +16,13 @@ import { firstDataSeen } from "./first-data"
  * data are abandoned signups; the setup audit still stamps them if they come back.
  */
 export const FIRST_DATA_SWEEP_WINDOW = Duration.days(30)
-/** Bounds one tick's warehouse reads; newest orgs first, so a fresh signup is never starved. */
+/**
+ * Bounds one tick's warehouse reads. Applied after the due check, not in SQL, so newer orgs
+ * cannot crowd older ones out: an older org is due on a staggered sixth of ticks.
+ */
 export const FIRST_DATA_SWEEP_LIMIT = 100
+/** Safety cap on the 30-day candidate read; signups per window are far below it. */
+const CANDIDATE_ROWS_CAP = 5_000
 const PROBE_CONCURRENCY = 4
 /** Probed every hourly tick while this young; most orgs that send data do it in the first days. */
 const EAGER_AGE = Duration.days(3)
@@ -112,7 +117,7 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 									}))
 									.where(($) => [$.firstDataReceivedAt.isNull(), $.createdAt.gt(cutoff)])
 									.orderBy(($) => [[$.createdAt, "desc"]])
-									.limit(FIRST_DATA_SWEEP_LIMIT),
+									.limit(CANDIDATE_ROWS_CAP),
 							),
 						),
 						dbExecute((db) =>
@@ -132,7 +137,7 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 									}))
 									.where(($) => [$.createdAt.gt(cutoff)])
 									.orderBy(($) => [[$.createdAt, "desc"]])
-									.limit(FIRST_DATA_SWEEP_LIMIT),
+									.limit(CANDIDATE_ROWS_CAP),
 							),
 						),
 					],
