@@ -13,7 +13,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
 import { detailRailGroup, detailRailRow, detailRailStats } from "@maple/views/ui/detail-rail"
-import { badge } from "@maple/views/ui/display"
+import { badge, separator } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -24,6 +24,8 @@ import {
 } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { browserIconFor, osIconFor } from "../replays/kit/sessions-parts"
 import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { meter } from "@maple/views/ui/meter"
 import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
@@ -421,10 +423,46 @@ const groupSection = <M>(
 				]),
 			]
 
-const MOBILE_OS = /ios|android|ipados/i
+/** The browser's mark, or none for a browser without one (the globe fallback says nothing). */
+const browserIconOf = (browser: string): IconName | undefined => {
+	const name = browserIconFor(browser)
+	return name === "GlobeIcon" ? undefined : name
+}
 
-/** A phone for a mobile OS, a computer otherwise. */
-const deviceIcon = (os: string): IconName => (MOBILE_OS.test(os) ? "MobileIcon" : "MonitorIcon")
+const VERSION = /\s+v?(\d+)[\d.]*$/
+
+/** A browser or OS as its mark and major version ("Chrome 130" is the Chrome mark and 130); the name when it has no mark. */
+const platformMark = <M>(h: HtmlBuilder<M>, mark: IconName | undefined, name: string): Html => {
+	if (mark === undefined)
+		return typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [name])
+	const version = VERSION.exec(name)?.[1]
+	return hstack(h, { gap: "1", as: "span", inline: true }, [
+		icon(h, mark, { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
+		...(version === undefined
+			? []
+			: [typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [version])]),
+	])
+}
+
+/** One pill for the browser and the OS it ran on, since they describe one device; named on hover. */
+const deviceBadge = <M>(h: HtmlBuilder<M>, device: Readonly<{ browser: string; os: string }>): Html => {
+	const name = `${device.browser} on ${device.os}`
+	return badge(
+		h,
+		{
+			variant: "outline",
+			size: "lg",
+			pill: true,
+			className: "cursor-default gap-2",
+			attributes: [h.AriaLabel(name), h.Role("img"), ...tooltipTrigger(h, name)],
+		},
+		[
+			platformMark(h, browserIconOf(device.browser), device.browser),
+			separator(h, "vertical", "h-3"),
+			platformMark(h, osIconFor(device.os), device.os),
+		],
+	)
+}
 
 /** The right rail: identity, the user's group, where their activity lives, traits and devices. */
 export const userRail = <M>(
@@ -515,11 +553,12 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.devices)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no recorded sessions"])]
 					: Arr.map(profile.devices, (device) =>
-							detailRailRow(
-								h,
-								{ icon: deviceIcon(device.os), label: device.browser, hint: device.os },
-								[railNumber(h, countLabel(device.sessions, "session"))],
-							),
+							hstack(h, { gap: "2", className: "min-h-8 min-w-0" }, [
+								hstack(h, { as: "span", className: "min-w-0 flex-1" }, [
+									deviceBadge(h, device),
+								]),
+								railNumber(h, countLabel(device.sessions, "session")),
+							]),
 						),
 			),
 		],

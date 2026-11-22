@@ -16,7 +16,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../../kit/underline-tabs"
 import { platformMeta, platformTile } from "../kit/platforms"
 import { effectiveTab, hasToken, integrationPlatformOf, focusIdOf, sourceHref } from "../kit/shared"
 import { actionsEmbed, cardEmbed, canManage as canManageIntegrations } from "../../integrations/embed"
@@ -66,7 +66,7 @@ const tabs = (h: H, shown: ReadonlyArray<SourceTab>, source: V2Source, active: S
 					...(isActive ? [h.AriaCurrent("page"), h.DataAttribute("status", "active")] : []),
 					h.Class(`${underlineTabClass(isActive)}${isActive ? " active" : ""}`),
 				],
-				[TAB_LABELS[tab]],
+				[underlineTabLabel(h, TAB_LABELS[tab])],
 			)
 		}),
 	)

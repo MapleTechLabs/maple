@@ -1,7 +1,7 @@
 import type { AnomalyIncidentDocument, ErrorIssueDocument, ErrorIssueId } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { cn } from "@maple/ui/lib/utils"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../../kit/underline-tabs"
 import { liveInvestigationSummary, resolveSignalState } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
@@ -197,10 +197,16 @@ export const issueTabs = (
 						h.Role("tab"),
 					],
 					[
-						tab.label,
+						underlineTabLabel(h, tab.label),
 						...(count === undefined || count === 0
 							? []
-							: [typography(h, { size: "xs", tone: "muted", numeric: true }, [String(count)])]),
+							: [
+									typography(
+										h,
+										{ size: "xs", weight: "normal", tone: "muted", numeric: true },
+										[String(count)],
+									),
+								]),
 					],
 				)
 			},
