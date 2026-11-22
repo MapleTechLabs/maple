@@ -467,6 +467,13 @@ describe("query_funnel exclusions", () => {
 			]),
 		})
 		expect(bound.isError).toBeUndefined()
+		// Across one gap the step on either side can never apply: refused rather than reported as applied.
+		const vacuous = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([{ step: { kind: "page", pagePath: "/pricing" } }]),
+		})
+		expect(vacuous.isError).toBe(true)
+		expect(markdown(vacuous)).toContain("can never apply")
 	})
 
 	it("does not offer to pin a funnel whose exclusions a dashboard widget would drop", async () => {

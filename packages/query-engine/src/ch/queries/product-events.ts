@@ -308,7 +308,8 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 		)
 	})
 	// A step strictly between the two bounds has to happen there, so excluding it leaves nobody.
-	// The bounds themselves may be excluded: "no second cart view between the cart and the payment".
+	// The bounds themselves may be excluded when the range spans more than one gap: "no return to
+	// the cart between the cart and the payment", in cart, address, payment.
 	const selfExcluding = Arr.findFirst(exclusions, (exclusion) => {
 		const { after, before } = exclusionRange(exclusion, opts.steps.length)
 		const excluded = stepKey(exclusion.step)
@@ -322,6 +323,26 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			reason: "InvalidExclusion",
 			message:
 				"an exclusion cannot be a step that lies between its own after and before: every attempt has to pass that step, so none would be left",
+		})
+	}
+	// Across a single gap, an exclusion that is the step on either side can never apply: a repeat
+	// of the first starts a new attempt, and the first occurrence of the second ends the gap.
+	// Accepting it would report an exclusion that changes nothing.
+	const vacuous = Arr.findFirst(exclusions, (exclusion) => {
+		const { after, before } = exclusionRange(exclusion, opts.steps.length)
+		const excluded = stepKey(exclusion.step)
+		return (
+			before === after + 1 &&
+			Arr.some([opts.steps[after - 1], opts.steps[before - 1]], (step) =>
+				step === undefined ? false : stepKey(step) === excluded,
+			)
+		)
+	})
+	if (Option.isNone(misplaced) && Option.isSome(vacuous)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message:
+				"an exclusion that is the step on either side of a single gap can never apply: a repeat of the first step starts a new attempt, and the second step ends the gap. Name another event, or widen after/before to span more steps",
 		})
 	}
 	if (Option.isSome(misplaced)) {

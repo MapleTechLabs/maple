@@ -358,6 +358,13 @@ const BOUNDS: Dataset = {
 			[2_000, "address"],
 			[3_000, "pay"],
 		]),
+		// Went back to the cart after the address and paid from there, with no address after it.
+		...user("restarted", [
+			[1_000, "cart"],
+			[2_000, "address"],
+			[2_500, "cart"],
+			[3_000, "pay"],
+		]),
 	],
 }
 
@@ -957,13 +964,16 @@ describeWithChdb("product event funnels over example products", () => {
 			windowSeconds: 3_600,
 			exclusions,
 		})
-		// No second cart between the cart and the address: `back` restarts and still converts.
-		expect(counts(BOUNDS, funnel([excluding("cart", 1, 2)]))).toEqual([3, 3, 3])
+		expect(counts(BOUNDS, funnel(undefined))).toEqual([4, 4, 4])
+		// No return to the cart before paying. `back` returns before the address and its second
+		// cart is a fresh attempt that converts; `restarted` returns after it, and that attempt
+		// has no address.
+		expect(counts(BOUNDS, funnel([excluding("cart")]))).toEqual([4, 4, 3])
 		// No pay between the cart and the address: `paidEarly` has no other cart to start from.
-		expect(counts(BOUNDS, funnel([excluding("pay", 1, 2)]))).toEqual([3, 2, 2])
+		expect(counts(BOUNDS, funnel([excluding("pay", 1, 2)]))).toEqual([4, 3, 3])
 		// A pay anywhere before the final pay: the final pay itself is the `before` bound.
-		expect(counts(BOUNDS, funnel([excluding("pay")]))).toEqual([3, 2, 2])
-		Arr.forEach([[excluding("cart", 1, 2)], [excluding("pay", 1, 2)], [excluding("pay")]], (exclusions) =>
+		expect(counts(BOUNDS, funnel([excluding("pay")]))).toEqual([4, 3, 3])
+		Arr.forEach([[excluding("cart")], [excluding("pay", 1, 2)], [excluding("pay")]], (exclusions) =>
 			expect(counts(BOUNDS, funnel(exclusions))).toEqual([
 				...referenceFunnel(BOUNDS, funnel(exclusions)),
 			]),
@@ -1000,10 +1010,14 @@ describeWithChdb("product event funnels over example products", () => {
 		// A step strictly inside the range has to happen there, so excluding it leaves nobody.
 		const checkout = [ev("cart"), ev("address"), ev("pay")]
 		expect(Result.isFailure(built([excluding("address")], checkout))).toBe(true)
-		// The bounds can be excluded, and so can a step outside the range.
+		// A bound can be excluded over more than one gap, and so can a step outside the range.
 		expect(Result.isSuccess(built([excluding("cart")], checkout))).toBe(true)
-		expect(Result.isSuccess(built([excluding("address", 2, 3)], checkout))).toBe(true)
+		expect(Result.isSuccess(built([excluding("pay")], checkout))).toBe(true)
 		expect(Result.isSuccess(built([excluding("pay", 1, 2)], checkout))).toBe(true)
+		// Across a single gap the step on either side can never apply: refused, not ignored.
+		expect(Result.isFailure(built([excluding("cart", 1, 2)], checkout))).toBe(true)
+		expect(Result.isFailure(built([excluding("address", 1, 2)], checkout))).toBe(true)
+		expect(Result.isFailure(built([excluding("cart")]))).toBe(true)
 		expect(Result.isSuccess(built([excluding("x")]))).toBe(true)
 		expect(
 			Result.isFailure(
