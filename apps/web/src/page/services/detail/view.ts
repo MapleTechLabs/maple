@@ -1,6 +1,6 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { underlineTabClass, underlineTabStrip } from "../../kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../../kit/underline-tabs"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -142,7 +142,7 @@ const tabs = (h: H, model: Model, inputs: PageViewInputs): Html => {
 					// A tab switch replaces the history entry; the href stays for new tabs.
 					h.OnClick(Message.ClickedTab({ tab: tab.value }), { defaultAction: "Prevent" }),
 				],
-				[tab.label],
+				[underlineTabLabel(h, tab.label)],
 			)
 		}),
 	)

@@ -16,7 +16,7 @@ import { pageTime } from "../kit/page-time"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { underlineTabClass, underlineTabStrip } from "../kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../kit/underline-tabs"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
@@ -110,7 +110,7 @@ const tabs = (h: H, model: Model): Html => {
 						),
 					),
 				],
-				[TAB_LABELS[tab]],
+				[underlineTabLabel(h, TAB_LABELS[tab])],
 			)
 		}),
 	)
