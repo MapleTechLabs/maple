@@ -21,9 +21,14 @@ const OAUTH_CALLBACK_PATH =
 // for opting a subscriber out; `DigestService.unsubscribeByToken` owns the span.
 const EMAIL_UNSUBSCRIBE_PATH = /^\/api\/email\/unsubscribe(?:\?|$)/
 
-// An uptime heartbeat ping's path segment is the monitor's secret token. The four ping routes
-// redact it (`UptimeHeartbeatRouter`); any other `/hb/` path matches no route, so nothing would.
-const UNROUTED_HEARTBEAT_PATH = /^\/hb\/(?![^/?#]+(?:\/fail)?(?:[?#]|$))/
+// An uptime heartbeat ping's path segment is the monitor's secret token. The ping routes
+// (`UptimeHeartbeatRouter`: GET and POST on these two shapes) redact it. Any other method or path
+// under `/hb/` matches no route, so nothing would.
+const HEARTBEAT_PATH = /^\/hb\//
+const HEARTBEAT_PING_ROUTE = /^\/hb\/[^/?#]+(?:\/fail)?(?:[?#]|$)/
+const isUnroutedHeartbeat = (request: { url: string; method: string }) =>
+	HEARTBEAT_PATH.test(request.url) &&
+	!(HEARTBEAT_PING_ROUTE.test(request.url) && (request.method === "GET" || request.method === "POST"))
 
 // The `TracerDisabledWhen` filter and the header-redaction list — both
 // references `HttpMiddleware.tracer` reads regardless of which Tracer is
@@ -41,7 +46,7 @@ export const ApiObservabilityLive = Layer.mergeAll(
 			request.method === "OPTIONS" ||
 			OAUTH_CALLBACK_PATH.test(request.url) ||
 			EMAIL_UNSUBSCRIBE_PATH.test(request.url) ||
-			UNROUTED_HEARTBEAT_PATH.test(request.url) ||
+			isUnroutedHeartbeat(request) ||
 			/\.(png|ico|jpg|jpeg|gif|css|js|svg|webp|woff2?)(\?.*)?$/i.test(request.url),
 	),
 	// Spans record only the allowlisted headers (`MapleHttpTracingLive`), none of
