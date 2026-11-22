@@ -24,7 +24,7 @@ Read `maple-onboarding-style` first (span pattern, resource attributes, framewor
 
 Skip this section when the prompt has no handoff code (`maple_ho_...`). With one, Maple shows the user your progress live:
 
-1. Ask the user before running the install script, then install and sign in: `curl -fsSL https://maple.dev/cli/install | MAPLE_HANDOFF=<code> sh`. If `maple` is already installed: `MAPLE_HANDOFF=<code> maple auth login`. Sign-in reports `connect_agent` itself.
+1. Ask the user before running the install script, then install and sign in with the code and the Maple API from the prompt: `curl -fsSL https://maple.dev/cli/install | MAPLE_API_URL=<api> MAPLE_HANDOFF=<code> sh`. If `maple` is already installed: `MAPLE_API_URL=<api> MAPLE_HANDOFF=<code> maple auth login`. The code works once, against that API only. Sign-in reports `connect_agent` itself.
 2. Report each stage as you go with `maple onboarding report <stage> <status> [--note "..."]`. Status is `active`, `waiting`, `completed`, `skipped` or `failed`.
    - `connect_agent`: the CLI is signed in.
    - `analyze_project`: Step 1, mapping services.
