@@ -16002,7 +16002,7 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:error_issue_sample_traces:default:baseline  [60549ff7]
+-- pipe:error_issue_sample_traces:default:baseline  [2be68138]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
@@ -16012,7 +16012,7 @@ SELECT
           intDiv(error_events.Duration, 1000) AS durationMicros,
           error_events.DeploymentEnv AS deploymentEnv,
           error_events.ServiceVersion AS serviceVersion,
-          error_events.UserId AS userId
+          '' AS userId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))

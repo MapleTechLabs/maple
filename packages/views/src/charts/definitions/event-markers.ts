@@ -14,11 +14,13 @@ interface PlacedMarker {
 
 /**
  * Markers inside the window from the first bucket to the end of the last one, at their own instant.
- * A band keeps the part of it that overlaps the window.
+ * A band keeps the part of it that overlaps the window. `extent` replaces that window with the x
+ * scale's own, so nothing lands past the plot.
  */
 export const placeMarkersInWindow = (
 	markers: ReadonlyArray<ChartEventMarker>,
 	bucketIsos: ReadonlyArray<string>,
+	extent?: Readonly<{ startMs: number; endMs: number }>,
 ): ReadonlyArray<PlacedMarker> => {
 	if (bucketIsos.length === 0 || markers.length === 0) return []
 	const times = Arr.sort(
@@ -32,15 +34,21 @@ export const placeMarkersInWindow = (
 	const last = times[times.length - 1]
 	if (first === undefined || last === undefined) return []
 	const width = times.length > 1 ? (times[1] ?? first) - first : 0
-	const end = last + width
-	const inWindow = (t: number) => Number.isFinite(t) && t >= first && t <= end
+	const lo = extent?.startMs ?? first
+	const hi = extent?.endMs ?? last + width
+	const inWindow = (t: number) => Number.isFinite(t) && t >= lo && t <= hi
 	return Arr.flatMap(markers, (marker): ReadonlyArray<PlacedMarker> => {
 		const at = toEpochMs(marker.at)
 		const until = marker.endsAt === undefined ? Number.NaN : toEpochMs(marker.endsAt)
 		if (Number.isFinite(at) && Number.isFinite(until) && until > at) {
-			const from = Math.max(at, first)
-			const to = Math.min(until, end)
-			return to > from ? [{ marker, x: new Date(from), x2: new Date(to) }] : []
+			const from = Math.max(at, lo)
+			const to = Math.min(until, hi)
+			// A window with no width (one bucket) keeps an overlapping band as a line.
+			return to > from
+				? [{ marker, x: new Date(from), x2: new Date(to) }]
+				: to === from
+					? [{ marker, x: new Date(from) }]
+					: []
 		}
 		return inWindow(at) ? [{ marker, x: new Date(at) }] : []
 	})

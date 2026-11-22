@@ -55,3 +55,34 @@ describe("event markers in the window", () => {
 		).toEqual([])
 	})
 })
+
+describe("event markers against an explicit extent", () => {
+	test("a marker past the bars' extent is dropped, and one bucket keeps a band as a line", () => {
+		const marker = {
+			id: "fixed",
+			at: "2026-11-01T11:45:00.000Z",
+			label: "Fixed",
+			tone: "neutral" as const,
+		}
+		const extent = {
+			startMs: Date.parse("2026-11-01T08:30:00.000Z"),
+			endMs: Date.parse("2026-11-01T11:30:00.000Z"),
+		}
+		expect(placeMarkersInWindow([marker], buckets, extent)).toEqual([])
+		const band = placeMarkersInWindow(
+			[
+				{
+					id: "incident",
+					at: "2026-11-01T09:00:00.000Z",
+					endsAt: "2026-11-01T10:00:00.000Z",
+					label: "Incident",
+					tone: "crit",
+				},
+			],
+			["2026-11-01T09:00:00.000Z"],
+		)
+		expect(Arr.map(band, (entry) => [entry.x.toISOString(), entry.x2 ?? null])).toEqual([
+			["2026-11-01T09:00:00.000Z", null],
+		])
+	})
+})

@@ -23,6 +23,21 @@ export const sortedOccurrences = (points: ReadonlyArray<Point>): ReadonlyArray<P
 		Order.mapInput(Order.Number, (point: Point) => toEpochMs(point.bucket)),
 	)
 
+/** The bars' x extent: each bar is centred on its bucket, so half a bucket past either end. */
+const barExtentOf = (sorted: ReadonlyArray<Point>): { startMs: number; endMs: number } | undefined => {
+	const times = Arr.map(sorted, (point) => toEpochMs(point.bucket))
+	const first = times[0]
+	const last = times[times.length - 1]
+	const gaps = Arr.filter(
+		Arr.zipWith(times.slice(1), times, (next, previous) => next - previous),
+		(gap) => gap > 0,
+	)
+	const step = Math.min(...gaps)
+	return first === undefined || last === undefined || !Number.isFinite(step)
+		? undefined
+		: { startMs: first - step / 2, endMs: last + step / 2 }
+}
+
 export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date, number> => {
 	const sorted = sortedOccurrences(spec.points)
 	const axis = makeBucketAxis(
@@ -37,6 +52,7 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 			: placeMarkersInWindow(
 					spec.markers ?? [],
 					Arr.map(sorted, (point) => point.bucket),
+					barExtentOf(sorted),
 				)
 	return {
 		definition: defineChart({

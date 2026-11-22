@@ -606,9 +606,11 @@ export function compilePipeQuery(
 				withParam("fingerprint_hash", (fingerprintHash) =>
 					eraseType(
 						compile(
+							// No `UserId`: the pipe has no fallback for a cluster without migration 0057.
 							errorIssueSampleTracesQuery({
 								fingerprintHashes: [fingerprintHash],
 								limit: int("limit", 25),
+								withUserId: false,
 							}),
 							{
 								orgId,

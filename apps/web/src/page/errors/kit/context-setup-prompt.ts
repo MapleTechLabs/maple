@@ -46,7 +46,7 @@ const ITEMS: ReadonlyArray<ContextItem> = [
 		title: "User",
 		gain: "How many users an error hits, with a link to each one.",
 		attribute: USER_ATTRIBUTE,
-		where: "on the request span, after sign-in",
+		where: "on every span after sign-in, including the one that records the error",
 	},
 ]
 
@@ -65,7 +65,7 @@ export const contextSetupPrompt = (serviceName: string, missing: MissingContext)
 			: []),
 		...(missing.user
 			? [
-					`Set the span attribute \`${USER_ATTRIBUTE}\` to the signed-in user's stable id on the active request span, in the middleware or handler that runs right after authentication. Use an opaque id, not an email or a name. Skip it for anonymous requests.`,
+					`Set the span attribute \`${USER_ATTRIBUTE}\` to the signed-in user's stable id, right after authentication. Maple reads it from the span that records the exception, so it must reach child spans too: put it in baggage and copy it onto each new span with a span processor, or set it wherever errors are recorded. Use an opaque id, not an email or a name. Skip it for anonymous requests.`,
 				]
 			: []),
 	]
