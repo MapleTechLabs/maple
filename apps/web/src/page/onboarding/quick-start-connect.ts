@@ -352,9 +352,7 @@ const agentShown = (connect: Connect): Step => {
 
 /** The run is read on open (one left open from an earlier visit shows) and on each poll while open. */
 const agentReads = (connect: Connect): Step["commands"] =>
-	connect.agent.run === null || AgentHandoff.isPolling(connect.agent)
-		? toAgent([AgentHandoff.LoadAgentRun()])
-		: []
+	AgentHandoff.shouldReadRun(connect.agent) ? toAgent([AgentHandoff.LoadAgentRun()]) : []
 
 /** The step opens: the key once, then presence and providers on a poll until it closes. */
 export const openConnect = (
@@ -362,13 +360,15 @@ export const openConnect = (
 	orgId: string,
 	platforms: ReadonlyArray<StackPlatform>,
 ): Step => {
-	const shown = agentShown({ ...connect, isActive: true })
+	// Opening the step looks again: a run started in another tab since the last 404 shows up.
+	const fresh = { ...connect, agent: { ...connect.agent, isRunMissing: false } }
+	const shown = agentShown({ ...fresh, isActive: true })
 	return {
 		connect: shown.connect,
 		commands: [
 			...(connect.keys._tag === "Pending" ? [FetchConnectKeys()] : []),
 			...reads(orgId, platforms),
-			...agentReads(connect),
+			...agentReads(fresh),
 			...shown.commands,
 		],
 	}

@@ -1,5 +1,5 @@
 import { V2OnboardingAgentHandoff, V2OnboardingAgentRun } from "@maple/domain/http/v2"
-import { Effect, Schema } from "effect"
+import { Effect, Predicate, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -31,6 +31,8 @@ export const Model = Schema.Struct({
 	isTrackingUnavailable: Schema.Boolean,
 	isShownTracked: Schema.Boolean,
 	run: Schema.NullOr(V2OnboardingAgentRun),
+	/** The last read answered 404 (no run yet): reads pause until a copy starts one. */
+	isRunMissing: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -44,6 +46,7 @@ export const init = (surface: AgentSurface): Model => ({
 	isTrackingUnavailable: false,
 	isShownTracked: false,
 	run: null,
+	isRunMissing: false,
 })
 
 export const Message = defineMessageUnion({
@@ -53,7 +56,7 @@ export const Message = defineMessageUnion({
 	GotCopyMessage: { message: CopyButton.Message },
 	ClickedShowPrompt: {},
 	SucceededLoadRun: { run: V2OnboardingAgentRun },
-	FailedLoadRun: {},
+	FailedLoadRun: { isMissing: Schema.Boolean },
 	CompletedTrack: {},
 })
 export type Message = typeof Message.Type
@@ -72,6 +75,11 @@ export const MintHandoff = Command.define("MintOnboardingAgentHandoff", {
 		),
 })
 
+/** The API's 404 for a person with no run yet, as the client decodes it (the public envelope). */
+const isRunNotFound = (error: unknown): boolean =>
+	Predicate.hasProperty(error, "error") &&
+	Predicate.isTagged(error.error, "@maple/http/errors/OnboardingAgentRunNotFoundError")
+
 /** `GET /v2/onboarding/agent_run`: the caller's latest run; none yet (404) is a failed read. */
 export const LoadAgentRun = Command.define("LoadOnboardingAgentRun", {
 	messages: [Message.SucceededLoadRun, Message.FailedLoadRun],
@@ -80,7 +88,7 @@ export const LoadAgentRun = Command.define("LoadOnboardingAgentRun", {
 		return yield* client.onboardingAgentRun.retrieve()
 	}).pipe(
 		Effect.map((run) => Message.SucceededLoadRun({ run })),
-		Effect.orElseSucceed(() => Message.FailedLoadRun()),
+		Effect.catch((error) => Effect.succeed(Message.FailedLoadRun({ isMissing: isRunNotFound(error) }))),
 	),
 })
 
@@ -107,6 +115,13 @@ export const isRunOpen = (run: V2OnboardingAgentRun): boolean =>
 
 /** The connect step's poll reads the run only while one is open. */
 export const isPolling = (model: Model): boolean => model.run !== null && isRunOpen(model.run)
+
+/**
+ * Whether a poll reads the run: an open one, or none known yet until a read says there is none
+ * (a failed read retries; a 404 waits for a copy, so the console is not a 404 every 5 seconds).
+ */
+export const shouldReadRun = (model: Model): boolean =>
+	model.run === null ? !model.isRunMissing : isRunOpen(model.run)
 
 type Step = Readonly<{
 	model: Model
@@ -209,6 +224,6 @@ export const update = (model: Model, message: Message): Step =>
 		GotCopyMessage: ({ message: child }) => copyStep(model, child),
 		ClickedShowPrompt: () => ({ model: { ...model, isPromptShown: !model.isPromptShown }, commands: [] }),
 		SucceededLoadRun: ({ run }) => loadedRun(model, run),
-		FailedLoadRun: () => ({ model, commands: [] }),
+		FailedLoadRun: ({ isMissing }) => ({ model: { ...model, isRunMissing: isMissing }, commands: [] }),
 		CompletedTrack: () => ({ model, commands: [] }),
 	})

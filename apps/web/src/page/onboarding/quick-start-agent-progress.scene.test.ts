@@ -169,6 +169,19 @@ describe("agent run polling", () => {
 		expect(reads(null)).toBe(1)
 	})
 
+	test("after the API says there is no run, polls stop reading until a copy starts one", () => {
+		const missing = AgentHandoff.update(
+			AgentHandoff.init("connect_step"),
+			AgentHandoff.Message.FailedLoadRun({ isMissing: true }),
+		).model
+		expect(AgentHandoff.shouldReadRun(missing)).toBe(false)
+		const flaky = AgentHandoff.update(
+			AgentHandoff.init("connect_step"),
+			AgentHandoff.Message.FailedLoadRun({ isMissing: false }),
+		).model
+		expect(AgentHandoff.shouldReadRun(flaky)).toBe(true)
+	})
+
 	test("an older run read mid-copy does not replace the newer one", () => {
 		const older = { ...labAgentRun("progress"), created_at: timestamp("2026-11-21T10:00:00.000Z") }
 		const next = AgentHandoff.update(
