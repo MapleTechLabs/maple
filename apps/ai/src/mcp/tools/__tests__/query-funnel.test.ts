@@ -17,7 +17,17 @@ const isFunnelRead = (sql: string): boolean => Str.includes("funnel_events")(sql
 /** The identity coverage read: the one query that counts events per identity. */
 const isCoverageRead = (sql: string): boolean => Str.includes("withSession")(sql)
 
+/** Every statement a call issued, so a test can tell which reads ran. */
+const issued: Array<string> = []
+
 const fixtures: FixtureRule[] = [
+	{
+		match: (sql) => {
+			issued.push(sql)
+			return false
+		},
+		rows: [],
+	},
 	// A second step nobody reaches; the detail reads below still answer for it.
 	{
 		match: (sql) =>
@@ -181,6 +191,7 @@ describe("query_funnel identity", () => {
 	})
 
 	it("does not read the coverage when every step has people", async () => {
+		const before = issued.length
 		const result = await call("query_funnel", {
 			steps_json: JSON.stringify([
 				{ kind: "page", pagePath: "/pricing" },
@@ -189,7 +200,17 @@ describe("query_funnel identity", () => {
 		})
 		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
 		expect(output.identityNote).toBeUndefined()
-		expect(output.suggestedKeyBy).toBeUndefined()
+		// The read itself: a normal funnel costs one statement, not two.
+		expect(Arr.filter(issued.slice(before), isCoverageRead)).toEqual([])
+		// And it does run when a step is empty, so the line above is not vacuous.
+		const empty = issued.length
+		await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "billing_only" },
+			]),
+		})
+		expect(Arr.filter(issued.slice(empty), isCoverageRead)).toHaveLength(1)
 	})
 
 	it("counts by group", async () => {
