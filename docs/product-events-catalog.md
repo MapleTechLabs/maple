@@ -38,8 +38,10 @@ about 95% carry `UserId` and `GroupId`. `PagePath` is the feature area: `/traces
 ## Events
 
 `source`: where the event is emitted. `web` = `trackProduct()` in `apps/web` (`ProductEvent` union in
-`apps/web/src/data/product-events.ts`), `server` = `ProductEventsService.track` in `apps/api`
-(`ProductEventName`), `trace` = a span in `apps/api` / `apps/ai`.
+`apps/web/src/data/product-events.ts`), `server` = `ProductEventsService.track` in `apps/api`,
+`apps/ai` or `apps/alerting` (`ProductEventName`), `trace` = a span in `apps/api` / `apps/ai`. Every
+`server` event carries an `environment` attribute (`MAPLE_ENVIRONMENT`): dev and preview deploys
+share the prod ingest key, so filter on it.
 
 ### Account and team
 
@@ -52,11 +54,11 @@ about 95% carry `UserId` and `GroupId`. `PagePath` is the feature area: `/traces
 
 ### Onboarding
 
-| Event                       | Source | Fires when                                                                                                              | Attributes                     | Identity   |
-| --------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- |
-| `onboarding_step_completed` | web    | Continue on a quick-start step                                                                                          | `step`                         | user + org |
-| `onboarding_reward_claimed` | web    | Org admin redeems the onboarding-checklist credit                                                                       | (none)                         | user + org |
-| `first_data_received`       | web    | The quick-start connect step's presence poll sees the org's first signal arrive (not data already there when it opened) | `signal` (`traces`, `logs`, …) | user + org |
+| Event                       | Source | Fires when                                                                                                                                                                                                                                                | Attributes                                                | Identity                        |
+| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------- |
+| `onboarding_step_completed` | web    | Continue on a quick-start step                                                                                                                                                                                                                            | `step`                                                    | user + org                      |
+| `onboarding_reward_claimed` | web    | Org admin redeems the onboarding-checklist credit                                                                                                                                                                                                         | (none)                                                    | user + org                      |
+| `first_data_received`       | server | The org's first traces, logs or metrics are stamped (`first_data_received_at`): the alerting Worker's hourly sweep of orgs younger than 30 days, or the setup audit. At most once per org; dated by the earliest data hour, not before the org's creation | `signals` (`logs,traces`, earliest first), `first_signal` | user (who set the org up) + org |
 
 ### Product usage
 

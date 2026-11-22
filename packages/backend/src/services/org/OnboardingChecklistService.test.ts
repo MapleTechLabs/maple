@@ -395,10 +395,12 @@ describe("first-data stamping on an org without onboarding state", () => {
 	const stampFirstData = Effect.gen(function* () {
 		const onboarding = yield* OnboardingService
 		const organizations = yield* OrganizationService
-		return yield* onboarding.recordFirstDataReceived(ORG, readOrgCreatedAt(organizations, ORG), {
-			signals: ["traces"],
-			firstSeenMs: null,
-		})
+		return yield* onboarding.recordFirstDataReceived(
+			ORG,
+			readOrgCreatedAt(organizations, ORG),
+			{ signals: ["traces"], firstSeenMs: null, windowStartMs: 0 },
+			null,
+		)
 	})
 
 	it.effect("dates the new row by the org's real creation time, so the window stays closed", () => {

@@ -967,6 +967,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 					tenant.orgId,
 					readOrgCreatedAt(organizations, tenant.orgId),
 					firstData,
+					tenant.userId,
 				)
 				.pipe(
 					Effect.tapError((error) =>

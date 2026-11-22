@@ -99,6 +99,27 @@ describe("ProductEventsService", () => {
 	// A span carrying `maple.product_event.name` is itself projected into
 	// `product_events` as a `Source='trace'` row, so the span that posts an event
 	// must not carry it, or every server event lands twice.
+	it.effect("stamps the deployment environment on every event", () =>
+		Effect.gen(function* () {
+			const { client, captured } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+				environment: "preview",
+			})
+			yield* events.track({
+				name: "first_data_received",
+				groupId: "org_1",
+				attributes: { signals: "logs" },
+			})
+			assert.deepStrictEqual(JSON.parse(captured[0]?.body ?? "{}").attributes, {
+				signals: "logs",
+				environment: "preview",
+			})
+		}),
+	)
+
 	it.effect("does not mark its own span as a trace-derived product event", () =>
 		Effect.gen(function* () {
 			const spans: Array<Tracer.NativeSpan> = []

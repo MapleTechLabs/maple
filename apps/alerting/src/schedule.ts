@@ -55,14 +55,15 @@ export const ALERTING_SCHEDULE = {
 	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
 	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
 	// and walks its backfill one chunk per tick, so 15 minutes moves history without a minute cron.
-	// `first_data` stamps recent orgs whose first telemetry has landed (emits `first_data_received`).
 	"*/15 * * * *": {
-		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console", "first_data"],
+		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
 		deadline: "10 minutes",
 	},
 	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
+	// `first_data` stamps recent orgs whose first telemetry has landed (emits `first_data_received`);
+	// the event is dated by the data, so an hour of lag costs nothing and keeps probes cheap.
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal", "first_data"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>
