@@ -42,6 +42,7 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 				"JSON array of URLs backing the proposal (logs, traces, analysis docs)",
 			),
 		}),
+		aliases: { summary: "patch_summary" },
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
 		permission: "ai:act",
 		phrases: ["Drafting a fix"],

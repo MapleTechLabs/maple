@@ -238,6 +238,33 @@ export const USER_DETAIL: UserDetail = {
 			href: null,
 		},
 		{
+			service: "maple-ai",
+			kind: "mcp",
+			atMs: ago(2 * MIN + 30_000),
+			title: "Codex connected",
+			detail: "maple-ai · no tool calls",
+			tone: "neutral",
+			href: "/mcp-servers/maple-ai/sessions/mcp_2b81e0c4",
+		},
+		{
+			service: "maple-ai",
+			kind: "event",
+			atMs: ago(2 * MIN + 40_000),
+			title: "mcp_tool_called",
+			detail: "trace · source=mcp, tool=find_errors",
+			tone: "neutral",
+			href: null,
+		},
+		{
+			service: "maple-ai",
+			kind: "event",
+			atMs: ago(2 * MIN + 50_000),
+			title: "mcp_tool_called",
+			detail: "trace · source=mcp, tool=run_sql",
+			tone: "neutral",
+			href: null,
+		},
+		{
 			service: "web",
 			kind: "event",
 			atMs: ago(3 * MIN + 20_000),
@@ -558,3 +585,38 @@ export const USER_DETAIL: UserDetail = {
 		},
 	],
 }
+
+/** A sole founder: their own group of one, one namespace, and the long ids Clerk hands out. */
+export const SOLO_DETAIL: UserDetail = {
+	...USER_DETAIL,
+	profile: {
+		...USER_DETAIL.profile,
+		userId: "user_3K6ZePbFWFCULtlI1CLq8wXrT2b",
+		name: "Brandon Stubbs",
+		email: "brandon@solo.dev",
+		groupId: "org_3K6ZgHuDSTHrIl0Ca88BzP4mQ1x",
+		groupName: "solo",
+		namespaces: ["core"],
+		traits: [
+			["plan", "startup"],
+			["role", "org:admin"],
+		],
+		services: [
+			{ service: "maple-web", namespace: "core", signals: 2_600 },
+			{ service: "maple-ai", namespace: "core", signals: 524 },
+			{ service: "maple-landing", namespace: "core", signals: 26 },
+		],
+		devices: [{ browser: "Chrome", os: "macOS", sessions: 28 }],
+		location: "US",
+		sessions: 28,
+	},
+}
+
+/** The solo user's group over the window: only them. */
+export const SOLO_GROUP = {
+	users: 1,
+	activeToday: 1,
+	withErrors: 0,
+	sessions: 28,
+	requests: 2_600,
+} as const

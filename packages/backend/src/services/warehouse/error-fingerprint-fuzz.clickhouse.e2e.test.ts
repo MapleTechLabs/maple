@@ -12,7 +12,8 @@ import {
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
 	resolveCustomFingerprint,
 } from "@maple/domain/tinybird/fingerprint"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { migrations } from "@maple/domain/clickhouse"
+import { Schema, Array as Arr, Option, String as Str } from "effect"
 import fc from "fast-check"
 import { msToDate } from "../../platform/time"
 import {
@@ -57,6 +58,27 @@ const frameLine = fc.oneof(
 	fc
 		.tuple(word, fc.nat(999), chars("0123456789abcdef", 1, 6))
 		.map(([file, line, pc]) => `\t/app/${file}.go:${line} +0x${pc}`),
+	// Minified names, alone, chained and behind `async`/`new`, and their near misses.
+	fc
+		.tuple(fc.constantFrom("", "async ", "new "), chars("abXY3$_.", 1, 5), word, fc.nat(999))
+		.map(([prefix, fn, file, line]) => `    at ${prefix}${fn} (/app/dist/${file}.js:${line}:1)`),
+	fc
+		.tuple(chars("abXY3$</.", 1, 6), word, fc.nat(999))
+		.map(([fn, file, line]) => `${fn}@https://x.dev/${file}.js:${line}:1`),
+	// A minified receiver before a real method, as V8 and as Firefox print it.
+	fc
+		.tuple(chars("abXY3$", 1, 3), word, word, fc.nat(999))
+		.map(([receiver, fn, file, line]) => `    at ${receiver}.${fn} (/app/dist/${file}.js:${line}:1)`),
+	fc
+		.tuple(chars("abXY3$</.", 1, 4), word, word, fc.nat(999))
+		.map(([receiver, fn, file, line]) => `${receiver}.${fn}@https://x.dev/${file}.js:${line}:1`),
+	// A Go error library's own stack: `pkg.Func (file.go:N)`, flush left, CRLF or not.
+	fc
+		.tuple(word, word, word, fc.nat(999), fc.constantFrom("", "\r"))
+		.map(
+			([pkg, fn, file, line, end]) =>
+				`github.com/acme/${pkg}.(*Store).${fn} (${file}.go:${line})${end}`,
+		),
 	// Dependency and stdlib frames, which the hash skips when the stack has its own.
 	fc
 		.tuple(word, word, fc.nat(999))
@@ -79,6 +101,8 @@ const frameLine = fc.oneof(
 		'    at [2]["params"]',
 		"    at async Promise.all (index 3)",
 		"    at file:///bundle/worker.js:1:2345",
+		"    at a.js:1:2",
+		"    at async b3.mjs:4:5",
 		'{"user":"a@b.io","attempt":0}',
 		"params: 1, abc, 2026-10-01",
 		"Traceback (most recent call last):",
@@ -105,7 +129,20 @@ const messagePart = fc.oneof(
 	chars("0123456789abcdefghijklmnopqrstuvwxyz", 8, 30),
 	chars("0123456789ABCDEFGHJKMNPQRSTVWXYZ", 8, 14),
 	fc.integer().map(String),
+	// Path segments around every edge of the value rules: digit runs, dots, capitals.
+	fc
+		.array(chars("ab19.-_ZV~%", 1, 9), { minLength: 1, maxLength: 5 })
+		.map((segments) => `/${Arr.join(segments, "/")}`),
 	fc.constantFrom(
+		"/acme.orders.v1.OrderService/Create",
+		"/assets/app.min.js",
+		"/assets/jquery-3.7.1.min.js",
+		"/acme.orders.v1beta1.OrderService/Create /a1b2/c3d4/9zzzz/8yyyy",
+		"/v1beta1/models",
+		"/auth/2fa/verify",
+		"/offers/7d-trial/x.y",
+		"</h264>",
+		"/a⸱js/x.y.z",
 		"RouteNotFound (GET /.env)",
 		"RouteNotFound (POST /a/b?x=1) extra",
 		"RouteNotFound (GET /$%7B$%7Bj:-n%7D",
@@ -117,6 +154,14 @@ const messagePart = fc.oneof(
 		"Route GET:/x not found",
 		'No route found for "GET https://x.dev/y"',
 		"StatusCode error (404 GET https://host.dev/f956aa438ac39eff/codex~maple-in-process)",
+		"StatusCode error (503 GET https://api.dev/v3/applications/com.acme.app/subscriptions/a.b.c/x)",
+		"/v2/organizations/28913/proxy/PZN8GVZLF8/v1/apps",
+		"/oauth2/token",
+		"/static/index.js",
+		"/a.b/c.d/e",
+		"/x1y2/..",
+		"/é.b.c/9z",
+		"3/4",
 		"/v1/user/@handle42",
 		"rejected key tok_prod_9fQz2LmXc7RtV4bNw8Yh",
 		"internal error; reference = skqdd7q56j7h4ovn7obivsp1",
@@ -225,38 +270,67 @@ const customKey = fc.oneof(
 	},
 )
 
-const Case = fc.record({
-	type: fc.oneof(fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream"), hostile),
-	stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => Arr.join(lines, "\n")),
-	message: fc.oneof(
-		{
-			arbitrary: fc.array(messagePart, { maxLength: 40 }).map((parts) => Arr.join(parts, " ")),
-			weight: 3,
-		},
-		{
-			arbitrary: fc
-				.array(messagePart, { minLength: 30, maxLength: 120 })
-				.map((parts) => Arr.join(parts, "")),
-			weight: 1,
-		},
-		{ arbitrary: jsonMessage, weight: 2 },
-	),
-	viaAttributes: fc.boolean(),
-	eventKey: customKey,
-	spanKey: customKey,
-})
+const Case = fc
+	.record({
+		type: fc.oneof(
+			fc.constantFrom("", "Error", "HttpServerError", "@acme/http/errors/Upstream", "500"),
+			hostile,
+		),
+		stack: fc.array(frameLine, { maxLength: 14 }).map((lines) => Arr.join(lines, "\n")),
+		message: fc.oneof(
+			{
+				arbitrary: fc.array(messagePart, { maxLength: 40 }).map((parts) => Arr.join(parts, " ")),
+				weight: 3,
+			},
+			{
+				arbitrary: fc
+					.array(messagePart, { minLength: 30, maxLength: 120 })
+					.map((parts) => Arr.join(parts, "")),
+				weight: 1,
+			},
+			{ arbitrary: jsonMessage, weight: 2 },
+		),
+		viaAttributes: fc.boolean(),
+		// With an event, whether the span also carries the message as its status.
+		statusFromEvent: fc.boolean(),
+		eventKey: customKey,
+		spanKey: customKey,
+		span: fc.record({
+			kind: fc.constantFrom("Server", "Client", "Internal", ""),
+			name: fc.oneof(
+				fc.constantFrom(
+					"",
+					"GET /",
+					"POST /queue/run",
+					"GET /users/18082/profile",
+					"ssh.tunnel.open",
+				),
+				hostile,
+			),
+		}),
+		// An error that names nothing: no message or stack, and no type beyond a status
+		// code, so only its span is left. `Error` and `5000x` are the near misses.
+		bare: fc.oneof(
+			{ arbitrary: fc.constant(undefined), weight: 5 },
+			{ arbitrary: fc.constantFrom("", "", "500", "_OTHER", "0", "Error", "5000x"), weight: 1 },
+		),
+	})
+	.map((c) => (c.bare === undefined ? c : { ...c, type: c.bare, stack: "", message: "" }))
 type Case = typeof Case extends fc.Arbitrary<infer A> ? A : never
 
 /** ClickHouse treats every input as UTF-8 bytes; a lone surrogate has no such encoding. */
 const wellFormed = (c: Case) =>
-	Arr.every([c.type, c.stack, c.message, c.eventKey ?? "", c.spanKey ?? ""], (s) => s.isWellFormed())
+	Arr.every([c.type, c.stack, c.message, c.eventKey ?? "", c.spanKey ?? "", c.span.name], (s) =>
+		s.isWellFormed(),
+	)
 const CASES = Arr.filter(fc.sample(Case, { numRuns: RUNS, seed: SEED }), wellFormed)
 
 /**
  * With an exception event the MV reads type and stack from it and the message from
- * StatusMessage; without one, and with no StatusMessage, it falls back to the
- * `exception.*` span attributes. Both paths feed the same mirror inputs.
+ * StatusMessage, else from the event; without one, and with no StatusMessage, it falls
+ * back to the `exception.*` span attributes. Every path feeds the same mirror inputs.
  */
+const messageFromEvent = (c: Case) => !c.viaAttributes && c.statusFromEvent
 const withKey = (attributes: Record<string, string>, key: string | undefined) =>
 	key === undefined ? attributes : { ...attributes, [CUSTOM_FINGERPRINT_ATTRIBUTE]: key }
 
@@ -272,12 +346,12 @@ const traceRow = (c: Case, spanId: string) => {
 		TraceId: `trace-${spanId}`,
 		SpanId: spanId,
 		ParentSpanId: "",
-		SpanName: "GET /",
-		SpanKind: "Server",
+		SpanName: c.span.name,
+		SpanKind: c.span.kind,
 		ServiceName: SERVICE,
 		Duration: 1_000_000,
 		StatusCode: "Error",
-		StatusMessage: c.viaAttributes ? "" : c.message,
+		StatusMessage: c.viaAttributes || messageFromEvent(c) ? "" : c.message,
 		SpanAttributes: withKey(c.viaAttributes ? exception : {}, c.spanKey),
 		ResourceAttributes: {},
 		EventsTimestamp: c.viaAttributes ? [] : [SEED_TS],
@@ -291,6 +365,8 @@ const mirrorRow = (c: Case, spanId: string) => {
 		exceptionType: c.type,
 		exceptionStacktrace: c.stack,
 		statusMessage: c.message,
+		messageFromEvent: messageFromEvent(c),
+		span: c.span,
 		// The view reads the event's key first, then the span's; a blank value counts as unset.
 		customFingerprint: resolveCustomFingerprint(c.viaAttributes ? undefined : c.eventKey, c.spanKey),
 	})
@@ -321,6 +397,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 	let strayLineage = -1
 	let missingLineage = -1
 	let rekeyed = 0
+	let unrealLineage = -1
 
 	beforeAll(async () => {
 		await clickhouseExec(`CREATE DATABASE IF NOT EXISTS ${database}`)
@@ -365,7 +442,7 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			Arr.filter(Str.split("\n")(body), (line) => Str.trim(line).length > 0),
 			decodeMismatch,
 		)
-		// The lineage view must pair each re-keyed hash with the v3 hash the mirror derives.
+		// The lineage view must pair each re-keyed hash with the previous hash the mirror derives.
 		const hashOf = (column: string) => `if(
 			length(m.${column}) = 2,
 			cityHash64('${ORG_ID}', '${SERVICE}', m.${column}[1], m.${column}[2]),
@@ -386,6 +463,29 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 			),
 		)
 		rekeyed = Number(Str.trim(await clickhouseExec(`SELECT count() FROM (${expected})`, database)))
+		// The mirror's previous hash is this version's code too. Migration 0061 is the view
+		// that wrote the previous version's hashes: evaluate its frozen SELECT on the same spans.
+		const previousView = Option.getOrUndefined(
+			Option.flatMap(
+				Arr.findFirst(migrations, (migration) => migration.version === 61),
+				(migration) =>
+					Arr.findFirst(
+						migration.statements,
+						(statement) =>
+							typeof statement === "string" &&
+							Str.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv ")(
+								statement,
+							),
+					),
+			),
+		)
+		assert.isString(previousView)
+		const real = `SELECT DISTINCT e.FingerprintHash AS FingerprintHash, p.FingerprintHash AS PreviousFingerprintHash
+			FROM error_events AS e INNER JOIN (${previousView.slice(previousView.indexOf(" AS\n") + 4)}) AS p ON e.SpanId = p.SpanId
+			WHERE e.OrgId = '${ORG_ID}'`
+		unrealLineage = Number(
+			Str.trim(await clickhouseExec(`SELECT count() FROM (${actual} EXCEPT ${real})`, database)),
+		)
 	}, 180_000)
 
 	afterAll(async () => {
@@ -397,13 +497,16 @@ describe.skipIf(!clickhouseE2eEnabled)("error fingerprint differential fuzz (Cli
 	})
 
 	it("records each re-keyed hash's previous hash exactly as the TS mirror does", () => {
-		// Library frames are generated, so some cases must re-key, or this proves nothing.
 		assert.isAbove(rekeyed, 0)
 		assert.deepStrictEqual(
 			{ strayLineage, missingLineage },
 			{ strayLineage: 0, missingLineage: 0 },
 			`replay with FINGERPRINT_FUZZ_SEED=${SEED}`,
 		)
+	})
+
+	it("names as previous hash only what the previous version's view hashed", () => {
+		assert.strictEqual(unrealLineage, 0, `replay with FINGERPRINT_FUZZ_SEED=${SEED}`)
 	})
 
 	it("hashes, labels and picks the top frame exactly as the TS mirror does", () => {

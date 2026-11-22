@@ -1,10 +1,11 @@
 import { MAPLE_MCP_SERVER_VERSION } from "@maple/domain/mcp-manifest"
-import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
+import { MAPLE_MCP_SERVER_INSTRUCTIONS, mcpServerInstructions } from "./server-instructions"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { McpProtocol, McpServer } from "effect/ai"
 import { RpcSerialization } from "effect/rpc"
-import { Cause, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Cause, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { McpToolRegistration } from "./server"
+import { flagsInTime, McpToolRegistration } from "./server"
 import { layerStatelessMcpHttp, layerStatelessMcpServer } from "./transport/stateless-http"
 import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
@@ -202,12 +203,18 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 const McpTransportLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const tools = yield* McpToolRegistration
+		const featureFlags = yield* OrganizationFeatureFlagsService
 		return layerStatelessMcpHttp({
 			path: "/mcp",
 			protocol: NEGOTIATED_PROTOCOL,
 			registerTools: tools.ensureRegistered,
 			loadToolExecutor: tools.ensureExecutor,
 			prewarmToolExecutor: tools.prewarmExecutor,
+			// Unknown flags name no data source tool: one named here is one a model calls.
+			instructionsFor: (tenant) =>
+				Effect.map(flagsInTime(featureFlags, tenant.orgId), (flags) =>
+					mcpServerInstructions({ dataSources: Option.isSome(flags) && flags.value.dataSources }),
+				),
 		})
 	}),
 ).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
@@ -220,7 +227,7 @@ const McpHttpLive = layerStatelessMcpServer({
 	protocols: MCP_PROTOCOLS,
 }).pipe(Layer.provide(McpTransportLive))
 
-export const McpLive: Layer.Layer<
+type McpLiveLayer = Layer.Layer<
 	never,
 	Cause.IllegalArgumentError,
 	| HttpRouter.HttpRouter
@@ -230,11 +237,23 @@ export const McpLive: Layer.Layer<
 	| ErrorActorsService
 	| McpToolExecutorLoader
 	| McpToolRateLimiter
-> = Layer.mergeAll(
-	McpHttpLive,
-	DebugErrorsPrompt,
-	LatencyAnalysisPrompt,
-	IncidentTriagePrompt,
-	InstructionsResource,
-	DataSourcesResource,
-).pipe(Layer.provide(McpToolRegistration.layer), Layer.provide(McpServer.McpServer.layer))
+>
+
+/** The transport over one reading of the org rollout flags, which decide what an org is shown. */
+export const mcpLiveWithFeatureFlags = (
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, Env>,
+): McpLiveLayer =>
+	Layer.mergeAll(
+		McpHttpLive,
+		DebugErrorsPrompt,
+		LatencyAnalysisPrompt,
+		IncidentTriagePrompt,
+		InstructionsResource,
+		DataSourcesResource,
+	).pipe(
+		Layer.provide(McpToolRegistration.layer),
+		Layer.provide(McpServer.McpServer.layer),
+		Layer.provide(featureFlags),
+	)
+
+export const McpLive: McpLiveLayer = mcpLiveWithFeatureFlags(OrganizationFeatureFlagsService.layer)

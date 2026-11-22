@@ -23,3 +23,34 @@ export const ListSourcesOutput = Schema.Struct({
 	/** Worst health first. */
 	sources: Schema.Array(SourceRow),
 })
+
+/** A source as a change to it leaves it: what it may send, and whether it is paused. */
+export const SourceConfigRow = Schema.Struct({
+	/** `src_…`, the value of the `maple_source_id` resource attribute on its telemetry. */
+	id: Schema.String,
+	name: Schema.String,
+	description: Schema.NullOr(Schema.String),
+	platform: SourcePlatform,
+	kind: SourceKind,
+	/** active, paused or expired. */
+	tokenStatus: Schema.String,
+	pausedAt: Schema.NullOr(Schema.String),
+	/** When a pause lifts on its own; null for a pause that lasts until resumed. */
+	pausedUntil: Schema.NullOr(Schema.String),
+	allowedSignals: Schema.NullOr(Schema.Array(SourceSignal)),
+	/** Requests per second the gateway accepts from its token; null when unlimited. */
+	rateLimitRps: Schema.NullOr(Schema.Number),
+	health: Schema.Literals(SOURCE_HEALTH_STATUSES),
+	lastDataAt: Schema.NullOr(Schema.String),
+})
+
+export const SourceMutationOutput = Schema.Struct({
+	action: Schema.Literals(["paused", "resumed", "updated"]),
+	source: SourceConfigRow,
+})
+
+export const DeleteSourceOutput = Schema.Struct({
+	deleted: Schema.Boolean,
+	id: Schema.String,
+	name: Schema.String,
+})

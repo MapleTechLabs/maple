@@ -12,11 +12,16 @@
  * Links are hand-picked per page in the registry, not `filter().slice(0, 3)`
  * over a fixed array. The mechanical version sent every page to the same first
  * three slugs, which left four features with no inbound links at all.
+ *
+ * A link may carry a brand mark (the compare pages): it sits before the name.
  */
+import BrandMarkIcon from "../BrandMarkIcon.astro";
+import type { BrandMarkId } from "../../lib/brand-marks";
+
 interface Props {
 	eyebrow: string;
 	title: string;
-	links: { href: string; name: string; desc: string }[];
+	links: { href: string; name: string; desc: string; mark?: BrandMarkId }[];
 	class?: string;
 }
 
@@ -53,11 +58,14 @@ const spanOf = (i: number) => {
 						href={link.href}
 						class:list={["group flex flex-col gap-1.5 bg-bg p-5 transition-colors hover:bg-bg-elevated md:p-6", spanOf(i)]}
 					>
-						<h3 class="flex items-baseline justify-between gap-3 font-display text-base leading-snug tracking-[-0.01em] text-fg md:text-lg">
-							{link.name}
+						<h3 class="flex items-center justify-between gap-3 font-display text-base leading-snug tracking-[-0.01em] text-fg md:text-lg">
+							<span class="flex min-w-0 items-center gap-2.5">
+								{link.mark && <BrandMarkIcon id={link.mark} class="h-[18px] w-[18px] shrink-0" />}
+								{link.name}
+							</span>
 							<span class="text-sm text-fg-muted transition-colors group-hover:text-fg" aria-hidden="true">→</span>
 						</h3>
-						<p class="max-w-[46ch] text-[13px] leading-relaxed text-fg-muted">{link.desc}</p>
+						<p class:list={["max-w-[46ch] text-[13px] leading-relaxed text-fg-muted", link.mark && "pl-7"]}>{link.desc}</p>
 					</a>
 				))
 			}

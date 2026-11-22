@@ -335,14 +335,14 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 }
 
 /** The lead tabs' description, shown under the page `<h1>`. */
-const tabDescription = (model: Model): string | undefined => {
+const tabDescription = (h: H, model: Model): Html | string | undefined => {
 	switch (model.tab?._tag) {
 		case "Keys":
 			return KeysView.description
 		case "Members":
 			return MembersView.description
 		case "Roles":
-			return RolesView.description
+			return RolesView.description(h)
 		case "Domains":
 			return DomainsView.description
 		case "Sso":
@@ -413,7 +413,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		h,
 		{
 			title: isLoading || empty ? undefined : settingsTabLabels[activeTabOf(model)],
-			description: isLoading || empty ? undefined : tabDescription(model),
+			description: isLoading || empty ? undefined : tabDescription(h, model),
 			actions: isLoading || empty ? undefined : tabActions(h, model),
 			width: "settings",
 			// Holds the header row while the session resolves, so the content does not jump down.

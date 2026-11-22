@@ -68,7 +68,7 @@ export const resolveSourceLink = (
 		? { label: only.name, href: sourceHref(only), source: only }
 		: {
 				label: `${matches.length} ${platformMeta(ref.platform).label} sources`,
-				href: hrefOf(AppRoute.Sources()),
+				href: hrefOf(AppRoute.Sources({ search: {} })),
 				source: null,
 			}
 }

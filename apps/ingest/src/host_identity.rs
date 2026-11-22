@@ -38,8 +38,17 @@ pub async fn detect(wal_dir: &Path) -> Vec<KeyValue> {
     else {
         return attrs;
     };
+    // The boot script's copy, when there is one: the host keeps the task off the metadata service.
+    let from_file = std::env::var("INGEST_HOST_IDENTITY_FILE")
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|contents| host_identity_file_attributes(&contents))
+        .filter(|attrs| !attrs.is_empty());
     let lookups = async {
-        let (ecs, ec2) = tokio::join!(ecs_task(&client, &ecs_uri), ec2_instance(&client));
+        let (ecs, ec2) = match from_file {
+            Some(ec2) => (ecs_task(&client, &ecs_uri).await, ec2),
+            None => tokio::join!(ecs_task(&client, &ecs_uri), ec2_instance(&client)),
+        };
         ecs.into_iter().chain(ec2).collect::<Vec<_>>()
     };
     if let Ok(found) = tokio::time::timeout(DETECT_BUDGET, lookups).await {
@@ -133,6 +142,27 @@ pub fn ecs_task_attributes(task: &Value) -> Vec<KeyValue> {
     attrs
 }
 
+/// The `key=value` lines the host's boot script writes, for the keys `ec2_instance` would read.
+pub fn host_identity_file_attributes(contents: &str) -> Vec<KeyValue> {
+    const KEYS: [&str; 4] = [
+        "host.id",
+        "host.type",
+        "host.image.id",
+        "cloud.availability_zone",
+    ];
+    contents
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.trim(), value.trim()))
+        .filter(|(_, value)| !value.is_empty())
+        .filter_map(|(key, value)| {
+            KEYS.iter()
+                .find(|known| **known == key)
+                .map(|known| KeyValue::new(*known, value.to_owned()))
+        })
+        .collect()
+}
+
 /// IMDSv2: a session token, then one GET per field. A task on Fargate (or with
 /// IMDS blocked) gets nothing here, and that is fine.
 async fn ec2_instance(client: &Client) -> Vec<KeyValue> {
@@ -221,6 +251,25 @@ mod tests {
         let mount = mount_for(MOUNTINFO, Path::new("/var/lib/maple-ingest/wal2"))
             .map(|mount| mount.mount_point);
         assert_eq!(mount.as_deref(), Some("/var/lib/maple-ingest"));
+    }
+
+    #[test]
+    fn host_identity_file_keeps_known_non_empty_keys() {
+        let attrs: Vec<(String, String)> = host_identity_file_attributes(
+            "host.id=i-0abc\nhost.type=c7gd.medium\nhost.image.id=\nsecret=x\ncloud.availability_zone=us-east-1a\n",
+        )
+        .into_iter()
+        .map(|kv| (kv.key.to_string(), kv.value.to_string()))
+        .collect();
+        assert_eq!(
+            attrs,
+            [
+                ("host.id", "i-0abc"),
+                ("host.type", "c7gd.medium"),
+                ("cloud.availability_zone", "us-east-1a"),
+            ]
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        );
     }
 
     #[test]

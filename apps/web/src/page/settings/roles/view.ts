@@ -2,7 +2,6 @@ import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr, Option } from "effect"
 import { button } from "@maple/views/ui/button"
-import { conceptFlow } from "@maple/views/ui/concept-flow"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { dividedList } from "@maple/views/ui/rule"
 import { errorState } from "@maple/views/ui/error-state"
@@ -33,7 +32,7 @@ import { denialTooltipContent, gatedControl } from "../../kit/session-grants"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialog from "./create-dialog"
 import { canManageRoles, Message, type Model } from "./model"
-import { findRole, memberCountLabel, membersHref, type RoleEntry, roleHref } from "./roles"
+import { findRole, memberCountLabel, type RoleEntry, roleHref } from "./roles"
 import { entriesOf } from "./update"
 import { holderLabel, permissionMeter, roleTypeBadge } from "./view-parts"
 
@@ -41,7 +40,21 @@ import { holderLabel, permissionMeter, roleTypeBadge } from "./view-parts"
 
 type H = HtmlBuilder<Message>
 
-export const description = "A role is a set of permissions. Each member holds one."
+export const description = <M>(h: HtmlBuilder<M>): Html =>
+	h.span(
+		[],
+		[
+			"A role is a set of permissions that decides what a member can see and change. Each member holds one. ",
+			textLink(
+				h,
+				{
+					href: docsUrl("roles"),
+					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
+				},
+				["Learn more"],
+			),
+		],
+	)
 
 // Below `sm` the type and permissions columns give their width to the role's name.
 const COLUMN = {
@@ -179,45 +192,6 @@ const rolesRows = (h: H, model: Model): ReadonlyArray<Html> =>
 		? Arr.map(entriesOf(model), (role) => roleRow(h, model, role))
 		: Arr.map([0, 1, 2, 3], (index) => skeletonRow(h, index))
 
-/** The primer above the list: what permissions, roles and members are to each other. */
-const howRolesWork = (h: H): Html =>
-	conceptFlow(h, {
-		id: "settings-roles-primer",
-		title: "How roles work",
-		lead: ["Roles decide what each person in your organization can see and change."],
-		steps: [
-			{
-				icon: "KeyIcon",
-				title: "Permissions",
-				body: ["One thing someone can do, like reading telemetry or managing alert rules."],
-			},
-			{
-				icon: "ShieldCheckIcon",
-				title: "Roles",
-				body: ["A named set of permissions. Start from the four built-in roles or create your own."],
-			},
-			{
-				icon: "UsersIcon",
-				title: "Members",
-				body: [
-					"Each member holds one role. Change it on the ",
-					textLink(h, { href: membersHref(), tone: "inherit", className: "underline" }, ["Members"]),
-					" page.",
-				],
-			},
-		],
-		footer: [
-			textLink(
-				h,
-				{
-					href: docsUrl("roles"),
-					attributes: [h.Target("_blank"), h.Rel("noopener noreferrer")],
-				},
-				["Learn more about roles", icon(h, "ExternalLinkIcon", { size: 12 })],
-			),
-		],
-	})
-
 const rolesSection = (h: H, model: Model): Html =>
 	settingsSection(
 		h,
@@ -317,7 +291,6 @@ const deleteDialog = (h: H, model: Model): Html => {
 
 export const view = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>
 	settingsSections(h, [
-		howRolesWork(h),
 		rolesSection(h, model),
 		h.submodel({
 			slotId: "role-create-form",

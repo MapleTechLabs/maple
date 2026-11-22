@@ -25,6 +25,17 @@ const INVALID_QUERY = [
 	Schema.is(RawSqlValidationError),
 ]
 
+const isDetailedValidationError = (
+	error: unknown,
+): error is AlertValidationError | QueryEngineValidationError =>
+	Schema.is(AlertValidationError)(error) || Schema.is(QueryEngineValidationError)(error)
+
+/** The text a rule's author sees for a failed check: a validation error's reasons, not only its headline. */
+export const evaluationErrorMessage = (error: { readonly message: string }): string =>
+	isDetailedValidationError(error) && error.details.length > 0
+		? `${error.message}: ${Arr.join(error.details, "; ")}`
+		: error.message
+
 /** Why a check failed, from the error that failed it. */
 export const evaluationErrorKind = (error: unknown): AlertEvaluationErrorKind => {
 	// `max_threads` is fixed at every interval, so only time and memory count.

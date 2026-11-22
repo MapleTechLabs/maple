@@ -499,6 +499,12 @@ html[lang="ko"] .monumental-home [data-scrollstory] > .shell:first-child h2 {
 	position: relative;
 	overflow-x: auto;
 }
+.ledger-bill__migrate {
+	margin-top: 24px;
+	max-width: 88ch;
+	color: var(--home-ink);
+	font-size: 15px;
+}
 .ledger-bill__note {
 	margin-top: 18px;
 	max-width: 88ch;

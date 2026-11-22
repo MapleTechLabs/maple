@@ -32,7 +32,7 @@ import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const SOURCES_HREF = hrefOf(AppRoute.Sources())
+const SOURCES_HREF = hrefOf(AppRoute.Sources({ search: {} }))
 const TAB_LABELS = {
 	overview: "Overview",
 	setup: "Setup",

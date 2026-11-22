@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import type { McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { EscalationChainCreateRequest } from "@maple/domain/http"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -18,10 +18,8 @@ import { doc } from "../lib/tool-doc"
 
 const decodeCreateRequest = Schema.decodeUnknownEffect(EscalationChainCreateRequest)
 
-export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
-	server.define({
-		name: "create_escalation_chain",
-		title: "Create Escalation Chain",
+export const createEscalationChainAction = (family: McpToolFamilyBuilder<"manage_escalation_chain">) =>
+	family.action("create", {
 		description:
 			"Create an escalation chain: steps that each page their targets (alert destinations, members by email and chat DM, or whoever is on call on a schedule), then wait for an acknowledgement before the next step. " +
 			"A rule tier that names the chain still notifies its own destinations at once; the chain pages on top until the incident is acknowledged or resolved. " +
@@ -36,7 +34,6 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		permission: "oncall:manage",
-		phrases: ["Creating an escalation chain"],
 		handler: Effect.fn("McpTool.createEscalationChain")(function* (params) {
 			const steps = yield* toStepsRequest(params.steps)
 			const request = yield* decodeCreateRequest({
@@ -63,4 +60,3 @@ export function registerCreateEscalationChainTool(server: McpToolRegistrar) {
 			],
 		}),
 	})
-}

@@ -2,7 +2,7 @@
  * Status pages: what the org's customers see about its health. Anyone may read them and run
  * incidents, like the REST routes; an agent's incident starts as a draft unless it asks to publish,
  * because every update is public text on the customer's page. Admins and engineers set pages up:
- * an agent's new page is a draft until publish_status_page, and its custom domain has its own
+ * an agent's new page is a draft until manage_status_page action=publish, and its custom domain has its own
  * DNS lifecycle (docs/status-page-custom-domains.md).
  */
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
@@ -312,15 +312,15 @@ const renderIncident = (title: string, output: typeof StatusPageIncidentMutation
 		title,
 		notices: output.pageDraft
 			? [
-					"The page is a draft, so nothing on it is public, this incident included. publish_status_page publishes it once the user wants it public.",
+					"The page is a draft, so nothing on it is public, this incident included. manage_status_page action=publish publishes it once the user wants it public.",
 				]
 			: incident.published
 				? []
 				: incident.resolvedAt === null
 					? [
-							"This is a draft: it is not on the public page. post_status_page_update with publish=true publishes it.",
+							"This is a draft: it is not on the public page. manage_status_page action=post_update with publish=true publishes it.",
 						]
-					: // A closed draft must not be pointed at post_status_page_update: its statuses reopen it.
+					: // A closed draft must not be pointed at manage_status_page action=post_update: its statuses reopen it.
 						["This was closed as a draft, so it never appeared on the public page."],
 		blocks: [
 			doc.fields([
@@ -385,7 +385,7 @@ const renderPageList = (pages: ReadonlyArray<typeof StatusPageRow.Type>) => ({
 				empty: {
 					message: "This organization has no status pages.",
 					hints: [
-						"create_status_page creates one as a draft, or create it in Maple under Status pages.",
+						"manage_status_page action=create creates one as a draft, or create it in Maple under Status pages.",
 					],
 				},
 			}
@@ -422,7 +422,7 @@ const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPage
 		// No suggested call: every follow-up needs a public message only the user can word.
 		...(Arr.some(page.activeIncidents, (incident) => isActiveIncident(incident))
 			? [
-					"To update an open incident, call post_status_page_update (incident, status, message) with wording the user approves; status=resolved closes it.",
+					"To update an open incident, call manage_status_page action=post_update (incident, status, message) with wording the user approves; status=resolved closes it.",
 				]
 			: []),
 		...(page.freshness.state === "delayed"
@@ -440,12 +440,12 @@ const renderPageDetail = (page: typeof StatusPageDetail.Type, config: StatusPage
 			: [
 					`The custom domain ${page.customDomain.hostname} is not live yet (${page.customDomain.status})${
 						page.customDomain.lastError === null ? "" : `: ${page.customDomain.lastError}`
-					}. set_status_page_domain with the same domain lists its DNS records and checks them now.`,
+					}. manage_status_page action=set_domain with the same domain lists its DNS records and checks them now.`,
 				]),
 		...(config === undefined
 			? []
 			: [
-					"apply_status_page_config replaces the page with an edited copy of the config below: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
+					"manage_status_page action=apply_config replaces the page with an edited copy of the config below: keep a component's id to update it, drop the id to add one, leave it out to delete it. Order is display order. Keep the `version` key: the apply is refused if the config changed since this read.",
 				]),
 	],
 	blocks: [
@@ -552,7 +552,7 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 		name: "get_status_page",
 		title: "Get Status Page",
 		description:
-			"The org's public status pages. Without `page`: every page with its slug and publish state. With `page`: that page as visitors see it, each component's status (worst of its uptime monitor, manual override and published incidents), the overall banner, open incidents and maintenance (drafts included, marked), and whether its live checks are fresh. include_config=true adds the page's settings, theme and components as the JSON document apply_status_page_config takes.",
+			"The org's public status pages. Without `page`: every page with its slug and publish state. With `page`: that page as visitors see it, each component's status (worst of its uptime monitor, manual override and published incidents), the overall banner, open incidents and maintenance (drafts included, marked), and whether its live checks are fresh. include_config=true adds the page's settings, theme and components as the JSON document manage_status_page action=apply_config takes.",
 		parameters: Schema.Struct({
 			page: P.optionalText("The page's slug, name or id. Omit to list every page"),
 			include_config: P.optionalFlag(
@@ -593,532 +593,541 @@ export function registerStatusPageTools(server: McpToolRegistrar) {
 				: renderPageDetail(output.page, output.config),
 	})
 
-	server.define({
-		name: "post_status_page_update",
-		title: "Post Status Page Update",
-		description:
-			"Write to a status page's incidents and maintenance, all public text your customers read. Without `incident`: opens a new incident on `page` with `title` and `message` as its first update, or announces maintenance when `starts_at` and `ends_at` are given. With `incident`: posts the next update and moves it to `status`; status=resolved (or completed) closes it. New ones start as unpublished drafts unless publish=true. Separate from internal alert incidents.",
-		parameters: Schema.Struct({
-			incident: P.optionalText(
-				"The incident's id (sti_… or its UUID; get_status_page lists open ones). Omit to open a new one",
-			),
-			message: P.text("The public update, written for customers (up to 20,000 characters)"),
-			status: P.optionalOneOf(
-				UPDATE_STATUSES,
-				"Incidents: investigating, identified, monitoring, resolved. Maintenance: scheduled, in_progress, completed. Required on an existing incident; a new incident starts investigating, new maintenance scheduled",
-			),
-			page: P.optionalText("Opening only: the page's slug, name or id"),
-			title: P.optionalText(
-				"Opening only: public title, e.g. `Elevated API errors` or `Database upgrade`",
-			),
-			starts_at: P.optionalTimestamp("Opening maintenance only: when it starts"),
-			ends_at: P.optionalTimestamp(
-				"Opening maintenance only: when it ends. It moves to in_progress at the start and completed at the end on its own",
-			),
-			auto_complete: P.optionalFlag(
-				"Opening maintenance only: false keeps it in_progress past `ends_at` until someone posts completed. Default true",
-			),
-			impact: P.optionalOneOf(
-				StatusPageIncidentImpact.literals,
-				"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",
-			),
-			components: P.optionalList(
-				"Affected components, by name or id (get_status_page lists them). On an update it replaces the list",
-			),
-			publish: publishParameter,
-		}),
-		hints: MUTATION_HINTS,
-		permission: "status_page_incidents:post",
-		scopeFamily: "status_page_incidents",
-		phrases: ["Posting a status page update"],
-		handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
-			const tool = "post_status_page_update"
-			const tenant = yield* CurrentMcpTenant
-			const service = yield* StatusPagesService
-
-			if (params.incident === undefined) {
-				if (params.page === undefined) {
+	server
+		.family({
+			name: "manage_status_page",
+			title: "Manage Status Page",
+			description:
+				"Change the org's public status page: create it, apply its config, publish it, set its custom domain, or post an incident update to it.",
+			phrases: ["Managing the status page"],
+		})
+		.action("create", {
+			scopeFamily: "status_pages",
+			description:
+				"Create a status page as a draft: private until manage_status_page action=publish. It starts with no components; read its config with get_status_page include_config=true, add components (linked to uptime monitors), theme and links, and write them with manage_status_page action=apply_config. Only org admins and engineers may call it.",
+			parameters: Schema.Struct({
+				name: P.text("The page's public name, e.g. `Acme Status`"),
+				slug: P.optionalText(
+					"The page's address on Maple's status domain: 3 to 48 lowercase letters, digits or inner hyphens. Defaults to one made from `name` (`Acme Status` gives `acme-status`)",
+				),
+				description: P.optionalText("Optional public text under the page's title"),
+			}),
+			hints: MUTATION_HINTS,
+			permission: "status_pages:edit",
+			handler: Effect.fn("McpTool.createStatusPage")(function* (params) {
+				const tool = "manage_status_page"
+				const tenant = yield* CurrentMcpTenant
+				const name = Str.trim(params.name)
+				const slug = params.slug === undefined ? slugFromName(name) : Str.trim(params.slug)
+				if (!isSlug(slug)) {
 					return yield* new McpInvalidInputError({
 						message:
-							"Pass `page` to open a new incident or maintenance, or `incident` to update an existing one.",
-						parameter: "page",
+							params.slug === undefined
+								? `The name gives the address "${slug}", which is not a valid slug. Pass \`slug\`: 3 to 48 lowercase letters, digits or inner hyphens.`
+								: "`slug` must be 3 to 48 lowercase letters, digits or inner hyphens, e.g. `acme-status`.",
+						parameter: "slug",
 					})
 				}
-				if (params.title === undefined) {
-					return yield* new McpInvalidInputError({
-						message: "Opening an incident or maintenance needs a public `title`.",
-						parameter: "title",
-					})
-				}
-				if ((params.starts_at === undefined) !== (params.ends_at === undefined)) {
-					return yield* new McpInvalidInputError({
-						message:
-							"Maintenance needs both `starts_at` and `ends_at`; an incident takes neither.",
-						parameter: params.starts_at === undefined ? "starts_at" : "ends_at",
-					})
-				}
-				const kind = params.starts_at === undefined ? ("incident" as const) : ("maintenance" as const)
-				const status =
-					params.status === undefined
-						? kind === "incident"
-							? ("investigating" as const)
-							: ("scheduled" as const)
-						: statusForKind(kind, params.status)
-				const page = yield* resolvePage(tool, tenant.orgId, params.page)
-				const components = yield* pageComponents(tool, tenant.orgId, page.id)
-				const componentIds = yield* resolveComponents(components, params.components ?? [])
-				const created = yield* service
-					.createIncident(tenant.orgId, page.id, {
-						kind,
-						title: params.title,
-						impact: params.impact ?? (kind === "incident" ? "minor" : "none"),
-						status,
-						body: params.message,
-						componentIds,
-						published: params.publish === true,
-						...(params.starts_at === undefined || params.ends_at === undefined
+				const created = yield* (yield* StatusPagesService)
+					.create(tenant.orgId, {
+						name,
+						slug,
+						...(params.description === undefined
 							? undefined
-							: {
-									scheduledStart: parseWarehouseDateTime(params.starts_at),
-									scheduledEnd: parseWarehouseDateTime(params.ends_at),
-								}),
-						...(params.auto_complete === undefined
-							? undefined
-							: { autoComplete: params.auto_complete }),
-						source: "mcp",
+							: { description: params.description }),
+						draft: true,
 						createdBy: tenant.userId,
 					})
-					.pipe(Effect.mapError(toMcpError(tool)))
-				yield* auditIncidentCreated(created)
-				return {
-					action: kind === "incident" ? ("created" as const) : ("scheduled" as const),
-					incident: toIncidentRow(created),
-					pageDraft: page.draft,
-				}
-			}
-
-			if (params.page !== undefined) return yield* opensOnlyParameter("page")
-			if (params.title !== undefined) return yield* opensOnlyParameter("title")
-			if (params.starts_at !== undefined) return yield* opensOnlyParameter("starts_at")
-			if (params.ends_at !== undefined) return yield* opensOnlyParameter("ends_at")
-			if (params.auto_complete !== undefined) return yield* opensOnlyParameter("auto_complete")
-			const requestedStatus = params.status
-			if (requestedStatus === undefined) {
-				return yield* new McpInvalidInputError({
-					message:
-						"An update needs a `status`: investigating, identified, monitoring or resolved for an incident; scheduled, in_progress or completed for maintenance.",
-					parameter: "status",
+					.pipe(
+						Effect.mapError((error) =>
+							error._tag === "@maple/http/errors/StatusPageSlugTakenError"
+								? new McpInvalidInputError({
+										message: `Another status page already has the address "${error.slug}". Pass a different \`slug\`.`,
+										parameter: "slug",
+									})
+								: toMcpError(tool)(error),
+						),
+					)
+				yield* auditPage("status_page.created", created.id, {
+					name: created.name,
+					slug: created.slug,
 				})
-			}
-			const incidentId = yield* decodeIncidentId(params.incident)
-			const current = yield* service
-				.getIncident(tenant.orgId, incidentId)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			const status = statusForKind(current.kind, requestedStatus)
-			const requested = params.components
-			const componentIds =
-				requested === undefined
-					? undefined
-					: yield* pageComponents(tool, tenant.orgId, current.pageId).pipe(
-							Effect.flatMap((components) => resolveComponents(components, requested)),
-						)
-			const posted = yield* service
-				.postUpdate(tenant.orgId, incidentId, {
-					status,
-					body: params.message,
-					...(params.impact === undefined ? undefined : { impact: params.impact }),
-					...(componentIds === undefined ? undefined : { componentIds }),
-					source: "mcp",
-					createdBy: tenant.userId,
-					// One write: a failure leaves neither the update nor the publish, so a retry cannot double post.
-					publish: params.publish === true,
-				})
-				.pipe(Effect.mapError(toMcpError(tool)))
-			yield* auditUpdatePosted(posted)
-			return {
-				action: isClosingStatus(status) ? ("resolved" as const) : ("updated" as const),
-				incident: toIncidentRow(posted),
-				pageDraft: yield* pageIsDraft(tool, tenant.orgId, posted.pageId),
-			}
-		}),
-		render: (output) =>
-			renderIncident(
-				output.action === "created"
-					? "Status page incident opened"
-					: output.action === "scheduled"
-						? "Maintenance scheduled"
-						: output.action === "resolved"
-							? "Status page incident resolved"
-							: "Status page update posted",
-				output,
-			),
-	})
-
-	server.define({
-		name: "apply_status_page_config",
-		title: "Apply Status Page Config",
-		description:
-			"Replace a status page with the config document get_status_page returns with include_config=true, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins and engineers may call it, and the result is public on the page.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id"),
-			config: P.json(
-				StatusPageConfig,
-				"The whole page document, as get_status_page returns it with include_config=true, edited. Keys it does not define are refused",
-			),
-			if_version: P.optionalText(
-				"The config `version` the document was read with. Defaults to the document's `version`; the apply is refused if the config changed since",
-			),
-		}),
-		rejectUnknownKeys: true,
-		hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
-		permission: "status_pages:edit",
-		scopeFamily: "status_pages",
-		phrases: ["Applying a status page config"],
-		handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
-			const tool = "apply_status_page_config"
-			const tenant = yield* CurrentMcpTenant
-			const service = yield* StatusPagesService
-			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			// Who can read the page has its own permission, checked as the HTTP routes check it. The
-			// page password is not in the document, so visibility is the only such field here.
-			const visibility = params.config.visibility
-			if (visibility !== undefined && visibility !== page.visibility)
-				yield* Policy.check(
-					tenant.permissions,
-					"status_pages:access",
-					(denial) =>
-						new McpUnavailableError({
-							message: `${tool} would change who can read the page. ${denial.message} Leave \`visibility\` as it is, or ask someone who can.`,
-							capability: "org_admin",
-						}),
-				)
-			const { config, changes } = yield* service
-				.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
-					ifVersion: params.if_version ?? params.config.version,
-				})
-				.pipe(Effect.mapError(toMcpError(tool)))
-			const audit = yield* AuditLogService
-			if (hasStatusPageConfigChanges(changes)) {
-				const actor = yield* CurrentAuditActor
-				yield* audit.record({
-					orgId: tenant.orgId,
-					...auditAttribution(tenant, actor),
-					action: "status_page.config_applied",
-					resourceId: page.id,
-					metadata: {
-						name: config.name,
-						fields_changed: Arr.join(changes.fields, ","),
-						components_created: changes.created.length,
-						components_updated: changes.updated.length,
-						components_deleted: changes.deleted.length,
-						components_reordered: changes.reordered,
-						...originMetadata(tenant.turnOrigin),
-					},
-				})
-			}
-			const applied = yield* service.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
-			return { page: toPageRow(applied), config, changes }
-		}),
-		render: (output) => {
-			const { fields, created, updated, deleted, reordered } = output.changes
-			const unchanged =
-				fields.length === 0 &&
-				created.length === 0 &&
-				updated.length === 0 &&
-				deleted.length === 0 &&
-				!reordered
-			const list = (names: ReadonlyArray<string>) =>
-				names.length === 0 ? undefined : Arr.join(names, ", ")
-			return {
-				title: `Status page config applied: ${output.page.name}`,
-				notices: unchanged
-					? ["Nothing changed: the document matched the page."]
-					: output.page.draft
-						? [
-								"The page is a draft, so the change stays private until publish_status_page publishes it.",
-							]
-						: ["The change publishes to the public page within a minute."],
+				return { page: toPageRow(created) }
+			}),
+			render: (output: typeof CreateStatusPageOutput.Type) => ({
+				title: `Status page created: ${output.page.name}`,
+				notices: [
+					"It is a draft: nobody outside Maple sees it until manage_status_page action=publish. Next, read its config document, add components (each can follow an uptime monitor) and settings, and write the edited document with manage_status_page action=apply_config.",
+				],
 				blocks: [
 					doc.fields([
-						["Fields changed", list(fields)],
-						["Components created", list(created)],
-						["Components updated", list(updated)],
-						["Components deleted", list(deleted)],
-						["Order changed", reordered ? "yes" : undefined],
+						["Slug", output.page.slug],
+						["Id", output.page.id],
+						["Published", "draft, not public"],
+					]),
+				],
+				next: [
+					doc.next(
+						"get_status_page",
+						{ page: output.page.slug, include_config: true },
+						"the config document to edit",
+					),
+				],
+			}),
+		})
+		.action("apply_config", {
+			scopeFamily: "status_pages",
+			description:
+				"Replace a status page with the config document get_status_page returns with include_config=true, in one write that fully applies or not at all. Components with an `id` are updated, without one created, and left out deleted; list order is display order; omitted optional fields take their defaults; unknown keys are refused. The document's `version` guards the write: if the config changed since it was read, nothing is applied and you must read it again. Only org admins and engineers may call it, and the result is public on the page.",
+			parameters: Schema.Struct({
+				page: P.text("The page's slug, name or id"),
+				config: P.json(
+					StatusPageConfig,
+					"The whole page document, as get_status_page returns it with include_config=true, edited. Keys it does not define are refused",
+				),
+				if_version: P.optionalText(
+					"The config `version` the document was read with. Defaults to the document's `version`; the apply is refused if the config changed since",
+				),
+			}),
+			rejectUnknownKeys: true,
+			hints: { readOnly: false, destructive: true, idempotent: false, openWorld: true },
+			permission: "status_pages:edit",
+			handler: Effect.fn("McpTool.applyStatusPageConfig")(function* (params) {
+				const tool = "manage_status_page"
+				const tenant = yield* CurrentMcpTenant
+				const service = yield* StatusPagesService
+				const page = yield* resolvePage(tool, tenant.orgId, params.page)
+				// Who can read the page has its own permission, checked as the HTTP routes check it. The
+				// page password is not in the document, so visibility is the only such field here.
+				const visibility = params.config.visibility
+				if (visibility !== undefined && visibility !== page.visibility)
+					yield* Policy.check(
+						tenant.permissions,
+						"status_pages:access",
+						(denial) =>
+							new McpUnavailableError({
+								message: `${tool} would change who can read the page. ${denial.message} Leave \`visibility\` as it is, or ask someone who can.`,
+								capability: "org_admin",
+							}),
+					)
+				const { config, changes } = yield* service
+					.applyConfig(tenant.orgId, page.id, params.config, tenant.userId, {
+						ifVersion: params.if_version ?? params.config.version,
+					})
+					.pipe(Effect.mapError(toMcpError(tool)))
+				const audit = yield* AuditLogService
+				if (hasStatusPageConfigChanges(changes)) {
+					const actor = yield* CurrentAuditActor
+					yield* audit.record({
+						orgId: tenant.orgId,
+						...auditAttribution(tenant, actor),
+						action: "status_page.config_applied",
+						resourceId: page.id,
+						metadata: {
+							name: config.name,
+							fields_changed: Arr.join(changes.fields, ","),
+							components_created: changes.created.length,
+							components_updated: changes.updated.length,
+							components_deleted: changes.deleted.length,
+							components_reordered: changes.reordered,
+							...originMetadata(tenant.turnOrigin),
+						},
+					})
+				}
+				const applied = yield* service
+					.get(tenant.orgId, page.id)
+					.pipe(Effect.mapError(toMcpError(tool)))
+				return { page: toPageRow(applied), config, changes }
+			}),
+			render: (output) => {
+				const { fields, created, updated, deleted, reordered } = output.changes
+				const unchanged =
+					fields.length === 0 &&
+					created.length === 0 &&
+					updated.length === 0 &&
+					deleted.length === 0 &&
+					!reordered
+				const list = (names: ReadonlyArray<string>) =>
+					names.length === 0 ? undefined : Arr.join(names, ", ")
+				return {
+					title: `Status page config applied: ${output.page.name}`,
+					notices: unchanged
+						? ["Nothing changed: the document matched the page."]
+						: output.page.draft
+							? [
+									"The page is a draft, so the change stays private until manage_status_page action=publish publishes it.",
+								]
+							: ["The change publishes to the public page within a minute."],
+					blocks: [
+						doc.fields([
+							["Fields changed", list(fields)],
+							["Components created", list(created)],
+							["Components updated", list(updated)],
+							["Components deleted", list(deleted)],
+							["Order changed", reordered ? "yes" : undefined],
+						]),
+					],
+					next: [
+						doc.next(
+							"get_status_page",
+							{ page: output.page.slug },
+							"the page as visitors see it",
+						),
+					],
+				}
+			},
+		})
+		.action("publish", {
+			scopeFamily: "status_pages",
+			description:
+				"Make a draft status page public: it goes live at its address with the next publish, within a minute, and its published incidents become visible. Calling it on a page that is already public changes nothing. A password page still asks visitors for its password; an internal page is still shown only inside Maple. Only org admins and engineers may call it.",
+			parameters: Schema.Struct({
+				page: P.text("The page's slug, name or id"),
+			}),
+			hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+			permission: "status_pages:edit",
+			handler: Effect.fn("McpTool.publishStatusPage")(function* (params) {
+				const tool = "manage_status_page"
+				const tenant = yield* CurrentMcpTenant
+				const page = yield* resolvePage(tool, tenant.orgId, params.page)
+				if (!page.draft) return { action: "already_public" as const, page: toPageRow(page) }
+				// The minutely publish writes it: this Worker has no edge storage to publish to itself.
+				const published = yield* (yield* StatusPagesService)
+					.makePublic(tenant.orgId, page.id)
+					.pipe(Effect.mapError(toMcpError(tool)))
+				yield* auditPage("status_page.published", published.id, {
+					outcome: "queued",
+					revision: published.revision,
+				})
+				return { action: "published" as const, page: toPageRow(published) }
+			}),
+			render: (output: typeof PublishStatusPageOutput.Type) => ({
+				title:
+					output.action === "published"
+						? `Status page published: ${output.page.name}`
+						: `Status page already public: ${output.page.name}`,
+				notices: [
+					output.action === "published"
+						? "The page is public now and goes live with the next publish, within a minute."
+						: "The page was already public, so nothing changed.",
+					...(output.page.visibility === "password"
+						? ["Visitors need the page's password to read it."]
+						: output.page.visibility === "internal"
+							? ["The page is internal: it is shown only inside Maple, on no public address."]
+							: []),
+				],
+				blocks: [
+					doc.fields([
+						["Slug", output.page.slug],
+						["Id", output.page.id],
+						["Last published", output.page.publishedAt ?? "not yet"],
+						["Publish error", output.page.lastPublishError ?? undefined],
 					]),
 				],
 				next: [
 					doc.next("get_status_page", { page: output.page.slug }, "the page as visitors see it"),
 				],
-			}
-		},
-	})
-	server.define({
-		name: "create_status_page",
-		title: "Create Status Page",
-		description:
-			"Create a status page as a draft: private until publish_status_page. It starts with no components; read its config with get_status_page include_config=true, add components (linked to uptime monitors), theme and links, and write them with apply_status_page_config. Only org admins and engineers may call it.",
-		parameters: Schema.Struct({
-			name: P.text("The page's public name, e.g. `Acme Status`"),
-			slug: P.optionalText(
-				"The page's address on Maple's status domain: 3 to 48 lowercase letters, digits or inner hyphens. Defaults to one made from `name` (`Acme Status` gives `acme-status`)",
-			),
-			description: P.optionalText("Optional public text under the page's title"),
-		}),
-		hints: MUTATION_HINTS,
-		permission: "status_pages:edit",
-		scopeFamily: "status_pages",
-		phrases: ["Creating a status page"],
-		handler: Effect.fn("McpTool.createStatusPage")(function* (params) {
-			const tool = "create_status_page"
-			const tenant = yield* CurrentMcpTenant
-			const name = Str.trim(params.name)
-			const slug = params.slug === undefined ? slugFromName(name) : Str.trim(params.slug)
-			if (!isSlug(slug)) {
-				return yield* new McpInvalidInputError({
-					message:
-						params.slug === undefined
-							? `The name gives the address "${slug}", which is not a valid slug. Pass \`slug\`: 3 to 48 lowercase letters, digits or inner hyphens.`
-							: "`slug` must be 3 to 48 lowercase letters, digits or inner hyphens, e.g. `acme-status`.",
-					parameter: "slug",
-				})
-			}
-			const created = yield* (yield* StatusPagesService)
-				.create(tenant.orgId, {
-					name,
-					slug,
-					...(params.description === undefined ? undefined : { description: params.description }),
-					draft: true,
-					createdBy: tenant.userId,
-				})
-				.pipe(
+			}),
+		})
+		.action("set_domain", {
+			scopeFamily: "status_pages",
+			description:
+				"Serve a status page on the org's own subdomain (`status.acme.com`), or remove it with remove=true. Returns the DNS records to add at the domain's DNS provider: a CNAME to Maple and a TXT record proving ownership. Maple checks them on its own (every minute for the first hour, then every 10 minutes) and issues the certificate; a domain not live within 7 days is dropped. Calling it again with the page's current domain checks the records now and reports where the setup stands. One domain per page, none on an internal page. Only org admins and engineers may call it.",
+			parameters: Schema.Struct({
+				page: P.text("The page's slug, name or id"),
+				domain: P.optionalText(
+					"The hostname to serve the page on, a subdomain such as `status.acme.com` (an apex domain cannot take a CNAME). It replaces the page's current domain; the same domain checks it again",
+				),
+				remove: P.optionalFlag(
+					"true removes the page's custom domain; the page stays on its Maple address. Takes no `domain`",
+				),
+			}),
+			hints: { readOnly: false, destructive: true, idempotent: true, openWorld: true },
+			permission: "status_pages:edit",
+			handler: Effect.fn("McpTool.setStatusPageDomain")(function* (params) {
+				const tool = "manage_status_page"
+				const tenant = yield* CurrentMcpTenant
+				const remove = params.remove === true
+				if (remove && params.domain !== undefined) {
+					return yield* new McpInvalidInputError({
+						message:
+							"Pass `domain` to set or check a domain, or remove=true to remove it, not both.",
+						parameter: "remove",
+					})
+				}
+				const requested = params.domain
+				if (!remove && requested === undefined) {
+					return yield* new McpInvalidInputError({
+						message:
+							"Pass `domain` (e.g. `status.acme.com`) to set or check the page's custom domain, or remove=true to remove it.",
+						parameter: "domain",
+					})
+				}
+				const page = yield* resolvePage(tool, tenant.orgId, params.page)
+				const customDomains = yield* StatusPageCustomDomainsService
+				// A domain going live or away bumps the page's revision: report the page as it is after.
+				const pages = yield* StatusPagesService
+				const reread = () => pages.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+				const before = yield* customDomains
+					.get(tenant.orgId, page.id)
+					.pipe(Effect.mapError(toMcpError(tool)))
+				const previous = before.domain?.hostname ?? null
+				if (requested === undefined) {
+					if (previous === null)
+						return { action: "unchanged" as const, page: toPageRow(page), domain: null }
+					yield* customDomains.remove(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
+					yield* auditPage("status_page.custom_domain_removed", page.id, { hostname: previous })
+					const after = yield* reread()
+					return { action: "removed" as const, page: toPageRow(after), domain: null }
+				}
+				const hostname = normalizeCustomDomain(requested)
+				// The same domain again is a check, as the dashboard's Check now: `set` would only re-read it.
+				const same = previous === hostname
+				const written: Effect.Effect<StatusPageCustomDomainView, StatusPageCustomDomainError> = same
+					? customDomains.check(tenant.orgId, page.id)
+					: customDomains.set(tenant.orgId, page.id, requested)
+				const view = yield* written.pipe(
 					Effect.mapError((error) =>
-						error._tag === "@maple/http/errors/StatusPageSlugTakenError"
-							? new McpInvalidInputError({
-									message: `Another status page already has the address "${error.slug}". Pass a different \`slug\`.`,
-									parameter: "slug",
-								})
+						// The hostname's issue, or an internal page, both fixed through `domain`.
+						error._tag === "@maple/http/errors/StatusPageValidationError"
+							? new McpInvalidInputError({ message: error.message, parameter: "domain" })
 							: toMcpError(tool)(error),
 					),
 				)
-			yield* auditPage("status_page.created", created.id, { name: created.name, slug: created.slug })
-			return { page: toPageRow(created) }
-		}),
-		render: (output: typeof CreateStatusPageOutput.Type) => ({
-			title: `Status page created: ${output.page.name}`,
-			notices: [
-				"It is a draft: nobody outside Maple sees it until publish_status_page. Next, read its config document, add components (each can follow an uptime monitor) and settings, and write the edited document with apply_status_page_config.",
-			],
-			blocks: [
-				doc.fields([
-					["Slug", output.page.slug],
-					["Id", output.page.id],
-					["Published", "draft, not public"],
-				]),
-			],
-			next: [
-				doc.next(
-					"get_status_page",
-					{ page: output.page.slug, include_config: true },
-					"the config document to edit",
-				),
-			],
-		}),
-	})
-
-	server.define({
-		name: "publish_status_page",
-		title: "Publish Status Page",
-		description:
-			"Make a draft status page public: it goes live at its address with the next publish, within a minute, and its published incidents become visible. Calling it on a page that is already public changes nothing. A password page still asks visitors for its password; an internal page is still shown only inside Maple. Only org admins and engineers may call it.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id"),
-		}),
-		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
-		permission: "status_pages:edit",
-		scopeFamily: "status_pages",
-		phrases: ["Publishing a status page"],
-		handler: Effect.fn("McpTool.publishStatusPage")(function* (params) {
-			const tool = "publish_status_page"
-			const tenant = yield* CurrentMcpTenant
-			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			if (!page.draft) return { action: "already_public" as const, page: toPageRow(page) }
-			// The minutely publish writes it: this Worker has no edge storage to publish to itself.
-			const published = yield* (yield* StatusPagesService)
-				.makePublic(tenant.orgId, page.id)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			yield* auditPage("status_page.published", published.id, {
-				outcome: "queued",
-				revision: published.revision,
-			})
-			return { action: "published" as const, page: toPageRow(published) }
-		}),
-		render: (output: typeof PublishStatusPageOutput.Type) => ({
-			title:
-				output.action === "published"
-					? `Status page published: ${output.page.name}`
-					: `Status page already public: ${output.page.name}`,
-			notices: [
-				output.action === "published"
-					? "The page is public now and goes live with the next publish, within a minute."
-					: "The page was already public, so nothing changed.",
-				...(output.page.visibility === "password"
-					? ["Visitors need the page's password to read it."]
-					: output.page.visibility === "internal"
-						? ["The page is internal: it is shown only inside Maple, on no public address."]
-						: []),
-			],
-			blocks: [
-				doc.fields([
-					["Slug", output.page.slug],
-					["Id", output.page.id],
-					["Last published", output.page.publishedAt ?? "not yet"],
-					["Publish error", output.page.lastPublishError ?? undefined],
-				]),
-			],
-			next: [doc.next("get_status_page", { page: output.page.slug }, "the page as visitors see it")],
-		}),
-	})
-
-	server.define({
-		name: "set_status_page_domain",
-		title: "Set Status Page Domain",
-		description:
-			"Serve a status page on the org's own subdomain (`status.acme.com`), or remove it with remove=true. Returns the DNS records to add at the domain's DNS provider: a CNAME to Maple and a TXT record proving ownership. Maple checks them on its own (every minute for the first hour, then every 10 minutes) and issues the certificate; a domain not live within 7 days is dropped. Calling it again with the page's current domain checks the records now and reports where the setup stands. One domain per page, none on an internal page. Only org admins and engineers may call it.",
-		parameters: Schema.Struct({
-			page: P.text("The page's slug, name or id"),
-			domain: P.optionalText(
-				"The hostname to serve the page on, a subdomain such as `status.acme.com` (an apex domain cannot take a CNAME). It replaces the page's current domain; the same domain checks it again",
-			),
-			remove: P.optionalFlag(
-				"true removes the page's custom domain; the page stays on its Maple address. Takes no `domain`",
-			),
-		}),
-		hints: { readOnly: false, destructive: true, idempotent: true, openWorld: true },
-		permission: "status_pages:edit",
-		scopeFamily: "status_pages",
-		phrases: ["Setting a status page domain"],
-		handler: Effect.fn("McpTool.setStatusPageDomain")(function* (params) {
-			const tool = "set_status_page_domain"
-			const tenant = yield* CurrentMcpTenant
-			const remove = params.remove === true
-			if (remove && params.domain !== undefined) {
-				return yield* new McpInvalidInputError({
-					message: "Pass `domain` to set or check a domain, or remove=true to remove it, not both.",
-					parameter: "remove",
-				})
-			}
-			const requested = params.domain
-			if (!remove && requested === undefined) {
-				return yield* new McpInvalidInputError({
-					message:
-						"Pass `domain` (e.g. `status.acme.com`) to set or check the page's custom domain, or remove=true to remove it.",
-					parameter: "domain",
-				})
-			}
-			const page = yield* resolvePage(tool, tenant.orgId, params.page)
-			const customDomains = yield* StatusPageCustomDomainsService
-			// A domain going live or away bumps the page's revision: report the page as it is after.
-			const pages = yield* StatusPagesService
-			const reread = () => pages.get(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
-			const before = yield* customDomains
-				.get(tenant.orgId, page.id)
-				.pipe(Effect.mapError(toMcpError(tool)))
-			const previous = before.domain?.hostname ?? null
-			if (requested === undefined) {
-				if (previous === null)
-					return { action: "unchanged" as const, page: toPageRow(page), domain: null }
-				yield* customDomains.remove(tenant.orgId, page.id).pipe(Effect.mapError(toMcpError(tool)))
-				yield* auditPage("status_page.custom_domain_removed", page.id, { hostname: previous })
-				const after = yield* reread()
-				return { action: "removed" as const, page: toPageRow(after), domain: null }
-			}
-			const hostname = normalizeCustomDomain(requested)
-			// The same domain again is a check, as the dashboard's Check now: `set` would only re-read it.
-			const same = previous === hostname
-			const written: Effect.Effect<StatusPageCustomDomainView, StatusPageCustomDomainError> = same
-				? customDomains.check(tenant.orgId, page.id)
-				: customDomains.set(tenant.orgId, page.id, requested)
-			const view = yield* written.pipe(
-				Effect.mapError((error) =>
-					// The hostname's issue, or an internal page, both fixed through `domain`.
-					error._tag === "@maple/http/errors/StatusPageValidationError"
-						? new McpInvalidInputError({ message: error.message, parameter: "domain" })
-						: toMcpError(tool)(error),
-				),
-			)
-			if (!same) {
-				yield* auditPage("status_page.custom_domain_set", page.id, {
-					hostname,
-					previous_hostname: previous,
-				})
-			}
-			const after = yield* reread()
-			return {
-				action: same ? ("checked" as const) : ("set" as const),
-				page: toPageRow(after),
-				domain: view.domain === null ? null : toDomainRow(view.domain),
-			}
-		}),
-		render: (output: typeof SetStatusPageDomainOutput.Type) => {
-			const { domain, page } = output
-			if (domain === null) {
-				return {
-					title:
-						output.action === "removed"
-							? `Custom domain removed: ${page.name}`
-							: `No custom domain: ${page.name}`,
-					notices: [
-						output.action === "removed"
-							? "The page is served on its Maple address only. Its DNS records can be deleted."
-							: "The page had no custom domain, so nothing changed.",
-					],
-					blocks: [],
-					next: [doc.next("get_status_page", { page: page.slug }, "the page as visitors see it")],
+				if (!same) {
+					yield* auditPage("status_page.custom_domain_set", page.id, {
+						hostname,
+						previous_hostname: previous,
+					})
 				}
-			}
-			const live = domain.status === "active"
-			return {
-				title: `Custom domain ${domain.hostname}: ${page.name}`,
-				notices: [
-					live
-						? `Live: the page answers at https://${domain.hostname}.`
-						: domain.status === "pending_dns"
-							? `Add these records at the DNS provider for ${domain.hostname}. Maple checks them every minute for the first hour, then every 10 minutes; call set_status_page_domain with the same domain to check now. A domain not live within 7 days is removed.`
-							: domain.status === "pending_ssl"
-								? "The DNS records are in place; the certificate is being issued, usually within minutes."
-								: `The setup stopped${domain.lastError === null ? "" : `: ${domain.lastError}`}. Fix the records, then call set_status_page_domain with the same domain to try again.`,
-					...(page.draft
-						? ["The page is a draft: the domain serves it once publish_status_page publishes it."]
-						: []),
-				],
-				blocks: [
-					doc.fields([
-						["Status", domain.status],
-						["Last error", live ? undefined : (domain.lastError ?? undefined)],
-						["Last checked", domain.lastCheckedAt ?? undefined],
-						["Live since", domain.activatedAt ?? undefined],
-					]),
-					doc.table(
-						["Type", "Name", "Value", "For"],
-						Arr.map(domain.dnsRecords, (record) => [
-							record.type,
-							record.name,
-							record.value,
-							record.purpose,
-						]),
-					),
-				],
-				next: live
-					? [doc.next("get_status_page", { page: page.slug }, "the page as visitors see it")]
-					: [
-							doc.next(
-								"set_status_page_domain",
-								{ page: page.slug, domain: domain.hostname },
-								"check the records again once they are added",
-							),
+				const after = yield* reread()
+				return {
+					action: same ? ("checked" as const) : ("set" as const),
+					page: toPageRow(after),
+					domain: view.domain === null ? null : toDomainRow(view.domain),
+				}
+			}),
+			render: (output: typeof SetStatusPageDomainOutput.Type) => {
+				const { domain, page } = output
+				if (domain === null) {
+					return {
+						title:
+							output.action === "removed"
+								? `Custom domain removed: ${page.name}`
+								: `No custom domain: ${page.name}`,
+						notices: [
+							output.action === "removed"
+								? "The page is served on its Maple address only. Its DNS records can be deleted."
+								: "The page had no custom domain, so nothing changed.",
 						],
-			}
-		},
-	})
+						blocks: [],
+						next: [
+							doc.next("get_status_page", { page: page.slug }, "the page as visitors see it"),
+						],
+					}
+				}
+				const live = domain.status === "active"
+				return {
+					title: `Custom domain ${domain.hostname}: ${page.name}`,
+					notices: [
+						live
+							? `Live: the page answers at https://${domain.hostname}.`
+							: domain.status === "pending_dns"
+								? `Add these records at the DNS provider for ${domain.hostname}. Maple checks them every minute for the first hour, then every 10 minutes; call manage_status_page action=set_domain with the same domain to check now. A domain not live within 7 days is removed.`
+								: domain.status === "pending_ssl"
+									? "The DNS records are in place; the certificate is being issued, usually within minutes."
+									: `The setup stopped${domain.lastError === null ? "" : `: ${domain.lastError}`}. Fix the records, then call manage_status_page action=set_domain with the same domain to try again.`,
+						...(page.draft
+							? [
+									"The page is a draft: the domain serves it once manage_status_page action=publish publishes it.",
+								]
+							: []),
+					],
+					blocks: [
+						doc.fields([
+							["Status", domain.status],
+							["Last error", live ? undefined : (domain.lastError ?? undefined)],
+							["Last checked", domain.lastCheckedAt ?? undefined],
+							["Live since", domain.activatedAt ?? undefined],
+						]),
+						doc.table(
+							["Type", "Name", "Value", "For"],
+							Arr.map(domain.dnsRecords, (record) => [
+								record.type,
+								record.name,
+								record.value,
+								record.purpose,
+							]),
+						),
+					],
+					next: live
+						? [doc.next("get_status_page", { page: page.slug }, "the page as visitors see it")]
+						: [
+								doc.next(
+									"manage_status_page",
+									{ action: "set_domain", page: page.slug, domain: domain.hostname },
+									"check the records again once they are added",
+								),
+							],
+				}
+			},
+		})
+		.action("post_update", {
+			scopeFamily: "status_page_incidents",
+			description:
+				"Write to a status page's incidents and maintenance, all public text your customers read. Without `incident`: opens a new incident on `page` with `title` and `message` as its first update, or announces maintenance when `starts_at` and `ends_at` are given. With `incident`: posts the next update and moves it to `status`; status=resolved (or completed) closes it. New ones start as unpublished drafts unless publish=true. Separate from internal alert incidents.",
+			parameters: Schema.Struct({
+				incident: P.optionalText(
+					"The incident's id (sti_… or its UUID; get_status_page lists open ones). Omit to open a new one",
+				),
+				message: P.text("The public update, written for customers (up to 20,000 characters)"),
+				status: P.optionalOneOf(
+					UPDATE_STATUSES,
+					"Incidents: investigating, identified, monitoring, resolved. Maintenance: scheduled, in_progress, completed. Required on an existing incident; a new incident starts investigating, new maintenance scheduled",
+				),
+				page: P.optionalText("Opening only: the page's slug, name or id"),
+				title: P.optionalText(
+					"Opening only: public title, e.g. `Elevated API errors` or `Database upgrade`",
+				),
+				starts_at: P.optionalTimestamp("Opening maintenance only: when it starts"),
+				ends_at: P.optionalTimestamp(
+					"Opening maintenance only: when it ends. It moves to in_progress at the start and completed at the end on its own",
+				),
+				auto_complete: P.optionalFlag(
+					"Opening maintenance only: false keeps it in_progress past `ends_at` until someone posts completed. Default true",
+				),
+				impact: P.optionalOneOf(
+					StatusPageIncidentImpact.literals,
+					"How hard it hits the components (new incident default minor, new maintenance none; omit on an update to keep it)",
+				),
+				components: P.optionalList(
+					"Affected components, by name or id (get_status_page lists them). On an update it replaces the list",
+				),
+				publish: publishParameter,
+			}),
+			hints: MUTATION_HINTS,
+			permission: "status_page_incidents:post",
+			handler: Effect.fn("McpTool.postStatusPageUpdate")(function* (params) {
+				const tool = "manage_status_page"
+				const tenant = yield* CurrentMcpTenant
+				const service = yield* StatusPagesService
+
+				if (params.incident === undefined) {
+					if (params.page === undefined) {
+						return yield* new McpInvalidInputError({
+							message:
+								"Pass `page` to open a new incident or maintenance, or `incident` to update an existing one.",
+							parameter: "page",
+						})
+					}
+					if (params.title === undefined) {
+						return yield* new McpInvalidInputError({
+							message: "Opening an incident or maintenance needs a public `title`.",
+							parameter: "title",
+						})
+					}
+					if ((params.starts_at === undefined) !== (params.ends_at === undefined)) {
+						return yield* new McpInvalidInputError({
+							message:
+								"Maintenance needs both `starts_at` and `ends_at`; an incident takes neither.",
+							parameter: params.starts_at === undefined ? "starts_at" : "ends_at",
+						})
+					}
+					const kind =
+						params.starts_at === undefined ? ("incident" as const) : ("maintenance" as const)
+					const status =
+						params.status === undefined
+							? kind === "incident"
+								? ("investigating" as const)
+								: ("scheduled" as const)
+							: statusForKind(kind, params.status)
+					const page = yield* resolvePage(tool, tenant.orgId, params.page)
+					const components = yield* pageComponents(tool, tenant.orgId, page.id)
+					const componentIds = yield* resolveComponents(components, params.components ?? [])
+					const created = yield* service
+						.createIncident(tenant.orgId, page.id, {
+							kind,
+							title: params.title,
+							impact: params.impact ?? (kind === "incident" ? "minor" : "none"),
+							status,
+							body: params.message,
+							componentIds,
+							published: params.publish === true,
+							...(params.starts_at === undefined || params.ends_at === undefined
+								? undefined
+								: {
+										scheduledStart: parseWarehouseDateTime(params.starts_at),
+										scheduledEnd: parseWarehouseDateTime(params.ends_at),
+									}),
+							...(params.auto_complete === undefined
+								? undefined
+								: { autoComplete: params.auto_complete }),
+							source: "mcp",
+							createdBy: tenant.userId,
+						})
+						.pipe(Effect.mapError(toMcpError(tool)))
+					yield* auditIncidentCreated(created)
+					return {
+						action: kind === "incident" ? ("created" as const) : ("scheduled" as const),
+						incident: toIncidentRow(created),
+						pageDraft: page.draft,
+					}
+				}
+
+				if (params.page !== undefined) return yield* opensOnlyParameter("page")
+				if (params.title !== undefined) return yield* opensOnlyParameter("title")
+				if (params.starts_at !== undefined) return yield* opensOnlyParameter("starts_at")
+				if (params.ends_at !== undefined) return yield* opensOnlyParameter("ends_at")
+				if (params.auto_complete !== undefined) return yield* opensOnlyParameter("auto_complete")
+				const requestedStatus = params.status
+				if (requestedStatus === undefined) {
+					return yield* new McpInvalidInputError({
+						message:
+							"An update needs a `status`: investigating, identified, monitoring or resolved for an incident; scheduled, in_progress or completed for maintenance.",
+						parameter: "status",
+					})
+				}
+				const incidentId = yield* decodeIncidentId(params.incident)
+				const current = yield* service
+					.getIncident(tenant.orgId, incidentId)
+					.pipe(Effect.mapError(toMcpError(tool)))
+				const status = statusForKind(current.kind, requestedStatus)
+				const requested = params.components
+				const componentIds =
+					requested === undefined
+						? undefined
+						: yield* pageComponents(tool, tenant.orgId, current.pageId).pipe(
+								Effect.flatMap((components) => resolveComponents(components, requested)),
+							)
+				const posted = yield* service
+					.postUpdate(tenant.orgId, incidentId, {
+						status,
+						body: params.message,
+						...(params.impact === undefined ? undefined : { impact: params.impact }),
+						...(componentIds === undefined ? undefined : { componentIds }),
+						source: "mcp",
+						createdBy: tenant.userId,
+						// One write: a failure leaves neither the update nor the publish, so a retry cannot double post.
+						publish: params.publish === true,
+					})
+					.pipe(Effect.mapError(toMcpError(tool)))
+				yield* auditUpdatePosted(posted)
+				return {
+					action: isClosingStatus(status) ? ("resolved" as const) : ("updated" as const),
+					incident: toIncidentRow(posted),
+					pageDraft: yield* pageIsDraft(tool, tenant.orgId, posted.pageId),
+				}
+			}),
+			render: (output) =>
+				renderIncident(
+					output.action === "created"
+						? "Status page incident opened"
+						: output.action === "scheduled"
+							? "Maintenance scheduled"
+							: output.action === "resolved"
+								? "Status page incident resolved"
+								: "Status page update posted",
+					output,
+				),
+		})
 }

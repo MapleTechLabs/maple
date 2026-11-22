@@ -50,9 +50,7 @@ const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 /** Reads a turn nobody is named on is not offered: connected systems, source, SQL, end users. */
 const WITHHELD_FROM_ANONYMOUS = [
 	"query_data_source",
-	"describe_data_source",
 	"list_data_sources",
-	"search_data_sources",
 	"run_sql",
 	"list_users",
 	"inspect_user",

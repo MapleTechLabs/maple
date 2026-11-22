@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import type { McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
@@ -6,19 +6,16 @@ import { deleteOverrideErrors } from "../lib/oncall-schedules"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
-export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
-	server.define({
-		name: "delete_oncall_override",
-		title: "Delete On-Call Override",
+export const removeOnCallOverrideAction = (family: McpToolFamilyBuilder<"manage_oncall_schedule">) =>
+	family.action("remove_override", {
 		description:
-			"Delete an override so the schedule's layers decide again. Override ids come from create_oncall_override or the REST overrides list.",
+			"Delete an override so the schedule's layers decide again. Override ids come from manage_oncall_schedule action=add_override or the REST overrides list.",
 		parameters: Schema.Struct({
 			schedule_id: P.resourceId("oncallSchedule", "On-call schedule the override is on"),
 			override_id: P.resourceId("oncallOverride", "Override to delete"),
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		permission: "oncall:manage",
-		phrases: ["Deleting an on-call override"],
 		handler: Effect.fn("McpTool.deleteOnCallOverride")(function* (params) {
 			const scheduleId = yield* P.decodeResourceId("oncallSchedule", "schedule_id")(params.schedule_id)
 			const overrideId = yield* P.decodeResourceId("oncallOverride", "override_id")(params.override_id)
@@ -48,4 +45,3 @@ export function registerDeleteOnCallOverrideTool(server: McpToolRegistrar) {
 			next: [doc.next("who_is_on_call", { schedule: output.scheduleId }, "who is on call now")],
 		}),
 	})
-}

@@ -222,12 +222,13 @@ const harness = (options: FakeGoogleOptions = {}) => {
 	const writes: Array<{
 		readonly datasource: string
 		readonly rows: ReadonlyArray<typeof WrittenRow.Type>
+		readonly durable: boolean
 	}> = []
 	let ingestCalls = 0
 	const warehouse = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
-			ingest: (_tenant, datasource, rows) =>
+			ingest: (_tenant, datasource, rows, ingestOptions) =>
 				Effect.suspend(() => {
 					ingestCalls += 1
 					if (ingestCalls === options.failIngestCallOnce) {
@@ -239,7 +240,11 @@ const harness = (options: FakeGoogleOptions = {}) => {
 							}),
 						)
 					}
-					writes.push({ datasource, rows: decodeWrittenRows(rows) })
+					writes.push({
+						datasource,
+						rows: decodeWrittenRows(rows),
+						durable: ingestOptions?.durable === true,
+					})
 					return Effect.void
 				}),
 		}),
@@ -286,7 +291,9 @@ const harness = (options: FakeGoogleOptions = {}) => {
 		),
 	)
 	const writtenRows = () => Arr.flatMap(writes, (write) => write.rows)
-	return { layer, google, writes, writtenRows, sql, siteState, nextAttemptOf, backoffOf }
+	/** Google's rows only, without the completion markers. */
+	const dataRows = () => Arr.filter(writtenRows(), (row) => row.SearchType === "web")
+	return { layer, google, writes, writtenRows, dataRows, sql, siteState, nextAttemptOf, backoffOf }
 }
 
 /** Connect Google at NOW and enable the one property. */
@@ -431,15 +438,36 @@ describe("SearchConsoleImportService", () => {
 				[0, 25_000],
 			)
 			const queryRows = Arr.filter(
-				h.writtenRows(),
+				h.dataRows(),
 				(row) => row.Grain === "query" && row.Date === `${PAGED_DAY} 00:00:00`,
 			)
 			assert.strictEqual(queryRows.length, 25_010)
 			assert.strictEqual(new Set(Arr.map(queryRows, (row) => row.Query)).size, 25_010)
 			assert.isTrue(Arr.every(h.writes, (write) => write.rows.length <= 10_000))
+			// Each write answers once stored, so a marker never lands ahead of the rows it vouches for.
+			assert.isTrue(Arr.every(h.writes, (write) => write.durable))
 			// One import, one IngestedAt, across every grain, page and batch.
 			assert.isAbove(h.writes.length, 3)
 			assert.strictEqual(new Set(Arr.map(h.writtenRows(), (row) => row.IngestedAt)).size, 1)
+			// The day's last write marks each grain complete, after all of its rows.
+			const dayWrites = Arr.filter(h.writes, (write) =>
+				Arr.some(write.rows, (row) => row.Date === `${PAGED_DAY} 00:00:00`),
+			)
+			assert.deepStrictEqual(
+				Option.map(Arr.last(dayWrites), (write) =>
+					Arr.map(write.rows, (row) => [row.Grain, row.SearchType, row.Clicks]),
+				),
+				Option.some([
+					["site", "web:complete", 0],
+					["page", "web:complete", 0],
+					["query", "web:complete", 0],
+				]),
+			)
+			assert.isTrue(
+				Arr.every(Arr.dropRight(dayWrites, 1), (write) =>
+					Arr.every(write.rows, (row) => row.SearchType === "web"),
+				),
+			)
 		}).pipe(Effect.provide(h.layer))
 	})
 
@@ -691,14 +719,15 @@ describe("SearchConsoleImportService frontier and writes", () => {
 	})
 
 	it.effect("an ingest batch that fails once is sent again and the day completes", () => {
-		// Thirteen one-batch days, then today's 25,012 rows in three batches; its second fails once.
-		const h = harness({ queryRowsTotal: 25_010, failIngestCallOnce: 13 + 2 })
+		// Thirteen days of one batch and one marker write each, then today's 25,012 rows in three
+		// batches; its second fails once.
+		const h = harness({ queryRowsTotal: 25_010, failIngestCallOnce: 13 * 2 + 2 })
 		return Effect.gen(function* () {
 			yield* connectSite
 			const summary = yield* settleWithClock(yield* Effect.forkChild(poll))
 			assert.deepStrictEqual([summary.imported, summary.failures, summary.days], [1, 0, 14])
 			const queryRows = Arr.filter(
-				h.writtenRows(),
+				h.dataRows(),
 				(row) => row.Grain === "query" && row.Date === `${PAGED_DAY} 00:00:00`,
 			)
 			assert.strictEqual(new Set(Arr.map(queryRows, (row) => row.Query)).size, 25_010)

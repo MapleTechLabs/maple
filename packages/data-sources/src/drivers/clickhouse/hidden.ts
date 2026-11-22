@@ -218,7 +218,7 @@ export const hiddenEntryIssue = (
 		Arr.some(chain.parts, (part, index) => index < chain.parts.length - 1 && SYSTEM_DATABASES.has(part)),
 	)
 	if (Option.isSome(system) || SYSTEM_DATABASES.has(database)) {
-		return "Agents cannot read the `system` or `information_schema` databases on this source: some of its tables are hidden from agents, and those databases list them. Use describe_data_source for the tables you can query."
+		return "Agents cannot read the `system` or `information_schema` databases on this source: some of its tables are hidden from agents, and those databases list them. Use list_data_sources with this data_source for the tables you can query."
 	}
 	const names = hiddenNames(hidden, database)
 	const named = Arr.findFirst(chains, (chain) => hiddenNameIn(chain, names))

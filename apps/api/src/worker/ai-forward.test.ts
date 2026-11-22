@@ -20,10 +20,32 @@ describe("forwardsToAi", () => {
 			"/api/chat/sessions/org:tab/abort",
 			"/internal/chat/apply",
 			"/internal/mcp/tools",
-			"/api/security-audit/targets",
-			"/api/security-audit/runs/run-1/events",
 		]) {
-			assert.isTrue(forwardsToAi(path), path)
+			assert.isTrue(forwardsToAi("GET", path), path)
+		}
+	})
+
+	it("forwards the security audit's writes and its settings read, and keeps its other reads on api", () => {
+		for (const [method, path] of [
+			["POST", "/api/security-audit/targets"],
+			["POST", "/api/security-audit/targets/t-1/runs"],
+			["POST", "/api/security-audit/runs/run-1/cancel"],
+			["PATCH", "/api/security-audit/targets/t-1/findings/abc"],
+			["PUT", "/api/security-audit/settings"],
+			["GET", "/api/security-audit/settings"],
+		] as const) {
+			assert.isTrue(forwardsToAi(method, path), `${method} ${path}`)
+		}
+		for (const path of [
+			"/api/security-audit/targets",
+			"/api/security-audit/runs",
+			"/api/security-audit/runs/run-1",
+			"/api/security-audit/runs/run-1/events",
+			"/api/security-audit/runs/run-1/units",
+			"/api/security-audit/runs/run-1/findings",
+			"/api/security-audit/targets/t-1/findings",
+		]) {
+			assert.isFalse(forwardsToAi("GET", path), path)
 		}
 	})
 
@@ -45,7 +67,7 @@ describe("forwardsToAi", () => {
 			"/api/security-auditx/targets",
 			"/v2/errors",
 		]) {
-			assert.isFalse(forwardsToAi(path), path)
+			assert.isFalse(forwardsToAi("POST", path), path)
 		}
 	})
 })

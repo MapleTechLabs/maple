@@ -15,6 +15,7 @@ import { HttpAnthropicCostLive } from "@/routes/internal/anthropic-cost.http"
 import { HttpFeatureRequestsLive } from "@/routes/internal/feature-requests.http"
 import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpOpenAiCostLive } from "@/routes/internal/openai-cost.http"
+import { HttpMorphCostLive } from "@/routes/internal/morph-cost.http"
 import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpCostBudgetsLive } from "@/routes/internal/cost-budgets.http"
@@ -40,6 +41,7 @@ import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpCloudSecurityLive } from "@/routes/internal/cloud-security.http"
+import { HttpSecurityAuditReadsLive } from "@maple/backend/http/security-audit-reads"
 import { HttpDeviceSecurityLive } from "@/routes/internal/device-security.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
 import { HttpErrorsLive } from "@/routes/internal/errors.http"
@@ -186,6 +188,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpDemoLive,
 			HttpAuditTrailLive,
 			HttpCloudSecurityLive,
+			HttpSecurityAuditReadsLive,
 			HttpDeviceSecurityLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
@@ -197,6 +200,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAnthropicCostLive,
 			HttpFeatureRequestsLive,
 			HttpOpenAiCostLive,
+			HttpMorphCostLive,
 			HttpGithubCostLive,
 			HttpPlanetScaleCostLive,
 			HttpOpenRouterCostLive,

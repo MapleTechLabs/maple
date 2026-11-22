@@ -10,6 +10,7 @@ import {
 	Redacted,
 	Schema,
 	Stream,
+	Record as Rec,
 	String as Str,
 } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -157,6 +158,51 @@ describe("HTTP request contract", () => {
 					const client = yield* make(config)
 					assert.instanceOf(
 						yield* Effect.flip(client.query({ sql: "SELECT 1", settings })),
+						ClickHouseConfigError,
+					)
+				}),
+				async () => {
+					assert.fail("must not fetch")
+					return response()
+				},
+			),
+		)
+	}
+	it.effect("sends configured extra headers beside its own Basic auth", () => {
+		let sent: Headers | undefined
+		return withFetch(
+			Effect.gen(function* () {
+				const client = yield* make({
+					...config,
+					headers: {
+						"CF-Access-Client-Id": Redacted.make("id.access"),
+						"CF-Access-Client-Secret": Redacted.make("s3cret"),
+					},
+				})
+				yield* client.query({ sql: "SELECT 1" })
+				assert.strictEqual(sent?.get("cf-access-client-id"), "id.access")
+				assert.strictEqual(sent?.get("cf-access-client-secret"), "s3cret")
+				assert.isTrue(Str.startsWith("Basic ")(sent?.get("authorization") ?? ""))
+			}),
+			async (_input, init) => {
+				sent = new Headers(init?.headers)
+				return response()
+			},
+		)
+	})
+	for (const headers of [
+		{ Authorization: "Bearer other" },
+		{ "content-type": "application/json" },
+		{ "X-ClickHouse-User": "admin" },
+		{ "bad header": "1" },
+		{ "x-ok": "line\r\nInjected: 1" },
+	] as Array<Record<string, string>>) {
+		it.effect(`rejects reserved or malformed headers ${JSON.stringify(headers)}`, () =>
+			withFetch(
+				Effect.gen(function* () {
+					const redacted = Rec.map(headers, (value: string) => Redacted.make(value))
+					assert.instanceOf(
+						yield* Effect.flip(make({ ...config, headers: redacted })),
 						ClickHouseConfigError,
 					)
 				}),

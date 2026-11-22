@@ -168,6 +168,8 @@ export interface ExternalDataSourceServiceApi {
 		query: string,
 		audience: Audience,
 		limit?: number,
+		/** Only this source's catalog, by name: ranked on its own, so other sources cannot crowd it out. */
+		sourceName?: string,
 	) => Effect.Effect<ReadonlyArray<DataSourceSearchHit>, DataSourcePersistenceError>
 	/** Refused unless the caller holds `data_sources:query`; an unattended run always reads as an agent. */
 	readonly query: (
@@ -1024,12 +1026,16 @@ export class ExternalDataSourceService extends Context.Service<
 			query: string,
 			audience: Audience,
 			limit?: number,
+			sourceName?: string,
 		) {
 			const [rows, entries] = yield* Effect.all([loadRows(orgId), loadEntries(orgId)], {
 				concurrency: 2,
 			})
 			const sources: ReadonlyArray<SearchableSource> = Arr.map(
-				Arr.filter(rows, (row) => visible(row, audience)),
+				Arr.filter(
+					rows,
+					(row) => visible(row, audience) && (sourceName === undefined || row.name === sourceName),
+				),
 				(row) => ({
 					id: row.id,
 					name: row.name,
@@ -1090,7 +1096,7 @@ export class ExternalDataSourceService extends Context.Service<
 				return yield* new DataSourceValidationError({
 					message: wantsSql
 						? `"${row.name}" is a ${row.kind} database: send SQL (\`sql\`), not a resource query.`
-						: `"${row.name}" is a ${row.kind} API: it takes a resource query, not SQL. Use describe_data_source to see its resources and an example.`,
+						: `"${row.name}" is a ${row.kind} API: it takes a resource query, not SQL. Use list_data_sources with this data_source to see its resources and an example.`,
 					field: "query",
 				})
 			}

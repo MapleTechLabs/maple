@@ -9,6 +9,7 @@ import * as m from "../paraglide/messages.js"
 import { AGENT_FRAMEWORK_GUIDES, AGENT_GATEWAY_GUIDES, AGENT_GUIDE_LANGUAGES } from "./agent-tracing-guides"
 import type { AgentGuide } from "./agent-tracing-guides"
 import { FRONTEND_GUIDES } from "./instrumentation-guides"
+import { integrations } from "./integrations"
 import type { BrandMarkId } from "./brand-marks"
 import type { LanguageId } from "./docs-languages"
 import { Array as Arr } from "effect"
@@ -29,7 +30,14 @@ export interface HubTile {
 }
 
 /** `PixelIcon` glyphs the rail uses, spelled out so this module stays free of `.astro`. */
-type RailIcon = "brackets-curly-dots" | "sparkle-2" | "cloud" | "stack-perspective-2" | "bell" | "laptop"
+type RailIcon =
+	| "brackets-curly-dots"
+	| "sparkle-2"
+	| "cloud"
+	| "stack-perspective-2"
+	| "bell"
+	| "laptop"
+	| "dashboard"
 
 export interface HubCategory {
 	/** Anchor id and rail key. */
@@ -46,7 +54,12 @@ export const text = (value: string | Msg): string => (typeof value === "string" 
 export const tileHref = (locale: string, tile: HubTile): string =>
 	tile.localized && locale !== "en" ? `/${locale}${tile.href}` : tile.href
 
-const doc = (path: string) => `/docs/${path}`
+// A docs guide with its own /integrations page is linked there; the page links back to the guide.
+const LANDING_PAGES = new Map(
+	Arr.map(Object.values(integrations), (i): [string, string] => [i.docsHref, `/integrations/${i.slug}`]),
+)
+const landing = (href: string) => LANDING_PAGES.get(href) ?? href
+const doc = (path: string) => landing(`/docs/${path}`)
 
 const languages: HubTile[] = [
 	{ name: "Effect", hint: "Node, Bun, Deno, Workers", href: doc("sdks/effect"), icon: { lang: "effect" } },
@@ -137,7 +150,7 @@ const languages: HubTile[] = [
 		name: g.name,
 		keywords: "frontend browser tracing",
 		hint: m.intg_hint_frontend,
-		href: g.href,
+		href: landing(g.href),
 		icon: g.icon,
 	})),
 ]
@@ -184,6 +197,13 @@ const cloud: HubTile[] = [
 		hint: m.intg_hint_railway,
 		href: doc("integrations/railway"),
 		icon: { mark: "railway" },
+	},
+	{
+		name: "Vercel",
+		keywords: "drains ai gateway speed insights",
+		hint: m.intg_hint_vercel,
+		href: doc("integrations/vercel"),
+		icon: { mark: "vercel" },
 	},
 	{
 		name: "Kubernetes",
@@ -255,6 +275,34 @@ const alerts: HubTile[] = [
 		icon: { mark: "pagerduty" },
 	},
 	{
+		name: "incident.io",
+		keywords: "incidentio on-call oncall incident",
+		hint: m.intg_hint_incidentio,
+		href: `${destinations}#incidentio`,
+		icon: { mark: "incidentio" },
+	},
+	{
+		name: "Linear",
+		keywords: "issues tickets",
+		hint: m.intg_hint_linear,
+		href: `${destinations}#linear`,
+		icon: { mark: "linear" },
+	},
+	{
+		name: "Microsoft Teams",
+		keywords: "msteams teams",
+		hint: m.intg_hint_teams,
+		href: `${destinations}#microsoft-teams`,
+		icon: { mark: "microsoftteams" },
+	},
+	{
+		name: "Google Chat",
+		keywords: "gchat workspace",
+		hint: m.intg_hint_googlechat,
+		href: `${destinations}#google-chat`,
+		icon: { mark: "googlechat" },
+	},
+	{
 		name: "Telegram",
 		hint: m.intg_hint_telegram,
 		href: `${destinations}#telegram`,
@@ -292,6 +340,23 @@ const code: HubTile[] = [
 	{ name: "Pulumi", hint: m.intg_hint_iac, href: doc("iac/pulumi"), icon: { mark: "pulumi" } },
 ]
 
+const more: HubTile[] = [
+	{
+		name: "Google Search Console",
+		keywords: "seo google search",
+		hint: m.intg_hint_search_console,
+		href: `${doc("product-events/web-analytics")}#search`,
+		icon: { mark: "google" },
+	},
+	{
+		name: "Fleet",
+		keywords: "fleetdm osquery mdm devices vulnerabilities",
+		hint: m.intg_hint_fleet,
+		href: doc("integrations/fleet"),
+		icon: { mark: "fleet" },
+	},
+]
+
 export const HUB_CATEGORIES: readonly HubCategory[] = [
 	{
 		id: "languages",
@@ -323,4 +388,5 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
 		tiles: alerts,
 	},
 	{ id: "code", icon: "laptop", title: m.intg_cat_code_title, lede: m.intg_cat_code_lede, tiles: code },
+	{ id: "more", icon: "dashboard", title: m.intg_cat_more_title, lede: m.intg_cat_more_lede, tiles: more },
 ]

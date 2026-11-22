@@ -766,9 +766,21 @@ export const mergeActivity = (
 					kind: "mcp",
 					atMs: session.firstSeenMs,
 					service: session.service,
-					title: `${plural(session.calls, "tool call")} from ${session.client}`,
+					// A session that only connected (initialize, tools/list) says so, not "0 tool calls".
+					title:
+						session.calls === 0
+							? `${session.client} connected`
+							: `${plural(session.calls, "tool call")} from ${session.client}`,
 					detail: Arr.join(
-						[session.service, plural(session.tools, "tool"), `${session.errors} failed`],
+						[
+							session.service,
+							...(session.calls === 0
+								? ["no tool calls"]
+								: [
+										plural(session.tools, "distinct tool"),
+										...(session.errors === 0 ? [] : [`${session.errors} failed`]),
+									]),
+						],
 						" · ",
 					),
 					tone: session.errors > 0 ? "crit" : "neutral",

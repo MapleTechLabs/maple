@@ -111,7 +111,7 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 		h,
 		{
 			title: "Roles",
-			description: RolesView.description,
+			description: RolesView.description(h),
 			width: "settings",
 			actions: h.submodel({
 				slotId: "lab-roles-actions",

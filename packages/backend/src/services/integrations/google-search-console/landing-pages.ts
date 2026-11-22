@@ -29,9 +29,12 @@ export interface LandingKey {
 /** Lowercased, without a trailing dot. `www.` is kept: web analytics records it as visited. */
 export const normalizeHost = (host: string): string => Str.replace(/\.$/, "")(Str.toLowerCase(host))
 
-/** The pathname without query string or fragment, and without a trailing slash except at the root. */
+/**
+ * The pathname without query string or fragment, repeated slashes collapsed, and without a
+ * trailing slash except at the root.
+ */
 export const normalizePath = (path: string): string => {
-	const bare = Str.replace(/[?#].*$/s, "")(path)
+	const bare = Str.replace(/\/{2,}/g, "/")(Str.replace(/[?#].*$/s, "")(path))
 	const trimmed = Str.replace(/\/+$/, "")(bare)
 	return trimmed === "" ? "/" : Str.startsWith("/")(trimmed) ? trimmed : `/${trimmed}`
 }
@@ -47,7 +50,10 @@ export const landingKeyOfUrl = (url: string): Option.Option<LandingKey> =>
 
 const keyString = (key: LandingKey): string => `${key.host}\n${key.path}`
 
-/** The `EntryPath` values worth asking web analytics about: each path with and without its slash. */
+/**
+ * The `EntryPath` values worth asking web analytics about: each path with and without its slash.
+ * The read collapses repeated slashes before matching, so `/docs//` is found as `/docs/`.
+ */
 export const entryPathsFor = (pages: ReadonlyArray<SearchPageRow>): ReadonlyArray<string> =>
 	Arr.dedupe(
 		Arr.flatMap(pages, (row) =>

@@ -1,14 +1,12 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { deleteWindowErrors } from "../lib/maintenance-windows"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
-export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
-	server.define({
-		name: "delete_maintenance_window",
-		title: "Delete Maintenance Window",
+export const deleteMaintenanceWindowAction = (family: McpToolFamilyBuilder<"manage_maintenance_window">) =>
+	family.action("delete", {
 		description:
 			"Delete a maintenance window. An occurrence in progress ends now (notifications it held back go out), and occurrences ahead are dropped. " +
 			"Requires confirm=true. Ids from list_maintenance_windows.",
@@ -18,11 +16,10 @@ export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		permission: "alerts:manage",
-		phrases: ["Deleting a maintenance window"],
 		handler: Effect.fn("McpTool.deleteMaintenanceWindow")(function* (params) {
 			if (params.confirm !== true) {
 				return yield* new McpInvalidInputError({
-					message: `Deletion not confirmed. Re-call delete_maintenance_window with confirm=true to delete window ${params.maintenance_window_id}.`,
+					message: `Deletion not confirmed. Re-call manage_maintenance_window action=delete with confirm=true to delete window ${params.maintenance_window_id}.`,
 					parameter: "confirm",
 				})
 			}
@@ -45,4 +42,3 @@ export function registerDeleteMaintenanceWindowTool(server: McpToolRegistrar) {
 			next: [doc.next("list_maintenance_windows", {}, "the remaining windows")],
 		}),
 	})
-}

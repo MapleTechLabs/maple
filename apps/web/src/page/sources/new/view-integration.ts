@@ -31,7 +31,9 @@ const openSource = (h: H, model: Model, integration: DataIntegration): Html => {
 	const sources = sourcesOfIntegration(model, integration)
 	const only = sources.length === 1 ? sources[0] : undefined
 	return only === undefined
-		? linkButton(h, { variant: "outline", href: hrefOf(AppRoute.Sources()) }, ["View sources"])
+		? linkButton(h, { variant: "outline", href: hrefOf(AppRoute.Sources({ search: {} })) }, [
+				"View sources",
+			])
 		: linkButton(h, { variant: "outline", href: sourceHref(only, "connection") }, ["Open source"])
 }
 

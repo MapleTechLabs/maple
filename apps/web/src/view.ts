@@ -5,7 +5,6 @@ import { createKeyedLazy, type Document, type Html, type HtmlBuilder } from "fol
 import { bootSplash } from "./layout/boot-splash"
 import { Message } from "./message"
 import { type Model, Session } from "./model"
-import * as PageHold from "./page/page-hold"
 import { onboardingInputsOf, pageContextOf, planGateOf, shellClerkOf } from "./update"
 import * as OnboardingView from "./page/onboarding/view"
 import {
@@ -109,16 +108,13 @@ const renderPage = (
 		toPageMessage,
 	)
 
-/** The page on screen: the one a navigation left while the entered one loads, else the open page. */
-const shownPage = (model: Model) => PageHold.shownSlot(model.pageHold, model.page)
-
 /**
  * The routed page, rebuilt only when its slot or an input it reads changes: a hovered link, a
  * toast or a shell menu re-renders the root, not the page. The context is rebuilt on every call,
  * so it is passed by field.
  */
 const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition): Option.Option<Html> =>
-	Option.flatMap(Option.fromNullishOr(shownPage(model)), (page) =>
+	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
 		Option.map(
 			pageContextOf(model),
 			({
@@ -178,7 +174,7 @@ const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 
 /** The open page's source, once it names one. */
 const sourceLinkOf = (model: Model): SourceLink | null => {
-	const page = shownPage(model)
+	const page = model.page
 	const ref = page === null ? null : pageSource(page)
 	return ref === null
 		? null
@@ -189,7 +185,6 @@ const sourceLinkOf = (model: Model): SourceLink | null => {
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = Str.split("?")(hrefOf(model.route))[0] ?? "/"
 	const clerk = shellClerkOf(model)
-	const shown = shownPage(model)
 	return [
 		h.submodel({
 			slotId: "shell-frame",
@@ -199,8 +194,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			viewInputs: {
 				currentPath,
 				clerk,
-				breadcrumbs: shown === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(shown),
-				pageHold: PageHold.holdAttribute(model.pageHold),
+				breadcrumbs: model.page === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(model.page),
 				page: () => pageView(model, h, "shell"),
 				topbarActions: () => topbarActionsView(model, h),
 				sourceLink: sourceLinkOf(model),

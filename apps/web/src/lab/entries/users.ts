@@ -7,8 +7,14 @@ import { button } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { dashboardPage } from "../../page/kit/dashboard-page"
-import { USER_TABS, type UserTab, userLabel } from "../../page/users/data"
-import { userDetailBody, userRail, userTabs, userTitle } from "../../page/users/view-detail"
+import { USER_TABS, type UserDetail, type UserTab, userLabel } from "../../page/users/data"
+import {
+	type UserGroupStats,
+	userDetailBody,
+	userRail,
+	userTabs,
+	userTitle,
+} from "../../page/users/view-detail"
 import {
 	type UsersSummaryState,
 	usersFilterRail,
@@ -18,18 +24,27 @@ import {
 import type { Resources } from "../../platform/resources"
 import { filterUsers, scopeDetail, usersFacets, usersGroups, usersSummary } from "../users-filter"
 import { noUsersState, usersLoading } from "../../page/users/view-states"
-import { USER_DETAIL, USER_ROWS, USERS_NOW, USERS_SUMMARY, USERS_TIME_ZONE } from "../users-fixture"
+import {
+	SOLO_DETAIL,
+	SOLO_GROUP,
+	USER_DETAIL,
+	USER_ROWS,
+	USERS_NOW,
+	USERS_SUMMARY,
+	USERS_TIME_ZONE,
+} from "../users-fixture"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/users`: the users directory and one user's page in the real shell, over a fixture week.
 // The toolbar at the bottom switches page and state, and pins a namespace the way the org menu
 // does; `?view=`, `?tab=` and `?pin=` open one directly.
 
-const VIEWS = ["list", "detail", "empty", "loading"] as const
+const VIEWS = ["list", "detail", "solo", "empty", "loading"] as const
 type View = (typeof VIEWS)[number]
 const VIEW_LABEL = {
 	list: "/users",
 	detail: "/users/usr_4b1x9q",
+	solo: "group of one",
 	empty: "empty",
 	loading: "loading",
 } satisfies { readonly [K in View]: string }
@@ -180,10 +195,18 @@ const listPage = (h: H, model: Model, body: Html): Html =>
 		[body],
 	)
 
-const detailPage = (h: H, model: Model): Html => {
+/** A user's page over a fixture: Maya, or the solo founder (`?view=solo`) with their group of one. */
+const detailPage = (
+	h: H,
+	model: Model,
+	user: UserDetail,
+	groupStats: UserGroupStats,
+	/** The directory filtered to the group; the solo founder is not in the directory's rows. */
+	groupHref: string | null,
+): Html => {
 	const clock = { nowMs: USERS_NOW, timeZone: USERS_TIME_ZONE }
 	const active = model.pinnedNamespace ?? model.detailNamespace
-	const detail = scopeDetail(USER_DETAIL, active)
+	const detail = scopeDetail(user, active)
 	const namespace = {
 		active,
 		isPinned: model.pinnedNamespace !== null,
@@ -195,13 +218,13 @@ const detailPage = (h: H, model: Model): Html => {
 		namespace,
 		nowMs: USERS_NOW,
 		timeZone: USERS_TIME_ZONE,
-		hrefOf: (tab: UserTab) => `?view=detail&tab=${tab}`,
+		hrefOf: (tab: UserTab) => `?view=${model.view}&tab=${tab}`,
 		onSelectTab: (tab: UserTab) => Message.ClickedTab({ tab }),
 	}
 	return dashboardPage(
 		h,
 		{
-			titleContent: userTitle(h, USER_DETAIL.profile, clock),
+			titleContent: userTitle(h, user.profile, clock),
 			actions: h.div(
 				[h.Class("flex flex-wrap items-center gap-2")],
 				[
@@ -217,17 +240,7 @@ const detailPage = (h: H, model: Model): Html => {
 				],
 			),
 			tabs: userTabs(h, detail, options),
-			rightPanel: userRail(
-				h,
-				detail.profile,
-				clock,
-				namespace,
-				detail.profile.groupId === null ? null : `?view=list&groups=${detail.profile.groupId}`,
-				Arr.findFirst(
-					usersGroups(USER_ROWS, USERS_NOW),
-					(group) => group.groupId === detail.profile.groupId,
-				).pipe(Option.getOrNull),
-			),
+			rightPanel: userRail(h, detail.profile, clock, namespace, groupHref, groupStats),
 			rightPanelWidth: "w-80",
 			scrollClassName: "p-0",
 		},
@@ -274,7 +287,18 @@ const view = (model: Model, h: H): Html => {
 			)
 		}
 		case "detail":
-			return detailPage(h, model)
+			return detailPage(
+				h,
+				model,
+				USER_DETAIL,
+				Arr.findFirst(
+					usersGroups(USER_ROWS, USERS_NOW),
+					(group) => group.groupId === USER_DETAIL.profile.groupId,
+				).pipe(Option.getOrNull),
+				`?view=list&groups=${USER_DETAIL.profile.groupId}`,
+			)
+		case "solo":
+			return detailPage(h, model, SOLO_DETAIL, SOLO_GROUP, null)
 		case "empty":
 			return listPage(
 				h,
@@ -341,7 +365,13 @@ export const lab = defineShellLab("Users", {
 	before: viewSwitcher,
 	currentPath: "/users",
 	breadcrumbs: (model) =>
-		model.view === "detail"
-			? [{ label: "Users" }, { label: userLabel(USER_DETAIL.profile), isPageHeading: true }]
+		model.view === "detail" || model.view === "solo"
+			? [
+					{ label: "Users" },
+					{
+						label: userLabel((model.view === "solo" ? SOLO_DETAIL : USER_DETAIL).profile),
+						isPageHeading: true,
+					},
+				]
 			: [{ label: "Users", isPageHeading: true }],
 })

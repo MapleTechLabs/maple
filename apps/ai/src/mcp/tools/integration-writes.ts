@@ -101,7 +101,7 @@ const renderTarget = (title: string, target: TargetRow) => ({
 	notices: target.enabled
 		? []
 		: [
-				"Scraping is paused: nothing is scraped and no new errors are recorded. Its stored metrics stay; update_scrape_target enabled=true resumes it.",
+				"Scraping is paused: nothing is scraped and no new errors are recorded. Its stored metrics stay; manage_scrape_target action=update enabled=true resumes it.",
 			],
 	blocks: [
 		doc.fields([
@@ -319,166 +319,161 @@ export function registerIntegrationWriteTools(server: McpToolRegistrar) {
 					},
 	})
 
-	server.define({
-		name: "create_scrape_target",
-		title: "Create Scrape Target",
-		description:
-			"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. Org admins and engineers only. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
-		parameters: Schema.Struct({
-			name: P.text("A label for the target, e.g. `node-exporter`"),
-			url: P.text("The full metrics URL, e.g. `https://metrics.example.com/metrics`"),
-			service: P.service("The `service.name` its metrics belong to"),
-			interval_seconds: intervalParam("How often to scrape, default 15"),
-		}),
-		aliases: P.SERVICE_ALIASES,
-		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
-		permission: "scrape_targets:manage",
-		scopeFamily: "scrape_targets",
-		phrases: ["Adding a scrape target"],
-		handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			const targets = yield* ScrapeTargetsService
-			const interval =
-				params.interval_seconds === undefined
-					? undefined
-					: yield* decodeInterval(params.interval_seconds).pipe(
-							Effect.mapError(
-								() =>
-									new McpInvalidInputError({
-										message: "interval_seconds must be 5 to 300.",
-										parameter: "interval_seconds",
+	server
+		.family({
+			name: "manage_scrape_target",
+			title: "Manage Scrape Target",
+			description:
+				"Create, change or delete a Prometheus scrape target: an endpoint Maple polls for metrics. Org admins and engineers only.",
+			phrases: ["Managing a scrape target"],
+			scopeFamily: "scrape_targets",
+		})
+		.action("create", {
+			description:
+				"Start scraping a Prometheus metrics endpoint: Maple's scraper pulls `url` every interval and stores the samples as metrics, tagged with `service` when given. The endpoint must be reachable from the internet without credentials; to add a bearer or basic credential, create it in Sources → Prometheus instead.",
+			parameters: Schema.Struct({
+				name: P.text("A label for the target, e.g. `node-exporter`"),
+				url: P.text("The full metrics URL, e.g. `https://metrics.example.com/metrics`"),
+				service: P.service("The `service.name` its metrics belong to"),
+				interval_seconds: intervalParam("How often to scrape, default 15"),
+			}),
+			aliases: P.SERVICE_ALIASES,
+			hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+			permission: "scrape_targets:manage",
+			handler: Effect.fn("McpTool.createScrapeTarget")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				const targets = yield* ScrapeTargetsService
+				const interval =
+					params.interval_seconds === undefined
+						? undefined
+						: yield* decodeInterval(params.interval_seconds).pipe(
+								Effect.mapError(
+									() =>
+										new McpInvalidInputError({
+											message: "interval_seconds must be 5 to 300.",
+											parameter: "interval_seconds",
+										}),
+								),
+							)
+				const created = yield* targets
+					.create(
+						tenant.orgId,
+						new CreateScrapeTargetRequest({
+							name: params.name,
+							url: params.url,
+							targetType: "prometheus",
+							authType: "none",
+							...(params.service === undefined ? undefined : { serviceName: params.service }),
+							...(interval === undefined ? undefined : { scrapeIntervalSeconds: interval }),
+						}),
+					)
+					.pipe(
+						Effect.catchTags({
+							"@maple/http/errors/ScrapeTargetValidationError": (error) =>
+								Effect.fail(
+									new McpInvalidInputError({ message: error.message, parameter: "url" }),
+								),
+							"@maple/http/errors/ScrapeTargetLimitReachedError": (error) =>
+								Effect.fail(
+									new McpUnavailableError({
+										message: error.message,
+										capability: "scrape_target_limit",
 									}),
-							),
-						)
-			const created = yield* targets
-				.create(
-					tenant.orgId,
-					new CreateScrapeTargetRequest({
-						name: params.name,
-						url: params.url,
-						targetType: "prometheus",
-						authType: "none",
-						...(params.service === undefined ? undefined : { serviceName: params.service }),
-						...(interval === undefined ? undefined : { scrapeIntervalSeconds: interval }),
-					}),
-				)
-				.pipe(
-					Effect.catchTags({
-						"@maple/http/errors/ScrapeTargetValidationError": (error) =>
-							Effect.fail(
-								new McpInvalidInputError({ message: error.message, parameter: "url" }),
-							),
-						"@maple/http/errors/ScrapeTargetLimitReachedError": (error) =>
-							Effect.fail(
-								new McpUnavailableError({
-									message: error.message,
-									capability: "scrape_target_limit",
-								}),
-							),
-					}),
-					Effect.mapError((error) =>
-						Schema.is(McpInvalidInputError)(error) || Schema.is(McpUnavailableError)(error)
-							? error
-							: queryError("create_scrape_target")(error),
-					),
-				)
-			return { action: "created" as const, target: toRow(created) }
-		}),
-		render: (output) => renderTarget(`Scrape target ${output.action}`, output.target),
-	})
-
-	server.define({
-		name: "update_scrape_target",
-		title: "Update Scrape Target",
-		description:
-			"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Org admins and engineers only. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
-		parameters: Schema.Struct({
-			target: P.text("The target's name or id (list_integrations provider=prometheus lists them)"),
-			enabled: P.optionalFlag("false pauses scraping, true resumes it"),
-			url: P.optionalText("A new metrics URL"),
-			name: P.optionalText("A new name"),
-			service: P.service("A new `service.name` for its metrics"),
-			interval_seconds: intervalParam("A new scrape interval"),
-		}),
-		aliases: P.SERVICE_ALIASES,
-		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
-		permission: "scrape_targets:manage",
-		scopeFamily: "scrape_targets",
-		phrases: ["Updating a scrape target"],
-		handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			const targets = yield* ScrapeTargetsService
-			const target = yield* resolveTarget("update_scrape_target", tenant.orgId, params.target)
-			const interval =
-				params.interval_seconds === undefined
-					? undefined
-					: yield* decodeInterval(params.interval_seconds).pipe(
-							Effect.mapError(
-								() =>
-									new McpInvalidInputError({
-										message: "interval_seconds must be 5 to 300.",
-										parameter: "interval_seconds",
-									}),
-							),
-						)
-			const updated = yield* targets
-				.update(
-					tenant.orgId,
-					target.id,
-					new UpdateScrapeTargetRequest({
-						...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
-						...(params.url === undefined ? undefined : { url: params.url }),
-						...(params.name === undefined ? undefined : { name: params.name }),
-						...(params.service === undefined ? undefined : { serviceName: params.service }),
-						...(interval === undefined ? undefined : { scrapeIntervalSeconds: interval }),
-					}),
-				)
-				.pipe(
-					Effect.catchTag("@maple/http/errors/ScrapeTargetValidationError", (error) =>
-						Effect.fail(new McpInvalidInputError({ message: error.message })),
-					),
-					Effect.mapError((error) =>
-						Schema.is(McpInvalidInputError)(error)
-							? error
-							: queryError("update_scrape_target")(error),
-					),
-				)
-			return { action: "updated" as const, target: toRow(updated) }
-		}),
-		render: (output) => renderTarget(`Scrape target ${output.action}`, output.target),
-	})
-
-	server.define({
-		name: "delete_scrape_target",
-		title: "Delete Scrape Target",
-		description:
-			"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, update_scrape_target enabled=false instead. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			target: P.text("The target's name or id"),
-			confirm: P.flag("Must be true. There is no undo."),
-		}),
-		hints: { readOnly: false, destructive: true, idempotent: false },
-		permission: "scrape_targets:manage",
-		scopeFamily: "scrape_targets",
-		phrases: ["Deleting a scrape target"],
-		handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {
-			if (params.confirm !== true) {
-				return yield* new McpInvalidInputError({
-					message: `Deletion not confirmed. Re-call delete_scrape_target with confirm=true to delete "${params.target}", or pause it with update_scrape_target enabled=false.`,
-					parameter: "confirm",
-				})
-			}
-			const tenant = yield* CurrentMcpTenant
-			const targets = yield* ScrapeTargetsService
-			const target = yield* resolveTarget("delete_scrape_target", tenant.orgId, params.target)
-			yield* targets
-				.delete(tenant.orgId, target.id)
-				.pipe(Effect.mapError(queryError("delete_scrape_target")))
-			return { deleted: true, id: target.id, name: target.name }
-		}),
-		render: (output) => ({
-			title: "Scrape target deleted",
-			blocks: [doc.text(`Deleted "${output.name}" (${output.id}). Its stored metrics remain.`)],
-		}),
-	})
+								),
+						}),
+						Effect.mapError((error) =>
+							Schema.is(McpInvalidInputError)(error) || Schema.is(McpUnavailableError)(error)
+								? error
+								: queryError("manage_scrape_target")(error),
+						),
+					)
+				return { action: "created" as const, target: toRow(created) }
+			}),
+			render: (output) => renderTarget(`Scrape target ${output.action}`, output.target),
+		})
+		.action("update", {
+			description:
+				"Change a Prometheus scrape target: pause or resume it, or change its URL, name, service or interval. Fields left out keep their value, and a stored credential is kept. Targets managed by an integration (PlanetScale) are changed from that integration in Settings.",
+			parameters: Schema.Struct({
+				target: P.text("The target's name or id (list_integrations provider=prometheus lists them)"),
+				enabled: P.optionalFlag("false pauses scraping, true resumes it"),
+				url: P.optionalText("A new metrics URL"),
+				name: P.optionalText("A new name"),
+				service: P.service("A new `service.name` for its metrics"),
+				interval_seconds: intervalParam("A new scrape interval"),
+			}),
+			aliases: P.SERVICE_ALIASES,
+			hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+			permission: "scrape_targets:manage",
+			handler: Effect.fn("McpTool.updateScrapeTarget")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				const targets = yield* ScrapeTargetsService
+				const target = yield* resolveTarget("manage_scrape_target", tenant.orgId, params.target)
+				const interval =
+					params.interval_seconds === undefined
+						? undefined
+						: yield* decodeInterval(params.interval_seconds).pipe(
+								Effect.mapError(
+									() =>
+										new McpInvalidInputError({
+											message: "interval_seconds must be 5 to 300.",
+											parameter: "interval_seconds",
+										}),
+								),
+							)
+				const updated = yield* targets
+					.update(
+						tenant.orgId,
+						target.id,
+						new UpdateScrapeTargetRequest({
+							...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
+							...(params.url === undefined ? undefined : { url: params.url }),
+							...(params.name === undefined ? undefined : { name: params.name }),
+							...(params.service === undefined ? undefined : { serviceName: params.service }),
+							...(interval === undefined ? undefined : { scrapeIntervalSeconds: interval }),
+						}),
+					)
+					.pipe(
+						Effect.catchTag("@maple/http/errors/ScrapeTargetValidationError", (error) =>
+							Effect.fail(new McpInvalidInputError({ message: error.message })),
+						),
+						Effect.mapError((error) =>
+							Schema.is(McpInvalidInputError)(error)
+								? error
+								: queryError("manage_scrape_target")(error),
+						),
+					)
+				return { action: "updated" as const, target: toRow(updated) }
+			}),
+			render: (output) => renderTarget(`Scrape target ${output.action}`, output.target),
+		})
+		.action("delete", {
+			description:
+				"Stop scraping a Prometheus target and delete it with its check history; metrics already stored stay. Irreversible; requires confirm=true. To stop it for a while, manage_scrape_target action=update enabled=false instead.",
+			parameters: Schema.Struct({
+				target: P.text("The target's name or id"),
+				confirm: P.flag("Must be true. There is no undo."),
+			}),
+			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "scrape_targets:manage",
+			handler: Effect.fn("McpTool.deleteScrapeTarget")(function* (params) {
+				if (params.confirm !== true) {
+					return yield* new McpInvalidInputError({
+						message: `Deletion not confirmed. Re-call manage_scrape_target action=delete with confirm=true to delete "${params.target}", or pause it with manage_scrape_target action=update enabled=false.`,
+						parameter: "confirm",
+					})
+				}
+				const tenant = yield* CurrentMcpTenant
+				const targets = yield* ScrapeTargetsService
+				const target = yield* resolveTarget("manage_scrape_target", tenant.orgId, params.target)
+				yield* targets
+					.delete(tenant.orgId, target.id)
+					.pipe(Effect.mapError(queryError("manage_scrape_target")))
+				return { deleted: true, id: target.id, name: target.name }
+			}),
+			render: (output) => ({
+				title: "Scrape target deleted",
+				blocks: [doc.text(`Deleted "${output.name}" (${output.id}). Its stored metrics remain.`)],
+			}),
+		})
 }

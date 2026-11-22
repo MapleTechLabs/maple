@@ -1,0 +1,325 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "why-sample", text: "Why sample" },
+    { depth: 2, slug: "head-sampling", text: "Head sampling" },
+    { depth: 3, slug: "parent-based", text: "Parent-based sampling" },
+    { depth: 3, slug: "sdk-config", text: "Configure the SDK" },
+    { depth: 3, slug: "collector-probabilistic", text: "In the Collector" },
+    { depth: 2, slug: "tail-sampling", text: "Tail sampling" },
+    { depth: 3, slug: "tail-config", text: "A tail sampling config" },
+    { depth: 3, slug: "tail-scaling", text: "Scaling it" },
+    { depth: 2, slug: "metrics-and-cost", text: "Metrics and cost" },
+    { depth: 2, slug: "choosing", text: "Which to use" },
+];
+
+const envSampler = String.raw`export OTEL_TRACES_SAMPLER="parentbased_traceidratio"
+export OTEL_TRACES_SAMPLER_ARG="0.1"   # keep 10% of new traces`;
+
+const nodeSampler = String.raw`import { NodeSDK } from "@opentelemetry/sdk-node";
+import { ParentBasedSampler, TraceIdRatioBasedSampler } from "@opentelemetry/sdk-trace-base";
+
+const sdk = new NodeSDK({
+  // Roots: keep 10%. Children: do what the parent did.
+  sampler: new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(0.1) }),
+});
+sdk.start();`;
+
+const pythonSampler = String.raw`from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+# Roots: keep 10%. Children: do what the parent did.
+provider = TracerProvider(sampler=ParentBased(root=TraceIdRatioBased(0.1)))
+trace.set_tracer_provider(provider)`;
+
+const probabilistic = String.raw`processors:
+  probabilistic_sampler:
+    sampling_percentage: 10
+    hash_seed: 22   # the same value on every Collector in this tier`;
+
+const tailConfig = String.raw`processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100000
+    expected_new_traces_per_sec: 2000
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: keep-slow
+        type: latency
+        latency:
+          threshold_ms: 2000
+      - name: keep-checkout
+        type: string_attribute
+        string_attribute:
+          key: http.route
+          values: [/api/checkout]
+      - name: sample-the-rest
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling]
+      exporters: [otlp_http]`;
+
+const spanMetrics = String.raw`connectors:
+  span_metrics:
+
+service:
+  pipelines:
+    traces/all:            # every span, before sampling
+      receivers: [otlp]
+      exporters: [span_metrics]
+    traces/sampled:        # what you store
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling]
+      exporters: [otlp_http]
+    metrics/spans:         # request, error and duration metrics from all spans
+      receivers: [span_metrics]
+      exporters: [otlp_http]`;
+
+const faqs = [
+    {
+        question: "What is the difference between head and tail sampling?",
+        answer:
+            "Head sampling decides whether to keep a trace when it starts, usually from the trace ID alone, so it is cheap but cannot know whether the trace will be slow or fail. Tail sampling decides after the trace's spans have arrived, so it can keep every error and slow trace, but it must buffer whole traces in a Collector.",
+    },
+    {
+        question: "What does parentbased_traceidratio mean?",
+        answer:
+            "It is an SDK sampler setting. For a new trace (a root span), it keeps the fraction of traces given in OTEL_TRACES_SAMPLER_ARG, decided from the trace ID. For any span with a parent, it follows the parent's decision, so a trace is either kept in every service or dropped in every service.",
+    },
+    {
+        question: "What is the default OpenTelemetry sampler?",
+        answer:
+            "parentbased_always_on. Every new trace is recorded, and child spans follow their parent's decision.",
+    },
+    {
+        question: "Does sampling affect metrics?",
+        answer:
+            "Metrics from the metrics SDK are not sampled. Metrics computed from spans are: a request rate counted from sampled spans is too low by the sampling factor unless each span carries its weight. Compute span metrics before sampling, for example with the span_metrics connector, or use a backend that reads the sampling weight.",
+    },
+    {
+        question: "Why are my traces missing spans after I enabled sampling?",
+        answer:
+            "Usually because services decide independently: one uses a plain ratio sampler or a different ratio, or a service in the middle does not propagate context. Use parent-based samplers everywhere so only the root decides, and make sure every service forwards the traceparent header.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="OpenTelemetry sampling: head vs tail, parent-based, tail sampling config | Maple"
+    description="How OpenTelemetry sampling works: head vs tail sampling, parent-based ratio samplers, a tested tail_sampling config, and what sampling does to metrics and cost."
+    title="OpenTelemetry sampling"
+    lede="Keep the traces that matter and drop the rest: head sampling in the SDK, tail sampling in the Collector, and what each one does to your metrics and your bill."
+    category="OpenTelemetry"
+    readMinutes={11}
+    published="2026-11-21"
+    modified="2026-11-21"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            <strong>Sampling</strong> means recording or keeping only some traces. A service handling a thousand requests a second produces a thousand traces a second, most of them fast, successful and identical. Sampling keeps enough of them to understand normal behaviour and, done well, every trace you would want during an incident.
+        </p>
+        <p>
+            OpenTelemetry can sample in two places: in the SDK when a trace starts (head sampling) or in a Collector after the trace has finished (tail sampling). This guide covers both, with configs tested on Collector v0.165.0 and the JavaScript and Python SDKs.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>Use <code>parentbased_traceidratio</code> in every service, so only the root span decides and traces stay whole.</li>
+                <li>Head sampling is cheap but blind: it drops errors at the same rate as successes.</li>
+                <li>Tail sampling keeps every error and slow trace, but needs all spans of a trace on one Collector instance.</li>
+                <li>Sampling traces does not sample SDK metrics. Metrics derived from spans need the sampling weight, or computing before sampling.</li>
+                <li>Head sampling saves cost from the application onward. Tail sampling only saves what happens after the Collector.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="why-sample" class="scroll-mt-24">
+        <h2>Why sample</h2>
+        <p>
+            Trace volume grows with traffic and with the number of spans per request. A request that crosses five services with a database call in each produces at least ten spans. Storing every one costs ingest, storage and query time, and most of them answer no question anyone will ask.
+        </p>
+        <p>
+            Sampling has a price too. A dropped trace is gone: if a customer reports a failed checkout and that trace was sampled out, you cannot look at it. The aim is to drop the boring traces and keep the interesting ones, and the two approaches differ in how well they can tell them apart.
+        </p>
+        <p>
+            Sample traces, not spans. Dropping individual spans leaves traces with holes, which is worse than having fewer traces. Every approach in this guide decides per trace, using the trace ID so that different services and Collectors reach the same answer.
+        </p>
+    </section>
+
+    <section id="head-sampling" class="scroll-mt-24">
+        <h2>Head sampling</h2>
+        <p>
+            Head sampling decides when the first span of a trace is created. The SDK looks at the new trace ID, compares it with a threshold, and either records the trace or does not. An unsampled span still exists in memory so that context keeps flowing, but it records nothing and is never exported, so it costs almost nothing.
+        </p>
+        <p>The SDK ships four building blocks:</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Sampler</th><th>Decision</th></tr></thead>
+                <tbody>
+                    <tr><td><code>AlwaysOn</code></td><td>Keep every span</td></tr>
+                    <tr><td><code>AlwaysOff</code></td><td>Keep nothing</td></tr>
+                    <tr><td><code>TraceIdRatioBased(0.1)</code></td><td>Keep about 10% of traces, chosen by a fixed function of the trace ID</td></tr>
+                    <tr><td><code>ParentBased(root)</code></td><td>Root spans use the <code>root</code> sampler; every other span copies its parent's decision</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Because <code>TraceIdRatioBased</code> decides from the trace ID, two services with the same ratio make the same decision for the same trace. Two services with different ratios do not, and that is where parent-based sampling comes in.
+        </p>
+
+        <h3 id="parent-based" class="scroll-mt-24">Parent-based sampling</h3>
+        <p>
+            When a request arrives with a <code>traceparent</code> header, the header's last field says whether the caller sampled the trace: <code>01</code> for sampled, <code>00</code> for not. A <code>ParentBased</code> sampler honours it. The service at the edge decides once, and every service downstream follows, so a trace is either recorded everywhere or nowhere.
+        </p>
+        <p>
+            Without it, each service decides on its own. A frontend at 10% and an API at 50% give you API spans whose parent span was never recorded: traces that start in the middle. A plain <code>TraceIdRatioBased</code> sampler in every service with the same ratio happens to agree, until somebody changes one ratio. Use the parent-based form.
+        </p>
+        <p>
+            The default sampler is <code>parentbased_always_on</code>: record every new trace and follow the parent otherwise. If you never configured sampling, you are keeping everything.
+        </p>
+
+        <h3 id="sdk-config" class="scroll-mt-24">Configure the SDK</h3>
+        <p>Every SDK reads two environment variables, which is the easiest way to set the same policy across languages:</p>
+        <Code code={envSampler} lang="shell" />
+        <p>The same in code, for Node.js and Python:</p>
+        <Code title="instrumentation.ts" code={nodeSampler} lang="typescript" />
+        <Code title="tracing.py" code={pythonSampler} lang="python" />
+        <p>
+            We ran the JavaScript version (SDK 2.12) against 10,000 traces of two spans each. It kept 984 traces, about the 10% asked for, and every kept child span belonged to a kept root. That is the behaviour you want: fewer traces, none of them broken.
+        </p>
+
+        <h3 id="collector-probabilistic" class="scroll-mt-24">Head-style sampling in the Collector</h3>
+        <p>
+            The <code>probabilistic_sampler</code> processor applies the same idea in a Collector: it hashes the trace ID and keeps a percentage. Use it when you cannot change the services' configuration, or when the Collector receives data from a source with no sampler.
+        </p>
+        <Code code={probabilistic} lang="yaml" />
+        <p>
+            Every Collector in the same tier must use the same <code>hash_seed</code>, or each makes a different decision for the same trace. The processor also records what it did: kept spans get a threshold in their <code>tracestate</code>, such as <code>ot=th:c</code> for 25%, which a backend can use to work out how many requests each kept span stands for. The JavaScript SDK's ratio sampler, in our test, wrote no threshold, so a backend sees those spans as unsampled.
+        </p>
+        <p>
+            The limit of every head approach is the same. The decision happens before the request runs, so a trace that will end in a 500 error is as likely to be dropped as one that succeeds. At 10% sampling, 90% of your errors have no trace.
+        </p>
+    </section>
+
+    <section id="tail-sampling" class="scroll-mt-24">
+        <h2>Tail sampling</h2>
+        <p>
+            Tail sampling waits until a trace's spans have arrived, then decides with the whole trace in view. It can keep every trace with an error, every trace slower than two seconds, every trace for one important route, and a small share of everything else. The <code>tail_sampling</code> processor in the Collector does this.
+        </p>
+        <p>
+            The SDKs must send everything for this to work, so services run with the default <code>parentbased_always_on</code> sampler, or a generous head ratio, and the Collector does the dropping.
+        </p>
+
+        <h3 id="tail-config" class="scroll-mt-24">A tail sampling config</h3>
+        <p>The processor section of a gateway Collector. Receivers and the <code>otlp_http</code> exporter are as in the <a href="/guides/opentelemetry-collector#config">Collector guide</a>; the complete file passes <code>otelcol-contrib validate</code> on v0.165.0.</p>
+        <Code title="gateway tier 2: sampler" code={tailConfig} lang="yaml" />
+        <p>How it behaves:</p>
+        <ul class="guide-list">
+            <li><strong>Buffering.</strong> The processor holds each trace's spans in memory for <code>decision_wait</code> (default 30 seconds, 10 here), then evaluates the policies. Pick a value longer than your slowest normal trace.</li>
+            <li><strong>Policies vote.</strong> The trace is kept if any policy says sample. A <code>drop</code> policy overrides every sample vote, which is how you exclude health checks. Here a trace is kept if it has an error, or took over 2 seconds, or hit <code>/api/checkout</code>, or lands in the random 10%.</li>
+            <li><strong>Capacity.</strong> <code>num_traces</code> is how many traces fit in memory at once (default 50,000). A trace pushed out before its decision is dropped unsampled. Size it above your new traces per second times <code>decision_wait</code>: 2,000 traces a second for 10 seconds needs 20,000, so 100,000 leaves room for spikes.</li>
+            <li><strong>Late spans.</strong> A span that arrives after its trace was decided follows that decision while the trace is still in the buffer. After that it is treated as a new trace. <code>decision_cache</code> keeps decisions for longer if your traces have stragglers.</li>
+        </ul>
+        <div class="guide-callout">
+            <p class="guide-kicker">Order matters</p>
+            <p>Put <code>tail_sampling</code> after processors that add context its policies match on, such as <code>k8s_attributes</code>, and after any redaction that deletes attributes, keeping in mind that a policy on a deleted attribute never matches.</p>
+        </div>
+
+        <h3 id="tail-scaling" class="scroll-mt-24">Scaling it</h3>
+        <p>
+            One Collector instance can only decide on a trace if it received every span of it. With several gateway replicas behind an ordinary load balancer, spans of one trace land on different replicas, and each sees a fragment: the error is on one, the slow span on another, and both decide wrongly.
+        </p>
+        <p>
+            The fix is two tiers. The first tier runs the <code>load_balancing</code> exporter with <code>routing_key: traceID</code>, which sends all spans of a trace to the same second-tier instance. The second tier runs <code>tail_sampling</code>. The <a href="/guides/opentelemetry-collector#agent-gateway">Collector guide</a> has the first tier's config.
+        </p>
+        <p>
+            Routing depends on the set of sampler instances. When one is added, removed or restarted, some trace IDs move to a different instance, and traces in flight at that moment are judged on partial data. Scale the sampler tier deliberately, not on every traffic blip, and expect a few incomplete decisions around each change.
+        </p>
+        <p>
+            Watch the processor's own metrics. Traces dropped from the buffer early mean <code>num_traces</code> is too small; the processor's README suggests comparing a low percentile, such as p1, of its <code>sampling_trace_removal_age</code> metric with <code>decision_wait</code>. Memory grows with traffic, so give the sampler tier a <code>memory_limiter</code> and alerts like any other Collector.
+        </p>
+    </section>
+
+    <section id="metrics-and-cost" class="scroll-mt-24">
+        <h2>What sampling does to metrics and cost</h2>
+        <p>
+            Metrics recorded with the metrics API, such as a request counter or a duration histogram, are not affected by trace sampling. Each request still increments the counter whether or not its trace was kept.
+        </p>
+        <p>
+            Metrics computed from spans are affected. If a dashboard counts server spans to show requests per second, 10% head sampling makes it read 10% of the real rate. Tail sampling distorts it in a less obvious way: a sampler that keeps every error but 10% of successes makes the error rate look roughly ten times higher than it is.
+        </p>
+        <p>There are two ways to get correct numbers from sampled traces:</p>
+        <ul class="guide-list">
+            <li><strong>Weight each span.</strong> If a span records the probability it was kept with, a backend can count it as 1 &divide; probability requests. The OpenTelemetry convention for this is the <code>th</code> threshold in <code>tracestate</code>, written by the <code>probabilistic_sampler</code> processor. Policies that keep every error have no single probability, so weighting works best for random sampling.</li>
+            <li><strong>Compute before sampling.</strong> The <code>span_metrics</code> connector turns every span into request, error and duration metrics before the sampler drops any. The metrics are exact and the stored traces are a sample.</li>
+        </ul>
+        <Code title="gateway tier 2: exact span metrics" code={spanMetrics} lang="yaml" />
+        <p>
+            Cost follows where the drop happens. Head sampling saves at every step: the application does less work, less data crosses the network, and the backend ingests and stores less. Tail sampling saves only after the Collector: services still produce and send every span, and you now run a stateful Collector tier sized for full traffic. It pays off when backend ingest and storage are the expensive part, which they usually are.
+        </p>
+        <p>
+            Logs are a separate stream. Sampling traces does not sample logs, so a log line can carry the trace ID of a trace that was dropped. That is expected: the log is still useful on its own, it just has no trace to open. If you want logs to follow trace decisions, the <code>probabilistic_sampler</code> processor can sample logs by their trace ID with the same seed as your traces.
+        </p>
+    </section>
+
+    <section id="choosing" class="scroll-mt-24">
+        <h2>Which to use</h2>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Situation</th><th>Approach</th></tr></thead>
+                <tbody>
+                    <tr><td>Low traffic, or you are just starting</td><td>No sampling. Keep everything until cost says otherwise.</td></tr>
+                    <tr><td>High volume of similar requests, cost first</td><td><code>parentbased_traceidratio</code> in every SDK</td></tr>
+                    <tr><td>You must see every error and slow request</td><td>Tail sampling in a gateway, SDKs sending everything</td></tr>
+                    <tr><td>Very high volume and you need errors</td><td>A generous head ratio (say 25%) to cut volume, then tail sampling on what remains</td></tr>
+                    <tr><td>You cannot change the services</td><td><code>probabilistic_sampler</code> or <code>tail_sampling</code> in a Collector</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Whatever you choose, make the services agree. Mixed samplers are the most common cause of broken traces after sampling is turned on, together with a service that does not forward the <code>traceparent</code> header. The <a href="/guides/opentelemetry-context-propagation">context propagation guide</a> covers the second one.
+        </p>
+
+        <div class="guide-maple">
+            <p class="guide-kicker">Maple</p>
+            <h3>Sampled traces, unsampled numbers</h3>
+            <p>Maple reads the <code>th</code> threshold in <code>tracestate</code>, or a <code>SampleRate</code> attribute, and weights each span at ingest, so throughput and error rates estimate the traffic before sampling.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/concepts/sampling-throughput" class="guide-button guide-button--primary">Sampling in Maple</a>
+                <a href="/docs/getting-started/quickstart" class="guide-button">Quickstart</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="guide-sources">
+        <h2>Sources and further reading</h2>
+        <ul>
+            <li><a href="https://opentelemetry.io/docs/concepts/sampling/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: Sampling</a></li>
+            <li><a href="https://opentelemetry.io/docs/languages/sdk-configuration/general/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: SDK configuration (OTEL_TRACES_SAMPLER)</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/tailsamplingprocessor/README.md" target="_blank" rel="noopener noreferrer">Collector contrib: tail sampling processor</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/probabilisticsamplerprocessor/README.md" target="_blank" rel="noopener noreferrer">Collector contrib: probabilistic sampler processor</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector" target="_blank" rel="noopener noreferrer">Collector contrib: span metrics connector</a></li>
+            <li><a href="/docs/concepts/sampling-throughput">Maple docs: Sampling and throughput estimation</a></li>
+        </ul>
+    </section>
+</GuidePage>

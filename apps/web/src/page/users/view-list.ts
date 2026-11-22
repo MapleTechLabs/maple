@@ -349,29 +349,33 @@ const numberCell = <M>(
 /** The user's busiest namespace, then how many more they reached. */
 const namespaceCell = <M>(h: HtmlBuilder<M>, namespaces: ReadonlyArray<string>): Html => {
 	const [first, ...rest] = namespaces
-	return hstack(h, { gap: "1.5", as: "span", className: "hidden w-32 shrink-0 @min-[680px]/panel:flex" }, [
-		first === undefined
-			? typography(h, { size: "xs", tone: "subtle", as: "span" }, ["none"])
-			: hstack(h, { gap: "1", as: "span", shrink: true, className: "min-w-0" }, [
-					icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
-					typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [first]),
-				]),
-		...(rest.length === 0
-			? []
-			: [
-					typography(
-						h,
-						{
-							size: "2xs",
-							mono: true,
-							tone: "muted",
-							as: "span",
-							attributes: [h.Title(Arr.join(rest, ", "))],
-						},
-						[`+${rest.length}`],
-					),
-				]),
-	])
+	return hstack(
+		h,
+		{ gap: "1.5", as: "span", className: `hidden ${NAMESPACE_LANE} @min-[680px]/panel:flex` },
+		[
+			first === undefined
+				? typography(h, { size: "xs", tone: "subtle", as: "span" }, ["none"])
+				: hstack(h, { gap: "1", as: "span", shrink: true, className: "min-w-0" }, [
+						icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
+						typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [first]),
+					]),
+			...(rest.length === 0
+				? []
+				: [
+						typography(
+							h,
+							{
+								size: "2xs",
+								mono: true,
+								tone: "muted",
+								as: "span",
+								attributes: [h.Title(Arr.join(rest, ", "))],
+							},
+							[`+${rest.length}`],
+						),
+					]),
+		],
+	)
 }
 
 /** The user's group by name, its id on hover; the id itself when no name was sent. */
@@ -385,15 +389,23 @@ const groupCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 			tone: label === null ? "subtle" : "soft",
 			truncate: true,
 			as: "span",
-			className: "hidden w-36 shrink-0 @min-[880px]/panel:block",
+			className: `hidden ${GROUP_LANE} @min-[880px]/panel:block`,
 			...(row.groupId !== null && row.groupName !== null && { attributes: [h.Title(row.groupId)] }),
 		},
 		[label ?? EMPTY_VALUE],
 	)
 }
 
-/** The Channel lane, head and cells. */
-const CHANNEL_LANE = columnClass({ width: "28", shrink: false, inset: "4" })
+// The lanes, head and cells. Text lanes keep their width when the panel has room and narrow to a
+// floor (truncating) when it does not, so every column a breakpoint shows fits without scrolling.
+/** The name: the widest lane, and the first to give way, down to its floor. */
+const NAME_LANE = "min-w-28 grow basis-48"
+const GROUP_LANE = "w-36 min-w-20"
+const NAMESPACE_LANE = "w-32 min-w-16"
+const LAST_SEEN_LANE = "w-24 min-w-20 whitespace-nowrap"
+const CHANNEL_LANE = columnClass({ width: "28", inset: "4", className: "min-w-24" })
+/** Tags cannot truncate, so the lane keeps its width. */
+const SIGNALS_LANE = "w-36 shrink-0"
 
 /** The channel most requests came from and its share, the whole split on hover. */
 const channelCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
@@ -454,15 +466,14 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 			? { className: "h-12" }
 			: { href: options.userHref(row.userId), className: "h-12" },
 		[
-			hstack(
-				h,
-				{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
-				[userAvatar(h, row), userNameBlock(h, row)],
-			),
+			hstack(h, { gap: "2.5", as: "span", className: NAME_LANE }, [
+				userAvatar(h, row),
+				userNameBlock(h, row),
+			]),
 			groupCell(h, row),
 			namespaceCell(h, row.namespaces),
 			h.span(
-				[h.Class("w-24 shrink-0 text-right")],
+				[h.Class(`${LAST_SEEN_LANE} text-right`)],
 				[
 					listRelativeTime(h, {
 						value: row.lastSeenMs,
@@ -497,7 +508,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 			channelCell(h, row),
 			hstack(
 				h,
-				{ gap: "1", as: "span", className: "hidden w-36 shrink-0 @min-[1000px]/panel:flex" },
+				{ gap: "1", as: "span", className: `hidden ${SIGNALS_LANE} @min-[1000px]/panel:flex` },
 				signalCell(h, row.signals),
 			),
 			h.span(
@@ -538,51 +549,56 @@ export const usersListBody = <M>(
 		h.section(
 			[h.AriaLabel("Users"), h.Class("min-w-0 px-6 pb-6")],
 			[
-				toolTable(h, [
-					toolTableHead(h, [
-						th(h, { label: "User", width: columnClass({ min: "48" }) }),
-						th(h, {
-							label: "Group",
-							width: "w-36 shrink-0",
-							hidden: "hidden @min-[880px]/panel:flex",
-						}),
-						th(h, {
-							label: "Namespace",
-							width: "w-32 shrink-0",
-							hidden: "hidden @min-[680px]/panel:flex",
-						}),
-						th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
-						th(h, { label: "Sessions", width: "w-16 shrink-0", align: "right" }),
-						th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
-						th(h, {
-							label: "Requests",
-							width: "w-28 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
-						}),
-						th(h, {
-							label: "Channel",
-							width: CHANNEL_LANE,
-							hidden: "hidden @min-[960px]/panel:flex",
-						}),
-						th(h, {
-							label: "Signals",
-							width: "w-36 shrink-0",
-							hidden: "hidden @min-[1000px]/panel:flex",
-						}),
-						th(h, {
-							label: "First seen",
-							width: "w-20 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[1100px]/panel:flex",
-						}),
-						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-					]),
-					toolTableBody(
-						h,
-						Arr.map(shown, (row) => userRow(h, row, options)),
-					),
-				]),
+				toolTable(
+					h,
+					[
+						toolTableHead(h, [
+							th(h, { label: "User", width: NAME_LANE }),
+							th(h, {
+								label: "Group",
+								width: GROUP_LANE,
+								hidden: "hidden @min-[880px]/panel:flex",
+							}),
+							th(h, {
+								label: "Namespace",
+								width: NAMESPACE_LANE,
+								hidden: "hidden @min-[680px]/panel:flex",
+							}),
+							th(h, { label: "Last seen", width: LAST_SEEN_LANE, align: "right" }),
+							th(h, { label: "Sessions", width: "w-16 shrink-0", align: "right" }),
+							th(h, { label: "Errors", width: "w-14 shrink-0", align: "right" }),
+							th(h, {
+								label: "Requests",
+								width: "w-28 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[760px]/panel:flex",
+							}),
+							th(h, {
+								label: "Channel",
+								width: CHANNEL_LANE,
+								hidden: "hidden @min-[960px]/panel:flex",
+							}),
+							th(h, {
+								label: "Signals",
+								width: SIGNALS_LANE,
+								hidden: "hidden @min-[1000px]/panel:flex",
+							}),
+							th(h, {
+								label: "First seen",
+								width: "w-20 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[1100px]/panel:flex",
+							}),
+							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
+						]),
+						toolTableBody(
+							h,
+							Arr.map(shown, (row) => userRow(h, row, options)),
+						),
+					],
+					undefined,
+					{ hasShrinkingLanes: true },
+				),
 				toolTableFooter(
 					h,
 					typeof summary === "string"
@@ -632,17 +648,13 @@ const groupRow = <M>(h: HtmlBuilder<M>, row: UsersGroupRow, options: UsersGroups
 			? { className: "h-12" }
 			: { href: options.groupHref(row.groupId), className: "h-12" },
 		[
-			hstack(
-				h,
-				{ gap: "2.5", shrink: true, grow: true, as: "span", className: columnClass({ min: "48" }) },
-				[
-					icon(h, row.groupId === null ? "UserIcon" : "UsersIcon", {
-						size: 14,
-						className: "shrink-0 text-foreground-subtle",
-					}),
-					groupNameBlock(h, row),
-				],
-			),
+			hstack(h, { gap: "2.5", as: "span", className: NAME_LANE }, [
+				icon(h, row.groupId === null ? "UserIcon" : "UsersIcon", {
+					size: 14,
+					className: "shrink-0 text-foreground-subtle",
+				}),
+				groupNameBlock(h, row),
+			]),
 			numberCell(h, formatNumber(row.users), "w-16"),
 			shareCell(h, row.activeToday, row.users, "hidden w-24 @min-[680px]/panel:block"),
 			shareCell(h, row.withErrors, row.users, "w-24", "error"),
@@ -665,7 +677,7 @@ const groupRow = <M>(h: HtmlBuilder<M>, row: UsersGroupRow, options: UsersGroups
 				row.requests === 0 ? "subtle" : undefined,
 			),
 			h.span(
-				[h.Class("w-24 shrink-0 text-right")],
+				[h.Class(`${LAST_SEEN_LANE} text-right`)],
 				[
 					listRelativeTime(h, {
 						value: row.lastSeenMs,
@@ -709,43 +721,48 @@ export const usersGroupsBody = <M>(
 		h.section(
 			[h.AriaLabel("Groups"), h.Class("min-w-0 px-6 pb-6")],
 			[
-				toolTable(h, [
-					toolTableHead(h, [
-						th(h, { label: "Group", width: columnClass({ min: "48" }) }),
-						th(h, { label: "Users", width: "w-16 shrink-0", align: "right" }),
-						th(h, {
-							label: "Active 24h",
-							width: "w-24 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[680px]/panel:flex",
-						}),
-						th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
-						th(h, {
-							label: "Sessions",
-							width: "w-16 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
-						}),
-						th(h, {
-							label: "Errors",
-							width: "w-14 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[760px]/panel:flex",
-						}),
-						th(h, {
-							label: "Requests",
-							width: "w-20 shrink-0",
-							align: "right",
-							hidden: "hidden @min-[880px]/panel:flex",
-						}),
-						th(h, { label: "Last seen", width: "w-24 shrink-0", align: "right" }),
-						h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
-					]),
-					toolTableBody(
-						h,
-						Arr.map(shown, (row) => groupRow(h, row, options)),
-					),
-				]),
+				toolTable(
+					h,
+					[
+						toolTableHead(h, [
+							th(h, { label: "Group", width: NAME_LANE }),
+							th(h, { label: "Users", width: "w-16 shrink-0", align: "right" }),
+							th(h, {
+								label: "Active 24h",
+								width: "w-24 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[680px]/panel:flex",
+							}),
+							th(h, { label: "Hit an error", width: "w-24 shrink-0", align: "right" }),
+							th(h, {
+								label: "Sessions",
+								width: "w-16 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[760px]/panel:flex",
+							}),
+							th(h, {
+								label: "Errors",
+								width: "w-14 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[760px]/panel:flex",
+							}),
+							th(h, {
+								label: "Requests",
+								width: "w-20 shrink-0",
+								align: "right",
+								hidden: "hidden @min-[880px]/panel:flex",
+							}),
+							th(h, { label: "Last seen", width: LAST_SEEN_LANE, align: "right" }),
+							h.span([h.AriaHidden(true), h.Class("w-3.5 shrink-0")], []),
+						]),
+						toolTableBody(
+							h,
+							Arr.map(shown, (row) => groupRow(h, row, options)),
+						),
+					],
+					undefined,
+					{ hasShrinkingLanes: true },
+				),
 				toolTableFooter(
 					h,
 					options.truncated ? `First ${countLabel(named, "group")}` : countLabel(named, "group"),

@@ -194,6 +194,17 @@ export const describeFailure = (error: unknown): FailureReport => {
 		}
 	}
 
+	// A raw `maple get|post|...` the workspace refused: a 4xx is the request to fix, a 5xx is not.
+	if (tag === "@maple/cli/ApiResponseError") {
+		const hint = stringField(error, "hint")
+		return {
+			tag,
+			message: messageOf(error),
+			...(hint === undefined ? undefined : { hint }),
+			expected: (numberField(error, "status") ?? 500) < 500,
+		}
+	}
+
 	if (EXPECTED_TAGS.has(tag)) {
 		const hint =
 			stringField(error, "hint") ?? (tag === "@maple/cli/TimeRangeError" ? TIME_RANGE_HINT : undefined)

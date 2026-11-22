@@ -60,7 +60,10 @@ export const statusOf = (
 }
 
 /** What a source's integration says about its health beyond the row (a scrape target's cadence, a metric stream). */
-export type SourceHealthOverrides = Pick<SourceHealthInput, "turnedOff" | "staleAfterMs" | "failing">
+export type SourceHealthOverrides = Pick<
+	SourceHealthInput,
+	"turnedOff" | "staleAfterMs" | "failing" | "deliveredAt"
+>
 
 /** The `sources` columns health reads: no token or secret column. */
 export const SOURCE_HEALTH_COLUMNS = [

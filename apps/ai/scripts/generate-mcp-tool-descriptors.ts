@@ -19,7 +19,7 @@ import {
 } from "@/mcp/tool-descriptors-render"
 import { mapleToolCatalog } from "@/mcp/tools/registry"
 import { TOOL_NAME_ALIASES } from "@/mcp/tools/tool-name-aliases"
-import type { McpToolRegistrar } from "@/mcp/tools/types"
+import { ignoreFamily, type McpToolRegistrar } from "@/mcp/tools/types"
 
 const DESCRIPTORS = resolve(import.meta.dirname, "../src/mcp/tool-descriptors.generated.ts")
 const MODULES = resolve(import.meta.dirname, "../src/mcp/tool-modules.generated.ts")
@@ -36,13 +36,18 @@ const findToolModules = async (): Promise<
 		const exports: Record<string, unknown> = await import(resolve(TOOLS_DIR, file))
 		for (const [register, value] of Object.entries(exports)) {
 			if (!/^register\w+Tools?$/.test(register) || typeof value !== "function") continue
+			const record = (name: string) => {
+				const existing = found.get(name)
+				if (existing !== undefined) {
+					throw new Error(`${name} is registered by both ${existing.module} and ${module}`)
+				}
+				found.set(name, { module, register })
+			}
 			const registrar: McpToolRegistrar = {
-				define: (spec) => {
-					const existing = found.get(spec.name)
-					if (existing !== undefined) {
-						throw new Error(`${spec.name} is registered by both ${existing.module} and ${module}`)
-					}
-					found.set(spec.name, { module, register })
+				define: (spec) => record(spec.name),
+				family: (spec) => {
+					record(spec.name)
+					return ignoreFamily()
 				},
 			}
 			value(registrar)
@@ -75,7 +80,7 @@ const outputs = [
 		path: MODULES,
 		rendered: renderToolModulesModule([
 			...mapleToolCatalog.map((entry) => sourceOf(entry.name, entry.name)),
-			...Object.entries(TOOL_NAME_ALIASES).map(([alias, tool]) => sourceOf(alias, tool)),
+			...Object.entries(TOOL_NAME_ALIASES).map(([alias, target]) => sourceOf(alias, target.tool)),
 		]),
 	},
 ]

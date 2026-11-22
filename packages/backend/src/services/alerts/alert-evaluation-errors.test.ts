@@ -2,11 +2,12 @@ import { describe, expect, it } from "@effect/vitest"
 import {
 	AlertValidationError,
 	QueryEngineTimeoutError,
+	QueryEngineValidationError,
 	RawSqlValidationError,
 	WarehouseQuotaExceededError,
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
-import { evaluationErrorKind, isQueryLimitFailure } from "./alert-evaluation-errors"
+import { evaluationErrorKind, evaluationErrorMessage, isQueryLimitFailure } from "./alert-evaluation-errors"
 
 const quota = (setting: "max_execution_time" | "max_memory_usage" | "max_threads") =>
 	new WarehouseQuotaExceededError({ message: "limit", pipeName: "alertEvaluation", setting })
@@ -45,5 +46,29 @@ describe("isQueryLimitFailure", () => {
 		expect(isQueryLimitFailure("query_too_much_memory")).toBe(true)
 		expect(isQueryLimitFailure("invalid_query")).toBe(false)
 		expect(isQueryLimitFailure("other")).toBe(false)
+	})
+})
+
+describe("evaluationErrorMessage", () => {
+	it("tells the author why their query is invalid, not only that it is", () => {
+		const error = new QueryEngineValidationError({
+			message: "Invalid raw SQL alert query",
+			details: ["Raw SQL alert queries must return a column named value."],
+		})
+		expect(evaluationErrorMessage(error)).toBe(
+			"Invalid raw SQL alert query: Raw SQL alert queries must return a column named value.",
+		)
+	})
+
+	it("joins several reasons and keeps a message that has none", () => {
+		expect(
+			evaluationErrorMessage(
+				new AlertValidationError({ message: "Invalid rule", details: ["a", "b"] }),
+			),
+		).toBe("Invalid rule: a; b")
+		expect(
+			evaluationErrorMessage(new AlertValidationError({ message: "Invalid rule", details: [] })),
+		).toBe("Invalid rule")
+		expect(evaluationErrorMessage(new QueryEngineTimeoutError({ message: "deadline" }))).toBe("deadline")
 	})
 })

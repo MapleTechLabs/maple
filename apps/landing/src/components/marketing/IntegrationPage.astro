@@ -1,13 +1,14 @@
 ---
 /**
- * /integrations/<runtime> in every locale: Next.js, Node.js and Python. The nine route files only
- * claim their path, so the three locales cannot drift apart again.
+ * /integrations/<runtime> in every locale. The route files only claim their path; the copy lives
+ * in `lib/integrations.ts`. Only Next.js is translated; the rest canonicalise to English.
  *
- * The hero carries the real waterfall. It replaces a hand-drawn "trace preview" lower on the
- * page, whose bars and durations were made up.
+ * The hero carries the real waterfall, on an example trace in that runtime's span names
+ * (`live/demo-traces.ts`); a runtime without one shows the checkout.
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
 import { integrations } from "../../lib/integrations";
+import { EU_INGEST_URL, US_INGEST_URL } from "../../lib/eu-region";
 import Layout from "../../layouts/Layout.astro";
 import * as m from "../../paraglide/messages.js";
 import BottomCTA from "../BottomCTA.astro";
@@ -20,66 +21,41 @@ import CrossLinks from "../page/CrossLinks.astro";
 import PageHero from "../page/PageHero.astro";
 import ProductFrame from "./ProductFrame.astro";
 
-type Runtime = "nextjs" | "nodejs" | "python";
-
 interface Props {
-	runtime: Runtime;
+	runtime: string;
 }
 
 const { runtime } = Astro.props;
 const integration = integrations[runtime];
 if (!integration) throw new Error(`IntegrationPage: unknown runtime "${runtime}"`);
 
-// Only Next.js has message keys. Node.js and Python are English in every locale, as before.
-const COPY = {
-	nextjs: {
-		title: m.page_nextjs_title,
-		description: m.page_nextjs_desc,
-		heading: m.page_nextjs_heading,
-		lede: m.page_nextjs_subtitle,
-		eyebrow: m.page_nextjs_what_you_get,
-		gridTitle: m.page_nextjs_auto_heading,
-		traceHeading: m.page_nextjs_trace_heading,
-	},
-	nodejs: {
-		title: () => "Node.js Observability with OpenTelemetry | Maple",
-		description: () =>
-			"Add distributed tracing to any Node.js application with the OpenTelemetry SDK. Auto-instrumentation captures Express, Fastify, database queries, and HTTP calls with no code changes.",
-		heading: () => "Node.js observability with OpenTelemetry",
-		lede: () =>
-			"Add distributed tracing to any Node.js application with the OpenTelemetry SDK. Auto-instrumentation captures Express, Fastify, database queries, and HTTP calls with no code changes.",
-		eyebrow: () => "What you get",
-		gridTitle: () => "Automatic instrumentation for Node.js",
-		traceHeading: () => "See your Node.js traces",
-	},
-	python: {
-		title: () => "Python Observability with OpenTelemetry | Maple",
-		description: () =>
-			"Instrument a Python application with OpenTelemetry auto-instrumentation and send traces to Maple. Flask, FastAPI, Django, SQLAlchemy, requests and dozens of other libraries are covered without code changes.",
-		heading: () => "Python observability with OpenTelemetry",
-		lede: () =>
-			"Install the OpenTelemetry distro, bootstrap the instrumentations for the libraries you already use, and run your app under opentelemetry-instrument. Flask, FastAPI, Django, SQLAlchemy, requests and dozens of other libraries are traced without code changes.",
-		eyebrow: () => "What you get",
-		gridTitle: () => "Automatic instrumentation for Python",
-		traceHeading: () => "See your Python traces",
-	},
-} satisfies Record<Runtime, Record<string, () => string>>;
-
-const OTHERS = [
-	{ runtime: "nextjs", name: "Next.js", desc: m.intg_other_nextjs_desc() },
-	{ runtime: "python", name: "Python", desc: m.intg_other_python_desc() },
-	{ runtime: "nodejs", name: "Node.js", desc: m.intg_other_nodejs_desc() },
-];
-
-const copy = COPY[runtime];
-const pageTitle = copy.title();
-const pageDescription = copy.description();
+// Next.js has message keys; every other page is written in English only.
+const copy =
+	runtime === "nextjs"
+		? {
+				title: m.page_nextjs_title(),
+				description: m.page_nextjs_desc(),
+				heading: m.page_nextjs_heading(),
+				lede: m.page_nextjs_subtitle(),
+				eyebrow: m.page_nextjs_what_you_get(),
+				gridTitle: m.page_nextjs_auto_heading(),
+				traceHeading: m.page_nextjs_trace_heading(),
+			}
+		: {
+				title: integration.title,
+				description: integration.description,
+				heading: integration.heading,
+				lede: integration.lede,
+				eyebrow: "What you get",
+				gridTitle: integration.gridTitle,
+				traceHeading: integration.traceHeading,
+			};
 
 const howToJsonLd = {
 	"@context": "https://schema.org",
 	"@type": "HowTo",
 	name: `How to add OpenTelemetry observability to ${integration.name}`,
-	description: pageDescription,
+	description: copy.description,
 	step: integration.steps.map((step, index) => ({
 		"@type": "HowToStep",
 		position: index + 1,
@@ -89,51 +65,77 @@ const howToJsonLd = {
 };
 
 const locale = Astro.currentLocale ?? "en";
+// An English-only page keeps its English URL from a localized page.
+const pageHref = (slug: string, locales: readonly string[]) =>
+	locales.includes(locale) ? getRelativeLocaleUrl(locale, `integrations/${slug}`) : `/integrations/${slug}`;
 const crossLinks = [
-	...OTHERS.filter((other) => other.runtime !== runtime).map((other) => ({
-		href: getRelativeLocaleUrl(locale, `integrations/${other.runtime}`),
-		name: other.name,
-		desc: other.desc,
-	})),
+	...integration.related.flatMap((slug) => {
+		const other = integrations[slug];
+		if (!other) throw new Error(`IntegrationPage: ${runtime} relates to unknown runtime "${slug}"`);
+		const desc = typeof other.summary === "string" ? other.summary : other.summary();
+		return [{ href: pageHref(other.slug, other.locales), name: other.name, desc }];
+	}),
 	{ href: getRelativeLocaleUrl(locale, "integrations"), name: m.breadcrumb_integrations(), desc: m.intg_title() },
 ];
+const linkClass = "text-fg underline decoration-border underline-offset-4 hover:decoration-fg";
 ---
 
-<Layout title={pageTitle} description={pageDescription} ogType="article">
-	<SeoHead title={pageTitle} description={pageDescription} />
+<Layout title={copy.title} description={copy.description} ogType="article" alternates={integration.locales}>
+	<SeoHead title={copy.title} description={copy.description} />
 	<Nav />
 
 	<PageHero
-		title={copy.heading()}
-		lede={copy.lede()}
+		title={copy.heading}
+		lede={copy.lede}
 		breadcrumb={[
 			{ label: m.breadcrumb_home(), href: "/" },
 			{ label: m.breadcrumb_integrations(), href: "/integrations" },
 			{ label: integration.name },
 		]}
 	>
-		{/* The heading names the runtime; the frame is the trace view every runtime's spans land in. */}
 		<div slot="aside" class="min-w-0">
-			<ProductFrame surface="trace" />
-			<h2 class="mt-3 text-sm font-medium text-fg">{copy.traceHeading()}</h2>
+			<ProductFrame surface="trace" demo={runtime} />
+			<h2 class="mt-3 text-sm font-medium text-fg">{copy.traceHeading}</h2>
 		</div>
 	</PageHero>
 
 	<div class="border-t border-border">
-		<QuickStartCode steps={integration.steps} />
+		<QuickStartCode steps={integration.steps} title={runtime === "nextjs" ? undefined : `Set up ${integration.name}`} />
+		<p class="mx-auto -mt-8 max-w-4xl px-6 pb-16 text-sm text-fg-muted md:-mt-12 md:pb-24">
+			This is the short path. The <a href={integration.docsHref} class={linkClass}>full {integration.name} guide</a> covers the rest.
+		</p>
+		{/* Ingest keys only work in the region that issued them. */}
+		<p class="mx-auto -mt-12 max-w-4xl px-6 pb-16 text-sm text-fg-muted md:-mt-20 md:pb-24">
+			{runtime === "react"
+				? <>Organization in the EU region? Pass <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">region: "eu"</code> to <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">MapleBrowser.init</code>. An ingest key only works in its own region.</>
+				: <>Organization in the EU region? Send to <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">{EU_INGEST_URL}</code> instead of <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">{US_INGEST_URL}</code>. An ingest key only works in its own region.</>}
+		</p>
 	</div>
 
 	<section class="border-t border-border bg-bg">
 		<div class="shell py-16 md:py-24">
-			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{copy.eyebrow()}</p>
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{copy.eyebrow}</p>
 			<h2 class="mt-4 max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl">
-				{copy.gridTitle()}
+				{copy.gridTitle}
 			</h2>
 			<div class="mt-10">
-				<FeatureDetailGrid items={integration.signals.map((s) => ({ title: s.title, description: s.description }))} />
+				<FeatureDetailGrid items={integration.signals} />
 			</div>
 		</div>
 	</section>
+
+	{integration.specifics && (
+		<section class="border-t border-border bg-bg">
+			<div class="shell py-16 md:py-24">
+				<h2 class="max-w-[24ch] font-display text-2xl font-medium leading-[1.08] tracking-[-0.02em] text-fg md:text-3xl">
+					{integration.specifics.title}
+				</h2>
+				<div class="mt-10">
+					<FeatureDetailGrid items={integration.specifics.items} />
+				</div>
+			</div>
+		</section>
+	)}
 
 	<CrossLinks eyebrow={m.breadcrumb_integrations()} title={m.intg_others_title()} links={crossLinks} />
 

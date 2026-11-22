@@ -12,6 +12,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 interface Answer {
@@ -25,6 +26,7 @@ type Run = (
 
 const tools = new Map<string, Run>()
 registerSourceCodeTools({
+	family: ignoreFamily,
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
 			Schema.decodeEffect(spec.parameters)(params).pipe(

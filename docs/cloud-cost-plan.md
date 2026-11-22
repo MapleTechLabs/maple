@@ -2,7 +2,7 @@
 
 Status: **phase 1 built 2026-11-11; open to every org, free during the beta, since 2026-11-17 (the `cloudCost` flag is gone).** AWS spend is synced daily
 into `cost_daily` and shown on `/cost`. OpenRouter, GitHub, Vercel and Cloudflare followed on
-2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13, Google Cloud on 2026-11-18.
+2026-11-12, PlanetScale, Anthropic and OpenAI on 2026-11-13, Google Cloud on 2026-11-18, Morph on 2026-11-21.
 Phase 0 checked the provider APIs against docs, public schemas and one real AWS account.
 Budgets, the first piece of phase 4, were built on 2026-11-15.
 Recommendations (phase 2) and the other providers are not built.
@@ -194,7 +194,8 @@ that only shows then is not alerted on, because a check reads the current period
   The resource section and that step show only where some cost names a resource: a GitHub
   repository, a Vercel project, a PlanetScale database's branch. Sources are added from the page:
   AWS through its connection (which has a Cost switch), OpenRouter by pasting a management key,
-  Cloudflare by pasting an API token and Anthropic and OpenAI by pasting an Admin API key, which
+  Cloudflare by pasting an API token, Anthropic and OpenAI by pasting an Admin API key and Morph by
+  pasting an organization admin's API key, which
   the page can also replace or remove, GitHub by picking
   one of the organizations the GitHub App is installed on, and Vercel and PlanetScale by adding
   the team or organization the org has connected, all three of which the page can remove again,
@@ -212,7 +213,8 @@ that only shows then is not alerted on, because a check reads the current period
   sidebar, Cost has two rows: Spend and Budgets.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
-  `/internal/cost/cloudflare`, `/internal/cost/anthropic` and `/internal/cost/openai` for the
+  `/internal/cost/cloudflare`, `/internal/cost/anthropic`, `/internal/cost/openai` and
+  `/internal/cost/morph` for the
   pasted credentials, `GET /internal/cost/github` with `PUT` /
   `DELETE /internal/cost/github/{installationId}` for GitHub sources, and `GET` / `PUT` /
   `DELETE` on `/internal/cost/vercel` and `/internal/cost/planetscale` for the Vercel and
@@ -574,6 +576,31 @@ newest bucket trails by about a day, inside the two open days; the key checked a
 organization with no spend, so its row shapes are still from the docs. Open: Anthropic rows from a
 real organization with spend, restated days, and how far back OpenAI serves.
 
+### Morph (billed, month-to-date readings)
+
+- Morph serves no usage history. The only spend it reports is `GET
+  /api/v1/org/members/budgets`: each member's spend on the organization's keys so far this UTC
+  month (`spent`, a decimal string in USD), refreshed about every 30 minutes, with the `month` it
+  covers. Query parameters for another month are ignored. Only an organization key owned by an
+  organization admin reads it; a personal account's key answers 403, an unknown key 401.
+- So each pull records a reading in `morph_spend_readings` (per connection, month, member and day:
+  the day's first and last reading, in millionths of a dollar), then builds the window's days from
+  the readings of its months. A member's day is its last reading less their last reading before it
+  in the month; what they had spent by the month's first reading goes on the month's first day as
+  its own usage type, unless that reading was on the first day. A drop is an `adjustment`. The
+  readings are the history: a re-pulled day comes out the same. A late write never replaces a newer
+  reading. They go with the connection, and months below the floor are pruned.
+- Morph's sync profile is due hourly (`headIntervalMs`, 55 minutes), so a day's last reading is
+  close to its end. Spend in a month's last hour after its last reading is not seen once Morph
+  reports the new month. The floor is the current month, and the previous one through day 3 for
+  its last readings: a source added mid-month shows no month of zeros before it.
+- Morph names no organization, so the account is `organization`. Best effort: a replacement key
+  missing most of the members of the newest month read is refused as another organization's.
+- Rows: `cloud_service` `morph` (no split by model), the member's newest email as the resource
+  (its user id when Morph gives none), the user id in the `morph.user_id` tag.
+- Live (2026-11-21, a real organization): the answer decoded, the parsed total matched Morph's to
+  the micro-dollar, and an unknown key read as 401.
+
 ### Railway (estimated per service, billed per workspace)
 
 - Schema: `usage(workspaceId, startDate, endDate, groupBy, measurements)` returns quantities
@@ -675,7 +702,7 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI are built. Railway,
+3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Morph are built. Railway,
    GCP, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter and a
    sync profile. One read with a pasted credential also adds itself to
    `COST_CONNECTION_PROVIDERS`, a connection service that checks the credential with the vendor,

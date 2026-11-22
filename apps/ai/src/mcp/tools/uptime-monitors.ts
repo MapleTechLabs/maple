@@ -139,7 +139,7 @@ const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type) => ({
 		...(row.enabled
 			? []
 			: [
-					"The monitor is paused: nothing is checked and no incident opens. update_uptime_monitor enabled=true resumes it.",
+					"The monitor is paused: nothing is checked and no incident opens. manage_uptime_monitor action=update enabled=true resumes it.",
 				]),
 		...(row.status === "down"
 			? [`"${row.name}" is down: ${row.lastCheck?.error ?? "its last check failed"}.`]
@@ -288,7 +288,9 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 								output.statusFilter === undefined && output.serviceFilter === undefined
 									? "This organization has no uptime monitors."
 									: "No uptime monitor matches these filters.",
-							hints: ["create_uptime_monitor adds one (org admins and engineers only)."],
+							hints: [
+								"manage_uptime_monitor action=create adds one (org admins and engineers only).",
+							],
 						},
 					}
 				: undefined),
@@ -329,165 +331,161 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		}),
 	})
 
-	server.define({
-		name: "create_uptime_monitor",
-		title: "Create Uptime Monitor",
-		description:
-			"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Org admins and engineers only. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
-		parameters: Schema.Struct({
-			name: P.text("A label for the monitor, unique among the org's monitors and alert rules"),
-			kind: P.oneOf(UptimeMonitorKind.literals, "What the monitor checks"),
-			...configParameters,
-			destination_ids: P.optionalResourceIdList(
-				"alertDestination",
-				"Alert destinations notified when the monitor goes down (list_alert_destinations lists them)",
-			),
-		}),
-		aliases: ALIASES,
-		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
-		permission: "uptime_monitors:manage",
-		scopeFamily: "uptime_monitors",
-		phrases: ["Adding an uptime monitor"],
-		handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			yield* refuseProbeSettingsForHeartbeat(params.kind, params)
-			const service = yield* UptimeMonitorsService
-			const config = yield* buildUptimeConfig(params.kind, configFields(params))
-			const intervalSeconds = yield* decodeInterval(params.interval_seconds)
-			const destinationIds: ReadonlyArray<AlertDestinationId> | undefined = yield* decodeDestinations(
-				params.destination_ids,
-			)
-			const created = yield* service
-				.create(tenant.orgId, {
-					name: params.name,
-					kind: params.kind,
-					config,
-					...(intervalSeconds === undefined ? undefined : { intervalSeconds }),
-					...(params.failures_to_down === undefined
-						? undefined
-						: { failuresToDown: params.failures_to_down }),
-					...(params.service === undefined ? undefined : { serviceName: params.service }),
-					...(destinationIds === undefined ? undefined : { destinationIds }),
-					createdBy: tenant.userId,
+	server
+		.family({
+			name: "manage_uptime_monitor",
+			title: "Manage Uptime Monitor",
+			description:
+				"Create, change or delete an uptime monitor: a scheduled HTTP, TCP, DNS, heartbeat or multi-step check that pages when it fails. Org admins and engineers only.",
+			phrases: ["Managing an uptime monitor"],
+			scopeFamily: "uptime_monitors",
+		})
+		.action("create", {
+			description:
+				"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
+			parameters: Schema.Struct({
+				name: P.text("A label for the monitor, unique among the org's monitors and alert rules"),
+				kind: P.oneOf(UptimeMonitorKind.literals, "What the monitor checks"),
+				...configParameters,
+				destination_ids: P.optionalResourceIdList(
+					"alertDestination",
+					"Alert destinations notified when the monitor goes down (list_alert_destinations lists them)",
+				),
+			}),
+			aliases: ALIASES,
+			hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+			permission: "uptime_monitors:manage",
+			handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				yield* refuseProbeSettingsForHeartbeat(params.kind, params)
+				const service = yield* UptimeMonitorsService
+				const config = yield* buildUptimeConfig(params.kind, configFields(params))
+				const intervalSeconds = yield* decodeInterval(params.interval_seconds)
+				const destinationIds: ReadonlyArray<AlertDestinationId> | undefined =
+					yield* decodeDestinations(params.destination_ids)
+				const created = yield* service
+					.create(tenant.orgId, {
+						name: params.name,
+						kind: params.kind,
+						config,
+						...(intervalSeconds === undefined ? undefined : { intervalSeconds }),
+						...(params.failures_to_down === undefined
+							? undefined
+							: { failuresToDown: params.failures_to_down }),
+						...(params.service === undefined ? undefined : { serviceName: params.service }),
+						...(destinationIds === undefined ? undefined : { destinationIds }),
+						createdBy: tenant.userId,
+					})
+					.pipe(Effect.mapError(toMcpUptimeError("manage_uptime_monitor")))
+				return {
+					action: "created" as const,
+					monitor: toMonitorRow(created, true),
+					pingCommand: pingCommand(created.heartbeatUrl),
+				}
+			}),
+			render: (output) => renderMonitor("Uptime monitor created", output.monitor),
+		})
+		.action("update", {
+			description:
+				"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind.",
+			parameters: Schema.Struct({
+				monitor: P.text("The monitor's name or id (list_uptime_monitors lists them)"),
+				enabled: P.optionalFlag("false pauses the monitor, true resumes it"),
+				name: P.optionalText("A new name"),
+				...configParameters,
+				clear_service: P.optionalFlag(
+					"true unlinks the monitor from its service; not with `service`",
+				),
+				clear_max_response_ms: P.optionalFlag(
+					"http: true removes the response time check; not with `max_response_ms`",
+				),
+				clear_body_contains: P.optionalFlag(
+					"http: true removes the body contains check; not with `body_contains`",
+				),
+				clear_expected: P.optionalFlag("dns: true removes the expected answer; not with `expected`"),
+				destination_ids: P.optionalResourceIdList(
+					"alertDestination",
+					"Replaces the alert destinations notified when the monitor goes down; [] notifies none",
+				),
+			}),
+			aliases: ALIASES,
+			// A field this tool lacks (`steps`, say) is refused, never dropped while the rest applies.
+			rejectUnknownKeys: true,
+			hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+			permission: "uptime_monitors:manage",
+			handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
+				const tenant = yield* CurrentMcpTenant
+				const service = yield* UptimeMonitorsService
+				const current = yield* resolveMonitor("manage_uptime_monitor", tenant.orgId, params.monitor)
+				yield* refuseProbeSettingsForHeartbeat(current.kind, params)
+				if (params.clear_service === true && params.service !== undefined) {
+					return yield* new McpInvalidInputError({
+						message:
+							"Pass service to link a service, or clear_service=true to unlink it, not both.",
+						parameter: "clear_service",
+					})
+				}
+				const serviceName = params.clear_service === true ? null : params.service
+				const config = yield* updateUptimeConfig(current.config, {
+					...configFields(params),
+					clear_max_response_ms: params.clear_max_response_ms,
+					clear_body_contains: params.clear_body_contains,
+					clear_expected: params.clear_expected,
 				})
-				.pipe(Effect.mapError(toMcpUptimeError("create_uptime_monitor")))
-			return {
-				action: "created" as const,
-				monitor: toMonitorRow(created, true),
-				pingCommand: pingCommand(created.heartbeatUrl),
-			}
-		}),
-		render: (output) => renderMonitor("Uptime monitor created", output.monitor),
-	})
-
-	server.define({
-		name: "update_uptime_monitor",
-		title: "Update Uptime Monitor",
-		description:
-			"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			monitor: P.text("The monitor's name or id (list_uptime_monitors lists them)"),
-			enabled: P.optionalFlag("false pauses the monitor, true resumes it"),
-			name: P.optionalText("A new name"),
-			...configParameters,
-			clear_service: P.optionalFlag("true unlinks the monitor from its service; not with `service`"),
-			clear_max_response_ms: P.optionalFlag(
-				"http: true removes the response time check; not with `max_response_ms`",
-			),
-			clear_body_contains: P.optionalFlag(
-				"http: true removes the body contains check; not with `body_contains`",
-			),
-			clear_expected: P.optionalFlag("dns: true removes the expected answer; not with `expected`"),
-			destination_ids: P.optionalResourceIdList(
-				"alertDestination",
-				"Replaces the alert destinations notified when the monitor goes down; [] notifies none",
-			),
-		}),
-		aliases: ALIASES,
-		// A field this tool lacks (`steps`, say) is refused, never dropped while the rest applies.
-		rejectUnknownKeys: true,
-		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
-		permission: "uptime_monitors:manage",
-		scopeFamily: "uptime_monitors",
-		phrases: ["Updating an uptime monitor"],
-		handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
-			const service = yield* UptimeMonitorsService
-			const current = yield* resolveMonitor("update_uptime_monitor", tenant.orgId, params.monitor)
-			yield* refuseProbeSettingsForHeartbeat(current.kind, params)
-			if (params.clear_service === true && params.service !== undefined) {
-				return yield* new McpInvalidInputError({
-					message: "Pass service to link a service, or clear_service=true to unlink it, not both.",
-					parameter: "clear_service",
-				})
-			}
-			const serviceName = params.clear_service === true ? null : params.service
-			const config = yield* updateUptimeConfig(current.config, {
-				...configFields(params),
-				clear_max_response_ms: params.clear_max_response_ms,
-				clear_body_contains: params.clear_body_contains,
-				clear_expected: params.clear_expected,
-			})
-			const intervalSeconds = yield* decodeInterval(params.interval_seconds)
-			const destinationIds: ReadonlyArray<AlertDestinationId> | undefined = yield* decodeDestinations(
-				params.destination_ids,
-			)
-			const updated = yield* service
-				.update(tenant.orgId, current.id, {
-					...(params.name === undefined ? undefined : { name: params.name }),
-					...(config === undefined ? undefined : { config }),
-					...(intervalSeconds === undefined ? undefined : { intervalSeconds }),
-					...(params.failures_to_down === undefined
-						? undefined
-						: { failuresToDown: params.failures_to_down }),
-					...(serviceName === undefined ? undefined : { serviceName }),
-					...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
-					...(destinationIds === undefined ? undefined : { destinationIds }),
-					updatedBy: tenant.userId,
-				})
-				.pipe(Effect.mapError(toMcpUptimeError("update_uptime_monitor")))
-			return {
-				action: "updated" as const,
-				monitor: toMonitorRow(updated, true),
-				pingCommand: pingCommand(updated.heartbeatUrl),
-			}
-		}),
-		render: (output) => renderMonitor("Uptime monitor updated", output.monitor),
-	})
-
-	server.define({
-		name: "delete_uptime_monitor",
-		title: "Delete Uptime Monitor",
-		description:
-			"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, update_uptime_monitor enabled=false instead. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			monitor: P.text("The monitor's name or id"),
-			confirm: P.flag("Must be true. There is no undo."),
-		}),
-		hints: { readOnly: false, destructive: true, idempotent: false },
-		permission: "uptime_monitors:manage",
-		scopeFamily: "uptime_monitors",
-		phrases: ["Deleting an uptime monitor"],
-		handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
-			// A member is refused before being asked to confirm, as create and update are.
-			const tenant = yield* CurrentMcpTenant
-			if (params.confirm !== true) {
-				return yield* new McpInvalidInputError({
-					message: `Deletion not confirmed. Re-call delete_uptime_monitor with confirm=true to delete "${params.monitor}", or pause it with update_uptime_monitor enabled=false.`,
-					parameter: "confirm",
-				})
-			}
-			const service = yield* UptimeMonitorsService
-			const monitor = yield* resolveMonitor("delete_uptime_monitor", tenant.orgId, params.monitor)
-			yield* service
-				.delete(tenant.orgId, monitor.id)
-				.pipe(Effect.mapError(toMcpUptimeError("delete_uptime_monitor")))
-			return { deleted: true, id: monitor.id, name: monitor.name }
-		}),
-		render: (output) => ({
-			title: "Uptime monitor deleted",
-			blocks: [doc.text(`Deleted "${output.name}" (${output.id}) and its alert rule.`)],
-			next: [doc.next("list_uptime_monitors", {}, "the monitors that remain")],
-		}),
-	})
+				const intervalSeconds = yield* decodeInterval(params.interval_seconds)
+				const destinationIds: ReadonlyArray<AlertDestinationId> | undefined =
+					yield* decodeDestinations(params.destination_ids)
+				const updated = yield* service
+					.update(tenant.orgId, current.id, {
+						...(params.name === undefined ? undefined : { name: params.name }),
+						...(config === undefined ? undefined : { config }),
+						...(intervalSeconds === undefined ? undefined : { intervalSeconds }),
+						...(params.failures_to_down === undefined
+							? undefined
+							: { failuresToDown: params.failures_to_down }),
+						...(serviceName === undefined ? undefined : { serviceName }),
+						...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
+						...(destinationIds === undefined ? undefined : { destinationIds }),
+						updatedBy: tenant.userId,
+					})
+					.pipe(Effect.mapError(toMcpUptimeError("manage_uptime_monitor")))
+				return {
+					action: "updated" as const,
+					monitor: toMonitorRow(updated, true),
+					pingCommand: pingCommand(updated.heartbeatUrl),
+				}
+			}),
+			render: (output) => renderMonitor("Uptime monitor updated", output.monitor),
+		})
+		.action("delete", {
+			description:
+				"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, manage_uptime_monitor action=update enabled=false instead.",
+			parameters: Schema.Struct({
+				monitor: P.text("The monitor's name or id"),
+				confirm: P.flag("Must be true. There is no undo."),
+			}),
+			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "uptime_monitors:manage",
+			handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
+				// A member is refused before being asked to confirm, as create and update are.
+				const tenant = yield* CurrentMcpTenant
+				if (params.confirm !== true) {
+					return yield* new McpInvalidInputError({
+						message: `Deletion not confirmed. Re-call manage_uptime_monitor action=delete with confirm=true to delete "${params.monitor}", or pause it with manage_uptime_monitor action=update enabled=false.`,
+						parameter: "confirm",
+					})
+				}
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* resolveMonitor("manage_uptime_monitor", tenant.orgId, params.monitor)
+				yield* service
+					.delete(tenant.orgId, monitor.id)
+					.pipe(Effect.mapError(toMcpUptimeError("manage_uptime_monitor")))
+				return { deleted: true, id: monitor.id, name: monitor.name }
+			}),
+			render: (output) => ({
+				title: "Uptime monitor deleted",
+				blocks: [doc.text(`Deleted "${output.name}" (${output.id}) and its alert rule.`)],
+				next: [doc.next("list_uptime_monitors", {}, "the monitors that remain")],
+			}),
+		})
 }

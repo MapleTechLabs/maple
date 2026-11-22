@@ -1,5 +1,5 @@
 /**
- * The tool tasks, checked against the live tool schemas. Free and deterministic, so it runs in the
+ * The tool and configuration tasks, checked against the live tool schemas. Free and deterministic, so it runs in the
  * unit suite: a renamed parameter or a dropped enum value fails here, where it is obvious, instead
  * of silently scoring every correct model call as wrong in the paid eval.
  */
@@ -7,7 +7,11 @@ import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { inputSchemaOf, mapleToolCatalogFor } from "../../mcp/tools/registry"
 import type { ArgExpectation, Scalar } from "../targets"
+import { CONFIG_TASKS } from "../config/tasks"
 import { TOOL_TASKS } from "./tasks"
+
+/** Every suite's tasks: a target that names a dead tool scores zero whichever suite holds it. */
+const TASKS = [...TOOL_TASKS, ...CONFIG_TASKS]
 
 const catalog = new Map(Arr.map(mapleToolCatalogFor("chat"), (entry) => [entry.name, entry]))
 
@@ -30,11 +34,11 @@ const valuesOf = (expectation: ArgExpectation): ReadonlyArray<Scalar> => {
 
 describe("tool eval tasks", () => {
 	it("have unique ids", () => {
-		const ids = Arr.map(TOOL_TASKS, (task) => task.id)
+		const ids = Arr.map(TASKS, (task) => task.id)
 		expect(ids.length).toBe(new Set(ids).size)
 	})
 
-	it.each(Arr.map(TOOL_TASKS, (task) => [task.id, task] as const))(
+	it.each(Arr.map(TASKS, (task) => [task.id, task] as const))(
 		"%s names only live tools and parameters",
 		(_id, task) => {
 			Arr.forEach(task.expect, (check) => {

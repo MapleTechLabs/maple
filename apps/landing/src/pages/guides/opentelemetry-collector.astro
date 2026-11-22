@@ -1,0 +1,417 @@
+---
+import GuidePage from "../../components/guides/GuidePage.astro";
+import Code from "../../components/guides/Code.astro";
+import { CONTRIBUTORS } from "../../lib/changelog-meta";
+
+const toc = [
+    { depth: 2, slug: "what-it-does", text: "What the Collector does" },
+    { depth: 2, slug: "components", text: "Components and pipelines" },
+    { depth: 2, slug: "config", text: "A working config" },
+    { depth: 3, slug: "renames", text: "Renamed components" },
+    { depth: 2, slug: "run", text: "Run it and send a span" },
+    { depth: 2, slug: "app", text: "Point your app at it" },
+    { depth: 2, slug: "processor-order", text: "Processor order" },
+    { depth: 2, slug: "agent-gateway", text: "Agent vs gateway" },
+    { depth: 2, slug: "monitor", text: "Monitor the Collector" },
+    { depth: 2, slug: "maple", text: "Send it to Maple" },
+];
+
+// The Collector's own `${env:NAME}` syntax, kept out of template interpolation.
+const envRef = (name: string) => "${env:" + name + "}";
+
+const agentConfig = String.raw`receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  resource_detection:
+    detectors: [env, system]
+    override: false
+
+exporters:
+  otlp_http:
+    endpoint: ${envRef("OTLP_ENDPOINT")}
+    headers:
+      Authorization: Bearer ${envRef("OTLP_API_KEY")}
+    sending_queue:
+      enabled: true
+      batch:
+        enabled: true
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection]
+      exporters: [otlp_http, debug]   # drop debug once data arrives
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection]
+      exporters: [otlp_http]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource_detection]
+      exporters: [otlp_http]`;
+
+// Published on localhost only: anyone who can reach these ports sends with your backend key.
+const dockerRun = String.raw`docker run --rm \
+  -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:13133:13133 \
+  -e OTLP_ENDPOINT -e OTLP_API_KEY \
+  -v "$PWD/config.yaml:/etc/otelcol-contrib/config.yaml" \
+  otel/opentelemetry-collector-contrib:0.165.0`;
+
+const validate = String.raw`# Your backend's OTLP base URL and key, read by the config
+export OTLP_ENDPOINT=https://otlp.example.com
+export OTLP_API_KEY=your-api-key
+
+docker run --rm \
+  -e OTLP_ENDPOINT -e OTLP_API_KEY \
+  -v "$PWD/config.yaml:/etc/otelcol-contrib/config.yaml" \
+  otel/opentelemetry-collector-contrib:0.165.0 \
+  validate --config /etc/otelcol-contrib/config.yaml`;
+
+// The span is stamped with the current time, so it lands inside the backend's default time range.
+const spanJson = String.raw`START=$(date +%s)000000000
+END=$((START + 250000000))
+cat > span.json <<EOF
+{
+  "resourceSpans": [{
+    "resource": {
+      "attributes": [{ "key": "service.name", "value": { "stringValue": "checkout" } }]
+    },
+    "scopeSpans": [{
+      "scope": { "name": "manual-test" },
+      "spans": [{
+        "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "spanId": "00f067aa0ba902b7",
+        "name": "GET /cart",
+        "kind": 2,
+        "startTimeUnixNano": "$START",
+        "endTimeUnixNano": "$END",
+        "status": { "code": 1 }
+      }]
+    }]
+  }]
+}
+EOF`;
+
+const appNode = String.raw`npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node
+
+export OTEL_SERVICE_NAME="checkout"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+node --require @opentelemetry/auto-instrumentations-node/register app.js`;
+
+const appPython = String.raw`pip install opentelemetry-distro opentelemetry-exporter-otlp
+opentelemetry-bootstrap -a install
+
+export OTEL_SERVICE_NAME="checkout"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+opentelemetry-instrument python app.py`;
+
+const curlSpan = String.raw`curl -i http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" \
+  --data @span.json`;
+
+const curlOutput = String.raw`HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"partialSuccess":{}}`;
+
+const lbConfig = String.raw`exporters:
+  load_balancing:
+    routing_key: traceID
+    protocol:
+      otlp:
+        tls:
+          insecure: true   # plain text inside the cluster; use TLS across networks
+    resolver:
+      dns:
+        hostname: otel-sampler-headless.observability.svc.cluster.local
+        port: "4317"`;
+
+const telemetryConfig = String.raw`service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888`;
+
+const faqs = [
+    {
+        question: "What is the OpenTelemetry Collector?",
+        answer:
+            "The OpenTelemetry Collector is a standalone process that receives telemetry, processes it and exports it to one or more backends. It accepts OTLP from OpenTelemetry SDKs and many other formats, and it is configured with one YAML file of receivers, processors, exporters and pipelines.",
+    },
+    {
+        question: "Do I need an OpenTelemetry Collector?",
+        answer:
+            "Not always. An SDK can export OTLP straight to a backend. Add a Collector when you need to scrub or enrich data in one place, collect host metrics or log files, tail sample, fan out to several backends, or keep retries and batching out of your application processes.",
+    },
+    {
+        question: "What ports does the OpenTelemetry Collector use?",
+        answer:
+            "The OTLP receiver listens on 4317 for gRPC and 4318 for HTTP. The health_check extension uses 13133 and the Collector's own metrics are served on 8888. Recent versions bind to localhost by default, so set the endpoint to 0.0.0.0 inside a container.",
+    },
+    {
+        question: "What is the difference between an agent and a gateway Collector?",
+        answer:
+            "An agent runs next to the application, on the same host or as a sidecar or DaemonSet, and adds local context such as host and pod attributes. A gateway is a central pool of Collectors behind a load balancer that receives from many agents or services and owns credentials, sampling and routing.",
+    },
+    {
+        question: "Is the batch processor deprecated?",
+        answer:
+            "Yes. The OpenTelemetry project deprecated the batch processor in favour of batching inside each exporter's sending_queue. Exporter batching is planned to become the default in v0.171.0 and the processor is planned for removal in v0.177.0.",
+    },
+];
+---
+
+<GuidePage
+    pageTitle="OpenTelemetry Collector: config, pipelines, agent vs gateway | Maple"
+    description="How the OpenTelemetry Collector works: receivers, processors, exporters and pipelines, a config tested on v0.165, and when to run it as an agent or a gateway."
+    title="The OpenTelemetry Collector"
+    lede="What the Collector does, how its pipelines fit together, a config you can run today, and how to choose between an agent and a gateway."
+    category="OpenTelemetry"
+    readMinutes={11}
+    published="2026-11-21"
+    modified="2026-11-21"
+    author={CONTRIBUTORS.makisuo}
+    toc={toc}
+    faqs={faqs}
+>
+    <section>
+        <p>
+            The <strong>OpenTelemetry Collector</strong> is a vendor-neutral process that receives telemetry, changes it, and sends it on. Your services export traces, metrics and logs to it over OTLP, the OpenTelemetry Protocol. It batches, retries, filters and enriches them, then exports them to whatever backend you use.
+        </p>
+        <p>
+            This guide covers the Collector's building blocks, a configuration we ran on Collector v0.165.0, how to test it with a single <code>curl</code>, and the two ways to deploy it. Every config on this page passes <code>otelcol-contrib validate</code>.
+        </p>
+        <div class="guide-takeaways">
+            <p class="guide-kicker">Key takeaways</p>
+            <ul>
+                <li>A component does nothing until a pipeline under <code>service.pipelines</code> lists it.</li>
+                <li>Put <code>memory_limiter</code> first in every pipeline. Batch in the exporter's <code>sending_queue</code>, not with the deprecated <code>batch</code> processor.</li>
+                <li>Since v0.144.0 the OTLP exporters are <code>otlp_grpc</code> and <code>otlp_http</code>. The old names still load with a warning.</li>
+                <li>Inside a container, bind the OTLP receiver to <code>0.0.0.0</code>. The default is <code>localhost</code>.</li>
+                <li>Run agents for local context and a gateway for credentials, sampling and routing. Tail sampling needs every span of a trace on one gateway instance.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="what-it-does" class="scroll-mt-24">
+        <h2>What the Collector does</h2>
+        <p>
+            An OpenTelemetry SDK can export straight to a backend. That works for a single service. As the system grows, a Collector between the two takes over jobs you would otherwise repeat in every service:
+        </p>
+        <ul class="guide-list">
+            <li><strong>Retries and queueing.</strong> The SDK hands data to a nearby Collector in milliseconds. The Collector holds it while the backend is slow or down.</li>
+            <li><strong>Processing in one place.</strong> Drop a noisy attribute, redact an email address or add the Kubernetes pod name once, for every service.</li>
+            <li><strong>Other sources.</strong> Receivers read host metrics, log files, Prometheus endpoints and other formats the SDKs do not produce.</li>
+            <li><strong>Routing.</strong> Send the same data to two backends during a migration, or change backends without redeploying services.</li>
+            <li><strong>Credentials.</strong> Only the Collector holds the backend's API key, so services never see it.</li>
+        </ul>
+        <p>
+            The Collector ships as several <strong>distributions</strong>. The core distribution (<code>otelcol</code>) has a small set of components. Contrib (<code>otelcol-contrib</code>) includes almost every component the project maintains and is the one most guides assume. The k8s distribution is trimmed for Kubernetes. For production you can build your own with the OpenTelemetry Collector Builder (<code>ocb</code>), which includes only the components you list and keeps the binary and attack surface small.
+        </p>
+    </section>
+
+    <section id="components" class="scroll-mt-24">
+        <h2>Components and pipelines</h2>
+        <p>A Collector config is a set of components, plus a <code>service</code> block that wires them into pipelines.</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Component</th><th>What it does</th><th>Examples</th></tr></thead>
+                <tbody>
+                    <tr><td>Receivers</td><td>Get data into the Collector, by listening or by pulling</td><td><code>otlp</code>, <code>prometheus</code>, <code>host_metrics</code>, <code>file_log</code></td></tr>
+                    <tr><td>Processors</td><td>Change data in order: drop, add, rename, sample, limit memory</td><td><code>memory_limiter</code>, <code>attributes</code>, <code>transform</code>, <code>filter</code>, <code>tail_sampling</code></td></tr>
+                    <tr><td>Exporters</td><td>Send data out, with a queue and retries</td><td><code>otlp_grpc</code>, <code>otlp_http</code>, <code>debug</code></td></tr>
+                    <tr><td>Connectors</td><td>Exporter in one pipeline and receiver in another, such as turning spans into metrics</td><td><code>span_metrics</code>, <code>count</code>, <code>routing</code></td></tr>
+                    <tr><td>Extensions</td><td>Capabilities that do not touch telemetry</td><td><code>health_check</code>, <code>pprof</code>, <code>zpages</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            A pipeline has a signal type (<code>traces</code>, <code>metrics</code> or <code>logs</code>), at least one receiver and at least one exporter. Processors run in the order the pipeline lists them. A receiver can feed several pipelines, and a processor listed in two pipelines runs as two separate instances.
+        </p>
+        <p>
+            Defining a component under <code>receivers:</code> or <code>exporters:</code> does not enable it. A Collector that starts cleanly but receives nothing usually has a receiver defined and never listed in a pipeline.
+        </p>
+        <p>
+            Names follow <code>type/name</code>. <code>attributes/drop-ids</code> and <code>attributes/add-env</code> are two independent instances of the <code>attributes</code> processor, each with its own settings.
+        </p>
+    </section>
+
+    <section id="config" class="scroll-mt-24">
+        <h2>A working config</h2>
+        <p>
+            This config receives OTLP on both protocols, protects the process from running out of memory, adds host attributes and exports everything over OTLP/HTTP to the backend named in <code>OTLP_ENDPOINT</code>. Traces also go to the <code>debug</code> exporter, which prints a line to the Collector's own output for each batch; it is there for the first test, so take it out once data reaches the backend.
+        </p>
+        <Code title="config.yaml" code={agentConfig} lang="yaml" />
+        <p>Block by block:</p>
+        <ul class="guide-list">
+            <li><strong><code>otlp</code> receiver.</strong> gRPC on 4317 and HTTP on 4318, the OTLP default ports. The Collector binds to <code>localhost</code> unless you say otherwise, which makes it unreachable from other containers. <code>0.0.0.0</code> listens on every interface. On a shared host, bind to a specific address instead. The receiver has no authentication here, so do not expose it outside your network.</li>
+            <li><strong><code>memory_limiter</code>.</strong> Checks memory every second. Above the soft limit (here 80% minus 20%, so 60% of total memory, or of the container's limit) it refuses new data with a retryable error, so senders back off. Above the hard limit (80%) it also forces garbage collection. It does not replace sizing the Collector properly; the processor's README also recommends setting the <code>GOMEMLIMIT</code> environment variable to about 80% of the container's memory limit.</li>
+            <li><strong><code>resource_detection</code>.</strong> Reads <code>OTEL_RESOURCE_ATTRIBUTES</code> and the host name. <code>override: false</code> keeps the values the SDK already set. Run it on agents, next to the app: on a central gateway, the <code>system</code> detector would stamp the gateway's own host name on every service that did not set one.</li>
+            <li><strong><code>otlp_http</code> exporter.</strong> The endpoint is a base URL. The exporter appends <code>/v1/traces</code>, <code>/v1/metrics</code> and <code>/v1/logs</code> itself. <code>$&#123;env:OTLP_ENDPOINT&#125;</code> and <code>$&#123;env:OTLP_API_KEY&#125;</code> are read from the environment when the Collector starts, so the file holds no secrets. Your backend's docs give both values.</li>
+            <li><strong><code>sending_queue</code> with <code>batch</code>.</strong> Queues data in memory and groups it into batches before sending. Retries on failure are on by default, backing off from 5 seconds to 30 seconds for up to 5 minutes.</li>
+            <li><strong><code>health_check</code>.</strong> Answers <code>200</code> on port 13133 once the pipelines are running, for container and Kubernetes probes.</li>
+        </ul>
+
+        <h3 id="renames" class="scroll-mt-24">Renamed components and the batch processor</h3>
+        <p>
+            Many Collector guides online were written before 2026 and use names that now log deprecation warnings. Collector v0.144.0 renamed the <code>otlp</code> exporter to <code>otlp_grpc</code> and <code>otlphttp</code> to <code>otlp_http</code>. Later releases moved other multi-word names to snake case: <code>hostmetrics</code> became <code>host_metrics</code>, <code>spanmetrics</code> became <code>span_metrics</code>, <code>loadbalancing</code> became <code>load_balancing</code> and <code>resourcedetection</code> became <code>resource_detection</code>. The old names still load as aliases. The <code>otlp</code> receiver kept its name.
+        </p>
+        <p>
+            The <code>batch</code> processor is deprecated. Batching moved into each exporter's <code>sending_queue</code>, as in the config above, with the same defaults as the old processor: 8,192 items or 200 ms, whichever comes first. The project plans to turn exporter batching on by default in v0.171.0 and to remove the processor in v0.177.0. If you remove <code>batch</code> from a busy pipeline, watch the queue: it now holds smaller, unbatched requests and may need a larger <code>queue_size</code>.
+        </p>
+        <div class="guide-callout">
+            <p class="guide-kicker">Older Collector?</p>
+            <p>The new names do not exist before the version that introduced them. On a Collector older than v0.144.0, keep <code>otlp</code>, <code>otlphttp</code> and the <code>batch</code> processor. Check the version with <code>otelcol-contrib --version</code>.</p>
+        </div>
+    </section>
+
+    <section id="run" class="scroll-mt-24">
+        <h2>Run it and send a span</h2>
+        <p>Check the file before you start anything. <code>validate</code> catches unknown keys, wrong types and components that are not in your distribution. The contrib image runs it without installing anything:</p>
+        <Code code={validate} lang="shell" />
+        <p>
+            One mistake it caught while we tested this guide: the <code>load_balancing</code> exporter's DNS resolver wants <code>port</code> as a string, so <code>port: 4317</code> fails and <code>port: "4317"</code> passes on v0.165.0, although the exporter's README shows an integer. Then start the Collector with the config mounted and the same two variables passed in. The ports are published on localhost only, since anything that can reach them sends telemetry with your key:
+        </p>
+        <Code code={dockerRun} lang="shell" />
+        <p>
+            You do not need an instrumented app to test the pipeline. OTLP/HTTP accepts JSON, so a file with one span and <code>curl</code> are enough. This script writes one, stamped with the current time so the backend shows it in its default time range. Trace and span IDs are hex strings, <code>kind: 2</code> is a server span, and timestamps are nanoseconds since the epoch, written as strings.
+        </p>
+        <Code title="make-span.sh" code={spanJson} lang="shell" />
+        <Code code={curlSpan} lang="shell" />
+        <Code code={curlOutput} output />
+        <p>
+            An empty <code>partialSuccess</code> means the Collector accepted the whole batch. It does not mean the backend received it: the exporter sends from its queue afterwards, so a wrong endpoint or key only shows up in the Collector's output. The <code>debug</code> exporter prints a line with <code>"spans": 1</code> once the span has passed through the pipeline; set <code>verbosity: detailed</code> to print every attribute. If the backend rejects the data, the exporter logs the HTTP status and response body in the Collector's output. The <a href="/guides/otlp">OTLP guide</a> covers what each status means.
+        </p>
+    </section>
+
+    <section id="app" class="scroll-mt-24">
+        <h2>Point your app at the Collector</h2>
+        <p>
+            Once the <code>curl</code> test passes, send real data. The fastest start is <a href="/glossary/instrumentation">auto-instrumentation</a>, which records spans for HTTP, database and queue calls without code changes. Every SDK reads the same environment variables, so the only Collector-specific setting is the endpoint. In Node.js:
+        </p>
+        <Code code={appNode} lang="shell" />
+        <p>In Python:</p>
+        <Code code={appPython} lang="shell" />
+        <p>
+            Make a request to the app and the <code>debug</code> exporter prints a batch a few seconds later. From another container, replace <code>localhost</code> with the Collector's service name, such as <code>http://otel-collector:4318</code>. If nothing arrives, the <a href="/guides/otlp#errors">OTLP errors section</a> lists the usual causes, and two services that appear as separate traces point at <a href="/guides/opentelemetry-context-propagation">context propagation</a>.
+        </p>
+    </section>
+
+    <section id="processor-order" class="scroll-mt-24">
+        <h2>Processor order</h2>
+        <p>Processors run in the order the pipeline lists them, and the order changes the outcome. A sequence that works for most pipelines:</p>
+        <ol class="guide-list">
+            <li><strong><code>memory_limiter</code></strong> first, so it can refuse data before any other work happens.</li>
+            <li><strong>Enrichment</strong> such as <code>resource_detection</code> or <code>k8s_attributes</code>, so later steps can match on what they add.</li>
+            <li><strong>Filtering and redaction</strong> with <code>filter</code>, <code>attributes</code>, <code>redaction</code> or <code>transform</code>. Dropping early saves the work of processing data you will not keep.</li>
+            <li><strong>Sampling</strong>, for example <code>probabilistic_sampler</code> or <code>tail_sampling</code>.</li>
+            <li><strong>Batching</strong> in the exporter's <code>sending_queue</code>, after everything else.</li>
+        </ol>
+        <p>
+            Two traps. A <code>filter</code> processor placed after <code>tail_sampling</code> can drop spans from a trace the sampler already kept, which leaves gaps in the trace. And attributes you delete before <code>tail_sampling</code> are gone by the time its policies run, so a policy on a deleted attribute never matches.
+        </p>
+    </section>
+
+    <section id="agent-gateway" class="scroll-mt-24">
+        <h2>Agent vs gateway</h2>
+        <p>The same binary runs in two roles. Most production setups use both.</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th></th><th>Agent</th><th>Gateway</th></tr></thead>
+                <tbody>
+                    <tr><td>Runs</td><td>On each host, as a Kubernetes DaemonSet, or as a sidecar</td><td>As a central Deployment behind a load balancer</td></tr>
+                    <tr><td>Receives from</td><td>Services on the same host or pod</td><td>Agents and services across the cluster or region</td></tr>
+                    <tr><td>Good at</td><td>Host metrics, log files, pod and node attributes, a short hop for the SDK</td><td>Credentials, tail sampling, routing, one place to change backends</td></tr>
+                    <tr><td>Scales with</td><td>The number of nodes</td><td>Traffic volume, horizontally</td></tr>
+                    <tr><td>Main risk</td><td>Config spread over every node</td><td>A shared bottleneck, so it needs replicas and queue alerts</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            <strong>Start with agents only</strong> if you have a handful of services: each agent exports straight to the backend. <strong>Add a gateway</strong> when you want one egress point, one place for the API key, or tail sampling. Then agents send OTLP to the gateway's service address and only the gateway talks to the backend.
+        </p>
+        <p>
+            Tail sampling adds a constraint. The <code>tail_sampling</code> processor decides once it has seen a whole trace, so every span of a trace must reach the same Collector instance. A plain round-robin load balancer breaks that. The fix is two gateway tiers: the first uses the <code>load_balancing</code> exporter to route by trace ID, the second runs the sampler.
+        </p>
+        <Code title="gateway tier 1: route by trace ID" code={lbConfig} lang="yaml" />
+        <p>
+            The DNS resolver watches a headless Kubernetes service, so a new sampler pod starts receiving its share of traces without a config change. The flip side: whenever the set of pods changes, part of the trace ID range moves to a different pod, and traces in flight at that moment are split. Scale the sampler tier deliberately rather than autoscaling it on every spike. The <a href="/guides/opentelemetry-sampling">sampling guide</a> has the second tier's tail sampling config.
+        </p>
+    </section>
+
+    <section id="monitor" class="scroll-mt-24">
+        <h2>Monitor the Collector</h2>
+        <p>
+            A Collector that silently drops data looks the same as a quiet system. It reports its own metrics in Prometheus format on port 8888, bound to <code>127.0.0.1</code> by default. To scrape it from another container, expose it on all interfaces:
+        </p>
+        <Code code={telemetryConfig} lang="yaml" />
+        <p>The metrics worth an alert:</p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Metric</th><th>What it tells you</th></tr></thead>
+                <tbody>
+                    <tr><td><code>otelcol_exporter_send_failed_spans</code></td><td>Spans the exporter gave up on. Any sustained rate is data loss. The same exists for metric points and log records.</td></tr>
+                    <tr><td><code>otelcol_exporter_queue_size</code> / <code>otelcol_exporter_queue_capacity</code></td><td>How full the sending queue is. Near 100%, new data is dropped.</td></tr>
+                    <tr><td><code>otelcol_exporter_enqueue_failed_spans</code></td><td>Spans dropped because the sending queue was full. This is the usual way data is lost during a backend outage.</td></tr>
+                    <tr><td><code>otelcol_receiver_refused_spans</code></td><td>Data turned away at the door, often by <code>memory_limiter</code>.</td></tr>
+                    <tr><td><code>otelcol_receiver_accepted_spans</code></td><td>Throughput. A sudden drop to zero means senders stopped reaching the Collector.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            Since v0.152.0 these names have no <code>_total</code> suffix by default. Dashboards built for older versions may query <code>otelcol_exporter_send_failed_spans_total</code> and show nothing.
+        </p>
+    </section>
+
+    <section id="maple" class="scroll-mt-24">
+        <h2>Send it to Maple</h2>
+        <p>
+            Maple ingests OTLP directly, so the config above works unchanged: set <code>OTLP_ENDPOINT=https://ingest.maple.dev</code> and <code>OTLP_API_KEY</code> to the private ingest key from <strong>Settings → Ingestion</strong>. For gRPC, use the <code>otlp_grpc</code> exporter with <code>endpoint: ingest.maple.dev:443</code>; the port is 443, not 4317. The <a href="/docs/reference/ingest">ingest reference</a> lists the limits and status codes, and <a href="/opentelemetry">OpenTelemetry with Maple</a> covers the SDK side.
+        </p>
+        <div class="guide-maple">
+            <p class="guide-kicker">Next step</p>
+            <h3>Point a Collector at Maple</h3>
+            <p>Traces, logs and metrics from the same Collector land in one place, linked by trace ID.</p>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/docs/getting-started/quickstart" class="guide-button guide-button--primary">Quickstart</a>
+                <a href="/docs/reference/ingest" class="guide-button">Ingest reference</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="guide-sources">
+        <h2>Sources and further reading</h2>
+        <ul>
+            <li><a href="https://opentelemetry.io/docs/collector/configuration/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: Collector configuration</a></li>
+            <li><a href="https://opentelemetry.io/blog/2026/collector-batching-migration/" target="_blank" rel="noopener noreferrer">OpenTelemetry blog: migrating from the batch processor</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md" target="_blank" rel="noopener noreferrer">Collector: memory_limiter processor</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/exporterhelper/README.md" target="_blank" rel="noopener noreferrer">Collector: exporter queue, batch and retry settings</a></li>
+            <li><a href="https://opentelemetry.io/docs/collector/internal-telemetry/" target="_blank" rel="noopener noreferrer">OpenTelemetry docs: Collector internal telemetry</a></li>
+            <li><a href="https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/tailsamplingprocessor/README.md" target="_blank" rel="noopener noreferrer">Collector contrib: tail sampling processor</a></li>
+            <li><a href="/docs/reference/ingest">Maple docs: Ingest API</a></li>
+        </ul>
+    </section>
+</GuidePage>

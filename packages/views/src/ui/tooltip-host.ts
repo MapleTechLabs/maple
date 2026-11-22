@@ -15,6 +15,11 @@ import { defineMessageUnion } from "foldkit/message"
 import { Side } from "./overlay/position"
 import { personCard } from "./person-avatar"
 import { timestampCard } from "./timestamp"
+import { typography } from "./typography"
+import { icon } from "./icon"
+import { ICON_TREES, type IconName } from "./icons.generated"
+import { cn } from "@maple/ui/lib/utils"
+import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import * as Tooltip from "./tooltip"
 
 /**
@@ -24,6 +29,9 @@ import * as Tooltip from "./tooltip"
 
 const CONTENT_ATTRIBUTE = "data-tooltip"
 const LAYOUT_ATTRIBUTE = "data-tooltip-layout"
+const TITLE_ATTRIBUTE = "data-tooltip-title"
+const ICON_ATTRIBUTE = "data-tooltip-icon"
+const TONE_ATTRIBUTE = "data-tooltip-tone"
 const SIDE_ATTRIBUTE = "data-tooltip-side"
 const OVERFLOW_ATTRIBUTE = "data-tooltip-overflow"
 const INSTANT_ATTRIBUTE = "data-tooltip-instant"
@@ -41,6 +49,11 @@ export type TriggerOptions = Readonly<{
 	side?: Side
 	/** Opens only while the trigger's text is cut off (`TruncatedText tooltip="overflow"`). */
 	isOverflowOnly?: boolean
+	/** A bold first line; the content becomes its muted description, wrapped at a reading width. */
+	title?: string
+	/** With `title`: a tinted tile beside it, in `tone` (the shared status colours, neutral by default). */
+	icon?: IconName
+	tone?: Tone
 }>
 
 /** `<TooltipTrigger>` + `<TooltipPopup>{content}</TooltipPopup>`. */
@@ -53,6 +66,9 @@ export const tooltipTrigger = <Message>(
 	...(options.layout === undefined ? [] : [h.DataAttribute("tooltip-layout", options.layout)]),
 	...(options.side === undefined ? [] : [h.DataAttribute("tooltip-side", options.side)]),
 	...(options.isOverflowOnly === true ? [h.DataAttribute("tooltip-overflow", "")] : []),
+	...(options.title === undefined ? [] : [h.DataAttribute("tooltip-title", options.title)]),
+	...(options.icon === undefined ? [] : [h.DataAttribute("tooltip-icon", options.icon)]),
+	...(options.tone === undefined ? [] : [h.DataAttribute("tooltip-tone", options.tone)]),
 ]
 
 /** A `timestampTrigger`'s instant, zone and the page clock its text read (else the hover's). */
@@ -68,6 +84,9 @@ type Person = { -readonly [K in keyof typeof Person.Type]: (typeof Person.Type)[
 
 const Shown = Schema.Struct({
 	text: Schema.String,
+	title: Schema.optionalKey(Schema.String),
+	icon: Schema.optionalKey(Schema.String),
+	tone: Schema.optionalKey(Schema.String),
 	isIconButton: Schema.Boolean,
 	side: Side,
 	instant: Schema.optionalKey(Instant),
@@ -273,6 +292,18 @@ const shownOf = (trigger: HTMLElement) => ({
 	triggerId: anchorIdOf(trigger),
 	shown: {
 		text: trigger.getAttribute(CONTENT_ATTRIBUTE) ?? "",
+		...Option.match(Option.fromNullishOr(trigger.getAttribute(TITLE_ATTRIBUTE)), {
+			onNone: () => ({}),
+			onSome: (title) => ({ title }),
+		}),
+		...Option.match(Option.fromNullishOr(trigger.getAttribute(ICON_ATTRIBUTE)), {
+			onNone: () => ({}),
+			onSome: (icon) => ({ icon }),
+		}),
+		...Option.match(Option.fromNullishOr(trigger.getAttribute(TONE_ATTRIBUTE)), {
+			onNone: () => ({}),
+			onSome: (tone) => ({ tone }),
+		}),
 		isIconButton: trigger.getAttribute(LAYOUT_ATTRIBUTE) === "icon-button",
 		side: Option.getOrElse(decodeSide(trigger.getAttribute(SIDE_ATTRIBUTE)), (): Side => "top"),
 		...Option.match(instantOf(trigger), { onNone: () => ({}), onSome: (instant) => ({ instant }) }),
@@ -413,6 +444,52 @@ export const whileEngaged: Stream.Stream<Message> = Stream.mergeAll([escapes, tr
 export const isEngaged = (model: Model): boolean =>
 	model.isEngaged || model.tooltip.isOpen || model.tooltip.isPressingTrigger
 
+// The attributes carry plain strings; only a known icon or tone is drawn.
+const ICON_NAMES: ReadonlySet<string> = new Set(Rec.keys(ICON_TREES))
+const TONES: ReadonlySet<string> = new Set(Rec.keys(TONE_SOFT))
+const isIconName = (name: string): name is IconName => ICON_NAMES.has(name)
+const isTone = (tone: string): tone is Tone => TONES.has(tone)
+
+/** A titled tooltip: an optional tinted icon tile, the title, its description muted below. */
+const titledCard = <M>(h: HtmlBuilder<M>, shown: Shown & { title: string }): Html => {
+	const tone: Tone = shown.tone !== undefined && isTone(shown.tone) ? shown.tone : "neutral"
+	const tile =
+		shown.icon !== undefined && isIconName(shown.icon)
+			? [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"flex size-6 shrink-0 items-center justify-center rounded-md",
+									TONE_SOFT[tone],
+								),
+							),
+							h.AriaHidden(true),
+						],
+						[icon(h, shown.icon, { size: 14 })],
+					),
+				]
+			: []
+	return h.div(
+		[
+			h.Class("flex max-w-72 items-start gap-2.5 px-0.5 py-1.5 text-left text-pretty"),
+			h.DataAttribute("slot", "tooltip-card"),
+		],
+		[
+			...tile,
+			h.div(
+				[h.Class("flex min-w-0 flex-col gap-0.5")],
+				[
+					typography(h, { size: "xs", weight: "medium", as: "div" }, [shown.title]),
+					...(shown.text === ""
+						? []
+						: [typography(h, { size: "xs", tone: "muted", as: "div" }, [shown.text])]),
+				],
+			),
+		],
+	)
+}
+
 /**
  * The portal, inside a wrapper that keeps its place in the parent: place it before any sibling
  * whose children change, since the portal itself moves to `<body>`.
@@ -443,6 +520,8 @@ export const view = <ParentMessage>(
 						const shown = model.shown[triggerId]
 						if (shown?.instant !== undefined) return [timestampCard(h, shown.instant)]
 						if (shown?.person !== undefined) return [personCard(h, shown.person)]
+						if (shown?.title !== undefined)
+							return [titledCard(h, { ...shown, title: shown.title })]
 						return [shown?.text ?? ""]
 					},
 					toView: ({ portal }) => portal ?? h.empty,

@@ -22,7 +22,7 @@ import Nav from "../Nav.astro";
 import SeoHead from "../SeoHead.astro";
 import PageCta from "../page/PageCta.astro";
 import PageHero from "../page/PageHero.astro";
-import ProductFrame from "../marketing/ProductFrame.astro";
+import IntegrationsWall from "./IntegrationsWall.astro";
 
 const locale = Astro.currentLocale ?? "en";
 const title = m.intg_seo_title();
@@ -41,13 +41,11 @@ const fillers = (count: number) => {
 	<Nav />
 
 	<PageHero
-		eyebrow={m.intg_eyebrow()}
 		title={m.intg_title()}
 		lede={m.intg_lede()}
 		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_integrations() }]}
 	>
-		{/* What the connections send: a live log stream. Every mark is in the grid below. */}
-		<ProductFrame slot="aside" surface="logs" />
+		<IntegrationsWall slot="aside" />
 	</PageHero>
 
 	<section class="border-t border-border bg-bg" data-hub>

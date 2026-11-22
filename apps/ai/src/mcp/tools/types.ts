@@ -1,7 +1,12 @@
 import type { Effect } from "effect"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
+import type {
+	McpToolFamilyActions,
+	McpToolFamilyName,
+	McpToolName,
+	McpToolOutputs,
+} from "@maple/domain/mcp-outputs"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
 import type { TenantContext } from "@maple/domain/http"
@@ -126,11 +131,16 @@ export const FEEDBACK_TOOL = "send_maple_feedback"
 export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
 	!readOnly && name !== FEEDBACK_TOOL
 
+/** The tools that read an org's connected data sources: absent for an org without that feature. */
+export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
+
 /**
  * The permission a tool asks of the caller, or `null` for one anybody may call ({@link FEEDBACK_TOOL}).
  * Declared on every tool; the registry hides and refuses a tool whose permission the caller lacks.
+ * A family whose actions ask for different ones lists them: it is shown to a caller holding any,
+ * and each action is then checked for its own.
  */
-export type McpToolPermission = Policy.Permission | null
+export type McpToolPermission = Policy.Permission | Arr.NonEmptyReadonlyArray<Policy.Permission> | null
 
 /**
  * Whether the tenant holds `permission` for a tool call. A data source query in an unattended turn
@@ -142,8 +152,11 @@ export const holdsToolPermission = (
 	permission: McpToolPermission,
 ): boolean => {
 	if (permission === null) return true
-	if (permission === "data_sources:query") return mayQueryDataSources(queryCallerOf(tenant))
-	return Policy.can(tenant.permissions, permission)
+	return Arr.some(Arr.ensure(permission), (one) =>
+		one === "data_sources:query"
+			? mayQueryDataSources(queryCallerOf(tenant))
+			: Policy.can(tenant.permissions, one),
+	)
 }
 
 /** Why this caller is refused the tool, and so never shown it: a permission they lack, their key, or nothing. */
@@ -156,7 +169,10 @@ export const refusalFor = (
 	tool: { readonly name: string; readonly permission: McpToolPermission; readonly readOnly: boolean },
 ): McpToolRefusal | undefined => {
 	if (tool.permission !== null && !holdsToolPermission(tenant, tool.permission)) {
-		return { _tag: "permission", permission: tool.permission }
+		return {
+			_tag: "permission",
+			permission: typeof tool.permission === "string" ? tool.permission : tool.permission[0],
+		}
 	}
 	if (tenant.readOnly === true && refusesReadOnlyCredential(tool.name, tool.readOnly)) {
 		return { _tag: "read_only_key" }
@@ -329,6 +345,62 @@ export interface McpToolSpec<
 /** A tool's output schema: the domain catalog's entry for its name. */
 export type McpToolOutput<N extends McpToolName> = (typeof McpToolOutputs)[N]
 
+/**
+ * One action of a tool family: what a tool of its own would declare, less what the family holds
+ * for all of them (name, title, audience, scope, phrases). Every action of a family changes data.
+ */
+export interface McpToolActionSpec<
+	P extends Schema.Codec<unknown, unknown, never, unknown>,
+	O,
+	R extends McpToolRequirements,
+> {
+	/** What this action does, in the family's description after `action=<name>:`. */
+	readonly description: string
+	readonly parameters: P
+	readonly hints: McpToolHints
+	/** What the caller must hold to run this action; the registry checks it once the action is known. */
+	readonly permission: Policy.Permission
+	/** In place of the family's, for an action a narrower key may run on its own. */
+	readonly scopeFamily?: string | ReadonlyArray<string>
+	readonly aliases?: Readonly<Record<string, string>>
+	readonly valueAliases?: Readonly<Record<string, Readonly<Record<string, string>>>>
+	readonly rejectUnknownKeys?: true
+	readonly untrustedOutput?: true
+	readonly handler: (params: P["Type"]) => Effect.Effect<O, McpToolError, R>
+	readonly render: (output: O) => ToolDoc
+}
+
+/** What each action of a family returns. */
+export type McpToolFamilyActionOutputs<N extends McpToolFamilyName> = (typeof McpToolFamilyActions)[N]
+
+/**
+ * One resource's write actions as a single tool: `manage_slo` with `action` create, update or
+ * delete, where three tools would each repeat the resource's parameters in `tools/list`.
+ */
+export interface McpToolFamilySpec<N extends McpToolFamilyName> {
+	readonly name: N
+	readonly title: string
+	/** What the family manages, in a sentence. Each action's own description follows it. */
+	readonly description: string
+	readonly audience?: McpToolAudience
+	/** The scope every action needs, unless an action names its own. */
+	readonly scopeFamily?: string | ReadonlyArray<string>
+	/** For every action: a chat status line names the tool, not what it was asked to do. */
+	readonly phrases: McpToolPhrases
+}
+
+export interface McpToolFamilyBuilder<N extends McpToolFamilyName> {
+	/** Adds an action. Every action the domain catalog lists for the family must be added. */
+	action<
+		K extends keyof McpToolFamilyActionOutputs<N> & string,
+		P extends Schema.Codec<unknown, unknown, never, unknown>,
+		R extends McpToolRequirements,
+	>(
+		name: K,
+		spec: McpToolActionSpec<P, Schema.Schema.Type<McpToolFamilyActionOutputs<N>[K]>, R>,
+	): McpToolFamilyBuilder<N>
+}
+
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
@@ -337,4 +409,11 @@ export interface McpToolRegistrar {
 	>(
 		spec: McpToolSpec<P, N, R>,
 	): void
+	family<N extends McpToolFamilyName>(spec: McpToolFamilySpec<N>): McpToolFamilyBuilder<N>
+}
+
+/** `family` for a registrar that captures standalone tools only: a test reading one tool's spec. */
+export const ignoreFamily = <N extends McpToolFamilyName>(): McpToolFamilyBuilder<N> => {
+	const builder: McpToolFamilyBuilder<N> = { action: () => builder }
+	return builder
 }

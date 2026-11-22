@@ -36,7 +36,8 @@ export const UPTIME_SETUP_WAYS = [
 		code: `> Add an uptime check for https://api.example.com/health,
   every minute, linked to the checkout service.
 
-create_uptime_monitor({
+manage_uptime_monitor({
+  action: "create",
   kind: "http",
   name: "checkout-api",
   url: "https://api.example.com/health",
@@ -105,6 +106,39 @@ export const STATUS_PAGE_ENDPOINTS = [
 	{ path: "/feed.atom", what: "Atom" },
 	{ path: "/badge.svg", what: "badge" },
 ]
+
+/**
+ * The demo outage from the status pages hero, step by step: what Maple did on the left, what
+ * the page printed on the right. Times are UTC on the demo's day (`lib/status-page-demo.ts`).
+ */
+export const STATUS_PAGE_TIMELINE = [
+	{ at: "11:33", maple: m.status_timeline_1_maple, state: "operational", update: null },
+	{ at: "11:34", maple: m.status_timeline_2_maple, state: "major_outage", update: null },
+	{
+		at: "11:34",
+		maple: m.status_timeline_3_maple,
+		state: "major_outage",
+		update: { status: m.status_timeline_investigating, body: m.status_timeline_3_body },
+	},
+	{
+		at: "11:52",
+		maple: m.status_timeline_4_maple,
+		state: "major_outage",
+		update: { status: m.status_timeline_identified, body: m.status_timeline_4_body },
+	},
+	{
+		at: "12:05",
+		maple: m.status_timeline_5_maple,
+		state: "operational",
+		update: { status: m.status_timeline_monitoring, body: m.status_timeline_5_body },
+	},
+	{
+		at: "12:35",
+		maple: m.status_timeline_6_maple,
+		state: "operational",
+		update: { status: m.status_timeline_resolved, body: m.status_timeline_6_body },
+	},
+] as const
 
 type Rule = { title: () => string; body: () => string }
 
@@ -231,6 +265,29 @@ export const sectionMarkdown = (id: SectionId, site: URL | undefined): string =>
 					{ title: m.cost_budgets_rule_1_title, body: m.cost_budgets_rule_1_body },
 					{ title: m.cost_budgets_rule_2_title, body: m.cost_budgets_rule_2_body },
 					{ title: m.cost_budgets_rule_3_title, body: m.cost_budgets_rule_3_body },
+				]),
+			)
+		case "status-page-timeline":
+			return section(
+				m.status_timeline_title(),
+				m.status_timeline_lede(),
+				Arr.join(
+					Arr.map(STATUS_PAGE_TIMELINE, (row) =>
+						row.update === null
+							? `- ${row.at} UTC: ${row.maple()}`
+							: `- ${row.at} UTC: ${row.maple()} Page: **${row.update.status()}**, "${row.update.body()}"`,
+					),
+					"\n",
+				),
+			)
+		case "status-page-themes":
+			return section(
+				m.status_themes_title(),
+				m.status_themes_lede(),
+				...rules([
+					{ title: m.status_themes_fact_1_title, body: m.status_themes_fact_1_body },
+					{ title: m.status_themes_fact_2_title, body: m.status_themes_fact_2_body },
+					{ title: m.status_themes_fact_3_title, body: m.status_themes_fact_3_body },
 				]),
 			)
 		case "status-page-feeds":

@@ -27,7 +27,7 @@ import {
 	type ServiceHealthCause,
 } from "./derive"
 import type { HealthSnapshot, Model } from "./model"
-import { alertFiringHero, heroCountsOf } from "./view-hero"
+import { alertFiringHero, heroSummaryOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
@@ -110,7 +110,7 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 	const rules = AsyncData.getOrElse(model.rules, () => [])
 	// Without live alerts (loading or sync down) the strip stays out.
 	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
-	const banner = !isAlertsKnown ? [] : alertFiringHero(h, heroCountsOf(incidents, rules))
+	const banner = !isAlertsKnown ? [] : alertFiringHero(h, heroSummaryOf(incidents, rules))
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),

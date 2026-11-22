@@ -11,6 +11,7 @@ import {
 	TOTAL_DURATION_MS,
 	WATERFALL_ROWS,
 } from "../trace-explorer/fixture"
+import { demoTrace, isDemoTraceId } from "./demo-traces"
 
 const checkoutTrace: TraceData = {
 	traceId: CHECKOUT_TRACE_ID,
@@ -22,11 +23,12 @@ const checkoutTrace: TraceData = {
 
 export const LiveTraceWaterfall = makeIsland({
 	name: "LiveTraceWaterfall",
-	Props: Schema.Struct({}),
+	// `demo` picks an integration page's example trace; without it, the checkout.
+	Props: Schema.Struct({ demo: Schema.optionalKey(Schema.String) }),
 	Model: Waterfall.Model,
-	init: () => {
+	init: ({ demo }) => {
 		const { model, commands } = Waterfall.init({
-			trace: checkoutTrace,
+			trace: demo !== undefined && isDemoTraceId(demo) ? demoTrace(demo).trace : checkoutTrace,
 			traceStartTime: BASE_TIME,
 			selectedSpanId: null,
 		})

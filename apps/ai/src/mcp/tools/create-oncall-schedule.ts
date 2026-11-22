@@ -1,4 +1,4 @@
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { OnCallScheduleCreateRequest } from "@maple/domain/http"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
@@ -17,13 +17,11 @@ import { doc } from "../lib/tool-doc"
 
 const decodeCreateRequest = Schema.decodeUnknownEffect(OnCallScheduleCreateRequest)
 
-export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
-	server.define({
-		name: "create_oncall_schedule",
-		title: "Create On-Call Schedule",
+export const createOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_oncall_schedule">) =>
+	family.action("create", {
 		description:
 			"Create an on-call schedule: layers that each rotate workspace members daily, weekly or every N hours in one time zone, optionally limited to weekly windows. " +
-			"Later layers sit on top of earlier ones; overrides (create_oncall_override) beat every layer.",
+			"Later layers sit on top of earlier ones; overrides (manage_oncall_schedule action=add_override) beat every layer.",
 		parameters: Schema.Struct({
 			name: P.text("Schedule name, e.g. 'Checkout primary'"),
 			time_zone: P.text("IANA time zone handoffs are read in, e.g. 'Europe/Berlin'"),
@@ -32,7 +30,6 @@ export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
 		}),
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		permission: "oncall:manage",
-		phrases: ["Creating an on-call schedule"],
 		handler: Effect.fn("McpTool.createOnCallSchedule")(function* (params) {
 			const request = yield* decodeCreateRequest({
 				name: params.name,
@@ -60,4 +57,3 @@ export function registerCreateOnCallScheduleTool(server: McpToolRegistrar) {
 			next: [doc.next("who_is_on_call", { schedule: output.schedule.id }, "who is on call now")],
 		}),
 	})
-}

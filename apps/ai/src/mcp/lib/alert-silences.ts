@@ -69,7 +69,7 @@ export const silenceNotFound = (silenceId: string) =>
 const failWith = (pipeName: string) => (error: AlertForbiddenError | AlertPersistenceError) =>
 	Effect.fail(toMcpHttpError(pipeName)(error))
 
-/** create_alert_silence failures: an invalid window or matcher is the caller's to fix. */
+/** manage_alert_silence action=create failures: an invalid window or matcher is the caller's to fix. */
 export const createSilenceErrors = {
 	// The details name what to fix (which rule ids do not exist), so they ride along.
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
@@ -84,17 +84,17 @@ export const createSilenceErrors = {
 				),
 			}),
 		),
-	"@maple/http/errors/AlertForbiddenError": failWith("create_alert_silence"),
-	"@maple/http/errors/AlertPersistenceError": failWith("create_alert_silence"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_alert_silence"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_alert_silence"),
 }
 
-/** end_alert_silence failures: an unknown id is invalid input on silence_id. */
+/** manage_alert_silence action=end failures: an unknown id is invalid input on silence_id. */
 export const endSilenceErrors = {
 	"@maple/http/errors/AlertSilenceNotFoundError": (error: AlertSilenceNotFoundError) =>
 		Effect.fail(silenceNotFound(error.silenceId)),
 	// A maintenance window's silence is ended through the window.
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
 		Effect.fail(new McpInvalidInputError({ message: error.message, parameter: "silence_id" })),
-	"@maple/http/errors/AlertForbiddenError": failWith("end_alert_silence"),
-	"@maple/http/errors/AlertPersistenceError": failWith("end_alert_silence"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_alert_silence"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_alert_silence"),
 }

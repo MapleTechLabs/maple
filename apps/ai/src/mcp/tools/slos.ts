@@ -30,6 +30,9 @@ import {
 	worstWindow,
 } from "../lib/slos"
 
+/** The family every SLO write runs under. */
+const TOOL = "manage_slo"
+
 const canManage = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
@@ -106,7 +109,9 @@ const renderMutation = (title: string, row: typeof SloConfigRow.Type) => ({
 	title,
 	notices: row.alerting.enabled
 		? []
-		: ["Burn-rate alerts are off: nothing pages. update_slo alerting_enabled=true turns them on."],
+		: [
+				"Burn-rate alerts are off: nothing pages. manage_slo action=update alerting_enabled=true turns them on.",
+			],
 	blocks: [configFields(row), doc.text(BURN_TIER_TEXT)],
 	next: [doc.next("inspect_slo", { slo: row.name }, `where "${row.name}" stands now`)],
 })
@@ -226,7 +231,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 								output.serviceFilter === undefined
 									? "This organization has no SLOs."
 									: "No SLO is set on this service.",
-							hints: ["create_slo adds one (org admins and engineers only)."],
+							hints: ["manage_slo action=create adds one (org admins and engineers only)."],
 						},
 					}
 				: undefined),
@@ -353,135 +358,133 @@ export function registerSloTools(server: McpToolRegistrar) {
 		},
 	})
 
-	server.define({
-		name: "create_slo",
-		title: "Create SLO",
-		description: `Define an SLO on one service's entry-point spans. sli=availability counts spans that are not errors as good; sli=latency counts spans faster than threshold_ms. target_percent is the good share to hold (50 to 99.999, e.g. 99.9) over window_days. ${BURN_TIER_TEXT} Org admins and engineers only.`,
-		parameters: Schema.Struct({
-			name: P.text("A label for the SLO, unique among the org's SLOs"),
-			service: P.text("The service whose entry-point spans count (exact `service.name`)"),
-			sli: P.oneOf(SLI_KINDS, "What makes a span good: not an error, or faster than threshold_ms"),
-			target_percent: P.number("Target share of good spans in percent, 50 to 99.999 (e.g. 99.9)"),
-			...sloParameters,
-		}),
-		aliases: P.SERVICE_ALIASES,
-		hints: { readOnly: false, destructive: false, idempotent: false },
-		permission: "slos:manage",
-		scopeFamily: "slos",
-		phrases: ["Adding an SLO"],
-		handler: Effect.fn("McpTool.createSlo")(function* (params) {
-			const tenant = yield* canManage("create_slo")
-			const service = yield* SlosService
-			const sli = yield* buildSli(params.sli, params.threshold_ms)
-			const windowDays = yield* decodeWindowDays(params.window_days)
-			const alerting = yield* alertingInput(params)
-			const created = yield* service
-				.create(tenant.orgId, {
-					name: params.name,
-					serviceName: params.service,
-					sli,
-					targetPercent: params.target_percent,
-					...(params.description === undefined ? undefined : { description: params.description }),
-					...(params.environments === undefined
-						? undefined
-						: { environments: params.environments }),
-					...(windowDays === undefined ? undefined : { windowDays }),
-					...(alerting === undefined ? undefined : { alerting }),
-					createdBy: tenant.userId,
-				})
-				.pipe(Effect.mapError(toMcpSloError("create_slo")))
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": created.id })
-			return { action: "created" as const, slo: toSloConfigRow(created) }
-		}),
-		render: (output) => renderMutation("SLO created", output.slo),
-	})
-
-	server.define({
-		name: "update_slo",
-		title: "Update SLO",
-		description:
-			"Change an SLO: its name, description, service, environments, SLI, target, window, or its burn-rate alerting (alerting_enabled, destinations per tier). Fields left out keep their value. Changing threshold_ms alone keeps a latency SLI. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			slo: P.text("The SLO's name or id (list_slos lists them)"),
-			name: P.optionalText("A new name"),
-			service: P.service("A new service (exact `service.name`)"),
-			sli: P.optionalOneOf(SLI_KINDS, "A new SLI: not an error, or faster than threshold_ms"),
-			target_percent: P.optionalNumber("A new target share of good spans in percent, 50 to 99.999"),
-			...sloParameters,
-			clear_description: P.optionalFlag("Remove the SLO's description"),
-		}),
-		aliases: P.SERVICE_ALIASES,
-		hints: { readOnly: false, destructive: false, idempotent: true },
-		permission: "slos:manage",
-		scopeFamily: "slos",
-		phrases: ["Updating an SLO"],
-		handler: Effect.fn("McpTool.updateSlo")(function* (params) {
-			const tenant = yield* canManage("update_slo")
-			const service = yield* SlosService
-			const current = yield* resolveSlo("update_slo", tenant.orgId, params.slo)
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": current.id })
-			const sliKind = params.sli ?? (params.threshold_ms === undefined ? undefined : current.sli._tag)
-			const sli = sliKind === undefined ? undefined : yield* buildSli(sliKind, params.threshold_ms)
-			const windowDays = yield* decodeWindowDays(params.window_days)
-			const alerting = yield* alertingInput(params)
-			const updated = yield* service
-				.update(tenant.orgId, current.id, {
-					...(params.name === undefined ? undefined : { name: params.name }),
-					...(params.clear_description === true
-						? { description: null }
-						: params.description === undefined
+	server
+		.family({
+			name: "manage_slo",
+			title: "Manage SLO",
+			description:
+				"Create, change or delete an SLO: an availability or latency objective on one service's entry-point spans, with burn-rate alerts. Org admins and engineers only.",
+			phrases: ["Managing an SLO"],
+			scopeFamily: "slos",
+		})
+		.action("create", {
+			description: `Define an SLO on one service's entry-point spans. sli=availability counts spans that are not errors as good; sli=latency counts spans faster than threshold_ms. target_percent is the good share to hold (50 to 99.999, e.g. 99.9) over window_days. ${BURN_TIER_TEXT}`,
+			parameters: Schema.Struct({
+				name: P.text("A label for the SLO, unique among the org's SLOs"),
+				service: P.text("The service whose entry-point spans count (exact `service.name`)"),
+				sli: P.oneOf(SLI_KINDS, "What makes a span good: not an error, or faster than threshold_ms"),
+				target_percent: P.number("Target share of good spans in percent, 50 to 99.999 (e.g. 99.9)"),
+				...sloParameters,
+			}),
+			aliases: P.SERVICE_ALIASES,
+			hints: { readOnly: false, destructive: false, idempotent: false },
+			permission: "slos:manage",
+			handler: Effect.fn("McpTool.createSlo")(function* (params) {
+				const tenant = yield* canManage(TOOL)
+				const service = yield* SlosService
+				const sli = yield* buildSli(params.sli, params.threshold_ms)
+				const windowDays = yield* decodeWindowDays(params.window_days)
+				const alerting = yield* alertingInput(params)
+				const created = yield* service
+					.create(tenant.orgId, {
+						name: params.name,
+						serviceName: params.service,
+						sli,
+						targetPercent: params.target_percent,
+						...(params.description === undefined
 							? undefined
 							: { description: params.description }),
-					...(params.service === undefined ? undefined : { serviceName: params.service }),
-					...(params.environments === undefined
-						? undefined
-						: { environments: params.environments }),
-					...(sli === undefined ? undefined : { sli }),
-					...(params.target_percent === undefined
-						? undefined
-						: { targetPercent: params.target_percent }),
-					...(windowDays === undefined ? undefined : { windowDays }),
-					...(alerting === undefined ? undefined : { alerting }),
-					updatedBy: tenant.userId,
-				})
-				.pipe(Effect.mapError(toMcpSloError("update_slo")))
-			return { action: "updated" as const, slo: toSloConfigRow(updated) }
-		}),
-		render: (output) => renderMutation("SLO updated", output.slo),
-	})
-
-	server.define({
-		name: "delete_slo",
-		title: "Delete SLO",
-		description:
-			"Delete an SLO and its burn-rate alert rule. Irreversible; requires confirm=true. To silence it instead, update_slo alerting_enabled=false. Org admins and engineers only.",
-		parameters: Schema.Struct({
-			slo: P.text("The SLO's name or id"),
-			confirm: P.flag("Must be true. There is no undo."),
-		}),
-		hints: { readOnly: false, destructive: true, idempotent: false },
-		permission: "slos:manage",
-		scopeFamily: "slos",
-		phrases: ["Deleting an SLO"],
-		handler: Effect.fn("McpTool.deleteSlo")(function* (params) {
-			// A member is refused before being asked to confirm, as create and update are.
-			const tenant = yield* canManage("delete_slo")
-			if (params.confirm !== true) {
-				return yield* new McpInvalidInputError({
-					message: `Deletion not confirmed. Re-call delete_slo with confirm=true to delete "${params.slo}", or silence it with update_slo alerting_enabled=false.`,
-					parameter: "confirm",
-				})
-			}
-			const service = yield* SlosService
-			const slo = yield* resolveSlo("delete_slo", tenant.orgId, params.slo)
-			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": slo.id })
-			yield* service.delete(tenant.orgId, slo.id).pipe(Effect.mapError(toMcpSloError("delete_slo")))
-			return { deleted: true, id: slo.id, name: slo.name }
-		}),
-		render: (output) => ({
-			title: "SLO deleted",
-			blocks: [doc.text(`Deleted "${output.name}" (${output.id}) and its burn-rate alert rule.`)],
-			next: [doc.next("list_slos", {}, "the SLOs that remain")],
-		}),
-	})
+						...(params.environments === undefined
+							? undefined
+							: { environments: params.environments }),
+						...(windowDays === undefined ? undefined : { windowDays }),
+						...(alerting === undefined ? undefined : { alerting }),
+						createdBy: tenant.userId,
+					})
+					.pipe(Effect.mapError(toMcpSloError(TOOL)))
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": created.id })
+				return { action: "created" as const, slo: toSloConfigRow(created) }
+			}),
+			render: (output) => renderMutation("SLO created", output.slo),
+		})
+		.action("update", {
+			description:
+				"Change an SLO: its name, description, service, environments, SLI, target, window, or its burn-rate alerting (alerting_enabled, destinations per tier). Fields left out keep their value. Changing threshold_ms alone keeps a latency SLI.",
+			parameters: Schema.Struct({
+				slo: P.text("The SLO's name or id (list_slos lists them)"),
+				name: P.optionalText("A new name"),
+				service: P.service("A new service (exact `service.name`)"),
+				sli: P.optionalOneOf(SLI_KINDS, "A new SLI: not an error, or faster than threshold_ms"),
+				target_percent: P.optionalNumber("A new target share of good spans in percent, 50 to 99.999"),
+				...sloParameters,
+				clear_description: P.optionalFlag("Remove the SLO's description"),
+			}),
+			aliases: P.SERVICE_ALIASES,
+			hints: { readOnly: false, destructive: false, idempotent: true },
+			permission: "slos:manage",
+			handler: Effect.fn("McpTool.updateSlo")(function* (params) {
+				const tenant = yield* canManage(TOOL)
+				const service = yield* SlosService
+				const current = yield* resolveSlo(TOOL, tenant.orgId, params.slo)
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": current.id })
+				const sliKind =
+					params.sli ?? (params.threshold_ms === undefined ? undefined : current.sli._tag)
+				const sli = sliKind === undefined ? undefined : yield* buildSli(sliKind, params.threshold_ms)
+				const windowDays = yield* decodeWindowDays(params.window_days)
+				const alerting = yield* alertingInput(params)
+				const updated = yield* service
+					.update(tenant.orgId, current.id, {
+						...(params.name === undefined ? undefined : { name: params.name }),
+						...(params.clear_description === true
+							? { description: null }
+							: params.description === undefined
+								? undefined
+								: { description: params.description }),
+						...(params.service === undefined ? undefined : { serviceName: params.service }),
+						...(params.environments === undefined
+							? undefined
+							: { environments: params.environments }),
+						...(sli === undefined ? undefined : { sli }),
+						...(params.target_percent === undefined
+							? undefined
+							: { targetPercent: params.target_percent }),
+						...(windowDays === undefined ? undefined : { windowDays }),
+						...(alerting === undefined ? undefined : { alerting }),
+						updatedBy: tenant.userId,
+					})
+					.pipe(Effect.mapError(toMcpSloError(TOOL)))
+				return { action: "updated" as const, slo: toSloConfigRow(updated) }
+			}),
+			render: (output) => renderMutation("SLO updated", output.slo),
+		})
+		.action("delete", {
+			description:
+				"Delete an SLO and its burn-rate alert rule. Irreversible; requires confirm=true. To silence it instead, action=update with alerting_enabled=false.",
+			parameters: Schema.Struct({
+				slo: P.text("The SLO's name or id"),
+				confirm: P.flag("Must be true. There is no undo."),
+			}),
+			hints: { readOnly: false, destructive: true, idempotent: false },
+			permission: "slos:manage",
+			handler: Effect.fn("McpTool.deleteSlo")(function* (params) {
+				// A member is refused before being asked to confirm, as create and update are.
+				const tenant = yield* canManage(TOOL)
+				if (params.confirm !== true) {
+					return yield* new McpInvalidInputError({
+						message: `Deletion not confirmed. Re-call manage_slo action=delete with confirm=true to delete "${params.slo}", or silence it with manage_slo action=update alerting_enabled=false.`,
+						parameter: "confirm",
+					})
+				}
+				const service = yield* SlosService
+				const slo = yield* resolveSlo(TOOL, tenant.orgId, params.slo)
+				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.slo.id": slo.id })
+				yield* service.delete(tenant.orgId, slo.id).pipe(Effect.mapError(toMcpSloError(TOOL)))
+				return { deleted: true, id: slo.id, name: slo.name }
+			}),
+			render: (output) => ({
+				title: "SLO deleted",
+				blocks: [doc.text(`Deleted "${output.name}" (${output.id}) and its burn-rate alert rule.`)],
+				next: [doc.next("list_slos", {}, "the SLOs that remain")],
+			}),
+		})
 }

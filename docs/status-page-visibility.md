@@ -12,7 +12,7 @@ audited (`status_page.updated` / `config_applied` with the field, `status_page.p
 | `internal` | Signed-in org members, in Maple      | Nothing: 404 on the Maple address and any custom domain |
 
 `visibility` is in `V2StatusPage`, `PATCH /v2/status_pages/{id}` and the config document
-(`PUT …/config`, MCP `apply_status_page_config`). A config without it keeps the page's
+(`PUT …/config`, MCP `manage_status_page action=apply_config`). A config without it keeps the page's
 current visibility, so no document opens a page by default. The password itself only goes
 through `PUT /v2/status_pages/{id}/password` (8 to 256 characters) and
 `DELETE …/password`; reads say `has_password`, nothing more.

@@ -1,18 +1,27 @@
 import { describe, expect, it } from "@effect/vitest"
-import { MAPLE_MCP_SERVER_INSTRUCTIONS } from "./server-instructions"
+import { mcpServerInstructions } from "./server-instructions"
 import { mapleToolCatalog } from "./tools/registry"
 import { withFeedbackHint } from "./dispatcher"
 import { Array as Arr, String as Str } from "effect"
 
 describe("MCP server instructions", () => {
+	const toolsNamedIn = (instructions: string) =>
+		Arr.map(Arr.fromIterable(Str.matchAll(/`([a-z_]+)`/g)(instructions)), (match) => match[1] ?? "")
+
 	it("name only tools that exist", () => {
 		const names = new Set(Arr.map(mapleToolCatalog, (tool) => tool.name))
-		const mentioned = Arr.map(
-			Arr.fromIterable(Str.matchAll(/`([a-z_]+)`/g)(MAPLE_MCP_SERVER_INSTRUCTIONS)),
-			(match) => match[1],
-		)
+		const mentioned = toolsNamedIn(mcpServerInstructions({ dataSources: true }))
 		expect(mentioned).toContain("send_maple_feedback")
-		for (const name of mentioned) expect(names.has(name ?? "")).toBe(true)
+		expect(Arr.filter(mentioned, (name) => !names.has(name))).toEqual([])
+	})
+
+	it("name the data source tools only to an org that has data sources", () => {
+		expect(toolsNamedIn(mcpServerInstructions({ dataSources: true }))).toEqual([
+			"list_data_sources",
+			"query_data_source",
+			"send_maple_feedback",
+		])
+		expect(toolsNamedIn(mcpServerInstructions({ dataSources: false }))).toEqual(["send_maple_feedback"])
 	})
 })
 

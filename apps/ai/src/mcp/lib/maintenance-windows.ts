@@ -99,7 +99,7 @@ export const maintenanceWindowTableRow = (window: WindowRow) => [
 const failWith = (pipeName: string) => (error: AlertForbiddenError | AlertPersistenceError) =>
 	Effect.fail(toMcpHttpError(pipeName)(error))
 
-/** create_maintenance_window failures: an invalid schedule or matcher is the caller's to fix. */
+/** manage_maintenance_window action=create failures: an invalid schedule or matcher is the caller's to fix. */
 export const createWindowErrors = {
 	"@maple/http/errors/AlertValidationError": (error: AlertValidationError) =>
 		Effect.fail(
@@ -113,11 +113,11 @@ export const createWindowErrors = {
 				),
 			}),
 		),
-	"@maple/http/errors/AlertForbiddenError": failWith("create_maintenance_window"),
-	"@maple/http/errors/AlertPersistenceError": failWith("create_maintenance_window"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_maintenance_window"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_maintenance_window"),
 }
 
-/** delete_maintenance_window failures: an unknown id is invalid input on maintenance_window_id. */
+/** manage_maintenance_window action=delete failures: an unknown id is invalid input on maintenance_window_id. */
 export const deleteWindowErrors = {
 	"@maple/http/errors/AlertMaintenanceWindowNotFoundError": (error: AlertMaintenanceWindowNotFoundError) =>
 		Effect.fail(
@@ -126,6 +126,6 @@ export const deleteWindowErrors = {
 				parameter: "maintenance_window_id",
 			}),
 		),
-	"@maple/http/errors/AlertForbiddenError": failWith("delete_maintenance_window"),
-	"@maple/http/errors/AlertPersistenceError": failWith("delete_maintenance_window"),
+	"@maple/http/errors/AlertForbiddenError": failWith("manage_maintenance_window"),
+	"@maple/http/errors/AlertPersistenceError": failWith("manage_maintenance_window"),
 }

@@ -67,14 +67,21 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 				{
 					href: comparePath("en", competitor.slug),
 					name: competitor.navLabel(),
-					desc: alt.ours ? `Every difference from ${page.vendor}, including where ${page.vendor} is ahead.` : `Pick it if: ${alt.pickIf}`,
+					mark: competitor.mark,
+					desc: alt.ours ? `Every difference from ${page.vendor}, including where ${page.vendor} is ahead.` : competitor.navDesc(),
 				},
 			]
 		: [];
 });
 ---
 
-<Layout title={page.seoTitle} description={page.seoDescription} ogType="article" alternates={["en"]}>
+<Layout
+	title={page.seoTitle}
+	description={page.seoDescription}
+	ogType="article"
+	alternates={["en"]}
+	mdHref={`/alternatives/${page.slug}.md`}
+>
 	<SeoHead
 		title={page.seoTitle}
 		description={page.seoDescription}
@@ -85,7 +92,6 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 	<Nav />
 
 	<PageHero
-		eyebrow="Alternatives"
 		title={page.title}
 		lede={page.lede}
 		breadcrumb={[
@@ -136,7 +142,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 							<th scope="col" class="px-4 py-3 font-medium">Pick it if</th>
 							<th scope="col" class="px-4 py-3 font-medium">Pricing</th>
 							<th scope="col" class="px-4 py-3 font-medium">License</th>
-							<th scope="col" class="px-4 py-3 font-medium">PromQL</th>
+							<th scope="col" class="px-4 py-3 font-medium">{page.keyColumn}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -145,7 +151,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 							<td class="px-4 py-3 text-fg-muted">The tool you are replacing</td>
 							<td class="px-4 py-3 text-fg-muted">{page.baseline.pricing}</td>
 							<td class="px-4 py-3 text-fg-muted">{page.baseline.openSource}</td>
-							<td class="px-4 py-3 text-fg-muted">{page.baseline.promql}</td>
+							<td class="px-4 py-3 text-fg-muted">{page.baseline.keyFact}</td>
 						</tr>
 						{
 							page.alternatives.map((alt) => (
@@ -159,7 +165,7 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 									<td class="px-4 py-3 text-fg-muted">{alt.pickIf}</td>
 									<td class="px-4 py-3 text-fg-muted">{alt.pricing}</td>
 									<td class="px-4 py-3 text-fg-muted">{alt.openSource}</td>
-									<td class="px-4 py-3 text-fg-muted">{alt.promql}</td>
+									<td class="px-4 py-3 text-fg-muted">{alt.keyFact}</td>
 								</tr>
 							))
 						}
@@ -276,8 +282,8 @@ const crossLinks = page.alternatives.flatMap((alt) => {
 			</h2>
 			<p class="mt-4 max-w-[62ch] text-[13px] leading-relaxed text-fg-muted">
 				Prices link to each vendor's own pricing page, with the month we last checked it. Every other claim
-				repeats a row on the matching Maple vs page, where it carries its own source. If something is out of
-				date, tell us and we will fix it.
+				repeats a row on the matching Maple vs page, where it carries its own source, or comes from a vendor
+				page listed here. If something is out of date, tell us and we will fix it.
 			</p>
 			<ol class="mt-8 max-w-3xl border-t border-border">
 				{

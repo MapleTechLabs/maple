@@ -10,6 +10,7 @@ import {
 	Schema,
 	Stream,
 	Array as Arr,
+	Record as Rec,
 	String as Str,
 } from "effect"
 import { WarehouseConfigError, WarehouseUpstreamError, type TenantContext } from "@maple/domain/http"
@@ -147,6 +148,7 @@ const createClickHouseSqlClient = (
 		username: config.username,
 		password: Redacted.make(config.password),
 		database: config.database,
+		headers: Rec.map(config.headers ?? {}, (value) => Redacted.make(value)),
 		// Sent as per-query URL params, so the compiled SQL text (and its fingerprint)
 		// is untouched. See `BackendDialect` for why each one is there.
 		settings: clickHouseSessionSettings(config.kind),
@@ -369,14 +371,17 @@ const createTinybirdSqlClient = (
 						return { data: decoded.data }
 					}),
 				),
-			insert: (datasource, rows) =>
+			insert: (datasource, rows, options) =>
 				rows.length === 0
 					? Effect.void
 					: Effect.scoped(
 							Effect.asVoid(
 								send(
 									HttpClientRequest.post(`${base}/v0/events`).pipe(
-										HttpClientRequest.setUrlParams({ name: datasource, wait: "false" }),
+										HttpClientRequest.setUrlParams({
+											name: datasource,
+											wait: options?.durable === true ? "true" : "false",
+										}),
 										HttpClientRequest.bodyText(
 											Arr.join(
 												Arr.map(rows, (row) => encodeEventRow(row)),
@@ -454,6 +459,21 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 									onSome: Redacted.value,
 								}),
 								database: env.CLICKHOUSE_DATABASE,
+								...Option.match(
+									Option.all([
+										env.CLICKHOUSE_ACCESS_CLIENT_ID,
+										env.CLICKHOUSE_ACCESS_CLIENT_SECRET,
+									]),
+									{
+										onNone: () => ({}),
+										onSome: ([id, secret]) => ({
+											headers: {
+												"CF-Access-Client-Id": id,
+												"CF-Access-Client-Secret": Redacted.value(secret),
+											},
+										}),
+									},
+								),
 							},
 							clientCacheKey: "read:managed",
 						}

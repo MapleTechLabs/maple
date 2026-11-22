@@ -109,7 +109,8 @@ const actions = (
 		case "openrouter":
 		case "cloudflare":
 		case "anthropic":
-		case "openai": {
+		case "openai":
+		case "morph": {
 			const { label } = CREDENTIAL_SOURCES[source.provider].replace
 			return [
 				rowButton(

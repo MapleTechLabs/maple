@@ -1,0 +1,101 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+import Code from "../../components/guides/Code.astro";
+
+const span = String.raw`name:            SELECT orders
+kind:            CLIENT
+trace_id:        4bf92f3577b34da6a3ce929d0e0e4736
+span_id:         a3ce929d0e0e4736
+parent_span_id:  00f067aa0ba902b7
+start:           2026-11-21T10:15:02.038Z
+end:             2026-11-21T10:15:02.052Z    (14 ms)
+status:          UNSET
+attributes:
+  db.system.name:      postgresql
+  db.operation.name:   SELECT
+  db.collection.name:  orders
+  server.address:      db-primary.internal
+resource:
+  service.name:        orders-service
+  service.version:     2.14.0`;
+
+const manual = String.raw`import { trace, SpanStatusCode } from "@opentelemetry/api";
+
+const tracer = trace.getTracer("orders");
+
+export async function chargeCard(order) {
+  return tracer.startActiveSpan("charge card", async (span) => {
+    span.setAttribute("order.id", order.id);
+    try {
+      return await payments.charge(order);
+    } catch (error) {
+      span.recordException(error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}`;
+---
+
+<GlossaryTermPage
+    slug="span"
+    pageTitle="What is a span? Spans in tracing, defined | Maple Glossary"
+    description="A span is one timed operation in a trace, with a name, start and end time, attributes, events and status. What each field means, span kinds, and an example."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://opentelemetry.io/docs/concepts/signals/traces/#spans", title: "OpenTelemetry docs: Spans" },
+        { href: "https://opentelemetry.io/docs/specs/otel/trace/api/#span", title: "OpenTelemetry spec: Span" },
+        { href: "https://opentelemetry.io/docs/specs/semconv/http/http-spans/", title: "OpenTelemetry semantic conventions: HTTP spans" },
+    ]}
+    readNext={[
+        { href: "/guides/opentelemetry-context-propagation", title: "Context propagation and trace IDs in logs" },
+        { href: "/guides/opentelemetry-sampling", title: "OpenTelemetry sampling" },
+        { href: "/guides/otlp", title: "OTLP explained" },
+        { href: "/docs/concepts/otel-conventions", title: "OpenTelemetry conventions (Maple docs)" },
+    ]}
+    relatedTerms={["trace", "semantic-conventions", "instrumentation", "cardinality"]}
+>
+    <section>
+        <h2>What a span contains</h2>
+        <p>A database query recorded by the orders service, as an OpenTelemetry span:</p>
+        <Code code={span} />
+        <ul class="guide-list">
+            <li><strong>Name</strong>: a low-cardinality description of the operation, such as <code>GET /orders/&#123;id&#125;</code> or <code>SELECT orders</code>. Never put IDs in a span name.</li>
+            <li><strong>Trace ID and span ID</strong>: which <a href="/glossary/trace">trace</a> the span belongs to, and its own identity.</li>
+            <li><strong>Parent span ID</strong>: the span that caused this one. Empty on the root span.</li>
+            <li><strong>Start and end time</strong>: the duration is the difference.</li>
+            <li><strong>Attributes</strong>: key-value details about the operation, named by the <a href="/glossary/semantic-conventions">semantic conventions</a> where one exists.</li>
+            <li><strong>Events</strong>: timestamped points inside the span. A recorded exception is an event.</li>
+            <li><strong>Links</strong>: references to spans in other traces, for example from a batch job to each message it processed.</li>
+            <li><strong>Status</strong>: <code>UNSET</code>, <code>OK</code> or <code>ERROR</code>.</li>
+            <li><strong>Resource</strong>: who produced it, such as <code>service.name</code> and the host. Shared by every span from the same process.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>Span kinds</h2>
+        <p>
+            The kind says how a span relates to other processes. <code>SERVER</code> handles an incoming request and <code>CLIENT</code> makes an outgoing one, so one HTTP call between two services produces a client span in the caller and a server span in the receiver. <code>PRODUCER</code> and <code>CONSUMER</code> are the same pair for messages sent through a queue. <code>INTERNAL</code>, the default, is work inside one process. Backends use kinds to draw service maps and to count requests, so getting them right matters more than it looks.
+        </p>
+    </section>
+
+    <section>
+        <h2>Status: leave it unset on success</h2>
+        <p>
+            Instrumentation sets <code>ERROR</code> when an operation fails, for example a 5xx response on a server span. It leaves successful spans <code>UNSET</code>. <code>OK</code> is for an application that wants to override an error decision explicitly, and is rarely needed. A 404 on a client span is an error for that call, while a 404 on a server span is usually the client's mistake and is left unset.
+        </p>
+    </section>
+
+    <section>
+        <h2>Creating a span by hand</h2>
+        <p>
+            <a href="/glossary/instrumentation">Auto-instrumentation</a> creates spans for HTTP, database and queue calls. For your own business logic, wrap the operation yourself. In Node.js:
+        </p>
+        <Code code={manual} lang="javascript" />
+        <p>
+            <code>startActiveSpan</code> makes the span current, so spans created inside it, such as the HTTP call to the payment provider, become its children. Always end the span, including on the error path; a span that never ends is never exported.
+        </p>
+    </section>
+</GlossaryTermPage>

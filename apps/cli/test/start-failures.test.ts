@@ -10,11 +10,16 @@ import {
 	decideStartFailure,
 	guardStartFailures,
 	MAX_BACKOFF_MS,
+	REFUSAL_REPORT_INTERVAL_MS,
 	REPORT_INTERVAL_MS,
 	startFailureFingerprint,
 	startFailuresPath,
 } from "../src/commands/start-failures"
-import { BackgroundServerExitedError, ServerOptionError } from "../src/commands/server-errors"
+import {
+	BackgroundServerExitedError,
+	BackgroundServerSpawnError,
+	ServerOptionError,
+} from "../src/commands/server-errors"
 import { LocalStoreDirtyError } from "@maple/local-server/store-errors"
 import { ProjectorModuleError } from "../src/server/eventing/projector-modules"
 import { ServerBindError } from "@maple/local-server/serve"
@@ -70,12 +75,38 @@ describe("decideStartFailure", () => {
 		expect(decision.record.lastReportedAtMs).toBe(0)
 	})
 
-	it("starts a new streak for a different failure or after a quiet gap", () => {
+	it("reports a different failure at once", () => {
 		const first = decideStartFailure(Option.none(), fp, 0, false).record
 		expect(decideStartFailure(Option.some(first), "other", MINUTE, false).report).toBe(true)
-		const later = decideStartFailure(Option.some(first), fp, 30 * MINUTE, false)
-		expect(later.report).toBe(true)
+	})
+
+	it("resets the backoff after a quiet gap but still dedupes the report", () => {
+		const first = decideStartFailure(Option.none(), fp, 0, false).record
+		const looping = { ...first, consecutive: 20 }
+		const later = decideStartFailure(Option.some(looping), fp, 30 * MINUTE, false)
+		expect(later.report).toBe(false)
 		expect(later.record.consecutive).toBe(1)
+		expect(later.backoffMs).toBe(0)
+		expect(decideStartFailure(Option.some(later.record), fp, REPORT_INTERVAL_MS, false).report).toBe(true)
+	})
+
+	it("reports a refusal restarted every 38 minutes once a day, not once per run", () => {
+		let record = decideStartFailure(Option.none(), fp, 0, false, REFUSAL_REPORT_INTERVAL_MS).record
+		const reports: Array<number> = []
+		for (let run = 1; run <= 40; run++) {
+			const nowMs = run * 38 * MINUTE
+			const decision = decideStartFailure(
+				Option.some(record),
+				fp,
+				nowMs,
+				false,
+				REFUSAL_REPORT_INTERVAL_MS,
+			)
+			if (decision.report) reports.push(nowMs)
+			expect(decision.backoffMs).toBe(0)
+			record = decision.record
+		}
+		expect(reports).toEqual([38 * 38 * MINUTE])
 	})
 
 	it("never waits for an interactive run", () => {
@@ -185,8 +216,20 @@ describe("guardStartFailures", () => {
 		expect(Exit.isSuccess(await run(chdbFailure, { detachedChild: true }))).toBe(true)
 	})
 
+	it("refuses a rejected option with exit 78 and reports it once", async () => {
+		const option = new ServerOptionError({
+			source: "MAPLE_LOCAL_ACCESS_TOKEN",
+			message: "MAPLE_LOCAL_ACCESS_TOKEN must be at least 32 characters",
+		})
+		expect(Exit.isFailure(await run(option))).toBe(true)
+		expect(process.exitCode).toBe(EXIT_START_REFUSED)
+		expect(Exit.isSuccess(await run(option))).toBe(true)
+	})
+
 	it("passes other failures through untouched", async () => {
-		const exit = await run(new ServerOptionError({ source: "--host", message: "bad host" }))
+		const exit = await run(
+			new BackgroundServerSpawnError({ logPath: "/x/maple.log", message: "spawn failed" }),
+		)
 		expect(Exit.isFailure(exit)).toBe(true)
 		expect(process.exitCode).toBe(0)
 		expect(existsSync(startFailuresPath(dataDir))).toBe(false)

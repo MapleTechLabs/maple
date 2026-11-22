@@ -1,0 +1,138 @@
+---
+/**
+ * /security: what Maple does with access, data and residency, and where each
+ * claim is documented. English-only, like /eu. Audits are "in progress" until
+ * lib/compliance.ts changes; nothing here may round that up.
+ */
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import SeoHead from "../components/SeoHead.astro";
+import FAQ from "../components/FAQ.astro";
+import Footer from "../components/Footer.astro";
+import PixelIcon from "../components/icons/PixelIcon.astro";
+import { DPA_REQUEST_URL } from "../lib/compliance";
+import { SUPPORT_EMAIL } from "../lib/agent-resources";
+import { securityFaqs, securitySections } from "../lib/security-page";
+
+const pageTitle = "Security and compliance | Maple";
+const pageDescription =
+	"How Maple handles access, encryption, data residency and audits: roles, SSO and SCIM, an append-only audit log, US or EU hosting, and SOC 2 Type II and ISO 27001 audits in progress.";
+
+const status = [
+	{ label: "DPA", icon: "lock" as const, value: "Available on request" },
+	{ label: "SOC 2 Type II", icon: "layers" as const, value: "Audit in progress" },
+	{ label: "ISO 27001", icon: "layers" as const, value: "Audit in progress" },
+	{ label: "Regions", icon: "earth" as const, value: "US or EU (Frankfurt)" },
+];
+
+const linkClass = "text-fg underline underline-offset-4 transition-colors hover:text-primary";
+---
+
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]} mdHref="/security.md">
+	<SeoHead title={pageTitle} description={pageDescription} />
+
+	<Nav />
+
+	<main id="main-content">
+		<section>
+			<div class="mx-auto max-w-6xl px-6 pt-24 pb-20 md:pt-32 md:pb-24">
+				<p class="flex items-center gap-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+					<PixelIcon name="lock" class="size-3.5 text-primary" />Security
+				</p>
+				<h1
+					class="mt-6 max-w-[20ch] text-balance font-display text-4xl font-semibold leading-[1.04] tracking-[-0.025em] text-fg sm:text-5xl md:text-6xl"
+				>
+					Security and compliance at Maple
+				</h1>
+				<p class="mt-6 max-w-[60ch] text-base leading-relaxed text-fg-muted">
+					Your telemetry holds request paths, user ids and error messages. This page lists what protects it,
+					what is still in progress, and the docs page behind each claim.
+				</p>
+				<div class="mt-8 flex flex-wrap items-center gap-3">
+					<a
+						href={DPA_REQUEST_URL}
+						data-track="cta_click"
+						data-track-location="security_hero"
+						class="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+					>
+						Request the DPA
+					</a>
+					<a
+						href="/contact"
+						class="inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-fg transition-colors hover:bg-bg-elevated"
+					>
+						Ask a security question
+					</a>
+				</div>
+
+				<dl class="mt-16 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+					{
+						status.map((item) => (
+							<div class="flex flex-col gap-2 bg-bg p-6">
+								<dt class="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-fg-muted">
+									<PixelIcon name={item.icon} class="size-4 text-primary" />
+									{item.label}
+								</dt>
+								<dd class="text-sm font-medium text-fg">{item.value}</dd>
+							</div>
+						))
+					}
+				</dl>
+			</div>
+		</section>
+
+		{
+			securitySections.map((section) => (
+				<section id={section.id} class="border-t border-border">
+					<div class="mx-auto max-w-6xl px-6 py-20 md:py-28">
+						<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{section.eyebrow}</p>
+						<h2 class="mt-4 font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
+							{section.title}
+						</h2>
+						<ul
+							class:list={[
+								"mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border",
+								section.facts.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2",
+							]}
+							role="list"
+						>
+							{section.facts.map((fact) => (
+								<li class="flex flex-col bg-bg p-6">
+									<span class="text-sm font-medium text-fg">{fact.title}</span>
+									<span class="mt-2 block text-[13px] leading-relaxed text-fg-muted">{fact.body}</span>
+									{fact.href && (
+										<a
+											href={fact.href}
+											class="mt-4 text-[13px] text-fg underline underline-offset-4 transition-colors hover:text-primary"
+											{...(fact.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+										>
+											{fact.link}
+										</a>
+									)}
+								</li>
+							))}
+						</ul>
+					</div>
+				</section>
+			))
+		}
+
+		<section class="border-t border-border">
+			<div class="mx-auto max-w-6xl px-6 py-20 md:py-28">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Disclosure</p>
+				<h2 class="mt-4 font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
+					Report a vulnerability
+				</h2>
+				<p class="mt-5 max-w-2xl text-base leading-relaxed text-fg-muted">
+					Email <a href={`mailto:${SUPPORT_EMAIL}?subject=Security`} class={linkClass}>{SUPPORT_EMAIL}</a> with
+					"Security" in the subject and the steps to reproduce. Please give us time to fix the issue before you
+					publish it.
+				</p>
+			</div>
+		</section>
+
+		<FAQ items={securityFaqs} />
+	</main>
+
+	<Footer />
+</Layout>

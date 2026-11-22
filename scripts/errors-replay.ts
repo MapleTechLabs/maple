@@ -9,12 +9,15 @@
  * A sample is JSONL, or the `{ "rows": [...] }` object the `run_sql` MCP tool
  * returns. Each row: serviceName, exceptionType, statusMessage,
  * exceptionStacktrace, and optionally count (events the row stands for),
- * customFingerprint (a `maple.fingerprint` value, read from traces) and
- * fingerprintHash (production's hash, which turns on the parity check).
+ * customFingerprint (a `maple.fingerprint` value, read from traces), span
+ * (`{ kind, name }` of the failing span, read from traces too: it keys an error
+ * that has no message, stack or named type) and fingerprintHash (production's
+ * hash, which turns on the parity check).
  * One way to pull a week of variants from an org:
  *
  *   SELECT ServiceName AS serviceName, ExceptionType AS exceptionType,
- *          StatusMessage AS statusMessage, ExceptionStacktrace AS exceptionStacktrace,
+ *          if(StatusMessage = '', ExceptionMessage, StatusMessage) AS statusMessage,
+ *          ExceptionStacktrace AS exceptionStacktrace,
  *          toString(FingerprintHash) AS fingerprintHash, count() AS count
  *   FROM error_events WHERE $__orgFilter AND $__timeFilter(Timestamp)
  *   GROUP BY serviceName, exceptionType, statusMessage, exceptionStacktrace, fingerprintHash
@@ -43,6 +46,7 @@ const Row = Schema.Struct({
 	statusMessage: Schema.String,
 	exceptionStacktrace: Schema.String,
 	customFingerprint: Schema.optional(Schema.String),
+	span: Schema.optional(Schema.Struct({ kind: Schema.String, name: Schema.String })),
 	count: Schema.optional(Schema.Union([Schema.Number, Schema.NumberFromString])),
 	fingerprintHash: Schema.optional(Schema.String),
 })

@@ -29,12 +29,15 @@ const COMPONENT_IDS = [
 export const fixtureComponentId = (index: number): string =>
 	COMPONENT_IDS[index] ?? "1c4c9b8e-6f2a-4d1e-9a5b-2f6c8d7e1aff"
 
+/** Checks alone never make a maintenance day. */
+type CheckedDayState = Exclude<StatusPageDayState, "maintenance">
+
 const DAY_COUNTS = {
 	none: { checks: 0, failures: 0, downChecks: 0 },
-	ok: { checks: 1440, failures: 0, downChecks: 0 },
-	degraded: { checks: 1440, failures: 3, downChecks: 0 },
+	ok: { checks: 1440, failures: 2, downChecks: 0 },
+	degraded: { checks: 1440, failures: 72, downChecks: 0 },
 	down: { checks: 1440, failures: 30, downChecks: 30 },
-} as const satisfies Record<StatusPageDayState, Omit<EncodedDay, "day">>
+} as const satisfies Record<CheckedDayState, Omit<EncodedDay, "day">>
 
 /**
  * `count` days ending on `nowMs` (90 unless given), all `ok` except the given overrides
@@ -42,7 +45,7 @@ const DAY_COUNTS = {
  */
 export const makeDays = (
 	nowMs: number = FIXTURE_NOW,
-	overrides: Readonly<Record<number, StatusPageDayState>> = {},
+	overrides: Readonly<Record<number, CheckedDayState>> = {},
 	count: number = STATUS_PAGE_WINDOW_DAYS,
 ): ReadonlyArray<EncodedDay> =>
 	Arr.map(lastDays(nowMs, count), (day, index) => ({

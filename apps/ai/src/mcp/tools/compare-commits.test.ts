@@ -9,6 +9,7 @@ import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCo
 import { renderToolDoc } from "../lib/tool-doc"
 import { registerCompareCommitsTool } from "./compare-commits"
 import type { McpToolError, McpToolRegistrar } from "./types"
+import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
@@ -26,6 +27,7 @@ type Invoke = (
 const compareTool = (): Invoke => {
 	let invoke: Invoke = () => Effect.die("unregistered")
 	const registrar: McpToolRegistrar = {
+		family: ignoreFamily,
 		define: (spec) => {
 			invoke = (params) =>
 				Schema.decodeEffect(spec.parameters)(params).pipe(

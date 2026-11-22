@@ -44,7 +44,6 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/combobox.ts` `inputId`, `listId`, `itemId`, `filterItems`, `queryOf`, `visibleItems`, `focusLeaves` (stateful: Model, init, update): Base UI `Combobox` (multiple, with chips) and `Autocomplete` (`@maple/ui/combobox`, `@maple/ui/autocomplete`): an input that filters a listbox.
 - `packages/views/src/ui/command.ts` `commandTitles`, `commandInput`, `commandList`, `commandGroup`, `commandFooter`, `commandHiddenInput`, `commandOption`, `commandListbox`, `commandEmpty`: `@maple/ui/command`: the command palette's body, an inline Autocomplete (always open, first match highlighted) on the Combobox Model, inside a `command-dialog` Dialog.
 - `packages/views/src/ui/compact-search-input.ts` `compactSearchInput`: `CompactSearchInput`: a 24px mono filter field (magnifier, search input, clear button) for a panel toolbar.
-- `packages/views/src/ui/concept-flow.ts` `conceptFlow`: `ConceptFlow`: a short primer at the top of a page that introduces an idea: a title, one lead sentence, then the concepts it is built from as tiles joined by arrows (each leads...
 - `packages/views/src/ui/confirm-dialog.ts` `confirmDialog`: A confirm dialog over the alert-dialog Submodel.
 - `packages/views/src/ui/context-menu-view.ts` `idleTrigger`, `view`: An entry of the menu: an item (with an optional shortcut) or a separator.
 - `packages/views/src/ui/context-menu.ts` `itemId`, `subItemId`, `subPopupId` (stateful: Model, init, update): Base UI `ContextMenu` (`@maple/ui/context-menu`): a right-click on the trigger opens a menu at the pointer (fixed, side right, align start, offset 4); arrows move the highlight,...
@@ -53,7 +52,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
-- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
+- `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailStats`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
 - `packages/views/src/ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
 - `packages/views/src/ui/dialog.ts` `popupId`, `triggerId`, `titleId`, `descriptionId`, `open`, `close`, `isDismissedByOutsidePress` (stateful: Model, init, update): Base UI `Dialog` / `AlertDialog` as one Submodel: open state, the enter/exit transition, and a Mount that portals the popup to `<body>`, marks the page outside it, locks scroll...
 - `packages/views/src/ui/display.ts` `kbd`, `kbdGroup`, `badgeClass`, `badge`, `separator`, `avatarFallback`: Small display pieces: keyboard keys, badges, separators and avatars.
@@ -186,6 +185,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/toggle.ts` `togglePrimitive`, `toggle`, `segmentItemHeight` (stateful: Model, init, update): Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not.
 - `packages/views/src/ui/tone-bars.ts` `toneBars`: `ToneBars`.
 - `packages/views/src/ui/tone-box.ts` `toneBoxClass`: `toneBoxClass`: a box (badge, pill, chip) tinted in one tone: its `-a2` fill, `-a3` edge and the tone's text, for an element whose shape another kit piece draws.
+- `packages/views/src/ui/tone-glyph.ts` `toneGlyph`: A glyph on a small tile tinted in one tone, naming a row's kind at a glance (a timeline's sessions, events, errors).
 - `packages/views/src/ui/tooltip-host.ts` `tooltipTrigger`, `triggerEvents`, `whileEngaged`, `isEngaged`, `view` (stateful: Model, init, update): The app's one tooltip: any element carrying `tooltipTrigger` opens it, through events delegated on `document`, so stateless kit helpers get Base UI's tooltip without a Model of...
 - `packages/views/src/ui/tooltip.ts` `view` (stateful: Model, init, update): Base UI `Tooltip` (`@maple/ui/tooltip`): opens after the pointer rests on a trigger (600 ms), closes when it leaves (no close delay), on a press of the trigger and on Escape.
 - `packages/views/src/ui/trace-badges.ts` `traceStatusBadge`, `servicePills`, `traceIdBadge`: A trace's id badge, status badge and service pills.

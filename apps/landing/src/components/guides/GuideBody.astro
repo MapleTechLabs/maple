@@ -1,7 +1,11 @@
 ---
 // The body of every guide: the outline rail beside the article. Below `lg` the
 // rail is hidden, so the sections show as a strip under the hero instead.
+// A guide in a series (lib/guide-series.ts) lists the series and ends on the
+// next part; any other guide ends on a few guides from its category.
 import TableOfContents from "../TableOfContents.astro";
+import SeriesParts from "./SeriesParts.astro";
+import { relatedGuides, seriesPosition } from "../../lib/guide-series";
 
 interface Props {
     headings: Array<{ depth: number; slug: string; text: string }>;
@@ -11,6 +15,8 @@ interface Props {
 
 const { headings, class: className } = Astro.props;
 const sections = headings.filter((h) => h.depth === 2);
+const position = seriesPosition(Astro.url.pathname);
+const related = position === undefined ? relatedGuides(Astro.url.pathname) : [];
 ---
 
 <nav aria-label="Guide sections" class="border-b border-border bg-bg-deep lg:hidden">
@@ -23,10 +29,53 @@ const sections = headings.filter((h) => h.depth === 2);
 
 <div class="shell grid gap-12 py-14 md:py-20 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[14rem_minmax(0,1fr)] xl:gap-16">
     <aside class="hidden lg:block">
-        <TableOfContents headings={headings} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
+        <div class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto">
+            <TableOfContents headings={headings} />
+            {position && <SeriesParts position={position} class="mt-10" />}
+        </div>
     </aside>
 
-    <article class:list={["guide-article min-w-0", className]}>
-        <slot />
-    </article>
+    <div class="min-w-0">
+        {position && <SeriesParts position={position} class="mb-12 max-w-[46rem] rounded-xl border border-border p-5 lg:hidden" />}
+
+        <article class:list={["guide-article min-w-0", className]}>
+            <slot />
+        </article>
+
+        {position && (position.next || position.previous) && (
+            <nav aria-label="Series navigation" class="mt-16 grid max-w-[46rem] gap-3 sm:grid-cols-2">
+                {position.previous ? (
+                    <a href={position.previous.href} class="flex flex-col rounded-xl border border-border p-5 transition-colors hover:border-primary/40">
+                        <span class="text-[12px] text-fg-muted">Previous: part {position.index}</span>
+                        <span class="mt-1.5 text-[15px] font-medium text-fg">{position.previous.title}</span>
+                    </a>
+                ) : (
+                    <span class="hidden sm:block" aria-hidden="true"></span>
+                )}
+                {position.next && (
+                    <a href={position.next.href} class="flex flex-col rounded-xl border border-primary/40 p-5 transition-colors hover:border-primary sm:text-right">
+                        <span class="text-[12px] text-primary">Next: part {position.index + 2} of {position.parts.length}</span>
+                        <span class="mt-1.5 text-[15px] font-medium text-fg">{position.next.title}</span>
+                        <span class="mt-1 text-[13px] leading-relaxed text-fg-muted">{position.next.description}</span>
+                    </a>
+                )}
+            </nav>
+        )}
+
+        {related.length > 0 && (
+            <nav aria-labelledby="related-guides" class="mt-16 max-w-[46rem] border-t border-border pt-8">
+                <h2 id="related-guides" class="text-[12px] font-medium text-fg">Related guides</h2>
+                <ul class="mt-4 grid list-none gap-3 p-0 sm:grid-cols-3">
+                    {related.map((guide) => (
+                        <li>
+                            <a href={guide.href} class="flex h-full flex-col rounded-xl border border-border p-4 transition-colors hover:border-primary/40">
+                                <span class="text-[14px] font-medium text-fg">{guide.title}</span>
+                                <span class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{guide.description}</span>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+        )}
+    </div>
 </div>

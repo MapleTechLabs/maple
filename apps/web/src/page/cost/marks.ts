@@ -34,6 +34,7 @@ const MODEL_PROVIDERS: ReadonlySet<CostProvider> = new Set<CostProvider>([
 	"openrouter",
 	"anthropic",
 	"openai",
+	"morph",
 ])
 
 /** The org's providers that bill services and regions of their own. */
@@ -110,9 +111,12 @@ const ANTHROPIC_SERVICES: ReadonlySet<string> = new Set([
 /** What a PlanetScale charge that names no database and has no description is filed under. */
 const PLANETSCALE_UNNAMED = "PlanetScale"
 
+/** Morph's one service: it reports no split by model. */
+const MORPH_SERVICE = "morph"
+
 /**
  * The platform a service's own name says bills it, when it says: a GitHub or Cloudflare product,
- * an AWS service, a PlanetScale charge filed under the provider's name.
+ * an AWS service, a PlanetScale charge filed under the provider's name, Morph's one service.
  */
 const namedServiceOwner = (key: string): CostProvider | undefined =>
 	GITHUB_PRODUCTS.has(key)
@@ -125,7 +129,9 @@ const namedServiceOwner = (key: string): CostProvider | undefined =>
 					? "aws"
 					: key === PLANETSCALE_UNNAMED
 						? "planetscale"
-						: undefined
+						: key === MORPH_SERVICE
+							? "morph"
+							: undefined
 
 /**
  * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and

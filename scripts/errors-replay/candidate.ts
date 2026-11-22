@@ -3,7 +3,7 @@
  *
  * Nothing in production reads this. It exists so a grouping change can be
  * measured (`bun run errors:replay`) instead of argued. It starts as a copy of
- * production (v3, `packages/domain/src/tinybird/fingerprint.ts`): edit
+ * production (`packages/domain/src/tinybird/fingerprint.ts`): edit
  * `candidateInputs` to propose a change. When a proposal wins, port it to
  * fingerprint.ts and the MV SQL, bump FINGERPRINT_VERSION, and reset this file.
  */
@@ -14,6 +14,12 @@ export interface ReplayEvent {
 	readonly exceptionType: string
 	readonly statusMessage: string
 	readonly exceptionStacktrace: string
+	/**
+	 * The failing span, which keys an error with no message, stack or named type.
+	 * `error_events` does not store it: a sample without it replays those as one key
+	 * per service and type, and the parity line counts them as differences.
+	 */
+	readonly span?: { readonly kind: string; readonly name: string } | undefined
 	/** The raw `maple.fingerprint` value, when the sample carries one. */
 	readonly customFingerprint?: string | undefined
 }

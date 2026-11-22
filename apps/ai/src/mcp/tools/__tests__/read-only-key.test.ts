@@ -119,6 +119,7 @@ describe("what an analyst may change over MCP", () => {
 			[
 				"add_dashboard_widget",
 				"create_dashboard",
+				"delete_dashboard",
 				"remove_dashboard_widget",
 				"reorder_dashboard_widgets",
 				"replace_dashboard_widgets",

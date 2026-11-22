@@ -1,5 +1,6 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { SearchConsoleTopQueriesRequest, SearchConsoleOverviewRequest } from "@maple/domain/http"
+import { CH } from "@maple/query-engine"
 import {
 	SearchConsoleDevice,
 	SearchConsoleQueriesOutput,
@@ -27,20 +28,8 @@ const MAX_LIMIT = 200
 
 type Output = typeof SearchConsoleQueriesOutput.Type
 
-/** A ClickHouse string literal: backslashes first, then quotes, so an escape cannot be undone. */
-const sqlString = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
-
-/** Daily clicks, impressions and position of one query, from each day's newest import only. */
-export const queryTrendSql = (siteUrl: string, query: string): string => {
-	const where = `WHERE $__orgFilter AND SiteUrl = ${sqlString(siteUrl)} AND Grain = 'query' AND Date >= toStartOfDay($__startTime) AND Date <= $__endTime`
-	return (
-		"SELECT Date, sum(Clicks) AS clicks, sum(Impressions) AS impressions, " +
-		"round(sum(PositionSum) / sum(Impressions), 1) AS position FROM search_console_daily " +
-		`${where} AND Query = ${sqlString(query)} ` +
-		`AND (Date, IngestedAt) IN (SELECT Date, max(IngestedAt) FROM search_console_daily ${where} GROUP BY Date) ` +
-		"GROUP BY Date ORDER BY Date"
-	)
-}
+/** The trend SQL the tool suggests for its top query (see `searchConsoleQueryTrendSql`). */
+export const queryTrendSql = CH.searchConsoleQueryTrendSql
 
 export const positionText = (current: number, previous: number): string =>
 	current === 0
@@ -99,12 +88,20 @@ export const lagNotice = (
 	},
 	covered: string,
 ): ReadonlyArray<string> => {
-	const days = daysPastDataThrough(output.timeRange.end, output.site.dataThrough)
-	return days === 0
-		? []
-		: [
-				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); ${covered} cover the window up to then.`,
-			]
+	const { past, total } = daysPastDataThrough(
+		{ startTime: output.timeRange.start, endTime: output.timeRange.end },
+		output.site.dataThrough,
+	)
+	const through = output.site.dataThrough ?? "?"
+	const lag = "Google reports with a 2 to 3 day lag and today is partial"
+	if (past === 0) return []
+	if (past === total)
+		return [
+			`Data is complete through ${through}, so none of this window's ${total} day${total === 1 ? " is" : "s are"} counted yet (${lag}); end the window on ${through} or earlier.`,
+		]
+	return [
+		`Data is complete through ${through}, so ${past === 1 ? "the last day of this window is" : `the last ${past} days of this window are`} left out (${lag}); ${covered} cover the window up to then.`,
+	]
 }
 
 export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {

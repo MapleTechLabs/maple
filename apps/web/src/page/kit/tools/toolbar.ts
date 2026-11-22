@@ -7,7 +7,7 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { searchInput } from "@maple/views/ui/search-input"
 import { switchControl } from "@maple/views/ui/switch"
 import { listToolbar } from "../list-toolbar"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, Option, Schema } from "effect"
 import { Command } from "foldkit"
 
@@ -66,11 +66,18 @@ export type FacetSelectConfig<M> = Readonly<{
 	options: ReadonlyArray<FacetOption>
 	model: Select.Model
 	toMessage: (message: Select.Message) => M
+	/** A glyph before each option's name, in the list and on the trigger. */
+	optionIcon?: (name: string) => Html
 }>
 
 /** The label small beside the value; a set value is drawn in the primary tint. */
 export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>): Html => {
 	const isSet = config.value !== undefined
+	const optionIcon = config.optionIcon
+	const withIcon = (name: string, text: string): ReadonlyArray<Html | string> =>
+		optionIcon === undefined || name === ALL
+			? [text]
+			: [hstack(h, { gap: "2", align: "center", as: "span", inline: true }, [optionIcon(name), text])]
 	return h.submodel({
 		slotId: config.model.id,
 		model: config.model,
@@ -87,6 +94,7 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 			ariaLabel: config.label,
 			size: "sm",
 			isDisabled: config.options.length === 0,
+			renderItem: (option: SelectView.SelectOption) => withIcon(option.value, option.label),
 			className: cn(
 				"gap-2 font-mono text-xs",
 				isSet
@@ -99,7 +107,7 @@ export const facetSelect = <M>(h: HtmlBuilder<M>, config: FacetSelectConfig<M>):
 					[config.label],
 				),
 				" ",
-				config.value ?? "All",
+				...(config.value === undefined ? ["All"] : withIcon(config.value, config.value)),
 			],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},

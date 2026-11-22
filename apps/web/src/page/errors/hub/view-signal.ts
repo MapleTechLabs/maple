@@ -10,6 +10,9 @@ import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import type { Tone } from "@maple/ui/lib/tone"
 
 // Row pieces of an error signal row and its spark.
 
@@ -70,61 +73,113 @@ export const signalSpark = (
 	})
 }
 
-/** `SignalActivity`: a live investigation, then comment and PR marks; nothing on an untouched row. */
-// The message takes the free width; the chips follow it at their natural size.
-export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
+/** Fixed slots of the activity lane, so each kind of mark sits in the same column on every row. */
+export const ACTIVITY_SLOT = {
+	investigation: "w-3 shrink-0 min-w-0 @5xl/page:w-24",
+	comments: "w-8 shrink-0",
+	prs: "w-8 shrink-0",
+} as const
+
+const countMark = (
+	h: H,
+	iconName: "ChatBubbleIcon" | "PullRequestIcon",
+	count: number,
+	tooltip: Readonly<{ title: string; description: string; tone: Tone }>,
+	isStrong: boolean,
+): Html =>
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "center",
+			as: "span",
+			className: cn(
+				"text-2xs tabular-nums",
+				isStrong ? "text-foreground-soft" : "text-muted-foreground",
+			),
+			attributes: tooltipTrigger(h, tooltip.description, {
+				title: tooltip.title,
+				icon: iconName,
+				tone: tooltip.tone,
+			}),
+		},
+		[
+			icon(h, iconName, { size: 12 }),
+			// The tooltip is not announced: a screen reader gets the title in place of the bare count.
+			h.span([h.AriaHidden(true)], [String(count)]),
+			typography(h, { as: "span", className: "sr-only" }, [tooltip.title]),
+		],
+	)
+
+/** Whether the row has any investigation, comment or PR mark to show. */
+export const hasActivity = (signal: ErrorSignal): boolean =>
+	signal.investigation !== null ||
+	signal.commentCount > 0 ||
+	signal.openPullRequestCount + signal.mergedPullRequestCount > 0
+
+/** `SignalActivity`: the investigation, comment and PR slots; an empty slot keeps its width. */
+export const signalActivity = (h: H, signal: ErrorSignal, className: string): Html => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount
-	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0) return null
-	return hstack(h, { gap: "2", align: "center", as: "span", className: "ml-auto shrink-0 pl-3" }, [
-		...(signal.investigation === null
-			? []
-			: [
-					investigationChip(h, signal.investigation, {
-						withConfidence: false,
-						compact: true,
-						onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
-					}),
-				]),
-		...(signal.commentCount > 0
-			? [
-					hstack(
-						h,
-						{
-							gap: "1",
-							align: "center",
-							as: "span",
-							className: "text-2xs tabular-nums text-muted-foreground",
-							attributes: [
-								h.Title(`${countLabel(signal.commentCount, "comment")} on the timeline`),
-							],
-						},
-						[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
-					),
-				]
-			: []),
-		...(prCount > 0
-			? [
-					h.span(
-						[
-							h.Class(
-								cn(
-									"flex items-center gap-1 text-2xs tabular-nums",
-									signal.mergedPullRequestCount > 0
-										? "text-foreground-soft"
-										: "text-muted-foreground",
-								),
-							),
-							h.Title(
-								signal.mergedPullRequestCount > 0
-									? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
-									: countLabel(prCount, "open pull request"),
-							),
+	return h.span(
+		[h.Class(className)],
+		[
+			h.span(
+				[h.Class(ACTIVITY_SLOT.investigation)],
+				signal.investigation === null
+					? []
+					: [
+							investigationChip(h, signal.investigation, {
+								withConfidence: false,
+								// The dot alone until the page is wide enough for the label.
+								compact: true,
+								onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
+							}),
 						],
-						[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
-					),
-				]
-			: []),
-	])
+			),
+			h.span(
+				[h.Class(ACTIVITY_SLOT.comments)],
+				signal.commentCount > 0
+					? [
+							countMark(
+								h,
+								"ChatBubbleIcon",
+								signal.commentCount,
+								{
+									title: countLabel(signal.commentCount, "comment"),
+									description: "Notes from your team on this issue's timeline.",
+									tone: "info",
+								},
+								false,
+							),
+						]
+					: [],
+			),
+			h.span(
+				[h.Class(ACTIVITY_SLOT.prs)],
+				prCount > 0
+					? [
+							countMark(
+								h,
+								"PullRequestIcon",
+								prCount,
+								{
+									title:
+										signal.mergedPullRequestCount > 0
+											? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
+											: countLabel(prCount, "open pull request"),
+									description:
+										signal.mergedPullRequestCount > 0
+											? "Pull requests linked to this issue as fixes. A merged one should ship the fix."
+											: "Pull requests linked to this issue as fixes, still open.",
+									tone: signal.mergedPullRequestCount > 0 ? "done" : "live",
+								},
+								signal.mergedPullRequestCount > 0,
+							),
+						]
+					: [],
+			),
+		],
+	)
 }
 
 /** The dense trend, whether it surges, and the spark's accessible name. */

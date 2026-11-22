@@ -57,8 +57,15 @@ describe("a password-protected page", () => {
 		expect(response.headers.get("x-robots-tag")).toBe("noindex")
 	})
 
-	it("keeps feeds, status.json, the badge and break-glass behind the password", async () => {
-		for (const path of ["feed.atom", "feed.rss", "api/v1/status.json", "badge.svg", "_manage"]) {
+	it("keeps feeds, status.json, the badge, the preview image and break-glass behind the password", async () => {
+		for (const path of [
+			"feed.atom",
+			"feed.rss",
+			"api/v1/status.json",
+			"badge.svg",
+			"og.png",
+			"_manage",
+		]) {
 			const response = await send(fake, `${PAGE}${path}`)
 			expect(response.status, path).toBe(401)
 			expect(await response.text(), path).toBe("This status page is password-protected.")

@@ -13,8 +13,9 @@
  *     served here because the registry lives in this Worker.
  *   - `/internal/cancellation-review/read`: the model's read of a plan
  *     cancellation, asked by api's cancellation review over the same binding.
- *   - `/api/security-audit/*`: scheduled security audits, typed and served here because the
- *     Workflow that runs them is hosted in this Worker.
+ *   - `/api/security-audit/*`: the scheduled security audit's writes and settings, typed and
+ *     served here because the Workflow that runs them is hosted in this Worker. Its reads are
+ *     api's (`SecurityAuditReadsApiGroup`), which stays warm.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
  *     does not forward it, and the callers are the Workers that open incidents.
@@ -38,10 +39,9 @@ import { layerDecisionModelFromConfig } from "../platform/Llm"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
 import { ChatSessionsRouter } from "../routes/chat-sessions.http"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
-import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
+import { SecurityAuditAccess } from "@maple/backend/services/security-audit/SecurityAuditAccess"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { rawRoutes } from "@maple/backend/http/raw-routes"
 import type { AiPortsLayer } from "../worker/bindings"
@@ -62,12 +62,7 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(
 		HttpSecurityAuditLive.pipe(
 			Layer.provide(
-				Layer.mergeAll(
-					SecurityAuditStore.layer,
-					OrganizationFeatureFlagsService.layer,
-					AiCredits.layer,
-					SecurityAuditRepositorySize.layer,
-				),
+				Layer.mergeAll(SecurityAuditAccess.layer, AiCredits.layer, SecurityAuditRepositorySize.layer),
 			),
 			Layer.provide(
 				Layer.mergeAll(

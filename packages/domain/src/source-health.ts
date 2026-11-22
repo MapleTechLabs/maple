@@ -111,6 +111,8 @@ export interface SourceHealthInput {
 	readonly staleAfterMs?: number
 	/** Why the integration's own record says it fails (a refused delivery), or undefined. */
 	readonly failing?: string
+	/** When the integration's own record last saw data arrive (an AWS delivery); counts like `lastUsedAt`. */
+	readonly deliveredAt?: number
 }
 
 const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b))
@@ -118,7 +120,8 @@ const latest = (a: number | null, b: number | null) => (a === null ? b : b === n
 const formatWindow = (ms: number) =>
 	ms >= 60 * MINUTE ? `${Math.round(ms / (60 * MINUTE))} hours` : `${Math.round(ms / MINUTE)} minutes`
 
-export const sourceHealth = (source: SourceHealthInput, now: number): SourceHealthResult => {
+export const sourceHealth = (input: SourceHealthInput, now: number): SourceHealthResult => {
+	const source = { ...input, lastUsedAt: latest(input.lastUsedAt, input.deliveredAt ?? null) }
 	const policy: HealthPolicy = POLICIES[source.platform]
 	const lastDataAt =
 		policy.pollReadsData === false ? source.lastUsedAt : latest(source.lastUsedAt, source.lastPollOkAt)

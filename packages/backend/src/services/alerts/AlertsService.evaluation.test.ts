@@ -212,6 +212,43 @@ describe("AlertsService evaluation error persistence", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
+	it.effect("shows the author why their raw SQL rule cannot evaluate", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { rawQueryRows: [{ count: 3 }] }
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_alert_raw_invalid")
+			const userId = asUserId("user_alert_raw_invalid")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Raw rule without value",
+						severity: "warning",
+						enabled: true,
+						signalType: "raw_query",
+						rawQuerySql:
+							"SELECT count() AS count FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+						comparator: "gt",
+						threshold: 1,
+						windowMinutes: 5,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+
+			yield* alerts.runSchedulerTick()
+
+			const rules = yield* alerts.listRules(orgId)
+			assert.strictEqual(
+				rules.rules[0]?.lastEvaluationError,
+				"Invalid raw SQL alert query: Raw SQL alert queries must return a column named value.",
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("skips rules on a warehouse outage without counting failures, warning once per org", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {

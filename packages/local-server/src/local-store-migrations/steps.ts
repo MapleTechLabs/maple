@@ -2083,6 +2083,35 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Fingerprint v5: the error and lineage views are recreated. No column change;
+		// stored rows keep their hashes and nothing is backfilled.
+		slug: "error-fingerprint-v5",
+		description:
+			"Recreate the error_events views for fingerprint v5 (minified names, URL path values, span-keyed bare errors)",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [
+			dropViews("error_events_mv", "error_events_by_time_mv", "error_fingerprint_lineage_mv"),
+		],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events and lineage views so new occurrences hash with fingerprint v5",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; new occurrences hash with v5, and the lineage table links each to its v4 hash.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

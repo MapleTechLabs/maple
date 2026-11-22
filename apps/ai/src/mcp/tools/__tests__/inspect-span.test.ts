@@ -5,11 +5,13 @@ import type { SpanDetailResult } from "@maple/query-engine/observability"
 import { renderToolDoc } from "../../lib/tool-doc"
 import { registerInspectSpanTool, spanDetailOutput } from "../inspect-span"
 import type { McpToolRegistrar } from "../types"
+import { ignoreFamily } from "../types"
 
 /** The tool's render, fed the output through its schema the way the registry decodes it. */
 let renderOutput: (output: typeof InspectSpanOutput.Type) => string = () =>
 	expect.unreachable("inspect_span not registered")
 const registrar: McpToolRegistrar = {
+	family: ignoreFamily,
 	define: (spec) => {
 		if (spec.name !== "inspect_span") return
 		renderOutput = (output) =>

@@ -1,9 +1,11 @@
 import type { StatusPageComponentStatus, StatusPageIncidentImpact } from "@maple/primitives"
 import {
+	classifyDay,
 	incidentComponentStatus,
 	STATUS_PAGE_HISTORY_DAYS,
 	STATUS_PAGE_WINDOW_DAYS,
 	type StatusPageDayBar,
+	type StatusPageDayState,
 	type StatusPageIncidentHistoryEntry,
 	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotComponent,
@@ -73,11 +75,19 @@ export const barComponents = (
 ): ReadonlyArray<StatusPageSnapshotComponent> =>
 	Arr.filter(components, (component) => component.showUptime && component.days.length > 0)
 
-/** Windows worth paging through: back to the oldest day any component was checked, at least one. */
-export const windowCount = (components: ReadonlyArray<StatusPageSnapshotComponent>): number =>
+/**
+ * Windows worth paging through: back to the oldest day any component was checked or had an
+ * incident marked on it, at least one.
+ */
+export const windowCount = (
+	components: ReadonlyArray<StatusPageSnapshotComponent>,
+	entries: ReadonlyArray<CalendarEntry>,
+	nowMs: number,
+): number =>
 	Arr.reduce(barComponents(components), 1, (count, component) => {
+		const marks = componentMarks(component.id, entries, nowMs)
 		return Option.match(
-			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0),
+			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0 || marks.has(bar.day)),
 			{
 				onNone: () => count,
 				onSome: (oldest) =>
@@ -139,6 +149,7 @@ export interface CalendarEntry {
 	readonly listed: boolean
 	readonly startedAt: number
 	readonly resolvedAt: number | null
+	readonly componentIds: ReadonlyArray<string>
 }
 
 type StatusPageHistoryKind = StatusPageIncidentHistoryEntry["kind"]
@@ -178,6 +189,7 @@ export const calendarEntries = (snapshot: StatusPagePublicSnapshot): ReadonlyArr
 		impact: incident.impact,
 		startedAt: incident.startedAt,
 		resolvedAt: incident.resolvedAt,
+		componentIds: incident.componentIds,
 		status: INCIDENT_STATUS_LABEL[incident.status],
 	}))
 	return Arr.map(
@@ -219,3 +231,36 @@ export const calendarDays = (
 	})
 	return new Map(Array.from(byDay, ([dayN, day]) => [utcDay(dayN * DAY_MS), day] as const))
 }
+
+/** The worst incident or maintenance on one day of a component's bar, and what it does to the day. */
+export interface BarMark {
+	readonly entry: CalendarEntry
+	/** `operational` for an incident with no impact: named in the tooltip, no colour. */
+	readonly status: StatusPageComponentStatus
+}
+
+/** Per UTC day, the worst entry naming the component; days without one are absent. */
+export const componentMarks = (
+	componentId: string,
+	entries: ReadonlyArray<CalendarEntry>,
+	nowMs: number,
+): ReadonlyMap<string, BarMark> => {
+	const own = Arr.filter(entries, (entry) => entry.componentIds.includes(componentId))
+	if (own.length === 0) return new Map()
+	return new Map(
+		Arr.flatMap([...calendarDays(own, nowMs)], ([day, mark]) => {
+			const entry = Option.getOrUndefined(
+				Arr.findFirst(mark.entries, (index) => own[index]?.tone === mark.tone).pipe(
+					Option.flatMap((index) => Arr.get(own, index)),
+				),
+			)
+			if (entry === undefined) return []
+			const status: StatusPageComponentStatus = mark.tone === "notice" ? "operational" : mark.tone
+			return [[day, { entry, status }] as const]
+		}),
+	)
+}
+
+/** A day's state with the incidents marked on it. */
+export const barState = (bar: StatusPageDayBar, mark: BarMark | undefined): StatusPageDayState =>
+	classifyDay(bar, mark?.status)

@@ -31,6 +31,9 @@ export interface EnvConfig {
 	readonly CLICKHOUSE_USER: string
 	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly CLICKHOUSE_DATABASE: string
+	/** A Cloudflare Access service token, for an env-level ClickHouse behind an Access application. */
+	readonly CLICKHOUSE_ACCESS_CLIENT_ID: Option.Option<string>
+	readonly CLICKHOUSE_ACCESS_CLIENT_SECRET: Option.Option<Redacted.Redacted>
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
 	readonly MAPLE_SESSION_SIGNING_SECRET: Option.Option<Redacted.Redacted>
@@ -208,6 +211,8 @@ const envConfig = Config.all({
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
 	CLICKHOUSE_PASSWORD: optionalRedacted("CLICKHOUSE_PASSWORD"),
 	CLICKHOUSE_DATABASE: stringWithDefault("CLICKHOUSE_DATABASE", "default"),
+	CLICKHOUSE_ACCESS_CLIENT_ID: optionalString("CLICKHOUSE_ACCESS_CLIENT_ID"),
+	CLICKHOUSE_ACCESS_CLIENT_SECRET: optionalRedacted("CLICKHOUSE_ACCESS_CLIENT_SECRET"),
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_SESSION_SIGNING_SECRET: optionalRedacted("MAPLE_SESSION_SIGNING_SECRET"),
@@ -361,6 +366,33 @@ const makeEnv = Effect.gen(function* () {
 	if (env.CLICKHOUSE_PROVIDER !== "clickhouse" && env.CLICKHOUSE_PROVIDER !== "tinybird") {
 		return yield* new EnvValidationError({
 			message: "CLICKHOUSE_PROVIDER must be either 'clickhouse' or 'tinybird'",
+		})
+	}
+
+	if (
+		Option.isSome(env.CLICKHOUSE_ACCESS_CLIENT_ID) !== Option.isSome(env.CLICKHOUSE_ACCESS_CLIENT_SECRET)
+	) {
+		return yield* new EnvValidationError({
+			message:
+				"CLICKHOUSE_ACCESS_CLIENT_ID and CLICKHOUSE_ACCESS_CLIENT_SECRET must be configured together",
+		})
+	}
+	if (
+		Option.isSome(env.CLICKHOUSE_ACCESS_CLIENT_ID) &&
+		(Option.isNone(env.CLICKHOUSE_URL) || env.CLICKHOUSE_PROVIDER !== "clickhouse")
+	) {
+		return yield* new EnvValidationError({
+			message: "CLICKHOUSE_ACCESS_CLIENT_ID needs CLICKHOUSE_URL with CLICKHOUSE_PROVIDER=clickhouse",
+		})
+	}
+	// The service token rides every request, so it must never cross plain HTTP.
+	if (
+		Option.isSome(env.CLICKHOUSE_ACCESS_CLIENT_ID) &&
+		Option.isSome(env.CLICKHOUSE_URL) &&
+		!Str.startsWith("https://")(Str.toLowerCase(Str.trim(env.CLICKHOUSE_URL.value)))
+	) {
+		return yield* new EnvValidationError({
+			message: "CLICKHOUSE_URL must use https:// when CLICKHOUSE_ACCESS_CLIENT_ID is configured",
 		})
 	}
 

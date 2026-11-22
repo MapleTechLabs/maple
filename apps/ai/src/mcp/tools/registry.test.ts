@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
-import { mapleToolCatalog, mapleToolPhrase, readToolCall, toInputSchema } from "./registry"
+import { Effect, Exit, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	inputSchemaOf,
+	mapleCallEntries,
+	mapleToolCatalog,
+	mapleToolPhrase,
+	readToolCall,
+	toInputSchema,
+} from "./registry"
 import * as P from "../lib/params"
+import { DATA_SOURCE_TOOLS } from "./types"
+import { TOOL_NAME_ALIASES, type ToolNameAlias } from "./tool-name-aliases"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
 
@@ -19,7 +28,7 @@ describe("toInputSchema nullable-union collapse", () => {
 		// collapsing that would narrow the contract. None exist today; this fails if
 		// one is ever added.
 		const nullableRequired: string[] = []
-		for (const definition of mapleToolCatalog) {
+		for (const definition of mapleCallEntries) {
 			const document = Schema.toJsonSchemaDocument(definition.schema)
 			const schema = document.schema as {
 				required?: ReadonlyArray<string>
@@ -37,7 +46,7 @@ describe("toInputSchema nullable-union collapse", () => {
 
 	it("publishes no null branch on any tool", () => {
 		const withNull = Arr.map(
-			Arr.filter(mapleToolCatalog, (d) =>
+			Arr.filter(mapleCallEntries, (d) =>
 				Str.includes('"type":"null"')(jsonOf(toInputSchema(d.schema))),
 			),
 			(d) => d.name,
@@ -102,7 +111,7 @@ describe("P.optionalNumber", () => {
 
 	it("publishes no non-finite enum branch on any tool in the catalog", () => {
 		const withEnum = Arr.map(
-			Arr.filter(mapleToolCatalog, (d) => Str.includes('"-Infinity"')(jsonOf(toInputSchema(d.schema)))),
+			Arr.filter(mapleCallEntries, (d) => Str.includes('"-Infinity"')(jsonOf(toInputSchema(d.schema)))),
 			(d) => d.name,
 		)
 		expect(withEnum).toEqual([])
@@ -179,7 +188,7 @@ describe("enum values as models spell them", () => {
 	})
 
 	it("maps every declared value alias to a value its parameter publishes", () => {
-		const broken = Arr.flatMap(mapleToolCatalog, (tool) =>
+		const broken = Arr.flatMap(mapleCallEntries, (tool) =>
 			Arr.flatMap(Object.entries(tool.valueAliases), ([parameter, aliases]) => {
 				const properties = toInputSchema(tool.schema).properties
 				const property =
@@ -205,5 +214,255 @@ describe("enum values as models spell them", () => {
 
 	it("still rejects a value nothing maps to", () => {
 		expect(feedback("telepathy")?.decodes).toBe(false)
+	})
+})
+
+describe("toInputSchema tagged-variant merge", () => {
+	const Published = Schema.Struct({
+		anyOf: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+		required: Schema.optionalKey(Schema.Array(Schema.String)),
+		properties: Schema.optionalKey(
+			Schema.Record(
+				Schema.String,
+				Schema.Struct({
+					enum: Schema.optionalKey(Schema.Array(Schema.String)),
+					description: Schema.optionalKey(Schema.String),
+				}),
+			),
+		),
+	})
+	const rangeOf = (schema: Record<string, unknown>) =>
+		Schema.decodeUnknownSync(Schema.Struct({ properties: Schema.Struct({ range: Published }) }))(schema)
+			.properties.range
+
+	const shared = { id: Schema.String, name: Schema.String, comment: Schema.optionalKey(Schema.String) }
+
+	it("publishes one object for variants that differ by a tag and their own optional keys", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({
+						...shared,
+						type: Schema.Literal("relative"),
+						value: Schema.optionalKey(Schema.String),
+					}),
+					Schema.Struct({
+						...shared,
+						type: Schema.Literal("absolute"),
+						start: Schema.optionalKey(Schema.String),
+					}),
+				]),
+			}),
+		)
+		const range = rangeOf(schema)
+		expect(range.anyOf).toBeUndefined()
+		expect(range.properties?.type?.enum).toEqual(["relative", "absolute"])
+		expect(range.properties?.name?.description).toBeUndefined()
+		expect(range.properties?.value?.description).toBe("Only for type=relative.")
+		expect(range.properties?.start?.description).toBe("Only for type=absolute.")
+		expect(range.required).toEqual(["id", "name", "type"])
+	})
+
+	it("keeps the union for a tool that refuses keys a variant does not declare", () => {
+		const union = Schema.Struct({
+			range: Schema.Union([
+				Schema.Struct({
+					...shared,
+					type: Schema.Literal("relative"),
+					value: Schema.optionalKey(Schema.String),
+				}),
+				Schema.Struct({
+					...shared,
+					type: Schema.Literal("absolute"),
+					start: Schema.optionalKey(Schema.String),
+				}),
+			]),
+		})
+		// Such a tool rejects `start` under `relative`; one merged object would publish it as allowed.
+		expect(rangeOf(toInputSchema(union, { onExcessProperty: "error" })).anyOf).toHaveLength(2)
+		expect(rangeOf(toInputSchema(union, { onExcessProperty: "ignore" })).anyOf).toBeUndefined()
+	})
+
+	it("keeps the union when a key is required under one tag only, which one object cannot say", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ ...shared, type: Schema.Literal("weekly"), weekday: Schema.String }),
+					Schema.Struct({ ...shared, type: Schema.Literal("daily") }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union when the tag is constrained differently per branch", () => {
+		const tagged = (value: string) => Schema.Literal(value).check(Schema.isMaxLength(value.length))
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ ...shared, type: tagged("a") }),
+					Schema.Struct({ ...shared, type: tagged("long") }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union when its branches are labelled", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ ...shared, type: Schema.Literal("drop") }).annotate({ title: "Drop" }),
+					Schema.Struct({ ...shared, type: Schema.Literal("redact") }).annotate({
+						title: "Redact",
+					}),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union where merging would not make the schema shorter", () => {
+		const O = Schema.optionalKey(Schema.String)
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					// Nothing shared but the tag: a note on every key outweighs the second object.
+					Schema.Struct({ type: Schema.Literal("a"), p: O, q: O, r: O, s: O }),
+					Schema.Struct({ type: Schema.Literal("b"), t: O, u: O, v: O, w: O }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+
+	it("keeps the union when the variants disagree on a shared key", () => {
+		const schema = toInputSchema(
+			Schema.Struct({
+				range: Schema.Union([
+					Schema.Struct({ type: Schema.Literal("relative"), value: Schema.String }),
+					Schema.Struct({ type: Schema.Literal("absolute"), value: Schema.Number }),
+				]),
+			}),
+		)
+		expect(rangeOf(schema).anyOf).toHaveLength(2)
+	})
+})
+
+describe("propose_fix arguments", () => {
+	it("reads `summary` as the patch summary", () => {
+		const call = readToolCall("propose_fix", {
+			issue_id: "0190a8f2-7c3e-7d4a-9b1c-2f6e5d4c3b2a",
+			summary: "Guard the nil session before reading its user",
+		})
+		expect(call?.unknown).toEqual([])
+		expect(call?.args.patch_summary).toBe("Guard the nil session before reading its user")
+	})
+})
+
+describe("data source tools", () => {
+	it("are all hidden from an org without data sources", () => {
+		const scoped = Arr.map(
+			Arr.filter(mapleToolCatalog, (tool) =>
+				Arr.ensure(tool.scopeFamily ?? []).includes("data_sources"),
+			),
+			(tool) => tool.name,
+		)
+		expect(Arr.sort(scoped, Order.String)).toEqual(Arr.sort([...DATA_SOURCE_TOOLS], Order.String))
+	})
+})
+
+describe("tool families", () => {
+	const family = mapleToolCatalog.find((tool) => tool.name === "manage_slo")
+	const Published = Schema.Struct({
+		required: Schema.Array(Schema.String),
+		properties: Schema.Record(
+			Schema.String,
+			Schema.Struct({
+				enum: Schema.optionalKey(Schema.Array(Schema.String)),
+				description: Schema.String,
+			}),
+		),
+	})
+	const published = Schema.decodeUnknownSync(Published)(family === undefined ? {} : inputSchemaOf(family))
+
+	it("publish one tool whose only required parameter is the action", () => {
+		expect(published.required).toEqual(["action"])
+		expect(published.properties.action?.enum).toEqual(["create", "update", "delete"])
+	})
+
+	it("publish each parameter once, saying which actions take it", () => {
+		expect(published.properties.confirm?.description).toMatch(/^\(delete\) /)
+		expect(published.properties.window_days?.description).toMatch(/^\(create, update\) /)
+		// The same name with a different meaning per action keeps each action's words.
+		expect(published.properties.name?.description).toBe(
+			"create: A label for the SLO, unique among the org's SLOs; update: A new name",
+		)
+	})
+
+	it("say in the description what each action cannot go without", () => {
+		expect(family?.description).toContain("- action=create: ")
+		expect(family?.description).toContain("Requires name, service, sli, target_percent.")
+		expect(family?.description).toContain("Requires slo, confirm.")
+	})
+
+	it("decode a call as the action it names, with that action's own required parameters", () => {
+		const create = { name: "Checkout", service: "checkout", sli: "availability", target_percent: 99.9 }
+		expect(readToolCall("manage_slo", { action: "create", ...create })?.decodes).toBe(true)
+		expect(readToolCall("manage_slo", { action: "Create", ...create })?.decodes).toBe(true)
+		expect(readToolCall("manage_slo", { action: "delete", ...create })?.decodes).toBe(false)
+		expect(readToolCall("manage_slo", create)?.decodes).toBe(false)
+		expect(readToolCall("manage_slo", { action: "archive", slo: "Checkout" })?.decodes).toBe(false)
+	})
+
+	it("report a parameter of another action as one this action does not take", () => {
+		const call = readToolCall("manage_slo", {
+			action: "delete",
+			slo: "Checkout",
+			confirm: true,
+			name: "x",
+		})
+		expect(call?.unknown).toEqual(["name"])
+	})
+
+	it("still answer to the names they replaced", () => {
+		const retired = readToolCall("delete_slo", { slo: "Checkout", confirm: true })
+		expect(retired?.decodes).toBe(true)
+		expect(retired?.args).toEqual({ slo: "Checkout", confirm: true })
+		// The retired name is the action: one sent with it cannot pick another.
+		expect(
+			readToolCall("delete_slo", { action: "create", slo: "Checkout", confirm: true })?.decodes,
+		).toBe(true)
+	})
+
+	it("keep an ingest rule's own action apart from which action to run", () => {
+		const rule = {
+			name: "Drop debug logs",
+			signals: ["logs"],
+			conditions: [{ field: "severity", op: "lt", value: "info" }],
+		}
+		const drop = { type: "drop", keep_percent: 0 }
+		const created = readToolCall("manage_ingest_rule", { action: "create", ...rule, rule_action: drop })
+		expect(created?.decodes).toBe(true)
+		// Under its retired name the rule's spec was `action`: it arrives as the spec, not as what to do.
+		const retired = readToolCall("create_ingest_rule", { ...rule, action: drop })
+		expect(retired?.decodes).toBe(true)
+		expect(retired?.args.rule_action).toEqual(created?.args.rule_action)
+		expect(
+			readToolCall("update_ingest_rule", { rule: "Drop debug logs", action: drop })?.unknown,
+		).toEqual([])
+	})
+
+	it("give every retired name a tool, and an action of it where it names one", () => {
+		const aliases: Readonly<Record<string, ToolNameAlias>> = TOOL_NAME_ALIASES
+		const broken = Arr.filter(Rec.toEntries(aliases), ([, alias]) => {
+			const tool = mapleToolCatalog.find((candidate) => candidate.name === alias.tool)
+			const action = alias.args?.action
+			return (
+				tool === undefined ||
+				(action !== undefined && !Arr.some(tool.actions ?? [], (entry) => entry.action === action))
+			)
+		})
+		expect(Arr.map(broken, ([name]) => name)).toEqual([])
 	})
 })

@@ -1,0 +1,77 @@
+---
+import GlossaryTermPage from "../../components/glossary/GlossaryTermPage.astro";
+---
+
+<GlossaryTermPage
+    slug="slo"
+    pageTitle="What is an SLO? SLOs, SLIs and error budgets explained | Maple Glossary"
+    description="An SLO is a reliability target such as 99.9% of requests succeeding over 30 days; the error budget is the failure it allows. Definitions, worked numbers, and burn-rate alerts."
+    modified="2026-11-21"
+    sources={[
+        { href: "https://sre.google/sre-book/service-level-objectives/", title: "Google SRE book: Service Level Objectives" },
+        { href: "https://sre.google/workbook/alerting-on-slos/", title: "Google SRE workbook: Alerting on SLOs" },
+    ]}
+    readNext={[
+        { href: "/guides/incident-response", title: "Incident response, step by step" },
+        { href: "/guides/api-latency", title: "When API p99 jumps but p50 doesn't" },
+        { href: "/guides/opentelemetry-sampling", title: "OpenTelemetry sampling" },
+        { href: "/guides/uptime-monitoring", title: "Uptime monitoring with checks and traces" },
+    ]}
+    relatedTerms={["percentiles", "cardinality", "trace", "span"]}
+>
+    <section>
+        <h2>SLI, SLO and SLA</h2>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>Term</th><th>What it is</th><th>Example</th></tr></thead>
+                <tbody>
+                    <tr><td>SLI, service level indicator</td><td>The measurement: a ratio of good events to all events</td><td>Requests answered without a 5xx in under 500 ms, divided by all requests</td></tr>
+                    <tr><td>SLO, service level objective</td><td>The target for that ratio over a window</td><td>99.9% over 30 days</td></tr>
+                    <tr><td>SLA, service level agreement</td><td>A contract with consequences, usually looser than the SLO</td><td>99.5% per month, or service credits</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The SLI is defined from the user's side. "CPU under 80%" is not an SLI, because users do not experience CPU. "Checkout requests that succeed" is one.
+        </p>
+    </section>
+
+    <section>
+        <h2>The error budget, with numbers</h2>
+        <p>
+            The error budget is <code>1 − SLO</code>. A 99.9% target leaves 0.1% for failure. Over 30 days, measured in time, that is 43.2 minutes of full downtime. Measured in requests, which is usually more accurate, a service handling 10 million requests a month may fail 10,000 of them.
+        </p>
+        <div class="guide-table">
+            <table>
+                <thead><tr><th>SLO</th><th>Budget</th><th>Per 30 days</th></tr></thead>
+                <tbody>
+                    <tr><td>99%</td><td>1%</td><td>7 h 12 min</td></tr>
+                    <tr><td>99.5%</td><td>0.5%</td><td>3 h 36 min</td></tr>
+                    <tr><td>99.9%</td><td>0.1%</td><td>43 min 12 s</td></tr>
+                    <tr><td>99.95%</td><td>0.05%</td><td>21 min 36 s</td></tr>
+                    <tr><td>99.99%</td><td>0.01%</td><td>4 min 19 s</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <p>
+            The budget turns reliability into a decision. While budget remains, the team ships features and takes risks. When it runs out, reliability work comes first until the window recovers. Neither side has to argue from opinion.
+        </p>
+    </section>
+
+    <section>
+        <h2>Burn rate and alerting</h2>
+        <p>
+            <strong>Burn rate</strong> is how fast you are spending the budget compared with spending it evenly. A burn rate of 1 uses the whole budget exactly at the end of the window. A burn rate of 14.4 for one hour spends 2% of a 30-day budget, which is worth waking someone for.
+        </p>
+        <p>
+            Alerting on burn rate instead of raw error rate cuts noise. A one-minute spike that costs 0.01% of the budget does not page anyone; a slow, steady 3x burn that would exhaust the budget in ten days does. The common setup pairs a fast window (such as 1 hour at 14.4x) with a slow one (such as 6 hours at 6x).
+        </p>
+    </section>
+
+    <section>
+        <h2>Where SLI data comes from</h2>
+        <p>
+            Request-based SLIs come from server-side metrics or spans: count requests and count the good ones. Two cautions. Counting from sampled traces undercounts unless each span carries its sampling weight, as the <a href="/guides/opentelemetry-sampling#metrics-and-cost">sampling guide</a> explains. And a latency SLI built on a <a href="/glossary/percentiles">percentile</a> is harder to turn into a budget than one that counts requests over a threshold.
+        </p>
+    </section>
+</GlossaryTermPage>

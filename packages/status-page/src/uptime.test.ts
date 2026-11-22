@@ -37,6 +37,38 @@ describe("renderUptimeJson", () => {
 		])
 	})
 
+	it("reports a day an incident or maintenance touched on the component by that, not its checks", () => {
+		const withMarks = makeSnapshot({
+			components: [makeComponent(0, { name: "API" })],
+			incidentHistory: [
+				{
+					id: "db",
+					title: "Database upgrade",
+					kind: "maintenance",
+					impact: "none",
+					startedAt: Date.UTC(2026, 9, 27, 2),
+					resolvedAt: Date.UTC(2026, 9, 27, 3),
+					componentIds: [fixtureComponentId(0)],
+				},
+				{
+					id: "outage",
+					title: "Outage",
+					kind: "incident",
+					impact: "critical",
+					startedAt: Date.UTC(2026, 9, 28, 2),
+					resolvedAt: Date.UTC(2026, 9, 28, 3),
+					componentIds: [fixtureComponentId(0)],
+				},
+			],
+		})
+		const json = renderUptimeJson(withMarks, PAGE_URL, { days: 3, componentId: null })
+		expect(Arr.map(json?.components[0]?.days ?? [], (day) => day.status)).toEqual([
+			"operational",
+			"maintenance",
+			"down",
+		])
+	})
+
 	it("leaves out components the page shows no uptime for", () => {
 		const json = renderUptimeJson(snapshot, PAGE_URL, { days: 90, componentId: null })
 		expect(Arr.map(json?.components ?? [], (component) => component.name)).toEqual(["API"])

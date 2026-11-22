@@ -5,6 +5,7 @@
 	"scripts": {
 		"eval": "vitest run --config vitest.eval.config.ts",
 		"eval:tools": "vitest run --config vitest.eval.config.ts src/evals/tools",
+		"eval:config": "vitest run --config vitest.eval.config.ts src/evals/config",
 		"eval:compare": "bun run scripts/eval-compare.ts",
 		"eval:check": "bun run scripts/eval-runtime-check.ts",
 		"eval:widgets": "bun run scripts/grade-widget-eval.ts",

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { sanitizeArgv, sanitizeStack, scrubAttributes, scrubTraceData } from "../src/core/telemetry"
+import {
+	argvAttribute,
+	sanitizeArgv,
+	sanitizeStack,
+	scrubAttributes,
+	scrubTraceData,
+} from "../src/core/telemetry"
 import { Array as Arr } from "effect"
 
 const str = (key: string, value: string) => ({ key, value: { stringValue: value } })
@@ -36,6 +42,11 @@ describe("CLI telemetry scrubber", () => {
 		expect(sanitizeArgv("query select body from logs where email = 'a@b.c'")).toBe("query select")
 		expect(sanitizeArgv("traces --service checkout --since=1h")).toBe("traces --service --since")
 		expect(sanitizeArgv("auth login")).toBe("auth login")
+	})
+
+	test("a value with spaces cannot smuggle a dash-prefixed word out as a flag", () => {
+		const argv = ["post", "/v2/x", "-d", "note=rotate -hunter2", "-H", "X-Key: -s3cret"]
+		expect(sanitizeArgv(argvAttribute(argv))).toBe("post -d -H")
 	})
 
 	test("keeps stack frames without messages or directories", () => {

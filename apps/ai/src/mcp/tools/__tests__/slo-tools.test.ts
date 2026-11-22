@@ -373,3 +373,47 @@ describe("delete_slo", () => {
 		expect(Arr.map(listed.slos, (row) => row.name)).toEqual(["Checkout availability"])
 	})
 })
+
+describe("manage_slo", () => {
+	it("runs the action it is given and says which one ran", async () => {
+		const result = await runToolDirect(admin, "manage_slo", {
+			action: "update",
+			slo: "Checkout availability",
+			description: "Checkout stays up.",
+		})
+		expect(result.structuredContent).toMatchObject({
+			action: "update",
+			result: { action: "updated", slo: { description: "Checkout stays up." } },
+		})
+		expect(markdown(result)).toContain("SLO updated")
+	})
+
+	it("answers a retired name in the shape that name published", async () => {
+		const result = await runToolDirect(admin, "update_slo", {
+			slo: "Checkout availability",
+			description: "Checkout stays up.",
+		})
+		expect(result.structuredContent).toMatchObject({
+			action: "updated",
+			slo: { description: "Checkout stays up." },
+		})
+	})
+
+	it("names its actions when the call gives none, or one it does not have", async () => {
+		const missing = await runToolDirect(admin, "manage_slo", { slo: "Checkout availability" })
+		expect(missing.failureCategory).toBe("invalid_parameters")
+		expect(markdown(missing)).toContain("Missing required `action`: one of create, update, delete.")
+		const unknown = await runToolDirect(admin, "manage_slo", {
+			action: "archive",
+			slo: "Checkout availability",
+		})
+		expect(markdown(unknown)).toContain('`action` "archive" is not one of create, update, delete.')
+	})
+
+	it("says which parameter the action is missing, not the family's whole list", async () => {
+		const result = await runToolDirect(admin, "manage_slo", { action: "create", name: "Search" })
+		expect(result.failureCategory).toBe("invalid_parameters")
+		expect(markdown(result)).toContain("Missing required `service`")
+		expect(markdown(result)).not.toContain("confirm")
+	})
+})

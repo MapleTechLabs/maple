@@ -78,7 +78,9 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 								output.status === undefined
 									? "No active or scheduled alert silences."
 									: `No ${output.status} alert silences.`,
-							hints: ["Create one with create_alert_silence to hold back notifications."],
+							hints: [
+								"Create one with manage_alert_silence action=create to hold back notifications.",
+							],
 						},
 					}
 				: undefined),
@@ -138,7 +140,11 @@ export function registerListAlertSilencesTool(server: McpToolRegistrar) {
 				: undefined),
 			next: [
 				...Arr.map(Arr.filter(output.silences, (s) => s.status !== "ended").slice(0, 1), (s) =>
-					doc.next("end_alert_silence", { silence_id: s.id }, `end "${s.reason}" now`),
+					doc.next(
+						"manage_alert_silence",
+						{ action: "end", silence_id: s.id },
+						`end "${s.reason}" now`,
+					),
 				),
 				doc.next("list_alert_rules", {}, "find rule ids and tags to silence"),
 			],

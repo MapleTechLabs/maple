@@ -136,6 +136,7 @@ import {
 import { simulateFiringSpans } from "./alert-firing-spans"
 import {
 	evaluationErrorKind,
+	evaluationErrorMessage,
 	hasUpstreamStatus,
 	isQueryEngineTimeout,
 	isQueryLimitFailure,
@@ -5894,7 +5895,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									Effect.flatMap(now, (failedAt) =>
 										recordEvaluationFailure(
 											row,
-											error,
+											{ message: evaluationErrorMessage(error) },
 											error.error.code,
 											{
 												kind: evaluationErrorKind(error),

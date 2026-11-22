@@ -10,13 +10,15 @@ import * as Cloudflare from "@alchemy.run/cloudflare"
 // BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { Context, Effect, Layer, Array as Arr } from "effect"
+import { Context, Effect, Layer, Predicate, Array as Arr, Record as Rec } from "effect"
 import { FEEDBACK_TOOL, type McpToolResult } from "./tools/types"
 import { McpRuntimeServicesLive, type McpToolRuntimeRequirements } from "./tools/runtime-services"
 import { CurrentMcpRequestTenant, CurrentMcpTenant, provideMcpTenant } from "./tenant"
 import { recordExpectedMcpFailure, spanFailureMessage } from "./expected-failures"
 import { mayReadDataSources } from "./lib/data-sources"
 import { executeRegisteredTool, type McpToolLookup } from "./tools/registry-core"
+import { canonicalToolCall, enumSpelling } from "./tools/tool-name-aliases"
+import { McpToolFamilyActions } from "@maple/domain/mcp-outputs"
 import { makeModuleToolLookup, mcpToolTitle } from "./tools/tool-lookup"
 import { recordMcpToolAudit } from "@maple/backend/services/audit/audit-access"
 import type { TenantContext } from "@maple/domain/http"
@@ -191,6 +193,21 @@ export interface McpToolExecutorApi {
 	) => Effect.Effect<ReadonlyArray<ExternalDataSourceDocument>, DataSourcePersistenceError>
 }
 
+const FAMILY_ACTIONS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = McpToolFamilyActions
+
+/**
+ * The action a call asks of a family tool, as sent or as its retired name stood for. Only one the
+ * family has: the value goes on a span, and arguments are the caller's text.
+ */
+export const familyActionOf = (name: string, input: unknown): string | undefined => {
+	const call = canonicalToolCall(name, input)
+	const actions = FAMILY_ACTIONS[call.name]
+	const asked = Predicate.isObject(call.input) ? call.input.action : undefined
+	if (actions === undefined || typeof asked !== "string") return undefined
+	const action = enumSpelling(asked)
+	return Rec.has(actions, action) ? action : undefined
+}
+
 /** More connected repositories than this and an investigation warms none of them. */
 const MAX_PREPARED_REPOSITORIES = 3
 
@@ -227,15 +244,22 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				input: unknown,
 				surface: McpToolSurface,
 			) {
+				// A family's action is what a caller did; the name alone merges create, update and delete.
+				const action = familyActionOf(name, input)
 				yield* Effect.annotateCurrentSpan({
 					"maple.mcp.tool": name,
 					"maple.mcp.surface": surface,
+					...(action === undefined ? undefined : { "maple.mcp.tool.action": action }),
 				})
 				// A public MCP call is also Maple's own `mcp_tool_called` product event,
 				// projected from this span. Agent turns (`chat`, `bot`) are not: the
 				// investigation that ran them is the event.
 				if (surface === "mcp") {
-					const base = { tool: name, source: "mcp" }
+					const base = {
+						tool: name,
+						source: "mcp",
+						...(action === undefined ? undefined : { action }),
+					}
 					const props =
 						tenant.mcpClientName === undefined ? base : { ...base, client: tenant.mcpClientName }
 					yield* Effect.annotateCurrentSpan(

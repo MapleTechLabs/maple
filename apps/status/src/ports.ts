@@ -1,3 +1,4 @@
+import type { StatusOgCard } from "@maple/status-page"
 import { Schema } from "effect"
 import type { Effect } from "effect"
 
@@ -8,6 +9,15 @@ export class StatusStorageError extends Schema.TaggedError<StatusStorageError>()
 		message: Schema.String,
 		store: Schema.Literals(["kv", "r2", "cache", "rate-limit"]),
 		key: Schema.String,
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
+) {}
+
+/** The link preview could not be drawn (renderer, wasm or cache). */
+export class StatusOgImageError extends Schema.TaggedError<StatusOgImageError>()(
+	"@maple/status/OgImageError",
+	{
+		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -42,4 +52,12 @@ export interface StatusEnv {
 	readonly randomId: () => string
 	/** Maple's own hosts for this Worker (its domain, workers.dev, local dev), which serve `/s/<org key>/<slug>`. */
 	readonly isSharedHost: (hostname: string) => boolean
+	/** The PNG for a card; `key` names one page's card version, so equal keys may share a render. */
+	readonly ogImage: (key: string, card: StatusOgCard) => Effect.Effect<StatusOgImage, StatusOgImageError>
+}
+
+/** `complete: false` is a stand-in (the logo was unreachable or undrawable) that must not be cached. */
+export interface StatusOgImage {
+	readonly png: Uint8Array<ArrayBuffer>
+	readonly complete: boolean
 }
