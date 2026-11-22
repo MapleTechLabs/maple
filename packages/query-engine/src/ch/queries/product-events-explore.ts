@@ -178,6 +178,8 @@ function metricExpr($: EventsAccessor, metric: ProductEventsMetric): CH.Expr<num
 			return CH.uniqIf($.UserId, $.UserId.neq(""))
 		case "visitors":
 			return CH.uniqIf($.VisitorId, $.VisitorId.neq(""))
+		case "groups":
+			return CH.uniqIf($.GroupId, $.GroupId.neq(""))
 	}
 }
 

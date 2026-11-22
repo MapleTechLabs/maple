@@ -20,9 +20,10 @@ export type FunnelSessionDimension = typeof FunnelSessionDimension.Type
 
 /**
  * What a funnel counts: a stitched person (user id, else the visitor's linked
- * user, else the visitor), the raw visitor or user column, or the session.
+ * user, else the visitor), the raw visitor or user column, the group the app
+ * identified the user into (an account or team), or the session.
  */
-export const FunnelKeyBy = Schema.Literals(["person", "visitor", "user", "session"])
+export const FunnelKeyBy = Schema.Literals(["person", "visitor", "user", "group", "session"])
 export type FunnelKeyBy = typeof FunnelKeyBy.Type
 
 /** A `track()` (or direct-ingested) event by name, optionally narrowed by `Attributes[k] = v`. */

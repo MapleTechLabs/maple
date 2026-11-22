@@ -365,12 +365,35 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 				answerNumber("accounts in checkout", paid[0] ?? 0),
 				answerNumber("accounts that paid", paid[1] ?? 0),
 			],
+			[
+				funnel(
+					[
+						{ kind: "event", eventName: "checkout_started" },
+						{ kind: "event", eventName: "plan_started" },
+					],
+					fourWeeks,
+					{ key_by: "group" },
+				),
+			],
 		),
 		scenario(
 			"active-accounts",
 			["counts", "accounts"],
 			`How many distinct accounts (not users) were active in the app (host ${APP_HOST}) ${span(lastWeek)}?`,
 			[answerNumber("active accounts", activeAccounts)],
+			[
+				{
+					tool: "query_data",
+					args: {
+						source: "product_events",
+						kind: "breakdown",
+						metric: "groups",
+						group_by: "host",
+						host: APP_HOST,
+						...window(lastWeek),
+					},
+				},
+			],
 		),
 		scenario(
 			"visitors-by-source",
@@ -464,6 +487,11 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			["accounts", "identity"],
 			`How many users started a paid plan (plan_started) ${span(fourWeeks)}?`,
 			[answerMentions("account", "group"), answerNumber("accounts that started a plan", paidAccounts)],
+			// By person it is empty, and the tool says why; by group it is the answer.
+			[
+				funnel([{ kind: "event", eventName: "plan_started" }], fourWeeks),
+				funnel([{ kind: "event", eventName: "plan_started" }], fourWeeks, { key_by: "group" }),
+			],
 		),
 	]
 }

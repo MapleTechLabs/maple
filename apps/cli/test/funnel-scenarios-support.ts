@@ -25,6 +25,8 @@ export interface SimEvent {
 	readonly sessionId: string
 	readonly visitorId: string
 	readonly userId: string
+	/** The account the user belongs to; `''` on a row that names none. */
+	readonly groupId: string
 	readonly kind: "navigation" | "custom" | "screen"
 	readonly eventName: string
 	readonly host: string
@@ -36,6 +38,7 @@ export interface SimSession {
 	readonly sessionId: string
 	readonly visitorId: string
 	readonly userId: string
+	readonly groupId: string
 	readonly startMs: number
 	readonly referrerHost: string
 	readonly utmSource: string
@@ -60,6 +63,7 @@ export const event = (fields: Partial<SimEvent> & Pick<SimEvent, "atMs" | "event
 	sessionId: "",
 	visitorId: "",
 	userId: "",
+	groupId: "",
 	kind: "custom",
 	host: "",
 	pagePath: "",
@@ -72,6 +76,7 @@ export const session = (
 ): SimSession => ({
 	visitorId: "",
 	userId: "",
+	groupId: "",
 	referrerHost: "",
 	utmSource: "",
 	utmMedium: "",
@@ -128,20 +133,20 @@ export const insertDataset = (db: Chdb, dataset: Dataset): void => {
 		const rows = Arr.map(
 			chunk,
 			(row) =>
-				`(${org}, ${quote(chTimestamp(row.atMs, row.micro))}, ${quote(row.source)}, ${quote(row.sessionId)}, ${row.seq}, ${quote(row.visitorId)}, ${quote(row.userId)}, ${quote(row.kind)}, ${quote(row.eventName)}, ${quote(row.host)}, ${quote(row.pagePath)}, ${mapLiteral(row.attributes)})`,
+				`(${org}, ${quote(chTimestamp(row.atMs, row.micro))}, ${quote(row.source)}, ${quote(row.sessionId)}, ${row.seq}, ${quote(row.visitorId)}, ${quote(row.userId)}, ${quote(row.groupId)}, ${quote(row.kind)}, ${quote(row.eventName)}, ${quote(row.host)}, ${quote(row.pagePath)}, ${mapLiteral(row.attributes)})`,
 		)
 		db.exec(
-			`INSERT INTO product_events (OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, Kind, EventName, Host, PagePath, Attributes) VALUES ${Arr.join(rows, ", ")}`,
+			`INSERT INTO product_events (OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, GroupId, Kind, EventName, Host, PagePath, Attributes) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 	Arr.forEach(Arr.chunksOf(dataset.sessions, INSERT_CHUNK), (chunk) => {
 		const rows = Arr.map(
 			chunk,
 			(row) =>
-				`(${org}, ${quote(row.sessionId)}, ${quote(chTimestamp(row.startMs))}, 'ended', ${quote(row.userId)}, 1, ${quote(row.visitorId)}, ${quote(row.referrerHost)}, ${quote(row.utmSource)}, ${quote(row.utmMedium)}, ${quote(row.utmCampaign)}, ${quote(row.country)}, ${quote(row.host)}, ${quote(row.deviceType)}, ${quote(row.browserName)})`,
+				`(${org}, ${quote(row.sessionId)}, ${quote(chTimestamp(row.startMs))}, 'ended', ${quote(row.userId)}, 1, ${quote(row.visitorId)}, ${quote(row.groupId)}, ${quote(row.referrerHost)}, ${quote(row.utmSource)}, ${quote(row.utmMedium)}, ${quote(row.utmCampaign)}, ${quote(row.country)}, ${quote(row.host)}, ${quote(row.deviceType)}, ${quote(row.browserName)})`,
 		)
 		db.exec(
-			`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, ReferrerHost, UtmSource, UtmMedium, UtmCampaign, Country, Host, DeviceType, BrowserName) VALUES ${Arr.join(rows, ", ")}`,
+			`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, GroupId, ReferrerHost, UtmSource, UtmMedium, UtmCampaign, Country, Host, DeviceType, BrowserName) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 }
@@ -308,12 +313,19 @@ const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
 
 const keyOf = (
 	keyBy: CH.FunnelKeyBy,
-	row: { readonly sessionId: string; readonly visitorId: string; readonly userId: string },
+	row: {
+		readonly sessionId: string
+		readonly visitorId: string
+		readonly userId: string
+		readonly groupId: string
+	},
 	links: ReadonlyMap<string, string>,
 ): string => {
 	switch (keyBy) {
 		case "session":
 			return row.sessionId
+		case "group":
+			return row.groupId
 		case "visitor":
 			return row.visitorId
 		case "user":

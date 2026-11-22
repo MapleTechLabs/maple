@@ -7,7 +7,12 @@ import {
 	funnelStepLabel,
 	type FunnelKeyBy as FunnelKeyByType,
 } from "@maple/query-model"
-import { productEventsFunnel, productEventsFunnelBreakdown } from "@maple/query-engine/observability"
+import {
+	productEventsFunnel,
+	productEventsFunnelBreakdown,
+	productEventsFunnelCoverage,
+	type ProductEventsFunnelCoverageOutput,
+} from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
@@ -34,8 +39,76 @@ const KEY_BY_NOUN = {
 	person: "persons",
 	visitor: "visitors",
 	user: "users",
+	group: "groups",
 	session: "sessions",
 } satisfies Record<FunnelKeyByType, string>
+
+/** The identity a key reads off an event, as a notice names it. */
+const KEY_BY_IDENTITY = {
+	person: "a user id or a visitor id",
+	visitor: "a visitor id",
+	user: "a user id",
+	group: "a group id",
+	session: "a session id",
+} satisfies Record<FunnelKeyByType, string>
+
+/** How many of a step's events carry the identity `keyBy` counts by. */
+const carried = (row: ProductEventsFunnelCoverageOutput, keyBy: FunnelKeyByType): number => {
+	switch (keyBy) {
+		case "person":
+			return row.withPerson
+		case "visitor":
+			return row.withVisitor
+		case "user":
+			return row.withUser
+		case "group":
+			return row.withGroup
+		case "session":
+			return row.withSession
+	}
+}
+
+/** Keys to suggest, most useful first: the default, then the one that follows account-level events. */
+const KEY_BY_PREFERENCE: ReadonlyArray<FunnelKeyByType> = ["person", "group", "user", "visitor", "session"]
+
+/**
+ * Why a step came back empty when its events exist: they lack the identity the funnel counts by.
+ * One sentence per such step, then the key every step's events do carry, when there is one.
+ */
+export const identityNoteFor = (
+	coverage: ReadonlyArray<ProductEventsFunnelCoverageOutput>,
+	keyBy: FunnelKeyByType,
+	labels: ReadonlyArray<string>,
+): { readonly note: string; readonly keyBy?: FunnelKeyByType } | undefined => {
+	// A session step matches no event row; it says nothing about the events' identity.
+	const matched = Arr.filter(coverage, (row) => row.events > 0)
+	const unreachable = Arr.filter(matched, (row) => carried(row, keyBy) === 0)
+	if (unreachable.length === 0) return undefined
+	const fitting = Arr.findFirst(
+		KEY_BY_PREFERENCE,
+		(candidate) => candidate !== keyBy && Arr.every(matched, (row) => carried(row, candidate) > 0),
+	)
+	const note = Arr.join(
+		[
+			...Arr.map(
+				unreachable,
+				(row) =>
+					`Step ${row.step} (${labels[row.step - 1] ?? "?"}) matched ${formatNumber(row.events)} ${row.events === 1 ? "event" : "events"}, but none carries ${KEY_BY_IDENTITY[keyBy]}, so no ${keyBy} can reach it: its 0 is missing identity, not a missing conversion.`,
+			),
+			Option.match(fitting, {
+				onNone: () =>
+					"No single key is on every step's events; send the same user id or group id with each of them.",
+				onSome: (candidate) =>
+					`Every step's events carry ${KEY_BY_IDENTITY[candidate]}: run it again with key_by="${candidate}".`,
+			}),
+		],
+		" ",
+	)
+	return Option.match(fitting, {
+		onNone: () => ({ note }),
+		onSome: (candidate) => ({ note, keyBy: candidate }),
+	})
+}
 
 /** Share of `denominator`, or null when there is nothing to divide by. */
 const ratio = (numerator: number, denominator: number): number | null =>
@@ -48,7 +121,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Query Funnel",
 		description:
-			"Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person. Reports each step's count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.",
+			'Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person, or per account with `key_by="group"`. Reports each step\'s count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.',
 		parameters: Schema.Struct({
 			steps_json: P.json(
 				Schema.Array(FunnelStep),
@@ -56,7 +129,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			),
 			key_by: P.optionalOneOf(
 				FunnelKeyBy.literals,
-				"What to count: `person` (default: user id when known, else the visitor's linked user, else the visitor), `visitor`, `user`, or `session` (per-session funnel; server events take no part).",
+				"What to count: `person` (default: user id when known, else the visitor's linked user, else the visitor), `visitor`, `user`, `group` (the account or team the app identified the user into; the key for a step a backend sends for the account alone, such as a billing event), or `session` (per-session funnel; server events take no part).",
 			),
 			window_seconds: P.optionalNumber(
 				"The whole chain must complete within this many seconds of the step-1 event. Default 86400 (24h).",
@@ -184,20 +257,21 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const last = stepData[stepData.length - 1]
 			const conversion = steps.length < 2 || last === undefined ? null : ratio(last.count, first)
 
-			// An empty VisitorId/UserId makes a visitor/user funnel match nobody and a person funnel
-			// collapse to one "person"; a per-session count of step 1 tells the two apart.
-			const sessionFirst =
-				keyBy === "session" || first > 1
-					? undefined
-					: yield* withTenantExecutor(
-							productEventsFunnel({ ...definition, keyBy: "session" }),
-						).pipe(
-							Effect.map((rows) => rows.find((row) => row.step === 1)?.count ?? 0),
-							orFallback("per-session funnel step 1", () => undefined),
+			// A step can be empty because its events lack the identity counted by, which reads exactly
+			// like nobody converting. Only then is the coverage worth a second read.
+			const hasEventStep = Arr.some(steps, (step) => step.kind !== "session")
+			const identity =
+				hasEventStep && Arr.some(stepData, (stat) => stat.count === 0)
+					? yield* withTenantExecutor(productEventsFunnelCoverage(definition)).pipe(
+							Effect.map((coverage) =>
+								identityNoteFor(
+									coverage,
+									keyBy,
+									Arr.map(stepData, (stat) => stat.label),
+								),
+							),
+							orFallback("funnel identity coverage", () => undefined),
 						)
-			const identityNote =
-				sessionFirst !== undefined && sessionFirst > Math.max(first, 1)
-					? `Step 1 matched ${sessionFirst} sessions but ${first} ${KEY_BY_NOUN[keyBy]}: the events carry no ${keyBy === "user" ? "UserId" : keyBy === "visitor" ? "VisitorId" : "VisitorId or UserId"}, so they cannot be stitched by ${keyBy}. Use key_by="session", or send a visitor/user id with the events.`
 					: undefined
 
 			const breakdown =
@@ -250,7 +324,8 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				conversion,
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
-				...(identityNote === undefined ? undefined : { identityNote }),
+				...(identity === undefined ? undefined : { identityNote: identity.note }),
+				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 			}
 		}),
 		render: (output) => {
@@ -268,10 +343,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					? {
 							empty: {
 								message: `Nobody matched step 1${first === undefined ? "" : ` (${first.label})`} in this window.`,
-								hints: [
-									output.identityNote ??
-										"Widen start_time/end_time, or check the step against `list_product_events`.",
-								],
+								// The notice above already says why; repeating it here would say it twice.
+								hints:
+									output.identityNote === undefined
+										? [
+												"Widen start_time/end_time, or check the step against `list_product_events`.",
+											]
+										: [],
 							},
 						}
 					: undefined),
@@ -326,6 +404,21 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 								),
 							],
 				next: [
+					// The funnel under the key its events carry is the answer the caller was after.
+					...(output.suggestedKeyBy === undefined
+						? []
+						: [
+								doc.next(
+									TOOL,
+									{
+										steps_json: stepsJson,
+										key_by: output.suggestedKeyBy,
+										window_seconds: output.windowSeconds,
+										...window,
+									},
+									`the same funnel counted by ${output.suggestedKeyBy}`,
+								),
+							]),
 					doc.next(
 						"list_product_events",
 						window,

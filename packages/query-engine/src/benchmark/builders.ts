@@ -482,6 +482,38 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelQuery",
+		label: "group-key",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "group",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelCoverageQuery",
+		label: "steps",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelCoverageQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
+				window,
+			),
+	},
 	// Drop-off details and paths share the funnel's person-key axis; one fixture
 	// per builder plus the direction / include / exclude shapes of the paths one.
 	{

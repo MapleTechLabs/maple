@@ -7,6 +7,7 @@
  * scorecard for "can the tools get the right data quickly".
  *
  * Needs a libchdb and bun; skipped where there is none, and required under MAPLE_REQUIRE_LIBCHDB.
+ * `PRODUCT_SCENARIOS_SHOW=<scenario id>` prints the pages a scenario's calls rendered.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { Option, Array as Arr, String as Str } from "effect"
@@ -79,6 +80,8 @@ describe.skipIf(!chdbRequired() && !chdbAvailable())("product scenarios: golden 
 		const page = Arr.join(shown, "\n\n")
 		const result = grade(scenario.facts, [], page)
 		rows.push({ id, calls: golden.length, ms, pass: result.pass })
+		// PRODUCT_SCENARIOS_SHOW=<id> prints what the model would read for that scenario.
+		if (process.env.PRODUCT_SCENARIOS_SHOW === id) console.info(`\n${page}\n`)
 
 		expect(result.pass, `${result.explanation}\n\n${page}`).toBe(true)
 		expect(golden.length).toBeLessThanOrEqual(scenario.maxToolCalls)

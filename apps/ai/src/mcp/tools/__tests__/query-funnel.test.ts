@@ -14,13 +14,49 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../.
 /** Every funnel query reads its rows under this alias; the event-name read does not. */
 const isFunnelRead = (sql: string): boolean => Str.includes("funnel_events")(sql)
 
+/** The identity coverage read: the one query that counts events per identity. */
+const isCoverageRead = (sql: string): boolean => Str.includes("withSession")(sql)
+
 const fixtures: FixtureRule[] = [
-	// Events with an empty VisitorId: keyed by session step 1 matches, keyed by visitor nothing does.
+	// Seven events with a session and no visitor id: by visitor nobody can match.
 	{
-		match: (sql) => Str.includes("anon_step")(sql) && isFunnelRead(sql) && !/VisitorId/.test(sql),
-		rows: [{ step: 1, count: 7 }],
+		match: (sql) => Str.includes("anon_step")(sql) && isCoverageRead(sql),
+		rows: [
+			{ step: 1, events: 7, withPerson: 0, withUser: 0, withVisitor: 0, withGroup: 0, withSession: 7 },
+		],
 	},
 	{ match: (sql) => Str.includes("anon_step")(sql), rows: [] },
+	// A billing event that carries the account and no user, after a step that carries both.
+	{
+		match: (sql) => Str.includes("billing_only")(sql) && isCoverageRead(sql),
+		rows: [
+			{
+				step: 1,
+				events: 30,
+				withPerson: 30,
+				withUser: 30,
+				withVisitor: 30,
+				withGroup: 30,
+				withSession: 30,
+			},
+			{
+				step: 2,
+				events: 18,
+				withPerson: 0,
+				withUser: 0,
+				withVisitor: 0,
+				withGroup: 18,
+				withSession: 0,
+			},
+		],
+	},
+	{
+		match: (sql) => Str.includes("billing_only")(sql) && isFunnelRead(sql),
+		rows: [
+			{ step: 1, count: 25 },
+			{ step: 2, count: 0 },
+		],
+	},
 	{
 		match: (sql) => /product_events/i.test(sql) && Str.includes("collapsed.test")(sql),
 		rows: [{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 1 }],
@@ -65,8 +101,49 @@ describe("query_funnel identity", () => {
 			key_by: "visitor",
 		})
 		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
-		expect(output.identityNote).toContain("7 sessions but 0 visitors")
+		expect(output.identityNote).toContain("matched 7 events, but none carries a visitor id")
+		expect(output.suggestedKeyBy).toBe("session")
 		expect(markdown(result)).toContain('key_by="session"')
+	})
+
+	it("says a step is empty for want of a user id, and offers the funnel by group", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "billing_only" },
+			]),
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.steps[1]?.count).toBe(0)
+		expect(output.identityNote).toContain("Step 2 (billing_only) matched 18 events")
+		expect(output.identityNote).not.toContain("Step 1")
+		expect(output.suggestedKeyBy).toBe("group")
+		// The first suggested call repeats the funnel under the key that works.
+		expect(markdown(result)).toMatch(/Next:\n- `query_funnel [^\n]*key_by="group"/)
+	})
+
+	it("does not read the coverage when every step has people", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed" },
+			]),
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.identityNote).toBeUndefined()
+		expect(output.suggestedKeyBy).toBeUndefined()
+	})
+
+	it("counts by group", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed" },
+			]),
+			key_by: "group",
+		})
+		expect(result.isError).toBeUndefined()
+		expect(markdown(result)).toContain("| # | Step | Groups |")
 	})
 })
 

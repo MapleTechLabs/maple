@@ -75,7 +75,7 @@ const queryDataSchema = Schema.Struct({
 	),
 	metric: P.optionalText(
 		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio; for a count of errors use count with status Error, which error_count is read as), " +
-			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors. " +
+			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors, groups (distinct accounts). " +
 			"Metrics: avg, sum, min, max, count, rate, increase. For counters (sum metrics, Prometheus *_total " +
 			"gauges) use increase (total over the window) or rate (per second); both are per-series and " +
 			"reset-aware. sum adds raw samples. Default: count, or avg for metrics.",
@@ -143,7 +143,7 @@ const queryDataDescription =
 const DEFAULT_METRIC = {
 	traces: ["count", "count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate, apdex"],
 	logs: ["count", "count"],
-	product_events: ["count", "count, sessions, persons, users, visitors"],
+	product_events: ["count", "count, sessions, persons, users, visitors, groups"],
 	metrics: ["avg", "avg, sum, min, max, count, rate, increase"],
 } as const
 

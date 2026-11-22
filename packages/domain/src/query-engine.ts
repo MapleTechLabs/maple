@@ -258,7 +258,14 @@ export const MetricsFilters = Schema.Struct({
 })
 export type MetricsFilters = Schema.Schema.Type<typeof MetricsFilters>
 
-export const ProductEventsMetric = Schema.Literals(["count", "sessions", "persons", "users", "visitors"])
+export const ProductEventsMetric = Schema.Literals([
+	"count",
+	"sessions",
+	"persons",
+	"users",
+	"visitors",
+	"groups",
+])
 export type ProductEventsMetric = Schema.Schema.Type<typeof ProductEventsMetric>
 
 export const PRODUCT_EVENTS_GROUP_BY = [

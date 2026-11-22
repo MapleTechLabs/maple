@@ -205,7 +205,7 @@ is one row per (visitor,user) pair.
 `packages/query-engine/src/ch/queries/product-events.ts` (replaces `web-analytics.ts`'s
 `web_events` references; the page-view queries move here unchanged):
 
-- `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "session",
+- `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "group" | "session",
   windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
   Step = `{ eventName } | { pagePath, host? } | { referrerHost | utmSource | ... }`. A
   session-dimension step (referral) becomes step 0's condition through the person's first
@@ -523,6 +523,13 @@ converted in either order.
   who sent no event at all: they count under "nothing after".
 - **A page step** matches a browser page view or a mobile screen view (`Kind` `navigation` or
   `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way.
+- **The key** is `person`, `visitor`, `user`, `group` or `session`. A row whose key is empty takes
+  no part, so a step whose events lack the key can never be reached: `plan_started` from a billing
+  webhook carries `GroupId` and no user, and by `person` reads as 0% however many accounts paid.
+  `group` (`GroupId`, since 2026-11-22) follows such an event through, with several users of one
+  account as one history. `productEventsFunnelCoverageQuery` counts, per step, the matching events
+  and how many carry each identity; `query_funnel` reads it when a step came back empty and says
+  which key every step's events do carry.
 
 `apps/cli/test/funnel-scenarios.test.ts` holds this definition as a plain TypeScript reference
 funnel and runs the compiled SQL against it on chDB: four example products (a SaaS signup with

@@ -4856,6 +4856,30 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
+-- builder:product-events:productEventsFunnelCoverageQuery:steps  [39b738f5]
+SELECT
+          arrayJoin([1, 2, 3, 4]) AS step,
+          arrayElement(totals.events, step) AS events,
+          arrayElement(totals.withPerson, step) AS withPerson,
+          arrayElement(totals.withUser, step) AS withUser,
+          arrayElement(totals.withVisitor, step) AS withVisitor,
+          arrayElement(totals.withGroup, step) AS withGroup,
+          arrayElement(totals.withSession, step) AS withSession
+        FROM (SELECT
+          [toUInt64(0), countIf(((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev')), countIf(product_events.EventName = 'signup_completed'), countIf((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup'))] AS events,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND (product_events.UserId != '' OR product_events.VisitorId != ''))), countIf((product_events.EventName = 'signup_completed' AND (product_events.UserId != '' OR product_events.VisitorId != ''))), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND (product_events.UserId != '' OR product_events.VisitorId != '')))] AS withPerson,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.UserId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.UserId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.UserId != ''))] AS withUser,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.VisitorId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.VisitorId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.VisitorId != ''))] AS withVisitor,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.GroupId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.GroupId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.GroupId != ''))] AS withGroup,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.SessionId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.SessionId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.SessionId != ''))] AS withSession
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND (((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') OR product_events.EventName = 'signup_completed' OR (product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup'))) AS totals
+        ORDER BY step ASC
+        FORMAT JSON
+
 -- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [e4ee4b23]
 SELECT
           hops.step AS step,
@@ -5004,6 +5028,47 @@ SELECT
         GROUP BY step, next) AS counted
         GROUP BY step) AS ranked) AS hops
         ORDER BY step ASC, count DESC, next ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventsFunnelQuery:group-key  [27a710f7]
+SELECT
+          arrayJoin([1, 2, 3]) AS step,
+          arrayElement(totals.counts, step) AS count
+        FROM (SELECT
+          [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
+        FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt
+        FROM (SELECT
+          funnel_events.key AS key,
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
+        FROM (SELECT
+          e.GroupId AS key,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
+          toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
+          toUInt8(e.EventName = 'signup_completed') AS s2,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND e.GroupId != '') AS funnel_events
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
+        ORDER BY step ASC
         FORMAT JSON
 
 -- builder:product-events:productEventsFunnelQuery:person  [3ef2759a]

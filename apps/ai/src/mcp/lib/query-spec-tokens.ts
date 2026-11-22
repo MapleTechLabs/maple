@@ -94,7 +94,7 @@ const TOKENS = {
 		groupBys: ["service", "attribute", "resource_attribute", "none"],
 	},
 	"product_events:timeseries": {
-		metrics: ["count", "sessions", "persons", "users", "visitors"],
+		metrics: ["count", "sessions", "persons", "users", "visitors", "groups"],
 		groupBys: [
 			"event_name",
 			"kind",
@@ -108,7 +108,7 @@ const TOKENS = {
 		],
 	},
 	"product_events:breakdown": {
-		metrics: ["count", "sessions", "persons", "users", "visitors"],
+		metrics: ["count", "sessions", "persons", "users", "visitors", "groups"],
 		groupBys: ["event_name", "kind", "source", "host", "page_path", "service", "group", "attribute"],
 	},
 	// `satisfies` rather than an annotation: it checks every combination is present
