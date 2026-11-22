@@ -209,6 +209,7 @@ export const OVERVIEW_SUMMARY = {
 	newSessions: 402,
 	bouncedSessions: 211,
 	identifiedSessions: 547,
+	unknownHistorySessions: 0,
 	avgDurationMs: 148_000,
 	botSessions: 0,
 	botShare: null,
@@ -228,6 +229,7 @@ export const OVERVIEW_TIMESERIES = Arr.makeBy(28, (index) => {
 		newSessions: Math.round(sessions * 0.73),
 		bouncedSessions: Math.round(sessions * 0.39),
 		identifiedSessions: sessions,
+		unknownHistorySessions: 0,
 		avgDurationMs: 148_000,
 	}
 })

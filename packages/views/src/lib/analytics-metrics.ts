@@ -124,9 +124,9 @@ const sum = <T>(rows: ReadonlyArray<T>, pick: (row: T) => number): number =>
 const ratio = (numerator: number, denominator: number): number =>
 	denominator > 0 ? numerator / denominator : 0
 
-/** Sessions that are not first-ever for their visitor. */
+/** Sessions known not to be first-ever for their visitor; cookieless ones are unknown. */
 const returningSessions = (summary: WebAnalyticsSummary): number =>
-	Math.max(summary.identifiedSessions - summary.newSessions, 0)
+	Math.max(summary.identifiedSessions - summary.newSessions - summary.unknownHistorySessions, 0)
 
 const fromTimeseries = (
 	source: AnalyticsMetricSource,
@@ -249,7 +249,9 @@ export const ANALYTICS_METRICS: Arr.NonEmptyReadonlyArray<AnalyticsMetricDescrip
 		// population that actually reports a visitor id rather than to all sessions.
 		value: (source) => returningSessions(source.summary),
 		series: (source) =>
-			fromTimeseries(source, (point) => Math.max(point.identifiedSessions - point.newSessions, 0)),
+			fromTimeseries(source, (point) =>
+				Math.max(point.identifiedSessions - point.newSessions - point.unknownHistorySessions, 0),
+			),
 		subline: () => "Seen before this window",
 	},
 ]

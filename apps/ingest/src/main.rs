@@ -1292,6 +1292,15 @@ trait KeyStore: Send + Sync {
         Ok(())
     }
 
+    /// Extends an open cookieless visit from a heartbeat. False: no shared visits here.
+    async fn touch_cookieless_visit(
+        &self,
+        _org_id: &str,
+        _visitor_id: &str,
+    ) -> Result<bool, String> {
+        Ok(false)
+    }
+
     /// Whether a cookieless session start opens a new visit, extending the visit either way.
     /// `None`: the store keeps no shared visits, so the process keeps its own.
     async fn claim_cookieless_visit(
@@ -4844,6 +4853,7 @@ struct CookielessVisitors {
     /// Behind an async lock so a new day's salt is read once per task, not once per request.
     salt: tokio::sync::Mutex<CookielessSaltCache>,
     local_visits: std::sync::Mutex<cookieless::LocalVisits>,
+    touch_throttle: std::sync::Mutex<cookieless::TouchThrottle>,
 }
 
 #[derive(Default)]
@@ -4876,6 +4886,7 @@ impl CookielessVisitors {
             store,
             salt: tokio::sync::Mutex::new(CookielessSaltCache::default()),
             local_visits: std::sync::Mutex::new(cookieless::LocalVisits::default()),
+            touch_throttle: std::sync::Mutex::new(cookieless::TouchThrottle::default()),
         }
     }
 
@@ -4962,6 +4973,35 @@ impl CookielessVisitors {
             .unwrap_or_default();
         let salt = self.salt(current_time_millis()).await?;
         Some(cookieless::visitor_id(&salt, org_id, &ip, &user_agent))
+    }
+
+    /// Extends the visitor's open visit from a heartbeat, at most once per interval per task.
+    /// Heartbeats stop 30 idle minutes after the last input, which bounds how far this
+    /// stretches a visit, and only ever toward billing less.
+    async fn touch_visit(&self, org_id: &str, visitor_id: &str) {
+        let now_ms = current_time_millis();
+        let due = self
+            .touch_throttle
+            .lock()
+            .is_ok_and(|mut throttle| throttle.due(org_id, visitor_id, now_ms));
+        if !due {
+            return;
+        }
+        let touched = tokio::time::timeout(
+            COOKIELESS_STORE_TIMEOUT,
+            self.store.touch_cookieless_visit(org_id, visitor_id),
+        )
+        .await
+        .unwrap_or_else(|_| Err("cookieless visit touch timed out".to_owned()));
+        match touched {
+            Ok(true) => {}
+            Ok(false) => {
+                if let Ok(mut visits) = self.local_visits.lock() {
+                    visits.touch(org_id, visitor_id, now_ms);
+                }
+            }
+            Err(error) => warn!(error = %error, "cookieless visit touch failed"),
+        }
     }
 
     /// Whether a cookieless session start bills: only a visit's first does. A failed claim
@@ -5250,6 +5290,8 @@ async fn handle_replay_meta_inner(
     let mut session_starts = BillableSessionStarts::default();
     let mut cookieless = CookielessRequest::new(state, headers, &org_id);
     let mut cookieless_start: Option<(String, String)> = None;
+    // A heartbeat from an open page: it keeps the visitor's visit from going idle.
+    let mut cookieless_active: Option<String> = None;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -5294,10 +5336,15 @@ async fn handle_replay_meta_inner(
         let visitor = cookieless.apply(obj).await;
         // Cookieless starts bill through one visit claim after the loop: every
         // row here shares the visitor, and the browser keeps no visit marker.
-        if session_starts.note(obj) && visitor != CookielessRow::NotCookieless {
+        let is_start = session_starts.note(obj);
+        if is_start && visitor != CookielessRow::NotCookieless {
             session_starts.retract(obj);
-            if let CookielessRow::Visitor(id) = visitor {
+        }
+        if let CookielessRow::Visitor(id) = visitor {
+            if is_start {
                 cookieless_start.get_or_insert((id, row_session_id(obj).to_owned()));
+            } else {
+                cookieless_active.get_or_insert(id);
             }
         }
         rows.push(
@@ -5316,6 +5363,8 @@ async fn handle_replay_meta_inner(
         if state.cookieless.claim_visit(&org_id, &visitor_id).await {
             session_starts.note_session(session_id);
         }
+    } else if let Some(visitor_id) = cookieless_active {
+        state.cookieless.touch_visit(&org_id, &visitor_id).await;
     }
     let count = rows.len();
     #[expect(
@@ -11948,6 +11997,25 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres prune cookieless_visits failed: {error}"))
     }
 
+    async fn touch_cookieless_visit(&self, org_id: &str, visitor_id: &str) -> Result<bool, String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE cookieless_visits SET last_seen_at = now() \
+                 WHERE org_id = $1 AND visitor_id = $2",
+                &[&org_id, &visitor_id],
+            )
+            .instrument(postgres_client_span(
+                "touch_cookieless_visit",
+                "UPDATE",
+                "cookieless_visits",
+                &self.target,
+            ))
+            .await
+            .map(|_| true)
+            .map_err(|error| format!("postgres touch_cookieless_visit failed: {error}"))
+    }
+
     async fn claim_cookieless_visit(
         &self,
         org_id: &str,
@@ -16623,7 +16691,7 @@ mod tests {
         let mut row = serde_json::json!({ "visitor_id": "cookieless", "visitor_is_new": 1 });
         let obj = row.as_object_mut().unwrap();
         CookielessRequest::new(state, headers, org_id).apply(obj).await;
-        assert_eq!(obj["visitor_is_new"], 0);
+        assert_eq!(obj["visitor_is_new"], 2, "unknown, neither new nor returning");
         obj["visitor_id"].as_str().unwrap().to_owned()
     }
 

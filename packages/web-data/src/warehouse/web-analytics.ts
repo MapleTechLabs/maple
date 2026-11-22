@@ -108,6 +108,8 @@ export interface WebAnalyticsSummary {
 	newSessions: number
 	bouncedSessions: number
 	identifiedSessions: number
+	/** Cookieless sessions: neither new nor returning. */
+	unknownHistorySessions: number
 	avgDurationMs: number
 	/** Sessions from crawlers, headless browsers and other non-human agents. */
 	botSessions: number
@@ -152,6 +154,8 @@ export interface WebAnalyticsTimeseriesPoint {
 	 */
 	bouncedSessions: number
 	identifiedSessions: number
+	/** Cookieless sessions: neither new nor returning. */
+	unknownHistorySessions: number
 	avgDurationMs: number
 }
 
