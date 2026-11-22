@@ -8,6 +8,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -264,7 +265,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 						: profile.failedRate === null
 							? "failure rate not available"
 							: `${formatPercent(profile.failedRate)} failed`,
-			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
+			tone: profile.failedRate === null ? "neutral" : errorRateLevel(profile.failedRate),
 			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,
 		}),
@@ -757,11 +758,11 @@ const KIND_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in ActivityKind]: IconName }
 
-/** Each kind keeps its own colour, so a day of mixed rows reads by kind before any text. */
+/** Only the kinds that ask for a look get a colour (errors, replays, MCP); the routine ones stay neutral. */
 const KIND_TONE = {
 	error: "crit",
 	request: "neutral",
-	event: "info",
+	event: "neutral",
 	session: "done",
 	log: "neutral",
 	mcp: "live",
@@ -872,7 +873,7 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 			const dayItems = days[key] ?? []
 			const first = dayItems[0]
 			return vstack(h, { as: "section" }, [
-				eyebrow(h, { variant: "mono", className: "px-2.5 pb-1" }, [
+				eyebrow(h, { className: "px-2.5 pb-1" }, [
 					first === undefined ? key : dayLabel(first.atMs, clock),
 				]),
 				vstack(
