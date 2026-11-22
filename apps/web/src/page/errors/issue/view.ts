@@ -180,6 +180,7 @@ const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZon
 					h,
 					skeleton(h, "inline-block h-3 w-8 align-middle"),
 					chartWindow?.bucketMs ?? null,
+					false,
 				),
 				skeletonBlock(h, { height: "44" }),
 			])

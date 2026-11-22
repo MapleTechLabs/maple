@@ -111,7 +111,7 @@ export const signalOf = (points: ReadonlyArray<Point>, window: ChartWindow) => {
 }
 
 /** The chart's caption: what a bar counts, the tallest one, and that a bar zooms in when one can. */
-export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null, canZoom = true): Html =>
+export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null, canZoom: boolean): Html =>
 	hstack(h, { gap: "3", justify: "between", className: "mb-2" }, [
 		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
 			bucketMs === null ? "Occurrences" : `Occurrences per ${formatBucket(bucketMs)}`,
