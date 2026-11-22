@@ -1,21 +1,21 @@
 {
-	"version": "0.3.6",
+	"version": "0.4.0",
 	"assets": {
 		"x86_64-linux": {
 			"target": "x86_64-unknown-linux-gnu",
-			"sha256": "d8cf826cd3533c744f4940386fd8484f70845b595ceddedbf554de4a0301cc8c"
+			"sha256": "859844397d9293aa557412acf2b20c7831d7419777bde526e21df9fc931083f6"
 		},
 		"aarch64-linux": {
 			"target": "aarch64-unknown-linux-gnu",
-			"sha256": "843d7432c9bb834b96b6f947c5c826e4a3068d919025a6ead33cc47731b0da70"
+			"sha256": "e7b55bb4f94ca7c10ce25606118a445d4ee2d06def016563d8ab018445a47839"
 		},
 		"x86_64-darwin": {
 			"target": "x86_64-apple-darwin",
-			"sha256": "0d5ee6b48c79053c70809c99c5c9b14a719c7d736c3bf67aaf15427ace133eee"
+			"sha256": "ee259cde3548fda9c63307b5107f79bef48eef0b7a3e0794515a6b522da33101"
 		},
 		"aarch64-darwin": {
 			"target": "aarch64-apple-darwin",
-			"sha256": "d485258a2004d1b491e0b331e1a7346eaacb08a0557edf022f1e24175abb201e"
+			"sha256": "e925396d158eac540a2e84c3dcd690b79e698929b0670b5f54ed055725d2a7ee"
 		}
 	}
 }
