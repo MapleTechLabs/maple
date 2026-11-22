@@ -32,6 +32,14 @@ const fixtures: FixtureRule[] = [
 			{ attributeValue: "pdf", usageCount: 62 },
 		],
 	},
+	// A breakdown in which some events carry no value for the dimension.
+	{
+		match: (sql) => Str.includes("'seat_tier'")(sql),
+		rows: [
+			{ name: "pro", value: 30 },
+			{ name: "", value: 12 },
+		],
+	},
 	// The whole-window read is the one bucket that starts at the window, not on an interval.
 	{
 		match: (sql) => Str.includes("nobody_event")(sql),
@@ -198,6 +206,20 @@ describe("query_data on product events", () => {
 			...old,
 		})
 		expect(markdown(plain)).not.toContain("Sessions are kept 30 days")
+	})
+
+	it("names the group of events that carry no value, as the warning says it does", async () => {
+		const result = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "attribute",
+			attribute_key: "seat_tier",
+		})
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(
+			output.result.kind === "breakdown" ? Arr.map(output.result.data, (item) => item.name) : [],
+		).toEqual(["pro", "(none)"])
+		expect(markdown(result)).toContain("(none)")
 	})
 
 	it("refuses a session filter on a source that has no sessions", async () => {

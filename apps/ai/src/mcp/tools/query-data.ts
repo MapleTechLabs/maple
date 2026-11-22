@@ -1018,7 +1018,12 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							? {
 									kind: "breakdown",
 									data: Arr.map(result.data, (item) => ({
-										name: item.name,
+										// The group of events with no value (no session, no such prop) is
+										// named as the timeseries names it, not left blank.
+										name:
+											params.source === "product_events" && item.name === ""
+												? "(none)"
+												: item.name,
 										value: item.value,
 									})),
 								}
