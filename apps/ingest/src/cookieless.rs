@@ -3,9 +3,11 @@
 //! swaps that for a hash of a daily salt, the org, the client IP and the user
 //! agent, so unique visitors count within a UTC day and never across days.
 //!
-//! The IP and user agent are only hashed, never stored. Each salt is deleted
-//! after two days (`cookieless_salts`), after which no stored id can be
-//! recomputed from an IP.
+//! The IP is only hashed, never stored. The user agent is hashed here too, though
+//! it also reaches the warehouse on its own: the SDK's `user_agent` column and the
+//! gateway's request spans (`record_client_identity`) carry it, as for every
+//! session. Each salt is deleted after two days (`cookieless_salts`), after which
+//! no stored id can be recomputed from an IP.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -95,9 +97,25 @@ pub fn apply(obj: &mut serde_json::Map<String, serde_json::Value>, visitor: Opti
     }
 }
 
-/// Mark an identified cookieless metadata row with `maple.visitor.mode`, so readers can tell
-/// its unknown history from a stored `visitor_is_new` of 0 without trusting the client.
+/// Remove a client-supplied `maple.visitor.mode`: only the gateway sets it.
+pub fn clear_metadata_mark(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    if let Some(attributes) = obj
+        .get_mut("resource_attributes")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        attributes.remove(VISITOR_MODE_ATTRIBUTE);
+    }
+}
+
+const VISITOR_MODE_ATTRIBUTE: &str = "maple.visitor.mode";
+
+/// Mark an identified cookieless metadata row: `maple.visitor.mode` and an unknown history,
+/// whether or not the client sent `visitor_is_new` (the column default 0 reads as returning).
 pub fn mark_metadata_row(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    obj.insert(
+        "visitor_is_new".to_owned(),
+        serde_json::Value::from(VISITOR_IS_NEW_UNKNOWN),
+    );
     let attributes = obj
         .entry("resource_attributes")
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
@@ -106,7 +124,7 @@ pub fn mark_metadata_row(obj: &mut serde_json::Map<String, serde_json::Value>) {
     }
     if let Some(map) = attributes.as_object_mut() {
         map.insert(
-            "maple.visitor.mode".to_owned(),
+            VISITOR_MODE_ATTRIBUTE.to_owned(),
             serde_json::Value::String("cookieless".to_owned()),
         );
     }
@@ -131,22 +149,29 @@ impl LocalVisits {
         previous.is_none_or(|last| now_ms - last > VISIT_IDLE_MS)
     }
 
-    /// Extend a visit from a heartbeat without opening one.
+    /// Extend a visit still open from a heartbeat, without opening or reopening one.
     pub fn touch(&mut self, org_id: &str, visitor_id: &str, now_ms: i64) {
         self.roll(now_ms);
         if let Some(last) = self
             .last_seen_ms
             .get_mut(&(org_id.to_owned(), visitor_id.to_owned()))
         {
-            *last = now_ms;
+            if now_ms - *last <= VISIT_IDLE_MS {
+                *last = now_ms;
+            }
         }
     }
 
+    /// A new day clears the map; a full one drops only visits already idle, so an open
+    /// visit is never forgotten (and re-billed) to make room.
     fn roll(&mut self, now_ms: i64) {
         let day = utc_day(now_ms);
-        if day != self.day || self.last_seen_ms.len() >= MAX_TRACKED_VISITORS {
+        if day != self.day {
             self.day = day;
             self.last_seen_ms.clear();
+        } else if self.last_seen_ms.len() >= MAX_TRACKED_VISITORS {
+            self.last_seen_ms
+                .retain(|_, last| now_ms - *last <= VISIT_IDLE_MS);
         }
     }
 }
@@ -298,5 +323,27 @@ mod tests {
         let mut bare = serde_json::json!({ "resource_attributes": "not a map" });
         mark_metadata_row(bare.as_object_mut().unwrap());
         assert_eq!(bare["resource_attributes"]["maple.visitor.mode"], "cookieless");
+    }
+
+    #[test]
+    fn a_late_heartbeat_never_reopens_an_expired_visit() {
+        let mut visits = LocalVisits::default();
+        assert!(visits.claim("org", "v", NOON));
+        visits.touch("org", "v", NOON + VISIT_IDLE_MS + 60_000);
+        assert!(visits.claim("org", "v", NOON + VISIT_IDLE_MS + 120_000));
+    }
+
+    #[test]
+    fn the_mode_marker_is_the_gateways_alone() {
+        let mut row = serde_json::json!({
+            "visitor_is_new": 1,
+            "resource_attributes": { "maple.visitor.mode": "cookieless", "service.name": "web" }
+        });
+        clear_metadata_mark(row.as_object_mut().unwrap());
+        assert_eq!(row["resource_attributes"], serde_json::json!({ "service.name": "web" }));
+
+        let mut identified = serde_json::json!({});
+        mark_metadata_row(identified.as_object_mut().unwrap());
+        assert_eq!(identified["visitor_is_new"], 2, "unknown even when the client sent none");
     }
 }
