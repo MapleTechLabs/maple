@@ -60,7 +60,7 @@ if (process.env.MAPLE_CPU_PROBE_CHILD === "1") {
 			[
 				"--no-warnings",
 				"--loader",
-				resolve(import.meta.dirname, "cf-loader.mjs"),
+				pathToFileURL(resolve(import.meta.dirname, "cf-loader.mjs")).href,
 				import.meta.filename,
 				dir,
 				"",
