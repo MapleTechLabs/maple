@@ -40,6 +40,9 @@ const DEVICE_TTL_SECONDS = 15 * 60
  */
 const CLI_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const POLL_INTERVAL_SECONDS = 5
+/** Marks a handoff code for people and secret scanners; the whole string is the device code. */
+export const HANDOFF_CODE_PREFIX = "maple_ho_"
+export const HANDOFF_DEVICE_NAME = "Coding agent (onboarding)"
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 const normalizeUserCode = (value: string) => Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value))
 const displayUserCode = (value: string) => `${Str.slice(0, 4)(value)}-${Str.slice(4, 8)(value)}`
@@ -110,6 +113,16 @@ export class CliDeviceAuthService extends Context.Service<
 			| CliDeviceExpiredError
 			| CliDeviceConflictError
 			| CliDevicePersistenceError
+		>
+		/**
+		 * A device login the signed-in person approves in advance, for a coding agent. The code
+		 * is the device code: `maple auth login` with `MAPLE_HANDOFF` polls it like any other.
+		 */
+		readonly createHandoff: (
+			identity: ApprovalIdentity,
+		) => Effect.Effect<
+			{ readonly code: string; readonly expiresAt: number },
+			CliDevicePersistenceError | CliDeviceRateLimitError
 		>
 	}
 >()("@maple/backend/services/CliDeviceAuthService", {
@@ -439,7 +452,35 @@ export class CliDeviceAuthService extends Context.Service<
 			return yield* completeFromRow(row.value)
 		})
 
-		return { start, poll, inspect, approve, deny }
+		const createHandoff = Effect.fn("CliDeviceAuthService.createHandoff")(function* (
+			identity: ApprovalIdentity,
+		) {
+			yield* checkRateLimit(`handoff:${identity.orgId}:${identity.userId}`)
+			const now = yield* Clock.currentTimeMillis
+			yield* purgeExpired(now)
+			const code = `${HANDOFF_CODE_PREFIX}${randomBytes(32).toString("base64url")}`
+			const expiresAt = now + DEVICE_TTL_SECONDS * 1000
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(CliDeviceAuthorizations).values({
+						deviceCodeHash: hashLookupToken("cli-device/device-code", code, apiKeyHmacKey),
+						// Never typed: a random user code keeps the unique index without a usable value.
+						userCodeHash: hashLookupToken("cli-device/user-code", randomUUID(), apiKeyHmacKey),
+						deviceName: HANDOFF_DEVICE_NAME,
+						approvedOrgId: identity.orgId,
+						approvedUserId: identity.userId,
+						approvedRoles: [...identity.roles],
+						approvedUserEmail: identity.userEmail,
+						approvedAt: now,
+						createdAt: now,
+						expiresAt,
+					}),
+				),
+			)
+			return { code, expiresAt }
+		})
+
+		return { start, poll, inspect, approve, deny, createHandoff }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

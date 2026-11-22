@@ -106,6 +106,27 @@ describe("CliDeviceAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("signs a CLI in with a handoff code the signed-in person approved in advance", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const auth = yield* CliDeviceAuthService
+			const apiKeys = yield* ApiKeysService
+			const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			expect(Str.startsWith("maple_ho_")(handoff.code)).toBe(true)
+
+			const polled = yield* auth.poll(handoff.code)
+			expect(polled.status).toBe("complete")
+			if (polled.status !== "complete") return
+			expect(polled.orgId).toBe(orgId)
+			const resolved = yield* apiKeys.resolveByKey(polled.token)
+			expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some([memberRole]))
+
+			// A guessed code next to a real one signs nothing in.
+			const guessed = yield* auth.poll(`${handoff.code}x`)
+			expect(guessed.status).toBe("expired")
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
 	it.effect("returns denied and expired terminal states without creating credentials", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
