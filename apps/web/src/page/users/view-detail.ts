@@ -6,7 +6,6 @@ import {
 	formatLatency,
 	formatNumber,
 	formatPercent,
-	formatPercentColumn,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
@@ -308,7 +307,7 @@ export type UserGroupStats =
 	| null
 
 const shareOf = (count: number, of: number): string | undefined =>
-	count === 0 ? undefined : formatPercentColumn(count / Math.max(1, of))
+	count === 0 ? undefined : `${formatPercent(count / Math.max(1, of))} of group`
 
 /** The group's name, a link to its users, over its id when the name stands in for it. */
 const groupHeading = <M>(
@@ -422,6 +421,11 @@ const groupSection = <M>(
 				]),
 			]
 
+const MOBILE_OS = /ios|android|ipados/i
+
+/** A phone for a mobile OS, a computer otherwise. */
+const deviceIcon = (os: string): IconName => (MOBILE_OS.test(os) ? "MobileIcon" : "MonitorIcon")
+
 /** The right rail: identity, the user's group, where their activity lives, traits and devices. */
 export const userRail = <M>(
 	h: HtmlBuilder<M>,
@@ -444,14 +448,22 @@ export const userRail = <M>(
 		[h.AriaLabel("User details"), h.Class("flex flex-col")],
 		[
 			detailRailGroup(h, "Identity", [
-				detailRailRow(h, { label: "user.id" }, [railValue(h, profile.userId)]),
+				detailRailRow(h, { icon: "IdBadgeIcon", label: "user.id" }, [railValue(h, profile.userId)]),
 				...(profile.email === null
 					? []
-					: [detailRailRow(h, { label: "Email" }, [railValue(h, profile.email, false)])]),
+					: [
+							detailRailRow(h, { icon: "EnvelopeIcon", label: "Email" }, [
+								railValue(h, profile.email, false),
+							]),
+						]),
 				...(onlyNamespace === undefined
 					? []
-					: [detailRailRow(h, { label: "Namespace" }, [railValue(h, onlyNamespace.name)])]),
-				detailRailRow(h, { label: "First seen" }, [
+					: [
+							detailRailRow(h, { icon: "LayersIcon", label: "Namespace" }, [
+								railValue(h, onlyNamespace.name),
+							]),
+						]),
+				detailRailRow(h, { icon: "CalendarIcon", label: "First seen" }, [
 					listRelativeTime(h, {
 						value: profile.firstSeenMs,
 						nowMs: clock.nowMs,
@@ -465,6 +477,7 @@ export const userRail = <M>(
 							detailRailRow(
 								h,
 								{
+									icon: "FingerprintIcon",
 									label: "Visitor ids",
 									title: "Anonymous visitor ids identify() linked to this user at sign-in",
 								},
@@ -473,7 +486,11 @@ export const userRail = <M>(
 						]),
 				...(profile.location === null
 					? []
-					: [detailRailRow(h, { label: "Location" }, [railValue(h, profile.location, false)])]),
+					: [
+							detailRailRow(h, { icon: "GlobeIcon", label: "Location" }, [
+								railValue(h, profile.location, false),
+							]),
+						]),
 			]),
 			...groupSection(h, profile, groupStats, groupHref, scope.active === null || scope.isPinned),
 			...(onlyNamespace === undefined ? [namespacesGroup(h, namespaces, scope)] : []),
@@ -484,7 +501,12 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.traits)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["No traits recorded for this user"])]
 					: Arr.map(profile.traits, ([key, value]) =>
-							detailRailRow(h, { label: key }, [railValue(h, value)]),
+							// A trait key is the user's own name for it: the label sizes to it, the value truncates.
+							detailRailRow(
+								h,
+								{ icon: "TagIcon", label: key, labelWidth: "minmax(88px, max-content)" },
+								[railValue(h, value)],
+							),
 						),
 			),
 			detailRailGroup(
@@ -493,9 +515,11 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.devices)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no recorded sessions"])]
 					: Arr.map(profile.devices, (device) =>
-							detailRailRow(h, { label: device.browser, hint: device.os }, [
-								railValue(h, countLabel(device.sessions, "session"), false),
-							]),
+							detailRailRow(
+								h,
+								{ icon: deviceIcon(device.os), label: device.browser, hint: device.os },
+								[railNumber(h, countLabel(device.sessions, "session"))],
+							),
 						),
 			),
 		],
@@ -510,7 +534,7 @@ const servicesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, isOneNamespac
 		Arr.isReadonlyArrayEmpty(profile.services)
 			? [typography(h, { size: "xs", tone: "subtle" }, ["no service named in this window"])]
 			: Arr.map(profile.services, (service) =>
-					hstack(h, { gap: "2", className: "min-h-7 min-w-0" }, [
+					hstack(h, { gap: "2", className: "min-h-8 min-w-0" }, [
 						serviceLabel(h, {
 							serviceName: service.service,
 							size: "xs",
@@ -539,7 +563,7 @@ const servicesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, isOneNamespac
 								mono: true,
 								tone: "muted",
 								numeric: true,
-								className: "shrink-0",
+								className: "w-10 shrink-0 text-right",
 							},
 							[formatNumber(service.signals)],
 						),
