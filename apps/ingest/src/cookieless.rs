@@ -10,7 +10,7 @@
 //! no stored id can be recomputed from an IP.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -42,6 +42,90 @@ pub fn utc_day(now_ms: i64) -> String {
         .unwrap_or_default()
         .format("%Y-%m-%d")
         .to_string()
+}
+
+/// Headers that can name the visitor's address, read in this order. The first that
+/// holds a public address wins, so a first-party proxy that sets `X-Forwarded-For` is
+/// honored instead of hashing every visitor as the proxy's IP. Without a proxy the edge
+/// puts the client's address in `X-Forwarded-For` too, so direct traffic hashes as before.
+/// A client can spoof these, but only to pick its own visitor id, which a public ingest
+/// key already allows through `visitor_id`.
+pub const CLIENT_IP_HEADERS: [&str; 7] = [
+    "x-forwarded-for",
+    "forwarded",
+    "x-real-ip",
+    "fly-client-ip",
+    "true-client-ip",
+    "cf-connecting-ip",
+    "cloudfront-viewer-address",
+];
+
+/// The visitor's address from the first of `CLIENT_IP_HEADERS` that holds a public one,
+/// normalized for hashing. `header` returns a header's value by lowercase name. In a
+/// list, the leftmost public entry is taken: a private hop (an office proxy's `10.x`) is
+/// shared by many people and would merge them into one visitor.
+#[must_use]
+pub fn client_ip(header: impl Fn(&str) -> Option<String>) -> Option<String> {
+    CLIENT_IP_HEADERS.iter().find_map(|name| {
+        let value = header(name)?;
+        let ip = match *name {
+            "x-forwarded-for" => value.split(',').find_map(public_addr),
+            "forwarded" => value
+                .split(',')
+                .filter_map(forwarded_for)
+                .find_map(public_addr),
+            _ => public_addr(&value),
+        }?;
+        normalize_ip(&ip.to_string())
+    })
+}
+
+/// The `for=` of one element of an RFC 7239 `Forwarded` header.
+fn forwarded_for(element: &str) -> Option<&str> {
+    element.split(';').find_map(|pair| {
+        let (key, addr) = pair.split_once('=')?;
+        key.trim().eq_ignore_ascii_case("for").then_some(addr)
+    })
+}
+
+fn public_addr(raw: &str) -> Option<IpAddr> {
+    parse_addr(raw).filter(|ip| is_public(*ip))
+}
+
+/// Not loopback, private, link-local, carrier-grade NAT or unspecified.
+fn is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || (a == 100 && (64..128).contains(&b)))
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public(IpAddr::V4(v4));
+            }
+            let first = v6.segments()[0];
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
+    }
+}
+
+/// An address with an optional port: `203.0.113.7`, `203.0.113.7:443`, `"[2001:db8::1]:443"`,
+/// or CloudFront's unbracketed `2001:db8::1:443`. Obfuscated or `unknown` values are `None`.
+fn parse_addr(raw: &str) -> Option<IpAddr> {
+    let raw = raw.trim().trim_matches('"');
+    raw.parse::<IpAddr>()
+        .ok()
+        .or_else(|| raw.parse::<SocketAddr>().ok().map(|socket| socket.ip()))
+        .or_else(|| raw.strip_prefix('[')?.strip_suffix(']')?.parse().ok())
+        .or_else(|| raw.rsplit_once(':')?.0.parse().ok())
 }
 
 /// The client address as hashed. IPv6 keeps only the /64: privacy extensions
@@ -264,6 +348,85 @@ mod tests {
             normalize_ip("203.0.113.7")
         );
         assert_eq!(normalize_ip("not an ip"), None);
+    }
+
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_owned())
+        }
+    }
+
+    #[test]
+    fn client_ip_reads_the_first_header_in_order_that_holds_an_address() {
+        let proxied = [
+            ("cf-connecting-ip", "192.0.2.1"),
+            ("x-forwarded-for", " 203.0.113.7 , 10.0.0.1, 192.0.2.1"),
+        ];
+        assert_eq!(client_ip(lookup(&proxied)).as_deref(), Some("203.0.113.7"));
+        assert_eq!(
+            client_ip(lookup(&[("cf-connecting-ip", "192.0.2.1")])).as_deref(),
+            Some("192.0.2.1")
+        );
+        let garbled = [
+            ("x-forwarded-for", "unknown"),
+            ("x-real-ip", "198.51.100.2"),
+        ];
+        assert_eq!(client_ip(lookup(&garbled)).as_deref(), Some("198.51.100.2"));
+        assert_eq!(client_ip(lookup(&[])), None);
+    }
+
+    #[test]
+    fn client_ip_skips_private_hops_and_falls_back_to_the_edge_address() {
+        let office = [("x-forwarded-for", "10.1.2.3, 203.0.113.7, 192.0.2.1")];
+        assert_eq!(client_ip(lookup(&office)).as_deref(), Some("203.0.113.7"));
+        let all_private = [
+            ("x-forwarded-for", "10.1.2.3, 172.16.0.9"),
+            ("x-real-ip", "127.0.0.1"),
+            ("cf-connecting-ip", "198.51.100.2"),
+        ];
+        assert_eq!(client_ip(lookup(&all_private)).as_deref(), Some("198.51.100.2"));
+        let forwarded = [("forwarded", "for=192.168.0.4, for=\"[fd00::1]\", for=203.0.113.7")];
+        assert_eq!(client_ip(lookup(&forwarded)).as_deref(), Some("203.0.113.7"));
+        assert_eq!(client_ip(lookup(&[("x-real-ip", "100.64.3.4")])), None);
+    }
+
+    #[test]
+    fn client_ip_parses_ports_brackets_and_forwarded_pairs() {
+        let cases: [(&str, &str, &str); 6] = [
+            ("x-forwarded-for", "203.0.113.7:51234", "203.0.113.7"),
+            (
+                "x-forwarded-for",
+                "[2001:db8:aa:bb::1]:443",
+                "2001:db8:aa:bb::/64",
+            ),
+            (
+                "forwarded",
+                r#"proto=https;For="[2001:db8:aa:bb::1]:443", for=192.0.2.1"#,
+                "2001:db8:aa:bb::/64",
+            ),
+            ("forwarded", "for=203.0.113.7;by=10.0.0.1", "203.0.113.7"),
+            (
+                "cloudfront-viewer-address",
+                "2001:db8:aa:bb::1:46532",
+                "2001:db8:aa:bb::/64",
+            ),
+            (
+                "cloudfront-viewer-address",
+                "203.0.113.7:46532",
+                "203.0.113.7",
+            ),
+        ];
+        for (name, value, expected) in cases {
+            assert_eq!(
+                client_ip(lookup(&[(name, value)])).as_deref(),
+                Some(expected),
+                "{name}: {value}"
+            );
+        }
+        assert_eq!(client_ip(lookup(&[("forwarded", "for=_hidden")])), None);
     }
 
     #[test]
