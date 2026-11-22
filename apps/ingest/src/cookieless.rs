@@ -163,6 +163,11 @@ mod tests {
     use super::*;
 
     const DAY_MS: i64 = 86_400_000;
+
+    /// A fresh random salt, as the gateway mints one per day.
+    fn random_salt() -> [u8; 16] {
+        *uuid::Uuid::new_v4().as_bytes()
+    }
     const NOON: i64 = 1_763_812_800_000; // 2025-11-22T12:00:00Z
 
     #[test]
@@ -190,17 +195,18 @@ mod tests {
 
     #[test]
     fn visitor_id_is_stable_per_input_and_differs_per_salt_org_ip_and_agent() {
-        let base = visitor_id(b"salt-a", "org_1", "203.0.113.7", "Firefox");
+        let (salt_a, salt_b) = (random_salt(), random_salt());
+        let base = visitor_id(&salt_a, "org_1", "203.0.113.7", "Firefox");
         assert_eq!(
             base,
-            visitor_id(b"salt-a", "org_1", "203.0.113.7", "Firefox")
+            visitor_id(&salt_a, "org_1", "203.0.113.7", "Firefox")
         );
         assert!(uuid::Uuid::parse_str(&base).is_ok());
         for other in [
-            visitor_id(b"salt-b", "org_1", "203.0.113.7", "Firefox"),
-            visitor_id(b"salt-a", "org_2", "203.0.113.7", "Firefox"),
-            visitor_id(b"salt-a", "org_1", "203.0.113.8", "Firefox"),
-            visitor_id(b"salt-a", "org_1", "203.0.113.7", "Chrome"),
+            visitor_id(&salt_b, "org_1", "203.0.113.7", "Firefox"),
+            visitor_id(&salt_a, "org_2", "203.0.113.7", "Firefox"),
+            visitor_id(&salt_a, "org_1", "203.0.113.8", "Firefox"),
+            visitor_id(&salt_a, "org_1", "203.0.113.7", "Chrome"),
         ] {
             assert_ne!(base, other);
         }
@@ -208,9 +214,10 @@ mod tests {
 
     #[test]
     fn visitor_id_parts_cannot_be_shifted_across_the_separator() {
+        let salt = random_salt();
         assert_ne!(
-            visitor_id(b"s", "org_1", "1.2.3.4", "ab"),
-            visitor_id(b"s", "org_1a", "1.2.3.4", "b"),
+            visitor_id(&salt, "org_1", "1.2.3.4", "ab"),
+            visitor_id(&salt, "org_1a", "1.2.3.4", "b"),
         );
     }
 
