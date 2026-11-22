@@ -68,13 +68,15 @@ const makeLayer = (testDb: TestDb) =>
 			Layer.mergeAll(
 				signals,
 				Layer.succeed(OrganizationService, {
+					create: () => Effect.die("create is not used by the first-data sweep"),
+					chooseRegion: () => Effect.die("chooseRegion is not used by the first-data sweep"),
 					retrieve: (orgId) =>
 						Effect.succeed({
 							id: orgId,
 							name: null,
 							slug: null,
 							imageUrl: null,
-							createdAtMs: KEY_ONLY_CREATED_AT,
+							createdAtMs: orgId === KEY_ONLY ? KEY_ONLY_CREATED_AT : NOW - 2 * DAY,
 						}),
 				}),
 				OnboardingService.layer.pipe(
@@ -96,7 +98,12 @@ const seed = (testDb: TestDb, orgId: OrgId, createdAt: number, firstDataAt: numb
 			testDb,
 			`INSERT INTO org_onboarding_state (org_id, user_id, demo_data_requested, first_data_received_at, created_at, updated_at)
 			 VALUES ($1, $2, false, $3, $4, $4)`,
-			[orgId, `user_of_${orgId}`, firstDataAt === null ? null : new Date(firstDataAt), new Date(createdAt)],
+			[
+				orgId,
+				`user_of_${orgId}`,
+				firstDataAt === null ? null : new Date(firstDataAt),
+				new Date(createdAt),
+			],
 		),
 	)
 
@@ -148,13 +155,16 @@ describe("FirstDataSweepService", () => {
 
 			assert.deepStrictEqual(
 				// Probes run concurrently, so compare in org order.
-				Arr.map(Arr.sortWith(emitted, (event) => event.groupId ?? "", Order.String), (event) => ({
-					name: event.name,
-					groupId: event.groupId,
-					userId: event.userId,
-					timestamp: event.timestamp,
-					attributes: event.attributes,
-				})),
+				Arr.map(
+					Arr.sortWith(emitted, (event) => event.groupId ?? "", Order.String),
+					(event) => ({
+						name: event.name,
+						groupId: event.groupId,
+						userId: event.userId,
+						timestamp: event.timestamp,
+						attributes: event.attributes,
+					}),
+				),
 				[
 					{
 						name: "first_data_received",

@@ -132,6 +132,21 @@ const isRetryable = (error: ProductEventsError) =>
 	// retrying it is noise.
 	error.status === undefined || error.status >= 500 || error.status === 429
 
+/**
+ * The deployment environment goes first so the 32-attribute cap can never drop it, and a
+ * caller's own `environment` cannot override it.
+ */
+const withEnvironment = (event: ProductEventInput, environment: string | undefined): ProductEventInput =>
+	environment === undefined
+		? event
+		: {
+				...event,
+				attributes: {
+					environment,
+					...Rec.filter(event.attributes ?? {}, (_, key) => key !== "environment"),
+				},
+			}
+
 export const makeProductEvents = (options: {
 	readonly httpClient: HttpClient.HttpClient
 	readonly endpoint: string
@@ -185,13 +200,7 @@ export const makeProductEvents = (options: {
 			return
 		}
 		const now = yield* Clock.currentTimeMillis
-		const line = toProductEventLine(
-			options.environment === undefined
-				? event
-				: { ...event, attributes: { ...event.attributes, environment: options.environment } },
-			now,
-			options.serviceName,
-		)
+		const line = toProductEventLine(withEnvironment(event, options.environment), now, options.serviceName)
 		yield* post(line).pipe(
 			Effect.retry({ times: RETRIES, while: isRetryable }),
 			// TOTAL budget, on top of the per-attempt timeout inside `post`.

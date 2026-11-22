@@ -120,6 +120,24 @@ describe("ProductEventsService", () => {
 		}),
 	)
 
+	it.effect("keeps the environment when a caller fills every attribute slot or sets its own", () =>
+		Effect.gen(function* () {
+			const { client, captured } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+				environment: "production",
+			})
+			const attributes: Record<string, string> = { environment: "spoofed" }
+			for (let i = 0; i < 32; i++) attributes[`k${i}`] = "v"
+			yield* events.track({ name: "feature_used", groupId: "org_1", attributes })
+			const sent = JSON.parse(captured[0]?.body ?? "{}").attributes
+			assert.strictEqual(sent.environment, "production")
+			assert.strictEqual(Rec.keys(sent).length, 32)
+		}),
+	)
+
 	it.effect("does not mark its own span as a trace-derived product event", () =>
 		Effect.gen(function* () {
 			const spans: Array<Tracer.NativeSpan> = []

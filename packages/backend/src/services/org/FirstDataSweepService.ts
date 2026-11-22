@@ -1,7 +1,7 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestKeys, OrgOnboardingState } from "@maple/db/tables"
 import { OnboardingPersistenceError, type OrgId } from "@maple/domain/http"
-import { Array as Arr, Clock, Context, Duration, Effect, Layer, Option, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Duration, Effect, Layer, Option, Order, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
@@ -45,8 +45,6 @@ export const isProbeDue = (orgId: string, sinceMs: number, nowMs: number): boole
 
 interface Candidate {
 	readonly orgId: OrgId
-	/** The onboarding row's creation time; `null` when the org has no row yet. */
-	readonly createdAt: number | null
 	/** When the org became a candidate: its onboarding row or its ingest key. */
 	readonly sinceMs: number
 	readonly userId: string | null
@@ -83,14 +81,10 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 				const report = yield* signals.read(systemTenant(candidate.orgId, ALERTING_SYSTEM_USER_ID))
 				const firstData = firstDataSeen(report)
 				if (firstData === undefined) return false
-				// An org with no onboarding row yet gets one dated by its real creation time.
-				const orgCreatedAt =
-					candidate.createdAt === null
-						? readOrgCreatedAt(organizations, candidate.orgId)
-						: Effect.succeed(candidate.createdAt)
+				// The org's real creation time dates a row created here and lifts the event's time.
 				return yield* onboarding.recordFirstDataReceived(
 					candidate.orgId,
-					orgCreatedAt,
+					readOrgCreatedAt(organizations, candidate.orgId),
 					firstData,
 					candidate.userId,
 				)
@@ -149,7 +143,6 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 				])
 				const fromRows: ReadonlyArray<Candidate> = Arr.map(unstamped, (row) => ({
 					orgId: row.orgId,
-					createdAt: row.createdAt,
 					sinceMs: row.createdAt,
 					userId: row.userId,
 				}))
@@ -162,8 +155,12 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 						userId: row.createdBy,
 					}),
 				)
-				const due = Arr.filter([...fromRows, ...fromKeys], (candidate) =>
-					isProbeDue(candidate.orgId, candidate.sinceMs, now),
+				// Newest first across both sources, so the cap never drops a newer key-only org.
+				const due = Arr.sort(
+					Arr.filter([...fromRows, ...fromKeys], (candidate) =>
+						isProbeDue(candidate.orgId, candidate.sinceMs, now),
+					),
+					Order.flip(Order.mapInput(Order.Number, (candidate: Candidate) => candidate.sinceMs)),
 				)
 				return Arr.take(due, FIRST_DATA_SWEEP_LIMIT)
 			})
