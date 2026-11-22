@@ -110,37 +110,39 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 	])
 }
 
-/** Shown above the editor for a saved rule. */
-export const impactPanel = (h: H, model: Model): Html => {
-	if (model.editingId === null || !AsyncData.isSuccess(model.existing)) return h.div([], [])
+/** Shown above the editor for a saved rule; nothing while creating one. */
+export const impactPanel = (h: H, model: Model): ReadonlyArray<Html> => {
+	if (model.editingId === null || !AsyncData.isSuccess(model.existing)) return []
 	const rule = model.existing.data
-	return panel(h, { className: "overflow-hidden" }, [
-		panelHeader(h, {
-			title: "Impact",
-			action: segmentedSelect<ImpactWindow, Message>(h, {
-				size: "xs",
-				ariaLabel: "Impact window",
-				value: model.impactWindow,
-				onChange: (window) => Message.PickedImpactWindow({ window }),
-				options: [
-					{ value: "24h", label: "24h" },
-					{ value: "7d", label: "7d" },
-				],
-			}),
-		}),
-		AsyncData.matchData(model.impact, {
-			onEmpty: () =>
-				vstack(h, { gap: "3", className: "p-4" }, [
-					skeleton(h, "h-8 w-64"),
-					skeleton(h, "h-12 w-full"),
-				]),
-			onFailure: (error) =>
-				errorState(h, {
-					failure: error,
-					title: "Couldn't load this rule's counts",
-					className: "border-0",
+	return [
+		panel(h, { className: "overflow-hidden" }, [
+			panelHeader(h, {
+				title: "Impact",
+				action: segmentedSelect<ImpactWindow, Message>(h, {
+					size: "xs",
+					ariaLabel: "Impact window",
+					value: model.impactWindow,
+					onChange: (window) => Message.PickedImpactWindow({ window }),
+					options: [
+						{ value: "24h", label: "24h" },
+						{ value: "7d", label: "7d" },
+					],
 				}),
-			onData: (stats) => body(h, model, rule, stats),
-		}),
-	])
+			}),
+			AsyncData.matchData(model.impact, {
+				onEmpty: () =>
+					vstack(h, { gap: "3", className: "p-4" }, [
+						skeleton(h, "h-8 w-64"),
+						skeleton(h, "h-12 w-full"),
+					]),
+				onFailure: (error) =>
+					errorState(h, {
+						failure: error,
+						title: "Couldn't load this rule's counts",
+						className: "border-0",
+					}),
+				onData: (stats) => body(h, model, rule, stats),
+			}),
+		]),
+	]
 }
