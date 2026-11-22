@@ -144,9 +144,14 @@ export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
-/** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
+/** Tools that change only the caller's own state, which an analyst's role reaches (v2's `personal`). */
+export const PERSONAL_STATE_TOOLS: ReadonlySet<string> = new Set(["onboarding_status_update"])
+
+/** Whether an analyst is refused this tool: one that changes data, not a dashboard or their own state. */
 export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
-	refusesReadOnlyCredential(name, readOnly) && !DASHBOARD_AUTHORING_TOOLS.has(name)
+	refusesReadOnlyCredential(name, readOnly) &&
+	!DASHBOARD_AUTHORING_TOOLS.has(name) &&
+	!PERSONAL_STATE_TOOLS.has(name)
 
 /** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
 export const refusalFor = (

@@ -16,15 +16,15 @@ const orgId = Schema.decodeSync(OrgId)("org_onboarding_tools")
 const userId = Schema.decodeSync(UserId)("user_onboarding_tools")
 const owner = { orgId, userId }
 
-const tenant = (readOnly: boolean): TenantContext => ({
+const tenant = (readOnly: boolean, role: string): TenantContext => ({
 	orgId,
 	userId,
-	roles: [Schema.decodeSync(RoleName)("root")],
+	roles: [Schema.decodeSync(RoleName)(role)],
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
 })
 
-const layer = (options: { readonly readOnly?: boolean } = {}) => {
+const layer = (options: { readonly readOnly?: boolean; readonly role?: string } = {}) => {
 	const db = createTestDb(createdDbs).layer
 	const env = testEnv({
 		MAPLE_INGEST_PUBLIC_URL: "https://ingest.eu.maple.test/",
@@ -33,7 +33,7 @@ const layer = (options: { readonly readOnly?: boolean } = {}) => {
 	return Layer.mergeAll(
 		OnboardingAgentRunService.layer,
 		IngestSetupService.layer,
-		Layer.succeed(CurrentMcpTenant, tenant(options.readOnly ?? false)),
+		Layer.succeed(CurrentMcpTenant, tenant(options.readOnly ?? false, options.role ?? "root")),
 	).pipe(Layer.provide(Layer.mergeAll(db, env)))
 }
 
@@ -60,7 +60,7 @@ const reportStatus = (params: unknown) =>
 describe("onboarding_status_update", () => {
 	it.effect("records a stage on the caller's run", () =>
 		Effect.gen(function* () {
-			yield* (yield* OnboardingAgentRunService).start(owner)
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-1")
 			const { output, text } = yield* reportStatus({
 				stage: "receive_verification",
 				status: "completed",
@@ -77,9 +77,17 @@ describe("onboarding_status_update", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
+	it.effect("lets an analyst report their own run: it changes only their state", () =>
+		Effect.gen(function* () {
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-analyst")
+			const { output } = yield* reportStatus({ stage: "connect_agent", status: "completed" })
+			expect(output.outcome).toBe("reported")
+		}).pipe(Effect.provide(layer({ role: "org:analyst" }))),
+	)
+
 	it.effect("tells the agent to stop reporting once the run is closed", () =>
 		Effect.gen(function* () {
-			yield* (yield* OnboardingAgentRunService).start(owner)
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-2")
 			yield* reportStatus({ stage: "prepare_production", status: "completed", run_status: "completed" })
 			const { output, text } = yield* reportStatus({ stage: "connect_agent", status: "active" })
 			expect(output.outcome).toBe("closed")
@@ -97,7 +105,7 @@ describe("onboarding_status_update", () => {
 
 	it.effect("refuses a trace id that is not 32 lowercase hex characters", () =>
 		Effect.gen(function* () {
-			yield* (yield* OnboardingAgentRunService).start(owner)
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-3")
 			const result = yield* call("onboarding_status_update", {
 				stage: "send_verification",
 				status: "completed",

@@ -28,6 +28,8 @@ export class IngestSetupService extends Context.Service<
 		const ingestKeys = yield* OrgIngestKeysService
 
 		const forOrg = Effect.fn("IngestSetupService.forOrg")(function* (orgId: OrgId, userId: UserId) {
+			// Read past this isolate's memo: a key rolled in the API's isolate must never reach a new setup.
+			yield* ingestKeys.forget(orgId)
 			const keys = yield* ingestKeys.getOrCreate(orgId, userId)
 			return {
 				ingestEndpoint: withoutTrailingSlash(env.MAPLE_INGEST_PUBLIC_URL),
