@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
-import { describe, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { agentSetupPrompt } from "../kit/onboard-skill"
 import { ingestUrl } from "../../platform/ingest-url"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -38,45 +38,37 @@ const indicatorMeasured = () =>
 		}),
 	)
 
-describe("build with your agent", () => {
-	test("copies the setup prompt with the org's endpoint and key, then says so", () => {
+const PROMPT = agentSetupPrompt(ingestUrl, "maple_pk_test")
+
+describe("use my coding agent", () => {
+	test("Copy prompt copies the guide URL, the endpoint and the public key, then says so", () => {
+		expect(PROMPT).toContain("https://maple.dev/SKILL.md")
+		expect(PROMPT).toContain("Public ingest key: maple_pk_test")
 		scene(
 			{ update, view },
 			given(atConnect()),
 			indicatorMeasured(),
-			click(role("button", { name: "Build with your agent" })),
-			Command.expectExact(
-				CopyButton.WriteClipboard({
-					text: agentSetupPrompt(ingestUrl, "maple_sk_test"),
-					generation: 1,
-				}),
-			),
+			expectView(role("tab", { name: "Use my coding agent" })).toHaveAttr("aria-selected", "true"),
+			expectView(text(/maple_sk_test/)).not.toExist(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.expectExact(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
-			expectView(role("button", { name: "Prompt copied" })).toHaveAttr("data-copy-state", "copied"),
+			expectView(role("button", { name: "Copy prompt" })).toHaveAttr("data-copy-status", "copied"),
 			Command.resolve(
 				CopyButton.WaitCopyStatus,
 				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
 			),
-			expectView(role("button", { name: "Build with your agent" })).toHaveAttr(
-				"data-copy-state",
-				"idle",
-			),
 		)
 	})
 
-	test("a member, who reads only the public key, gets it in the prompt and is told whom to ask", () => {
+	test("a member, who reads only the public key, gets the same prompt and is told whom to ask", () => {
 		scene(
 			{ update, view },
 			given(atConnect(null)),
 			indicatorMeasured(),
 			expectView(text(/^This is your org's public key\./)).toExist(),
-			click(role("button", { name: "Build with your agent" })),
-			Command.expectExact(
-				CopyButton.WriteClipboard({
-					text: agentSetupPrompt(ingestUrl, "maple_pk_test"),
-					generation: 1,
-				}),
-			),
+			click(role("button", { name: "Copy prompt" })),
+			Command.expectExact(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			Command.resolve(
 				CopyButton.WaitCopyStatus,

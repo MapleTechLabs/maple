@@ -1,5 +1,5 @@
 import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
-import { agentSetupPrompt, ONBOARD_SKILL_COMMAND, onboardSkillPrompt } from "./onboard-skill"
+import { agentSetupPrompt } from "./onboard-skill"
 import {
 	type FrameworkId,
 	fillSnippet,
@@ -16,8 +16,8 @@ import { button } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
+import { typography } from "@maple/views/ui/typography"
 import type * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "./code-block"
@@ -99,17 +99,10 @@ export const setupBlocks = (framework: string, keys: SetupKeys): ReadonlyArray<S
 /** The key a server snippet gets. */
 export const serverKey = (keys: SetupKeys): string | null => keyFor({ key: "private" }, keys)
 
-/** The key the coding-agent prompts carry: the one the picked stack's setup uses (public for the browser). */
-export const promptKey = (framework: string, keys: SetupKeys): string | null =>
-	Option.match(
-		Arr.findFirst(sdkSnippets, (entry) => entry.language === framework),
-		{ onNone: () => serverKey(keys), onSome: (snippet) => keyFor(snippet, keys) },
-	)
-
 const SETUP_TAB_ICONS = {
 	install: "DownloadIcon",
 	instrument: "CodeIcon",
-	"claude-code": "ClaudeIcon",
+	agent: "SquareTerminalIcon",
 } as const satisfies { readonly [Value in (typeof SETUP_TAB_VALUES)[number]]: IconName }
 
 const isSetupTab = (value: string): value is (typeof SETUP_TAB_VALUES)[number] =>
@@ -122,7 +115,7 @@ const PACKAGE_MANAGERS = [
 	{ id: "bun", command: "bun add" },
 ] as const
 
-export const SETUP_TAB_VALUES = ["install", "instrument", "claude-code"] as const
+export const SETUP_TAB_VALUES = ["install", "instrument", "agent"] as const
 export const PACKAGE_TAB_VALUES = Arr.map(PACKAGE_MANAGERS, (pm) => pm.id)
 
 export const frameworkIconStrip = <M>(h: HtmlBuilder<M>): Html =>
@@ -187,10 +180,13 @@ const AGENT_LABELS = {
 } as const satisfies Record<CopyButton.CopyStatus, string>
 
 /**
- * The onboarding agent prompt with the org's endpoint and key. Without a key (a member, or the key
- * store is down) the skill uses its `MAPLE_TEST` placeholder and says where to get one.
+ * The coding-agent setup prompt with the org's endpoint and public key, never the private one (the
+ * prompt lands in an agent's context). Without a key the guide uses its `MAPLE_TEST` placeholder.
  */
-export const setupAgentPrompt = (apiKey: string | null): string => agentSetupPrompt(ingestUrl, apiKey ?? "")
+export const setupAgentPrompt = (keys: SetupKeys): string => agentSetupPrompt(ingestUrl, keys.publicKey ?? "")
+
+/** The copy-state key of the agent tab's Copy prompt button. */
+const AGENT_PROMPT_COPY = "agent-prompt"
 
 /**
  * maple.dev's "Build with your agent": copies one prompt for Claude Code, Codex or Cursor, usually
@@ -344,7 +340,7 @@ const packageManagerBlock = <M>(
 		},
 	})
 
-/** The setup instructions without credentials: Install / Instrument / Claude Code tabs. */
+/** The setup instructions without credentials: Install / Instrument / coding-agent tabs. */
 export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsParts<M>): Html => {
 	const found = Arr.findFirst(sdkSnippets, (entry) => entry.language === parts.framework)
 	if (Option.isNone(found)) return h.empty
@@ -361,7 +357,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 		toParentMessage: parts.toSetupTabs,
 		viewInputs: {
 			variant: "underline",
-			labels: ["Install", "Instrument", "Claude Code"],
+			labels: ["Install", "Instrument", "Use my coding agent"],
 			className: "flex flex-col",
 			listClassName: "h-9",
 			tabClassName: "gap-2 max-sm:px-1.5",
@@ -394,7 +390,7 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 					],
 				),
 			panelClassName: cn("overflow-auto mt-0", padding),
-			panelClassNameFor: (value) => (value === "claude-code" ? "space-y-2" : undefined),
+			panelClassNameFor: (value) => (value === "agent" ? "space-y-2" : undefined),
 			panel: (value) => {
 				if (value === "install")
 					return [
@@ -440,26 +436,28 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 							],
 						),
 					]
+				const prompt = setupAgentPrompt(parts.keys)
 				return [
-					h.p(
-						[h.Class("text-xs text-muted-foreground")],
-						[
-							"Install the Maple skills, then run the prompt in Claude Code, Codex, or Cursor. The",
-							" ",
-							inlineCode(h, {}, ["maple-onboard"]),
-							" skill walks every service in the repo, installs OpenTelemetry, wires traces / logs / metrics, and verifies the bootstrap end-to-end.",
-						],
-					),
-					block(h, parts, "skill-command", ONBOARD_SKILL_COMMAND, "shell"),
-					block(
-						h,
-						parts,
-						"skill-prompt",
-						onboardSkillPrompt(ingestUrl, promptKey(parts.framework, parts.keys) ?? ""),
-						"prompt",
-						REPLAY_BLOCK_CLASS,
-						true,
-					),
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						"Paste this into Claude Code, Codex or Cursor. Your agent follows Maple's setup guide: it maps every service in the repo, wires traces, logs and metrics, and checks that a real request reaches Maple.",
+					]),
+					codeBlock(h, {
+						code: prompt,
+						isPlain: true,
+						className: REPLAY_BLOCK_CLASS,
+					}),
+					CopyButton.view(h, {
+						model: parts.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
+						toParentMessage: (message) => parts.toSnippetCopy(AGENT_PROMPT_COPY, message),
+						value: prompt,
+						label: "prompt",
+						idleLabel: "Copy prompt",
+						copiedLabel: "Prompt copied",
+						variant: "default",
+						size: "default",
+						keepsFillInk: true,
+						className: "w-full",
+					}),
 				]
 			},
 		},

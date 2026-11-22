@@ -16,8 +16,9 @@ export type CodeBlockOptions<M> = Readonly<{
 	className?: string
 	/** The scrolling body's classes: a height cap for a long file keeps the copy button in view. */
 	bodyClassName?: string
-	copy: CopyButton.Model
-	toCopyMessage: (message: CopyButton.Message) => M
+	/** The header's copy button; without both, the block is read-only and a sibling control copies it. */
+	copy?: CopyButton.Model
+	toCopyMessage?: (message: CopyButton.Message) => M
 	/** Prose, not code (a prompt for a coding agent): shown as typed, without highlighting. */
 	isPlain?: boolean
 }>
@@ -25,24 +26,38 @@ export type CodeBlockOptions<M> = Readonly<{
 const escapeHtml = (text: string): string =>
 	Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(text)))
 
-export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): Html =>
-	h.div(
-		[h.Class(cn("relative overflow-clip rounded-md border border-border bg-muted", options.className))],
-		[
-			hstack(
-				h,
-				{ align: "center", justify: "between", className: "px-3 py-1.5 text-muted-foreground" },
-				[
-					...(options.language === undefined ? [] : [eyebrow(h, { variant: "mono" }, [options.language])]),
+export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): Html => {
+	const { copy, toCopyMessage } = options
+	const header = [
+		...(options.language === undefined ? [] : [eyebrow(h, { variant: "mono" }, [options.language])]),
+		...(copy === undefined || toCopyMessage === undefined
+			? []
+			: [
 					CopyButton.view(h, {
-						model: options.copy,
-						toParentMessage: options.toCopyMessage,
+						model: copy,
+						toParentMessage: toCopyMessage,
 						value: options.code,
 						label: "Code",
 						className: "ml-auto",
 					}),
-				],
-			),
+				]),
+	]
+	return h.div(
+		[h.Class(cn("relative overflow-clip rounded-md border border-border bg-muted", options.className))],
+		[
+			...(header.length === 0
+				? []
+				: [
+						hstack(
+							h,
+							{
+								align: "center",
+								justify: "between",
+								className: "px-3 py-1.5 text-muted-foreground",
+							},
+							header,
+						),
+					]),
 			h.div(
 				[h.Class(cn("overflow-x-auto bg-surface-well py-3", options.bodyClassName))],
 				[
@@ -79,3 +94,4 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 			),
 		],
 	)
+}

@@ -1,30 +1,24 @@
 import { Array as Arr } from "effect"
-// Installs the whole skills folder: maple-onboard reads its per-language companion skills.
-export const ONBOARD_SKILL_COMMAND = "bunx skills add MapleTechLabs/maple/skills --skill '*'"
 
-// The endpoint carries the org's region; the skill uses it verbatim.
-export function onboardSkillPrompt(ingestUrl: string, ingestKey: string): string {
-	return Arr.join(
-		[
-			"Install Maple in this repo using the maple-onboard skill.",
-			`My ingest endpoint is ${ingestUrl}.`,
-			`My ingest key is ${ingestKey || "<your-ingest-key>"}.`,
-		],
-		"\n",
-	)
-}
+// The coding-agent prompts that point at the setup guides maple.dev serves.
+
+/** The agent setup guide maple.dev serves (`skills/maple-onboard/SKILL.md`). */
+export const AGENT_SETUP_GUIDE_URL = "https://maple.dev/SKILL.md"
 
 /** The Users page's empty state prompt: the `maple-identify-users` skill, served by maple.dev. */
 export const IDENTIFY_USERS_PROMPT =
 	"Identify the signed-in users in my app so they show up on Maple's Users page: maple.dev/skills/identify-users.md"
 
-/** maple.dev's "Build with your agent" line, with this org's endpoint and key so nothing is a placeholder. */
-export function agentSetupPrompt(ingestUrl: string, ingestKey: string): string {
+/**
+ * The one coding-agent setup prompt. The endpoint carries the org's region; `publicKey` must be the
+ * public `maple_pk_` key (it lands in an agent's context), and its line is left out when empty.
+ */
+export function agentSetupPrompt(ingestUrl: string, publicKey: string): string {
 	return Arr.join(
 		[
-			"Add Maple observability to my app: maple.dev/SKILL.md",
-			`My ingest endpoint is ${ingestUrl}.`,
-			...(ingestKey === "" ? [] : [`My ingest key is ${ingestKey}.`]),
+			`Set up Maple observability in this repo by following ${AGENT_SETUP_GUIDE_URL}`,
+			`Ingest endpoint: ${ingestUrl}`,
+			...(publicKey === "" ? [] : [`Public ingest key: ${publicKey}`]),
 		],
 		"\n",
 	)

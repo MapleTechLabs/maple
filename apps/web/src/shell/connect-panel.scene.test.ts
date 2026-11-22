@@ -6,6 +6,8 @@ import { cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-confi
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import * as Popover from "@maple/views/ui/popover"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { agentSetupPrompt } from "../page/kit/onboard-skill"
 import {
 	close,
 	FetchKeys,
@@ -68,6 +70,37 @@ describe("connect panel scene", () => {
 				}),
 			),
 			expect(text("Connected · 1 service")).toExist(),
+		)
+	})
+
+	test("Copy prompt copies the coding-agent prompt with the public key, never the private one", () => {
+		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef")
+		expectVitest(prompt).toContain("https://maple.dev/SKILL.md")
+		scene(
+			config,
+			given(init()),
+			...opened,
+			Command.resolve(
+				FetchKeys({ orgId: ORG }),
+				Message.SucceededLoadKeys({
+					orgId: ORG,
+					publicKey: "maple_pk_0123456789abcdef",
+					privateKey: "maple_sk_secret",
+				}),
+			),
+			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
+			Command.resolve(
+				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
+				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
+			),
+			expect(text(/maple_sk_secret/)).toBeAbsent(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.expectExact(CopyButton.WriteClipboard({ text: prompt, generation: 1 })),
+			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
 		)
 	})
 

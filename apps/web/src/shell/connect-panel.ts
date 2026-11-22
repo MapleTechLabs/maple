@@ -19,7 +19,7 @@ export const CopyField = Schema.Literals([
 	"endpoint",
 	"publicKey",
 	"privateKey",
-	"skill",
+	"agentPrompt",
 	"mcp",
 	"mcpCommand",
 ])
@@ -54,7 +54,7 @@ export const Model = Schema.Struct({
 		endpoint: CopyButton.Model,
 		publicKey: CopyButton.Model,
 		privateKey: CopyButton.Model,
-		skill: CopyButton.Model,
+		agentPrompt: CopyButton.Model,
 		mcp: CopyButton.Model,
 		mcpCommand: CopyButton.Model,
 	}),
@@ -68,7 +68,7 @@ const initCopies = (): Model["copies"] => ({
 	endpoint: CopyButton.init(),
 	publicKey: CopyButton.init(),
 	privateKey: CopyButton.init(),
-	skill: CopyButton.init(),
+	agentPrompt: CopyButton.init(),
 	mcp: CopyButton.init(),
 	mcpCommand: CopyButton.init(),
 })

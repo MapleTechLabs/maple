@@ -246,7 +246,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/funnel-steps.ts` `applyStepEdit`, `applyAnchorEdit`, `stepControlId`, `stepEditOf`, `stepComboUpdate`, `stepFilterLine`, `stepBuilder`: The funnel step builder: an ordered list of steps, each an event name, a page path or (first step only) a session dimension.
 - `apps/web/src/page/kit/gated-controls.ts` `gatedEntries`, `gatedSwitch`, `gatedLinkButton`, `gatedBy`: Controls behind a permission, drawn disabled with who can use them for a viewer without it: menu items, switches, link buttons, and any control when the view only has the verdict.
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
-- `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `promptKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
+- `apps/web/src/page/kit/guided-setup.ts` `keyFor`, `setupBlocks`, `serverKey`, `frameworkIconStrip`, `frameworkPicker`, `setupAgentPrompt`, `agentPromptButton`, `connectInstructions`: The SDK setup guide: the stack picker, then the Install / Instrument / coding-agent tabs filled in with the org's ingest keys.
 - `apps/web/src/page/kit/health-gap-notice.ts` `healthGapOf`, `healthGapText`, `healthGapNotice`: Service health is the overview joined with firing alerts and baseline anomalies.
 - `apps/web/src/page/kit/image-dropzone.ts` `checkImage`, `clickFileInput`, `imageDropzone`, `typeToConfirmField`: An image picker with a drop target and a preview.
 - `apps/web/src/page/kit/image-source-field.ts` `imageSourceInputId`, `imageSourceField`, `imageSourceDialog`: An image a user uploads or links (a logo, a favicon).
@@ -273,7 +273,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
 - `apps/web/src/page/kit/notifies-no-one.ts` `notifiesNoOne`: A list row's warning that a rule has no destination: its incidents open, and nobody is told.
-- `apps/web/src/page/kit/onboard-skill.ts` `onboardSkillPrompt`, `agentSetupPrompt`: Installs the whole skills folder: maple-onboard reads its per-language companion skills.
+- `apps/web/src/page/kit/onboard-skill.ts` `agentSetupPrompt`: The coding-agent prompts that point at the setup guides maple.dev serves.
 - `apps/web/src/page/kit/own-services.ts` `isOwnService`: The service onboarding's "Send test trace" reports as.
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.
 - `apps/web/src/page/kit/page-time.ts` `stepTimePicker`, `pickerStep`, `withPreset`, `pageTime`: The header time cluster pages share, and the picker's update step.

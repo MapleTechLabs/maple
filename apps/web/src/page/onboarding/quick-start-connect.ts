@@ -103,7 +103,7 @@ export const initConnect = (): Connect => ({
 	presence: AsyncData.Idle(),
 	connected: {},
 	isActive: false,
-	setupTabs: Tabs.init({ idBase: 60, values: SETUP_TAB_VALUES, selected: "claude-code" }),
+	setupTabs: Tabs.init({ idBase: 60, values: SETUP_TAB_VALUES, selected: "agent" }),
 	packageTabs: Tabs.init({ idBase: 70, values: PACKAGE_TAB_VALUES, selected: "npm" }),
 	snippetCopies: {},
 })

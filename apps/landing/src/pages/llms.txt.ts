@@ -44,6 +44,13 @@ export const GET: APIRoute = ({ site }) => {
 			"For AI agents and automation, use the resources below.",
 			"",
 
+			"## Set up Maple with a coding agent",
+			"",
+			`To add Maple to a project, follow ${url("/SKILL.md")}. It installs OpenTelemetry across every service in the repo, sends traces, logs and metrics to Maple, and verifies that a real request arrives.`,
+			"",
+			`An agent reaches Maple through the \`maple\` CLI ([reference](${url("/docs/reference/cli.md")})) or the hosted MCP server at \`${API_ORIGIN}${API_PATHS.mcp}\` ([guide](${url(`${SITE_PATHS.mcpDocs}.md`)})).`,
+			"",
+
 			"## Documentation",
 			"",
 			CONVENTION("docs"),
