@@ -160,7 +160,8 @@ export class OtelIngestKey extends Secret<OtelIngestKey>()("MAPLE_OTEL_INGEST_KE
 
 export class ProductEventsIngestKey extends Secret<ProductEventsIngestKey>()(
 	"MAPLE_PRODUCT_EVENTS_INGEST_KEY",
-	{ issuer: "maple", consumers: ["api"] },
+	// ai and alerting stamp an org's first data, which emits `first_data_received`.
+	{ issuer: "maple", consumers: ["api", "ai", "alerting"] },
 ) {}
 
 // Billing

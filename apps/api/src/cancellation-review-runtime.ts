@@ -6,6 +6,7 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 import { ProductEventsIngestKey, StripeSecretKey, SupportSlackBotToken } from "@maple/infra/secrets"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import { CancellationReviewJob } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { CancellationReviewService } from "@maple/backend/services/cancellation-review/CancellationReviewService"
 
 /** Not `maple-api`: a review's minute of upstream reads would skew the request service's percentiles. */
@@ -16,6 +17,7 @@ export const cancellationReviewTelemetry = eventTelemetry({ serviceName: "maple-
  * The ports (`AI_WORKER`, `MAPLE_DB`, config) come from the Worker.
  */
 export const CancellationReviewLive = CancellationReviewService.layer.pipe(
+	Layer.provide(ProductEventsService.layer),
 	Layer.provide(
 		Layer.mergeAll(
 			EventBaseLive,

@@ -60,8 +60,10 @@ export const ALERTING_SCHEDULE = {
 		deadline: "10 minutes",
 	},
 	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
+	// `first_data` stamps recent orgs whose first telemetry has landed (emits `first_data_received`);
+	// the event is dated by the data, so an hour of lag costs nothing and keeps probes cheap.
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal", "first_data"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>

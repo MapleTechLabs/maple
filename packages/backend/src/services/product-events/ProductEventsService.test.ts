@@ -99,6 +99,48 @@ describe("ProductEventsService", () => {
 	// A span carrying `maple.product_event.name` is itself projected into
 	// `product_events` as a `Source='trace'` row, so the span that posts an event
 	// must not carry it, or every server event lands twice.
+	it.effect("stamps the deployment environment and the emitting Worker on every event", () =>
+		Effect.gen(function* () {
+			const { client, captured } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+				environment: "preview",
+				serviceName: "maple-alerting",
+			})
+			yield* events.track({
+				name: "first_data_received",
+				groupId: "org_1",
+				attributes: { signals: "logs" },
+			})
+			const line = JSON.parse(captured[0]?.body ?? "{}")
+			assert.strictEqual(line.service_name, "maple-alerting")
+			assert.deepStrictEqual(line.attributes, { signals: "logs", environment: "preview" })
+		}),
+	)
+
+	it.effect("keeps the environment when a caller fills every attribute slot or sets its own", () =>
+		Effect.gen(function* () {
+			const { client, captured } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+				environment: "production",
+			})
+			const filler = Rec.fromEntries(Arr.makeBy(32, (i): [string, string] => [`k${i}`, "v"]))
+			yield* events.track({
+				name: "feature_used",
+				groupId: "org_1",
+				attributes: { environment: "spoofed", ...filler },
+			})
+			const sent = JSON.parse(captured[0]?.body ?? "{}").attributes
+			assert.strictEqual(sent.environment, "production")
+			assert.strictEqual(Rec.keys(sent).length, 32)
+		}),
+	)
+
 	it.effect("does not mark its own span as a trace-derived product event", () =>
 		Effect.gen(function* () {
 			const spans: Array<Tracer.NativeSpan> = []
