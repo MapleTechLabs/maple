@@ -69,7 +69,8 @@ use maple_ingest::prometheus_remote_write;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::row_budget::{self, ForwardBody, RowEstimate, ROW_PIECE_BYTES};
 use maple_ingest::session_analytics::{
-    derive_referrer_host, row_session_id, sanitize_product_event, sanitize_session_event,
+    derive_referrer_host, is_billable_session_start, row_session_id, sanitize_product_event,
+    sanitize_session_event,
     sanitize_session_meta,
     BillableSessionStarts,
 };
@@ -1297,6 +1298,7 @@ trait KeyStore: Send + Sync {
         &self,
         _org_id: &str,
         _visitor_id: &str,
+        _idle_ms: i64,
     ) -> Result<bool, String> {
         Ok(false)
     }
@@ -4990,7 +4992,8 @@ impl CookielessVisitors {
         }
         let touched = tokio::time::timeout(
             COOKIELESS_STORE_TIMEOUT,
-            self.store.touch_cookieless_visit(org_id, visitor_id),
+            self.store
+                .touch_cookieless_visit(org_id, visitor_id, cookieless::VISIT_IDLE_MS),
         )
         .await
         .unwrap_or_else(|_| Err("cookieless visit touch timed out".to_owned()));
@@ -5338,14 +5341,16 @@ async fn handle_replay_meta_inner(
         // LowCardinality columns. Clamp before it reaches the warehouse — the
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
+        // The mode marker is the gateway's to set, never the client's.
+        cookieless::clear_metadata_mark(obj);
         let visitor = cookieless.apply(obj).await;
         if matches!(visitor, CookielessRow::Visitor(_)) {
             cookieless::mark_metadata_row(obj);
         }
         // Cookieless starts bill through one visit claim after the loop: every
         // row here shares the visitor, and the browser keeps no visit marker.
-        let is_start = session_starts.note(obj);
-        if is_start && visitor != CookielessRow::NotCookieless {
+        let is_start = is_billable_session_start(obj);
+        if session_starts.note(obj) && visitor != CookielessRow::NotCookieless {
             session_starts.retract(obj);
         }
         if let CookielessRow::Visitor(id) = visitor {
@@ -5367,8 +5372,10 @@ async fn handle_replay_meta_inner(
     }
     // Claimed once the whole body parsed. A later enqueue failure leaves the visit
     // claimed and unbilled: the gateway errs toward under-billing.
+    // No claim when the request's billing slots are full: a claimed visit it could not
+    // bill would also go unbilled on the visitor's next request.
     if let Some((visitor_id, session_id)) = cookieless_start {
-        if state.cookieless.claim_visit(&org_id, &visitor_id).await {
+        if session_starts.has_room() && state.cookieless.claim_visit(&org_id, &visitor_id).await {
             session_starts.note_session(session_id);
         }
     } else if let Some(visitor_id) = cookieless_active {
@@ -12005,13 +12012,20 @@ impl KeyStore for PostgresKeyStore {
             .map_err(|error| format!("postgres prune cookieless_visits failed: {error}"))
     }
 
-    async fn touch_cookieless_visit(&self, org_id: &str, visitor_id: &str) -> Result<bool, String> {
+    async fn touch_cookieless_visit(
+        &self,
+        org_id: &str,
+        visitor_id: &str,
+        idle_ms: i64,
+    ) -> Result<bool, String> {
         let client = self.client().await?;
+        // A heartbeat only extends a visit still open: a delayed one never reopens it.
         client
             .execute(
                 "UPDATE cookieless_visits SET last_seen_at = now() \
-                 WHERE org_id = $1 AND visitor_id = $2",
-                &[&org_id, &visitor_id],
+                 WHERE org_id = $1 AND visitor_id = $2 \
+                 AND last_seen_at >= now() - $3::bigint * interval '1 millisecond'",
+                &[&org_id, &visitor_id, &idle_ms],
             )
             .instrument(postgres_client_span(
                 "touch_cookieless_visit",
@@ -14150,6 +14164,7 @@ mod tests {
             &self,
             _org_id: &str,
             visitor_id: &str,
+            _idle_ms: i64,
         ) -> Result<bool, String> {
             self.cookieless_touches
                 .lock()
@@ -16827,6 +16842,25 @@ mod tests {
         handle_replay_meta_inner(&state, &dave, Bytes::from(many.join("\n")))
             .await
             .expect("session metadata should be accepted");
+        // A body whose billing slots are full claims no visit, so Frank's next start still bills.
+        let frank = cookieless_headers("maple_sk_test_cl_bill", "192.0.2.66", "Opera");
+        let full: Vec<String> = (0..4)
+            .map(|n| {
+                format!(
+                    r#"{{"session_id":"sess_p{n}","version":1,"billable_start":1,"visitor_id":"00000000-0000-4000-8000-00000000000{n}"}}"#
+                )
+            })
+            .chain(std::iter::once(
+                r#"{"session_id":"sess_f1","version":1,"billable_start":1,"visitor_id":"cookieless"}"#
+                    .to_owned(),
+            ))
+            .collect();
+        handle_replay_meta_inner(&state, &frank, Bytes::from(full.join("\n")))
+            .await
+            .expect("session metadata should be accepted");
+        handle_replay_meta_inner(&state, &frank, start("sess_f2"))
+            .await
+            .expect("session metadata should be accepted");
         // No trusted client IP: no visitor to claim a visit for, so not billed.
         handle_replay_meta_inner(&state, &bearer_headers("maple_sk_test_cl_bill"), start("sess_c1"))
             .await
@@ -16838,7 +16872,8 @@ mod tests {
             .filter(|(feature, _)| *feature == "browser_sessions")
             .map(|(_, count)| count)
             .sum();
-        assert!((billed - 3.0).abs() < f64::EPSILON, "{calls:?}");
+        // Alice, Bob and Dave once each, the four persistent starts, Frank's later start.
+        assert!((billed - 8.0).abs() < f64::EPSILON, "{calls:?}");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

@@ -19,8 +19,9 @@ export const CookielessSalts = PG.table("cookieless_salts", {
 
 /**
  * The billing visit claim for cookieless visitors, which the browser cannot keep: one row per
- * visitor id (already daily), extended by each session start. A start more than 30 idle minutes
- * after the last one is a new billable visit. The gateway deletes rows a day after their last start.
+ * visitor id (already daily). Session starts and heartbeats from an open page refresh
+ * `last_seen_at`; a start more than 30 minutes after it opens a new billable visit. The gateway
+ * deletes rows a day after `last_seen_at`.
  */
 export const CookielessVisits = PG.table("cookieless_visits", {
 	columns: {

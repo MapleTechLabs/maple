@@ -154,11 +154,17 @@ fn clamp_string_field(
 /// charged. An absent key is an SDK predating visits: customers pin SDK
 /// versions, so it keeps the old `version == 1` rule rather than going unbilled.
 fn take_billable_session_start(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
-    let marker = obj.remove("billable_start");
-    if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
-        return false;
-    }
-    marker.is_none_or(|value| value.as_u64() == Some(1))
+    let billable = is_billable_session_start(obj);
+    obj.remove("billable_start");
+    billable
+}
+
+/// Whether a session metadata row is a billable start, leaving the row as it is.
+pub fn is_billable_session_start(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+    obj.get("version").and_then(serde_json::Value::as_u64) == Some(1)
+        && obj
+            .get("billable_start")
+            .is_none_or(|value| value.as_u64() == Some(1))
 }
 
 /// Most browser sessions one metadata request can bill. Every SDK posts one
@@ -183,6 +189,11 @@ impl BillableSessionStarts {
             return false;
         }
         self.sessions.insert(row_session_id(obj).to_owned())
+    }
+
+    /// Whether one more session can still be billed for this request.
+    pub fn has_room(&self) -> bool {
+        self.sessions.len() < MAX_BILLABLE_SESSIONS_PER_REQUEST
     }
 
     /// Count a session start the gateway decided to bill on its own (a cookieless visit).
