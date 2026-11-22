@@ -216,13 +216,16 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				const now = yield* Clock.currentTimeMillis
 				const stamped = yield* stampFirstData(orgId, orgCreatedAt, now)
 				if (!stamped) return false
+				// The row names who set the org up; its `createdAt` can be a first visit, not the org's
+				// creation, so the event is dated against the org itself.
 				const row = yield* findRow(orgId)
+				const orgCreatedAtMs = yield* orgCreatedAt
 				yield* productEvents.track(
 					firstDataReceivedEvent({
 						orgId,
 						userId: row?.userId ?? userId,
 						firstData,
-						orgCreatedAtMs: row?.createdAt ?? null,
+						orgCreatedAtMs,
 						nowMs: now,
 					}),
 				)

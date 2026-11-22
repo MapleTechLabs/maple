@@ -68,13 +68,15 @@ const makeLayer = (testDb: TestDb) =>
 			Layer.mergeAll(
 				signals,
 				Layer.succeed(OrganizationService, {
+					create: () => Effect.die("create is not used by the first-data sweep"),
+					chooseRegion: () => Effect.die("chooseRegion is not used by the first-data sweep"),
 					retrieve: (orgId) =>
 						Effect.succeed({
 							id: orgId,
 							name: null,
 							slug: null,
 							imageUrl: null,
-							createdAtMs: KEY_ONLY_CREATED_AT,
+							createdAtMs: orgId === KEY_ONLY ? KEY_ONLY_CREATED_AT : NOW - 2 * DAY,
 						}),
 				}),
 				OnboardingService.layer.pipe(
