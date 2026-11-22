@@ -16,15 +16,17 @@ const NOTES = {
 	connect_agent: null,
 	analyze_project: "Found 2 services: checkout-api and web",
 	instrument_app: "Added OpenTelemetry to checkout-api",
-	send_verification: "The dev server would not start on port 3000",
+	send_verification: "Sent GET /checkout from the running app",
 	receive_verification: null,
-	prepare_production: null,
+	prepare_production: "You chose to deploy later",
 } as const satisfies Record<OnboardingAgentStage, string | null>
 
 const run = (
 	status: V2OnboardingAgentRun["status"],
 	statuses: ReadonlyArray<OnboardingAgentStageStatus>,
-	extra: Partial<Pick<V2OnboardingAgentRun, "service_names" | "trace_id">> = {},
+	extra: Partial<Pick<V2OnboardingAgentRun, "service_names" | "trace_id">> & {
+		readonly notes?: Partial<Record<OnboardingAgentStage, string>>
+	} = {},
 ): V2OnboardingAgentRun => ({
 	object: "onboarding_agent_run",
 	status,
@@ -37,7 +39,7 @@ const run = (
 			object: "onboarding_agent_stage",
 			id,
 			status: stageStatus,
-			note: stageStatus === "pending" ? null : NOTES[id],
+			note: stageStatus === "pending" ? null : (extra.notes?.[id] ?? NOTES[id]),
 			updated_at: stageStatus === "pending" ? null : timestamp("2026-11-22T10:04:00.000Z"),
 		}
 	}),
@@ -53,6 +55,7 @@ export const labAgentRun = (state: Exclude<LabAgentState, "none">): V2Onboarding
 		case "progress":
 			return run("in_progress", ["completed", "completed", "completed", "failed", "active"], {
 				service_names: ["checkout-api"],
+				notes: { send_verification: "The dev server would not start on port 3000" },
 			})
 		case "completed":
 			return run(
