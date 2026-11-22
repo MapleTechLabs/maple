@@ -76,9 +76,9 @@ The setup is done only when Maple shows a trace from the real bootstrap. Per ser
 
 1. The project's own dev or build command still starts cleanly. Broken startup is a regression: fix it.
 2. Run the app the normal way: offer to start it, or ask the user how they run it.
-3. Drive one real request through an instrumented route (or a real CLI command) so the trace comes from the real bootstrap. No standalone script that bypasses it.
+3. Drive one real request through an instrumented route (or a real CLI command) so the trace comes from the real bootstrap. No standalone script that bypasses it. Then identify that request's own trace: its trace id (the `traceparent` response header, or the exporter's debug output), or else the `deployment.environment.name` you set for this run, which no other deployment uses. A span from another deployment of the same `service.name` proves nothing.
 4. Confirm in Maple that the configured `service.name` has spans: MCP `list_services` / `search_traces`, or the `maple` CLI (`maple services`, `maple traces -s <service> --since 15m`). With Maple MCP connected, run `audit_setup` and fix what it reports; with the CLI only, the audit runs in Step 7 once MCP is connected.
-5. Show the user the trace link.
+5. Show the user the link to that trace (MCP `inspect_trace`, or `maple trace <trace-id>`).
 
 If nothing arrives within about 2 minutes, keep debugging: endpoint region, key, init order, exporter errors (`maple-onboarding-style` "Verify export" has the per-language diagnostics and what to do on a `401`). With `MAPLE_TEST` nothing is stored: confirm export succeeds with no exporter errors, and tell the user that Maple verification waits for their real key.
 
