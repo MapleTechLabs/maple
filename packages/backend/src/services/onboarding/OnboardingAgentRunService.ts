@@ -3,6 +3,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { OnboardingAgentRuns, type OnboardingAgentRunRow } from "@maple/db/tables"
 import {
 	ONBOARDING_AGENT_RUN_TTL_MS,
+	ONBOARDING_HANDOFF_TTL_MS,
 	ONBOARDING_AGENT_SERVICES_MAX,
 	OnboardingAgentRunClosedError,
 	OnboardingAgentRunNotFoundError,
@@ -13,7 +14,7 @@ import {
 	type OnboardingAgentStage,
 } from "@maple/domain/onboarding-agent-run"
 import type { OrgId, UserId } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schedule, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -31,16 +32,35 @@ interface Owner {
 	readonly userId: UserId
 }
 
-const OPEN: ReadonlySet<OnboardingAgentRunStatus> = new Set(["waiting_for_agent", "in_progress"])
+const OPEN_STATUSES = [
+	"waiting_for_agent",
+	"in_progress",
+] as const satisfies ReadonlyArray<OnboardingAgentRunStatus>
+const OPEN: ReadonlySet<OnboardingAgentRunStatus> = new Set(OPEN_STATUSES)
 
-/** An open run past its lifetime reads as `expired`; the row is never rewritten for it. */
-export const effectiveRunStatus = (row: OnboardingAgentRunRow, now: number): OnboardingAgentRunStatus =>
-	OPEN.has(row.status) && row.expiresAt <= now ? "expired" : row.status
+/**
+ * An open run reads as `expired` past its lifetime, or once its handoff code lapsed with no
+ * report; the row is never rewritten for it.
+ */
+export const effectiveRunStatus = (row: OnboardingAgentRunRow, now: number): OnboardingAgentRunStatus => {
+	if (!OPEN.has(row.status)) return row.status
+	const unclaimed = row.status === "waiting_for_agent" && row.createdAt + ONBOARDING_HANDOFF_TTL_MS <= now
+	return unclaimed || row.expiresAt <= now ? "expired" : row.status
+}
 
+// Control and format characters (bidi overrides, zero-width) go: the note is shown to the person.
 const cleanNote = (note: string | undefined): string | null => {
-	const trimmed = Str.trim(Str.replace(/\s+/g, " ")(note ?? ""))
+	const trimmed = Str.trim(Str.replace(/\s+/g, " ")(Str.replace(/[\p{Cc}\p{Cf}]/gu, "")(note ?? "")))
 	return trimmed === "" ? null : trimmed
 }
+
+/** Another report changed the run between the read and the write. Internal: retried, never surfaced. */
+class ReportConflict extends Schema.TaggedError<ReportConflict>()(
+	"@maple/backend/OnboardingAgentRunReportConflict",
+	{
+		message: Schema.String,
+	},
+) {}
 
 export class OnboardingAgentRunService extends Context.Service<
 	OnboardingAgentRunService,
@@ -80,6 +100,31 @@ export class OnboardingAgentRunService extends Context.Service<
 
 		const start = Effect.fn("OnboardingAgentRunService.start")(function* (owner: Owner) {
 			const now = yield* Clock.currentTimeMillis
+			// One live run per person: the newest copy of the prompt is the one the page follows.
+			yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.deleteFrom(OnboardingAgentRuns).where(($) => [
+								$.orgId.eq(owner.orgId),
+								$.userId.eq(owner.userId),
+								$.expiresAt.lt(now),
+							]),
+						)
+						yield* Effect.forEach(OPEN_STATUSES, (open) =>
+							db.run(
+								PG.update(OnboardingAgentRuns)
+									.set({ status: "expired", updatedAt: now })
+									.where(($) => [
+										$.orgId.eq(owner.orgId),
+										$.userId.eq(owner.userId),
+										$.status.eq(open),
+									]),
+							),
+						)
+					}),
+				),
+			)
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(OnboardingAgentRuns)
@@ -135,7 +180,7 @@ export class OnboardingAgentRunService extends Context.Service<
 			return { ...row, status: effectiveRunStatus(row, now) }
 		})
 
-		const report = Effect.fn("OnboardingAgentRunService.report")(function* (
+		const attemptReport = Effect.fn("OnboardingAgentRunService.attemptReport")(function* (
 			owner: Owner,
 			input: OnboardingAgentReport,
 		) {
@@ -162,6 +207,7 @@ export class OnboardingAgentRunService extends Context.Service<
 				Arr.dedupe([...row.serviceNames, ...(input.serviceNames ?? [])]),
 				ONBOARDING_AGENT_SERVICES_MAX,
 			)
+			// Written only over the row as read, so a concurrent report or a close is never overwritten.
 			const updated = yield* dbExecute((db) =>
 				db.run(
 					PG.update(OnboardingAgentRuns)
@@ -171,13 +217,43 @@ export class OnboardingAgentRunService extends Context.Service<
 							serviceNames,
 							traceId: input.traceId ?? row.traceId,
 							lastReportedAt: now,
-							updatedAt: now,
+							updatedAt: Math.max(now, row.updatedAt + 1),
 						})
-						.where(($) => [$.orgId.eq(owner.orgId), $.id.eq(row.id)])
+						.where(($) => [
+							$.orgId.eq(owner.orgId),
+							$.id.eq(row.id),
+							$.updatedAt.eq(row.updatedAt),
+							$.status.eq(row.status),
+						])
 						.returning(),
 				),
 			)
-			return updated[0] ?? row
+			const written = Option.fromNullishOr(updated[0])
+			if (Option.isNone(written)) {
+				return yield* new ReportConflict({ message: "The run changed during the report" })
+			}
+			return written.value
+		})
+
+		const report = Effect.fn("OnboardingAgentRunService.report")(function* (
+			owner: Owner,
+			input: OnboardingAgentReport,
+		) {
+			return yield* attemptReport(owner, input).pipe(
+				Effect.retry({
+					schedule: Schedule.recurs(4),
+					while: (error) => error._tag === "@maple/backend/OnboardingAgentRunReportConflict",
+				}),
+				Effect.catchTag("@maple/backend/OnboardingAgentRunReportConflict", (error) =>
+					Effect.fail(
+						new OnboardingAgentRunUnavailableError({
+							message: error.message,
+							operation: "report",
+							cause: null,
+						}),
+					),
+				),
+			)
 		})
 
 		return { start, current, report }

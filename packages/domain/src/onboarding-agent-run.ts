@@ -95,6 +95,20 @@ export class OnboardingAgentRunClosedError extends HttpTaggedError<OnboardingAge
 	},
 ) {}
 
+export class OnboardingAgentRunRateLimitedError extends HttpTaggedError<OnboardingAgentRunRateLimitedError>()(
+	"@maple/http/errors/OnboardingAgentRunRateLimitedError",
+	{ message: Schema.String },
+	{
+		status: 429,
+		code: "onboarding_agent_run_rate_limited",
+		title: "Too many agent prompts",
+		message: "Too many agent prompts were copied in a short time. Wait a minute and copy it again.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "public_message",
+	},
+) {}
+
 export class OnboardingAgentRunUnavailableError extends HttpTaggedError<OnboardingAgentRunUnavailableError>()(
 	"@maple/http/errors/OnboardingAgentRunUnavailableError",
 	{ message: Schema.String, operation: Schema.String, cause: Schema.Defect() },

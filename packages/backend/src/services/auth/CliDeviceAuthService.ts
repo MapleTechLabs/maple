@@ -18,6 +18,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { generateApiKey, hashApiKey, hashLookupToken } from "../../platform/credential-tokens"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
 import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
@@ -44,6 +45,11 @@ const POLL_INTERVAL_SECONDS = 5
 export const HANDOFF_CODE_PREFIX = "maple_ho_"
 export const HANDOFF_DEVICE_NAME = "Coding agent (onboarding)"
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+/** A typed-in device name never takes the handoff's, which marks a row single-use. */
+const deviceLabel = (deviceName: string) => {
+	const label = Str.slice(0, 120)(Str.trim(deviceName))
+	return label === "" || label === HANDOFF_DEVICE_NAME ? "Maple CLI" : label
+}
 const normalizeUserCode = (value: string) => Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value))
 const displayUserCode = (value: string) => `${Str.slice(0, 4)(value)}-${Str.slice(4, 8)(value)}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
@@ -208,7 +214,7 @@ export class CliDeviceAuthService extends Context.Service<
 					PG.insertInto(CliDeviceAuthorizations).values({
 						deviceCodeHash: hashLookupToken("cli-device/device-code", deviceCode, apiKeyHmacKey),
 						userCodeHash: hashLookupToken("cli-device/user-code", userCode, apiKeyHmacKey),
-						deviceName: Str.slice(0, 120)(Str.trim(deviceName)) || "Maple CLI",
+						deviceName: deviceLabel(deviceName),
 						createdAt: now,
 						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
 					}),
@@ -446,6 +452,10 @@ export class CliDeviceAuthService extends Context.Service<
 				return new CliDeviceExpiredResponse({ status: "expired" })
 			}
 			if (row.value.deniedAt !== null) return new CliDeviceDeniedResponse({ status: "denied" })
+			// A handoff code travels through an agent's transcript: it signs in once, never again.
+			if (row.value.deviceName === HANDOFF_DEVICE_NAME && row.value.apiKeyId !== null) {
+				return new CliDeviceExpiredResponse({ status: "expired" })
+			}
 			if (row.value.approvedAt === null) {
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
@@ -459,7 +469,7 @@ export class CliDeviceAuthService extends Context.Service<
 			const now = yield* Clock.currentTimeMillis
 			yield* purgeExpired(now)
 			const code = `${HANDOFF_CODE_PREFIX}${randomBytes(32).toString("base64url")}`
-			const expiresAt = now + DEVICE_TTL_SECONDS * 1000
+			const expiresAt = now + ONBOARDING_HANDOFF_TTL_MS
 			yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CliDeviceAuthorizations).values({

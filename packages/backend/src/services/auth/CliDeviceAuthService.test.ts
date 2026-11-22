@@ -121,6 +121,10 @@ describe("CliDeviceAuthService", () => {
 			const resolved = yield* apiKeys.resolveByKey(polled.token)
 			expect(Option.map(resolved, (key) => key.roles)).toEqual(Option.some([memberRole]))
 
+			// Once claimed, the code is spent: a copy left in a transcript signs nothing in.
+			const replayed = yield* auth.poll(handoff.code)
+			expect(replayed.status).toBe("expired")
+
 			// A guessed code next to a real one signs nothing in.
 			const guessed = yield* auth.poll(`${handoff.code}x`)
 			expect(guessed.status).toBe("expired")

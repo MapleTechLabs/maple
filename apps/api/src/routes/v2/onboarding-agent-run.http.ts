@@ -2,7 +2,10 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, isoTimestamp, isoTimestampOrNull } from "@maple/domain/http/v2"
 import type { V2OnboardingAgentRun } from "@maple/domain/http/v2"
-import { OnboardingAgentRunUnavailableError } from "@maple/domain/onboarding-agent-run"
+import {
+	OnboardingAgentRunRateLimitedError,
+	OnboardingAgentRunUnavailableError,
+} from "@maple/domain/onboarding-agent-run"
 import type { OnboardingAgentRunRow } from "@maple/db/tables"
 import { Array as Arr, Effect } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -52,14 +55,22 @@ export const HttpV2OnboardingAgentRunLive = HttpApiBuilder.group(
 								userEmail,
 							})
 							.pipe(
-								Effect.mapError(
-									(error) =>
-										new OnboardingAgentRunUnavailableError({
-											message: error.message,
-											operation: "handoff",
-											cause: null,
-										}),
-								),
+								Effect.catchTags({
+									"@maple/http/errors/CliDeviceRateLimitError": (error) =>
+										Effect.fail(
+											new OnboardingAgentRunRateLimitedError({
+												message: error.message,
+											}),
+										),
+									"@maple/http/errors/CliDevicePersistenceError": (error) =>
+										Effect.fail(
+											new OnboardingAgentRunUnavailableError({
+												message: error.message,
+												operation: "handoff",
+												cause: null,
+											}),
+										),
+								}),
 							)
 						const run = yield* runs.start({ orgId: tenant.orgId, userId: tenant.userId })
 						yield* recordHttpAudit("cli_session.approved", {

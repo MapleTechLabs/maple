@@ -6,6 +6,7 @@ import {
 	OnboardingAgentReportedStatus,
 	OnboardingAgentRunClosedError,
 	OnboardingAgentRunNotFoundError,
+	OnboardingAgentRunRateLimitedError,
 	OnboardingAgentRunStatus,
 	OnboardingAgentRunUnavailableError,
 	OnboardingAgentStage,
@@ -46,7 +47,7 @@ export const V2OnboardingAgentRun = Schema.Struct({
 	}),
 	status: OnboardingAgentRunStatus.annotate({
 		description:
-			"`waiting_for_agent` until the first report, `in_progress` after it, `completed` or `failed` once the agent says so, `expired` a day after the run started without either.",
+			"`waiting_for_agent` until the first report, `in_progress` after it, `completed` or `failed` once the agent says so. `expired` when no agent reported before the handoff code expired, a day after the run started, or once a newer run replaced it.",
 		examples: ["in_progress"],
 	}),
 	created_at: Timestamp.annotate({ description: "When the prompt was copied." }),
@@ -105,7 +106,7 @@ export const V2OnboardingAgentHandoff = Schema.Struct({
 	}),
 	handoff_code: Schema.String.annotate({
 		description:
-			"Signs the `maple` CLI in as you, once: `MAPLE_HANDOFF=<code> maple auth login`. Returned only here; treat it like a password.",
+			"Signs the `maple` CLI in as you, once, within 15 minutes: `MAPLE_HANDOFF=<code> maple auth login`. Returned only here; treat it like a password.",
 	}),
 	handoff_expires_at: Timestamp.annotate({ description: "When the code stops signing a CLI in." }),
 	run: V2OnboardingAgentRun,
@@ -116,7 +117,8 @@ export const V2OnboardingAgentHandoff = Schema.Struct({
 })
 export type V2OnboardingAgentHandoff = Schema.Schema.Type<typeof V2OnboardingAgentHandoff>
 
-const ServiceName = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(120))
+// `service.name` characters only: these values are rendered on the dashboard.
+const ServiceName = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[\w.:@/-]+$/u))
 const HexTraceId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/u))
 
 export const V2OnboardingAgentReport = Schema.Struct({
@@ -159,7 +161,10 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 	.add(
 		HttpApiEndpoint.post("start", "/", {
 			success: V2OnboardingAgentHandoff,
-			error: [V2InsufficientPermissions.schema, ...publicErrors(OnboardingAgentRunUnavailableError)],
+			error: [
+				V2InsufficientPermissions.schema,
+				...publicErrors(OnboardingAgentRunRateLimitedError, OnboardingAgentRunUnavailableError),
+			],
 		})
 			.annotate(AnalystAccess, "personal")
 			.annotateMerge(
@@ -167,7 +172,7 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 					identifier: "startOnboardingAgentRun",
 					summary: "Start an onboarding agent run",
 					description:
-						"Starts a run for the signed-in person and returns a single-use handoff code that signs the `maple` CLI in as them for 15 minutes. " +
+						"Starts a run for the signed-in person, closing any open one, and returns a single-use handoff code that signs the `maple` CLI in as them for 15 minutes. " +
 						"Takes a signed-in session: an API key is refused. Requires the `onboarding:write` scope.",
 				}),
 			),

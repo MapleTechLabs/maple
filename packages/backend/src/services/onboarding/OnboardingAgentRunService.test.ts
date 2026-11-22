@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { ONBOARDING_AGENT_RUN_TTL_MS } from "@maple/domain/onboarding-agent-run"
+import { ONBOARDING_AGENT_RUN_TTL_MS, ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -29,7 +29,7 @@ describe("OnboardingAgentRunService", () => {
 			yield* runs.report(owner, {
 				stage: "instrument_app",
 				status: "active",
-				note: "  Instrumenting\n two services ",
+				note: "  Instrumenting\n two\u202e services\u200b ",
 				serviceNames: ["api", "web"],
 			})
 			const verified = yield* runs.report(owner, {
@@ -75,6 +75,37 @@ describe("OnboardingAgentRunService", () => {
 				.report(owner, { stage: "prepare_production", status: "active" })
 				.pipe(Effect.flip)
 			expect(refused._tag).toBe("@maple/http/errors/OnboardingAgentRunClosedError")
+		}).pipe(provideRuns(db))
+	})
+
+	it.effect("a newer run closes the older one, and an unclaimed run lapses with its code", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			const first = yield* runs.start(owner)
+			yield* runs.report(owner, { stage: "connect_agent", status: "completed" })
+			yield* TestClock.adjust("1 second")
+			const second = yield* runs.start(owner)
+			expect(second.id).not.toBe(first.id)
+			expect((yield* runs.current(owner)).status).toBe("waiting_for_agent")
+
+			yield* TestClock.adjust(ONBOARDING_HANDOFF_TTL_MS)
+			expect((yield* runs.current(owner)).status).toBe("expired")
+		}).pipe(provideRuns(db))
+	})
+
+	it.effect("concurrent reports all land and none reopens a closed run", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			yield* runs.start(owner)
+			yield* Effect.forEach(
+				["connect_agent", "analyze_project", "instrument_app"] as const,
+				(stage) => runs.report(owner, { stage, status: "completed" }),
+				{ concurrency: "unbounded" },
+			)
+			const run = yield* runs.current(owner)
+			expect(Arr.filter(run.stages, (stage) => stage.status === "completed").length).toBe(3)
 		}).pipe(provideRuns(db))
 	})
 
