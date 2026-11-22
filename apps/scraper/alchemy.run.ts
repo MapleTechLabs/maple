@@ -99,7 +99,8 @@ export const createMapleScraper = ({
 
 			// Liveness only: any answer counts, so ECS replaces a process whose server no longer
 			// responds. `/health`'s 503 means the API is unreachable, not that this task is stuck.
-			// The image has no curl; bun does the probe.
+			// The image has no curl; bun does the probe. Starting `bun -e` on a busy 0.5 vCPU task
+			// can take seconds, so the probe gets 10s and five misses (~2.5 min) before a replace.
 			healthCheck: {
 				command: [
 					"CMD",
@@ -108,8 +109,8 @@ export const createMapleScraper = ({
 					`fetch("http://127.0.0.1:${SCRAPER_PORT}/health").then(() => process.exit(0), () => process.exit(1))`,
 				],
 				interval: "30 seconds",
-				timeout: "5 seconds",
-				retries: 3,
+				timeout: "10 seconds",
+				retries: 5,
 				startPeriod: "60 seconds",
 			},
 
