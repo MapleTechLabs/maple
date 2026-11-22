@@ -4934,6 +4934,7 @@ impl CookielessVisitors {
             }
             Err(error) => {
                 warn!(error = %error, "cookieless salt unavailable");
+                metrics::cookieless_failed("salt");
                 None
             }
         }
@@ -5000,7 +5001,10 @@ impl CookielessVisitors {
                     visits.touch(org_id, visitor_id, now_ms);
                 }
             }
-            Err(error) => warn!(error = %error, "cookieless visit touch failed"),
+            Err(error) => {
+                warn!(error = %error, "cookieless visit touch failed");
+                metrics::cookieless_failed("touch");
+            }
         }
     }
 
@@ -5022,6 +5026,7 @@ impl CookielessVisitors {
                 .is_ok_and(|mut visits| visits.claim(org_id, visitor_id, current_time_millis())),
             Err(error) => {
                 warn!(error = %error, "cookieless visit claim failed; not billed");
+                metrics::cookieless_failed("claim");
                 false
             }
         }
