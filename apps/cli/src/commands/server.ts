@@ -946,36 +946,46 @@ export const start = Command.make("start", {
 					? serverDiscoveryPath(dataDir)
 					: inMemoryDiscoveryPath(mapleDir, process.pid)
 			const startFailuresKey = inMemory === undefined ? dataDir : inMemoryStartFailuresKey(mapleDir)
-			const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
-			const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
-				Effect.mapError(
-					(error) => new ServerOptionError({ source: error.source, message: error.message }),
-				),
-			)
-			// Rejected up front, before anything is opened: a typo that quietly fell
-			// back to the default (or worse, to off) would reintroduce the data loss
-			// the refresh loop exists to prevent.
+			const guardStart = guardStartFailures(startFailuresKey, {
+				detachedChild: pidHandoverFrom() !== undefined,
+			})
+			const onDirtyStore = Option.getOrElse(a.onDirtyStore, (): DirtyStorePolicy => "fail")
 			const checkpointIntervalArg = Option.getOrElse(
 				a.checkpointInterval,
 				() => CHECKPOINT_INTERVAL_DEFAULT,
 			)
-			const onDirtyStore = Option.getOrElse(a.onDirtyStore, (): DirtyStorePolicy => "fail")
-			const checkpointInterval = parseCheckpointInterval(checkpointIntervalArg)
-			if (checkpointInterval === "invalid") {
-				return yield* new ServerOptionError({
-					source: "--checkpoint-interval",
-					message:
-						`invalid --checkpoint-interval: ${checkpointIntervalArg}; ` +
-						"expected a duration like 45s, 30m or 2h, or `off`",
-				})
-			}
-			// `--offline` trusts no hosted origin at all, so none is configured.
-			const hostedUiUrl = a.offline ? undefined : yield* remoteUiUrl()
-			const advertiseHostEnv = yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST")
-			const advertiseHost = yield* validatedHost(
-				"--advertise-host / MAPLE_LOCAL_ADVERTISE_HOST",
-				resolveAdvertiseHost(Option.getOrUndefined(a.advertiseHost), advertiseHostEnv, bindHost),
-			)
+			// A rejected flag or env var fails identically on every supervisor restart,
+			// so it is deduped and backed off like the store refusals below.
+			const options = yield* Effect.gen(function* () {
+				const bindHost = yield* validatedHost("--host / MAPLE_LOCAL_BIND_HOST", a.host)
+				const auth = yield* Effect.fromResult(remoteAuthFromEnv(process.env)).pipe(
+					Effect.mapError(
+						(error) => new ServerOptionError({ source: error.source, message: error.message }),
+					),
+				)
+				// Rejected up front, before anything is opened: a typo that quietly fell
+				// back to the default (or worse, to off) would reintroduce the data loss
+				// the refresh loop exists to prevent.
+				const checkpointInterval = parseCheckpointInterval(checkpointIntervalArg)
+				if (checkpointInterval === "invalid") {
+					return yield* new ServerOptionError({
+						source: "--checkpoint-interval",
+						message:
+							`invalid --checkpoint-interval: ${checkpointIntervalArg}; ` +
+							"expected a duration like 45s, 30m or 2h, or `off`",
+					})
+				}
+				// `--offline` trusts no hosted origin at all, so none is configured.
+				const hostedUiUrl = a.offline ? undefined : yield* remoteUiUrl()
+				const advertiseHostEnv = yield* optionalEnvString("MAPLE_LOCAL_ADVERTISE_HOST")
+				const advertiseHost = yield* validatedHost(
+					"--advertise-host / MAPLE_LOCAL_ADVERTISE_HOST",
+					resolveAdvertiseHost(Option.getOrUndefined(a.advertiseHost), advertiseHostEnv, bindHost),
+				)
+				return { bindHost, auth, checkpointInterval, hostedUiUrl, advertiseHost }
+			}).pipe(guardStart)
+			if (options === undefined) return
+			const { bindHost, auth, checkpointInterval, hostedUiUrl, advertiseHost } = options
 			const scope = commandScope({ dataDir, port: a.port, host: bindHost })
 			const pidPath = serverPidPath(dataDir)
 
@@ -1333,7 +1343,7 @@ export const start = Command.make("start", {
 
 					return yield* Effect.never
 				}),
-			).pipe(guardStartFailures(startFailuresKey, { detachedChild: pidHandoverFrom() !== undefined }))
+			).pipe(guardStart)
 		}, Effect.scoped),
 	),
 )
