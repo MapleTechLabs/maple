@@ -16,6 +16,7 @@ import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueReadModelsService } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { WarehouseSchemaDriftError } from "@maple/domain/http"
 
 // Compile-time guard: cache, Env, notifications, WorkerEnvironment, and the
 // broad ErrorsService cannot enter this layer without making this fail.
@@ -49,23 +50,44 @@ const WAREHOUSE_ROWS = new Map<string, ReadonlyArray<Record<string, unknown>>>([
 				timestamp: "2026-11-05 10:01:02",
 				exceptionMessage: "upstream timed out",
 				durationMicros: 1500,
+				deploymentEnv: "production",
+				serviceVersion: "",
+				userId: "",
 			},
 		],
 	],
 	["errorIssueEnvironments", [{ name: "production", count: 4 }]],
 ])
 
-const makeWarehouseStub = (contexts: Array<string>, sqls: Array<string>): WarehouseQueryServiceApi => ({
+/** A cluster that has not applied migration 0057 rejects any read naming `UserId`. */
+const missingUserId = (sql: string) =>
+	new WarehouseSchemaDriftError({
+		message: `Unknown expression identifier \`UserId\` in scope ${sql}`,
+		pipeName: "errorIssueSampleTraces",
+		clickhouseType: "UNKNOWN_IDENTIFIER",
+	})
+
+const makeWarehouseStub = (
+	contexts: Array<string>,
+	sqls: Array<string>,
+	stubOptions: { withoutUserId?: boolean } = {},
+): WarehouseQueryServiceApi => ({
 	query: () => Effect.die(new Error("unexpected pipe query")),
 	rawSqlQuery: () => Effect.die(new Error("unexpected raw SQL query")),
 	crossOrgQuery: () => Effect.die(new Error("unexpected cross-org query")),
 	compiledQuery: (_tenant, compile, options) => {
 		const compiled =
 			typeof compile === "function" ? Effect.runSync(compile(baselineWarehouseCapabilities())) : compile
+		const sql = compiledQueryOf(compiled).sql
 		return Effect.sync(() => {
 			contexts.push(options?.context ?? "")
-			sqls.push(compiledQueryOf(compiled).sql)
+			sqls.push(sql)
 		}).pipe(
+			Effect.andThen(
+				stubOptions.withoutUserId === true && /\bUserId\b/.test(sql)
+					? Effect.fail(missingUserId(sql))
+					: Effect.void,
+			),
 			Effect.andThen(
 				compiledQueryOf(compiled)
 					.decodeRows(WAREHOUSE_ROWS.get(options?.context ?? "") ?? [])
@@ -83,7 +105,11 @@ const makeWarehouseStub = (contexts: Array<string>, sqls: Array<string>): Wareho
 	},
 })
 
-const makeLayer = (contexts: Array<string>, sqls: Array<string> = []) => {
+const makeLayer = (
+	contexts: Array<string>,
+	sqls: Array<string> = [],
+	stubOptions: { withoutUserId?: boolean } = {},
+) => {
 	const database = createTestDb(createdDbs).layer
 	const actors = ErrorActorsService.layer.pipe(Layer.provide(database))
 	const workflow = Layer.effect(ErrorIssueWorkflowService, ErrorIssueWorkflowService.make).pipe(
@@ -91,7 +117,7 @@ const makeLayer = (contexts: Array<string>, sqls: Array<string> = []) => {
 		Layer.provide(database),
 		Layer.provide(actors),
 	)
-	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts, sqls))
+	const warehouse = Layer.succeed(WarehouseQueryService, makeWarehouseStub(contexts, sqls, stubOptions))
 	const readModels = readRequirements.pipe(
 		Layer.provide(database),
 		Layer.provide(warehouse),
@@ -295,6 +321,21 @@ describe("ErrorIssueReadModelsService", () => {
 		}).pipe(Effect.provide(makeLayer(contexts)))
 	})
 
+	it.effect("still serves samples, with no user, on a cluster without UserId", () =>
+		Effect.gen(function* () {
+			const readModels = yield* ErrorIssueReadModelsService
+			const now = yield* Clock.currentTimeMillis
+			const issueId = asIssueId(randomUUID())
+			yield* seedIssue(ORG, issueId, now, { fingerprintHash: "fp-checkout" })
+
+			const detail = yield* readModels.getIssue(ORG, issueId, {})
+			assert.deepStrictEqual(
+				Arr.map(detail.sampleTraces, (trace) => [trace.traceId, trace.deploymentEnv, trace.userId]),
+				[["0af7651916cd43dd8448eb211c80319c", "production", ""]],
+			)
+		}).pipe(Effect.provide(makeLayer([], [], { withoutUserId: true }))),
+	)
+
 	it.effect("searches type, message and service case-insensitively", () => {
 		const contexts: Array<string> = []
 		return Effect.gen(function* () {
@@ -360,9 +401,9 @@ describe("ErrorIssueReadModelsService", () => {
 				"11111111111111111111",
 				"3333333333333333333",
 			])
-			// Timeseries, samples and environments each ask for both hashes.
+			// Timeseries, samples, environments and the latest stack trace each ask for both hashes.
 			const issueReads = Arr.filter(sqls, (sql) => Str.includes("11111111111111111111")(sql))
-			assert.lengthOf(issueReads, 3)
+			assert.lengthOf(issueReads, 4)
 			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
 
 			// The volume-ranked list asks by hash; a merged-in one finds its owner.

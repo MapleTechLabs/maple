@@ -24,6 +24,42 @@ interface TokenSet {
 	readonly groupBys: ReadonlyArray<string>
 }
 
+/** The last seven read a numeric property and need `value_attribute`. */
+const PRODUCT_EVENTS_METRICS = [
+	"count",
+	"sessions",
+	"persons",
+	"users",
+	"visitors",
+	"groups",
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"p50",
+	"p95",
+	"p99",
+]
+/** The last eight are dimensions of the event's session. */
+const PRODUCT_EVENTS_GROUP_BYS = [
+	"event_name",
+	"kind",
+	"source",
+	"host",
+	"page_path",
+	"service",
+	"group",
+	"attribute",
+	"country",
+	"referrer_host",
+	"utm_source",
+	"utm_medium",
+	"utm_campaign",
+	"device_type",
+	"browser",
+	"os",
+]
+
 const TOKENS = {
 	"traces:timeseries": {
 		metrics: [
@@ -94,22 +130,12 @@ const TOKENS = {
 		groupBys: ["service", "attribute", "resource_attribute", "none"],
 	},
 	"product_events:timeseries": {
-		metrics: ["count", "sessions", "persons", "users", "visitors"],
-		groupBys: [
-			"event_name",
-			"kind",
-			"source",
-			"host",
-			"page_path",
-			"service",
-			"group",
-			"attribute",
-			"none",
-		],
+		metrics: PRODUCT_EVENTS_METRICS,
+		groupBys: [...PRODUCT_EVENTS_GROUP_BYS, "none"],
 	},
 	"product_events:breakdown": {
-		metrics: ["count", "sessions", "persons", "users", "visitors"],
-		groupBys: ["event_name", "kind", "source", "host", "page_path", "service", "group", "attribute"],
+		metrics: PRODUCT_EVENTS_METRICS,
+		groupBys: PRODUCT_EVENTS_GROUP_BYS,
 	},
 	// `satisfies` rather than an annotation: it checks every combination is present
 	// and well-shaped while keeping the literal token types visible to callers.

@@ -1,4 +1,4 @@
-import type { UserChannel, WorkflowState } from "@maple/domain/http"
+import type { UserCalendarDay, UserChannel, WorkflowState } from "@maple/domain/http"
 import type { McpClientKind } from "@maple/domain/mcp-clients"
 import { Array as Arr, Order } from "effect"
 import { USER_DETAIL_TABS, type UserDetailTab } from "../../route/search"
@@ -148,6 +148,49 @@ export type UserTrace = Readonly<{
 	href: string
 }>
 
+/** Back-to-back requests to the same operation with the same outcome, newest first. */
+export type UserTraceRun = Readonly<{
+	newest: UserTrace
+	/** The run's slowest request: the one worth opening. */
+	slowest: UserTrace
+	count: number
+}>
+
+/** Folds consecutive repeats (same service, entry span and outcome), so a polling loop reads as one row. */
+export const foldRepeats = (traces: ReadonlyArray<UserTrace>): ReadonlyArray<UserTraceRun> => {
+	const none: ReadonlyArray<UserTraceRun> = []
+	return Arr.reduce(traces, none, (runs, trace) => {
+		const last = runs[runs.length - 1]
+		const repeats =
+			last !== undefined &&
+			last.newest.service === trace.service &&
+			last.newest.rootSpan === trace.rootSpan &&
+			last.newest.isError === trace.isError
+		if (!repeats) return [...runs, { newest: trace, slowest: trace, count: 1 }]
+		return [
+			...runs.slice(0, -1),
+			{
+				newest: last.newest,
+				slowest: trace.durationMs > last.slowest.durationMs ? trace : last.slowest,
+				count: last.count + 1,
+			},
+		]
+	})
+}
+
+/** One operation the user called, summed over the window; `href` opens its requests in /traces. */
+export type UserOperation = Readonly<{
+	service: string
+	/** The display span name, e.g. `POST /api/checkout`. */
+	name: string
+	requests: number
+	errors: number
+	p50Ms: number
+	p95Ms: number
+	lastSeenMs: number
+	href: string
+}>
+
 /** One log line; `href` opens its trace, `null` outside one. */
 export type UserLog = Readonly<{
 	atMs: number
@@ -180,6 +223,15 @@ export type UserMcpSession = Readonly<{
 	href: string
 }>
 
+/** One UTC day the user was active, for the activity calendar. */
+export type UserActivityDay = UserCalendarDay
+
+/** The activity calendar's read: its days (only those with activity), or where it stands. */
+export type UserCalendar =
+	| Readonly<{ days: ReadonlyArray<UserActivityDay>; indexed: boolean }>
+	| "loading"
+	| "failed"
+
 /** Everything the detail page reads for one user. */
 export type UserDetail = Readonly<{
 	profile: UserProfile
@@ -187,6 +239,8 @@ export type UserDetail = Readonly<{
 	sessions: ReadonlyArray<UserSession>
 	issues: ReadonlyArray<UserIssue>
 	traces: ReadonlyArray<UserTrace>
+	/** The Traces tab's summary, busiest first. */
+	operations: ReadonlyArray<UserOperation>
 	logs: ReadonlyArray<UserLog>
 	events: ReadonlyArray<UserEvent>
 	mcpSessions: ReadonlyArray<UserMcpSession>

@@ -121,7 +121,8 @@ const reviewRow = (h: H, review: CodeReviewListItem, context: RowContext): Html 
 				h,
 				[
 					h.span(
-						[h.Class(cn(hstackClass({ gap: "1.5", inline: true }), outcome.tone))],
+						// A block row, not inline: inline it rides the line box's baseline, above the numbers' middle.
+						[h.Class(cn(hstackClass({ gap: "1.5" }), outcome.tone))],
 						[
 							outcome.kind === "running"
 								? spinner(h, undefined, 14)

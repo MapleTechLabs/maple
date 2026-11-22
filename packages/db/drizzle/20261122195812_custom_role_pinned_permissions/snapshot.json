@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "bf9856a7323692cdc265b35d9fb32d63d529535e50c93d0e5de6ec786008538e",
+	"id": "4cedbf920433efd103379e2e43b4a424bd93c258abff23cbbe85a3dc61a2d00b",
 	"prevIds": [
-		"7fd5b7c5d30b61371839c2faef8b3786108ab3f7d2442299011b3f671fe18726"
+		"18bf9decd577736078f4f732b294754025bf0e42606a7436faeb9935e1ca4bc7"
 	],
 	"entities": [
 		{
@@ -324,6 +324,27 @@
 				"columns": [
 					"org_id",
 					"account_id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "cookieless_salts",
+			"primaryKey": {
+				"name": "cookieless_salts_pkey",
+				"columns": [
+					"day"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "cookieless_visits",
+			"primaryKey": {
+				"name": "cookieless_visits_pkey",
+				"columns": [
+					"org_id",
+					"visitor_id"
 				]
 			}
 		},
@@ -6399,6 +6420,76 @@
 			"position": 6,
 			"type": "text",
 			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_salts",
+			"name": "day",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_salts",
+			"name": "salt",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_salts",
+			"name": "created_at",
+			"position": 2,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": "now()",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_visits",
+			"name": "org_id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_visits",
+			"name": "visitor_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_visits",
+			"name": "visit_token",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "cookieless_visits",
+			"name": "last_seen_at",
+			"position": 3,
+			"type": "timestamp with time zone",
+			"notNull": true,
 			"default": null,
 			"identity": null
 		},
@@ -22383,6 +22474,17 @@
 			"method": "btree",
 			"columns": [
 				"\"source_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "cookieless_visits",
+			"name": "cookieless_visits_last_seen_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"last_seen_at\""
 			],
 			"where": null
 		},

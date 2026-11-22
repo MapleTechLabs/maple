@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildSessionMetaRow } from "./meta-row"
+import { COOKIELESS_VISITOR_ID } from "../identity/row-visitor"
 
 // `maple.session.recorded` is the only signal the Sessions UI has for telling a
 // metadata-only session (replay off / unsampled) apart from one whose chunks
@@ -193,6 +194,23 @@ describe("buildSessionMetaRow analytics fields", () => {
 		// Otherwise every private-mode session looks like a distinct visitor and
 		// unique counts quietly inflate.
 		expect(attrs["maple.visitor.persisted"]).toBe("false")
+		expect(attrs["maple.visitor.mode"]).toBeUndefined()
+	})
+
+	it("marks a gateway-derived cookieless visitor, never as new", () => {
+		const row = buildSessionMetaRow({
+			...base,
+			status: "active",
+			recorded: true,
+			visitorId: COOKIELESS_VISITOR_ID,
+			visitorIsNew: true,
+			visitorIdPersisted: false,
+		})
+		const attrs = row.resource_attributes as Record<string, string>
+		expect(row.visitor_id).toBe(COOKIELESS_VISITOR_ID)
+		expect(row.visitor_is_new).toBe(0)
+		expect(attrs["maple.visitor.mode"]).toBe("cookieless")
+		expect(attrs["maple.visitor.persisted"]).toBeUndefined()
 	})
 
 	it("falls back to the legacy userId when no identity was set", () => {

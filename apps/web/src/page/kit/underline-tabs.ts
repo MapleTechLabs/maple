@@ -43,6 +43,19 @@ export const underlineTabClass = (isActive: boolean): string =>
 			: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
 	)
 
+/**
+ * A tab's label, as wide as its current (medium) weight in every state, so switching tabs never
+ * shifts the strip: a hidden medium-weight copy holds the width.
+ */
+export const underlineTabLabel = <M>(h: HtmlBuilder<M>, label: string): Html =>
+	h.span(
+		[h.Class("inline-grid")],
+		[
+			h.span([h.Class("col-start-1 row-start-1")], [label]),
+			h.span([h.AriaHidden(true), h.Class("invisible col-start-1 row-start-1 font-medium")], [label]),
+		],
+	)
+
 export type LinkTab<M = never> = Readonly<{
 	key: string
 	href: string
@@ -102,7 +115,7 @@ export const linkTabStrip = <M>(
 				],
 				[
 					...(tab.icon === undefined ? [] : [icon(h, tab.icon, { size: 14 })]),
-					tab.label,
+					underlineTabLabel(h, tab.label),
 					...(tab.count === undefined
 						? []
 						: [
@@ -110,7 +123,7 @@ export const linkTabStrip = <M>(
 									[
 										h.Class(
 											cn(
-												"text-xs tabular-nums",
+												"text-xs font-normal tabular-nums",
 												tab.countTone === "error"
 													? "text-severity-error"
 													: "text-muted-foreground",

@@ -329,18 +329,30 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 					if (payload.publish !== true) return toV2StatusPage(created)
 					// The page is created either way: a failed publish leaves it queued for the minutely sweep.
 					const publisher = yield* Effect.serviceOption(StatusPagePublisher)
+					const outcome = Option.isNone(publisher)
+						? { outcome: "queued" as const, revision: created.revision }
+						: yield* publisher.value.publish(created.id).pipe(
+								Effect.map((result) => ({
+									outcome: result.written ? ("published" as const) : ("unchanged" as const),
+									revision: result.revision,
+								})),
+								Effect.catch((error) =>
+									Effect.logWarning("Status page publish after create failed").pipe(
+										Effect.annotateLogs({
+											"maple.status_page.id": created.id,
+											"error.type": error._tag,
+											"error.message": error.message,
+										}),
+										Effect.as({ outcome: "queued" as const, revision: created.revision }),
+									),
+								),
+							)
+					// Publishing from the builder is a publish too, as the standalone publish route records it.
+					yield* recordHttpAudit("status_page.published", {
+						resourceId: created.id,
+						metadata: { outcome: outcome.outcome, revision: outcome.revision },
+					})
 					if (Option.isNone(publisher)) return toV2StatusPage(created)
-					yield* publisher.value.publish(created.id).pipe(
-						Effect.catch((error) =>
-							Effect.logWarning("Status page publish after create failed").pipe(
-								Effect.annotateLogs({
-									"maple.status_page.id": created.id,
-									"error.type": error._tag,
-									"error.message": error.message,
-								}),
-							),
-						),
-					)
 					// Re-read for the publish state; a page deleted meanwhile answers as created.
 					const current = yield* service
 						.get(tenant.orgId, created.id)

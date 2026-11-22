@@ -19,6 +19,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ErrorIssueSearch } from "../../../route/search"
 import * as Combobox from "@maple/views/ui/combobox"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -61,6 +62,10 @@ export const Model = Schema.Struct({
 	issueIdCopy: CopyButton.Model,
 	/** The agent handoff panel's "Copy prompt". */
 	promptCopy: CopyButton.Model,
+	/** The occurrences table's "Copy setup prompt", for errors with no release or user. */
+	setupPromptCopy: CopyButton.Model,
+	/** The card that explains the release and user attributes, on the setup foot. */
+	setupCard: HoverCard.Model,
 	chart: Chart.Model,
 	...ChartEnvFields,
 	/** The rail writes in flight, one entry per write kind. */
@@ -89,3 +94,6 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 })
 export type Model = typeof Model.Type
+
+/** The setup card's id on the occurrences table's foot. */
+export const SETUP_CARD_ID = "issue-setup-card"

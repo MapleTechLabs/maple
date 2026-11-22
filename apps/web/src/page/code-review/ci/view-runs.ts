@@ -142,7 +142,7 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 		[
 			tableCell(
 				h,
-				[ciResultBadge(h, run.result, run.attempt, "flex-wrap")],
+				[ciResultBadge(h, run.result, run.attempt, "flex-col items-start gap-1")],
 				"px-3 py-2.5 align-top leading-normal sm:px-4",
 			),
 			tableCell(
@@ -162,39 +162,50 @@ const runRow = (h: H, run: CodeReviewCiRun, time: TimeContext): Html => {
 			tableCell(
 				h,
 				[h.span([h.Class("leading-normal")], [formatDuration(run.durationMs)])],
-				"hidden px-3 text-right align-top tabular-nums sm:table-cell",
+				"hidden px-3 py-2.5 text-right align-top leading-normal tabular-nums sm:table-cell",
 			),
 			tableCell(
 				h,
 				[listRelativeTime(h, { value: run.startedAt, variant: "short", ...time })],
-				"hidden px-3 text-right align-top text-muted-foreground tabular-nums md:table-cell",
+				"hidden px-3 py-2.5 text-right align-top leading-normal text-muted-foreground tabular-nums md:table-cell",
 			),
 			tableCell(
 				h,
 				[
-					hstack(h, { gap: "1", align: "center", justify: "end", inline: true, as: "span" }, [
-						...traceLink(h, run, time.nowMs),
-						...(runUrl === null
-							? []
-							: [
-									linkButton(
-										h,
-										{
-											variant: "ghost",
-											size: "xs",
-											href: runUrl,
-											attributes: [
-												h.Attribute("target", "_blank"),
-												h.Attribute("rel", "noreferrer"),
-												h.AriaLabel("Open the run on GitHub"),
-											],
-										},
-										["GitHub", icon(h, "ExternalLinkIcon")],
-									),
-								]),
-					]),
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							justify: "end",
+							inline: true,
+							as: "span",
+							className: "-my-0.5",
+						},
+						[
+							...traceLink(h, run, time.nowMs),
+							...(runUrl === null
+								? []
+								: [
+										linkButton(
+											h,
+											{
+												variant: "ghost",
+												size: "xs",
+												href: runUrl,
+												attributes: [
+													h.Attribute("target", "_blank"),
+													h.Attribute("rel", "noreferrer"),
+													h.AriaLabel("Open the run on GitHub"),
+												],
+											},
+											["GitHub", icon(h, "ExternalLinkIcon")],
+										),
+									]),
+						],
+					),
 				],
-				"hidden px-4 text-right align-top sm:table-cell",
+				"hidden px-4 py-2.5 text-right align-top leading-normal sm:table-cell",
 			),
 		],
 		undefined,

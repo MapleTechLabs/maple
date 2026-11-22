@@ -50,6 +50,80 @@ describe("productEventsTimeseriesQuery", () => {
 		)
 	})
 
+	it("counts distinct groups, leaving out events that carry none", () => {
+		const { sql } = compileUnsafe(productEventsTimeseriesQuery({ metric: "groups" }), params)
+		expect(oneLine(sql)).toContain(
+			"uniqIf(product_events.GroupId, product_events.GroupId != '') AS value",
+		)
+	})
+
+	it("aggregates a numeric prop, reading text, NaN and infinity as no value", () => {
+		const sqlFor = (metric: Parameters<typeof productEventsTimeseriesQuery>[0]["metric"]) =>
+			oneLine(
+				compileUnsafe(productEventsTimeseriesQuery({ metric, valueAttributeKey: "amount" }), params)
+					.sql,
+			)
+		const value =
+			"if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL)"
+		// No values reads 0 whichever the aggregate answers for an empty set: NULL or NaN.
+		expect(sqlFor("sum")).toContain(`ifNull(ifNotFinite(sum(${value}), 0), 0) AS value`)
+		expect(sqlFor("avg")).toContain(`ifNull(ifNotFinite(avg(${value}), 0), 0) AS value`)
+		expect(sqlFor("p95")).toContain(`ifNull(ifNotFinite(quantile(0.95)(${value}), 0), 0) AS value`)
+		// The sample count is the rows that carry a number, not every row in the bucket.
+		expect(sqlFor("sum")).toContain(`countIf(${value} IS NOT NULL) AS eventCount`)
+	})
+
+	it("reads a whole range up to its end, or through it when asked to match the bucketed read", () => {
+		const halfOpen = "product_events.Timestamp < '2026-06-25 06:00:00'"
+		const sqlFor = (closedEnd: boolean) =>
+			oneLine(
+				compileUnsafe(
+					productEventsTimeseriesQuery({ metric: "count", wholeRange: true, closedEnd }),
+					params,
+				).sql,
+			)
+		expect(sqlFor(false)).toContain(halfOpen)
+		expect(sqlFor(true)).not.toContain(halfOpen)
+		expect(sqlFor(true)).toContain("product_events.Timestamp <= '2026-06-25 06:00:00'")
+	})
+
+	it("joins the sessions' dimensions only when a group-by reads one", () => {
+		const plain = compileUnsafe(
+			productEventsTimeseriesQuery({ metric: "count", groupBy: ["event_name"] }),
+			params,
+		).sql
+		expect(plain).not.toContain("session_replays")
+
+		const grouped = oneLine(
+			compileUnsafe(
+				productEventsTimeseriesQuery({ metric: "visitors", groupBy: ["country", "utm_source"] }),
+				params,
+			).sql,
+		)
+		expect(grouped).toContain("LEFT JOIN (SELECT")
+		expect(grouped).toContain("max(session_replays.Country) AS country")
+		expect(grouped).toContain("max(session_replays.UtmSource) AS utm_source")
+		// The sessions are read under the caller's org, from a day before the window: a session
+		// that started before it can still hold the window's events.
+		expect(grouped).toContain("session_replays.OrgId = 'org_1'")
+		expect(grouped).toContain(
+			"session_replays.StartTime >= subtractHours(toDateTime('2026-06-24 04:00:00'), 24)",
+		)
+		expect(grouped).toContain("session_replays.SessionId != ''")
+
+		// A filter on a session dimension reads the same sessions, so a group and the filter on it agree.
+		const filtered = oneLine(
+			compileUnsafe(productEventsTimeseriesQuery({ metric: "count", country: "DE" }), params).sql,
+		)
+		expect(filtered).toContain(
+			"session_replays.StartTime >= subtractHours(toDateTime('2026-06-24 04:00:00'), 24)",
+		)
+		expect(filtered).not.toContain("session_replays.StartTime >= '2026-06-24 04:00:00'")
+		expect(grouped).toContain("product_events.SessionId = sd.SessionId")
+		// An event with no session groups as unset, not as a dropped row.
+		expect(grouped).toContain("coalesce(nullIf(coalesce(sd.country, ''), ''), '(none)')")
+	})
+
 	it("groups by an event column and an attribute key", () => {
 		const { sql } = compileUnsafe(
 			productEventsTimeseriesQuery({

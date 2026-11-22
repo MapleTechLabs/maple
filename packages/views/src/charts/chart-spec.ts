@@ -180,11 +180,13 @@ export const ChartSpec = defineTaggedUnion({
 		/** `per_second`: rate values are already per second (PromQL); absent divides by the bucket. */
 		rateBasis: Schema.optionalKey(Schema.Literals(["per_bucket", "per_second"])),
 	},
-	/** An issue's occurrences: bucketed counts as bars. */
+	/** An issue's occurrences: bucketed counts as bars, under its history (regressions, fixes). */
 	Occurrences: {
 		points: Schema.Array(Schema.Struct({ bucket: Schema.String, count: Schema.Number })),
 		color: Schema.String,
 		timeZone: Schema.String,
+		markers: Schema.optionalKey(Schema.Array(ChartEventMarker)),
+		markerColors: Schema.optionalKey(MarkerColors),
 	},
 	/** The /logs severity histogram, stacked per bucket, with its drag selection. */
 	LogsVolume: {

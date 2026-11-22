@@ -15,12 +15,19 @@ import { OnboardingService } from "@maple/backend/services/org/OnboardingService
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import {
+	type ProductEventInput,
+	ProductEventsService,
+} from "@maple/backend/services/product-events/ProductEventsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 
 const trackedDbs: TestDb[] = []
+/** Product events the audit emitted, in order. */
+let emitted: Array<ProductEventInput> = []
 afterEach(() => {
 	rowsBySql = []
+	emitted = []
 	return cleanupTestDbs(trackedDbs)
 })
 
@@ -93,7 +100,15 @@ const makeLayer = (testDb: TestDb, probe: Probe) =>
 			Layer.mergeAll(
 				warehouse,
 				signalPresence(probe),
-				OnboardingService.layer,
+				OnboardingService.layer.pipe(
+					Layer.provide(
+						Layer.succeed(ProductEventsService, {
+							enabled: true,
+							track: (event) => Effect.sync(() => void emitted.push(event)),
+							trackAll: (events) => Effect.sync(() => void emitted.push(...events)),
+						}),
+					),
+				),
 				organizations,
 				IntegrationInventoryService.layer,
 			),
@@ -133,6 +148,33 @@ describe("SetupAuditService first-data stamping", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, "present")))
 	})
 
+	it.effect("emits first_data_received for the stamp, and not again once the org is stamped", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* seedUnstampedRow(testDb)
+			yield* SetupAuditService.use((audit) => audit.run(tenant))
+			yield* SetupAuditService.use((audit) => audit.run(tenant))
+			assert.deepStrictEqual(
+				Arr.map(emitted, (event) => ({
+					name: event.name,
+					groupId: event.groupId,
+					userId: event.userId,
+					attributes: event.attributes,
+				})),
+				[
+					{
+						name: "first_data_received",
+						groupId: ORG,
+						// The seeded row names no one, so the person running the audit.
+						userId: USER,
+						// Sessions are present too, but only backend telemetry counts as first data.
+						attributes: { signals: "traces", first_signal: "traces" },
+					},
+				],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, "present")))
+	})
+
 	it.effect("creates the row dated by the org's creation time when the org has no onboarding state", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -153,6 +195,7 @@ describe("SetupAuditService first-data stamping", () => {
 			assert.strictEqual(report.checks.length, 0)
 			const row = yield* firstDataInDb(testDb)
 			assert.isNull(row?.first_data_received_at ?? null)
+			assert.deepStrictEqual(emitted, [])
 		}).pipe(Effect.provide(makeLayer(testDb, "absent")))
 	})
 

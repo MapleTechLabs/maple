@@ -14,8 +14,10 @@ import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import type { PresetValue } from "../../kit/time-controls"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
+	calendarWindow,
 	CompleteReloadSpin,
 	detailInputs,
+	FetchCalendar,
 	FetchGroupStats,
 	FetchLogs,
 	FetchOverview,
@@ -88,6 +90,10 @@ const requestReads = (model: Model, context: PageContext, window: TimeWindow, mo
 	const issues = Keyed.request(model.issues, overviewKey, mode)
 	const traces = tab === "traces" ? Keyed.request(model.traces, tracesKey, mode) : Option.none()
 	const logs = tab === "logs" ? Keyed.request(model.logs, logsKey, mode) : Option.none()
+	// The calendar covers the last year whatever the page's range, so only the scope keys it.
+	const calendarInputs = { ...inputs, ...calendarWindow(model.nowMs) }
+	const calendarKey = requestKey(context.orgId, "getUserCalendar", { data: calendarInputs })
+	const calendar = tab === "activity" ? Keyed.request(model.calendar, calendarKey, mode) : Option.none()
 	const refresh = mode === "Refresh"
 	return {
 		model: {
@@ -98,6 +104,7 @@ const requestReads = (model: Model, context: PageContext, window: TimeWindow, mo
 			issues: Option.getOrElse(issues, () => model.issues),
 			traces: Option.getOrElse(traces, () => model.traces),
 			logs: Option.getOrElse(logs, () => model.logs),
+			calendar: Option.getOrElse(calendar, () => model.calendar),
 		},
 		commands: [
 			...(Option.isSome(profile) || Option.isSome(activity) || Option.isSome(issues)
@@ -105,6 +112,9 @@ const requestReads = (model: Model, context: PageContext, window: TimeWindow, mo
 				: []),
 			...(Option.isSome(traces) ? [FetchTraces({ key: tracesKey, refresh, ...inputs })] : []),
 			...(Option.isSome(logs) ? [FetchLogs({ key: logsKey, refresh, ...inputs })] : []),
+			...(Option.isSome(calendar)
+				? [FetchCalendar({ key: calendarKey, refresh, ...calendarInputs })]
+				: []),
 		],
 	}
 }
@@ -156,6 +166,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		issues: Keyed.idle(),
 		traces: Keyed.idle(),
 		logs: Keyed.idle(),
+		calendar: Keyed.idle(),
 		groupStats: Keyed.idle(),
 		timePicker: TimeRangePicker.init("user-time-range"),
 		refreshVersion: 0,
@@ -177,10 +188,11 @@ export const preload = (route: Route, context: PageContext, nowMs: number) => {
 		},
 		nowMs,
 	)
-	return pickCommands(requestAll(model, context, window, "Load"), [
+	return pickCommands(requestAll({ ...model, nowMs }, context, window, "Load"), [
 		FetchOverview.name,
 		FetchTraces.name,
 		FetchLogs.name,
+		FetchCalendar.name,
 	])
 }
 
@@ -256,6 +268,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchLogs: ({ key, result }) => ({
 			model: { ...model, logs: Keyed.accept(model.logs, key, result) },
+		}),
+		CompletedFetchCalendar: ({ key, result }) => ({
+			model: { ...model, calendar: Keyed.accept(model.calendar, key, result) },
 		}),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }

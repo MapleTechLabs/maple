@@ -1,15 +1,23 @@
+import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
 import { reloadSpin } from "@maple/views/data/timing"
 import { RequestMode } from "@maple/views/data/keyed"
-import { getUserLogs, getUserOverview, getUserTraces, listUserGroups } from "@maple/web-data/warehouse/users"
+import {
+	getUserCalendar,
+	getUserLogs,
+	getUserOverview,
+	getUserTraces,
+	listUserGroups,
+} from "@maple/web-data/warehouse/users"
 import { Array as Arr, Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { IdleTtl } from "../../../data/idle-ttl"
 import { readThrough } from "../../../data/read-cache"
 import { TimeWindow } from "../../../data/time-range"
+import { CALENDAR_DAYS } from "../activity-calendar"
 import { resolveUsersWindow } from "../window"
 import { Message } from "./message"
-import { GroupStatsData, LogsData, OverviewData, TracesData, type Search } from "./model"
+import { CalendarData, GroupStatsData, LogsData, OverviewData, TracesData, type Search } from "./model"
 
 /** The namespace in effect: the org-global pin wins over one picked on this page. */
 export const activeNamespace = (search: Search, pinnedNamespace: string | null): string | null =>
@@ -29,6 +37,19 @@ export const detailInputs = (
 		endTime: window.endTime,
 		namespaces: namespace === null ? [] : [namespace],
 	}
+}
+
+const HOUR_MS = 3_600_000
+const DAY_MS = 24 * HOUR_MS
+
+/**
+ * The calendar's window: the last 365 UTC days, ending on the current hour so its request key holds
+ * steady within the hour. It ignores the page's time range.
+ */
+export const calendarWindow = (nowMs: number) => {
+	const endMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
+	const startMs = Math.floor((endMs - (CALENDAR_DAYS - 1) * DAY_MS) / DAY_MS) * DAY_MS
+	return { startTime: formatWarehouseDateTime(startMs), endTime: formatWarehouseDateTime(endMs) }
 }
 
 export const ResolveWindow = Command.define("ResolveUserWindow", {
@@ -113,7 +134,10 @@ export const FetchTraces = Command.define("FetchUserTraces", {
 	execute: ({ key, refresh, ...data }) =>
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.userTraces, schema: TracesData },
-			Effect.map(getUserTraces({ data }), (response): TracesData => ({ traces: response.traces })),
+			Effect.map(getUserTraces({ data }), (response): TracesData => ({
+				traces: response.traces,
+				operations: response.operations,
+			})),
 		).pipe(settleTo((result) => Message.CompletedFetchTraces({ key, result }))),
 })
 
@@ -125,6 +149,19 @@ export const FetchLogs = Command.define("FetchUserLogs", {
 			{ key, refresh, idleTtlMs: IdleTtl.userLogs, schema: LogsData },
 			Effect.map(getUserLogs({ data }), (response): LogsData => ({ logs: response.logs })),
 		).pipe(settleTo((result) => Message.CompletedFetchLogs({ key, result }))),
+})
+
+export const FetchCalendar = Command.define("FetchUserCalendar", {
+	args: FetchArgs,
+	messages: [Message.CompletedFetchCalendar],
+	execute: ({ key, refresh, ...data }) =>
+		readThrough(
+			{ key, refresh, idleTtlMs: IdleTtl.userCalendar, schema: CalendarData },
+			Effect.map(getUserCalendar({ data }), (response): CalendarData => ({
+				days: response.days,
+				indexed: response.indexed,
+			})),
+		).pipe(settleTo((result) => Message.CompletedFetchCalendar({ key, result }))),
 })
 
 export const CompleteReloadSpin = reloadSpin("CompleteUserReloadSpin", Message.CompletedReloadSpin)

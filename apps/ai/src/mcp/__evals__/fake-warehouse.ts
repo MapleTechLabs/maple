@@ -107,6 +107,11 @@ export const installFakeWarehouse = (
 		})
 }
 
+/** Replace the warehouse SQL client with one that answers from a real engine (the chDB world). */
+export const installWarehouseClient = (client: NonNullable<typeof fakeClient>): void => {
+	fakeClient = client
+}
+
 export const restoreWarehouse = (): void => {
 	fakeClient = undefined
 }

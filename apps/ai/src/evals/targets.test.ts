@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest"
-import { answerMentions, call, calls, grade, never, noTools, observeCall } from "./targets"
+import {
+	answerDuration,
+	answerMentions,
+	answerNumber,
+	answerPercent,
+	call,
+	calls,
+	durationsIn,
+	grade,
+	never,
+	noTools,
+	numbersIn,
+	observeCall,
+} from "./targets"
 
 describe("eval targets", () => {
 	it("scores what a call means: a retired alias reads as the current parameter", () => {
@@ -108,5 +121,46 @@ describe("eval targets", () => {
 		expect(result.pass).toBe(false)
 		expect(result.score).toBe(0.5)
 		expect(result.explanation).toContain("calls: no calls")
+	})
+})
+
+describe("answer checks on quantities", () => {
+	it("reads numbers in any digit grouping and keeps percentages apart", () => {
+		expect(numbersIn("1,234 exports by 99 users (37.5% of 264)")).toEqual({
+			plain: [1234, 99, 264],
+			percents: [37.5],
+		})
+	})
+
+	it("does not read dates, clock times or identifiers as quantities", () => {
+		expect(
+			numbersIn("From 2026-10-19 to 2026-11-15 23:59:59, user u_017 on /dashboards/d37").plain,
+		).toEqual([])
+	})
+
+	it("passes a count only on the exact number", () => {
+		const check = [answerNumber("users", 59)]
+		expect(grade(check, [], "59 users signed up.").pass).toBe(true)
+		expect(grade(check, [], "About 60 users signed up, 59% of visitors.").pass).toBe(false)
+	})
+
+	it("accepts a share rounded to a whole percent, and only as a percentage", () => {
+		const check = [answerPercent("conversion", 0.3729)]
+		expect(grade(check, [], "Conversion was 37.29%.").pass).toBe(true)
+		expect(grade(check, [], "Roughly 37% converted.").pass).toBe(true)
+		expect(grade(check, [], "37 of them converted.").pass).toBe(false)
+	})
+
+	it("reads a duration written in parts as one duration", () => {
+		expect(durationsIn("median 1d 3h 30m, p90 2 hours and 5 minutes; fastest 45s")).toEqual([
+			99_000_000, 7_500_000, 45_000,
+		])
+	})
+
+	it("passes a duration inside its tolerance, in any unit", () => {
+		const check = [answerDuration("median", 27.5 * 3_600_000, 0.1)]
+		expect(grade(check, [], "The median was about 27.5 hours.").pass).toBe(true)
+		expect(grade(check, [], "The median was 1 day 3 hours.").pass).toBe(true)
+		expect(grade(check, [], "The median was 12 hours.").pass).toBe(false)
 	})
 })

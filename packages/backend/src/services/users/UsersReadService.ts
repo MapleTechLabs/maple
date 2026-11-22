@@ -10,6 +10,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	readUserActivity,
+	readUserCalendar,
 	readUserIssues,
 	readUserLogs,
 	readUserOverview,
@@ -47,6 +48,8 @@ const make = Effect.gen(function* () {
 		traces: (tenant: TenantContext, request: UserDetailRequest) =>
 			provide(readUserTraces(tenant, request)),
 		logs: (tenant: TenantContext, request: UserDetailRequest) => provide(readUserLogs(tenant, request)),
+		calendar: (tenant: TenantContext, request: UserDetailRequest) =>
+			provide(readUserCalendar(tenant, request)),
 	}
 })
 

@@ -22,5 +22,6 @@ export const HttpUsersInternalLive = HttpApiBuilder.group(MapleInternalApi, "use
 			.handle("traces", withTenant(users.traces))
 			.handle("logs", withTenant(users.logs))
 			.handle("issues", withTenant(users.issues))
+			.handle("calendar", withTenant(users.calendar))
 	}),
 )

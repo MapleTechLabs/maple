@@ -301,6 +301,10 @@ export class ErrorIssueSampleTrace extends Schema.Class<ErrorIssueSampleTrace>("
 	timestamp: IsoDateTimeString,
 	exceptionMessage: Schema.String,
 	durationMicros: Schema.Number,
+	// Empty when the span carried none.
+	deploymentEnv: Schema.String,
+	serviceVersion: Schema.String,
+	userId: Schema.String,
 }) {}
 
 /** One deployment environment a fingerprint was observed in over the detail window. */
@@ -330,6 +334,8 @@ export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailRespo
 	// Environments the fingerprint was seen in over the requested window. The
 	// issue row itself has none: one fingerprint spans environments.
 	environments: Schema.Array(ErrorIssueEnvironment),
+	// The newest stack trace in the window; null when no occurrence there carried one.
+	latestStacktrace: Schema.NullOr(Schema.String),
 }) {}
 
 export class ErrorIncidentsListResponse extends Schema.Class<ErrorIncidentsListResponse>(

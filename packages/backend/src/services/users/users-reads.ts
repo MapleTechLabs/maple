@@ -1,5 +1,6 @@
 import {
 	UserActivityResponse,
+	UserCalendarResponse,
 	UserIssuesResponse,
 	UserLogsResponse,
 	UserOverviewResponse,
@@ -9,6 +10,7 @@ import {
 	UsersGroupsResponse,
 	UsersListResponse,
 	type UserActivityItem,
+	type UserCalendarDay,
 	type UserChannel,
 	type UserDetailRequest,
 	type UserEventItem,
@@ -16,6 +18,7 @@ import {
 	type UserListItem,
 	type UserLogItem,
 	type UserMcpSessionItem,
+	type UserOperationItem,
 	type UserProfileItem,
 	type UserService,
 	type UserSessionItem,
@@ -32,6 +35,7 @@ import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/quer
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	isMissingUserActivityChannels,
+	isMissingUserActivityDaily,
 	isMissingUserActivityHourly,
 	isMissingUserActivityIdentity,
 } from "@maple/backend/services/warehouse/missing-table"
@@ -622,6 +626,8 @@ const ACTIVITY_LIMIT = 200
 const EVENT_DETAIL_PROPERTIES = 3
 /** Requests and log lines the Traces and Logs tabs list at most. */
 const USER_TRACES_LIMIT = 100
+/** Operations the Traces tab's summary lists at most. */
+const USER_OPERATIONS_LIMIT = 50
 const USER_LOGS_LIMIT = 200
 /** Failed or slow requests, and warnings, the Activity timeline takes at most, each. */
 const NOTABLE_LIMIT = 50
@@ -1200,6 +1206,41 @@ const toTraceItem = (row: CH.UserTraceOutput): UserTraceItem => ({
 	isRoot: row.isRoot === 1,
 })
 
+const toOperationItem = (row: CH.UserOperationOutput): UserOperationItem => ({
+	service: row.serviceName,
+	spanName: row.spanName,
+	requests: row.requestCount,
+	errors: row.errorCount,
+	p50Ms: row.p50DurationMs ?? 0,
+	p95Ms: row.p95DurationMs ?? 0,
+	lastSeenMs: toMs(row.lastSeen),
+})
+
+/** The user's requests per operation, over the same services and window as the list. */
+const readOperationRows = Effect.fn("UsersReads.operationRows")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
+) {
+	const window = sliceWindow(requestHours(slices), payload)
+	if (window === null) return []
+	const warehouse = yield* WarehouseQueryService
+	const rows = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(
+			CH.userOperationsQuery({
+				userId: payload.userId,
+				namespaces: payload.namespaces ?? [],
+				serviceNames: window.serviceNames,
+				limit: USER_OPERATIONS_LIMIT,
+			}),
+			{ orgId: tenant.orgId, startTime: window.startTime, endTime: window.endTime },
+		),
+		{ profile: "list", context: "userOperations" },
+	)
+	return Arr.map(rows, toOperationItem)
+})
+
 const toLogItem = (row: CH.UserLogOutput): UserLogItem => ({
 	atMs: toMs(row.timestamp),
 	severity: severityOf(row.severityText, row.severityNumber),
@@ -1269,9 +1310,18 @@ export const readUserTraces = Effect.fn("UsersReads.traces")(function* (
 ) {
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const slices = yield* readSlices(tenant, payload)
-	const traces = yield* readTraceRows(tenant, payload, slices, { limit: USER_TRACES_LIMIT, notable: false })
-	yield* Effect.annotateCurrentSpan({ "maple.users.traces": traces.length })
-	return new UserTracesResponse({ traces })
+	const [traces, operations] = yield* Effect.all(
+		[
+			readTraceRows(tenant, payload, slices, { limit: USER_TRACES_LIMIT, notable: false }),
+			readOperationRows(tenant, payload, slices),
+		],
+		{ concurrency: "unbounded" },
+	)
+	yield* Effect.annotateCurrentSpan({
+		"maple.users.traces": traces.length,
+		"maple.users.operations": operations.length,
+	})
+	return new UserTracesResponse({ traces, operations })
 })
 
 /** The Logs tab: the user's log lines, newest first, read only where the rollup saw them. */
@@ -1285,6 +1335,94 @@ export const readUserLogs = Effect.fn("UsersReads.logs")(function* (
 	yield* Effect.annotateCurrentSpan({ "maple.users.logs": logs.length })
 	return new UserLogsResponse({ logs })
 })
+
+/** A daily rollup read, `None` on a cluster that has not applied migration 0070. */
+const dailyRollupRead = <A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<Option.Option<A>, E, R> =>
+	read.pipe(
+		Effect.asSome,
+		Effect.catchIf(isMissingUserActivityDaily, () => Effect.succeedNone),
+	)
+
+/** Replays (which scope events to a namespace) are kept 30 days, so a namespaced calendar resolves its services over those. */
+const CALENDAR_SCOPE_MS = 30 * DAY_MS
+
+/**
+ * The activity calendar: the user's active days over the request's window (a year), requests and
+ * sessions from `user_activity_daily`, events from `product_events`, merged per UTC day.
+ */
+export const readUserCalendar = Effect.fn("UsersReads.calendar")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+) {
+	const warehouse = yield* WarehouseQueryService
+	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+	const namespaces = payload.namespaces ?? []
+	const scope: CH.UsersScope =
+		namespaces.length === 0
+			? { namespaces, services: [], serviceNamespaces: [], mcpServices: [] }
+			: yield* loadScope(tenant, {
+					startTime: formatWarehouseDateTime(
+						parseWarehouseDateTime(payload.endTime) - CALENDAR_SCOPE_MS,
+					),
+					endTime: payload.endTime,
+					namespaces,
+				})
+	const params = detailParams(tenant, payload)
+	const [activity, events] = yield* Effect.all(
+		[
+			dailyRollupRead(
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.userActivityDaysQuery({ userId: payload.userId, namespaces }), params),
+					{ profile: "list", context: "userActivityDays" },
+				),
+			),
+			CH.readsServiceSources(scope)
+				? warehouse.compiledQuery(tenant, CH.compile(CH.userEventDaysQuery(scope), params), {
+						profile: "list",
+						context: "userEventDays",
+					})
+				: Effect.succeed([]),
+		],
+		{ concurrency: 2 },
+	)
+	const days = mergeCalendarDays(
+		Option.getOrElse(activity, () => []),
+		events,
+	)
+	yield* Effect.annotateCurrentSpan({
+		"maple.users.calendar_days": days.length,
+		"maple.users.daily_rollup": Option.isSome(activity),
+	})
+	return new UserCalendarResponse({ days, indexed: Option.isSome(activity) })
+})
+
+/** The rollup's days and the events' days as one row per day, oldest first. */
+export const mergeCalendarDays = (
+	activity: ReadonlyArray<CH.UserActivityDayOutput>,
+	events: ReadonlyArray<Readonly<{ day: string; events: number }>>,
+): ReadonlyArray<UserCalendarDay> => {
+	const empty = { requests: 0, failedRequests: 0, errorLogs: 0, sessions: 0, events: 0 }
+	const byDay = new Map<string, UserCalendarDay>()
+	Arr.forEach(activity, (row) =>
+		byDay.set(row.day, {
+			...empty,
+			day: row.day,
+			requests: row.requestCount,
+			failedRequests: row.failedRequestCount,
+			errorLogs: row.errorLogCount,
+			sessions: row.sessionCount,
+		}),
+	)
+	Arr.forEach(events, (row) => {
+		const day = byDay.get(row.day) ?? { ...empty, day: row.day }
+		byDay.set(row.day, { ...day, events: row.events })
+	})
+	return Arr.sort(
+		[...byDay.values()],
+		Order.mapInput(Order.String, (day: UserCalendarDay) => day.day),
+	)
+}
 
 /** The timeline's failed or slow requests and warn/error log lines. */
 const readNotable = Effect.fn("UsersReads.notable")(function* (

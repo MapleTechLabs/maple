@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 import {
 	OrgId,
 	UserDetailRequest,
@@ -92,6 +92,20 @@ const fixture: Fixture = new Map<string, ReadonlyArray<unknown>>([
 		],
 	],
 	[
+		"userOperations",
+		[
+			{
+				serviceName: "checkout",
+				spanName: "POST /checkout",
+				requestCount: "4",
+				errorCount: "1",
+				p50DurationMs: "120",
+				p95DurationMs: "812.5",
+				lastSeen: "2026-11-01 14:12:00.000000000",
+			},
+		],
+	],
+	[
 		"userLogs",
 		[
 			{
@@ -115,10 +129,16 @@ describe("readUserTraces", () => {
 				Effect.provide(warehouse(fixture, ran)),
 			)
 			assert.deepStrictEqual(
-				Arr.map(ran, (query) => query.context),
-				["userActivitySlices", "userTraces"],
+				Arr.sort(
+					Arr.map(ran, (query) => query.context),
+					Order.String,
+				),
+				["userActivitySlices", "userOperations", "userTraces"],
 			)
-			const raw = ran[1]?.sql ?? ""
+			const raw = Arr.findFirst(ran, (query) => query.context === "userTraces").pipe(
+				Option.map((query) => query.sql),
+				Option.getOrElse(() => ""),
+			)
 			assert.include(raw, "traces.ServiceName IN ('checkout')")
 			assert.include(raw, "traces.Timestamp >= '2026-11-01 14:00:00'")
 			assert.include(raw, "traces.Timestamp <= '2026-11-01 15:00:00'")
@@ -131,6 +151,17 @@ describe("readUserTraces", () => {
 				]),
 				[["a1b2", "POST /checkout", "Error", 812.5]],
 			)
+			assert.deepStrictEqual(response.operations, [
+				{
+					service: "checkout",
+					spanName: "POST /checkout",
+					requests: 4,
+					errors: 1,
+					p50Ms: 120,
+					p95Ms: 812.5,
+					lastSeenMs: Date.UTC(2026, 10, 1, 14, 12),
+				},
+			])
 		}),
 	)
 
@@ -156,6 +187,7 @@ describe("readUserTraces", () => {
 				Effect.provide(warehouse(fixture, ran, false)),
 			)
 			assert.deepStrictEqual(response.traces, [])
+			assert.deepStrictEqual(response.operations, [])
 			assert.isFalse(Arr.some(ran, (query) => query.context === "userTraces"))
 		}),
 	)

@@ -1,10 +1,12 @@
 import { Schema } from "effect"
 import {
 	UserActivityItem,
+	UserCalendarDay,
 	UserEventItem,
 	UserIssueItem,
 	UserLogItem,
 	UserMcpSessionItem,
+	UserOperationItem,
 	UserProfileItem,
 	UserSessionItem,
 	UserTraceItem,
@@ -32,7 +34,10 @@ export const ActivityData = Schema.Struct({
 export type ActivityData = typeof ActivityData.Type
 
 /** `getUserTraces`: the Traces tab's requests, read only while the tab is open. */
-export const TracesData = Schema.Struct({ traces: Schema.Array(UserTraceItem) })
+export const TracesData = Schema.Struct({
+	traces: Schema.Array(UserTraceItem),
+	operations: Schema.Array(UserOperationItem),
+})
 export type TracesData = typeof TracesData.Type
 
 /** The overview's issues: the Errors tab, and the timeline's error rows. */
@@ -55,6 +60,10 @@ export type GroupStatsData = typeof GroupStatsData.Type
 export const LogsData = Schema.Struct({ logs: Schema.Array(UserLogItem) })
 export type LogsData = typeof LogsData.Type
 
+/** `getUserCalendar`: the user's active days over the last year, read while Activity is open. */
+export const CalendarData = Schema.Struct({ days: Schema.Array(UserCalendarDay), indexed: Schema.Boolean })
+export type CalendarData = typeof CalendarData.Type
+
 export const Model = Schema.Struct({
 	userId: Schema.String,
 	search: UserDetailSearch,
@@ -65,6 +74,7 @@ export const Model = Schema.Struct({
 	issues: KeyedSchema(IssuesData, LoadFailure),
 	traces: KeyedSchema(TracesData, LoadFailure),
 	logs: KeyedSchema(LogsData, LoadFailure),
+	calendar: KeyedSchema(CalendarData, LoadFailure),
 	/** Read once the profile names a group. */
 	groupStats: KeyedSchema(GroupStatsData, LoadFailure),
 	timePicker: TimeRangePicker.Model,

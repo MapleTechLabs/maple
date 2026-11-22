@@ -250,6 +250,8 @@ export interface UseCase {
  */
 const localePath = (locale: string, path: string) => (locale === "en" ? path : `/${locale}${path}`)
 
+export const featuresIndexPath = (locale: string) => localePath(locale, "/features")
+
 export const featurePath = (locale: string, slug: string) => localePath(locale, `/features/${slug}`)
 
 export const useCasePath = (locale: string, slug: string) => localePath(locale, `/use-cases/${slug}`)

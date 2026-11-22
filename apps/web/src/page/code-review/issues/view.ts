@@ -79,7 +79,8 @@ const filterSelects = (h: H, model: Model): ReadonlyArray<Html> =>
 				entries: options,
 				size: "sm",
 				ariaLabel: label,
-				className: "w-40",
+				// Narrow enough that search and all six filters share one row on a laptop screen.
+				className: "w-36",
 				toView: (parts) => h.div([h.Class("contents")], parts),
 			},
 		}),

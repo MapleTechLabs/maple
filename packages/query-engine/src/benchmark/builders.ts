@@ -329,6 +329,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userActivitySummaryQuery", () =>
 		CH.compileUnsafe(CH.userActivitySummaryQuery(USER_SCOPE), window),
 	),
+	userActivityFixture("userActivityDaysQuery", () =>
+		CH.compileUnsafe(CH.userActivityDaysQuery(USER_SCOPE), window),
+	),
 	userActivityFixture("userActivityServicesQuery", () =>
 		CH.compileUnsafe(CH.userActivityServicesQuery(USER_SCOPE), window),
 	),
@@ -350,6 +353,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 		),
 		label: "notable",
 	},
+	userActivityFixture("userOperationsQuery", () =>
+		CH.compileUnsafe(CH.userOperationsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
+	),
 	userActivityFixture("userLogsQuery", () =>
 		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),
@@ -480,6 +486,119 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 					}),
 				),
 				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelQuery",
+		label: "group-key",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "group",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelCoverageQuery",
+		label: "steps",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelCoverageQuery({
+						steps: REFERRAL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events-cohort",
+		name: "productEventsCohortQuery",
+		label: "did-and-never",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsCohortQuery({
+						did: { kind: "event", eventName: "signup_completed" },
+						didNot: {
+							kind: "event",
+							eventName: "plan_started",
+							attributeEquals: { plan: "pro" },
+						},
+						didNotScope: "ever",
+						keyBy: "person",
+						limit: 50,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events-cohort",
+		name: "productEventsCohortQuery",
+		label: "did-in-window-group",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsCohortQuery({
+						did: { kind: "page", pagePath: "/settings/*" },
+						didNotScope: "window",
+						keyBy: "group",
+						limit: 25,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events-retention",
+		name: "productEventsRetentionQuery",
+		label: "weekly-first-ever-person",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsRetentionQuery({
+						startEvent: { kind: "event", eventName: "signup_completed" },
+						keyBy: "person",
+						interval: "week",
+						periods: 8,
+						firstEver: true,
+					}),
+				),
+				{ ...window, returnEndTime: window.endTime },
+			),
+	},
+	{
+		module: "product-events-retention",
+		name: "productEventsRetentionQuery",
+		label: "daily-in-window-group",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsRetentionQuery({
+						startEvent: { kind: "page", pagePath: "/pricing" },
+						returnEvent: {
+							kind: "event",
+							eventName: "plan_started",
+							attributeEquals: { plan: "pro" },
+						},
+						keyBy: "group",
+						interval: "day",
+						periods: 14,
+						firstEver: false,
+						filters: { country: "DE" },
+					}),
+				),
+				{ ...window, returnEndTime: window.endTime },
 			),
 	},
 	// Drop-off details and paths share the funnel's person-key axis; one fixture
@@ -643,6 +762,36 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 					hosts: ["maple.dev"],
 				}),
 				window,
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsBreakdownQuery",
+		label: "visitors-by-session-dimension",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsBreakdownQuery({
+					metric: "visitors",
+					groupBy: "utm_source",
+					hosts: ["maple.dev"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsTimeseriesQuery",
+		label: "numeric-sum-by-country",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsTimeseriesQuery({
+					metric: "sum",
+					valueAttributeKey: "amount",
+					groupBy: ["country", "event_name"],
+					eventNames: ["plan_started"],
+					bucketSeconds: 3600,
+				}),
+				{ ...window, bucketSeconds: 3600 },
 			),
 	},
 	{
@@ -1963,6 +2112,15 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "errors",
+		name: "errorIssueLatestStacktraceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorIssueLatestStacktraceQuery({ fingerprintHashes: [FINGERPRINT] }), {
+				...window,
+			}),
+	},
+	{
+		module: "errors",
 		name: "errorIssueEnvironmentsQuery",
 		label: "default",
 		compile: () =>
@@ -2739,6 +2897,12 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		name: "userDevicesQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.userDevicesQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
+	},
+	{
+		module: "users",
+		name: "userEventDaysQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.userEventDaysQuery(USERS_SCOPE), { ...window, userId: "user_42" }),
 	},
 	{
 		module: "users",

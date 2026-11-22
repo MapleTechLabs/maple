@@ -66,6 +66,7 @@ import { CancellationCompanyEvidenceReader } from "./evidence-company"
 import type { CancellationEvidenceInput } from "./evidence-input"
 import { CancellationTelemetryEvidenceReader } from "./evidence-telemetry"
 import { CancellationReviewService, type CancellationToReview } from "./CancellationReviewService"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -504,7 +505,9 @@ const makeLayer = (world: World, testDb: TestDb) =>
 		Layer.provide(
 			Layer.mergeAll(
 				stubs(world),
-				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
+				OnboardingService.layer.pipe(
+					Layer.provide(Layer.mergeAll(testDb.layer, ProductEventsService.noop)),
+				),
 				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
 				testDb.layer,
 				SecureRandom.layerWebCrypto,

@@ -205,7 +205,7 @@ is one row per (visitor,user) pair.
 `packages/query-engine/src/ch/queries/product-events.ts` (replaces `web-analytics.ts`'s
 `web_events` references; the page-view queries move here unchanged):
 
-- `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "session",
+- `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "group" | "session",
   windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
   Step = `{ eventName } | { pagePath, host? } | { referrerHost | utmSource | ... }`. A
   session-dimension step (referral) becomes step 0's condition through the person's first
@@ -522,7 +522,66 @@ converted in either order.
 - **A leaver** is anyone who stopped short, including a visitor whose session matched step 1 and
   who sent no event at all: they count under "nothing after".
 - **A page step** matches a browser page view or a mobile screen view (`Kind` `navigation` or
-  `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way.
+  `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way. A `*` in
+  the step's path matches any run of characters (`pagePathLikePattern` in `@maple/query-model`,
+  compiled to `LIKE` with `%` and `_` escaped); a path without one is compared with `=`.
+- **An exclusion** (`exclusions`, 2026-11-22) is an event or page that must not happen part way
+  through: an attempt that has reached step `after` (default 1) and not yet step `before` (default
+  the last) is dropped when it does. Dropping is per attempt and per step: the person can convert
+  on a later attempt, and an attempt dropped from step 2 still stands at step 1 and can take a
+  later step-2 row. In the walk an excluded row writes a marker (1, which no order key is) into
+  the state of the steps it covers, carried forward like a start; nothing advances from it.
+  "Between" is strict: the row that reaches `after` or `before` is that step, not an excluded
+  event for its own range, even when it matches the exclusion too. So in cart, address,
+  payment, "no return to the cart before paying" works. Two definitions are refused: an
+  exclusion that is a step strictly inside its own range, since every attempt has to pass it, and
+  one that is the step on either side of a single gap, since it can never apply (a repeat of the
+  first step starts a new attempt, and the second step ends the gap). A row read only for an exclusion
+  takes no part in a breakdown's group. A
+  funnel without exclusions compiles to the SQL it always did. Counts and breakdowns honour
+  exclusions; timing and leavers refuse them, because the chain they read is rebuilt from the
+  person's rows without knowing which attempts were dropped. No dashboard surface sets them yet;
+  `query_funnel` does, with `exclusions_json`.
+- **The key** is `person`, `visitor`, `user`, `group` or `session`. A row whose key is empty takes
+  no part, so a step whose events lack the key can never be reached: `plan_started` from a billing
+  webhook carries `GroupId` and no user, and by `person` reads as 0% however many accounts paid.
+  `group` (`GroupId`, since 2026-11-22) follows such an event through, with several users of one
+  account as one history. `productEventsFunnelCoverageQuery` counts, per step, the matching events
+  and how many carry each identity; `query_funnel` reads it when a step came back empty and says
+  which key every step's events do carry.
+
+## Cohorts (2026-11-22)
+
+`productEventsCohortQuery` (`product-events-cohort.ts`), reached through the MCP tool
+`query_cohort`: the keys that did one event or page view in the window and, optionally, did not do
+another, either ever (all history up to the window's end) or inside the window. One pass per key
+over the rows matching either event; the members (who did it last first) and two totals, everyone
+who did the first thing and those of them who fit, come back from the same read as window
+functions. `retention-scenarios.test.ts` checks it against a TypeScript reference on chDB.
+
+## How retention is counted (2026-11-22)
+
+`productEventsRetentionQuery` (`packages/query-engine/src/ch/queries/product-events-retention.ts`),
+reached through the MCP tool `query_retention`. There is no dashboard panel for it yet.
+
+- **A cohort** is the interval (UTC day, Monday week or month) of a key's first start event. With
+  `firstEver` (the tool's default) that first is read over the whole table, not the window, so a
+  key that was active before the window is in no cohort. Reading firsts from the window alone
+  puts every existing user into its first interval, which then looks several times larger and
+  better retained than the ones after it. `firstEver: false` is that cheaper read, for when it is
+  what is wanted.
+- **Period 0** is the cohort's size. **Period n** is the keys of it with a return event in the
+  n-th interval after the cohort's own. The start and return events default to any event.
+- **Returns** are read from the window start to a separate `returnEndTime` parameter, so the last
+  cohorts are followed past the end of the cohort window. The tool passes now, and marks a
+  period that has not started as unknown and one still running as open, never as a zero.
+- **The key** is `person`, `user`, `visitor` or `group`. Not `session`: a session cannot return.
+- One pass per key: `minIf(ts, isStart)` and `groupUniqArrayIf(bucket(ts), isReturn)`, then the
+  periods as date arithmetic over that array. No join, and no second read of the cohorts.
+
+`apps/cli/test/retention-scenarios.test.ts` holds the definition as a TypeScript reference and
+runs the compiled SQL against it on chDB: hand-built cases (someone active before the window),
+example products and random histories over every key and interval.
 
 `apps/cli/test/funnel-scenarios.test.ts` holds this definition as a plain TypeScript reference
 funnel and runs the compiled SQL against it on chDB: four example products (a SaaS signup with

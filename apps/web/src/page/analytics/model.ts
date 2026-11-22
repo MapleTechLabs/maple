@@ -35,6 +35,7 @@ export const Summary = Schema.Struct({
 	newSessions: Schema.Number,
 	bouncedSessions: Schema.Number,
 	identifiedSessions: Schema.Number,
+	unknownHistorySessions: Schema.Number,
 	avgDurationMs: Schema.Number,
 	botSessions: Schema.Number,
 	botShare: Schema.NullOr(Schema.Number),
@@ -56,6 +57,7 @@ export const TimeseriesPoint = Schema.Struct({
 	newSessions: Schema.Number,
 	bouncedSessions: Schema.Number,
 	identifiedSessions: Schema.Number,
+	unknownHistorySessions: Schema.Number,
 	avgDurationMs: Schema.Number,
 })
 

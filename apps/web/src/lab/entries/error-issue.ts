@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
 import {
+	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
 	ErrorIssueId,
 	ErrorIssuePullRequestsResponse,
@@ -22,7 +23,8 @@ import { defineShellLab } from "../shell-lab"
 
 // `/lab/error-issue`: the error issue page over one fixture issue, a surging high-severity error
 // with a regression, as a member or an analyst, who reads it and gets no triage control
-// (`?role=member|analyst&tab=overview|occurrences|activity`). API Commands are dropped; the page
+// (`?role=member|analyst&tab=overview|occurrences|activity`; `context=none` drops the samples' release
+// and user, for the table's setup prompt). API Commands are dropped; the page
 // is sent the answers its reads would get.
 
 const context: PageContext = {
@@ -87,6 +89,9 @@ const detail = Schema.decodeSync(V2ErrorIssueDetail)({
 		timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
 		exception_message: "Cannot read properties of undefined (reading 'plan')",
 		duration_micros: 18_400 + i * 2_100,
+		deployment_environment: i === 3 ? "staging" : "production",
+		service_version: i < 3 ? "2026.11.01-4f1c2a9" : "2026.10.30-b81e0d4",
+		user_id: i === 2 ? null : (["usr_8f2k1", "usr_02mxq", null, "usr_tl91c", "usr_8f2k1"][i] ?? null),
 	})),
 	incidents: [
 		{
@@ -105,7 +110,39 @@ const detail = Schema.decodeSync(V2ErrorIssueDetail)({
 		{ name: "production", count: 1_104 },
 		{ name: "staging", count: 96 },
 	],
+	latest_stacktrace: Arr.join(
+		[
+			"TypeError: Cannot read properties of undefined (reading 'plan')",
+			"    at resolvePlan (/app/apps/subscriptions-api/src/billing/plan.ts:42:28)",
+			"    at SubscriptionService.renew (/app/apps/subscriptions-api/src/billing/subscription-service.ts:118:19)",
+			"    at async handleRenewal (/app/apps/subscriptions-api/src/routes/renewals.ts:31:5)",
+			"    at async /app/node_modules/hono/dist/compose.js:30:17",
+		],
+		"\n",
+	),
 })
+
+const affectedUsers = new ErrorIssueAffectedUsersResponse({
+	affectedUsers: 214,
+	hitsWithUser: 1_031,
+	hits: 1_200,
+	users: Arr.map(["usr_8f2k1", "usr_02mxq", "usr_tl91c"], (userId, i) => ({
+		userId,
+		hits: 42 - i * 11,
+		lastSeenMs: NOW - (i + 1) * 300_000,
+	})),
+	attributed: true,
+})
+
+/** The same issue with samples that carry no release and no user, as before either is set up. */
+const detailWithoutContext: typeof detail = {
+	...detail,
+	sample_traces: Arr.map(detail.sample_traces, (trace) => ({
+		...trace,
+		service_version: null,
+		user_id: null,
+	})),
+}
 
 /** Reads, writes and the window resolve go to the API; the lab answers them itself. */
 const isLocalCommand = (command: { readonly name: string }): boolean =>
@@ -123,13 +160,19 @@ const send = (step: Step, message: Message): Step => {
 
 const ROLES = ["member", "analyst"] as const
 const TABS = ["overview", "occurrences", "activity"] as const
-const Flags = Schema.Struct({ role: Schema.Literals(ROLES), tab: Schema.Literals(TABS) })
+const CONTEXTS = ["full", "none"] as const
+const Flags = Schema.Struct({
+	role: Schema.Literals(ROLES),
+	tab: Schema.Literals(TABS),
+	context: Schema.Literals(CONTEXTS),
+})
 type Flags = typeof Flags.Type
 type LabRole = Flags["role"]
 type LabTab = Flags["tab"]
 
 const decodeRole = Schema.decodeUnknownOption(Schema.Literals(ROLES))
 const decodeTab = Schema.decodeUnknownOption(Schema.Literals(TABS))
+const decodeContext = Schema.decodeUnknownOption(Schema.Literals(CONTEXTS))
 
 const init = (flags: Flags) => {
 	const entered = pageInit({ issueId, search: flags.tab === "overview" ? {} : { tab: flags.tab } }, context)
@@ -143,11 +186,19 @@ const init = (flags: Flags) => {
 		}),
 	)
 	const windowed = send(granted, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
-	const keyOf = (field: "detail" | "events" | "pullRequests" | "verifications" | "escalations") =>
-		windowed.model[field].key ?? ""
+	const keyOf = (
+		field: "detail" | "events" | "pullRequests" | "verifications" | "escalations" | "affectedUsers",
+	) => windowed.model[field].key ?? ""
 	return Arr.reduce(
 		[
-			Message.CompletedFetchDetail({ key: keyOf("detail"), result: Result.succeed(detail) }),
+			Message.CompletedFetchDetail({
+				key: keyOf("detail"),
+				result: Result.succeed(flags.context === "none" ? detailWithoutContext : detail),
+			}),
+			Message.CompletedFetchAffectedUsers({
+				key: keyOf("affectedUsers"),
+				result: Result.succeed(affectedUsers),
+			}),
 			Message.CompletedFetchEvents({
 				key: keyOf("events"),
 				result: Result.succeed(new ErrorIssueEventsResponse({ events: [] })),
@@ -207,6 +258,7 @@ export const lab = defineShellLab("Error issue", {
 		return {
 			role: Option.getOrElse(decodeRole(params.get("role")), (): LabRole => "member"),
 			tab: Option.getOrElse(decodeTab(params.get("tab")), (): LabTab => "overview"),
+			context: Option.getOrElse(decodeContext(params.get("context")), (): Flags["context"] => "full"),
 		}
 	}),
 	init,

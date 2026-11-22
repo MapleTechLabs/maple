@@ -1228,3 +1228,16 @@ export function userVisitorIdsQuery(limit = 50) {
 		.limit(limit)
 		.format("JSON")
 }
+
+/** The user's product events per UTC day in the window, for the activity calendar (a year of them). */
+export function userEventDaysQuery(scope: UsersScope) {
+	return from(Datasources.productEvents)
+		.select(() => ({
+			day: CH.rawExpr<string>("toString(toDate(Timestamp))", T.string),
+			events: CH.count(),
+		}))
+		.where(($) => userEventRows($, scope))
+		.groupBy("day")
+		.orderBy(["day", "asc"])
+		.format("JSON")
+}

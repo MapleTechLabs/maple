@@ -15,7 +15,7 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { browserIconFor, deviceIconFor } from "../kit/sessions-parts"
-import { recordedMarker } from "../kit/replay-window"
+import { recordedMarker, visitorHistory } from "../kit/replay-window"
 import { Message } from "./message"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import type { Model, ReplayDetail } from "./model"
@@ -467,7 +467,7 @@ export const sessionTab = (h: H, model: SessionView, session: ReplayDetail): Htm
 								],
 							),
 							row(h, { icon: "UserIcon", label: "Visitor" }, [
-								value(h, session.visitorIsNew ? "New" : "Returning"),
+								value(h, visitorHistory(session.resourceAttributes, session.visitorIsNew)),
 							]),
 						])
 					: null,

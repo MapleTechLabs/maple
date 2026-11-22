@@ -9,17 +9,29 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnAccessor, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import type { AttributeFilter, ProductEventsGroupBy, ProductEventsMetric } from "@maple/domain/query-engine"
+import {
+	PRODUCT_EVENTS_NUMERIC_METRICS,
+	PRODUCT_EVENTS_SESSION_GROUP_BY,
+	type AttributeFilter,
+	type ProductEventsGroupBy,
+	type ProductEventsMetric,
+	type ProductEventsNumericMetric,
+	type ProductEventsSessionGroupBy,
+} from "@maple/domain/query-engine"
 import * as Datasources from "@maple/domain/tinybird/datasources"
-import { orgIdParam } from "../tables"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
 import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
 import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./web-analytics"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { Array as Arr } from "effect"
+import { Array as Arr, Record as Rec } from "effect"
+import type { OpenJoinAccessor, OpenJoinQuery } from "./product-events"
 
-type EventsAccessor = ColumnAccessor<typeof Datasources.productEvents.columns>
+type EventsColumns = typeof Datasources.productEvents.columns
+type EventsAccessor = ColumnAccessor<EventsColumns>
+/** The events with the session dimensions joined in as `sd` when a group-by reads one. */
+type GroupedAccessor = OpenJoinAccessor<EventsColumns>
 
 export type ProductEventsGroupByKey = ProductEventsGroupBy | "none"
 
@@ -41,6 +53,7 @@ export interface ProductEventsQueryOpts {
 	excludedServiceNames?: readonly string[]
 	attributeFilters?: readonly AttributeFilter[]
 	groupByAttributeKey?: string
+	valueAttributeKey?: string
 	referrerHost?: string
 	country?: string
 	deviceType?: string
@@ -60,6 +73,8 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 	seriesLimit?: number
 	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
 	wholeRange?: boolean
+	/** With `wholeRange`: count the instant `endTime` too, as the bucketed read of the window does. */
+	closedEnd?: boolean
 }
 
 export interface ProductEventsTimeseriesOutput {
@@ -127,6 +142,24 @@ function sessionFilters(opts: ProductEventsQueryOpts): WebAnalyticsFilters {
 	}
 }
 
+/** The browser SDK's session lifetime cap: no event is further than this from its session's start. */
+const SESSION_MAX_LIFETIME_HOURS = 24
+
+/**
+ * Where the sessions of a window's events start: a lifetime before it. An event early in the
+ * window belongs to a session that began earlier, and the timeseries cache re-runs a query on
+ * sub-ranges as short as a minute, where nearly every event does.
+ */
+const sessionsFrom = (): CH.Expr<DateTime.Utc> => {
+	const windowStart = CH.toDateTime(utcSecondsParam("startTime"))
+	return CH.compileTypedFnCall(
+		"subtractHours",
+		CH.schemaOf<DateTime.Utc>(windowStart),
+		windowStart,
+		CH.lit(SESSION_MAX_LIFETIME_HOURS),
+	)
+}
+
 function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Condition | undefined {
 	const filters = sessionFilters(opts)
 	if (!needsSessionSemiJoin(filters)) return undefined
@@ -134,7 +167,8 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 		$.SessionId,
 		from(Datasources.sessionReplays)
 			.select(($s) => ({ sessionId: $s.SessionId }))
-			.where(($s) => replaysWhere($s, filters))
+			// The same sessions a session group-by reads, so a bucket and the filter on it agree.
+			.where(($s) => replaysWhere($s, filters, undefined, sessionsFrom()))
 			.groupBy("sessionId"),
 	)
 }
@@ -166,7 +200,58 @@ function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array
 /** Row-local person key. No `identity_links` join: a count does not need the stitching a funnel does. */
 const personKey = ($: EventsAccessor): CH.Expr<string> => CH.if_($.UserId.neq(""), $.UserId, $.VisitorId)
 
-function metricExpr($: EventsAccessor, metric: ProductEventsMetric): CH.Expr<number> {
+const isNumericMetric = (metric: ProductEventsMetric): metric is ProductEventsNumericMetric =>
+	Arr.contains(PRODUCT_EVENTS_NUMERIC_METRICS, metric)
+
+/**
+ * `fn` over `Attributes[key]` read as a number. A prop that is missing, text, `NaN` or infinite is
+ * no value, so one bad event cannot poison a bucket; a group with no values at all reads 0.
+ */
+function numericValue($: EventsAccessor, key: string): CH.Expr<number | null> {
+	const parsed = CH.compileTypedFnCall(
+		"toFloat64OrNull",
+		T.nullable(T.float64).schema,
+		$.Attributes.get(key),
+	)
+	return CH.compileTypedFnCall(
+		"if",
+		T.nullable(T.float64).schema,
+		CH.compileFnCallCond("isFinite", parsed),
+		parsed,
+		CH.rawExpr("NULL", T.nullable(T.float64)),
+	)
+}
+
+function numericExpr($: EventsAccessor, fn: ProductEventsNumericMetric, key: string): CH.Expr<number> {
+	const value = numericValue($, key)
+	const aggregate = (): CH.Expr<number | null> => {
+		switch (fn) {
+			case "sum":
+				return CH.sum(value)
+			case "avg":
+				return CH.avg(value)
+			case "min":
+				return CH.min_(value)
+			case "max":
+				return CH.max_(value)
+			case "p50":
+				return CH.quantile(0.5)(value)
+			case "p95":
+				return CH.quantile(0.95)(value)
+			case "p99":
+				return CH.quantile(0.99)(value)
+		}
+	}
+	// No values at all is NULL from `sum`, and can be NaN from `avg` or a quantile.
+	return CH.ifNull(CH.ifNotFinite(aggregate(), 0), CH.lit(0))
+}
+
+function metricExpr(
+	$: EventsAccessor,
+	metric: ProductEventsMetric,
+	valueAttributeKey: string | undefined,
+): CH.Expr<number> {
+	if (isNumericMetric(metric)) return numericExpr($, metric, valueAttributeKey ?? "")
 	switch (metric) {
 		case "count":
 			return CH.count()
@@ -178,14 +263,69 @@ function metricExpr($: EventsAccessor, metric: ProductEventsMetric): CH.Expr<num
 			return CH.uniqIf($.UserId, $.UserId.neq(""))
 		case "visitors":
 			return CH.uniqIf($.VisitorId, $.VisitorId.neq(""))
+		case "groups":
+			return CH.uniqIf($.GroupId, $.GroupId.neq(""))
 	}
 }
 
+const SESSION_DIMENSION_COLUMN = {
+	country: "Country",
+	referrer_host: "ReferrerHost",
+	utm_source: "UtmSource",
+	utm_medium: "UtmMedium",
+	utm_campaign: "UtmCampaign",
+	device_type: "DeviceType",
+	browser: "BrowserName",
+	os: "OsName",
+} as const satisfies Record<ProductEventsSessionGroupBy, keyof typeof Datasources.sessionReplays.columns>
+
+const isSessionGroupBy = (key: string): key is ProductEventsSessionGroupBy =>
+	Arr.contains(PRODUCT_EVENTS_SESSION_GROUP_BY, key)
+
+const SESSION_ALIAS = "sd"
+
+/**
+ * One row per session with the dimensions asked for. `max()` so the row that carries a value
+ * beats an un-merged earlier version's `''`. A session with no id is nobody's.
+ */
+function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
+	return from(Datasources.sessionReplays)
+		.select(($) => ({
+			SessionId: $.SessionId,
+			...Rec.fromEntries(
+				Arr.map(keys, (key) => [key, CH.max_($[SESSION_DIMENSION_COLUMN[key]])] as const),
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.StartTime.gte(sessionsFrom()),
+			$.StartTime.lte(param.dateTime("endTime")),
+			$.SessionId.neq(""),
+		])
+		.groupBy("SessionId")
+}
+
+/** `product_events`, joined to its sessions' dimensions only when a group-by reads one. */
+function eventsGroupedBy(groupBy: ReadonlyArray<ProductEventsGroupByKey>): OpenJoinQuery<EventsColumns> {
+	const events: OpenJoinQuery<EventsColumns> = from(Datasources.productEvents)
+	const keys = Arr.dedupe(Arr.filter(groupBy, isSessionGroupBy))
+	return keys.length === 0
+		? events
+		: events.leftJoinQuery(sessionDimensions(keys), SESSION_ALIAS, (event, session) =>
+				event.SessionId.eq(session.SessionId),
+			)
+}
+
 function dimensionColumn(
-	$: EventsAccessor,
+	$: GroupedAccessor,
 	key: ProductEventsGroupBy,
 	attributeKey: string | undefined,
 ): CH.Expr<string> {
+	if (isSessionGroupBy(key)) {
+		// join_use_nulls=0 yields '' for an event with no session; coalesce covers a cluster that flips it.
+		const dimension = $[SESSION_ALIAS]?.[key]
+		return dimension === undefined ? CH.lit("") : CH.coalesce(dimension, CH.lit(""))
+	}
 	switch (key) {
 		case "event_name":
 			return $.EventName
@@ -208,7 +348,7 @@ function dimensionColumn(
 
 // Every dimension keeps its position, an empty one shown as `(none)`, so
 // `browser · (none)` and `(none) · browser` stay two groups.
-function groupNameExpr($: EventsAccessor, opts: ProductEventsTimeseriesOpts): CH.Expr<string> {
+function groupNameExpr($: GroupedAccessor, opts: ProductEventsTimeseriesOpts): CH.Expr<string> {
 	const keys = Arr.filter(opts.groupBy ?? [], (key): key is ProductEventsGroupBy => key !== "none")
 	if (keys.length === 0) return CH.lit("all")
 	const parts = Arr.map(keys, (key) =>
@@ -232,14 +372,21 @@ const TS_COLUMNS: ColumnDefs = {
 export function productEventsTimeseriesQuery(
 	opts: ProductEventsTimeseriesOpts,
 ): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput> {
-	const inner = from(Datasources.productEvents)
+	const inner = eventsGroupedBy(opts.groupBy ?? [])
 		.select(($) => ({
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
-			value: metricExpr($, opts.metric),
-			eventCount: CH.count(),
+			value: metricExpr($, opts.metric, opts.valueAttributeKey),
+			// The sample count an alert reads: for a numeric metric, the events that carried a number,
+			// so a window with events and no values is no data rather than a measured 0.
+			eventCount: isNumericMetric(opts.metric)
+				? CH.countIf(numericValue($, opts.valueAttributeKey ?? "").isNotNull())
+				: CH.count(),
 		}))
-		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
+		.where(($) => [
+			...eventConditions($, opts),
+			wholeRangeEnd($.Timestamp, opts.wholeRange === true && opts.closedEnd !== true),
+		])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts)
@@ -248,10 +395,10 @@ export function productEventsTimeseriesQuery(
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
 ): CHQuery<ColumnDefs, ProductEventsBreakdownOutput> {
-	return from(Datasources.productEvents)
+	return eventsGroupedBy([opts.groupBy])
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
-			value: metricExpr($, opts.metric),
+			value: metricExpr($, opts.metric, opts.valueAttributeKey),
 		}))
 		.where(($) => eventConditions($, opts))
 		.groupBy("name")

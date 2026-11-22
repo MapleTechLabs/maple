@@ -140,3 +140,14 @@ export const getUserLogs = Effect.fn("Users.logs")(function* ({ data }: { data: 
 		}),
 	)
 })
+
+/** The user's active days over a year, for the activity calendar. */
+export const getUserCalendar = Effect.fn("Users.calendar")(function* ({ data }: { data: UserDetailInput }) {
+	const input = yield* decodeInput(UserDetailInput, data, "userCalendar")
+	return yield* runWarehouseQuery("userCalendar", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalHttp
+			return yield* client.usersInternal.calendar({ payload: detailRequest(input) })
+		}),
+	)
+})

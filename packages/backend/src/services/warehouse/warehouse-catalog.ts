@@ -91,6 +91,11 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Sum `SpanCount`, `ErrorSpanCount`, `RequestCount` (entry-point spans), `FailedRequestCount`, `LogCount`, `WarnLogCount`, `ErrorLogCount`; `min(FirstSeen)` / `max(LastSeen)`. Merge `TraceIds` / `SessionIds` with `uniqIfMerge`, `RequestDurationQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95)` (NANOSECONDS), `TopRoutes` with `approx_top_kMerge(10)` (drop the '' entry).",
 		"Keeps 90 days at hour grain: snap range bounds with `toStartOfHour`. Sorting key: `(OrgId, ServiceNamespace, UserId, Hour, ServiceName)`.",
 	],
+	user_activity_daily: [
+		"`user_activity_hourly` at UTC-day grain, kept 365 days: one row per (`ServiceNamespace`, `UserId`, `Day`, `ServiceName`). Use it for per-user trends older than 90 days.",
+		"Sum `RequestCount`, `FailedRequestCount`, `ErrorSpanCount`, `LogCount`, `ErrorLogCount`; merge `SessionIds` with `uniqIfMerge`. No names, emails, routes or latency: read those from `user_activity_hourly`.",
+		"Snap range bounds with `toStartOfDay`. Sorting key: `(OrgId, ServiceNamespace, UserId, Day, ServiceName)`.",
+	],
 	service_operations_hourly: [
 		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
 		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",

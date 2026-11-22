@@ -226,6 +226,8 @@ export interface McpToolAuditInput {
 	readonly name: string
 	/** The tool's human title, so the audit log can read "Search Repository Checkout", not `sandbox_grep`. */
 	readonly title?: string | undefined
+	/** A tool family's action (`create`, `update`, ...); the name alone merges them. */
+	readonly action?: string | undefined
 	readonly input: unknown
 	readonly surface: McpToolSurface
 	readonly isError: boolean
@@ -248,6 +250,7 @@ export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 			metadata: {
 				tool: input.name,
 				...(input.title !== undefined ? { tool_title: input.title } : undefined),
+				...(input.action !== undefined ? { tool_action: input.action } : undefined),
 				surface: input.surface,
 				// Which Maple agent ran it (investigation, code review, ...); absent for a public MCP call.
 				...(input.tenant.chatMode !== undefined ? { agent: input.tenant.chatMode } : undefined),

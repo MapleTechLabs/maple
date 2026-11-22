@@ -22,7 +22,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import * as Materializations from "../packages/domain/src/tinybird/materializations"
 
-type Grain = "raw" | "minute" | "hour"
+type Grain = "raw" | "minute" | "hour" | "day"
 
 interface Target {
 	readonly name: string
@@ -35,6 +35,7 @@ interface Target {
 const raw = (name: string, extra?: string): Target => ({ name, timeColumn: "Timestamp", grain: "raw", extra })
 const minute = (name: string): Target => ({ name, timeColumn: "Minute", grain: "minute" })
 const hour = (name: string, extra?: string): Target => ({ name, timeColumn: "Hour", grain: "hour", extra })
+const day = (name: string): Target => ({ name, timeColumn: "Day", grain: "day" })
 
 const TRACE_SCOPES = "AttributeScope IN ('span', 'resource')"
 
@@ -58,6 +59,7 @@ const TARGETS: ReadonlyArray<Target> = [
 	hour("service_runtimes_hourly"),
 	// Shared with logs: the purged hours lose their log counts too.
 	hour("user_activity_hourly"),
+	day("user_activity_daily"),
 	hour("attribute_keys_hourly", TRACE_SCOPES),
 	hour("attribute_values_hourly", TRACE_SCOPES),
 	raw("product_events", "Source = 'trace'"),
@@ -144,7 +146,7 @@ const checkCoverage = () => {
 const floorTo = (date: Date, ms: number) => new Date(Math.floor(date.getTime() / ms) * ms)
 const ceilTo = (date: Date, ms: number) => new Date(Math.ceil(date.getTime() / ms) * ms)
 
-const GRAIN_MS = { raw: 1, minute: 60_000, hour: 3_600_000 } satisfies Record<Grain, number>
+const GRAIN_MS = { raw: 1, minute: 60_000, hour: 3_600_000, day: 86_400_000 } satisfies Record<Grain, number>
 
 const chTime = (date: Date) =>
 	`toDateTime64('${Str.replace("Z", "")(Str.replace("T", " ")(date.toISOString()))}', 3, 'UTC')`

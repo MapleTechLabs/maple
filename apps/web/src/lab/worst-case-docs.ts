@@ -61,6 +61,9 @@ export function sampleTraces(mode: WorstCaseMode): ReadonlyArray<ErrorIssueSampl
 			timestamp: new Date(NOW - n * 60_000).toISOString(),
 			exceptionMessage,
 			durationMicros: 30_000_000,
+			deploymentEnv: mode === "demo" ? "production" : "",
+			serviceVersion: mode === "demo" ? "2026.11.20-4f1c2a9" : "",
+			userId: "",
 		})
 	if (mode === "demo") return [sample(1, "api", "Bad Gateway"), sample(2, "api", "Bad Gateway")]
 	return [sample(1, LONG_SERVICE, PROXY_502), sample(2, "unknown_service:node", "")]
