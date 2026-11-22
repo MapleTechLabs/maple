@@ -16,6 +16,7 @@ describe("context setup prompt", () => {
 	test("a missing user alone never asks for a release", () => {
 		const prompt = contextSetupPrompt("checkout-api", { release: false, user: true })
 		expect(prompt).not.toContain("service.version")
+		expect(prompt).not.toContain("release")
 		expect(prompt).toContain("1. Set the span attribute `user.id`")
 		expect(
 			Arr.map(missingContextItems({ release: false, user: true }), (item) => item.attribute),
@@ -24,6 +25,8 @@ describe("context setup prompt", () => {
 	})
 
 	test("an unnamed service reads as this service", () => {
-		expect(contextSetupPrompt("", { release: true, user: false })).toContain("of this service")
+		const prompt = contextSetupPrompt("", { release: true, user: false })
+		expect(prompt).toContain("of this service")
+		expect(prompt).not.toContain("user")
 	})
 })

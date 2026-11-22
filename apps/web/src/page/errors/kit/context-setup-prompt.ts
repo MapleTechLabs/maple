@@ -54,6 +54,14 @@ const ITEMS: ReadonlyArray<ContextItem> = [
 export const missingContextItems = (missing: MissingContext): ReadonlyArray<ContextItem> =>
 	Arr.filter(ITEMS, (item) => missing[item.key])
 
+/** What the prompt's opening sentence says Maple gains, naming only what is missing. */
+const purposeOf = (missing: MissingContext): string =>
+	missing.release && missing.user
+		? "which release and which user each error comes from"
+		: missing.release
+			? "which release each error comes from"
+			: "which user each error comes from"
+
 /** A prompt a coding agent can act on in the service's repository, naming only what is missing. */
 export const contextSetupPrompt = (serviceName: string, missing: MissingContext): string => {
 	const service = serviceName === "" ? "this service" : `the ${serviceName} service`
@@ -71,7 +79,7 @@ export const contextSetupPrompt = (serviceName: string, missing: MissingContext)
 	]
 	return Arr.join(
 		[
-			`Add ${Arr.join(ATTRIBUTE_NAMES(missing), " and ")} to the OpenTelemetry instrumentation of ${service}, so Maple can show which release and which user each error comes from.`,
+			`Add ${Arr.join(ATTRIBUTE_NAMES(missing), " and ")} to the OpenTelemetry instrumentation of ${service}, so Maple can show ${purposeOf(missing)}.`,
 			"",
 			...Arr.map(steps, (step, index) => `${index + 1}. ${step}`),
 			`${steps.length + 1}. Keep the change small and follow the existing instrumentation setup. Do not add a second SDK or exporter.`,
