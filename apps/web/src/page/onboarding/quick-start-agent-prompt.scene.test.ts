@@ -3,7 +3,7 @@ import { click, Command, expect as expectView, given, Mount, role, scene, text }
 import { describe, expect, test } from "vitest"
 import { agentSetupPrompt } from "../kit/onboard-skill"
 import { ingestUrl } from "../../platform/ingest-url"
-import { apiBaseUrl } from "../../platform/api-base-url"
+import { apiPublicUrl } from "../../platform/api-base-url"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
@@ -45,7 +45,7 @@ const PROMPT = agentSetupPrompt(ingestUrl, "maple_pk_test")
 const HANDOFF = labHandoff()
 const PROMPT_WITH_CODE = agentSetupPrompt(ingestUrl, "maple_pk_test", {
 	code: HANDOFF.handoff_code,
-	apiUrl: apiBaseUrl,
+	apiUrl: apiPublicUrl,
 })
 
 /** Every copy is tracked with whether it carried a handoff code. */

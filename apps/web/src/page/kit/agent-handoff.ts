@@ -6,7 +6,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { trackProduct } from "../../data/analytics"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { ingestUrl } from "../../platform/ingest-url"
-import { apiBaseUrl } from "../../platform/api-base-url"
+import { apiPublicUrl } from "../../platform/api-base-url"
 import type { Resources } from "../../platform/resources"
 import { agentSetupPrompt } from "./onboard-skill"
 
@@ -197,7 +197,7 @@ export const update = (model: Model, message: Message): Step =>
 		SucceededMint: ({ publicKey, handoff }) =>
 			copyPrompt(
 				{ ...model, run: handoff.run, isTrackingUnavailable: false },
-				agentSetupPrompt(ingestUrl, publicKey, { code: handoff.handoff_code, apiUrl: apiBaseUrl }),
+				agentSetupPrompt(ingestUrl, publicKey, { code: handoff.handoff_code, apiUrl: apiPublicUrl }),
 				true,
 			),
 		FailedMint: ({ publicKey }) =>
