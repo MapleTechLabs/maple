@@ -400,6 +400,19 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			["acquisition"],
 			`Which utm_source brought the most visitors to ${MARKETING_HOST} ${span(threeWeeks)}, and how many distinct visitors came from it?`,
 			[answerMentions(topSource), answerNumber(`visitors from ${topSource}`, topSourceVisitors)],
+			[
+				{
+					tool: "query_data",
+					args: {
+						source: "product_events",
+						kind: "breakdown",
+						metric: "visitors",
+						group_by: "utm_source",
+						host: MARKETING_HOST,
+						...window(threeWeeks),
+					},
+				},
+			],
 		),
 		scenario(
 			"pricing-by-country",
@@ -418,12 +431,39 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			["properties"],
 			`Which properties does the report_exported event carry, and which value of its file format property was the most common ${span(fourWeeks)}?`,
 			[answerMentions("format"), answerMentions(topFormat)],
+			[
+				{
+					tool: "explore_attributes",
+					args: { source: "product_events", event_name: "report_exported", ...window(fourWeeks) },
+				},
+				{
+					tool: "explore_attributes",
+					args: {
+						source: "product_events",
+						event_name: "report_exported",
+						key: "format",
+						...window(fourWeeks),
+					},
+				},
+			],
 		),
 		scenario(
 			"plan-revenue",
 			["properties"],
 			`What do the amount properties of all plan_started events ${span(whole)} add up to, and how many plan_started events were there?`,
 			[answerNumber("total amount", revenue), answerNumber("plans started", plans.length)],
+			Arr.map(["sum", "count"], (metric) => ({
+				tool: "query_data",
+				args: {
+					source: "product_events",
+					kind: "breakdown",
+					metric,
+					...(metric === "sum" ? { value_attribute: "amount" } : undefined),
+					group_by: "event_name",
+					event_name: ["plan_started"],
+					...window(whole),
+				},
+			})),
 		),
 		scenario(
 			"signup-retention",

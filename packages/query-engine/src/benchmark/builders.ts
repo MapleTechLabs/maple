@@ -679,6 +679,36 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "product-events-explore",
+		name: "productEventsBreakdownQuery",
+		label: "visitors-by-session-dimension",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsBreakdownQuery({
+					metric: "visitors",
+					groupBy: "utm_source",
+					hosts: ["maple.dev"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsTimeseriesQuery",
+		label: "numeric-sum-by-country",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsTimeseriesQuery({
+					metric: "sum",
+					valueAttributeKey: "amount",
+					groupBy: ["country", "event_name"],
+					eventNames: ["plan_started"],
+					bucketSeconds: 3600,
+				}),
+				{ ...window, bucketSeconds: 3600 },
+			),
+	},
+	{
+		module: "product-events-explore",
 		name: "productEventsListQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.productEventsListQuery({ limit: 50, kinds: ["custom"] }), window),

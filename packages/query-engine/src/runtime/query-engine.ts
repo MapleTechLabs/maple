@@ -20,6 +20,7 @@ import {
 	type AttributeFilter,
 	type TracesNumericAggregation,
 	MAX_METRICS_GROUP_BY_KEYS,
+	PRODUCT_EVENTS_NUMERIC_METRICS,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -58,7 +59,7 @@ import {
 } from "../datetime"
 import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 import {
-	MAX_BREAKDOWN_RANGE_SECONDS,
+	maxBreakdownRangeSeconds,
 	MAX_LIST_RANGE_SECONDS,
 	MAX_QUERY_RANGE_SECONDS,
 	MAX_TIMESERIES_POINTS,
@@ -583,6 +584,21 @@ const validateProductEventsAttributeGrouping = Effect.fn(
 	})
 })
 
+/** A numeric metric aggregates a prop, so it has to be told which one. */
+const validateProductEventsNumericMetric = Effect.fn("QueryEngineService.validateProductEventsNumericMetric")(
+	function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+		if (query.source !== "product_events" || (query.kind !== "timeseries" && query.kind !== "breakdown"))
+			return
+		if (!Arr.contains(PRODUCT_EVENTS_NUMERIC_METRICS, query.metric)) return
+		const key = query.filters?.valueAttributeKey
+		if (key !== undefined && Str.trim(key)) return
+		return yield* new QueryEngineValidationError({
+			message: "Invalid product events numeric metric",
+			details: [`metric=${query.metric} requires filters.valueAttributeKey`],
+		})
+	},
+)
+
 const validatePointBudget = Effect.fn("QueryEngineService.validatePointBudget")(function* (
 	request: QueryEngineExecuteRequest,
 	range: TimeRangeBounds,
@@ -678,18 +694,23 @@ const validateBreakdownQuery = Effect.fn("QueryEngineService.validateBreakdownQu
 ): Effect.fn.Return<void, QueryEngineValidationError> {
 	if (request.query.kind !== "breakdown") return
 
-	if (range.rangeSeconds > MAX_BREAKDOWN_RANGE_SECONDS) {
+	const ceiling = maxBreakdownRangeSeconds(request.query.source)
+	if (range.rangeSeconds > ceiling) {
 		return yield* new QueryEngineValidationError({
 			message: "Breakdown query time range too large",
 			details: [
-				`Breakdown queries support a maximum range of ${formatRangeSeconds(MAX_BREAKDOWN_RANGE_SECONDS)}`,
+				`Breakdown queries support a maximum range of ${formatRangeSeconds(ceiling)}`,
 				"Narrow the time range or use a timeseries query for wider trends",
 			],
-			fittingRangeSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
+			fittingRangeSeconds: ceiling,
 		})
 	}
 
-	if (range.rangeSeconds > MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS && !hasNarrowingFilter(request)) {
+	if (
+		request.query.source !== "product_events" &&
+		range.rangeSeconds > MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS &&
+		!hasNarrowingFilter(request)
+	) {
 		return yield* new QueryEngineValidationError({
 			message: "Breakdown query too broad without filters",
 			details: [
@@ -812,7 +833,9 @@ function groupAllMetricsTimeSeriesRows<
 const executeRangeCeiling = (query: QuerySpec): number =>
 	query.kind === "timeseries" || (query.kind === "facets" && query.source === "services")
 		? MAX_TIMESERIES_RANGE_SECONDS
-		: MAX_QUERY_RANGE_SECONDS
+		: query.kind === "breakdown" && query.source === "product_events"
+			? Math.max(MAX_QUERY_RANGE_SECONDS, maxBreakdownRangeSeconds(query.source))
+			: MAX_QUERY_RANGE_SECONDS
 
 const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function* (
 	request: QueryEngineExecuteRequest,
@@ -821,6 +844,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
 	yield* validateProductEventsAttributeGrouping(request.query)
+	yield* validateProductEventsNumericMetric(request.query)
 	yield* validateLogsAttributeGrouping(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
@@ -838,6 +862,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 		yield* validateTraceAttributeFilters(request.source.query)
 		yield* validateMetricsAttributeFilters(request.source.query)
 		yield* validateProductEventsAttributeGrouping(request.source.query)
+		yield* validateProductEventsNumericMetric(request.source.query)
 		yield* validateLogsAttributeGrouping(request.source.query)
 	}
 	return range

@@ -11,6 +11,24 @@ an org that has events. The phase-1 query-set builders landed in
 `packages/query-engine/src/ch/queries/product-events-explore.ts`; the funnel queries stay in
 `product-events.ts`.
 
+## Added since (2026-11-22)
+
+The query-set source grew three things the MCP `query_data` tool exposes; the dashboard builder's
+own token lists (`AGGREGATIONS_BY_SOURCE`, `GROUP_BY_TOKENS`) do not offer them yet.
+
+- **`groups`** as a metric: `uniq(GroupId)`, the accounts behind the events.
+- **Numeric metrics** `sum`, `avg`, `min`, `max`, `p50`, `p95`, `p99` over a `track()` prop named by
+  `filters.valueAttributeKey` (`Attributes[key]` read with `toFloat64OrNull`; text, `NaN` and
+  infinity are no value; a group with none reads 0). The engine refuses one that names no prop.
+- **Session dimensions as group-bys**: `country`, `referrer_host`, `utm_source`, `utm_medium`,
+  `utm_campaign`, `device_type`, `browser`, `os`. They left-join one row per session from
+  `session_replays`, under the same window bound the session filters use, only when a group-by
+  reads one. An event with no session (every server-side event) groups as unset.
+
+A breakdown over `product_events` may cover 93 days and needs no narrowing filter
+(`maxBreakdownRangeSeconds`): both limits exist for spans, and an org's whole event table over a
+quarter is a smaller read than a day of them.
+
 ## Where it stood before this PR
 
 Dashboards knew three query-builder sources: `traces`, `logs`, `metrics`

@@ -4243,6 +4243,28 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
+-- builder:product-events-explore:productEventsBreakdownQuery:visitors-by-session-dimension  [6172598d]
+SELECT
+          coalesce(sd.utm_source, '') AS name,
+          uniqIf(product_events.VisitorId, product_events.VisitorId != '') AS value
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS SessionId,
+          max(session_replays.UtmSource) AS utm_source
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.Host IN ('maple.dev')
+        GROUP BY name
+        ORDER BY value DESC, name ASC
+        LIMIT 10
+        FORMAT JSON
+
 -- builder:product-events-explore:productEventsListQuery:default  [e62f8b65]
 SELECT
           product_events.Timestamp AS timestamp,
@@ -4280,6 +4302,29 @@ SELECT
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC, groupName ASC
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsTimeseriesQuery:numeric-sum-by-country  [c77539ac]
+SELECT
+          toStartOfInterval(product_events.Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          arrayStringConcat([coalesce(nullIf(coalesce(sd.country, ''), ''), '(none)'), coalesce(nullIf(product_events.EventName, ''), '(none)')], ' · ') AS groupName,
+          ifNull(sum(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL)), 0) AS value,
+          count() AS eventCount
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS SessionId,
+          max(session_replays.Country) AS country
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+        GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.EventName IN ('plan_started')
         GROUP BY bucket, groupName
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
