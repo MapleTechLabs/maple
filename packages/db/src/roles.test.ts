@@ -121,6 +121,7 @@ const gatewayStatements = [
 	"DELETE FROM cookieless_salts WHERE day < '2026-11-21'",
 	"DELETE FROM cookieless_visits WHERE last_seen_at < now() - interval '1 day'",
 	claimVisit("v", "t"),
+	"UPDATE cookieless_visits SET last_seen_at = now() WHERE org_id = 'o' AND visitor_id = 'v'",
 ]
 
 const outsideTheGateway = [

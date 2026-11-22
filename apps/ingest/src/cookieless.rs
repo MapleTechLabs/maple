@@ -16,6 +16,15 @@ use sha2::Sha256;
 /// What the SDK sends in `visitor_id` for a cookieless visitor.
 pub const COOKIELESS_VISITOR_ID: &str = "cookieless";
 
+/// `visitor_is_new` for a cookieless row: unknown, so neither the new nor the returning count.
+pub const VISITOR_IS_NEW_UNKNOWN: u8 = 2;
+
+/// How often one task extends a visitor's visit from heartbeats.
+pub const VISIT_TOUCH_INTERVAL_MS: i64 = 2 * 60_000;
+
+/// Bound on the in-process maps, which reset when full: a lost entry costs one extra write.
+const MAX_TRACKED_VISITORS: usize = 200_000;
+
 /// A session start more than this long after the visitor's last one is a new visit,
 /// matching the SDK's session idle timeout.
 pub const VISIT_IDLE_MS: i64 = 30 * 60_000;
@@ -72,15 +81,18 @@ pub fn is_cookieless(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
     obj.get("visitor_id").and_then(serde_json::Value::as_str) == Some(COOKIELESS_VISITOR_ID)
 }
 
-/// Replace the sentinel with `visitor` (`""` when none could be derived). A
-/// cookieless visitor is never "new": the gateway cannot tell across days.
+/// Replace the sentinel with `visitor` (`""` when none could be derived). Whether a
+/// cookieless visitor is new is unknown: the gateway cannot tell across days.
 pub fn apply(obj: &mut serde_json::Map<String, serde_json::Value>, visitor: Option<&str>) {
     obj.insert(
         "visitor_id".to_owned(),
         serde_json::Value::String(visitor.unwrap_or_default().to_owned()),
     );
     if obj.contains_key("visitor_is_new") {
-        obj.insert("visitor_is_new".to_owned(), serde_json::Value::from(0));
+        obj.insert(
+            "visitor_is_new".to_owned(),
+            serde_json::Value::from(VISITOR_IS_NEW_UNKNOWN),
+        );
     }
 }
 
@@ -96,15 +108,53 @@ pub struct LocalVisits {
 impl LocalVisits {
     /// Whether a session start at `now_ms` opens a new visit, extending it either way.
     pub fn claim(&mut self, org_id: &str, visitor_id: &str, now_ms: i64) -> bool {
-        let day = utc_day(now_ms);
-        if day != self.day {
-            self.day = day;
-            self.last_seen_ms.clear();
-        }
+        self.roll(now_ms);
         let previous = self
             .last_seen_ms
             .insert((org_id.to_owned(), visitor_id.to_owned()), now_ms);
         previous.is_none_or(|last| now_ms - last > VISIT_IDLE_MS)
+    }
+
+    /// Extend a visit from a heartbeat without opening one.
+    pub fn touch(&mut self, org_id: &str, visitor_id: &str, now_ms: i64) {
+        self.roll(now_ms);
+        if let Some(last) = self
+            .last_seen_ms
+            .get_mut(&(org_id.to_owned(), visitor_id.to_owned()))
+        {
+            *last = now_ms;
+        }
+    }
+
+    fn roll(&mut self, now_ms: i64) {
+        let day = utc_day(now_ms);
+        if day != self.day || self.last_seen_ms.len() >= MAX_TRACKED_VISITORS {
+            self.day = day;
+            self.last_seen_ms.clear();
+        }
+    }
+}
+
+/// Per-task throttle on heartbeat touches, so a busy visitor costs one write per interval.
+#[derive(Debug, Default)]
+pub struct TouchThrottle {
+    last_touch_ms: HashMap<(String, String), i64>,
+}
+
+impl TouchThrottle {
+    /// Whether a touch at `now_ms` is due, recording it when it is.
+    pub fn due(&mut self, org_id: &str, visitor_id: &str, now_ms: i64) -> bool {
+        if self.last_touch_ms.len() >= MAX_TRACKED_VISITORS {
+            self.last_touch_ms.clear();
+        }
+        let key = (org_id.to_owned(), visitor_id.to_owned());
+        match self.last_touch_ms.get(&key) {
+            Some(last) if now_ms - last < VISIT_TOUCH_INTERVAL_MS => false,
+            _ => {
+                self.last_touch_ms.insert(key, now_ms);
+                true
+            }
+        }
     }
 }
 
@@ -172,7 +222,7 @@ mod tests {
         apply(obj, Some("v-1"));
         assert_eq!(
             row,
-            serde_json::json!({ "visitor_id": "v-1", "visitor_is_new": 0 })
+            serde_json::json!({ "visitor_id": "v-1", "visitor_is_new": 2 })
         );
 
         let mut row = serde_json::json!({ "visitor_id": "cookieless" });
@@ -191,5 +241,25 @@ mod tests {
         assert!(visits.claim("org", "v", NOON + 35 * 60_000 + VISIT_IDLE_MS + 1));
         assert!(visits.claim("org_other", "v", NOON + 36 * 60_000));
         assert!(visits.claim("org", "v", NOON + DAY_MS));
+    }
+
+    #[test]
+    fn a_touch_keeps_an_active_visit_open_past_the_idle_window() {
+        let mut visits = LocalVisits::default();
+        assert!(visits.claim("org", "v", NOON));
+        visits.touch("org", "v", NOON + 25 * 60_000);
+        assert!(!visits.claim("org", "v", NOON + 40 * 60_000));
+        // A touch never opens a visit for a visitor with none.
+        visits.touch("org", "w", NOON);
+        assert!(visits.claim("org", "w", NOON + 60_000));
+    }
+
+    #[test]
+    fn touches_are_throttled_per_visitor() {
+        let mut throttle = TouchThrottle::default();
+        assert!(throttle.due("org", "v", NOON));
+        assert!(!throttle.due("org", "v", NOON + 60_000));
+        assert!(throttle.due("org", "w", NOON + 60_000));
+        assert!(throttle.due("org", "v", NOON + VISIT_TOUCH_INTERVAL_MS));
     }
 }
