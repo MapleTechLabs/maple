@@ -120,7 +120,7 @@ const resourceLinks = (locale: string): ReadonlyArray<MenuLink> => [
 	{ href: "/blog", label: () => m.nav_blog() },
 	{ href: "/changelog", label: () => m.nav_changelog() },
 	{ href: "/customers", label: () => m.nav_customers() },
-	{ href: "/roadmap", label: () => m.footer_roadmap() },
+	{ href: localized(locale, "/roadmap"), label: () => m.footer_roadmap() },
 	{ href: localized(locale, "/opentelemetry"), label: () => m.footer_opentelemetry() },
 ]
 
