@@ -10,6 +10,7 @@ import type { ErrorIssueSearch, ISSUE_TABS } from "../../../route/search"
 import type { DetailQuery } from "./command"
 import type { Model } from "./model"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import type { ChartEventMarker } from "@maple/views/charts/event-marker-spec"
 
 export type Search = typeof ErrorIssueSearch.Type
 
@@ -143,4 +144,39 @@ export const investigationPayload = (detail: ErrorIssueDetailResponse): V2Invest
 			serviceName: issue.serviceName || null,
 		},
 	}
+}
+
+/**
+ * The issue's history on its chart: first seen, the last fix and the last regression as lines,
+ * each incident as a band from open to resolve (or its last trigger while open). The chart keeps
+ * only what falls inside the window.
+ */
+export const occurrenceMarkersOf = (detail: ErrorIssueDetailResponse): ReadonlyArray<ChartEventMarker> => {
+	const { issue, incidents } = detail
+	const lines: ReadonlyArray<ChartEventMarker> = [
+		{ id: "first-seen", at: issue.firstSeenAt, label: "First seen", tone: "neutral" },
+		...(issue.lastResolvedAt === null
+			? []
+			: [{ id: "resolved", at: issue.lastResolvedAt, label: "Fixed", tone: "neutral" as const }]),
+		...(issue.lastRegressedAt === null
+			? []
+			: [{ id: "regressed", at: issue.lastRegressedAt, label: "Regressed", tone: "warn" as const }]),
+	]
+	const bands = Arr.map(incidents, (incident): ChartEventMarker => ({
+		id: `incident-${incident.id}`,
+		at: incident.firstTriggeredAt,
+		endsAt: incident.resolvedAt ?? incident.lastTriggeredAt,
+		label: "Incident",
+		tone: "crit",
+	}))
+	return [...bands, ...lines]
+}
+
+/** A bar's bucket as an absolute window: where a click on the occurrences chart zooms the page. */
+export const bucketRangeOf = (
+	bucket: string,
+	bucketMs: number,
+): Readonly<{ startMs: number; endMs: number }> | null => {
+	const startMs = toEpochMs(bucket)
+	return Number.isFinite(startMs) ? { startMs, endMs: startMs + bucketMs } : null
 }

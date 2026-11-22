@@ -1632,14 +1632,31 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:errors:errorIssueSampleTracesQuery:default  [79f165f1]
+-- builder:errors:errorIssueLatestStacktraceQuery:default  [5489bb6f]
+SELECT
+          error_events.Timestamp AS timestamp,
+          error_events.ExceptionStacktrace AS stacktrace
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events.ExceptionStacktrace != ''
+        ORDER BY timestamp DESC
+        LIMIT 1
+        FORMAT JSON
+
+-- builder:errors:errorIssueSampleTracesQuery:default  [60549ff7]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
           error_events.ServiceName AS serviceName,
           error_events.Timestamp AS timestamp,
           error_events.ExceptionMessage AS exceptionMessage,
-          intDiv(error_events.Duration, 1000) AS durationMicros
+          intDiv(error_events.Duration, 1000) AS durationMicros,
+          error_events.DeploymentEnv AS deploymentEnv,
+          error_events.ServiceVersion AS serviceVersion,
+          error_events.UserId AS userId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
@@ -15964,14 +15981,17 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:error_issue_sample_traces:default:baseline  [79f165f1]
+-- pipe:error_issue_sample_traces:default:baseline  [60549ff7]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
           error_events.ServiceName AS serviceName,
           error_events.Timestamp AS timestamp,
           error_events.ExceptionMessage AS exceptionMessage,
-          intDiv(error_events.Duration, 1000) AS durationMicros
+          intDiv(error_events.Duration, 1000) AS durationMicros,
+          error_events.DeploymentEnv AS deploymentEnv,
+          error_events.ServiceVersion AS serviceVersion,
+          error_events.UserId AS userId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))

@@ -347,10 +347,14 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 			timestamp: decodeIso("2026-07-15T09:18:00.000Z"),
 			exceptionMessage: "upstream timed out",
 			durationMicros: 1200,
+			deploymentEnv: "production",
+			serviceVersion: "",
+			userId: "",
 		}),
 	],
 	incidents: [errorIncidentFixture],
 	environments: [new ErrorIssueEnvironment({ name: "production", count: 12 })],
+	latestStacktrace: null,
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))

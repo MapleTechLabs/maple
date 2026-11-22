@@ -9,10 +9,10 @@ import { tabOf } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { headerActions, issueTabs } from "./view-header"
-import { statRailLoading } from "../../kit/stat-rail"
+import { statRail, statRailItemSkeleton } from "../../kit/stat-rail"
 import { issueField } from "./view-overview"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { strip } from "@maple/views/ui/rule"
+import { strip, stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -39,25 +39,40 @@ const overviewSkeleton = (h: H): Html =>
 				issueField(h, "Raised at", [skeleton(h, "h-4 w-[min(24rem,70%)]")]),
 			]),
 		]),
-		statRailLoading(h, 4, 4, "shrink-0"),
 		panel(h, { className: "shrink-0 overflow-hidden" }, [
-			panelHeader(h, { title: "Get it fixed" }),
+			statRail(
+				h,
+				{ columns: 4, isFlush: true, isBusy: true },
+				Arr.map([0, 1, 2, 3], () => statRailItemSkeleton(h)),
+			),
+			panelChartBody(h, [skeleton(h, "mb-2 h-3 w-28"), skeletonBlock(h, { height: "44" })]),
+		]),
+		panel(h, { className: "shrink-0 overflow-hidden" }, [
 			h.div(
-				[h.Class("grid divide-y xl:grid-cols-2 xl:divide-x xl:divide-y-0")],
+				[],
 				Arr.map([0, 1], (lane) =>
-					vstack(h, { gap: "3", className: "p-4", attributes: [h.Key(String(lane))] }, [
-						skeleton(h, "h-3 w-28"),
-						skeleton(h, "h-4 w-3/4"),
-						skeleton(h, "h-10 w-full"),
-						skeleton(h, "h-7 w-32"),
-					]),
+					hstack(
+						h,
+						{
+							gap: "3",
+							justify: "between",
+							className: stripClass("row", "py-3"),
+							attributes: [h.Key(String(lane))],
+						},
+						[
+							hstack(h, { gap: "3", className: "min-w-0 flex-1" }, [
+								skeleton(h, "size-8 rounded-md"),
+								vstack(h, { gap: "1.5", className: "min-w-0 flex-1" }, [
+									skeleton(h, "h-4 w-48"),
+									skeleton(h, "h-3 w-3/4"),
+								]),
+							]),
+							skeleton(h, "h-7 w-32"),
+						],
+					),
 				),
 			),
 			strip(h, { kind: "foot" }, [skeleton(h, "h-3 w-28")]),
-		]),
-		panel(h, { className: "shrink-0 overflow-hidden" }, [
-			panelHeader(h, { title: "Occurrences", scope: skeleton(h, "h-3 w-28") }),
-			panelChartBody(h, [skeletonBlock(h, { height: "44" })]),
 		]),
 	])
 

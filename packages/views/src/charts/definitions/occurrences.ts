@@ -9,6 +9,7 @@ import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
+import { chartEventMarkerMarks, placeMarkersInWindow } from "./event-markers"
 
 // The issue occurrence chart's definition: severity-coloured bars, one count per bucket on hover.
 
@@ -30,6 +31,13 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 	)
 	const yDomain = niceLinearDomain(linearYDomain({ rows: sorted, keys: ["count"] }))
 	const liftCount = minBarLength(yDomain)
+	const placed =
+		spec.markerColors === undefined
+			? []
+			: placeMarkersInWindow(
+					spec.markers ?? [],
+					Arr.map(sorted, (point) => point.bucket),
+				)
 	return {
 		definition: defineChart({
 			marks: [
@@ -39,6 +47,9 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 					fill: spec.color,
 					radius: 2,
 				}),
+				...(spec.markerColors === undefined
+					? []
+					: chartEventMarkerMarks(placed, yDomain, spec.markerColors)),
 			],
 			scales: {
 				x: axis.xBand,
@@ -56,7 +67,8 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 					},
 				},
 			},
-			margin: { top: 8, right: 4, bottom: 22, left: 44 },
+			// Room above the bars for a marker's label.
+			margin: { top: placed.length === 0 ? 8 : 16, right: 4, bottom: 22, left: 44 },
 			focus: "group-x",
 			focusRing: false,
 			tooltip: cursorTooltip("pointer"),

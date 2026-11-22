@@ -49,6 +49,9 @@ const WAREHOUSE_ROWS = new Map<string, ReadonlyArray<Record<string, unknown>>>([
 				timestamp: "2026-11-05 10:01:02",
 				exceptionMessage: "upstream timed out",
 				durationMicros: 1500,
+				deploymentEnv: "production",
+				serviceVersion: "",
+				userId: "",
 			},
 		],
 	],
@@ -360,9 +363,9 @@ describe("ErrorIssueReadModelsService", () => {
 				"11111111111111111111",
 				"3333333333333333333",
 			])
-			// Timeseries, samples and environments each ask for both hashes.
+			// Timeseries, samples, environments and the latest stack trace each ask for both hashes.
 			const issueReads = Arr.filter(sqls, (sql) => Str.includes("11111111111111111111")(sql))
-			assert.lengthOf(issueReads, 3)
+			assert.lengthOf(issueReads, 4)
 			for (const sql of issueReads) expect(sql).toContain("3333333333333333333")
 
 			// The volume-ranked list asks by hash; a merged-in one finds its owner.

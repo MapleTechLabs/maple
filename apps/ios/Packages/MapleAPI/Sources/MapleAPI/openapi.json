@@ -4583,7 +4583,7 @@
       },
       "ErrorIssueDetail": {
         "additionalProperties": false,
-        "description": "The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
+        "description": "The issue resource with its requested timeseries window, sample traces, incidents, the environments it was seen in, and its newest stack trace.",
         "properties": {
           "archived_at": {
             "type": "string"
@@ -4647,6 +4647,9 @@
             "type": "string"
           },
           "last_seen_at": {
+            "type": "string"
+          },
+          "latest_stacktrace": {
             "type": "string"
           },
           "lease_expires_at": {
@@ -4832,6 +4835,9 @@
       "ErrorIssueSampleTrace": {
         "additionalProperties": false,
         "properties": {
+          "deployment_environment": {
+            "type": "string"
+          },
           "duration_micros": {
             "type": "number"
           },
@@ -4839,6 +4845,9 @@
             "type": "string"
           },
           "service_name": {
+            "type": "string"
+          },
+          "service_version": {
             "type": "string"
           },
           "span_id": {
@@ -4849,6 +4858,9 @@
           },
           "trace_id": {
             "$ref": "#/components/schemas/_maple_TraceId"
+          },
+          "user_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -10835,7 +10847,7 @@
                 }
               }
             },
-            "description": "The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in."
+            "description": "The issue resource with its requested timeseries window, sample traces, incidents, the environments it was seen in, and its newest stack trace."
           },
           "400": {
             "content": {

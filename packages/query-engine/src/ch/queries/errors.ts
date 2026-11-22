@@ -1440,6 +1440,9 @@ export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limi
 			timestamp: $.Timestamp,
 			exceptionMessage: $.ExceptionMessage,
 			durationMicros: CH.intDiv($.Duration, 1000),
+			deploymentEnv: $.DeploymentEnv,
+			serviceVersion: $.ServiceVersion,
+			userId: $.UserId,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1449,6 +1452,25 @@ export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limi
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 25)
+		.format("JSON")
+}
+
+/** The newest occurrence in the window that carried a stack trace: the issue page's full trace. */
+export function errorIssueLatestStacktraceQuery(opts: IssueFingerprintsOpts) {
+	return from(Datasources.errorEvents)
+		.select(($) => ({
+			timestamp: $.Timestamp,
+			stacktrace: $.ExceptionStacktrace,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
+			$.ExceptionStacktrace.neq(""),
+		])
+		.orderBy(["timestamp", "desc"])
+		.limit(1)
 		.format("JSON")
 }
 

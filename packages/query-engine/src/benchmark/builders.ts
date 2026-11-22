@@ -1963,6 +1963,15 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "errors",
+		name: "errorIssueLatestStacktraceQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorIssueLatestStacktraceQuery({ fingerprintHashes: [FINGERPRINT] }), {
+				...window,
+			}),
+	},
+	{
+		module: "errors",
 		name: "errorIssueEnvironmentsQuery",
 		label: "default",
 		compile: () =>

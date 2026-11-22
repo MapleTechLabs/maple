@@ -11,19 +11,23 @@ import { sortedOccurrences } from "@maple/views/charts/definitions/occurrences"
 import { plotFrame } from "@maple/views/charts/plot-frame"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { emptyMessage } from "@maple/views/ui/empty"
-import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
+import { panelChartBody } from "@maple/views/ui/panel"
 import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import type { ChartWindow } from "./derive"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
+import { pressable } from "@maple/views/ui/pressable"
+import type { ChartEventMarker, MarkerColors } from "@maple/views/charts/event-marker-spec"
 
 type H = HtmlBuilder<Message>
 type Point = Readonly<{ bucket: string; count: number }>
 
 /** The tokens the chart reads off the theme: each severity's colour, and primary for unset. */
-export const OCCURRENCE_TOKENS = [...Rec.values(SEVERITY_TOKEN), "--primary"]
+export const OCCURRENCE_TOKENS = [...Rec.values(SEVERITY_TOKEN), "--primary", "--muted-foreground"]
 
-const formatBucket = (bucketMs: number): string => {
+/** A bucket width as a short label: "15m", "1h". */
+export const formatBucket = (bucketMs: number): string => {
 	const seconds = Math.round(bucketMs / 1000)
 	if (seconds < 60) return `${seconds}s`
 	if (seconds < 3600) return `${Math.round(seconds / 60)}m`
@@ -35,6 +39,8 @@ export type ChartInputs = Readonly<{
 	points: ReadonlyArray<Point>
 	color: string
 	timeZone: string
+	markers: ReadonlyArray<ChartEventMarker>
+	markerColors: MarkerColors
 }>
 
 /** The bars, or the dashed empty line when the window saw nothing. */
@@ -57,6 +63,8 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((
 					points: inputs.points,
 					color: inputs.color,
 					timeZone: inputs.timeZone,
+					markers: inputs.markers,
+					markerColors: inputs.markerColors,
 				}),
 				tooltipBody: (portal) =>
 					Option.flatMap(model.tooltip, (tooltip) =>
@@ -73,35 +81,66 @@ export const signalOf = (points: ReadonlyArray<Point>, window: ChartWindow) => {
 	return { dense, surge: surgeRatio(dense) }
 }
 
-export const occurrencePanel = (
-	h: H,
-	chart: Chart.Model,
-	points: ReadonlyArray<Point>,
-	severity: IssueSeverity | null,
-	window: ChartWindow,
-	theme: ThemeColors,
-	timeZone: string,
-): Html => {
-	const peak = Arr.reduce(points, 0, (max, point) => Math.max(max, point.count))
-	return panel(h, { className: "shrink-0 overflow-hidden" }, [
-		panelHeader(h, {
-			title: "Occurrences",
-			scope: typography(h, { size: "2xs", tone: "muted", mono: true, numeric: true }, [
-				`Peak ${formatNumber(peak)} / ${formatBucket(window.bucketMs)}`,
-			]),
-		}),
-		panelChartBody(h, [
-			h.submodel({
-				slotId: "issue-occurrence-chart",
-				model: chart,
-				view: chartView,
-				toParentMessage: (message) => Message.GotChartMessage({ message }),
-				viewInputs: {
-					points,
-					color: resolveColor(theme, severity === null ? "--primary" : SEVERITY_TOKEN[severity]),
-					timeZone,
-				},
-			}),
+/** The chart's caption: what a bar counts, the tallest one, and that a bar zooms in. */
+export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null): Html =>
+	hstack(h, { gap: "3", justify: "between", className: "mb-2" }, [
+		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
+			bucketMs === null ? "Occurrences" : `Occurrences per ${formatBucket(bucketMs)}`,
 		]),
+		typography(h, { size: "2xs", tone: "muted", numeric: true }, [
+			"Peak ",
+			peak,
+			" · click a bar to zoom in",
+		]),
+	])
+
+export type OccurrenceChartInputs = Readonly<{
+	points: ReadonlyArray<Point>
+	severity: IssueSeverity | null
+	window: ChartWindow
+	markers: ReadonlyArray<ChartEventMarker>
+	theme: ThemeColors
+	timeZone: string
+}>
+
+/** The occurrences chart under its caption: the body of the occurrences panel, below its stats. */
+export const occurrenceChart = (h: H, chart: Chart.Model, inputs: OccurrenceChartInputs): Html => {
+	const { points, theme } = inputs
+	const peak = Arr.reduce(points, 0, (max, point) => Math.max(max, point.count))
+	const plot = h.submodel({
+		slotId: "issue-occurrence-chart",
+		model: chart,
+		view: chartView,
+		toParentMessage: (message) => Message.GotChartMessage({ message }),
+		viewInputs: {
+			points,
+			color: resolveColor(
+				theme,
+				inputs.severity === null ? "--primary" : SEVERITY_TOKEN[inputs.severity],
+			),
+			timeZone: inputs.timeZone,
+			markers: inputs.markers,
+			markerColors: {
+				neutral: resolveColor(theme, "--muted-foreground"),
+				warn: resolveColor(theme, "--severity-warn"),
+				crit: resolveColor(theme, "--severity-error"),
+				label: resolveColor(theme, "--muted-foreground"),
+			},
+		},
+	})
+	return panelChartBody(h, [
+		chartCaption(h, formatNumber(peak), inputs.window.bucketMs),
+		// The chart tracks the hovered bar; a click zooms the page's window into it.
+		peak === 0
+			? plot
+			: pressable(
+					h,
+					{
+						onClick: Message.ClickedOccurrenceBar(),
+						label: "Zoom into the hovered bar's time range",
+						className: "block w-full cursor-zoom-in rounded-sm text-left",
+					},
+					[plot],
+				),
 	])
 }

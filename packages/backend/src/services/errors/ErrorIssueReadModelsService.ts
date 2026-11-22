@@ -516,6 +516,18 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
+		const stacktraceCompiled = CH.compile(CH.errorIssueLatestStacktraceQuery({ fingerprintHashes }), {
+			orgId,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
+		const stacktraceEffect = isErrorKind
+			? warehouse.compiledQuery(tenant, stacktraceCompiled, {
+					profile: "list",
+					context: "errorIssueLatestStacktrace",
+				})
+			: Effect.succeed([])
+
 		const incidentsEffect = dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIncidents)
@@ -526,10 +538,11 @@ const make: Effect.Effect<
 			),
 		)
 
-		const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
-			[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
-			{ concurrency: 4 },
+		const [timeseriesRows, sampleRows, environmentRows, stacktraceRows, incidentRows] = yield* Effect.all(
+			[timeseriesEffect, samplesEffect, environmentsEffect, stacktraceEffect, incidentsEffect],
+			{ concurrency: 5 },
 		)
+		const latestStacktrace = stacktraceRows[0]?.stacktrace ?? null
 		const issue = yield* workflow.hydrateIssue(orgId, issueRow)
 		const timeseries = Arr.map(
 			timeseriesRows,
@@ -549,6 +562,9 @@ const make: Effect.Effect<
 					timestamp: decodeIsoDateTimeStringSync(DateTime.formatIso(row.timestamp)),
 					exceptionMessage: row.exceptionMessage,
 					durationMicros: row.durationMicros,
+					deploymentEnv: row.deploymentEnv,
+					serviceVersion: row.serviceVersion,
+					userId: row.userId,
 				}),
 		)
 
@@ -563,6 +579,7 @@ const make: Effect.Effect<
 			sampleTraces,
 			incidents: Arr.map(incidentRows, rowToIncident),
 			environments,
+			latestStacktrace,
 		})
 	})
 
