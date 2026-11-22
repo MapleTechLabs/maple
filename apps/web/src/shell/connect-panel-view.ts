@@ -122,17 +122,22 @@ const credentials = (h: H, model: Model): Html =>
 									onToggle: Message.ClickedRevealPublicKey(),
 								},
 							}),
-							copyableField(h, {
-								id: "connect-private-key",
-								label: "Private key",
-								value: model.keys.privateKey,
-								copy: model.copies.privateKey,
-								toCopyMessage: toCopy("privateKey"),
-								masked: {
-									isVisible: model.isPrivateKeyVisible,
-									onToggle: Message.ClickedRevealPrivateKey(),
-								},
-							}),
+							// A member reads the public key only; the private field is left out for them.
+							...(model.keys.privateKey === null
+								? []
+								: [
+										copyableField(h, {
+											id: "connect-private-key",
+											label: "Private key",
+											value: model.keys.privateKey,
+											copy: model.copies.privateKey,
+											toCopyMessage: toCopy("privateKey"),
+											masked: {
+												isVisible: model.isPrivateKeyVisible,
+												onToggle: Message.ClickedRevealPrivateKey(),
+											},
+										}),
+									]),
 						]
 					: [fieldSkeleton(h, "Public key"), fieldSkeleton(h, "Private key")]),
 		],

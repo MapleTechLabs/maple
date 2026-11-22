@@ -1,4 +1,4 @@
-import { retrieveIngestKeys } from "../data/ingest-keys"
+import { retrieveSetupKeys } from "../data/ingest-keys"
 import { isOwnService } from "../page/kit/own-services"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { Effect, Schema, Array as Arr } from "effect"
@@ -25,10 +25,10 @@ export const CopyField = Schema.Literals([
 ])
 export type CopyField = typeof CopyField.Type
 
-/** `retainedQueryV2("ingestKeys", "retrieve")`: both keys from one admin-only read. */
+/** The setup keys: both for an engineer and up, the public key alone (`privateKey` null) for a member. */
 export const Keys = Schema.Union([
 	Schema.TaggedStruct("Loading", {}),
-	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.String }),
+	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) }),
 	Schema.TaggedStruct("Failed", {}),
 ])
 export type Keys = typeof Keys.Type
@@ -89,7 +89,11 @@ export const init = (): Model => ({
 
 export const Message = defineMessageUnion({
 	GotPopoverMessage: { message: Popover.Message },
-	SucceededLoadKeys: { orgId: Schema.String, publicKey: Schema.String, privateKey: Schema.String },
+	SucceededLoadKeys: {
+		orgId: Schema.String,
+		publicKey: Schema.String,
+		privateKey: Schema.NullOr(Schema.String),
+	},
 	FailedLoadKeys: { orgId: Schema.String },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
 	SucceededLoadOverview: {
@@ -110,12 +114,12 @@ export const FetchKeys = Command.define("FetchConnectIngestKeys", {
 	args: { orgId: Schema.String },
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
 	execute: ({ orgId }) =>
-		retrieveIngestKeys.pipe(
+		retrieveSetupKeys.pipe(
 			Effect.map((keys) =>
 				Message.SucceededLoadKeys({
 					orgId,
-					publicKey: keys.public_key,
-					privateKey: keys.private_key,
+					publicKey: keys.publicKey,
+					privateKey: keys.privateKey,
 				}),
 			),
 			Effect.orElseSucceed(() => Message.FailedLoadKeys({ orgId })),
@@ -186,9 +190,8 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	}
 	if (!isOpening || context.orgId === null) return { model: { ...model, popover: next.model }, commands }
 	const orgId = context.orgId
-	const isSameOrg = model.orgId === orgId
-	// The retained keys answer a reopen in the same org; a failure or another org reads again.
-	const keys: Keys = isSameOrg ? model.keys : { _tag: "Loading" }
+	// Every open reads the keys again: a key rolled in Settings since the last open must never be copied.
+	const keys: Keys = { _tag: "Loading" }
 	return {
 		model: {
 			...model,
@@ -200,11 +203,7 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 			isOverviewInFlight: false,
 			isOverviewFailed: false,
 		},
-		commands: [
-			...commands,
-			...(keys._tag === "Ready" ? [] : [FetchKeys({ orgId })]),
-			ResolveWindow({ orgId }),
-		],
+		commands: [...commands, FetchKeys({ orgId }), ResolveWindow({ orgId })],
 	}
 }
 

@@ -104,6 +104,40 @@ describe("connect panel scene", () => {
 		)
 	})
 
+	test("a member copies the public key, and sees no private key field", () => {
+		scene(
+			config,
+			given(init()),
+			...opened,
+			Command.resolve(
+				FetchKeys({ orgId: ORG }),
+				Message.SucceededLoadKeys({
+					orgId: ORG,
+					publicKey: "maple_pk_0123456789abcdef",
+					privateKey: null,
+				}),
+			),
+			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
+			Command.resolve(
+				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
+				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
+			),
+			expect(selector("#connect-private-key")).toBeAbsent(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.expectExact(
+				CopyButton.WriteClipboard({
+					text: agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef"),
+					generation: 1,
+				}),
+			),
+			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
+		)
+	})
+
 	test("a member who cannot read the keys gets the settings note", () => {
 		scene(
 			config,
@@ -227,10 +261,10 @@ describe("connect panel update", () => {
 		expectVitest(update(stale.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 	})
 
-	test("a reopen in the same org keeps the keys it read and does not read them again", () => {
+	test("a reopen reads the keys again, so a key rolled since the last open is never copied", () => {
 		const ready = update(
 			open(init()).model,
-			Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk", privateKey: "sk" }),
+			Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk_old", privateKey: "sk" }),
 			context,
 		)
 		const closed = update(
@@ -244,8 +278,8 @@ describe("connect panel update", () => {
 			reopened.commands === undefined
 				? undefined
 				: Arr.map(reopened.commands, (command) => command.name),
-		).not.toContain("FetchConnectIngestKeys")
-		expectVitest(reopened.model.keys._tag).toBe("Ready")
+		).toContain("FetchConnectIngestKeys")
+		expectVitest(reopened.model.keys._tag).toBe("Loading")
 	})
 
 	test("navigating away closes an open panel and stops its poll", () => {
