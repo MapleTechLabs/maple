@@ -47,7 +47,7 @@ export const V2OnboardingAgentRun = Schema.Struct({
 	}),
 	status: OnboardingAgentRunStatus.annotate({
 		description:
-			"`waiting_for_agent` until the first report, `in_progress` after it, `completed` or `failed` once the agent says so. `expired` when no agent reported before the handoff code expired, a day after the run started, or once a newer run replaced it.",
+			"`waiting_for_agent` until the first report, `in_progress` after it, `completed` or `failed` once the agent says so. `expired` when no agent signed in with the code before it lapsed, a day after the run started, or once a newer run replaced it.",
 		examples: ["in_progress"],
 	}),
 	created_at: Timestamp.annotate({ description: "When the prompt was copied." }),
