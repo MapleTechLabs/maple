@@ -11586,13 +11586,35 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:default  [8247554d]
+-- builder:user-activity:userOperationsQuery:default  [a591efdb]
+SELECT
+          traces.ServiceName AS serviceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          count() AS requestCount,
+          countIf(traces.StatusCode = 'Error') AS errorCount,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+        GROUP BY serviceName, spanName
+        ORDER BY requestCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:default  [78457797]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
@@ -11609,13 +11631,13 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:notable  [9c6e1711]
+-- builder:user-activity:userTracesQuery:notable  [d063f52b]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
