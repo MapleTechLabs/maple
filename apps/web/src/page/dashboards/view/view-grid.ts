@@ -129,6 +129,7 @@ const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {
 	return h.div(
 		[
 			h.DataAttribute("dashboard-grid", ""),
+			...(ctx.model.keyboardMove === null ? [] : [h.DataAttribute("keyboard-moving", "")]),
 			h.OnMount(WatchGridHandles()),
 			h.Style({
 				display: "grid",

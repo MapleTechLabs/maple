@@ -1,5 +1,13 @@
 import { Schema } from "effect"
-import { FunnelKeyBy, FunnelStep } from "@maple/query-model"
+import {
+	FunnelExclusion,
+	FunnelKeyBy,
+	FunnelStep,
+	PathsAnchor,
+	PathsDirection,
+	RetentionInterval,
+	RetentionKeyBy,
+} from "@maple/query-model"
 import {
 	AiSessionListItem,
 	AiToolErrorBreakdownItem,
@@ -157,6 +165,14 @@ export const QueryFunnelStepRow = Schema.Struct({
 	/** Conversion from the previous step, 0-1; null on step 1 or when the previous step counted nobody. */
 	ofPrevious: Schema.NullOr(Schema.Number),
 	dropOff: Schema.Number,
+	/** With `details`, steps 2..N: milliseconds from the previous step's event, median and p90. */
+	p50Ms: Schema.optionalKey(Schema.Number),
+	p90Ms: Schema.optionalKey(Schema.Number),
+	/** With `details`, steps 2..N: milliseconds from step 1's event. */
+	sinceStartP50Ms: Schema.optionalKey(Schema.Number),
+	sinceStartP90Ms: Schema.optionalKey(Schema.Number),
+	/** With `details`, steps 2..N: what the people who stopped before this step did next; `''` is nothing. */
+	leavers: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number }))),
 })
 
 export const QueryFunnelOutput = Schema.Struct({
@@ -180,8 +196,105 @@ export const QueryFunnelOutput = Schema.Struct({
 	),
 	/** The steps as given, so a follow-up call can repeat the funnel. */
 	definition: Schema.Array(FunnelStep),
-	/** Set when the identity `keyBy` counts by is empty on the events, so the funnel collapses. */
+	/** The exclusions as given, when there were any. */
+	exclusions: Schema.optionalKey(Schema.Array(FunnelExclusion)),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	/** Set when a step's events lack the identity `keyBy` counts by, so the step reads as empty. */
 	identityNote: Schema.optionalKey(Schema.String),
+	/** The key every step's events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
+	/** Set when the window reaches past what sessions are kept and the funnel reads them. */
+	sessionNote: Schema.optionalKey(Schema.String),
+	/** Set when `details` was asked for and could not be read. */
+	detailsNote: Schema.optionalKey(Schema.String),
+})
+
+export const QueryPathsOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	anchor: PathsAnchor,
+	direction: PathsDirection,
+	depth: Schema.Number,
+	keyBy: FunnelKeyBy,
+	windowSeconds: Schema.Number,
+	/** Everyone who reached the anchor in the window. */
+	total: Schema.Number,
+	/** Set when a session filter is used and the window starts before sessions are kept. */
+	sessionNote: Schema.optionalKey(Schema.String),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	/** One entry per hop away from the anchor, nearest first. */
+	hops: Schema.Array(
+		Schema.Struct({
+			hop: Schema.Number,
+			/** The nodes of this column, most visited first: `''` is "nothing followed", `$other` the folded rest. */
+			nodes: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
+			/** The hop's transitions, most common first. */
+			edges: Schema.Array(
+				Schema.Struct({ from: Schema.String, to: Schema.String, count: Schema.Number }),
+			),
+		}),
+	),
+})
+
+export const QueryCohortOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	keyBy: RetentionKeyBy,
+	did: PathsAnchor,
+	didNot: Schema.optionalKey(PathsAnchor),
+	/** `ever`: never, up to the window's end. `window`: not inside the window. Only with `didNot`. */
+	didNotScope: Schema.optionalKey(Schema.Literals(["ever", "window"])),
+	/** Everyone who did `did` in the window, whether they also did `didNot` or not. */
+	didTotal: Schema.Number,
+	/** The cohort's size: those of `didTotal` that did not do `didNot`. */
+	total: Schema.Number,
+	limit: Schema.Number,
+	/** Set when nobody is counted because the events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
+	/** The members listed, the one who did it last first; `total` counts all of them. */
+	members: Schema.Array(
+		Schema.Struct({
+			id: Schema.String,
+			firstAt: Schema.String,
+			lastAt: Schema.String,
+			count: Schema.Number,
+		}),
+	),
+})
+
+export const QueryRetentionOutput = Schema.Struct({
+	/** The cohort window: who first did the start event inside it. */
+	timeRange: OutputTimeRange,
+	/** Returns were read up to here. */
+	returnsThrough: Schema.String,
+	keyBy: RetentionKeyBy,
+	interval: RetentionInterval,
+	periods: Schema.Number,
+	firstEver: Schema.Boolean,
+	/** What put a key in a cohort and what counted as coming back, as given; absent means any event. */
+	start: Schema.optionalKey(PathsAnchor),
+	return: Schema.optionalKey(PathsAnchor),
+	cohorts: Schema.Array(
+		Schema.Struct({
+			/** The cohort interval's first day, `YYYY-MM-DD` (UTC). */
+			cohort: Schema.String,
+			size: Schema.Number,
+			/** `returned[n - 1]`: keys of the cohort with a return event in the n-th interval after it. */
+			returned: Schema.Array(Schema.Number),
+			/** Intervals after the cohort's own that have fully passed; later ones are still open or ahead. */
+			completePeriods: Schema.Number,
+			/** Intervals after the cohort's own that have started. */
+			startedPeriods: Schema.Number,
+		}),
+	),
+	/** Per period, the share of everyone in a cohort old enough to have finished it; null when none is. */
+	overall: Schema.Array(Schema.NullOr(Schema.Number)),
+	/** Set when there are no cohorts because the start events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
 })
 
 export const ProductEventKind = Schema.Literals(["custom", "navigation", "screen"])
@@ -196,6 +309,8 @@ export const ListProductEventsOutput = Schema.Struct({
 			count: Schema.Number,
 			sessions: Schema.Number,
 			persons: Schema.Number,
+			/** Distinct accounts (`GroupId`) the event fired for; 0 when it carries none. */
+			groups: Schema.Number,
 		}),
 	),
 	/** The kind filter, when one applied. */

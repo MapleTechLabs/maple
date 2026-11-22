@@ -269,13 +269,13 @@ const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: Re
 	summary === "loading"
 		? statRail(
 				h,
-				{ columns: 4, isFlush: true, isBusy: true },
+				{ columns: 4, isFlush: true, isBusy: true, isOnPageGutter: true },
 				Arr.map(SUMMARY_EYEBROWS, () => statRailItemSkeleton(h)),
 			)
 		: summary === "failed"
 			? statRail(
 					h,
-					{ columns: 4, isFlush: true },
+					{ columns: 4, isFlush: true, isOnPageGutter: true },
 					Arr.map(SUMMARY_EYEBROWS, (eyebrow) =>
 						statRailItem(h, {
 							eyebrow,
@@ -287,7 +287,7 @@ const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: Re
 				)
 			: statRail(
 					h,
-					{ columns: 4, isFlush: true },
+					{ columns: 4, isFlush: true, isOnPageGutter: true },
 					Arr.map(summaryItems(summary, scope), (item) =>
 						statRailItem(h, {
 							eyebrow: item.eyebrow,
@@ -309,7 +309,7 @@ export const usersToolbar = <M>(
 	h: HtmlBuilder<M>,
 	options: Pick<UsersListOptions<M>, "filters" | "onSearch" | "onClearSearch" | "groupBy" | "onGroupBy">,
 ): Html =>
-	hstack(h, { gap: "2", wrap: true, justify: "between", className: "px-6 py-3" }, [
+	hstack(h, { gap: "2", wrap: true, justify: "between", className: "px-(--page-gutter) py-3" }, [
 		searchInput(h, {
 			id: "users-search",
 			value: options.filters.search,
@@ -547,7 +547,7 @@ export const usersListBody = <M>(
 		summaryRail(h, summary, options.scope),
 		usersToolbar(h, options),
 		h.section(
-			[h.AriaLabel("Users"), h.Class("min-w-0 px-6 pb-6")],
+			[h.AriaLabel("Users"), h.Class("min-w-0 px-(--page-gutter) pb-(--page-gutter)")],
 			[
 				toolTable(
 					h,
@@ -719,7 +719,7 @@ export const usersGroupsBody = <M>(
 		summaryRail(h, summary, options.scope),
 		usersToolbar(h, options),
 		h.section(
-			[h.AriaLabel("Groups"), h.Class("min-w-0 px-6 pb-6")],
+			[h.AriaLabel("Groups"), h.Class("min-w-0 px-(--page-gutter) pb-(--page-gutter)")],
 			[
 				toolTable(
 					h,

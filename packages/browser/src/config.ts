@@ -104,7 +104,12 @@ export interface MapleBrowserConfig extends SignalOptions {
 		 * `"memory"` keeps everything in memory: no cookies, localStorage,
 		 * sessionStorage or IndexedDB, and no visitor id. Each page load is a new
 		 * session, so a reload splits a replay, and `transport.offline` keeps
-		 * nothing. Default `"browser"`.
+		 * nothing. `"cookieless"` also stores nothing on the device, but the
+		 * ingest gateway derives a visitor id that changes every UTC day, from a
+		 * salt it deletes after two days: unique visitors are counted within a
+		 * day, not across days, and new vs returning is unavailable. Consent, GPC,
+		 * `respectDoNotTrack` and `persistVisitorId: false` still turn that id off. `"memory"` wins if
+		 * two SDKs on the page disagree. Default `"browser"`.
 		 */
 		readonly persistence?: Persistence
 		/**

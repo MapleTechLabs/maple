@@ -249,6 +249,11 @@ export function optOutOfVisitorId(): void {
 	purgeVisitorId()
 }
 
+/** Whether any SDK on the page set `persistVisitorId: false`. */
+export function isVisitorOptedOut(): boolean {
+	return visitorState().optedOut
+}
+
 /** Drop the id and the visit claim from memory and every store. */
 export function purgeVisitorId(): void {
 	const state = visitorState()

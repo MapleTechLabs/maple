@@ -25,6 +25,7 @@ import { OrganizationService } from "@maple/backend/services/org/OrganizationSer
 import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -214,7 +215,7 @@ const makeLayer = (world: World, testDb: TestDb) => {
 		Layer.provideMerge(
 			Layer.mergeAll(
 				stubs(world),
-				OnboardingService.layer,
+				OnboardingService.layer.pipe(Layer.provide(ProductEventsService.noop)),
 				ApiKeysService.layer,
 				VcsRepository.layer,
 				EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
@@ -394,7 +395,12 @@ describe("first-data stamping on an org without onboarding state", () => {
 	const stampFirstData = Effect.gen(function* () {
 		const onboarding = yield* OnboardingService
 		const organizations = yield* OrganizationService
-		return yield* onboarding.recordFirstDataReceived(ORG, readOrgCreatedAt(organizations, ORG))
+		return yield* onboarding.recordFirstDataReceived(
+			ORG,
+			readOrgCreatedAt(organizations, ORG),
+			{ signals: ["traces"], firstSeenMs: null, windowStartMs: 0 },
+			null,
+		)
 	})
 
 	it.effect("dates the new row by the org's real creation time, so the window stays closed", () => {

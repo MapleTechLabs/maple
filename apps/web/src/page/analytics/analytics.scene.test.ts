@@ -53,6 +53,7 @@ const summary: Summary = {
 	newSessions: 101,
 	bouncedSessions: 31,
 	identifiedSessions: 181,
+	unknownHistorySessions: 0,
 	avgDurationMs: 262_000,
 	botSessions: 0,
 	botShare: null,

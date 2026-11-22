@@ -1431,7 +1431,10 @@ export interface ErrorIssueSampleTracesOutput {
 	readonly durationMicros: number
 }
 
-export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
+/** `withUserId: false` projects an empty user for a cluster without migration 0057's `UserId`. */
+export function errorIssueSampleTracesQuery(
+	opts: IssueFingerprintsOpts & { limit?: number; withUserId?: boolean },
+) {
 	return from(Datasources.errorEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -1440,6 +1443,9 @@ export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limi
 			timestamp: $.Timestamp,
 			exceptionMessage: $.ExceptionMessage,
 			durationMicros: CH.intDiv($.Duration, 1000),
+			deploymentEnv: $.DeploymentEnv,
+			serviceVersion: $.ServiceVersion,
+			userId: opts.withUserId === false ? CH.lit("") : $.UserId,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1449,6 +1455,25 @@ export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limi
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 25)
+		.format("JSON")
+}
+
+/** The newest occurrence in the window that carried a stack trace: the issue page's full trace. */
+export function errorIssueLatestStacktraceQuery(opts: IssueFingerprintsOpts) {
+	return from(Datasources.errorEvents)
+		.select(($) => ({
+			timestamp: $.Timestamp,
+			stacktrace: $.ExceptionStacktrace,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lte(utcSecondsParam("endTime")),
+			$.ExceptionStacktrace.neq(""),
+		])
+		.orderBy(["timestamp", "desc"])
+		.limit(1)
 		.format("JSON")
 }
 

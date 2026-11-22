@@ -348,10 +348,14 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 			timestamp: decodeIso("2026-07-15T09:18:00.000Z"),
 			exceptionMessage: "upstream timed out",
 			durationMicros: 1200,
+			deploymentEnv: "production",
+			serviceVersion: "",
+			userId: "",
 		}),
 	],
 	incidents: [errorIncidentFixture],
 	environments: [new ErrorIssueEnvironment({ name: "production", count: 12 })],
+	latestStacktrace: null,
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))
@@ -2464,7 +2468,7 @@ describe("v2 users wire mapping over HTTP", () => {
 					timestamp: "2026-11-01T08:10:00.000Z",
 					service_name: "maple-mcp",
 					title: "109 tool calls from claude-code",
-					detail: "maple-mcp · 127 tools · 113 failed",
+					detail: "maple-mcp · 127 distinct tools · 113 failed",
 					tone: "crit",
 					mcp_session_id: "mcp_sess_ada",
 				},

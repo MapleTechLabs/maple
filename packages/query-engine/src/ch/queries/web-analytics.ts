@@ -316,6 +316,8 @@ export function replaysWhere(
 	$: ReplaysAccessor,
 	filters: WebAnalyticsFilters,
 	exclude?: WebAnalyticsFacetKey,
+	/** Read sessions that started from here on instead of from `startTime`. */
+	sessionsFrom?: CH.Expr<DateTime.Utc>,
 ): Array<CH.Condition | undefined> {
 	// `host` and `pagePath` both narrow through one navigation semi-join rather
 	// than two, so a page filter and a site filter compose into "sessions that
@@ -337,7 +339,7 @@ export function replaysWhere(
 
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.gte(sessionsFrom ?? param.dateTime("startTime")),
 		$.StartTime.lte(param.dateTime("endTime")),
 		navigationFilter,
 		exclude === "referrerHost"
@@ -459,6 +461,8 @@ export interface WebAnalyticsSummaryOutput {
 	readonly bouncedSessions: number
 	/** Sessions carrying a VisitorId, i.e. the analytics-block coverage numerator. */
 	readonly identifiedSessions: number
+	/** Cookieless sessions: their visitor history is unknown, so neither new nor returning. */
+	readonly unknownHistorySessions: number
 	/** Mean wall-clock session duration in ms over sessions that ended. */
 	readonly avgDurationMs: number
 	/**
@@ -502,6 +506,9 @@ export interface WebAnalyticsSummaryOutput {
  * start row survived — the same class of error the `avgDurationMs` predicate
  * already guards against.
  */
+/** `VisitorIsNew` the gateway writes for cookieless visitors, whose history it cannot know. */
+export const VISITOR_IS_NEW_UNKNOWN = 2
+
 export function webAnalyticsSummaryQuery(
 	filters: WebAnalyticsFilters = {},
 ): CHQuery<ColumnDefs, WebAnalyticsSummaryOutput> {
@@ -514,6 +521,10 @@ export function webAnalyticsSummaryQuery(
 				CH.uniqIf($.SessionId, $.PageViews.gt(1).and($.VisitorId.neq(""))),
 			),
 			identifiedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")),
+			unknownHistorySessions: CH.uniqIf(
+				$.SessionId,
+				$.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN).and($.VisitorId.neq("")),
+			),
 			botSessions: CH.uniqIf($.SessionId, isBotCond($.UserAgent)),
 			// avgIf over the ended rows only: the v1 row's DurationMs is NULL, and
 			// including it would average NULLs into the result.
@@ -584,6 +595,8 @@ export interface WebAnalyticsTimeseriesOutput {
 	readonly bouncedSessions: number
 	/** The per-bucket coverage denominator, and the bounce-rate denominator. */
 	readonly identifiedSessions: number
+	/** Cookieless sessions: their visitor history is unknown, so neither new nor returning. */
+	readonly unknownHistorySessions: number
 	readonly avgDurationMs: number
 }
 
@@ -621,6 +634,10 @@ export function webAnalyticsTimeseriesQuery(
 				CH.uniqIf($.SessionId, $.PageViews.gt(1).and($.VisitorId.neq(""))),
 			),
 			identifiedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")),
+			unknownHistorySessions: CH.uniqIf(
+				$.SessionId,
+				$.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN).and($.VisitorId.neq("")),
+			),
 			// avgIf over the ended rows only — same as the summary: the v1 row's
 			// DurationMs is NULL and would average in as a NULL.
 			avgDurationMs: CH.round_(

@@ -8,12 +8,13 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
 import { detailRailGroup, detailRailRow, detailRailStats } from "@maple/views/ui/detail-rail"
-import { badge } from "@maple/views/ui/display"
+import { badge, separator } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -24,6 +25,8 @@ import {
 } from "@maple/views/ui/empty"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { browserIconFor, osIconFor } from "../replays/kit/sessions-parts"
 import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { meter } from "@maple/views/ui/meter"
 import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
@@ -50,9 +53,11 @@ import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
-import { namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
+import { foldRepeats, namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/issue-workflow"
 import { userAvatar } from "./view-kit"
+import { sectionHeading } from "../kit/section-heading"
+import { activityCalendar, type ActivityCalendarOptions } from "./activity-calendar"
 
 // `/users/$userId`: one end user's identity, then everything Maple holds for them, by tab.
 
@@ -75,6 +80,8 @@ export type UserDetailOptions<M> = Readonly<{
 	onSelectTab: (tab: UserTab) => M
 	/** Drawn in place of the tab's rows while they load or after their read failed. */
 	tabContent?: Html | undefined
+	/** The Activity tab's calendar over the last year; none draws no card. */
+	calendar?: Omit<ActivityCalendarOptions, "nowMs"> | undefined
 }>
 
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -237,7 +244,7 @@ const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
 }
 
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
-	statRail(h, { columns: 5, isFlush: true, className: "[&>*]:px-(--page-gutter)" }, [
+	statRail(h, { columns: 5, isFlush: true, isOnPageGutter: true }, [
 		statRailItem(h, {
 			eyebrow: "Sessions",
 			value: formatNumber(profile.sessions),
@@ -259,7 +266,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 						: profile.failedRate === null
 							? "failure rate not available"
 							: `${formatPercent(profile.failedRate)} failed`,
-			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
+			tone: profile.failedRate === null ? "neutral" : errorRateLevel(profile.failedRate),
 			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,
 		}),
@@ -421,10 +428,63 @@ const groupSection = <M>(
 				]),
 			]
 
-const MOBILE_OS = /ios|android|ipados/i
+/** The browser's mark, or none for a browser without one (the globe fallback says nothing). */
+const browserIconOf = (browser: string): IconName | undefined => {
+	const name = browserIconFor(browser)
+	return name === "GlobeIcon" ? undefined : name
+}
 
-/** A phone for a mobile OS, a computer otherwise. */
-const deviceIcon = (os: string): IconName => (MOBILE_OS.test(os) ? "MobileIcon" : "MonitorIcon")
+const VERSION = /\s+v?(\d+)[\d.]*$/
+
+/**
+ * A browser or OS as its mark and major version ("Chrome 130" is the Chrome mark and 130); the name
+ * when it has no mark. `isNamedWithoutVersion` puts the name beside a versionless mark, for the OS,
+ * whose Apple mark covers both macOS and iOS.
+ */
+const platformMark = <M>(
+	h: HtmlBuilder<M>,
+	mark: IconName | undefined,
+	name: string,
+	isNamedWithoutVersion: boolean,
+): Html => {
+	if (mark === undefined)
+		return typography(h, { size: "xs", tone: "soft", truncate: true, as: "span" }, [name])
+	const version = VERSION.exec(name)?.[1]
+	const detail = version ?? (isNamedWithoutVersion ? name : undefined)
+	return hstack(h, { gap: "1", as: "span", inline: true }, [
+		icon(h, mark, { className: "size-3.5", attributes: [h.AriaHidden(true)] }),
+		...(detail === undefined
+			? []
+			: [typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [detail])]),
+	])
+}
+
+/**
+ * One pill for the browser and the OS it ran on, since they describe one device; named on hover
+ * and on focus. A device with only one half known draws that half alone.
+ */
+const deviceBadge = <M>(h: HtmlBuilder<M>, device: Readonly<{ browser: string; os: string }>): Html => {
+	const browser =
+		device.browser === "" ? [] : [platformMark(h, browserIconOf(device.browser), device.browser, false)]
+	const os = device.os === "" ? [] : [platformMark(h, osIconFor(device.os), device.os, true)]
+	const name = Arr.join(
+		Arr.filter([device.browser, device.os], (part) => part !== ""),
+		" on ",
+	)
+	return badge(
+		h,
+		{
+			variant: "outline",
+			size: "lg",
+			pill: true,
+			className: "cursor-default gap-2",
+			attributes: [h.AriaLabel(name), h.Role("img"), h.Tabindex(0), ...tooltipTrigger(h, name)],
+		},
+		Arr.isReadonlyArrayEmpty(browser) || Arr.isReadonlyArrayEmpty(os)
+			? [...browser, ...os]
+			: [...browser, separator(h, "vertical", "h-3"), ...os],
+	)
+}
 
 /** The right rail: identity, the user's group, where their activity lives, traits and devices. */
 export const userRail = <M>(
@@ -515,11 +575,12 @@ export const userRail = <M>(
 				Arr.isReadonlyArrayEmpty(profile.devices)
 					? [typography(h, { size: "xs", tone: "subtle" }, ["no recorded sessions"])]
 					: Arr.map(profile.devices, (device) =>
-							detailRailRow(
-								h,
-								{ icon: deviceIcon(device.os), label: device.browser, hint: device.os },
-								[railNumber(h, countLabel(device.sessions, "session"))],
-							),
+							hstack(h, { gap: "2", className: "min-h-8 min-w-0" }, [
+								hstack(h, { as: "span", className: "min-w-0 flex-1" }, [
+									deviceBadge(h, device),
+								]),
+								railNumber(h, countLabel(device.sessions, "session")),
+							]),
 						),
 			),
 		],
@@ -698,11 +759,11 @@ const KIND_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in ActivityKind]: IconName }
 
-/** Each kind keeps its own colour, so a day of mixed rows reads by kind before any text. */
+/** Only the kinds that ask for a look get a colour (errors, replays, MCP); the routine ones stay neutral. */
 const KIND_TONE = {
 	error: "crit",
 	request: "neutral",
-	event: "info",
+	event: "neutral",
 	session: "done",
 	log: "neutral",
 	mcp: "live",
@@ -813,7 +874,7 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 			const dayItems = days[key] ?? []
 			const first = dayItems[0]
 			return vstack(h, { as: "section" }, [
-				eyebrow(h, { variant: "mono", className: "px-2.5 pb-1" }, [
+				eyebrow(h, { className: "px-2.5 pb-1" }, [
 					first === undefined ? key : dayLabel(first.atMs, clock),
 				]),
 				vstack(
@@ -1048,41 +1109,137 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 /** A request this slow reads as a warning. */
 const SLOW_MS = 2000
 
-/** The user's requests, one row per entry span; each opens its trace. */
+const latencyCell = <M>(h: HtmlBuilder<M>, ms: number, className = "w-20 shrink-0"): Html =>
+	cellText(h, formatLatency(ms), className, {
+		right: true,
+		mono: false,
+		tone: ms >= SLOW_MS ? "warning" : "foreground",
+	})
+
+/** Operations the API lists at most (`USER_OPERATIONS_LIMIT`); a full list says it is the top ones. */
+const OPERATIONS_CAP = 50
+
+/** Set off from the latency columns beside it, so "P95" and "Last seen" don't read as one. */
+const LAST_SEEN_LANE = "w-24 shrink-0 pl-4"
+
+/** What the user calls, busiest first: requests, failures and latency per operation. */
+const operationsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	toolTable(h, [
+		toolTableHead(h, [
+			th(h, { label: "Operation", width: columnClass({ min: "0" }) }),
+			th(h, { label: "Requests", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Failed", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "P50", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "P95", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Last seen", width: LAST_SEEN_LANE }),
+		]),
+		toolTableBody(
+			h,
+			Arr.map(detail.operations, (operation) =>
+				toolTableRow(h, { href: operation.href, className: "h-12" }, [
+					vstack(h, { gap: "0.5", className: "w-0 min-w-0 flex-1" }, [
+						typography(h, { size: "xs", mono: true, truncate: true }, [operation.name]),
+						serviceLabel(h, { serviceName: operation.service, size: "2xs", tone: "muted" }),
+					]),
+					cellText(h, formatNumber(operation.requests), "w-20 shrink-0", {
+						right: true,
+						mono: false,
+					}),
+					cellText(
+						h,
+						operation.errors === 0
+							? EMPTY_VALUE
+							: formatPercent(operation.errors / operation.requests, { floor: 0.001 }),
+						"w-20 shrink-0",
+						{ right: true, mono: false, tone: operation.errors === 0 ? "muted" : "error" },
+					),
+					latencyCell(h, operation.p50Ms),
+					latencyCell(h, operation.p95Ms),
+					timeCell(h, operation.lastSeenMs, clock, LAST_SEEN_LANE),
+				]),
+			),
+		),
+	])
+
+/** The latest requests, repeats folded into one row that opens the run's slowest. */
+const recentRequestsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	toolTable(h, [
+		toolTableHead(h, [
+			th(h, { label: "Time", width: "w-20 shrink-0" }),
+			th(h, { label: "Request", width: columnClass({ min: "0" }) }),
+			th(h, { label: "Service", width: SERVICE_LANE }),
+			th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
+		]),
+		toolTableBody(
+			h,
+			Arr.map(foldRepeats(detail.traces), (run) =>
+				toolTableRow(h, { href: run.slowest.href }, [
+					timeCell(h, run.newest.atMs, clock),
+					hstack(h, { gap: "2", as: "span", className: "w-0 min-w-0 flex-1" }, [
+						typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+							run.newest.rootSpan,
+						]),
+						...(run.count === 1
+							? []
+							: [
+									badge(
+										h,
+										{ variant: "muted", size: "sm", mono: true, className: "shrink-0" },
+										[`×${formatNumber(run.count)}`],
+									),
+								]),
+					]),
+					serviceCell(h, run.newest.service),
+					latencyCell(h, run.slowest.durationMs),
+					cellText(h, run.newest.status, "w-16 shrink-0", {
+						right: true,
+						mono: false,
+						tone: run.newest.isError ? "error" : "muted",
+					}),
+				]),
+			),
+		),
+	])
+
+/** The user's requests: a per-operation summary over the window, then the latest ones. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.requests, detail.traces) === "unindexed"
 		? unavailableTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
 			? noRows(h, "No requests from this user in this window")
-			: toolTable(h, [
-					toolTableHead(h, [
-						th(h, { label: "Time", width: "w-20 shrink-0" }),
-						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
-						th(h, { label: "Service", width: SERVICE_LANE }),
-						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
-						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
-					]),
-					toolTableBody(
-						h,
-						Arr.map(detail.traces, (trace) =>
-							toolTableRow(h, { href: trace.href }, [
-								timeCell(h, trace.atMs, clock),
-								cellText(h, trace.rootSpan, "w-0 flex-1"),
-								serviceCell(h, trace.service),
-								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
-									right: true,
-									mono: false,
-									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
-								}),
-								cellText(h, trace.status, "w-16 shrink-0", {
-									right: true,
-									mono: false,
-									tone: trace.isError ? "error" : "muted",
-								}),
+			: vstack(h, { gap: "8", className: "min-w-0" }, [
+					...(Arr.isReadonlyArrayEmpty(detail.operations)
+						? []
+						: [
+								requestSection(
+									h,
+									"Operations",
+									formatNumber(detail.operations.length),
+									detail.operations.length >= OPERATIONS_CAP
+										? `Top ${OPERATIONS_CAP}, busiest first`
+										: "Busiest first",
+									operationsTable(h, detail, clock),
+								),
 							]),
+					requestSection(
+						h,
+						"Recent requests",
+						formatNumber(detail.traces.length),
+						"Newest first, repeats folded",
+						cappedList(
+							h,
+							recentRequestsTable(h, detail, clock),
+							detail.traces.length,
+							detail.profile.requests ?? detail.traces.length,
+							"request",
 						),
 					),
 				])
+
+/** One block of the Traces tab: its titled, counted heading over its table. */
+const requestSection = <M>(h: HtmlBuilder<M>, title: string, count: string, hint: string, body: Html): Html =>
+	vstack(h, { gap: "3", className: "min-w-0" }, [sectionHeading(h, { as: "h3", title, count, hint }), body])
 
 /** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
@@ -1232,12 +1389,21 @@ export const userDetailBody = <M>(
 	options: UserDetailOptions<M>,
 ): Html => {
 	const clock = { nowMs: options.nowMs, timeZone: options.timeZone }
+	const content = options.tabContent ?? tabBody(h, detail, options.tab, clock)
+	const calendar = options.tab === "activity" ? options.calendar : undefined
 	return vstack(h, { shrink: true, className: "@container/panel" }, [
 		userStats(h, detail.profile),
 		namespaceScopeBar(h, detail.profile, options.namespace),
 		h.div(
 			[h.Class("min-w-0 px-(--page-gutter) py-5")],
-			[options.tabContent ?? tabBody(h, detail, options.tab, clock)],
+			[
+				calendar === undefined
+					? content
+					: vstack(h, { gap: "6" }, [
+							activityCalendar(h, { ...calendar, nowMs: clock.nowMs }),
+							content,
+						]),
+			],
 		),
 	])
 }

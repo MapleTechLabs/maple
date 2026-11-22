@@ -107,9 +107,13 @@ export const toV2IssueDetail = (detail: ErrorIssueDetailResponse): V2ErrorIssueD
 		timestamp: trace.timestamp,
 		exception_message: trace.exceptionMessage,
 		duration_micros: trace.durationMicros,
+		deployment_environment: trace.deploymentEnv === "" ? null : trace.deploymentEnv,
+		service_version: trace.serviceVersion === "" ? null : trace.serviceVersion,
+		user_id: trace.userId === "" ? null : trace.userId,
 	})),
 	incidents: Arr.map(detail.incidents, toV2Incident),
 	environments: Arr.map(detail.environments, (env) => ({ name: env.name, count: env.count })),
+	latest_stacktrace: detail.latestStacktrace,
 })
 
 const decodeCursor = (

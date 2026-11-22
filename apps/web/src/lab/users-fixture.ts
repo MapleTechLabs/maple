@@ -1,4 +1,6 @@
-import type { UserDetail, UserRow } from "../page/users/data"
+import { Array as Arr, String as Str } from "effect"
+import { calendarDays } from "../page/users/activity-calendar"
+import type { UserActivityDay, UserDetail, UserRow } from "../page/users/data"
 import type { UsersSummary } from "../page/users/view-list"
 
 // `/lab/users`: a week of identified users for a B2B app, and one of them in full. The rows cover
@@ -419,6 +421,16 @@ export const USER_DETAIL: UserDetail = {
 			status: "Error",
 			isError: true,
 		},
+		...Arr.map([0, 1, 2, 3], (index) => ({
+			traceId: `c4a0${index}`,
+			href: `/traces/c4a0${index}`,
+			atMs: ago(2 * MIN + (index + 1) * 8_000),
+			rootSpan: "GET /api/cart",
+			service: "api",
+			durationMs: 60 + index * 9,
+			status: "Ok",
+			isError: false,
+		})),
 		{
 			traceId: "7a1e02",
 			href: "/traces/7a1e02",
@@ -470,6 +482,35 @@ export const USER_DETAIL: UserDetail = {
 			isError: false,
 		},
 	],
+	operations: Arr.map(
+		[
+			{ service: "api", name: "GET /api/cart", requests: 214, errors: 0, p50Ms: 72, p95Ms: 160 },
+			{
+				service: "web",
+				name: "documentLoad /pricing",
+				requests: 61,
+				errors: 0,
+				p50Ms: 610,
+				p95Ms: 1_420,
+			},
+			{ service: "api", name: "POST /api/checkout", requests: 38, errors: 6, p50Ms: 640, p95Ms: 2_300 },
+			{ service: "api", name: "GET /api/pricing", requests: 33, errors: 0, p50Ms: 98, p95Ms: 210 },
+			{ service: "api", name: "POST /api/events", requests: 27, errors: 1, p50Ms: 18, p95Ms: 44 },
+			{
+				service: "search-indexer-worker",
+				name: "GET /reports/:id",
+				requests: 4,
+				errors: 0,
+				p50Ms: 2_900,
+				p95Ms: 3_400,
+			},
+		],
+		(operation, index) => ({
+			...operation,
+			lastSeenMs: ago((index + 1) * 3 * MIN),
+			href: `/traces?spanNames=${encodeURIComponent(operation.name)}`,
+		}),
+	),
 	logs: [
 		{
 			atMs: ago(2 * MIN),
@@ -620,3 +661,40 @@ export const SOLO_GROUP = {
 	sessions: 28,
 	requests: 2_600,
 } as const
+
+/** A seeded random in [0, 1), so the lab's calendar is the same on every load. */
+const seeded = (seed: number) => {
+	const next = (Math.sin(seed * 12.9898) * 43758.5453) % 1
+	return next < 0 ? next + 1 : next
+}
+
+/**
+ * Maya's last year: nothing before she signed up in the spring, weekdays busy and weekends quiet, a
+ * fortnight off in August, a run of errors in October and a streak up to today.
+ */
+export const USER_CALENDAR: ReadonlyArray<UserActivityDay> = Arr.flatMap(
+	calendarDays(USERS_NOW),
+	(day, index): ReadonlyArray<UserActivityDay> => {
+		const [year, month = 1, date = 1] = Arr.map(Str.split("-")(day), Number)
+		const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay()
+		const isWeekend = weekday === 0 || weekday === 6
+		const roll = seeded(index + 1)
+		const isBeforeSignup = index < 120
+		const isOff = index >= 265 && index <= 278
+		const isQuiet = index < 150 ? roll < 0.55 : isWeekend ? roll < 0.75 : roll < 0.12
+		if (isBeforeSignup || isOff || (isQuiet && index < 357)) return []
+		const ramp = 0.3 + ((index - 120) / 245) * 0.9
+		const requests = Math.round((isWeekend ? 20 : 120 + roll * 380) * ramp)
+		const hasErrors = index >= 330 && index <= 340 && roll > 0.35
+		return [
+			{
+				day,
+				requests,
+				failedRequests: hasErrors ? Math.round(requests * 0.04) : 0,
+				errorLogs: hasErrors ? Math.round(roll * 3) : 0,
+				sessions: isWeekend ? 0 : Math.round(roll * 4),
+				events: Math.round(requests * 0.12),
+			},
+		]
+	},
+)

@@ -1,6 +1,7 @@
 import type { UserActivityItem, UserProfileItem } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/http"
 import { Array as Arr, Schema } from "effect"
+import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type {
 	ActivityItem,
@@ -8,6 +9,7 @@ import type {
 	UserIssue,
 	UserLog,
 	UserMcpSession,
+	UserOperation,
 	UserProfile,
 	UserTrace,
 } from "../data"
@@ -31,6 +33,35 @@ export const issueHref = (issueId: string, search: Search): string =>
 	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: windowSearch(search) }))
 
 export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
+
+/**
+ * /traces narrowed to one operation's requests from this user (`user.id`, else `enduser.id`), in the
+ * span view: an operation counts entry spans, and many have a parent the root-only list would hide.
+ * It carries the window the page resolved, so a preset-less page and /traces read the same hours.
+ */
+export const operationTracesHref = (
+	userId: string,
+	operation: Readonly<{ service: string; spanName: string }>,
+	search: Search,
+	window: TimeWindow | null,
+): string =>
+	hrefOf(
+		AppRoute.Traces({
+			search: {
+				...(window === null
+					? windowSearch(search)
+					: { startTime: window.startTime, endTime: window.endTime }),
+				services: [operation.service],
+				spanNames: [operation.spanName],
+				...(search.namespace !== undefined &&
+					search.namespace !== "" && { namespaces: [search.namespace] }),
+				rootOnly: false,
+				attributeFilters: [
+					{ key: "user.id", value: userId, or: [{ key: "enduser.id", value: userId }] },
+				],
+			},
+		}),
+	)
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 
@@ -93,6 +124,8 @@ export type TabReads = Readonly<{
 	issues?: IssuesData | undefined
 	traces: TracesData | undefined
 	logs: LogsData | undefined
+	/** The window the page resolved, which links to other pages carry; `null` before it has one. */
+	window?: TimeWindow | null
 }>
 
 export const toUserIssue = (issue: IssuesData["issues"][number], search: Search): UserIssue => ({
@@ -147,6 +180,16 @@ export const toUserDetail = (
 			status: trace.status,
 			isError: trace.status === "Error",
 			href: traceHref(trace.traceId),
+		})),
+		operations: Arr.map(tabs.traces?.operations ?? [], (operation): UserOperation => ({
+			service: operation.service,
+			name: operation.spanName,
+			requests: operation.requests,
+			errors: operation.errors,
+			p50Ms: operation.p50Ms,
+			p95Ms: operation.p95Ms,
+			lastSeenMs: operation.lastSeenMs,
+			href: operationTracesHref(profile.userId, operation, search, tabs.window ?? null),
 		})),
 		logs: Arr.map(tabs.logs?.logs ?? [], (log): UserLog => ({
 			atMs: log.atMs,

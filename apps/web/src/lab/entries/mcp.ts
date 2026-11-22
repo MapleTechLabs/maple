@@ -12,7 +12,7 @@ import { facetSelect, toolFilterToolbar } from "../../page/kit/tools/toolbar"
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { timeControls } from "../../page/kit/time-controls"
 import * as TimeRangePicker from "../../page/kit/time-range-picker"
-import { underlineTabClass, underlineTabStrip } from "../../page/kit/underline-tabs"
+import { underlineTabClass, underlineTabLabel, underlineTabStrip } from "../../page/kit/underline-tabs"
 import { listBody } from "../../page/mcp/view-list"
 import { formatClock } from "../../page/kit/timezone-zones"
 import { MCP_CHART_TOKENS, clientIcon, scopeText } from "../../page/mcp/view-kit"
@@ -386,7 +386,10 @@ const pageView = (model: Model, h: H): Html => {
 						h,
 						{ label: "Service sections", navigation: true },
 						Arr.map(["Overview", "API", "Operations", "Dependencies", "MCP"], (label) =>
-							h.a([h.Class(underlineTabClass(label === "MCP")), h.Href("#")], [label]),
+							h.a(
+								[h.Class(underlineTabClass(label === "MCP")), h.Href("#")],
+								[underlineTabLabel(h, label)],
+							),
 						),
 					),
 					scrollClassName: "p-0",

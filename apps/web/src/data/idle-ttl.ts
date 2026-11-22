@@ -24,6 +24,8 @@ export const IdleTtl = {
 	userTraces: 30_000,
 	/** `/users/$userId`: the Logs tab's lines. */
 	userLogs: 30_000,
+	/** A year of days that change only at the day's edge: kept a few minutes. */
+	userCalendar: 300_000,
 	replay: 60_000,
 	replayManifest: 240_000,
 	sessionTranscript: 60_000,

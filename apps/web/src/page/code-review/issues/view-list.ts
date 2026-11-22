@@ -60,10 +60,18 @@ const findingRow = (h: H, finding: CodeReviewFinding, context: RowContext): Html
 				]),
 				trailing: [
 					h.span(
-						[h.Class("hidden text-xs text-muted-foreground sm:block")],
+						[h.Class("hidden w-28 truncate text-xs text-muted-foreground sm:block")],
 						[CATEGORY_LABELS[finding.category]],
 					),
-					badge(h, { variant: "outline", size: "sm" }, [FINDING_STATUS_LABELS[finding.status]]),
+					// A fixed column, so the state chips line up whatever their label.
+					h.span(
+						[h.Class("w-20")],
+						[
+							badge(h, { variant: "outline", size: "sm" }, [
+								FINDING_STATUS_LABELS[finding.status],
+							]),
+						],
+					),
 					relativeTime(h, {
 						value: finding.createdAt,
 						nowMs: context.nowMs,

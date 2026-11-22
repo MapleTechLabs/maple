@@ -95,4 +95,50 @@ describe("the user rail", () => {
 			expectView(role("button", { name: /core/ })).toExist(),
 		)
 	})
+
+	test("a device shows its browser and OS together as one named badge of marks, and the name itself when there is no mark", () => {
+		const devices: UserProfile = {
+			...SOLO_DETAIL.profile,
+			devices: [{ browser: "Netscape", os: "Plan 9", sessions: 2 }, ...USER_DETAIL.profile.devices],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: devices, stats: null }),
+			expectView(role("img", { name: "Chrome 130 on macOS 15" })).toExist(),
+			expectView(role("img", { name: "Safari 18 on iOS 18" })).toExist(),
+			expectView(text("Chrome 130")).not.toExist(),
+			expectView(text("Netscape")).toExist(),
+			expectView(text("Plan 9")).toExist(),
+		)
+	})
+
+	test("a device with only its OS known is named and drawn by the OS alone", () => {
+		const osOnly: UserProfile = {
+			...SOLO_DETAIL.profile,
+			devices: [{ browser: "", os: "macOS 15", sessions: 4 }],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: osOnly, stats: null }),
+			expectView(role("img", { name: "macOS 15" })).toExist(),
+			expectView(role("separator")).not.toExist(),
+		)
+	})
+
+	test("a device recorded without versions names its OS beside the mark, so macOS and iOS differ", () => {
+		const bare: UserProfile = {
+			...SOLO_DETAIL.profile,
+			devices: [
+				{ browser: "Chrome", os: "macOS", sessions: 5 },
+				{ browser: "Safari", os: "iOS", sessions: 2 },
+			],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: bare, stats: null }),
+			expectView(text("macOS")).toExist(),
+			expectView(text("iOS")).toExist(),
+			expectView(text("Chrome")).not.toExist(),
+		)
+	})
 })

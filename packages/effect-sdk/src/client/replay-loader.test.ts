@@ -3,9 +3,12 @@ import {
 	clearSessionSink,
 	configurePrivacy,
 	getActiveSink,
+	getVisitorId,
+	publishSessionSink,
 	resetConsentForTests,
 	scrubUrl,
 	setConsent,
+	setVisitorTracking,
 } from "@maple/browser-session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { startClientSession } from "./replay-loader.js"
@@ -176,5 +179,21 @@ describe("startClientSession privacy", () => {
 		setConsent(true)
 		expect(getActiveSink()).toBeDefined()
 		await session.stop()
+	})
+
+	it("turns the page's visitor id off when it joins another SDK's session in cookieless mode", async () => {
+		stubPage()
+		// `@maple-dev/browser` already owns the page's session and its visitor id.
+		setVisitorTracking(true)
+		publishSessionSink("browser-sdk-session")
+		expect(getVisitorId()).toBeDefined()
+
+		const joiner = startClientSession({
+			...BASE,
+			replay: { enabled: false },
+			privacy: { persistence: "cookieless" },
+		})
+		expect(getVisitorId()).toBeUndefined()
+		await joiner.stop()
 	})
 })

@@ -1632,14 +1632,31 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:errors:errorIssueSampleTracesQuery:default  [79f165f1]
+-- builder:errors:errorIssueLatestStacktraceQuery:default  [5489bb6f]
+SELECT
+          error_events.Timestamp AS timestamp,
+          error_events.ExceptionStacktrace AS stacktrace
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp <= '2026-01-03 14:15:00'
+          AND error_events.ExceptionStacktrace != ''
+        ORDER BY timestamp DESC
+        LIMIT 1
+        FORMAT JSON
+
+-- builder:errors:errorIssueSampleTracesQuery:default  [60549ff7]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
           error_events.ServiceName AS serviceName,
           error_events.Timestamp AS timestamp,
           error_events.ExceptionMessage AS exceptionMessage,
-          intDiv(error_events.Duration, 1000) AS durationMicros
+          intDiv(error_events.Duration, 1000) AS durationMicros,
+          error_events.DeploymentEnv AS deploymentEnv,
+          error_events.ServiceVersion AS serviceVersion,
+          error_events.UserId AS userId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
@@ -4185,6 +4202,96 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
+-- builder:product-events-cohort:productEventsCohortQuery:did-and-never  [6d9d149d]
+SELECT
+          key AS key,
+          toString(counted.firstAt) AS firstAt,
+          toString(counted.lastAt) AS lastAt,
+          counted.didCount AS count,
+          counted.didTotal AS didTotal,
+          counted.total AS total
+        FROM (SELECT
+          per_key.key AS key,
+          per_key.firstAt AS firstAt,
+          per_key.lastAt AS lastAt,
+          per_key.didCount AS didCount,
+          per_key.notCount AS notCount,
+          count() OVER () AS didTotal,
+          countIf(notCount = 0) OVER () AS total
+        FROM (SELECT
+          cohort_events.key AS key,
+          minIf(ts, isDid = 1) AS firstAt,
+          maxIf(ts, isDid = 1) AS lastAt,
+          countIf(isDid = 1) AS didCount,
+          countIf(isNot = 1) AS notCount
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          e.Timestamp AS ts,
+          toUInt8((e.EventName = 'signup_completed' AND e.Timestamp >= '2026-01-01 10:30:00')) AS isDid,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro')) AS isNot
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND (e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro'))
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS cohort_events
+        GROUP BY key) AS per_key
+        WHERE per_key.didCount > 0) AS counted
+        WHERE counted.notCount = 0
+        ORDER BY lastAt DESC, key ASC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:product-events-cohort:productEventsCohortQuery:did-in-window-group  [52acf25d]
+SELECT
+          key AS key,
+          toString(counted.firstAt) AS firstAt,
+          toString(counted.lastAt) AS lastAt,
+          counted.didCount AS count,
+          counted.didTotal AS didTotal,
+          counted.total AS total
+        FROM (SELECT
+          per_key.key AS key,
+          per_key.firstAt AS firstAt,
+          per_key.lastAt AS lastAt,
+          per_key.didCount AS didCount,
+          per_key.notCount AS notCount,
+          count() OVER () AS didTotal,
+          countIf(notCount = 0) OVER () AS total
+        FROM (SELECT
+          cohort_events.key AS key,
+          minIf(ts, isDid = 1) AS firstAt,
+          maxIf(ts, isDid = 1) AS lastAt,
+          countIf(isDid = 1) AS didCount,
+          countIf(isNot = 1) AS notCount
+        FROM (SELECT
+          e.GroupId AS key,
+          e.Timestamp AS ts,
+          toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath LIKE '/settings/%') AND e.Timestamp >= '2026-01-01 10:30:00')) AS isDid,
+          0 AS isNot
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND (e.Kind IN ('navigation', 'screen') AND e.PagePath LIKE '/settings/%')
+          AND e.GroupId != '') AS cohort_events
+        GROUP BY key) AS per_key
+        WHERE per_key.didCount > 0) AS counted
+        WHERE counted.notCount = 0
+        ORDER BY lastAt DESC, key ASC
+        LIMIT 25
+        FORMAT JSON
+
 -- builder:product-events-explore:productEventAttributeKeysQuery:default  [30a1e945]
 SELECT
           arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey,
@@ -4217,6 +4324,29 @@ SELECT
           product_events.PagePath AS name,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS value
         FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.Host IN ('maple.dev')
+        GROUP BY name
+        ORDER BY value DESC, name ASC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsBreakdownQuery:visitors-by-session-dimension  [7d006b85]
+SELECT
+          coalesce(sd.utm_source, '') AS name,
+          uniqIf(product_events.VisitorId, product_events.VisitorId != '') AS value
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS SessionId,
+          max(session_replays.UtmSource) AS utm_source
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.SessionId != ''
+        GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
@@ -4267,7 +4397,31 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [a3692859]
+-- builder:product-events-explore:productEventsTimeseriesQuery:numeric-sum-by-country  [4345fdb7]
+SELECT
+          toStartOfInterval(product_events.Timestamp, INTERVAL 3600 SECOND) AS bucket,
+          arrayStringConcat([coalesce(nullIf(coalesce(sd.country, ''), ''), '(none)'), coalesce(nullIf(product_events.EventName, ''), '(none)')], ' · ') AS groupName,
+          ifNull(ifNotFinite(sum(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL)), 0), 0) AS value,
+          countIf(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL) IS NOT NULL) AS eventCount
+        FROM product_events
+        LEFT JOIN (SELECT
+          session_replays.SessionId AS SessionId,
+          max(session_replays.Country) AS country
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.SessionId != ''
+        GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.EventName IN ('plan_started')
+        GROUP BY bucket, groupName
+        ORDER BY bucket ASC, groupName ASC
+        FORMAT JSON
+
+-- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [94543d2b]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -4300,7 +4454,7 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
           AND session_replays.Country = 'DE'
         GROUP BY sessionId)
@@ -4609,13 +4763,91 @@ SELECT
         ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:default  [d05b039c]
+-- builder:product-events-retention:productEventsRetentionQuery:daily-in-window-group  [712f12e7]
+SELECT
+          toString(cohortDay) AS cohort,
+          cohorted.period AS period,
+          count() AS count
+        FROM (SELECT
+          toDate(first, 'UTC') AS cohortDay,
+          arrayJoin(arrayConcat([0], arrayDistinct(arrayFilter(p -> p >= 1 AND p <= 14, arrayMap(b -> dateDiff('day', cohortDay, b), buckets))))) AS period
+        FROM (SELECT
+          retention_events.key AS key,
+          minIf(ts, isStart = 1) AS first,
+          groupUniqArrayIf(toDate(ts, 'UTC'), isReturn = 1) AS buckets
+        FROM (SELECT
+          e.GroupId AS key,
+          e.Timestamp AS ts,
+          toUInt8((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing')) AS isStart,
+          toUInt8(((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro') AND e.Timestamp >= '2026-01-01 10:30:00')) AS isReturn
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND ((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro'))
+          AND e.GroupId != ''
+          AND e.GroupId IN (SELECT
+          session_replays.GroupId AS key
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.Country = 'DE'
+        GROUP BY key)) AS retention_events
+        GROUP BY key) AS per_key
+        WHERE per_key.first >= '2026-01-01 10:30:00'
+          AND per_key.first < '2026-01-03 14:15:00') AS cohorted
+        GROUP BY cohort, period
+        ORDER BY cohort ASC, period ASC
+        FORMAT JSON
+
+-- builder:product-events-retention:productEventsRetentionQuery:weekly-first-ever-person  [9974a14a]
+SELECT
+          toString(cohortDay) AS cohort,
+          cohorted.period AS period,
+          count() AS count
+        FROM (SELECT
+          toStartOfWeek(first, 1, 'UTC') AS cohortDay,
+          arrayJoin(arrayConcat([0], arrayDistinct(arrayFilter(p -> p >= 1 AND p <= 8, arrayMap(b -> intDiv(dateDiff('day', cohortDay, b), 7), buckets))))) AS period
+        FROM (SELECT
+          retention_events.key AS key,
+          minIf(ts, isStart = 1) AS first,
+          groupUniqArrayIf(toStartOfWeek(ts, 1, 'UTC'), isReturn = 1) AS buckets
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          e.Timestamp AS ts,
+          toUInt8(e.EventName = 'signup_completed') AS isStart,
+          toUInt8(e.Timestamp >= '2026-01-01 10:30:00') AS isReturn
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS retention_events
+        GROUP BY key) AS per_key
+        WHERE per_key.first >= '2026-01-01 10:30:00'
+          AND per_key.first < '2026-01-03 14:15:00') AS cohorted
+        GROUP BY cohort, period
+        ORDER BY cohort ASC, period ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventNamesQuery:default  [26f202a4]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4625,13 +4857,14 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:filtered  [b9a881b9]
+-- builder:product-events:productEventNamesQuery:filtered  [a4fa1221]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4839,6 +5072,30 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
+-- builder:product-events:productEventsFunnelCoverageQuery:steps  [39b738f5]
+SELECT
+          arrayJoin([1, 2, 3, 4]) AS step,
+          arrayElement(totals.events, step) AS events,
+          arrayElement(totals.withPerson, step) AS withPerson,
+          arrayElement(totals.withUser, step) AS withUser,
+          arrayElement(totals.withVisitor, step) AS withVisitor,
+          arrayElement(totals.withGroup, step) AS withGroup,
+          arrayElement(totals.withSession, step) AS withSession
+        FROM (SELECT
+          [toUInt64(0), countIf(((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev')), countIf(product_events.EventName = 'signup_completed'), countIf((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup'))] AS events,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND (product_events.UserId != '' OR product_events.VisitorId != ''))), countIf((product_events.EventName = 'signup_completed' AND (product_events.UserId != '' OR product_events.VisitorId != ''))), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND (product_events.UserId != '' OR product_events.VisitorId != '')))] AS withPerson,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.UserId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.UserId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.UserId != ''))] AS withUser,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.VisitorId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.VisitorId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.VisitorId != ''))] AS withVisitor,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.GroupId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.GroupId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.GroupId != ''))] AS withGroup,
+          [toUInt64(0), countIf((((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') AND product_events.SessionId != '')), countIf((product_events.EventName = 'signup_completed' AND product_events.SessionId != '')), countIf(((product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup') AND product_events.SessionId != ''))] AS withSession
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND (((product_events.Kind IN ('navigation', 'screen') AND product_events.PagePath = '/pricing') AND product_events.Host = 'maple.dev') OR product_events.EventName = 'signup_completed' OR (product_events.EventName = 'plan_started' AND product_events.Attributes['plan'] = 'startup'))) AS totals
+        ORDER BY step ASC
+        FORMAT JSON
+
 -- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [e4ee4b23]
 SELECT
           hops.step AS step,
@@ -4987,6 +5244,47 @@ SELECT
         GROUP BY step, next) AS counted
         GROUP BY step) AS ranked) AS hops
         ORDER BY step ASC, count DESC, next ASC
+        FORMAT JSON
+
+-- builder:product-events:productEventsFunnelQuery:group-key  [27a710f7]
+SELECT
+          arrayJoin([1, 2, 3]) AS step,
+          arrayElement(totals.counts, step) AS count
+        FROM (SELECT
+          [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
+        FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt
+        FROM (SELECT
+          funnel_events.key AS key,
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
+        FROM (SELECT
+          e.GroupId AS key,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
+          toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
+          toUInt8(e.EventName = 'signup_completed') AS s2,
+          toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
+          AND e.GroupId != '') AS funnel_events
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
+        ORDER BY step ASC
         FORMAT JSON
 
 -- builder:product-events:productEventsFunnelQuery:person  [3ef2759a]
@@ -11114,6 +11412,23 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
+-- builder:user-activity:userActivityDaysQuery:default  [95f977c3]
+SELECT
+          toString(toDate(Day)) AS day,
+          sum(user_activity_daily.RequestCount) AS requestCount,
+          sum(user_activity_daily.FailedRequestCount) AS failedRequestCount,
+          sum(user_activity_daily.ErrorLogCount) AS errorLogCount,
+          uniqIfMerge(SessionIds) AS sessionCount
+        FROM user_activity_daily
+        WHERE user_activity_daily.OrgId = 'org_sql_catalog'
+          AND user_activity_daily.ServiceNamespace IN ('storefront')
+          AND user_activity_daily.UserId = 'user_catalog'
+          AND user_activity_daily.Day >= toStartOfDay(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_daily.Day <= toStartOfDay(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY day
+        ORDER BY day ASC
+        FORMAT JSON
+
 -- builder:user-activity:userActivityIdentityQuery:default  [5c1b7e69]
 SELECT
           argMaxIfMerge(UserName) AS name,
@@ -11271,13 +11586,35 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:default  [8247554d]
+-- builder:user-activity:userOperationsQuery:default  [a591efdb]
+SELECT
+          traces.ServiceName AS serviceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          count() AS requestCount,
+          countIf(traces.StatusCode = 'Error') AS errorCount,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+        GROUP BY serviceName, spanName
+        ORDER BY requestCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:default  [78457797]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
@@ -11294,13 +11631,13 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:notable  [9c6e1711]
+-- builder:user-activity:userTracesQuery:notable  [d063f52b]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
@@ -11348,6 +11685,19 @@ SELECT
         GROUP BY browser, os
         ORDER BY sessions DESC
         LIMIT 10
+        FORMAT JSON
+
+-- builder:users:userEventDaysQuery:default  [3b44e586]
+SELECT
+          toString(toDate(Timestamp)) AS day,
+          count() AS events
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.UserId = 'user_42'
+        GROUP BY day
+        ORDER BY day ASC
         FORMAT JSON
 
 -- builder:users:userEventsQuery:namespaceFiltered  [28a0c0c9]
@@ -15313,13 +15663,14 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default  [cd960b9b]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15328,13 +15679,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [cd960b9b]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15343,13 +15695,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [8601ff7f]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [718208d5]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15387,13 +15740,14 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [d9e8d975]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [51688ae7]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15431,7 +15785,7 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [ec93b790]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15439,6 +15793,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
@@ -15448,7 +15803,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [ec93b790]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15456,6 +15811,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
@@ -15985,14 +16341,17 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- pipe:error_issue_sample_traces:default:baseline  [79f165f1]
+-- pipe:error_issue_sample_traces:default:baseline  [2be68138]
 SELECT
           error_events.TraceId AS traceId,
           error_events.SpanId AS spanId,
           error_events.ServiceName AS serviceName,
           error_events.Timestamp AS timestamp,
           error_events.ExceptionMessage AS exceptionMessage,
-          intDiv(error_events.Duration, 1000) AS durationMicros
+          intDiv(error_events.Duration, 1000) AS durationMicros,
+          error_events.DeploymentEnv AS deploymentEnv,
+          error_events.ServiceVersion AS serviceVersion,
+          '' AS userId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
@@ -21503,7 +21862,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:product-events-timeseries-grouped:baseline  [8a641280]
+-- spec:product-events-timeseries-grouped:baseline  [2c1003e6]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -21534,7 +21893,7 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-03 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-03 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
           AND session_replays.Country = 'DE'
         GROUP BY sessionId)

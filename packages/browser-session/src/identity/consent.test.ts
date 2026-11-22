@@ -10,6 +10,8 @@ import {
 	setConsent,
 } from "./consent"
 import { getVisitorId, setVisitorTracking } from "./visitor"
+import { COOKIELESS_VISITOR_ID, rowVisitorId } from "./row-visitor"
+import { mayUseStorage } from "../platform/persistence"
 
 /** A page whose visitor id from an earlier, consented load is still on disk. */
 function installReturningVisitor(): { store: Map<string, string>; cookies: Map<string, string> } {
@@ -194,6 +196,90 @@ describe("consent", () => {
 		configurePrivacy(undefined)
 		setConsent(true)
 		expect(mayPersistIdentifier()).toBe(false)
+	})
+
+	describe("cookieless mode", () => {
+		it("stores nothing, deletes an earlier visitor id and asks the gateway for one", () => {
+			const { store, cookies } = installReturningVisitor()
+			configurePrivacy({ persistence: "cookieless" })
+			setVisitorTracking(mayPersistIdentifier())
+
+			expect(mayPersistIdentifier()).toBe(false)
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+			expect(store.size).toBe(0)
+			expect(cookies.size).toBe(0)
+		})
+
+		it("loses to an older SDK copy's memory mode, whichever starts first", () => {
+			const olderCopyAsksForMemory = () => {
+				Reflect.set(globalThis, "__MAPLE_BROWSER_MEMORY_ONLY__", true)
+			}
+			olderCopyAsksForMemory()
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe("")
+
+			resetConsentForTests()
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+			olderCopyAsksForMemory()
+			expect(rowVisitorId()).toBe("")
+			expect(mayUseStorage()).toBe(false)
+		})
+
+		it("only tightens: a second init without the option keeps storage off", () => {
+			installReturningVisitor()
+			configurePrivacy({ persistence: "cookieless" })
+			configurePrivacy(undefined)
+			expect(mayPersistIdentifier()).toBe(false)
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+		})
+
+		it("loses to memory-only when two SDK copies disagree, in either order", () => {
+			installReturningVisitor()
+			configurePrivacy({ persistence: "cookieless" })
+			configurePrivacy({ persistence: "memory" })
+			setVisitorTracking(mayPersistIdentifier())
+			expect(rowVisitorId()).toBe("")
+
+			resetConsentForTests()
+			configurePrivacy({ persistence: "memory" })
+			configurePrivacy({ persistence: "cookieless" })
+			setVisitorTracking(mayPersistIdentifier())
+			expect(rowVisitorId()).toBe("")
+		})
+
+		it("sends no visitor id under Global Privacy Control", () => {
+			installReturningVisitor()
+			vi.stubGlobal("navigator", { globalPrivacyControl: true })
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe("")
+		})
+
+		it("sends no visitor id for Do Not Track when the app respects it", () => {
+			installReturningVisitor()
+			vi.stubGlobal("navigator", { doNotTrack: "1" })
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+
+			configurePrivacy({ respectDoNotTrack: true })
+			expect(rowVisitorId()).toBe("")
+		})
+
+		it("sends no visitor id until consent is granted", () => {
+			installReturningVisitor()
+			configurePrivacy({ requireConsent: true, persistence: "cookieless" })
+			expect(rowVisitorId()).toBe("")
+
+			setConsent(true)
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+		})
+
+		it("sends no visitor id with persistVisitorId: false from any SDK copy", () => {
+			installReturningVisitor()
+			configurePrivacy({ persistence: "cookieless" })
+			configurePrivacy({ persistVisitorId: false })
+			expect(rowVisitorId()).toBe("")
+		})
 	})
 
 	it("treats a denial replayed on a fresh page load as a withdrawal", () => {

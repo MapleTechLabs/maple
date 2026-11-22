@@ -117,4 +117,28 @@ describe("error issue", () => {
 		).model
 		expect(hovered.chart.tooltip).toEqual(Option.some(tooltip))
 	})
+
+	test("a click on a hovered bar zooms the page into that bar's bucket, short of the next one; with none hovered it stays", () => {
+		const model = windowed()
+		expect(pageUpdate(model, Message.ClickedOccurrenceBar()).outMessage).toBeUndefined()
+		const hovered = pageUpdate(
+			model,
+			Message.GotChartMessage({
+				message: Chart.Message.ChangedChartFocus({
+					maybeKey: Option.some("2026-10-01T10:00:00.000Z"),
+				}),
+			}),
+		).model
+		expect(pageUpdate(hovered, Message.ClickedOccurrenceBar()).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: hrefOf(
+					AppRoute.ErrorIssue({
+						issueId,
+						search: { startTime: "2026-10-01 10:00:00", endTime: "2026-10-01 10:14:59" },
+					}),
+				),
+				isReplace: false,
+			}),
+		)
+	})
 })

@@ -81,8 +81,10 @@ const BUDGET = {
 	 * cross-origin requests only), prefix CORS URLs and the no-response status cleanup (~0.2 kB).
 	 * 26: requests a reload cancels are not errors (spans and their rejections), and
 	 * `errors.ignoreNetworkFailuresFor`, sampled-out sessions included (~0.55 kB).
+	 * 26.5 since 2026-11: `persistence: "cookieless"` (the row visitor rule, memory-wins
+	 * guard against older copies) measured 26.07 kB.
 	 */
-	firstParty: 26,
+	firstParty: 26.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */

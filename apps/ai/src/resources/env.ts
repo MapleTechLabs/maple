@@ -26,6 +26,8 @@ export const aiConfiguredEnv = (input: {
 		// Providers OpenRouter tries first, e.g. `morph` to use an org-wide BYOK key.
 		optionalPlain("MAPLE_OPENROUTER_PROVIDER_ORDER"),
 		Secrets.OpenRouterApiKey.optional,
+		// The setup audit tool stamps an org's first data (`first_data_received`); unset falls back to MAPLE_INGEST_KEY.
+		Secrets.ProductEventsIngestKey.optional,
 		// Decision model, on Workers AI via the gateway binding (`layerDecisionModel`).
 		optionalPlain("MAPLE_DECISION_MODEL"),
 		// Maple's own org: the only one `list_maple_feedback` reads across orgs for.

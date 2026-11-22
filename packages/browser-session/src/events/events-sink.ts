@@ -6,7 +6,7 @@ import { approximateSize } from "../platform/approximate-size"
 import { patchMethod } from "../capture/patch"
 import { markActivity, noteNavigation } from "../session/session"
 import { activeTraceId } from "./trace-id"
-import { getVisitorId } from "../identity/visitor"
+import { rowVisitorId } from "../identity/row-visitor"
 import { scrubUrl } from "../platform/url-privacy"
 
 /**
@@ -457,9 +457,8 @@ function drainPending(sink: SessionEventSink): void {
  *
  * Identity is resolved here, at flush time: it is the person key funnels group
  * on, and reading it late means an `identify()` that lands shortly after init
- * still stamps the initial page view. `visitor_id` is `""` whenever the visitor
- * cookie is off (consent, GPC, `persistVisitorId: false`), the same rule the
- * metadata row applies. Time, URL and trace id were stamped by `emit`.
+ * still stamps the initial page view. `visitor_id` follows `rowVisitorId()`, the
+ * same rule the metadata row applies: `""` when refused, the sentinel when cookieless. Time, URL and trace id were stamped by `emit`.
  */
 function toRow(
 	config: IngestConfig,
@@ -470,7 +469,7 @@ function toRow(
 	const identity = config.getIdentity?.()
 	return {
 		session_id: sessionId,
-		visitor_id: getVisitorId() ?? "",
+		visitor_id: rowVisitorId(),
 		user_id: identity?.id ?? "",
 		group_id: identity?.groupId ?? "",
 		timestamp: formatCHDateTime(new Date(ev.timestamp)),

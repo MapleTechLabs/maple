@@ -43,6 +43,8 @@ EVAL_TIER=regression bun run eval:tools        # what CI runs
 bun run eval:compare .evals/runs/<A> .evals/runs/<B>
 bun run eval:config                            # configuration changes, same variables
 EVAL_TASKS=tag:gap EVAL_K=5 bun run eval:config
+bun run eval:product                           # product questions on a real engine
+bunx vitest run src/evals/product/golden.test.ts   # the same questions, no model
 ```
 
 | Variable           | Default                 | Meaning                                      |
@@ -75,6 +77,23 @@ failing tasks in `summary.md`.
   instead) and `negative` (a question, or a change with no named target, that must change nothing).
   A target names a family's action like any other argument: `call("manage_slo", { action: "create" })`.
 
+- **product** (`product/`): product analytics questions (counts, funnels, accounts, acquisition,
+  retention, paths, cohorts) about Acme, a seeded B2B SaaS (`product/world.ts`). Unlike the other
+  suites the warehouse is real: the world is inserted into chDB with Maple's local schema
+  (`product/chdb-warehouse.ts`), and every tool call runs the SQL it compiles. The expected
+  answers are read from the rows by plain TypeScript, never from that SQL. One scenario list
+  (`product/scenarios.ts`) feeds two runners:
+    - `golden.test.ts`, no model: a scenario's `golden` calls must show every fact of its answer,
+      inside the call and time budget. It proves the tools can answer the question and prints
+      calls and milliseconds per scenario. CI runs it in the `Product scenarios (chDB)` job.
+    - `product.eval.ts`, the model: the agent gets only the question and is graded on the facts
+      (`answer-number`, `answer-duration`, `answer-mentions`), whichever tools it used. It also
+      prints tool calls and seconds per scenario.
+
+    A scenario with no `golden` has no direct tool path yet: the eval still asks it, and adding the
+    path is how a tool change shows up as a score. Needs a libchdb (`~/.maple/bin`, or
+    `MAPLE_LIBCHDB`) and bun; both runners skip without them.
+
 ## Adding a task
 
 1. Start from a real failure: a production transcript, a support thread, a bad answer.
@@ -97,6 +116,7 @@ failing tasks in `summary.md`.
 | `world.ts`     | The services, attributes and errors the tasks assume exist  |
 | `tools/`       | Tool-use tasks, their schema contract test, and the suite   |
 | `config/`      | Configuration tasks, their configured org, and the suite    |
+| `product/`     | Product scenarios, the Acme world, and the chDB warehouse   |
 
 The fake warehouse and eval runtime live in `src/mcp/__evals__/` beside the deterministic
 renderer tests that share them.

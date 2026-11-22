@@ -1,12 +1,16 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../tenant"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { MAX_BREAKDOWN_RANGE_SECONDS, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
+import { productEventsTotal } from "@maple/query-engine/observability"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { orFallback } from "../lib/fallback"
+import { sessionRetentionNote } from "../lib/product-identity"
+import { maxBreakdownRangeSeconds, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { MetricType, QueryEngineExecuteRequest, QuerySpec } from "@maple/domain/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
-import { ProductEventKind } from "@maple/domain/query-engine"
+import { PRODUCT_EVENTS_NUMERIC_METRICS, ProductEventKind } from "@maple/domain/query-engine"
 import { QueryDataOutput } from "@maple/domain/mcp-outputs"
 import {
 	bucketLabels,
@@ -24,6 +28,37 @@ import { knownAttributeKeys, pickAttributeScope, resolveAttributeScope } from ".
 import { emptyResultHints } from "../lib/empty-result-hints"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
+/** Product questions are about days and weeks, and events are sparse next to spans. */
+const EVENTS_WINDOW = P.timeWindow({ defaultHours: 7 * 24 })
+
+/** The session dimensions a product-event query filters on: parameter name to the engine's filter field. */
+const SESSION_FILTERS = {
+	country: "country",
+	referrer_host: "referrerHost",
+	utm_source: "utmSource",
+	utm_medium: "utmMedium",
+	utm_campaign: "utmCampaign",
+	device_type: "deviceType",
+	browser: "browserName",
+	os: "osName",
+} as const
+type SessionFilterParam = keyof typeof SESSION_FILTERS
+const SESSION_FILTER_PARAMS: ReadonlyArray<SessionFilterParam> = [
+	"country",
+	"referrer_host",
+	"utm_source",
+	"utm_medium",
+	"utm_campaign",
+	"device_type",
+	"browser",
+	"os",
+]
+
+/** Metrics that count distinct identities; an event that carries none of that identity counts nothing. */
+const DISTINCT_METRICS: ReadonlySet<string> = new Set(["sessions", "persons", "users", "visitors", "groups"])
+
+const isNumericMetric = (metric: string | undefined): boolean =>
+	metric !== undefined && Arr.contains(PRODUCT_EVENTS_NUMERIC_METRICS, metric)
 const ATTRIBUTE_SCOPES = ["span", "resource"] as const
 type AttributeScope = (typeof ATTRIBUTE_SCOPES)[number]
 
@@ -65,7 +100,7 @@ const queryDataSchema = Schema.Struct({
 		QUERY_BUILDER_DATA_SOURCES,
 		"'traces' for request/span analysis (latency, errors, throughput); 'logs' for log volume; " +
 			"'metrics' for a custom metric (needs metric_name and metric_type from list_metrics); " +
-			"'product_events' for track() events, page views and server events (names from list_product_events). " +
+			"'product_events' for track() events, page views and server events (names from list_product_events, properties from explore_attributes source=product_events). " +
 			"Signups and accounts in a connected system (Clerk, a database) are data sources: list_data_sources, listed when the org has any.",
 	),
 	kind: P.oneOf(
@@ -75,7 +110,8 @@ const queryDataSchema = Schema.Struct({
 	),
 	metric: P.optionalText(
 		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio; for a count of errors use count with status Error, which error_count is read as), " +
-			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors. " +
+			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors, groups (distinct accounts), " +
+			"or over a numeric property named by value_attribute: sum, avg, min, max, p50, p95, p99. " +
 			"Metrics: avg, sum, min, max, count, rate, increase. For counters (sum metrics, Prometheus *_total " +
 			"gauges) use increase (total over the window) or rate (per second); both are per-series and " +
 			"reset-aware. sum adds raw samples. Default: count, or avg for metrics.",
@@ -84,12 +120,17 @@ const queryDataSchema = Schema.Struct({
 		"Traces: service, span_name, status_code, http_method, attribute, resource_attribute. " +
 			"Logs: service, severity; breakdowns also attribute, resource_attribute. " +
 			"Metrics: service, attribute, resource_attribute. " +
-			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
+			"Product events: event_name, kind, source, host, page_path, service, group, attribute, and the event's session: " +
+			"country, referrer_host, utm_source, utm_medium, utm_campaign, device_type, browser, os. " +
 			"'attribute' and 'resource_attribute' need attribute_key (resource_attribute reads resource keys such as " +
 			"k8s.pod.name or deployment.environment; per commit is resource_attribute with attribute_key=vcs.ref.head.revision). " +
 			"Timeseries also take 'none' (the default); breakdown defaults to service.",
 	),
 	...WINDOW.fields,
+	start_time: WINDOW.fields.start_time.annotate({
+		description:
+			"Window start, UTC (YYYY-MM-DD HH:mm:ss). Default: 6 hours before end_time, or 7 days for product_events.",
+	}),
 	service: P.service(),
 	span_name: P.optionalText(
 		"Filter by span name (traces only). Exact match first; when nothing matches exactly it is matched as a case-insensitive substring",
@@ -107,6 +148,23 @@ const queryDataSchema = Schema.Struct({
 	}),
 	host: P.optionalText("Only events fired on this site host (product_events only)"),
 	page_path: P.optionalText("Only events fired on this page path (product_events only)"),
+	value_attribute: P.optionalText(
+		"The numeric property a sum, avg, min, max, p50, p95 or p99 metric reads, e.g. amount (product_events only). Events without a number there are left out",
+	),
+	country: P.optionalText(
+		"Only events from sessions in this country, two-letter ISO code (product_events only; like every session filter below it leaves out server-side events, which have no session)",
+	),
+	referrer_host: P.optionalText("Only events from sessions referred by this host (product_events only)"),
+	utm_source: P.optionalText("Only events from sessions carrying this utm_source (product_events only)"),
+	utm_medium: P.optionalText("Only events from sessions carrying this utm_medium (product_events only)"),
+	utm_campaign: P.optionalText(
+		"Only events from sessions carrying this utm_campaign (product_events only)",
+	),
+	device_type: P.optionalText(
+		"Only events from sessions on this device type: desktop, mobile or tablet (product_events only)",
+	),
+	browser: P.optionalText("Only events from sessions in this browser, e.g. Chrome (product_events only)"),
+	os: P.optionalText("Only events from sessions on this operating system (product_events only)"),
 	metric_name: P.optionalText("The metric, from list_metrics (source=metrics only)"),
 	metric_type: P.optionalOneOf(MetricType.literals, "Type of `metric_name`, as list_metrics reports it"),
 	attribute_key: P.optionalText(
@@ -143,7 +201,10 @@ const queryDataDescription =
 const DEFAULT_METRIC = {
 	traces: ["count", "count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate, apdex"],
 	logs: ["count", "count"],
-	product_events: ["count", "count, sessions, persons, users, visitors"],
+	product_events: [
+		"count",
+		"count, sessions, persons, users, visitors, groups, and sum, avg, min, max, p50, p95, p99 with value_attribute",
+	],
 	metrics: ["avg", "avg, sum, min, max, count, rate, increase"],
 } as const
 
@@ -157,8 +218,14 @@ const DEFAULT_GROUP_BY = {
 		breakdown: ["service", "service, severity, attribute, resource_attribute"],
 	},
 	product_events: {
-		timeseries: ["none", "event_name, kind, source, host, page_path, service, group, attribute, none"],
-		breakdown: ["event_name", "event_name, kind, source, host, page_path, service, group, attribute"],
+		timeseries: [
+			"none",
+			"event_name, kind, source, host, page_path, service, group, attribute, country, referrer_host, utm_source, utm_medium, utm_campaign, device_type, browser, os, none",
+		],
+		breakdown: [
+			"event_name",
+			"event_name, kind, source, host, page_path, service, group, attribute, country, referrer_host, utm_source, utm_medium, utm_campaign, device_type, browser, os",
+		],
 	},
 	metrics: {
 		timeseries: ["none", "service, attribute, resource_attribute, none"],
@@ -296,6 +363,15 @@ const eventAttributeFilters = (params: Params, resolved: ResolvedQuery) => {
 	return filters.length > 0 ? { attributeFilters: filters } : undefined
 }
 
+/** The session filters that were set, by parameter name. */
+const sessionFiltersOf = (params: Params): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.flatMap(SESSION_FILTER_PARAMS, (name) => {
+			const value = params[name]
+			return value === undefined || value === "" ? [] : [[name, value] as const]
+		}),
+	)
+
 const environmentsOf = (params: Params) =>
 	params.environments && params.environments.length > 0 ? { environments: params.environments } : undefined
 
@@ -353,6 +429,16 @@ export const buildRawSpec = (params: Params, resolved: ResolvedQuery): Record<st
 			})
 		case "product_events":
 			return withFilters({
+				...Rec.fromEntries(
+					Arr.flatMap(SESSION_FILTER_PARAMS, (name) => {
+						const value = params[name]
+						return value === undefined || value === ""
+							? []
+							: [[SESSION_FILTERS[name], value] as const]
+					}),
+				),
+				...(isNumericMetric(metric) &&
+					params.value_attribute !== undefined && { valueAttributeKey: params.value_attribute }),
 				...(params.event_name && params.event_name.length > 0 && { eventNames: params.event_name }),
 				...(params.event_kind && params.event_kind.length > 0 && { kinds: params.event_kind }),
 				...(params.host && { hosts: [params.host] }),
@@ -384,6 +470,16 @@ const COUNTER_NAME = /(_total|_count|_sum|_bucket)$/
 
 /** Caveats on numbers that are easy to misread, rendered above the result. */
 const metricsWarningsFor = (params: Params, metric: string): Array<string> => {
+	if (params.source === "product_events") {
+		const sessionKeyed =
+			Rec.keys(sessionFiltersOf(params)).length > 0 ||
+			Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? "")
+		return sessionKeyed
+			? [
+					"Session dimensions come from the event's browser or app session. Server-side events have no session: a session filter leaves them out, and a session group_by puts them under (none).",
+				]
+			: []
+	}
 	if (params.source !== "metrics") return []
 	const warnings: Array<string> = []
 	const looksLikeCounter =
@@ -425,6 +521,11 @@ const queryContextOf = (params: Params, resolved: ResolvedQuery): Output["queryC
 			params.event_kind.length > 0 && { eventKind: Arr.join(params.event_kind, ",") }),
 		...(params.host && { host: params.host }),
 		...(params.page_path && { pagePath: params.page_path }),
+		...(params.source === "product_events" &&
+			Rec.keys(sessionFiltersOf(params)).length > 0 && { sessionFilters: sessionFiltersOf(params) }),
+		...(params.source === "product_events" &&
+			isNumericMetric(resolved.metric) &&
+			params.value_attribute !== undefined && { valueAttribute: params.value_attribute }),
 		...(params.metric_name && { metricName: params.metric_name }),
 		...(params.metric_type && { metricType: params.metric_type }),
 		...((params.apdex_threshold_ms ?? 0) > 0 && { apdexThresholdMs: params.apdex_threshold_ms }),
@@ -510,12 +611,19 @@ const attributeConditionText = (
 
 export const renderQueryData = (output: Output): ToolDoc => {
 	const capitalize = (s: string) => Str.toUpperCase(s.charAt(0)) + Str.slice(1)(s)
-	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${output.metric}`
+	const valueAttribute = output.queryContext.valueAttribute
+	const measured = valueAttribute === undefined ? output.metric : `${output.metric}(${valueAttribute})`
+	const title = `${capitalize(output.queryContext.source)} ${capitalize(output.kind)}: ${measured}`
 	const conditions = Arr.map(output.queryContext.attributeFilters ?? [], attributeConditionText)
+	const sessions = Arr.map(
+		Rec.toEntries(output.queryContext.sessionFilters ?? {}),
+		([name, value]) => `${name} = ${value}`,
+	)
 	const scope: ToolDoc["scope"] = [
 		["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 		["Grouped by", output.groupBy],
 		...(conditions.length > 0 ? [["Attributes", Arr.join(conditions, " AND ")] as const] : []),
+		...(sessions.length > 0 ? [["Sessions", Arr.join(sessions, " AND ")] as const] : []),
 	]
 	const decisions =
 		output.decisions !== undefined && output.decisions.length > 0
@@ -564,6 +672,17 @@ export const renderQueryData = (output: Output): ToolDoc => {
 					]),
 				),
 				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
+				...(output.total === undefined
+					? []
+					: [
+							doc.text(
+								`**Whole window: ${formatMetricValue(output.metric, output.total)} ${measured}.** ${
+									DISTINCT_METRICS.has(output.metric)
+										? "A distinct count over the window, not the sum of the buckets: the same one can be in several."
+										: "Over every event in the window."
+								}`,
+							),
+						]),
 				...(lastIsPartial ? [doc.text(PARTIAL_BUCKET_NOTE)] : []),
 				...notes,
 			],
@@ -581,7 +700,7 @@ export const renderQueryData = (output: Output): ToolDoc => {
 		blocks: [
 			...decisions,
 			doc.table(
-				["Name", isWeightedCount(output) ? "count (estimated)" : output.metric],
+				["Name", isWeightedCount(output) ? "count (estimated)" : measured],
 				Arr.map(items, (item) => [
 					untrustedName(item.name, 200),
 					formatMetricValue(output.metric, item.value),
@@ -614,11 +733,13 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				group_by: aliases.group_by,
 				attribute_key: aliases.attribute_key,
 			}
-			const resolvedWindow = yield* WINDOW.resolve(params, "query_data")
+			const windowOf = params.source === "product_events" ? EVENTS_WINDOW : WINDOW
+			const resolvedWindow = yield* windowOf.resolve(params, "query_data")
 			const et = resolvedWindow.et
 			// Moved forward here and by `execute` when the window is past a breakdown limit.
 			let st = resolvedWindow.st
-			const breakdownStartMs = parseWarehouseDateTime(et) - MAX_BREAKDOWN_RANGE_SECONDS * 1000
+			const breakdownRangeSeconds = maxBreakdownRangeSeconds(params.source)
+			const breakdownStartMs = parseWarehouseDateTime(et) - breakdownRangeSeconds * 1000
 			const clampedBreakdown =
 				params.kind === "breakdown" && parseWarehouseDateTime(st) < breakdownStartMs
 			if (clampedBreakdown) st = warehouseDateTime(breakdownStartMs)
@@ -641,6 +762,34 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							? 'group_by="attribute" attribute_key="http.method"'
 							: 'group_by="resource_attribute" attribute_key="k8s.pod.name"',
 				})
+			}
+
+			const eventsOnly = Arr.findFirst(
+				["value_attribute", ...SESSION_FILTER_PARAMS] as const,
+				(name) => params.source !== "product_events" && params[name] !== undefined,
+			)
+			if (Option.isSome(eventsOnly)) {
+				return yield* new McpInvalidInputError({
+					message: `\`${eventsOnly.value}\` applies to source=product_events only; source=${params.source} has no sessions or event properties. For spans, filter with attribute_key or attribute_filters.`,
+					parameter: eventsOnly.value,
+				})
+			}
+			if (params.source === "product_events") {
+				const numeric = isNumericMetric(params.metric)
+				if (numeric && params.value_attribute === undefined) {
+					return yield* new McpInvalidInputError({
+						message: `metric=${params.metric} aggregates a numeric property: name it with \`value_attribute\`. Use explore_attributes source=product_events to see an event's properties.`,
+						parameter: "value_attribute",
+						example: `source="product_events" metric="${params.metric}" value_attribute="amount" event_name=["plan_started"]`,
+					})
+				}
+				if (!numeric && params.metric !== undefined && params.value_attribute !== undefined) {
+					return yield* new McpInvalidInputError({
+						message: `\`value_attribute\` is read by sum, avg, min, max, p50, p95 and p99; metric=${params.metric} counts events or identities. Drop one of them.`,
+						parameter: "metric",
+						example: 'source="product_events" metric="sum" value_attribute="amount"',
+					})
+				}
 			}
 
 			if (
@@ -700,19 +849,27 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				})
 			}
 
-			const [defaultMetric, availableMetrics] = DEFAULT_METRIC[params.source]
+			const [sourceDefaultMetric, availableMetrics] = DEFAULT_METRIC[params.source]
+			// A property to measure and no way named: adding it up is what was asked for.
+			const defaultMetric =
+				params.source === "product_events" && params.value_attribute !== undefined
+					? "sum"
+					: sourceDefaultMetric
 			const [defaultGroupBy, availableGroupBys] = DEFAULT_GROUP_BY[params.source][params.kind]
 			const metric = params.metric ?? defaultMetric
 
 			const decisions: Array<string> = [...aliases.decisions]
 			if (clampedBreakdown)
 				decisions.push(
-					`start_time: moved to ${st}; a breakdown covers at most ${MAX_BREAKDOWN_RANGE_SECONDS / 86_400} days. Use kind="timeseries" for a longer trend.`,
+					`start_time: moved to ${st}; a breakdown covers at most ${breakdownRangeSeconds / 86_400} days. Use kind="timeseries" for a longer trend.`,
 				)
 			if (params.start_time === undefined)
 				decisions.push(
-					`start_time: defaulted to ${WINDOW.spec.defaultHours} hours before end_time (${st})`,
+					params.source === "product_events"
+						? `start_time: defaulted to 7 days before end_time (${st})`
+						: `start_time: defaulted to ${windowOf.spec.defaultHours} hours before end_time (${st})`,
 				)
+
 			if (params.end_time === undefined) decisions.push(`end_time: defaulted to now (${et})`)
 			// Defaults that cannot change the answer (logs' only metric, no grouping) are not noted.
 			if (params.metric === undefined && params.source !== "logs") {
@@ -788,6 +945,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				"maple.ai.kind": params.kind,
 			})
 
+			let total: number | undefined
 			const run = Effect.fn("McpQueryData.run")(function* (resolved: ResolvedQuery) {
 				const rawSpec = buildRawSpec(params, resolved)
 				const query = yield* decodeQuerySpec(rawSpec).pipe(
@@ -861,7 +1019,12 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							? {
 									kind: "breakdown",
 									data: Arr.map(result.data, (item) => ({
-										name: item.name,
+										// The group of events with no value (no session, no such prop) is
+										// named as the timeseries names it, not left blank.
+										name:
+											params.source === "product_events" && item.name === ""
+												? "(none)"
+												: item.name,
 										value: item.value,
 									})),
 								}
@@ -871,6 +1034,18 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						message: `The query engine returned a "${result.kind}" result for a ${params.kind} query.`,
 						pipeName: "query_data",
 					})
+				}
+				// A product question is usually "how many in this period": one number the buckets cannot
+				// give for a distinct count. One more read, only for an ungrouped event series.
+				if (query.source === "product_events" && query.kind === "timeseries" && groupBy === "none") {
+					total = yield* withTenantExecutor(
+						productEventsTotal({
+							startTime: st,
+							endTime: et,
+							metric: query.metric,
+							...(query.filters === undefined ? undefined : { filters: query.filters }),
+						}),
+					).pipe(orFallback("product events window total", () => undefined))
 				}
 				return mapped
 			})
@@ -898,7 +1073,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				)
 			}
 
-			const emptyHints = isEmptyResult(resolved)
+			const signalHints = isEmptyResult(resolved)
 				? yield* emptyResultHints(
 						{
 							service: params.service,
@@ -912,9 +1087,26 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						{ traceKeys: params.source === "traces" || params.source === "logs" },
 					)
 				: []
+			// A distinct count is empty for events that exist but carry no such identity.
+			const emptyHints =
+				isEmptyResult(resolved) && params.source === "product_events" && DISTINCT_METRICS.has(metric)
+					? [
+							...signalHints,
+							`metric=${metric} counts only events that carry that identity. An event sent for the account alone (a billing webhook) has a group id and no user: check with metric="count", and count accounts with metric="groups".`,
+						]
+					: signalHints
 
 			const queryContext = queryContextOf(params, resolvedQuery)
-			const warnings = metricsWarningsFor(params, metric)
+			const readsSessions =
+				params.source === "product_events" &&
+				(Rec.keys(sessionFiltersOf(params)).length > 0 ||
+					Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? ""))
+			const nowMs = yield* Clock.currentTimeMillis
+			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
+			const warnings = [
+				...metricsWarningsFor(params, metric),
+				...(sessionNote === undefined ? [] : [sessionNote]),
+			]
 			return {
 				timeRange: { start: st, end: et },
 				kind: params.kind,
@@ -924,6 +1116,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				...(warnings.length > 0 ? { warnings } : undefined),
 				queryContext,
 				unit: inferQueryDataUnit(params.source, metric, queryContext.metricName),
+				...(total === undefined ? undefined : { total }),
 				result: resolved,
 				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}

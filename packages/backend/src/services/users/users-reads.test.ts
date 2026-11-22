@@ -7,6 +7,7 @@ import {
 	issueItem,
 	mcpServersInScope,
 	mergeActivity,
+	mergeCalendarDays,
 	mergeServices,
 	resolveUsersScope,
 	severityOf,
@@ -284,5 +285,30 @@ describe("issueItem", () => {
 		expect(issueItem({ ...issue, type: "TypeError", message: "x is undefined" }).title).toBe("TypeError")
 		expect(issueItem({ ...issue, message: "upstream timed out" }).title).toBe("upstream timed out")
 		expect(issueItem(issue).title).toBe("Unknown Error")
+	})
+})
+
+describe("mergeCalendarDays", () => {
+	const activity = (day: string, requestCount: number) => ({
+		day,
+		requestCount,
+		failedRequestCount: 1,
+		errorLogCount: 2,
+		sessionCount: 3,
+	})
+
+	it("puts a day's events beside its requests, keeps event-only days, and sorts oldest first", () => {
+		const days = mergeCalendarDays(
+			[activity("2026-11-03", 40), activity("2026-11-01", 10)],
+			[
+				{ day: "2026-11-03", events: 7 },
+				{ day: "2026-11-02", events: 4 },
+			],
+		)
+		expect(days).toEqual([
+			{ day: "2026-11-01", requests: 10, failedRequests: 1, errorLogs: 2, sessions: 3, events: 0 },
+			{ day: "2026-11-02", requests: 0, failedRequests: 0, errorLogs: 0, sessions: 0, events: 4 },
+			{ day: "2026-11-03", requests: 40, failedRequests: 1, errorLogs: 2, sessions: 3, events: 7 },
+		])
 	})
 })

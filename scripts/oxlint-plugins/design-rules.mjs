@@ -66,6 +66,7 @@ const SHADOW_TOKENS = new Set([
 	"overflow-up",
 	"rule-bottom",
 	"backdrop-below",
+	"key",
 	"none",
 ])
 const INSET_SHADOW_TOKENS = new Set(["highlight", "pressed", "none"])
@@ -83,7 +84,7 @@ const isRawShadow = (token) => {
 const noRawShadow = ratcheted("no-raw-shadow", {
 	description: "Depth comes from surfaces, the hairline and the shadow tokens.",
 	message:
-		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up`, `shadow-rule-bottom` or `shadow-backdrop-below` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
+		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up`, `shadow-rule-bottom`, `shadow-backdrop-below` or `shadow-key` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
 	collect: (_context, push) =>
 		classStrings((node, tokens) => {
 			for (const token of tokens) if (isRawShadow(splitToken(token).utility)) push(node, { token })
@@ -120,8 +121,7 @@ const instantState = {
 		docs: { description: "Hover and press land in the frame they happen; only movement eases." },
 		messages: {
 			bad: "`{{token}}` eases a colour on a string with hover or press states. State is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
-			color:
-				"`{{token}}` eases a colour. A colour changes with state (a parent's hover, selection, focus, open), and state is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
+			color: "`{{token}}` eases a colour. A colour changes with state (a parent's hover, selection, focus, open), and state is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
 		},
 	},
 	create(context) {
@@ -132,10 +132,7 @@ const instantState = {
 				if (variants.length > 0) return
 				const list = /^transition-\[([^\]]+)\]$/.exec(utility)
 				const props = list === null ? [] : list[1].split(",")
-				if (
-					utility === "transition-colors" ||
-					props.some((prop) => EASED_COLOR_PROPS.has(prop))
-				)
+				if (utility === "transition-colors" || props.some((prop) => EASED_COLOR_PROPS.has(prop)))
 					context.report({ node, messageId: "color", data: { token: tokens[i] } })
 				else if (
 					interactive &&
@@ -398,10 +395,8 @@ const surfaceWashes = {
 		type: "problem",
 		docs: { description: "Neutral washes and hover fills are the surface tokens." },
 		messages: {
-			alpha:
-				"`{{token}}` hand-picks a neutral wash. Use `bg-surface-faint`, `bg-surface-sunken` or `bg-surface-strong`; they read the same on any surface.",
-			hover:
-				"`{{token}}` is not a hover fill. A row, list item or chip hovers `bg-surface-sunken` (`bg-surface-strong` on an already sunken chip); a control's hover belongs to its kit component (`button` ghost).",
+			alpha: "`{{token}}` hand-picks a neutral wash. Use `bg-surface-faint`, `bg-surface-sunken` or `bg-surface-strong`; they read the same on any surface.",
+			hover: "`{{token}}` is not a hover fill. A row, list item or chip hovers `bg-surface-sunken` (`bg-surface-strong` on an already sunken chip); a control's hover belongs to its kit component (`button` ghost).",
 		},
 		schema: [
 			{
@@ -437,8 +432,7 @@ const focusRing = {
 		type: "problem",
 		docs: { description: "Focus draws one ring: solid `ring-ring`, or the input halo." },
 		messages: {
-			alpha:
-				"`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24` with `border-ring`.",
+			alpha: "`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24` with `border-ring`.",
 			halo: "`{{token}}` is the input halo, which is too faint to show focus alone. Add `{{border}}` (a bordered input), or use the solid `ring-2 ring-ring` (anything else).",
 		},
 	},

@@ -5,14 +5,14 @@ import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
+import { MCP_PRODUCT_EVENTS_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
 const TOOL = "list_product_events"
-const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
+const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
 
 /** The query's own cap: a kind or name filter applies after it, so a narrowed read fetches all of it. */
 const QUERY_MAX = 200
@@ -25,7 +25,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Product Events",
 		description:
-			"List the product event names an org recorded (browser `track()` events, server-side events, page views) with how often each fired and how many sessions and persons it reached. Use it to find exact step names for `query_funnel`. `kind`: `custom` is a `track()` or server event, `navigation` a page view, `screen` a mobile screen. `kind` and `search` select among the 200 most frequent names in the window.",
+			"List the product event names an org recorded (browser `track()` events, server-side events, page views) with how often each fired and how many sessions, persons and groups (accounts) it reached. Use it to find exact step names for `query_funnel`. `kind`: `custom` is a `track()` or server event, `navigation` a page view, `screen` a mobile screen. `kind` and `search` select among the 200 most frequent names in the window.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			kind: P.optionalOneOf(
@@ -89,6 +89,7 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 					count: row.count,
 					sessions: row.sessions,
 					persons: row.persons,
+					groups: row.groups,
 				}),
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)
@@ -108,6 +109,8 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				eventName: event.eventName,
 			}))
 			const expectsCustom = output.kind === undefined || output.kind === "custom"
+			// Sent for the account alone, as a billing webhook does: no person key will ever count these.
+			const accountOnly = Arr.filter(events, (event) => event.persons === 0 && event.groups > 0)
 			// Every event on one "person" across many sessions means the identity keys are empty.
 			const maxSessions = Math.max(0, ...Arr.map(events, (event) => event.sessions))
 			const collapsed = maxSessions > 1 && Arr.every(events, (event) => event.persons <= 1)
@@ -141,15 +144,29 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 						? []
 						: [
 								doc.table(
-									["Event", "Kind", "Count", "Sessions", "Persons"],
+									["Event", "Kind", "Count", "Sessions", "Persons", "Groups"],
 									Arr.map(events, (event) => [
 										truncate(event.eventName, 60),
 										event.kind,
 										formatNumber(event.count),
 										formatNumber(event.sessions),
 										formatNumber(event.persons),
+										formatNumber(event.groups),
 									]),
 								),
+								...(accountOnly.length === 0
+									? []
+									: [
+											doc.text(
+												`${Arr.join(
+													Arr.map(
+														accountOnly.slice(0, 5),
+														(event) => `\`${truncate(event.eventName, 40)}\``,
+													),
+													", ",
+												)} ${accountOnly.length === 1 ? "carries" : "carry"} a group (account) id and no user or visitor id: counted by person ${accountOnly.length === 1 ? "it reads" : "they read"} as nobody. Count ${accountOnly.length === 1 ? "it" : "them"} by group: \`key_by="group"\` in query_funnel, query_cohort and query_retention, \`metric="groups"\` in query_data.`,
+											),
+										]),
 								...(customEvents.length === 0
 									? [
 											doc.text(

@@ -236,7 +236,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	IngestRuleService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,
-	ProductEventsService.layer,
 	DailySpendService.layer,
 	BillingCustomerResolver.layer,
 	BillingOrgService.layer,
@@ -325,4 +324,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,
-).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, ApiSecretsLive, EdgeCacheServiceLive)))
+).pipe(
+	// A platform service: onboarding and billing services emit through it.
+	Layer.provideMerge(ProductEventsService.layer),
+	Layer.provideMerge(Layer.mergeAll(Env.layer, ApiSecretsLive, EdgeCacheServiceLive)),
+)

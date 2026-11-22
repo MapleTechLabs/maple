@@ -45,8 +45,19 @@ export const MAX_LIST_RANGE_SECONDS = 60 * 60 * 24 * 7
 export const MAX_BREAKDOWN_RANGE_SECONDS = ONE_MONTH_PRESET_SECONDS
 
 /**
+ * Product events are orders of magnitude fewer than spans, and product questions (which plan
+ * converts, which source retains) are asked over a quarter.
+ */
+export const MAX_PRODUCT_EVENTS_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24 * 93
+
+/** The widest window a breakdown over `source` may cover. */
+export const maxBreakdownRangeSeconds = (source: string): number =>
+	source === "product_events" ? MAX_PRODUCT_EVENTS_BREAKDOWN_RANGE_SECONDS : MAX_BREAKDOWN_RANGE_SECONDS
+
+/**
  * A breakdown with no narrowing filter scans the entire partition prefix, so it
- * gets a far tighter ceiling than a filtered one.
+ * gets a far tighter ceiling than a filtered one. Product events are exempt: an
+ * org's whole event table over a quarter is a smaller read than a day of spans.
  */
 export const MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS = 60 * 60 * 24
 

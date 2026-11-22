@@ -6,6 +6,7 @@ import type { EntryContext } from "../session/session"
 import { parseUserAgent } from "../platform/user-agent"
 import { scrubUrl } from "../platform/url-privacy"
 import { isCommitSha } from "../platform/commit-sha"
+import { COOKIELESS_VISITOR_ID } from "../identity/row-visitor"
 
 /** ClickHouse-style `YYYY-MM-DD HH:MM:SS.mmm` in UTC (matches the ingest gateway). */
 export function formatCHDateTime(date: Date): string {
@@ -96,6 +97,8 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 	const entryUrl = scrubUrl(input.entry?.entryUrl || location?.href || "")
 	const referrer = scrubUrl(input.entry?.referrer ?? "")
 	const utm = input.entry?.utm ?? {}
+	// The gateway derives this visitor id; the rows say so for the analytics layer.
+	const cookieless = input.visitorId === COOKIELESS_VISITOR_ID
 
 	const row: SessionMetaRow = {
 		session_id: input.sessionId,
@@ -130,9 +133,11 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 				: undefined),
 			// Storage-blocked visitors get an in-memory id, so their sessions each
 			// look like a distinct visitor. Flag it rather than inflate silently.
-			...(input.visitorId && input.visitorIdPersisted === false
-				? { "maple.visitor.persisted": "false" }
-				: undefined),
+			...(cookieless
+				? { "maple.visitor.mode": "cookieless" }
+				: input.visitorId && input.visitorIdPersisted === false
+					? { "maple.visitor.persisted": "false" }
+					: undefined),
 			...(input.environment
 				? {
 						// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + canonical.
@@ -156,7 +161,8 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 		// counters moved out of the `ended` branch: they used to default to 0 on
 		// the surviving row, which read as "one page, no clicks" — a bounce.
 		visitor_id: input.visitorId ?? "",
-		visitor_is_new: input.visitorIsNew ? 1 : 0,
+		// A cookieless client cannot know whether the visitor is new.
+		visitor_is_new: input.visitorIsNew && !cookieless ? 1 : 0,
 		billable_start: input.billableStart ? 1 : 0,
 		user_email: (input.captureUserEmail === false ? undefined : identity?.email) ?? "",
 		user_name: identity?.username ?? "",

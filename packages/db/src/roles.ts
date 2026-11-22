@@ -1,6 +1,8 @@
 import { String as Str } from "effect"
 import {
 	AwsConnections,
+	CookielessSalts,
+	CookielessVisits,
 	CloudflareLogpushConnectors,
 	GcpConnectors,
 	OrgBillingLinks,
@@ -34,7 +36,7 @@ export type DbAccess = keyof typeof DB_ACCESS_ROLES
  */
 export const INGEST_GATEWAY_ROLE = "maple_ingest"
 
-export type TablePrivilege = "SELECT" | "INSERT" | "UPDATE"
+export type TablePrivilege = "SELECT" | "INSERT" | "UPDATE" | "DELETE"
 
 /**
  * Exactly what the gateway's Postgres store (`PostgresKeyStore`, apps/ingest/src/main.rs) runs.
@@ -59,6 +61,9 @@ export const INGEST_GATEWAY_GRANTS: ReadonlyArray<{
 	{ table: AwsConnections, privileges: ["SELECT", "UPDATE"] },
 	// The hourly upsert (`ON CONFLICT ... DO UPDATE` reads the row it adds to). No serial column.
 	{ table: OrgIngestRuleStats, privileges: ["SELECT", "INSERT", "UPDATE"] },
+	// Cookieless visitors: the gateway mints the day's salt, claims visits, and deletes both once stale.
+	{ table: CookielessSalts, privileges: ["SELECT", "INSERT", "DELETE"] },
+	{ table: CookielessVisits, privileges: ["SELECT", "INSERT", "UPDATE", "DELETE"] },
 ]
 
 const sqlLiteral = (value: string) => `'${Str.replaceAll("'", "''")(value)}'`

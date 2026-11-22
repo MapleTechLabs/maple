@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 // A product-event funnel definition, as every surface that stores one keeps
 // it: the /analytics URL, a dashboard funnel widget, an MCP tool call, and the
@@ -20,9 +20,10 @@ export type FunnelSessionDimension = typeof FunnelSessionDimension.Type
 
 /**
  * What a funnel counts: a stitched person (user id, else the visitor's linked
- * user, else the visitor), the raw visitor or user column, or the session.
+ * user, else the visitor), the raw visitor or user column, the group the app
+ * identified the user into (an account or team), or the session.
  */
-export const FunnelKeyBy = Schema.Literals(["person", "visitor", "user", "session"])
+export const FunnelKeyBy = Schema.Literals(["person", "visitor", "user", "group", "session"])
 export type FunnelKeyBy = typeof FunnelKeyBy.Type
 
 /** A `track()` (or direct-ingested) event by name, optionally narrowed by `Attributes[k] = v`. */
@@ -31,7 +32,11 @@ export const FunnelEventStep = Schema.Struct({
 	eventName: Schema.String,
 	attributeEquals: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
-/** A page view, or a mobile screen view, of `pagePath`, optionally on one `host`. */
+/**
+ * A page view, or a mobile screen view, of `pagePath`, optionally on one `host`. A `*` in the
+ * path stands for any run of characters, so `/dashboards/*` is every dashboard; a path with none
+ * is matched exactly.
+ */
 export const FunnelPageStep = Schema.Struct({
 	kind: Schema.Literal("page"),
 	pagePath: Schema.String,
@@ -45,6 +50,41 @@ export const FunnelSessionStep = Schema.Struct({
 })
 export const FunnelStep = Schema.Union([FunnelEventStep, FunnelPageStep, FunnelSessionStep])
 export type FunnelStep = typeof FunnelStep.Type
+
+/**
+ * Something that must not happen part way through a funnel: an attempt that has reached step
+ * `after` (default 1) and not yet step `before` (default the last) is dropped when it does.
+ */
+export const FunnelExclusion = Schema.Struct({
+	step: Schema.Union([FunnelEventStep, FunnelPageStep]),
+	after: Schema.optionalKey(Schema.Number),
+	before: Schema.optionalKey(Schema.Number),
+})
+export type FunnelExclusion = typeof FunnelExclusion.Type
+
+/** Mirror `FUNNEL_MAX_EXCLUSIONS` in the query engine. */
+export const FUNNEL_MAX_EXCLUSIONS = 5
+
+const PAGE_WILDCARD = "*"
+
+/** Whether a page step's path is a pattern rather than one exact path. */
+export const isPagePathPattern = (pagePath: string): boolean => Str.includes(PAGE_WILDCARD)(pagePath)
+
+/**
+ * A page step's pattern as a SQL `LIKE` pattern: `*` becomes `%`, and the characters `LIKE` reads
+ * specially (`%`, `_`, `\`) are escaped so they match themselves.
+ */
+export const pagePathLikePattern = (pagePath: string): string =>
+	Str.replaceAll(PAGE_WILDCARD, "%")(Str.replace(/[\\%_]/g, "\\$&")(pagePath))
+
+/** Whether `path` is the page a step names: equal to it, or matching its `*` pattern. */
+export const pagePathMatches = (pagePath: string, path: string): boolean => {
+	if (!isPagePathPattern(pagePath)) return path === pagePath
+	const parts = Arr.map(Str.split(PAGE_WILDCARD)(pagePath), (part) =>
+		Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(part),
+	)
+	return new RegExp(`^${Arr.join(parts, "[\\s\\S]*")}$`).test(path)
+}
 
 /** An acquisition dimension of the person's sessions, the event `Host`, or `attribute:<key>`. */
 export const FunnelBreakdownBy = Schema.Union([
@@ -293,6 +333,19 @@ export const funnelWidgetRowsWithDetails = (
 // query's own `{ hop, fromNode, toNode, count }`, with two sentinels the chart
 // labels: `''` for a sequence that ended, `$other` for the folded remainder of
 // a column.
+
+// Retention: of the keys that first did one thing in an interval, how many did another in each
+// interval after it. Mirrors `productEventsRetentionQuery`'s options.
+
+export const RetentionInterval = Schema.Literals(["day", "week", "month"])
+export type RetentionInterval = typeof RetentionInterval.Type
+
+/** A session cannot come back in a later interval, so it is not a retention key. */
+export const RetentionKeyBy = Schema.Literals(["person", "visitor", "user", "group"])
+export type RetentionKeyBy = typeof RetentionKeyBy.Type
+
+/** Mirror `RETENTION_MAX_PERIODS` in the query engine. */
+export const RETENTION_MAX_PERIODS = 26
 
 export const PathsDirection = Schema.Literals(["after", "before"])
 export type PathsDirection = typeof PathsDirection.Type
