@@ -42,6 +42,8 @@ export type ProductEventName =
 	| "member_joined"
 	| "member_removed"
 	| "first_data_received"
+	/** A feature action from the audit log; `feature` and `action` name it. */
+	| "feature_used"
 
 export interface ProductEventInput {
 	readonly name: ProductEventName

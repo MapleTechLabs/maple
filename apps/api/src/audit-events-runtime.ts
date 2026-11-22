@@ -13,6 +13,12 @@ import {
 	type AuditTrailServiceApi,
 } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { mapleAuditTrailEvents } from "@maple/backend/services/audit-trail/providers/maple"
+import { featureUsedEvents } from "@maple/backend/services/audit/audit-product-events"
+import {
+	type ProductEventsApi,
+	ProductEventsService,
+} from "@maple/backend/services/product-events/ProductEventsService"
+import { ProductEventsIngestKey } from "@maple/infra/secrets"
 import {
 	type AuditLogEvent,
 	auditEventToRow,
@@ -26,9 +32,11 @@ import {
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const AuditEventsLive = Layer.mergeAll(WarehouseQueryService.layer, AuditTrailService.layer).pipe(
-	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
-)
+export const AuditEventsLive = Layer.mergeAll(
+	WarehouseQueryService.layer,
+	AuditTrailService.layer,
+	ProductEventsService.layer,
+).pipe(Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive, ProductEventsIngestKey.layer)))
 
 /**
  * Best-effort identity for the exhaustion log. The body reached us as queue
@@ -43,6 +51,9 @@ const auditEventField = (body: unknown, field: string): string => {
 }
 const auditEventOrgId = (body: unknown) => auditEventField(body, "orgId")
 const auditEventAction = (body: unknown) => auditEventField(body, "action")
+
+/** Product event POSTs in flight per org batch. */
+const PRODUCT_EVENT_CONCURRENCY = 4
 
 interface DecodedMessage {
 	readonly message: Message
@@ -92,6 +103,16 @@ const copyToTrail = (trail: AuditTrailServiceApi, orgId: OrgId, events: Readonly
 	)
 
 /**
+ * Feature actions also go out as `feature_used` product events, so adoption is counted from every
+ * client (dashboard, API, MCP, CLI) in one place. `track` never fails and is bounded per event.
+ */
+const emitFeatureEvents = (productEvents: ProductEventsApi, events: ReadonlyArray<AuditLogEvent>) =>
+	Effect.forEach(featureUsedEvents(events), productEvents.track, {
+		concurrency: PRODUCT_EVENT_CONCURRENCY,
+		discard: true,
+	})
+
+/**
  * Audit events queue consumer: lowers each event to its `audit_log` row (and, for a change or
  * a refusal, its `audit_trail_events` row) and writes one batch per org through the managed
  * ingest pipeline. The table is a
@@ -105,6 +126,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 ) {
 	const warehouse = yield* WarehouseQueryService
 	const trail = yield* AuditTrailService
+	const productEvents = yield* ProductEventsService
 	const now = yield* Clock.currentTimeMillis
 
 	const decodedPerMessage = yield* Effect.forEach(batch.messages, (message) =>
@@ -145,6 +167,7 @@ export const processAuditEventsBatch = Effect.fn("AuditEvents.processBatch")(fun
 				)
 				.pipe(
 					Effect.andThen(copyToTrail(trail, orgId, events)),
+					Effect.andThen(emitFeatureEvents(productEvents, events)),
 					Effect.flatMap(() =>
 						Effect.sync(() => {
 							for (const { message } of group) message.ack()
