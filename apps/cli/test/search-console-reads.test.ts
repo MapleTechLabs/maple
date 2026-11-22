@@ -116,6 +116,32 @@ describeWithChdb("Search Console reads on chDB", () => {
 		])
 	}
 
+	const trendDecode = decodeJsonEachRow(Schema.Struct({ Date: Schema.String, clicks: CH.CHNumber }))
+
+	/** The `run_sql` trend the queries tool suggests, with its macros filled in as run_sql would. */
+	const trend = (site: string, query: string) =>
+		Arr.map(
+			trendDecode(
+				db.query(
+					Str.replaceAll(
+						"$__endTime",
+						"toDateTime('2026-11-10 23:59:59')",
+					)(
+						Str.replaceAll(
+							"$__startTime",
+							`toDateTime('${DAY}')`,
+						)(
+							Str.replaceAll(
+								"$__orgFilter",
+								`OrgId = '${ORG}'`,
+							)(CH.searchConsoleQueryTrendSql(site, query)),
+						),
+					) + " FORMAT JSONEachRow",
+				),
+			),
+			(entry) => [entry.Date, entry.clicks],
+		)
+
 	const expectations = () => {
 		expect(topQueries("legacy")).toEqual([["a", 12]])
 		expect(topQueries("dropped")).toEqual([["a", 6]])
@@ -123,6 +149,12 @@ describeWithChdb("Search Console reads on chDB", () => {
 		// A filter narrows the rows, never which import is complete: markers hold '' there.
 		expect(topQueries("dropped", { country: "usa", device: "desktop" })).toEqual([["a", 6]])
 		expect(topQueries("dropped", { country: "deu" })).toEqual([])
+		// The suggested trend reads the day the way the query list does.
+		expect(trend("dropped", "a")).toEqual([[DAY, 6]])
+		expect(trend("dropped", "b")).toEqual([])
+		expect(trend("emptied", "a")).toEqual([])
+		expect(trend("partial", "a")).toEqual([[DAY, 9]])
+		expect(trend("partial", "b")).toEqual([[DAY, 2]])
 		// An imported empty day is a zero point; a day never imported (Nov 7) is no point.
 		expect(timeseries("chart")).toEqual([
 			["2026-11-08 00:00:00", 5],

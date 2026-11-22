@@ -260,6 +260,14 @@ describe("search_console_queries", () => {
 		expect(text).not.toContain("the last 3 days")
 	})
 
+	it("says a one-day window past the last complete day is not counted yet", async () => {
+		const result = await call("search_console_queries", {
+			start_time: "2026-10-31 00:00:00",
+			end_time: "2026-10-31 12:00:00",
+		})
+		expect(markdown(result)).toContain("none of this window's 1 day is counted yet")
+	})
+
 	it("treats today's import as partial: data runs through yesterday", async () => {
 		const today = pacificToday(Date.now())
 		await sql("UPDATE search_console_sites SET watermark_date = $1", [today])

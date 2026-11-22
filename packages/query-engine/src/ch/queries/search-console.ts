@@ -4,7 +4,7 @@
 // after all of an import's rows, since a re-fetched day can lose keys an older import still holds
 // and an import can fail part-way. Pinned to the managed route: written through `ingest` only.
 
-import type { DateTime } from "effect"
+import { String as Str, type DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from, fromQuery, param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
@@ -297,4 +297,29 @@ export function searchConsoleLandingPagesQuery(opts: SearchConsoleSortOpts = {})
 		sortDir: sortDirOf({ ...opts, sortBy }),
 		limit: opts.limit ?? 100,
 	})
+}
+
+/** A ClickHouse string literal: backslashes first, then quotes, so an escape cannot be undone. */
+const sqlString = (value: string): string =>
+	`'${Str.replaceAll("'", "\\'")(Str.replaceAll("\\", "\\\\")(value))}'`
+
+/**
+ * Hand-written `run_sql` text for one query's daily clicks, impressions and position, read like
+ * the query list: each day from its newest complete (marked) import, each key at its newest
+ * version from then on. Uses the `run_sql` macros `$__orgFilter`, `$__startTime`, `$__endTime`.
+ */
+export const searchConsoleQueryTrendSql = (siteUrl: string, query: string): string => {
+	const where = `WHERE $__orgFilter AND SiteUrl = ${sqlString(siteUrl)} AND Grain = 'query' AND Date >= toStartOfDay($__startTime) AND Date <= $__endTime`
+	return (
+		"SELECT Date, sum(keyClicks) AS clicks, sum(keyImpressions) AS impressions, " +
+		"round(sum(keyPositionSum) / sum(keyImpressions), 1) AS position FROM (" +
+		"SELECT Date, Page, Country, Device, argMax(Clicks, IngestedAt) AS keyClicks, " +
+		"argMax(Impressions, IngestedAt) AS keyImpressions, argMax(PositionSum, IngestedAt) AS keyPositionSum " +
+		"FROM search_console_daily INNER JOIN (" +
+		`SELECT Date AS completeDate, argMax(IngestedAt, (SearchType = '${SEARCH_TYPE_WEB_COMPLETE}', IngestedAt)) AS completeAt ` +
+		`FROM search_console_daily ${where} AND SearchType IN ('${SEARCH_TYPE_WEB}', '${SEARCH_TYPE_WEB_COMPLETE}') GROUP BY completeDate` +
+		") AS complete ON Date = complete.completeDate " +
+		`${where} AND SearchType = '${SEARCH_TYPE_WEB}' AND Query = ${sqlString(query)} AND IngestedAt >= complete.completeAt ` +
+		"GROUP BY Date, Page, Country, Device) GROUP BY Date ORDER BY Date"
+	)
 }

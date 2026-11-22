@@ -1,6 +1,6 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { SearchConsoleTopQueriesRequest, SearchConsoleOverviewRequest } from "@maple/domain/http"
-import { SEARCH_TYPE_WEB, SEARCH_TYPE_WEB_COMPLETE } from "@maple/domain/search-console"
+import { CH } from "@maple/query-engine"
 import {
 	SearchConsoleDevice,
 	SearchConsoleQueriesOutput,
@@ -28,28 +28,8 @@ const MAX_LIMIT = 200
 
 type Output = typeof SearchConsoleQueriesOutput.Type
 
-/** A ClickHouse string literal: backslashes first, then quotes, so an escape cannot be undone. */
-const sqlString = (value: string): string => `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
-
-/**
- * Daily clicks, impressions and position of one query, read like the query list: each day from its
- * newest complete (marked) import, each key at its newest version from then on.
- */
-export const queryTrendSql = (siteUrl: string, query: string): string => {
-	const where = `WHERE $__orgFilter AND SiteUrl = ${sqlString(siteUrl)} AND Grain = 'query' AND Date >= toStartOfDay($__startTime) AND Date <= $__endTime`
-	return (
-		"SELECT Date, sum(keyClicks) AS clicks, sum(keyImpressions) AS impressions, " +
-		"round(sum(keyPositionSum) / sum(keyImpressions), 1) AS position FROM (" +
-		"SELECT Date, Page, Country, Device, argMax(Clicks, IngestedAt) AS keyClicks, " +
-		"argMax(Impressions, IngestedAt) AS keyImpressions, argMax(PositionSum, IngestedAt) AS keyPositionSum " +
-		"FROM search_console_daily INNER JOIN (" +
-		`SELECT Date AS completeDate, argMax(IngestedAt, (SearchType = '${SEARCH_TYPE_WEB_COMPLETE}', IngestedAt)) AS completeAt ` +
-		`FROM search_console_daily ${where} AND SearchType IN ('${SEARCH_TYPE_WEB}', '${SEARCH_TYPE_WEB_COMPLETE}') GROUP BY completeDate` +
-		") AS complete ON Date = complete.completeDate " +
-		`${where} AND SearchType = '${SEARCH_TYPE_WEB}' AND Query = ${sqlString(query)} AND IngestedAt >= complete.completeAt ` +
-		"GROUP BY Date, Page, Country, Device) GROUP BY Date ORDER BY Date"
-	)
-}
+/** The trend SQL the tool suggests for its top query (see `searchConsoleQueryTrendSql`). */
+export const queryTrendSql = CH.searchConsoleQueryTrendSql
 
 export const positionText = (current: number, previous: number): string =>
 	current === 0
@@ -117,7 +97,7 @@ export const lagNotice = (
 	if (past === 0) return []
 	if (past === total)
 		return [
-			`Data is complete through ${through}, so none of this window's ${total} day${total === 1 ? "" : "s"} are counted yet (${lag}); end the window on ${through} or earlier.`,
+			`Data is complete through ${through}, so none of this window's ${total} day${total === 1 ? " is" : "s are"} counted yet (${lag}); end the window on ${through} or earlier.`,
 		]
 	return [
 		`Data is complete through ${through}, so the last ${past} day${past === 1 ? "" : "s"} of this window are left out (${lag}); ${covered} cover the window up to then.`,
