@@ -88,11 +88,10 @@ pub fn apply(obj: &mut serde_json::Map<String, serde_json::Value>, visitor: Opti
         "visitor_id".to_owned(),
         serde_json::Value::String(visitor.unwrap_or_default().to_owned()),
     );
+    // Only an identified row has a history to be unknown; an unidentified one is not new.
     if obj.contains_key("visitor_is_new") {
-        obj.insert(
-            "visitor_is_new".to_owned(),
-            serde_json::Value::from(VISITOR_IS_NEW_UNKNOWN),
-        );
+        let is_new = if visitor.is_some() { VISITOR_IS_NEW_UNKNOWN } else { 0 };
+        obj.insert("visitor_is_new".to_owned(), serde_json::Value::from(is_new));
     }
 }
 
@@ -163,6 +162,11 @@ mod tests {
     use super::*;
 
     const DAY_MS: i64 = 86_400_000;
+
+    /// A fresh random salt, as the gateway mints one per day.
+    fn random_salt() -> [u8; 16] {
+        *uuid::Uuid::new_v4().as_bytes()
+    }
     const NOON: i64 = 1_763_812_800_000; // 2025-11-22T12:00:00Z
 
     #[test]
@@ -190,17 +194,18 @@ mod tests {
 
     #[test]
     fn visitor_id_is_stable_per_input_and_differs_per_salt_org_ip_and_agent() {
-        let base = visitor_id(b"salt-a", "org_1", "203.0.113.7", "Firefox");
+        let (salt_a, salt_b) = (random_salt(), random_salt());
+        let base = visitor_id(&salt_a, "org_1", "203.0.113.7", "Firefox");
         assert_eq!(
             base,
-            visitor_id(b"salt-a", "org_1", "203.0.113.7", "Firefox")
+            visitor_id(&salt_a, "org_1", "203.0.113.7", "Firefox")
         );
         assert!(uuid::Uuid::parse_str(&base).is_ok());
         for other in [
-            visitor_id(b"salt-b", "org_1", "203.0.113.7", "Firefox"),
-            visitor_id(b"salt-a", "org_2", "203.0.113.7", "Firefox"),
-            visitor_id(b"salt-a", "org_1", "203.0.113.8", "Firefox"),
-            visitor_id(b"salt-a", "org_1", "203.0.113.7", "Chrome"),
+            visitor_id(&salt_b, "org_1", "203.0.113.7", "Firefox"),
+            visitor_id(&salt_a, "org_2", "203.0.113.7", "Firefox"),
+            visitor_id(&salt_a, "org_1", "203.0.113.8", "Firefox"),
+            visitor_id(&salt_a, "org_1", "203.0.113.7", "Chrome"),
         ] {
             assert_ne!(base, other);
         }
@@ -208,9 +213,10 @@ mod tests {
 
     #[test]
     fn visitor_id_parts_cannot_be_shifted_across_the_separator() {
+        let salt = random_salt();
         assert_ne!(
-            visitor_id(b"s", "org_1", "1.2.3.4", "ab"),
-            visitor_id(b"s", "org_1a", "1.2.3.4", "b"),
+            visitor_id(&salt, "org_1", "1.2.3.4", "ab"),
+            visitor_id(&salt, "org_1a", "1.2.3.4", "b"),
         );
     }
 
@@ -225,10 +231,10 @@ mod tests {
             serde_json::json!({ "visitor_id": "v-1", "visitor_is_new": 2 })
         );
 
-        let mut row = serde_json::json!({ "visitor_id": "cookieless" });
+        let mut row = serde_json::json!({ "visitor_id": "cookieless", "visitor_is_new": 1 });
         let obj = row.as_object_mut().unwrap();
         apply(obj, None);
-        assert_eq!(row, serde_json::json!({ "visitor_id": "" }));
+        assert_eq!(row, serde_json::json!({ "visitor_id": "", "visitor_is_new": 0 }));
     }
 
     #[test]

@@ -15641,14 +15641,14 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default  [5e346ce2]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15657,14 +15657,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [5e346ce2]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15673,14 +15673,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [85515b72]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [718208d5]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15718,14 +15718,14 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [9cc44828]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [51688ae7]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15763,7 +15763,7 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [d7b53fb5]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15771,7 +15771,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
@@ -15781,7 +15781,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [d7b53fb5]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15789,7 +15789,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
-          uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 2) AS unknownHistorySessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
