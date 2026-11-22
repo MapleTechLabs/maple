@@ -69,9 +69,9 @@ const completedSummary = <M>(h: HtmlBuilder<M>, run: V2OnboardingAgentRun): Read
 			]),
 ]
 
-/** An expired run no agent ever signed in to: the code lapsed, not the setup. */
+/** An expired run with no report: no agent signed in, or one signed in and never reported. */
 const UNCLAIMED_LINE =
-	"No agent signed in with this code within the hour. Copy the prompt again for a new one."
+	"Your agent never checked in, and this code has expired. Copy the prompt again for a new one."
 
 const statusLine = (run: V2OnboardingAgentRun): string =>
 	run.status === "expired" && Arr.every(run.stages, (stage) => stage.status === "pending")

@@ -17,7 +17,7 @@ export type ProductEvent =
 	| "onboarding_step_completed"
 	/** The coding-agent setup prompt was shown; `surface` is `connect_step` or `connect_panel`. */
 	| "onboarding_agent_prompt_shown"
-	/** The agent prompt was copied; `has_handoff_code` is false when the mint failed. */
+	/** The agent prompt was copied; `has_handoff_code` is false for a `control` org or when the mint failed. */
 	| "onboarding_agent_prompt_copied"
 	/** The page saw the agent's first report (an unclaimed run that expires never counts). */
 	| "onboarding_agent_run_reported"

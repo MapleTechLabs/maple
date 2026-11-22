@@ -125,7 +125,7 @@ describe("agent progress", () => {
 			given(atConnect()),
 			indicatorMeasured(),
 			...polledRun({ ...labAgentRun("waiting"), status: "expired" }),
-			expectView(text(/No agent signed in with this code within the hour/)).toExist(),
+			expectView(text(/Your agent never checked in, and this code has expired/)).toExist(),
 		)
 		scene(
 			{ update, view },
