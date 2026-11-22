@@ -33,7 +33,7 @@ import { planRows } from "../../lib/feature-plan";
 import { featureBySlug } from "../../lib/features";
 import { getOffer } from "../../lib/pricing-offer";
 import { SCALE_PROOF_STORY_PATH } from "../../lib/scale-proof";
-import { featurePath, GALLERY_SHOT_SIZE, useCasePath } from "../../lib/page-registry";
+import { featurePath, featuresIndexPath, GALLERY_SHOT_SIZE, useCasePath } from "../../lib/page-registry";
 import { useCaseBySlug } from "../../lib/use-cases";
 import Layout from "../../layouts/Layout.astro";
 import FAQ from "../FAQ.astro";
@@ -83,7 +83,7 @@ const hero = {
 	illustrationAlt: feature.illustrationAlt,
 	breadcrumb: [
 		{ label: m.breadcrumb_home(), href: "/" },
-		{ label: m.breadcrumb_features(), href: "/#features" },
+		{ label: m.breadcrumb_features(), href: featuresIndexPath(locale) },
 		{ label: feature.navLabel() },
 	],
 };

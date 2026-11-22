@@ -99,15 +99,45 @@ describe("NavBar island", () => {
 		await vi.waitFor(() => expect(open?.getAttribute("aria-expanded")).toBe("false"))
 	})
 
-	it("clicking Product opens the mega-menu with every section", async () => {
+	const openMenu = async (label: string): Promise<string> => {
+		const trigger = [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label))
+		trigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+		await vi.waitFor(() => expect(trigger?.getAttribute("aria-expanded")).toBe("true"))
+		return document.body.textContent ?? ""
+	}
+
+	it("Product shows nine pillars and lists every other feature, Maple Local included, below", async () => {
 		await mount()
-		const product = [...document.querySelectorAll("button")].find((b) =>
-			b.textContent?.startsWith("Product"),
-		)
-		product?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-		await vi.waitFor(() => expect(product?.getAttribute("aria-expanded")).toBe("true"))
-		const text = document.body.textContent ?? ""
-		for (const section of ["Features", "Use Cases", "Integrations", "Compare", "Maple vs Honeycomb"])
-			expect(text).toContain(section)
+		await openMenu("Product")
+		const links = [...document.querySelectorAll('[data-slot="navigation-menu-link"]')]
+		const pillars = links.filter((a) => a.querySelector("svg") !== null)
+		expect(pillars.map((a) => a.getAttribute("href"))).toEqual([
+			"/features/distributed-tracing",
+			"/features/log-management",
+			"/features/metrics-dashboards",
+			"/features/error-tracking",
+			"/features/browser-sessions",
+			"/features/alerts",
+			"/features/uptime-monitoring",
+			"/features/ai-mcp-integration",
+			"/features/github",
+		])
+		const hrefs = links.map((a) => a.getAttribute("href"))
+		for (const href of [
+			"/features/status-pages",
+			"/features/kubernetes-monitoring",
+			"/features/cost-explorer",
+			"/local",
+		])
+			expect(hrefs).toContain(href)
+	})
+
+	it("Solutions holds the use cases, integrations and the tools people switch from", async () => {
+		await mount()
+		const text = await openMenu("Solutions")
+		for (const label of ["Use Cases", "Integrations", "Switching from", "Honeycomb"])
+			expect(text).toContain(label)
+		const honeycomb = [...document.querySelectorAll("a")].find((a) => a.textContent === "Honeycomb")
+		expect(honeycomb?.getAttribute("href")).toBe("/compare/honeycomb")
 	})
 })
