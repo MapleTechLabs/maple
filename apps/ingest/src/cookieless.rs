@@ -88,11 +88,10 @@ pub fn apply(obj: &mut serde_json::Map<String, serde_json::Value>, visitor: Opti
         "visitor_id".to_owned(),
         serde_json::Value::String(visitor.unwrap_or_default().to_owned()),
     );
+    // Only an identified row has a history to be unknown; an unidentified one is not new.
     if obj.contains_key("visitor_is_new") {
-        obj.insert(
-            "visitor_is_new".to_owned(),
-            serde_json::Value::from(VISITOR_IS_NEW_UNKNOWN),
-        );
+        let is_new = if visitor.is_some() { VISITOR_IS_NEW_UNKNOWN } else { 0 };
+        obj.insert("visitor_is_new".to_owned(), serde_json::Value::from(is_new));
     }
 }
 
@@ -232,10 +231,10 @@ mod tests {
             serde_json::json!({ "visitor_id": "v-1", "visitor_is_new": 2 })
         );
 
-        let mut row = serde_json::json!({ "visitor_id": "cookieless" });
+        let mut row = serde_json::json!({ "visitor_id": "cookieless", "visitor_is_new": 1 });
         let obj = row.as_object_mut().unwrap();
         apply(obj, None);
-        assert_eq!(row, serde_json::json!({ "visitor_id": "" }));
+        assert_eq!(row, serde_json::json!({ "visitor_id": "", "visitor_is_new": 0 }));
     }
 
     #[test]

@@ -14008,6 +14008,8 @@ mod tests {
     /// Keyed on the same `(hash, column)` shape the real key store sees.
     #[derive(Default)]
     struct FakeKeyStore {
+        /// Visitor id of every `touch_cookieless_visit` call.
+        cookieless_touches: std::sync::Mutex<Vec<String>>,
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
         sources: std::sync::Mutex<std::collections::HashMap<String, SourceRow>>,
         /// Key id of every `record_source_used` call.
@@ -14141,6 +14143,18 @@ mod tests {
 
     #[async_trait::async_trait]
     impl KeyStore for FakeKeyStore {
+        async fn touch_cookieless_visit(
+            &self,
+            _org_id: &str,
+            visitor_id: &str,
+        ) -> Result<bool, String> {
+            self.cookieless_touches
+                .lock()
+                .unwrap()
+                .push(visitor_id.to_owned());
+            Ok(false)
+        }
+
         async fn fetch_ingest_key(
             &self,
             key_hash: &str,
@@ -16696,8 +16710,11 @@ mod tests {
         let mut row = serde_json::json!({ "visitor_id": "cookieless", "visitor_is_new": 1 });
         let obj = row.as_object_mut().unwrap();
         CookielessRequest::new(state, headers, org_id).apply(obj).await;
-        assert_eq!(obj["visitor_is_new"], 2, "unknown, neither new nor returning");
-        obj["visitor_id"].as_str().unwrap().to_owned()
+        let visitor = obj["visitor_id"].as_str().unwrap().to_owned();
+        // Unknown history only for an identified row; an unidentified one is not new.
+        let expected_is_new = if visitor.is_empty() { 0 } else { 2 };
+        assert_eq!(obj["visitor_is_new"], expected_is_new);
+        visitor
     }
 
     #[tokio::test]
@@ -16728,6 +16745,45 @@ mod tests {
             .await;
         assert_eq!(outcome, CookielessRow::NotCookieless);
         assert_eq!(row["visitor_id"], "kept-visitor");
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_cookieless_heartbeat_extends_the_visit_and_a_start_does_not() {
+        let queue_dir = unique_main_test_dir("cookieless-touch");
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_cl_touch",
+            KeyRow {
+                org_id: "org_cl_touch".to_owned(),
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        let mut state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        state.config.trust_proxy_geo = true;
+        let alice = cookieless_headers("maple_sk_test_cl_touch", "203.0.113.7", "Firefox");
+        let row = |version: u32, billable: u8| {
+            Bytes::from(format!(
+                r#"{{"session_id":"sess_t","version":{version},"billable_start":{billable},"visitor_id":"cookieless"}}"#
+            ))
+        };
+
+        handle_replay_meta_inner(&state, &alice, row(1, 1)).await.unwrap();
+        assert!(store.cookieless_touches.lock().unwrap().is_empty(), "a start claims, not touches");
+
+        handle_replay_meta_inner(&state, &alice, row(2, 0)).await.unwrap();
+        // Throttled: a second heartbeat inside the interval writes nothing.
+        handle_replay_meta_inner(&state, &alice, row(3, 0)).await.unwrap();
+        let visitor = cookieless_visitor(&state, &alice, "org_cl_touch").await;
+        assert_eq!(*store.cookieless_touches.lock().unwrap(), vec![visitor]);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }

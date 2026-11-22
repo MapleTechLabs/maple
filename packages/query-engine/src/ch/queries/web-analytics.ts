@@ -521,7 +521,10 @@ export function webAnalyticsSummaryQuery(
 				CH.uniqIf($.SessionId, $.PageViews.gt(1).and($.VisitorId.neq(""))),
 			),
 			identifiedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")),
-			unknownHistorySessions: CH.uniqIf($.SessionId, $.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN)),
+			unknownHistorySessions: CH.uniqIf(
+				$.SessionId,
+				$.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN).and($.VisitorId.neq("")),
+			),
 			botSessions: CH.uniqIf($.SessionId, isBotCond($.UserAgent)),
 			// avgIf over the ended rows only: the v1 row's DurationMs is NULL, and
 			// including it would average NULLs into the result.
@@ -631,7 +634,10 @@ export function webAnalyticsTimeseriesQuery(
 				CH.uniqIf($.SessionId, $.PageViews.gt(1).and($.VisitorId.neq(""))),
 			),
 			identifiedSessions: CH.uniqIf($.SessionId, $.VisitorId.neq("")),
-			unknownHistorySessions: CH.uniqIf($.SessionId, $.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN)),
+			unknownHistorySessions: CH.uniqIf(
+				$.SessionId,
+				$.VisitorIsNew.eq(VISITOR_IS_NEW_UNKNOWN).and($.VisitorId.neq("")),
+			),
 			// avgIf over the ended rows only — same as the summary: the v1 row's
 			// DurationMs is NULL and would average in as a NULL.
 			avgDurationMs: CH.round_(
