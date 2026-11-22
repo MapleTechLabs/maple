@@ -213,6 +213,19 @@ character but `\n`", before compiling.
   the same over 24 hours or 7 days, with a row per signal. A drop rule's `matched - dropped` is
   what its `keepPercent` kept.
 
+## Dry run
+
+`POST /v2/ingest_rules/preview` counts what a draft's conditions match in the last 24 hours of
+stored logs and spans (`ingestRuleLogMatchesQuery`, `ingestRuleSpanMatchesQuery`), per service.
+A drop rule's estimated drops are the matches times `(100 - keepPercent) / 100`, and its bytes are
+each service's drops times that service's average record size in `service_usage`. The rule editor
+shows it above the sample preview, a moment after the last edit.
+
+It is an estimate, not the gateway's verdict: data the org's other rules dropped was never stored,
+regexes run on ClickHouse's RE2, and attribute values are compared as ingest stored them. Metrics
+are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
+above on chDB.
+
 ## Limits
 
 - 50 rules per org and 20 conditions per rule.

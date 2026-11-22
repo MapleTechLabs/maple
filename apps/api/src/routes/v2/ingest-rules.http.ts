@@ -15,6 +15,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -46,6 +47,7 @@ const ruleAuditKeys: ReadonlyArray<"name" | "enabled" | "position" | "signals" |
 export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRules", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* IngestRuleService
+		const previews = yield* IngestRulePreviewService
 
 		// A rule drops or rewrites the whole org's telemetry, so writes need ingest_rules:manage.
 		const requireRuleWrite = (tenant: CurrentTenant.TenantSchema) =>
@@ -118,6 +120,38 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 							id: row.ruleId,
 							bucket: isoTimestamp(row.bucket),
 							...counts(row),
+						})),
+					}
+				}),
+			)
+			.handle("preview", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const now = yield* Clock.currentTimeMillis
+					const result = yield* previews.preview(
+						tenant,
+						{
+							signals: payload.signals,
+							conditions: payload.conditions ?? [],
+							action: fromV2IngestRuleAction(payload.action),
+						},
+						now,
+					)
+					return {
+						object: "ingest_rule_preview" as const,
+						start_time: isoTimestamp(result.startMs),
+						end_time: isoTimestamp(result.endMs),
+						signals: Arr.map(result.signals, (entry) => ({
+							signal: entry.signal,
+							stored: entry.stored,
+							matched: entry.matched,
+							estimated_dropped: entry.estimatedDropped,
+							estimated_dropped_bytes: entry.estimatedDroppedBytes,
+							services: Arr.map(entry.services, (service) => ({
+								service_name: service.serviceName,
+								stored: service.stored,
+								matched: service.matched,
+							})),
 						})),
 					}
 				}),

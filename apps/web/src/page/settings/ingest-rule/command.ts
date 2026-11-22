@@ -1,5 +1,5 @@
 import { IngestRuleId } from "@maple/domain"
-import { V2IngestRuleCreateParams } from "@maple/domain/http/v2"
+import { V2IngestRuleCreateParams, V2IngestRulePreviewParams } from "@maple/domain/http/v2"
 import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { executeQueryEngine } from "@maple/web-data/warehouse/effect-utils"
 import { getLogAttributeKeys, getLogsFacets, listLogs } from "@maple/web-data/warehouse/logs"
@@ -14,6 +14,7 @@ import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
+import { ESTIMATE_DEBOUNCE_MS } from "./estimate"
 import { IMPACT_HOURS, ImpactWindow } from "./impact"
 import { KeyScope, Message } from "./message"
 import { PreviewSignal, type Samples, type SpanSample } from "./preview"
@@ -42,6 +43,23 @@ export const FetchImpact = Command.define("FetchIngestRuleImpact", {
 				query: { start_time: DateTime.formatIso(start), end_time: DateTime.formatIso(end) },
 			})
 		}).pipe(settleTo((result) => Message.CompletedFetchImpact({ window, result }))),
+})
+
+export const DebounceEstimate = Command.define("DebounceIngestRuleEstimate", {
+	args: { key: Schema.String },
+	messages: [Message.ElapsedEstimateDebounce],
+	execute: ({ key }) =>
+		Effect.as(Effect.sleep(ESTIMATE_DEBOUNCE_MS), Message.ElapsedEstimateDebounce({ key })),
+})
+
+/** The draft's matches over the last 24 hours of stored logs and spans. */
+export const FetchEstimate = Command.define("FetchIngestRuleEstimate", {
+	args: { key: Schema.String, payload: V2IngestRulePreviewParams },
+	messages: [Message.CompletedFetchEstimate],
+	execute: ({ key, payload }) =>
+		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.preview({ payload })).pipe(
+			settleTo((result) => Message.CompletedFetchEstimate({ key, result })),
+		),
 })
 
 export const FetchSession = Command.define("FetchIngestRuleSession", {

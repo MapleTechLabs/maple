@@ -1,11 +1,12 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option, Record as Rec, Result, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import type { PageContext } from "../page/contract"
+import { keepPercentOf } from "../page/settings/ingest-rule/form"
 import * as EditorMessage from "../page/settings/ingest-rule/message"
 import * as EditorModel from "../page/settings/ingest-rule/model"
 import * as EditorUpdate from "../page/settings/ingest-rule/update"
@@ -26,6 +27,8 @@ export const LabState = Schema.Literals([
 	"rule-sampled",
 	"rule-redact",
 	"rule-empty",
+	"new-drop",
+	"new-sampled",
 ])
 export type LabState = typeof LabState.Type
 
@@ -237,25 +240,75 @@ const LOG_SAMPLES = [
 	log("api", "DEBUG", 5, "pool size 12, idle 9"),
 ]
 
-/** Answers the editor's reads from the fixtures. */
-const answerEditor = (model: EditorModel.Model, commands: ReadonlyArray<{ readonly name: string }>) =>
+/** What the API would count for a draft over the last 24 hours. */
+const ESTIMATE = (keepPercent: number) => {
+	const stored = 8_412_000
+	const matched = 1_236_000
+	const dropped = Math.round(matched * (1 - keepPercent / 100))
+	return Schema.decodeSync(V2IngestRulePreview)({
+		object: "ingest_rule_preview",
+		start_time: new Date(END_MS - 24 * HOUR).toISOString(),
+		end_time: new Date(END_MS).toISOString(),
+		signals: [
+			{
+				signal: "logs",
+				stored,
+				matched,
+				estimated_dropped: dropped,
+				estimated_dropped_bytes: dropped * 290,
+				services: [
+					{ service_name: "checkout", stored: 4_100_000, matched: 802_000 },
+					{ service_name: "payments", stored: 2_300_000, matched: 301_000 },
+					{ service_name: "api", stored: 2_012_000, matched: 133_000 },
+				],
+			},
+		],
+	})
+}
+
+/** Answers the editor's reads from the fixtures, and the reads those answers start. */
+const answerEditor = (
+	model: EditorModel.Model,
+	commands: ReadonlyArray<{ readonly name: string }>,
+): EditorModel.Model =>
 	Arr.reduce(commands, model, (current, command) => {
-		const step = (message: EditorMessage.Message) => EditorUpdate.update(current, message, context).model
-		if (command.name === "FetchIngestRuleImpact")
-			return step(
-				EditorMessage.Message.CompletedFetchImpact({
-					window: current.impactWindow,
-					result: Result.succeed(statsFor(current.impactWindow === "7d" ? 168 : 24)),
-				}),
-			)
-		if (command.name === "FetchIngestRuleSamples")
-			return step(
-				EditorMessage.Message.CompletedFetchSamples({
-					key: current.samplesKey,
-					result: Result.succeed({ _tag: "logs", rows: LOG_SAMPLES }),
-				}),
-			)
-		return current
+		const reply = (message: EditorMessage.Message) => {
+			const step = EditorUpdate.update(current, message, context)
+			return answerEditor(step.model, step.commands ?? [])
+		}
+		switch (command.name) {
+			case "FetchIngestRuleImpact":
+				return reply(
+					EditorMessage.Message.CompletedFetchImpact({
+						window: current.impactWindow,
+						result: Result.succeed(statsFor(current.impactWindow === "7d" ? 168 : 24)),
+					}),
+				)
+			case "FetchIngestRuleSamples":
+				return reply(
+					EditorMessage.Message.CompletedFetchSamples({
+						key: current.samplesKey,
+						result: Result.succeed({ _tag: "logs", rows: LOG_SAMPLES }),
+					}),
+				)
+			case "DebounceIngestRuleEstimate":
+				return reply(EditorMessage.Message.ElapsedEstimateDebounce({ key: current.estimateKey }))
+			case "FetchIngestRuleEstimate":
+				return reply(
+					EditorMessage.Message.CompletedFetchEstimate({
+						key: current.estimateKey,
+						result: Result.succeed(
+							ESTIMATE(
+								current.draft.actionType === "drop"
+									? keepPercentOf(current.draft.keepPercent)
+									: 0,
+							),
+						),
+					}),
+				)
+			default:
+				return current
+		}
 	})
 
 const liftEditor = (commands: ReadonlyArray<Command.Command<EditorMessage.Message, never, Resources>>) =>
@@ -274,10 +327,16 @@ export const init = (flags: Flags): Return => {
 					Rules.Message.CompletedFetchStats({ result: Result.succeed(statsFor(24)) }),
 				).model
 	const target = ruleFor(flags.state)
-	const opened = EditorUpdate.init({ _tag: "IngestRule", ruleId: target.id }, context)
+	const isNew = flags.state === "new-drop" || flags.state === "new-sampled"
+	const opened = isNew
+		? EditorUpdate.init({ _tag: "IngestRuleNew", search: { template: "drop-debug-logs" } }, context)
+		: EditorUpdate.init({ _tag: "IngestRule", ruleId: target.id }, context)
 	const steps: ReadonlyArray<EditorMessage.Message> = [
 		EditorMessage.Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
-		EditorMessage.Message.CompletedFetchExisting({ result: Result.succeed(target) }),
+		...(isNew ? [] : [EditorMessage.Message.CompletedFetchExisting({ result: Result.succeed(target) })]),
+		...(flags.state === "new-sampled"
+			? [EditorMessage.Message.ChangedText({ part: "keepPercent", value: "10" })]
+			: []),
 	]
 	const filled = Arr.reduce(steps, opened.model, (model, message) => {
 		const step = EditorUpdate.update(model, message, context)

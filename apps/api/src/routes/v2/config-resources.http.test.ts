@@ -28,6 +28,7 @@ import {
 	Phase1ResourceStubsLayer,
 } from "./v2-test-support"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
@@ -142,8 +143,13 @@ const makeHarness = () => {
 				HttpV2ScrapeTargetsLive,
 				HttpV2IngestRulesLive.pipe(
 					Layer.provide(
-						Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
-							Layer.provide(OrganizationFeatureFlagsService.allEnabled),
+						Layer.mergeAll(
+							Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
+								Layer.provide(OrganizationFeatureFlagsService.allEnabled),
+							),
+							Layer.effect(IngestRulePreviewService, IngestRulePreviewService.make).pipe(
+								Layer.provide(warehouseLive),
+							),
 						),
 					),
 				),
@@ -476,6 +482,40 @@ describe("v2 ingest_rules over HTTP", () => {
 			{ token: key.secret },
 		)
 		expect(inverted.status).toBe(400)
+		await harness.dispose()
+	})
+
+	it("previews a draft over the last 24 hours without saving it, and refuses an invalid one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const preview = await harness.request("POST", "/v2/ingest_rules/preview", {
+			token: key.secret,
+			body: {
+				signals: ["logs", "traces", "metrics"],
+				conditions: [{ field: "service_name", op: "eq", value: "legacy-cron" }],
+				action: { type: "drop", keep_percent: 0 },
+			},
+		})
+		expect(preview.status).toBe(200)
+		expect(preview.body).toMatchObject({
+			object: "ingest_rule_preview",
+			signals: [
+				{ signal: "logs", stored: 0, matched: 0, estimated_dropped: 0, services: [] },
+				{ signal: "traces", stored: 0, matched: 0, estimated_dropped: 0, services: [] },
+			],
+		})
+		const listed = await harness.request("GET", "/v2/ingest_rules", { token: key.secret })
+		expect(listed.body.data).toEqual([])
+		const invalid = await harness.request("POST", "/v2/ingest_rules/preview", {
+			token: key.secret,
+			body: {
+				signals: ["logs"],
+				conditions: [{ field: "body", op: "regex", value: "(?=x)" }],
+				action: { type: "drop", keep_percent: 0 },
+			},
+		})
+		expect(invalid.status).toBe(400)
+		expect(invalid.body.error.code).toBe("ingest_rule_invalid")
 		await harness.dispose()
 	})
 

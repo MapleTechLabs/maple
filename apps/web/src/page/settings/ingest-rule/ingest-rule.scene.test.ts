@@ -1,11 +1,21 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	Command,
+	change,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ORG } from "../../kit/alert-test-rows"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { DebounceEstimate } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { LogSample } from "./preview"
@@ -83,6 +93,8 @@ describe("ingest rule editor", () => {
 			given(fresh("drop-debug-logs")),
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("lt"),
 			change(role("combobox", { name: "Condition 1 field" }), "body"),
+			// The edit asks for a fresh 24 hour count; an elapsed debounce for another draft does nothing.
+			Command.resolve(DebounceEstimate, Message.ElapsedEstimateDebounce({ key: "" })),
 			expectView(role("combobox", { name: "Condition 1 field" })).toHaveValue("body"),
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("eq"),
 		)
@@ -251,5 +263,75 @@ describe("ingest rule impact", () => {
 			Message.CompletedFetchImpact({ window: "24h", result: Result.succeed(impactOf(5, 0)) }),
 		)
 		expect(late.model.impact._tag).toBe("Loading")
+	})
+})
+
+describe("ingest rule 24 hour estimate", () => {
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+		Arr.map(commands ?? [], ({ name }) => name)
+	const estimate = (dropped: number) =>
+		Schema.decodeSync(V2IngestRulePreview)({
+			object: "ingest_rule_preview",
+			start_time: "2026-11-22T12:00:00.000Z",
+			end_time: "2026-11-23T12:00:00.000Z",
+			signals: [
+				{
+					signal: "logs",
+					stored: 8_000_000,
+					matched: 1_200_000,
+					estimated_dropped: dropped,
+					estimated_dropped_bytes: 340_000_000,
+					services: [
+						{ service_name: "checkout", stored: 5_000_000, matched: 900_000 },
+						{ service_name: "api", stored: 3_000_000, matched: 300_000 },
+					],
+				},
+			],
+		})
+
+	test("a template counts the last 24 hours once the debounce elapses", () => {
+		const opened = init({ _tag: "IngestRuleNew", search: { template: "drop-debug-logs" } }, context)
+		expect(names(opened.commands)).toContain("DebounceIngestRuleEstimate")
+		const key = opened.model.estimateKey
+		expect(key).not.toBe("")
+		const fired = pageUpdate(opened.model, Message.ElapsedEstimateDebounce({ key }))
+		expect(names(fired.commands)).toEqual(["FetchIngestRuleEstimate"])
+	})
+
+	test("the estimate says how much the rule would drop, the bytes and the busiest services", () => {
+		const model = fresh("drop-debug-logs")
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchEstimate({
+						key: model.estimateKey,
+						result: Result.succeed(estimate(1_200_000)),
+					}),
+				).model,
+			),
+			expectView(text("Would drop 1.2M of 8M logs (15%)")).toExist(),
+			expectView(text("About 340 MB kept off the bill")).toExist(),
+			expectView(text("checkout 900K · api 300K")).toExist(),
+		)
+	})
+
+	test("an edit asks again and drops the answer for the old draft", () => {
+		const model = fresh("drop-debug-logs")
+		const oldKey = model.estimateKey
+		const edited = pageUpdate(model, Message.PickedAction({ actionType: "redact" }))
+		expect(edited.model.estimateKey).not.toBe(oldKey)
+		const late = pageUpdate(
+			edited.model,
+			Message.CompletedFetchEstimate({ key: oldKey, result: Result.succeed(estimate(1)) }),
+		)
+		expect(late.model.estimate._tag).not.toBe("Success")
+	})
+
+	test("a draft that cannot be saved asks for nothing", () => {
+		const opened = init({ _tag: "IngestRuleNew", search: {} }, context)
+		expect(opened.model.estimateKey).toBe("")
+		expect(names(opened.commands)).not.toContain("DebounceIngestRuleEstimate")
 	})
 })

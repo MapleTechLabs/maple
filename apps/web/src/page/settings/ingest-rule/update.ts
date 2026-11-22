@@ -6,6 +6,8 @@ import type { AppRoute } from "../../../route"
 import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
+	DebounceEstimate,
+	FetchEstimate,
 	FetchImpact,
 	FetchKeys,
 	FetchRule,
@@ -30,6 +32,7 @@ import { ingestionHref, ruleIdFromUrl } from "./hrefs"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import type { PreviewSignal } from "./preview"
+import { estimateKeyOf, estimateParamsOf } from "./estimate"
 import { draftFromRule, isTemplateId, TEMPLATES } from "./templates"
 
 type Return = PageReturn<Model, Message>
@@ -103,7 +106,7 @@ const mapCondition = (
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 	list.includes(value) ? Arr.filter(list, (entry) => entry !== value) : [...list, value]
 
-export const init = (route: EditorRoute, context: PageContext): Return => {
+const initial = (route: EditorRoute, context: PageContext): Return => {
 	const parsed = route._tag === "IngestRule" ? ruleIdFromUrl(route.ruleId) : Option.none()
 	const editingId = Option.getOrNull(parsed)
 	const template = route._tag === "IngestRuleNew" ? route.search.template : undefined
@@ -124,6 +127,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		samplesKey: "",
 		impact: editingId === null ? AsyncData.Idle() : AsyncData.Loading(),
 		impactWindow: "24h",
+		estimate: AsyncData.Idle(),
+		estimateKey: "",
 		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
@@ -178,7 +183,38 @@ const updateKeyBox = (model: Model, id: number, child: Combobox.Message): Return
 	}
 }
 
+/** A fresh count, after the debounce, when the step changed what the draft would count. */
+const withEstimate = (step: Return): Return => {
+	const key = estimateKeyOf(step.model.draft)
+	if (key === step.model.estimateKey) return step
+	return {
+		...step,
+		model: {
+			...step.model,
+			estimateKey: key,
+			estimate: key === "" ? AsyncData.Idle() : AsyncData.Loading(),
+		},
+		commands: [...(step.commands ?? []), ...(key === "" ? [] : [DebounceEstimate({ key })])],
+	}
+}
+
+const fetchEstimate = (model: Model): Return => {
+	const payload = estimateParamsOf(model.draft)
+	return payload === null
+		? { model }
+		: {
+				model: { ...model, estimate: AsyncData.Loading() },
+				commands: [FetchEstimate({ key: model.estimateKey, payload })],
+			}
+}
+
+export const init = (route: EditorRoute, context: PageContext): Return =>
+	withEstimate(initial(route, context))
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withEstimate(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchExisting: ({ result }) =>
 			Result.match(result, {
@@ -268,6 +304,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: { ...model, impactWindow: window, impact: AsyncData.Loading() },
 						commands: [FetchImpact({ window })],
 					},
+		ElapsedEstimateDebounce: ({ key }) => (key === model.estimateKey ? fetchEstimate(model) : { model }),
+		CompletedFetchEstimate: ({ key, result }) =>
+			key === model.estimateKey
+				? { model: { ...model, estimate: AsyncData.settle(model.estimate, result) } }
+				: { model },
+		ClickedRetryEstimate: () => fetchEstimate(model),
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {

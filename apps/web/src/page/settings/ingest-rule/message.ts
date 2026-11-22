@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import {
 	IngestRuleDetector,
 	IngestRuleField,
@@ -47,6 +47,9 @@ export const Message = defineMessageUnion({
 	ClickedRetryPreview: {},
 	CompletedFetchImpact: { window: ImpactWindow, result: outcome(V2IngestRuleStats) },
 	PickedImpactWindow: { window: ImpactWindow },
+	ElapsedEstimateDebounce: { key: Schema.String },
+	CompletedFetchEstimate: { key: Schema.String, result: outcome(V2IngestRulePreview) },
+	ClickedRetryEstimate: {},
 	ClickedSave: {},
 	CompletedSave: { result: outcome(V2IngestRule) },
 })
