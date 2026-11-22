@@ -117,7 +117,7 @@ export const V2SessionReplay = Schema.Struct({
 	...sessionReplayBaseFields,
 	visitor_is_new: Schema.Boolean.annotate({
 		description:
-			"Whether this was the visitor's first session. Always false for a cookieless visitor, whose history is unknown: those sessions carry `maple.visitor.mode: cookieless` in `resource_attributes`.",
+			"Whether this was the visitor's first session. Always false for a cookieless visitor, whose history is unknown. An identified cookieless session carries `maple.visitor.mode: cookieless` in `resource_attributes`; one the gateway could not identify has an empty `visitor_id` and no history at all.",
 	}),
 	user_traits: Schema.String.annotate({ description: "Identify traits as a JSON-encoded string map." }),
 	referrer: Schema.String,
