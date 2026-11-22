@@ -185,6 +185,13 @@ impl BillableSessionStarts {
         self.sessions.insert(row_session_id(obj).to_owned())
     }
 
+    /// Count a session start the gateway decided to bill on its own (a cookieless visit).
+    pub fn note_session(&mut self, session_id: String) {
+        if self.sessions.len() < MAX_BILLABLE_SESSIONS_PER_REQUEST {
+            self.sessions.insert(session_id);
+        }
+    }
+
     /// Un-count the session a `note` just added, for a start the gateway decides not to bill.
     pub fn retract(&mut self, obj: &serde_json::Map<String, serde_json::Value>) {
         self.sessions.remove(row_session_id(obj));
@@ -195,7 +202,7 @@ impl BillableSessionStarts {
     }
 }
 
-fn row_session_id(obj: &serde_json::Map<String, serde_json::Value>) -> &str {
+pub fn row_session_id(obj: &serde_json::Map<String, serde_json::Value>) -> &str {
     obj.get("session_id")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()

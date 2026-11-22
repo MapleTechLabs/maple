@@ -69,7 +69,8 @@ use maple_ingest::prometheus_remote_write;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::row_budget::{self, ForwardBody, RowEstimate, ROW_PIECE_BYTES};
 use maple_ingest::session_analytics::{
-    derive_referrer_host, sanitize_product_event, sanitize_session_event, sanitize_session_meta,
+    derive_referrer_host, row_session_id, sanitize_product_event, sanitize_session_event,
+    sanitize_session_meta,
     BillableSessionStarts,
 };
 use maple_ingest::telemetry::{
@@ -3411,6 +3412,7 @@ async fn main() {
         }),
         cookieless: CookielessVisitors::new(Arc::clone(&store)),
     });
+    state.cookieless.spawn_pruner();
 
     let cors = cors_layer();
 
@@ -4853,6 +4855,10 @@ struct CookielessSaltCache {
 }
 
 const COOKIELESS_SALT_RETRY_MS: i64 = 30_000;
+/// A slow Postgres sends rows unidentified and unbilled rather than stalling the request.
+const COOKIELESS_STORE_TIMEOUT: Duration = Duration::from_millis(500);
+/// How often each task deletes stale salts and visit claims, so deletion never waits on traffic.
+const COOKIELESS_PRUNE_INTERVAL: Duration = Duration::from_hours(1);
 const DAY_MS: i64 = 86_400_000;
 
 /// What a row's `visitor_id` turned out to be.
@@ -4879,15 +4885,23 @@ impl CookielessVisitors {
         if cache.day == day && (cache.salt.is_some() || now_ms < cache.retry_at_ms) {
             return cache.salt.clone();
         }
+        // Recorded before awaiting, so a request cancelled mid-fetch still leaves the backoff.
+        *cache = CookielessSaltCache {
+            day: day.clone(),
+            salt: None,
+            retry_at_ms: now_ms + COOKIELESS_SALT_RETRY_MS,
+        };
         let mut candidate = [0u8; 32];
         let minted =
             ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut candidate);
         let stored = match minted {
-            Ok(()) => {
+            Ok(()) => tokio::time::timeout(
+                COOKIELESS_STORE_TIMEOUT,
                 self.store
-                    .cookieless_salt(&day, &STANDARD.encode(candidate))
-                    .await
-            }
+                    .cookieless_salt(&day, &STANDARD.encode(candidate)),
+            )
+            .await
+            .unwrap_or_else(|_| Err("cookieless salt read timed out".to_owned())),
             Err(_) => Err("no system randomness for a cookieless salt".to_owned()),
         };
         let salt = match stored {
@@ -4905,26 +4919,28 @@ impl CookielessVisitors {
                     salt: Some(Arc::clone(&salt)),
                     retry_at_ms: 0,
                 };
-                drop(cache);
-                let store = Arc::clone(&self.store);
-                let keep_from_day = cookieless::utc_day(now_ms - DAY_MS);
-                tokio::spawn(async move {
-                    if let Err(error) = store.prune_cookieless(&keep_from_day).await {
-                        warn!(error = %error, "cookieless prune failed");
-                    }
-                });
                 Some(salt)
             }
             Err(error) => {
                 warn!(error = %error, "cookieless salt unavailable");
-                *cache = CookielessSaltCache {
-                    day,
-                    salt: None,
-                    retry_at_ms: now_ms + COOKIELESS_SALT_RETRY_MS,
-                };
                 None
             }
         }
+    }
+
+    /// Deletes salts older than yesterday and day-old visit claims, every hour for the process.
+    fn spawn_pruner(&self) {
+        let store = Arc::clone(&self.store);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(COOKIELESS_PRUNE_INTERVAL);
+            loop {
+                interval.tick().await;
+                let keep_from_day = cookieless::utc_day(current_time_millis() - DAY_MS);
+                if let Err(error) = store.prune_cookieless(&keep_from_day).await {
+                    warn!(error = %error, "cookieless prune failed");
+                }
+            }
+        });
     }
 
     /// The visitor id for a request's cookieless rows. Needs the client IP from the trusted
@@ -4940,7 +4956,10 @@ impl CookielessVisitors {
         }
         let ip = replay_header(headers, "cf-connecting-ip")
             .and_then(|raw| cookieless::normalize_ip(&raw))?;
-        let user_agent = replay_header(headers, "user-agent").unwrap_or_default();
+        let user_agent = headers
+            .get("user-agent")
+            .map(|value| String::from_utf8_lossy(value.as_bytes()).trim().to_owned())
+            .unwrap_or_default();
         let salt = self.salt(current_time_millis()).await?;
         Some(cookieless::visitor_id(&salt, org_id, &ip, &user_agent))
     }
@@ -4948,11 +4967,14 @@ impl CookielessVisitors {
     /// Whether a cookieless session start bills: only a visit's first does. A failed claim
     /// does not bill, so a customer never pays for the gateway's own outage.
     async fn claim_visit(&self, org_id: &str, visitor_id: &str) -> bool {
-        match self
-            .store
-            .claim_cookieless_visit(org_id, visitor_id, cookieless::VISIT_IDLE_MS)
-            .await
-        {
+        let claim = tokio::time::timeout(
+            COOKIELESS_STORE_TIMEOUT,
+            self.store
+                .claim_cookieless_visit(org_id, visitor_id, cookieless::VISIT_IDLE_MS),
+        )
+        .await
+        .unwrap_or_else(|_| Err("cookieless visit claim timed out".to_owned()));
+        match claim {
             Ok(Some(new_visit)) => new_visit,
             Ok(None) => self
                 .local_visits
@@ -5227,6 +5249,7 @@ async fn handle_replay_meta_inner(
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut session_starts = BillableSessionStarts::default();
     let mut cookieless = CookielessRequest::new(state, headers, &org_id);
+    let mut cookieless_start: Option<(String, String)> = None;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -5269,15 +5292,12 @@ async fn handle_replay_meta_inner(
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
         let visitor = cookieless.apply(obj).await;
-        // A cookieless visitor's session starts bill once per visit, claimed here
-        // because the browser keeps no visit marker of its own.
+        // Cookieless starts bill through one visit claim after the loop: every
+        // row here shares the visitor, and the browser keeps no visit marker.
         if session_starts.note(obj) && visitor != CookielessRow::NotCookieless {
-            let bills = match &visitor {
-                CookielessRow::Visitor(id) => state.cookieless.claim_visit(&org_id, id).await,
-                _ => false,
-            };
-            if !bills {
-                session_starts.retract(obj);
+            session_starts.retract(obj);
+            if let CookielessRow::Visitor(id) = visitor {
+                cookieless_start.get_or_insert((id, row_session_id(obj).to_owned()));
             }
         }
         rows.push(
@@ -5289,6 +5309,13 @@ async fn handle_replay_meta_inner(
 
     if rows.is_empty() {
         return Ok(0);
+    }
+    // Claimed once the whole body parsed. A later enqueue failure leaves the visit
+    // claimed and unbilled: the gateway errs toward under-billing.
+    if let Some((visitor_id, session_id)) = cookieless_start {
+        if state.cookieless.claim_visit(&org_id, &visitor_id).await {
+            session_starts.note_session(session_id);
+        }
     }
     let count = rows.len();
     #[expect(
@@ -5642,7 +5669,6 @@ async fn handle_product_events_inner(
     let received_at = chrono::Utc::now();
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut dropped: u64 = 0;
-    let mut cookieless = CookielessRequest::new(state, headers, &org_id);
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
@@ -5656,7 +5682,10 @@ async fn handle_product_events_inner(
             dropped += 1;
             continue;
         }
-        cookieless.apply(obj).await;
+        // Server and mobile senders only: their IP is a backend's, never a visitor's.
+        if cookieless::is_cookieless(obj) {
+            cookieless::apply(obj, None);
+        }
         // org_id comes from the authenticated key, never the body — the
         // sanitizer already discarded whatever the client sent under that name.
         obj.insert(
@@ -11867,6 +11896,23 @@ impl KeyStore for PostgresKeyStore {
             ))
             .await
             .map_err(|error| format!("postgres cookieless_salt failed: {error}"))?;
+        if let Some(row) = row {
+            return Ok(Some(row.get("salt")));
+        }
+        // A concurrent first writer committed after this statement's snapshot: read it now.
+        let row = client
+            .query_opt(
+                "SELECT salt FROM cookieless_salts WHERE day = $1",
+                &[&day],
+            )
+            .instrument(postgres_client_span(
+                "cookieless_salt",
+                "SELECT",
+                "cookieless_salts",
+                &self.target,
+            ))
+            .await
+            .map_err(|error| format!("postgres cookieless_salt failed: {error}"))?;
         row.map(|row| Some(row.get("salt")))
             .ok_or_else(|| format!("no cookieless salt stored for {day}"))
     }
@@ -16637,6 +16683,18 @@ mod tests {
         handle_replay_meta_inner(&state, &bob, start("sess_b1"))
             .await
             .expect("session metadata should be accepted");
+        // One body with many starts from a new visitor: one claim, one bill.
+        let dave = cookieless_headers("maple_sk_test_cl_bill", "192.0.2.44", "Safari");
+        let many: Vec<String> = (0..50)
+            .map(|n| {
+                format!(
+                    r#"{{"session_id":"sess_d{n}","version":1,"billable_start":1,"visitor_id":"cookieless"}}"#
+                )
+            })
+            .collect();
+        handle_replay_meta_inner(&state, &dave, Bytes::from(many.join("\n")))
+            .await
+            .expect("session metadata should be accepted");
         // No trusted client IP: no visitor to claim a visit for, so not billed.
         handle_replay_meta_inner(&state, &bearer_headers("maple_sk_test_cl_bill"), start("sess_c1"))
             .await
@@ -16648,7 +16706,7 @@ mod tests {
             .filter(|(feature, _)| *feature == "browser_sessions")
             .map(|(_, count)| count)
             .sum();
-        assert!((billed - 2.0).abs() < f64::EPSILON, "{calls:?}");
+        assert!((billed - 3.0).abs() < f64::EPSILON, "{calls:?}");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
