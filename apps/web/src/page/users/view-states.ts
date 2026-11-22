@@ -59,7 +59,7 @@ export const noUsersState = <M>(
 	}>,
 ): Html =>
 	h.div(
-		[h.Class("border-t border-border px-6 py-14")],
+		[h.Class("border-t border-border px-(--page-gutter) py-14")],
 		[
 			empty(h, [
 				emptyHeader(h, [
@@ -114,7 +114,7 @@ export const noUsersState = <M>(
 
 /** The directory while its first read is out. */
 export const usersLoading = <M>(h: HtmlBuilder<M>): Html =>
-	vstack(h, { gap: "3", className: "px-6 pt-4" }, [
+	vstack(h, { gap: "3", className: "px-(--page-gutter) pt-4" }, [
 		skeleton(h, "h-20"),
 		skeleton(h, "h-8 max-w-sm"),
 		...Array.from({ length: 8 }, () => skeleton(h, "h-11")),
@@ -122,7 +122,7 @@ export const usersLoading = <M>(h: HtmlBuilder<M>): Html =>
 
 /** One user's page while the profile read is out: the stats strip, then rows. */
 export const userDetailLoading = <M>(h: HtmlBuilder<M>): Html =>
-	vstack(h, { gap: "3", className: "px-6 pt-4" }, [
+	vstack(h, { gap: "3", className: "px-(--page-gutter) pt-4" }, [
 		skeleton(h, "h-16"),
 		...Array.from({ length: 6 }, () => skeleton(h, "h-10")),
 	])
