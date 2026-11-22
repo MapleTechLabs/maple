@@ -9,6 +9,8 @@ import { init, Message, type Model, update as updateWith } from "./quick-start"
 import { DEFAULT_QUICK_START_STATE, type QuickStartState } from "./quick-start-state"
 import { ConnectMessage, ReadSetupLink, SETUP_LINK_COPY } from "./quick-start-connect"
 import { connectStep } from "./quick-start-view"
+import * as AgentHandoff from "../kit/agent-handoff"
+import { labHandoff } from "../../lab/onboarding-agent-fixture"
 
 const update = (model: Model, message: Message) => updateWith(model, message, true)
 
@@ -39,25 +41,103 @@ const indicatorMeasured = () =>
 	)
 
 const PROMPT = agentSetupPrompt(ingestUrl, "maple_pk_test")
+const HANDOFF = labHandoff()
+const PROMPT_WITH_CODE = agentSetupPrompt(ingestUrl, "maple_pk_test", HANDOFF.handoff_code)
+
+/** Every copy is tracked with whether it carried a handoff code. */
+const copyTracked = (hasHandoffCode: boolean) =>
+	Command.resolve(
+		AgentHandoff.TrackAgentEvent({
+			event: "onboarding_agent_prompt_copied",
+			surface: "connect_step",
+			hasHandoffCode,
+		}),
+		AgentHandoff.Message.CompletedTrack(),
+	)
+
+const copySettled = (generation: number) => [
+	Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation })),
+	Command.resolve(CopyButton.WaitCopyStatus, CopyButton.Message.ElapsedCopyStatus({ generation })),
+]
 
 describe("use my coding agent", () => {
-	test("Copy prompt copies the guide URL, the endpoint and the public key, then says so", () => {
-		expect(PROMPT).toContain("https://maple.dev/SKILL.md")
-		expect(PROMPT).toContain("Public ingest key: maple_pk_test")
+	test("the prompt shows the handoff line masked until Copy prompt asks for a code", () => {
 		scene(
 			{ update, view },
 			given(atConnect()),
 			indicatorMeasured(),
 			expectView(role("tab", { name: "Use my coding agent" })).toHaveAttr("aria-selected", "true"),
+			expectView(text(/Handoff code \(single use, 15 min\): ••••••••••/)).toExist(),
+			expectView(text(/maple_ho_/)).not.toExist(),
 			expectView(text(/maple_sk_test/)).not.toExist(),
+		)
+	})
+
+	test("Copy prompt mints a handoff, then copies the prompt with its code and never the private key", () => {
+		expect(PROMPT_WITH_CODE).toContain("Handoff code (single use, 15 min): maple_ho_")
+		expect(PROMPT_WITH_CODE).not.toContain("maple_sk_")
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
 			click(role("button", { name: "Copy prompt" })),
-			Command.expectExact(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
+			Command.expectExact(AgentHandoff.MintHandoff({ publicKey: "maple_pk_test" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
+			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT_WITH_CODE, generation: 1 })),
+			copyTracked(true),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			expectView(role("button", { name: "Copy prompt" })).toHaveAttr("data-copy-status", "copied"),
+			// The copy started a run: its progress shows under the prompt.
+			expectView(text("Waiting for your agent…")).toExist(),
+			// The page keeps the code masked; it lives only on the clipboard.
+			expectView(text(/maple_ho_/)).not.toExist(),
 			Command.resolve(
 				CopyButton.WaitCopyStatus,
 				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
 			),
+		)
+	})
+
+	test("a failed mint copies the prompt without a code and says progress tracking is unavailable", () => {
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.FailedMint({ publicKey: "maple_pk_test" }),
+			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
+			copyTracked(false),
+			...copySettled(1),
+			expectView(text(/progress tracking is unavailable/)).toExist(),
+			expectView(text("Agent progress")).not.toExist(),
+		)
+	})
+
+	test("a refused clipboard offers the prompt to copy by hand", () => {
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
+			),
+			copyTracked(true),
+			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.FailedCopy({ generation: 1 })),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
+			expectView(role("textbox", { name: "Setup prompt" })).not.toExist(),
+			click(role("button", { name: "Show prompt" })),
+			expectView(role("textbox", { name: "Setup prompt" })).toHaveValue(PROMPT_WITH_CODE),
 		)
 	})
 
@@ -68,12 +148,13 @@ describe("use my coding agent", () => {
 			indicatorMeasured(),
 			expectView(text(/^This is your org's public key\./)).toExist(),
 			click(role("button", { name: "Copy prompt" })),
-			Command.expectExact(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
-			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			Command.resolve(
-				CopyButton.WaitCopyStatus,
-				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
 			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT_WITH_CODE, generation: 1 })),
+			copyTracked(true),
+			...copySettled(1),
 		)
 	})
 })

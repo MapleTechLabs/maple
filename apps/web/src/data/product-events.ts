@@ -15,6 +15,14 @@
 
 export type ProductEvent =
 	| "onboarding_step_completed"
+	/** The coding-agent setup prompt was shown; `surface` is `connect_step` or `connect_panel`. */
+	| "onboarding_agent_prompt_shown"
+	/** The agent prompt was copied; `has_handoff_code` is false when the mint failed. */
+	| "onboarding_agent_prompt_copied"
+	/** The page saw the agent's first report: its run left `waiting_for_agent`. */
+	| "onboarding_agent_run_reported"
+	/** The page saw the agent close its run as completed. */
+	| "onboarding_agent_run_completed"
 	/** The org admin redeemed the onboarding-checklist credit from the top bar. */
 	| "onboarding_reward_claimed"
 	| "integration_connected"

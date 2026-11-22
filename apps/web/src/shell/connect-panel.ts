@@ -9,20 +9,14 @@ import type { Resources } from "../platform/resources"
 import { readEffectiveTimeZone } from "../platform/time-zone"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Popover from "@maple/views/ui/popover"
+import * as AgentHandoff from "../page/kit/agent-handoff"
 
 // The Connect button: the top bar's popover with
 // the ingest endpoint and keys, the live connection pill and the MCP card.
 
 export const POPOVER_ID = "shell-connect"
 
-export const CopyField = Schema.Literals([
-	"endpoint",
-	"publicKey",
-	"privateKey",
-	"agentPrompt",
-	"mcp",
-	"mcpCommand",
-])
+export const CopyField = Schema.Literals(["endpoint", "publicKey", "privateKey", "mcp", "mcpCommand"])
 export type CopyField = typeof CopyField.Type
 
 /** The setup keys: both for an engineer and up, the public key alone (`privateKey` null) for a member. */
@@ -56,13 +50,14 @@ export const Model = Schema.Struct({
 		endpoint: CopyButton.Model,
 		publicKey: CopyButton.Model,
 		privateKey: CopyButton.Model,
-		agentPrompt: CopyButton.Model,
 		mcp: CopyButton.Model,
 		mcpCommand: CopyButton.Model,
 	}),
 	/** `CopyableField masked`: each key's reveal toggle, reset when the panel unmounts. */
 	isPublicKeyVisible: Schema.Boolean,
 	isPrivateKeyVisible: Schema.Boolean,
+	/** The coding-agent prompt: Copy mints its handoff code. */
+	agent: AgentHandoff.Model,
 })
 export type Model = typeof Model.Type
 
@@ -70,7 +65,6 @@ const initCopies = (): Model["copies"] => ({
 	endpoint: CopyButton.init(),
 	publicKey: CopyButton.init(),
 	privateKey: CopyButton.init(),
-	agentPrompt: CopyButton.init(),
 	mcp: CopyButton.init(),
 	mcpCommand: CopyButton.init(),
 })
@@ -88,6 +82,7 @@ export const init = (): Model => ({
 	copies: initCopies(),
 	isPublicKeyVisible: false,
 	isPrivateKeyVisible: false,
+	agent: AgentHandoff.init("connect_panel"),
 })
 
 export const Message = defineMessageUnion({
@@ -111,6 +106,7 @@ export const Message = defineMessageUnion({
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
 	ClickedRevealPublicKey: {},
 	ClickedRevealPrivateKey: {},
+	GotAgentMessage: { message: AgentHandoff.Message },
 })
 export type Message = typeof Message.Type
 
@@ -175,6 +171,9 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const toPopover = (message: Popover.Message) => Message.GotPopoverMessage({ message })
 
+const toAgent = (commands: ReadonlyArray<Command.Command<AgentHandoff.Message, never, Resources>>) =>
+	Command.mapMessages(commands, (message) => Message.GotAgentMessage({ message }))
+
 /** `{open && <ConnectPanel />}`: opening mounts the panel's reads; closing unmounts its state. */
 const popoverStep = (model: Model, message: Popover.Message, context: Context): UpdateReturn => {
 	const next = Popover.update(model.popover, message)
@@ -196,6 +195,7 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	}
 	if (!isOpening || context.orgId === null) return { model: { ...model, popover: next.model }, commands }
 	const orgId = context.orgId
+	const shown = AgentHandoff.shown(model.agent)
 	// Every open reads the keys again: a key rolled in Settings since the last open must never be copied.
 	const keys: Keys = { _tag: "Loading" }
 	const keysRequest = model.keysRequest + 1
@@ -210,8 +210,14 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 			window: null,
 			isOverviewInFlight: false,
 			isOverviewFailed: false,
+			agent: shown.model,
 		},
-		commands: [...commands, FetchKeys({ orgId, request: keysRequest }), ResolveWindow({ orgId })],
+		commands: [
+			...commands,
+			...toAgent(shown.commands),
+			FetchKeys({ orgId, request: keysRequest }),
+			ResolveWindow({ orgId }),
+		],
 	}
 }
 
@@ -282,6 +288,10 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ClickedRevealPrivateKey: () => ({
 			model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible },
 		}),
+		GotAgentMessage: ({ message: child }) => {
+			const next = AgentHandoff.update(model.agent, child)
+			return { model: { ...model, agent: next.model }, commands: toAgent(next.commands) }
+		},
 	})
 
 /** Navigation closes the panel: its links lead elsewhere, and an open panel would hide the page. */

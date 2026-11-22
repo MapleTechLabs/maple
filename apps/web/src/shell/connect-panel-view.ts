@@ -3,9 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ingestUrl } from "../platform/ingest-url"
 import { mcpUrl } from "../platform/mcp-url"
 import { claudeCodeCommand, cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
-import { agentSetupPrompt } from "../page/kit/onboard-skill"
-import { codeBlock } from "../page/kit/code-block"
-import { REPLAY_BLOCK_CLASS } from "../page/kit/replay-privacy"
+import * as AgentHandoffView from "../page/kit/agent-handoff-view"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"
@@ -241,30 +239,14 @@ const mcpCard = (h: H, model: Model): Html =>
 		],
 	)
 
-/** The coding-agent setup prompt: the public key only, so it is safe in an agent's context. */
-const agentPrompt = (model: Model): string =>
-	agentSetupPrompt(ingestUrl, model.keys._tag === "Ready" ? model.keys.publicKey : "")
-
-/** The prompt, read-only, with a full-width Copy prompt below it. */
+/** The prompt with its handoff code masked; Copy prompt mints the code. The public key only. */
 const agentPromptBlock = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("space-y-2")],
-		[
-			codeBlock(h, { code: agentPrompt(model), isPlain: true, className: REPLAY_BLOCK_CLASS }),
-			CopyButton.view(h, {
-				model: model.copies.agentPrompt,
-				toParentMessage: toCopy("agentPrompt"),
-				value: agentPrompt(model),
-				label: "prompt",
-				idleLabel: "Copy prompt",
-				copiedLabel: "Prompt copied",
-				variant: "default",
-				size: "default",
-				keepsFillInk: true,
-				className: "w-full",
-			}),
-		],
-	)
+	AgentHandoffView.agentPrompt(h, {
+		model: model.agent,
+		publicKey: model.keys._tag === "Ready" ? model.keys.publicKey : "",
+		toMessage: (message) => Message.GotAgentMessage({ message }),
+		showsProgress: false,
+	})
 
 /** The footer's two links share one style. */
 const LINK_CLASS =

@@ -1,5 +1,7 @@
 import { REPLAY_BLOCK_CLASS } from "./replay-privacy"
 import { agentSetupPrompt } from "./onboard-skill"
+import type * as AgentHandoff from "./agent-handoff"
+import * as AgentHandoffView from "./agent-handoff-view"
 import {
 	type FrameworkId,
 	fillSnippet,
@@ -286,6 +288,8 @@ export type InstructionsParts<M> = Readonly<{
 	variant: "boxed" | "flush"
 	/** The Instrument tab's guide; defaults to the framework's (a Rust stack sets the Rust one). */
 	docs?: InstructionsDocs
+	/** The agent tab's handoff: Copy mints a code and the run's progress shows. Without it, a plain copy. */
+	agent?: Readonly<{ model: AgentHandoff.Model; toMessage: (message: AgentHandoff.Message) => M }>
 }>
 
 const block = <M>(
@@ -441,23 +445,31 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
 						"Paste this into Claude Code, Codex or Cursor. Your agent follows Maple's setup guide: it maps every service in the repo, wires traces, logs and metrics, and checks that a real request reaches Maple.",
 					]),
-					codeBlock(h, {
-						code: prompt,
-						isPlain: true,
-						className: REPLAY_BLOCK_CLASS,
-					}),
-					CopyButton.view(h, {
-						model: parts.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
-						toParentMessage: (message) => parts.toSnippetCopy(AGENT_PROMPT_COPY, message),
-						value: prompt,
-						label: "prompt",
-						idleLabel: "Copy prompt",
-						copiedLabel: "Prompt copied",
-						variant: "default",
-						size: "default",
-						keepsFillInk: true,
-						className: "w-full",
-					}),
+					...(parts.agent === undefined
+						? [
+								codeBlock(h, { code: prompt, isPlain: true, className: REPLAY_BLOCK_CLASS }),
+								CopyButton.view(h, {
+									model: parts.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
+									toParentMessage: (message) =>
+										parts.toSnippetCopy(AGENT_PROMPT_COPY, message),
+									value: prompt,
+									label: "prompt",
+									idleLabel: "Copy prompt",
+									copiedLabel: "Prompt copied",
+									variant: "default",
+									size: "default",
+									keepsFillInk: true,
+									className: "w-full",
+								}),
+							]
+						: [
+								AgentHandoffView.agentPrompt(h, {
+									model: parts.agent.model,
+									publicKey: parts.keys.publicKey ?? "",
+									toMessage: parts.agent.toMessage,
+									showsProgress: true,
+								}),
+							]),
 				]
 			},
 		},

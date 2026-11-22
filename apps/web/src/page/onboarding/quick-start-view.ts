@@ -704,6 +704,10 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					toPackageTabs: (message) => toConnect(ConnectMessage.GotPackageTabsMessage({ message })),
 					toSnippetCopy: (snippet, message) =>
 						toConnect(ConnectMessage.GotSnippetCopyMessage({ snippet, message })),
+					agent: {
+						model: connect.agent,
+						toMessage: (message) => toConnect(ConnectMessage.GotAgentMessage({ message })),
+					},
 					variant: "boxed",
 					...docsFor(state.stack),
 				}),

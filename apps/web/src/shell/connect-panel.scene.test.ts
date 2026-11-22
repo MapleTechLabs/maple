@@ -8,6 +8,8 @@ import { describe, expect as expectVitest, test } from "vitest"
 import * as Popover from "@maple/views/ui/popover"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { agentSetupPrompt } from "../page/kit/onboard-skill"
+import * as AgentHandoff from "../page/kit/agent-handoff"
+import { labHandoff } from "../lab/onboarding-agent-fixture"
 import {
 	close,
 	FetchKeys,
@@ -34,6 +36,15 @@ const opened = [
 	Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
 	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
 	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+	// Each opening shows the coding-agent prompt once.
+	Command.resolve(
+		AgentHandoff.TrackAgentEvent({
+			event: "onboarding_agent_prompt_shown",
+			surface: "connect_panel",
+			hasHandoffCode: null,
+		}),
+		AgentHandoff.Message.CompletedTrack(),
+	),
 ]
 
 describe("connect panel scene", () => {
@@ -74,9 +85,12 @@ describe("connect panel scene", () => {
 		)
 	})
 
-	test("Copy prompt copies the coding-agent prompt with the public key, never the private one", () => {
-		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef")
+	test("Copy prompt mints a handoff and copies the prompt with its code, never the private key", () => {
+		const handoff = labHandoff()
+		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", handoff.handoff_code)
 		expectVitest(prompt).toContain("https://maple.dev/SKILL.md")
+		expectVitest(prompt).toContain("maple_ho_")
+		expectVitest(prompt).not.toContain("maple_sk_")
 		scene(
 			config,
 			given(init()),
@@ -96,8 +110,21 @@ describe("connect panel scene", () => {
 				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
 			),
 			expect(text(/maple_sk_secret/)).toBeAbsent(),
+			expect(text(/Handoff code \(single use, 15 min\): ••••••••••/)).toExist(),
 			click(role("button", { name: "Copy prompt" })),
-			Command.expectExact(CopyButton.WriteClipboard({ text: prompt, generation: 1 })),
+			Command.resolve(
+				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
+				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_0123456789abcdef", handoff }),
+			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: prompt, generation: 1 })),
+			Command.resolve(
+				AgentHandoff.TrackAgentEvent({
+					event: "onboarding_agent_prompt_copied",
+					surface: "connect_panel",
+					hasHandoffCode: true,
+				}),
+				AgentHandoff.Message.CompletedTrack(),
+			),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			Command.resolve(
 				CopyButton.WaitCopyStatus,

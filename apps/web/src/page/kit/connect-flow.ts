@@ -291,7 +291,8 @@ export const connectionTabItem = (detail: string): RailItem => ({
 	detail: `On the source page: ${detail}`,
 })
 
-export type CheckState = "done" | "working" | "waiting" | "failed"
+/** `working` spins; `active` is its still glyph, for a list re-read on a poll (a run's stages). */
+export type CheckState = "done" | "working" | "active" | "pending" | "waiting" | "skipped" | "failed"
 
 export type CheckRow = Readonly<{
 	state: CheckState
@@ -304,7 +305,10 @@ export type CheckRow = Readonly<{
 
 const CHECK_ICON = {
 	done: { name: "CircleCheckIcon", className: "text-severity-info" },
+	active: { name: "ArrowRightIcon", className: "text-primary" },
+	pending: { name: "CircleIcon", className: "text-muted-foreground" },
 	waiting: { name: "ClockIcon", className: "text-muted-foreground" },
+	skipped: { name: "MinusIcon", className: "text-muted-foreground" },
 	failed: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<CheckState, "working">, { name: IconName; className: string }>
 
@@ -323,6 +327,8 @@ const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
 export type LiveChecklistOptions = Readonly<{
 	title?: string
 	meta?: Html | string
+	/** A line under the title: where the whole list stands. */
+	summary?: Html | string
 	rows: ReadonlyArray<CheckRow>
 	/** The source exists, so leaving is safe: "Saved as a source. Safe to leave; sync keeps running." */
 	saved?: string
@@ -345,6 +351,9 @@ export const liveChecklist = <M>(h: HtmlBuilder<M>, options: LiveChecklistOption
 						: [h.span([h.Class("text-xs text-muted-foreground")], [options.meta])]),
 				],
 			),
+			...(options.summary === undefined
+				? []
+				: [h.p([h.Class("px-5 pb-2 text-sm text-muted-foreground")], [options.summary])]),
 			h.p(
 				[h.Class("sr-only"), h.AriaLive("polite"), h.AriaAtomic(true)],
 				[checklistSummary(options.rows)],
@@ -367,7 +376,11 @@ export const liveChecklist = <M>(h: HtmlBuilder<M>, options: LiveChecklistOption
 											h.Class(
 												cn(
 													"text-sm",
-													row.state === "waiting" && "text-muted-foreground",
+													row.state !== "done" &&
+														row.state !== "working" &&
+														row.state !== "active" &&
+														row.state !== "failed" &&
+														"text-muted-foreground",
 												),
 											),
 										],

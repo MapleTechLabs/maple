@@ -21,6 +21,8 @@ export type CodeBlockOptions<M> = Readonly<{
 	toCopyMessage?: (message: CopyButton.Message) => M
 	/** Prose, not code (a prompt for a coding agent): shown as typed, without highlighting. */
 	isPlain?: boolean
+	/** A muted last line that is not part of `code`: a value shown masked until it is copied. */
+	maskedLine?: string
 }>
 
 const escapeHtml = (text: string): string =>
@@ -90,6 +92,18 @@ export const codeBlock = <M>(h: HtmlBuilder<M>, options: CodeBlockOptions<M>): H
 							),
 						],
 					),
+					...(options.maskedLine === undefined
+						? []
+						: [
+								h.pre(
+									[
+										h.Class(
+											"px-3 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground",
+										),
+									],
+									[options.maskedLine],
+								),
+							]),
 				],
 			),
 		],
