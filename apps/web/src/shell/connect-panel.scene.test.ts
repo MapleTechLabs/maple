@@ -47,9 +47,10 @@ describe("connect panel scene", () => {
 			expect(selector("#connect-ingest-endpoint")).toHaveValue(ingestUrl),
 			expect(text("Waiting for telemetry")).toExist(),
 			Command.resolve(
-				FetchKeys({ orgId: ORG }),
+				FetchKeys({ orgId: ORG, request: 1 }),
 				Message.SucceededLoadKeys({
 					orgId: ORG,
+					request: 1,
 					publicKey: "maple_pk_0123456789abcdef",
 					privateKey: "maple_sk_x",
 				}),
@@ -81,9 +82,10 @@ describe("connect panel scene", () => {
 			given(init()),
 			...opened,
 			Command.resolve(
-				FetchKeys({ orgId: ORG }),
+				FetchKeys({ orgId: ORG, request: 1 }),
 				Message.SucceededLoadKeys({
 					orgId: ORG,
+					request: 1,
 					publicKey: "maple_pk_0123456789abcdef",
 					privateKey: "maple_sk_secret",
 				}),
@@ -110,9 +112,10 @@ describe("connect panel scene", () => {
 			given(init()),
 			...opened,
 			Command.resolve(
-				FetchKeys({ orgId: ORG }),
+				FetchKeys({ orgId: ORG, request: 1 }),
 				Message.SucceededLoadKeys({
 					orgId: ORG,
+					request: 1,
 					publicKey: "maple_pk_0123456789abcdef",
 					privateKey: null,
 				}),
@@ -143,7 +146,10 @@ describe("connect panel scene", () => {
 			config,
 			given(init()),
 			...opened,
-			Command.resolve(FetchKeys({ orgId: ORG }), Message.FailedLoadKeys({ orgId: ORG })),
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.FailedLoadKeys({ orgId: ORG, request: 1 }),
+			),
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
@@ -169,7 +175,7 @@ describe("connect panel update", () => {
 		).model
 		const stale = update(
 			opened,
-			Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }),
+			Message.SucceededLoadKeys({ orgId: "org_b", request: 1, publicKey: "pk", privateKey: "sk" }),
 			context,
 		)
 		expectVitest(stale.model.keys).toEqual({ _tag: "Loading" })
@@ -264,7 +270,7 @@ describe("connect panel update", () => {
 	test("a reopen reads the keys again, so a key rolled since the last open is never copied", () => {
 		const ready = update(
 			open(init()).model,
-			Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk_old", privateKey: "sk" }),
+			Message.SucceededLoadKeys({ orgId: ORG, request: 1, publicKey: "pk_old", privateKey: "sk" }),
 			context,
 		)
 		const closed = update(
@@ -280,6 +286,27 @@ describe("connect panel update", () => {
 				: Arr.map(reopened.commands, (command) => command.name),
 		).toContain("FetchConnectIngestKeys")
 		expectVitest(reopened.model.keys._tag).toBe("Loading")
+	})
+
+	test("a key read from an earlier opening that lands late is dropped", () => {
+		const first = open(init()).model
+		const closed = update(
+			first,
+			Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }),
+			context,
+		).model
+		const reopened = open(closed).model
+		const fresh = update(
+			reopened,
+			Message.SucceededLoadKeys({ orgId: ORG, request: 2, publicKey: "pk_new", privateKey: "sk" }),
+			context,
+		).model
+		const late = update(
+			fresh,
+			Message.SucceededLoadKeys({ orgId: ORG, request: 1, publicKey: "pk_old", privateKey: "sk" }),
+			context,
+		).model
+		expectVitest(late.keys).toEqual({ _tag: "Ready", publicKey: "pk_new", privateKey: "sk" })
 	})
 
 	test("navigating away closes an open panel and stops its poll", () => {
@@ -298,7 +325,10 @@ describe("connect panel update", () => {
 			config,
 			given(init()),
 			...opened,
-			Command.resolve(FetchKeys({ orgId: ORG }), Message.FailedLoadKeys({ orgId: ORG })),
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.FailedLoadKeys({ orgId: ORG, request: 1 }),
+			),
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),

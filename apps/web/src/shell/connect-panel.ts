@@ -50,6 +50,8 @@ export const Model = Schema.Struct({
 	isOverviewFailed: Schema.Boolean,
 	/** The overview read sent last, across openings; only its answer counts. */
 	overviewRequest: Schema.Number,
+	/** The key read sent last, across openings; an earlier opening's late answer is dropped. */
+	keysRequest: Schema.Number,
 	copies: Schema.Struct({
 		endpoint: CopyButton.Model,
 		publicKey: CopyButton.Model,
@@ -82,6 +84,7 @@ export const init = (): Model => ({
 	isOverviewInFlight: false,
 	isOverviewFailed: false,
 	overviewRequest: 0,
+	keysRequest: 0,
 	copies: initCopies(),
 	isPublicKeyVisible: false,
 	isPrivateKeyVisible: false,
@@ -91,10 +94,11 @@ export const Message = defineMessageUnion({
 	GotPopoverMessage: { message: Popover.Message },
 	SucceededLoadKeys: {
 		orgId: Schema.String,
+		request: Schema.Number,
 		publicKey: Schema.String,
 		privateKey: Schema.NullOr(Schema.String),
 	},
-	FailedLoadKeys: { orgId: Schema.String },
+	FailedLoadKeys: { orgId: Schema.String, request: Schema.Number },
 	ResolvedWindow: { orgId: Schema.String, window: TimeWindow },
 	SucceededLoadOverview: {
 		orgId: Schema.String,
@@ -111,18 +115,19 @@ export const Message = defineMessageUnion({
 export type Message = typeof Message.Type
 
 export const FetchKeys = Command.define("FetchConnectIngestKeys", {
-	args: { orgId: Schema.String },
+	args: { orgId: Schema.String, request: Schema.Number },
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
-	execute: ({ orgId }) =>
+	execute: ({ orgId, request }) =>
 		retrieveSetupKeys.pipe(
 			Effect.map((keys) =>
 				Message.SucceededLoadKeys({
 					orgId,
+					request,
 					publicKey: keys.publicKey,
 					privateKey: keys.privateKey,
 				}),
 			),
-			Effect.orElseSucceed(() => Message.FailedLoadKeys({ orgId })),
+			Effect.orElseSucceed(() => Message.FailedLoadKeys({ orgId, request })),
 		),
 })
 
@@ -184,6 +189,7 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 				orgId: model.orgId,
 				keys: model.keys,
 				overviewRequest: model.overviewRequest,
+				keysRequest: model.keysRequest,
 			},
 			commands,
 		}
@@ -192,20 +198,25 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 	const orgId = context.orgId
 	// Every open reads the keys again: a key rolled in Settings since the last open must never be copied.
 	const keys: Keys = { _tag: "Loading" }
+	const keysRequest = model.keysRequest + 1
 	return {
 		model: {
 			...model,
 			popover: next.model,
 			orgId,
 			keys,
+			keysRequest,
 			services: [],
 			window: null,
 			isOverviewInFlight: false,
 			isOverviewFailed: false,
 		},
-		commands: [...commands, FetchKeys({ orgId }), ResolveWindow({ orgId })],
+		commands: [...commands, FetchKeys({ orgId, request: keysRequest }), ResolveWindow({ orgId })],
 	}
 }
+
+const isCurrentKeys = (model: Model, orgId: string, request: number) =>
+	model.orgId === orgId && model.keysRequest === request
 
 const isCurrent = (model: Model, orgId: string, request: number) =>
 	model.orgId === orgId && model.overviewRequest === request
@@ -223,12 +234,14 @@ const copyStep = (model: Model, field: CopyField, message: CopyButton.Message): 
 export const update = (model: Model, message: Message, context: Context): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		GotPopoverMessage: ({ message: child }) => popoverStep(model, child, context),
-		SucceededLoadKeys: ({ orgId, publicKey, privateKey }) =>
-			model.orgId === orgId
+		SucceededLoadKeys: ({ orgId, request, publicKey, privateKey }) =>
+			isCurrentKeys(model, orgId, request)
 				? { model: { ...model, keys: { _tag: "Ready", publicKey, privateKey } } }
 				: { model },
-		FailedLoadKeys: ({ orgId }) =>
-			model.orgId === orgId ? { model: { ...model, keys: { _tag: "Failed" } } } : { model },
+		FailedLoadKeys: ({ orgId, request }) =>
+			isCurrentKeys(model, orgId, request)
+				? { model: { ...model, keys: { _tag: "Failed" } } }
+				: { model },
 		// The open read and every poll: the overview follows the clock, not the window at open.
 		ResolvedWindow: ({ orgId, window }) =>
 			model.orgId === orgId && model.popover.isOpen
