@@ -3077,8 +3077,10 @@ export type ProductEventsRow = InferRow<typeof productEvents>
 
 /**
  * Identity links — one row per (visitor, user) pair ever observed together on a
- * session, materialized out of `session_replays` (later also from mobile
- * `identify` calls). This is how a funnel collapses a person's anonymous
+ * session, materialized out of `session_replays`, and on a server, mobile or
+ * trace product event (`identity_links_events_mv`). The `description` below still
+ * names sessions only: editing it changes the Tinybird datafile, and a changed
+ * datafile for a table with feeding views risks a rebuild from their 30-day sources. This is how a funnel collapses a person's anonymous
  * marketing visit (VisitorId only) and their later server-side events (UserId
  * only) into one row: a `product_events` row resolves its person as
  * `if(UserId != '', UserId, coalesce(link.UserId, VisitorId))`.
