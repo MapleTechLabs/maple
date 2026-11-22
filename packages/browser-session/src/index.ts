@@ -4,6 +4,7 @@ export {
 	consentAllowedSince,
 	consentRevokedAt,
 	hasConsent,
+	mayIdentifyVisitor,
 	mayPersistIdentifier,
 	onConsentChange,
 	// Consent state is page-global and `configurePrivacy` only ever tightens, so
@@ -61,6 +62,7 @@ export {
 	sdkHint,
 } from "./platform/transport"
 export { getVisitorId, isVisitorIdPersisted, setVisitorTracking } from "./identity/visitor"
+export { COOKIELESS_VISITOR_ID, rowVisitorId } from "./identity/row-visitor"
 export type { Persistence } from "./platform/persistence"
 export { mayUseStorage } from "./platform/persistence"
 export type { MapleRegion } from "./platform/region"

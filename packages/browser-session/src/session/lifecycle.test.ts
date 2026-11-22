@@ -1,8 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { markActivity, noteNavigation, peekSession, rotateSession } from "./session"
+import {
+	markActivity,
+	noteNavigation,
+	peekSession,
+	resetSessionStorageStateForTests,
+	resetTabLeaseForTests,
+	rotateSession,
+} from "./session"
 import { type SessionLifecycleHooks, type SessionSuspendOptions, startSessionLifecycle } from "./lifecycle"
 import { resetVisitClaimForTests } from "../identity/visit"
 import { resetVisitorCacheForTests, setVisitorTracking } from "../identity/visitor"
+import {
+	configurePrivacy,
+	mayPersistIdentifier,
+	type PrivacyOptions,
+	resetConsentForTests,
+} from "../identity/consent"
+import { COOKIELESS_VISITOR_ID } from "../identity/row-visitor"
 import * as Arr from "effect/Array"
 
 // Same in-memory storage stand-in session.test.ts uses, so the rotation logic
@@ -17,6 +31,9 @@ class FakeStorage {
 	}
 	removeItem(key: string): void {
 		this.store.delete(key)
+	}
+	get size(): number {
+		return this.store.size
 	}
 }
 
@@ -194,6 +211,84 @@ describe("billable_start", () => {
 		expect(last().billable_start).toBe(1)
 
 		expect(localStorage.getItem("maple.visit")).toBeNull()
+	})
+})
+
+describe("cookieless persistence", () => {
+	/** What the SDK init does: configure privacy, then gate the stored visitor id on it. */
+	const configure = (privacy: PrivacyOptions): void => {
+		configurePrivacy(privacy)
+		setVisitorTracking(mayPersistIdentifier())
+	}
+
+	/** A fresh document: its own sessionStorage and no in-memory session or visit claim. */
+	let tabStorage: FakeStorage
+	const loadPage = (): void => {
+		resetSessionStorageStateForTests()
+		resetTabLeaseForTests()
+		resetVisitClaimForTests()
+		tabStorage = new FakeStorage()
+		const globals = globalThis as Record<string, unknown>
+		globals.window = { sessionStorage: tabStorage, localStorage }
+	}
+
+	beforeEach(loadPage)
+
+	afterEach(() => {
+		resetConsentForTests()
+		resetSessionStorageStateForTests()
+		resetTabLeaseForTests()
+		vi.unstubAllGlobals()
+	})
+
+	it("asks the gateway for a visitor id and stores nothing on the device", () => {
+		configure({ persistence: "cookieless" })
+		start()
+
+		expect(last()).toMatchObject({
+			visitor_id: COOKIELESS_VISITOR_ID,
+			visitor_is_new: 0,
+			version: 1,
+			billable_start: 1,
+		})
+		const attrs = last().resource_attributes as Record<string, string>
+		expect(attrs["maple.visitor.mode"]).toBe("cookieless")
+		expect(attrs["maple.visitor.persisted"]).toBeUndefined()
+		expect(localStorage.size).toBe(0)
+		expect(tabStorage.size).toBe(0)
+	})
+
+	it("bills every page load's first session row, like memory-only mode", () => {
+		configure({ persistence: "cookieless" })
+		start()
+		expect(last()).toMatchObject({ version: 1, billable_start: 1 })
+
+		// A second page load within the visit: the gateway, not the device, dedupes it.
+		loadPage()
+		start()
+		expect(last()).toMatchObject({ version: 1, billable_start: 1 })
+	})
+
+	it.each([
+		["Global Privacy Control", { persistence: "cookieless" }, { globalPrivacyControl: true }],
+		["denied consent", { persistence: "cookieless", requireConsent: true }, {}],
+		["persistVisitorId: false", { persistence: "cookieless", persistVisitorId: false }, {}],
+	] as const)("sends an empty visitor id under %s", (_, privacy, nav) => {
+		vi.stubGlobal("navigator", nav)
+		configure(privacy)
+		start()
+
+		expect(last().visitor_id).toBe("")
+		const attrs = last().resource_attributes as Record<string, string>
+		expect(attrs["maple.visitor.mode"]).toBeUndefined()
+	})
+
+	it("keeps memory-only rows free of any visitor id", () => {
+		configure({ persistence: "memory" })
+		start()
+		expect(last()).toMatchObject({ visitor_id: "", visitor_is_new: 0, billable_start: 1 })
+		const attrs = last().resource_attributes as Record<string, string>
+		expect(attrs["maple.visitor.mode"]).toBeUndefined()
 	})
 })
 
