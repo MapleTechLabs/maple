@@ -5,14 +5,14 @@ import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
+import { MCP_PRODUCT_EVENTS_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
 const TOOL = "list_product_events"
-const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
+const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
 
 /** The query's own cap: a kind or name filter applies after it, so a narrowed read fetches all of it. */
 const QUERY_MAX = 200

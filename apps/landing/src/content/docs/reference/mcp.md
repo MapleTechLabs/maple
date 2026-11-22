@@ -178,9 +178,10 @@ The write tools here need the org admin or engineer role.
 | `get_session_traces`     | read   | The backend traces a browser session produced                                                  |
 | `list_product_events`    | read   | Product event names with how often each fired and how many sessions and people it reached      |
 | `query_funnel`           | read   | Conversion funnel over product events, per person or per account, with conversion and drop-off |
+| `query_paths`            | read   | What people do in the steps after, or before, one event or page                                |
 | `query_retention`        | read   | Retention cohorts: who first did one thing, and how many came back each day, week or month     |
 | `list_users`             | read   | The end users your apps identified, with sessions, requests, errors and their busiest route    |
-| `inspect_user`           | read   | One end user: sessions, MCP sessions, the issues they hit and their failed requests            |
+| `inspect_user`           | read   | One end user: sessions, their latest events, MCP sessions, issues and failed requests          |
 
 ### Agent sessions
 

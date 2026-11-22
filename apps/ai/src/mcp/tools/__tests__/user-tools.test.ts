@@ -104,7 +104,22 @@ const reads = (
 					device: "Chrome · macOS",
 				},
 			],
-			events: [],
+			events: [
+				{
+					atMs: AT - 60_000,
+					name: "report_exported",
+					source: "browser",
+					service: "",
+					detail: "format=csv",
+				},
+				{
+					atMs: AT - 120_000,
+					name: "$pageview",
+					source: "browser",
+					service: "",
+					detail: "/dashboards/d37",
+				},
+			],
 			mcpSessions: [
 				{
 					service: "maple-mcp",
@@ -315,6 +330,11 @@ describe("inspect_user", () => {
 
 		const markdown = text(result)
 		expect(markdown).toContain("| maple-mcp | mcp_sess_9 | claude-code | agent |")
+		// What the user did, latest first, with the page or the properties beside each event.
+		expect(Arr.map(output.events, (event) => event.name)).toEqual(["report_exported", "$pageview"])
+		expect(markdown).toMatch(
+			/\| report_exported \| format=csv \| browser \| - \|\n\| [^|]+ \| \$pageview \| \/dashboards\/d37 \|/,
+		)
 		expect(markdown).toContain("plan=pro")
 		expect(markdown).toContain("Acme Inc. (acme)")
 		expect(markdown).toContain(`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-11-01 12:30:00"`)

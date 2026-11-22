@@ -14,6 +14,7 @@
  * Every expected answer is read from these rows by the plain functions at the bottom, never
  * from the SQL under test.
  */
+import { pagePathMatches } from "@maple/query-model"
 import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 export const MINUTE_MS = 60_000
@@ -448,7 +449,9 @@ export const named =
 export const viewed =
 	(pagePath: string, host?: string): Predicate =>
 	(row) =>
-		row.kind === "navigation" && row.pagePath === pagePath && (host === undefined || row.host === host)
+		row.kind === "navigation" &&
+		pagePathMatches(pagePath, row.pagePath) &&
+		(host === undefined || row.host === host)
 
 export const inRange =
 	(range: Range): Predicate =>

@@ -84,6 +84,58 @@ export const productEventsFunnelCoverage = Effect.fn("Observability.productEvent
 	})
 })
 
+/** Time between a funnel's steps, for steps 2..N: medians and p90s since the previous step and since step 1. */
+export const productEventsFunnelTiming = Effect.fn("Observability.productEventsFunnelTiming")(function* (
+	input: ProductEventsFunnelInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.funnel.steps": input.steps.length })
+	const { startTime, endTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsFunnelTimingQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
+	return yield* executor.compiledQuery(compiled, {
+		profile: "aggregation",
+		context: "productEventsFunnelTiming",
+	})
+})
+
+/** What the people who stopped before each step did next: `{ step, next, count }`, most common first. */
+export const productEventsFunnelLeavers = Effect.fn("Observability.productEventsFunnelLeavers")(function* (
+	input: ProductEventsFunnelInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.funnel.steps": input.steps.length })
+	const { startTime, endTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsFunnelLeaversQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
+	return yield* executor.compiledQuery(compiled, {
+		profile: "aggregation",
+		context: "productEventsFunnelLeavers",
+	})
+})
+
+export interface ProductEventsPathsInput extends CH.ProductEventsPathsOpts {
+	readonly startTime: string
+	readonly endTime: string
+}
+
+/** What people did in the hops after (or before) one anchor: `{ hop, fromNode, toNode, count }`. */
+export const productEventsPaths = Effect.fn("Observability.productEventsPaths")(function* (
+	input: ProductEventsPathsInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({
+		orgId: executor.orgId,
+		"maple.paths.direction": input.direction,
+		"maple.paths.depth": input.depth,
+		"maple.paths.key_by": input.keyBy,
+	})
+	const { startTime, endTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsPathsQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime })
+	return yield* executor.compiledQuery(compiled, { profile: "aggregation", context: "productEventsPaths" })
+})
+
 export interface ProductEventsRetentionInput extends CH.ProductEventsRetentionOpts {
 	/** The cohort window: a key is in a cohort when its first start event falls inside it. */
 	readonly startTime: string

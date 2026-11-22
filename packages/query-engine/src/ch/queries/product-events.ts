@@ -11,7 +11,7 @@
 // same table (`useProductEvents`); this module owns everything funnel-shaped.
 
 import * as CH from "@maple-dev/effect-orm/expr"
-import { FUNNEL_MAX_STEPS } from "@maple/query-model"
+import { FUNNEL_MAX_STEPS, isPagePathPattern, pagePathLikePattern } from "@maple/query-model"
 import {
 	param,
 	from,
@@ -35,6 +35,8 @@ import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from ".
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export type { ProductEventsFilters } from "./web-analytics"
+// The page-step matcher, for a reference that has to agree with `eventStepCondition`.
+export { pagePathMatches } from "@maple/query-model"
 
 // Local function helpers (generic per call site, so not `defineFn`)
 
@@ -99,7 +101,7 @@ export type FunnelSessionDimension =
  * - `event`: a `track()` (or direct-ingested) event by name, optionally
  *   narrowed by `Attributes[k] = v` for every entry of `attributeEquals`.
  * - `page`: a browser page view or a mobile screen view of `pagePath`, optionally
- *   on one `host`.
+ *   on one `host`. A `*` in the path matches any run of characters.
  * - `session`: "started a session with this acquisition dimension" — the
  *   referral / campaign entry point. Only valid as step 1: it is evaluated
  *   against `session_replays` and enters the funnel as a synthetic
@@ -362,7 +364,11 @@ export function eventStepCondition($: EventsAccessor, step: FunnelStep): CH.Cond
 			return cond
 		}
 		case "page": {
-			const cond = isPageView($).and($.PagePath.eq(step.pagePath))
+			const cond = isPageView($).and(
+				isPagePathPattern(step.pagePath)
+					? $.PagePath.like(pagePathLikePattern(step.pagePath))
+					: $.PagePath.eq(step.pagePath),
+			)
 			return step.host === undefined ? cond : cond.and($.Host.eq(step.host))
 		}
 		case "session":

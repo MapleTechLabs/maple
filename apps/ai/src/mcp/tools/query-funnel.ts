@@ -1,9 +1,10 @@
-import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	FUNNEL_MAX_STEPS,
 	FunnelBreakdownBy,
 	FunnelKeyBy,
 	FunnelStep,
+	funnelStepDetails,
 	funnelStepLabel,
 	type FunnelKeyBy as FunnelKeyByType,
 } from "@maple/query-model"
@@ -11,13 +12,17 @@ import {
 	productEventsFunnel,
 	productEventsFunnelBreakdown,
 	productEventsFunnelCoverage,
+	productEventsFunnelLeavers,
+	productEventsFunnelTiming,
 	type ProductEventsFunnelCoverageOutput,
 } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
+import { MCP_PRODUCT_EVENTS_MAX_HOURS, SESSION_RETENTION_HOURS } from "../lib/time"
+import { formatDuration } from "@maple/domain/format"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
@@ -25,7 +30,7 @@ import { doc } from "../lib/tool-doc"
 import { orFallback } from "../lib/fallback"
 
 const TOOL = "query_funnel"
-const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
+const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
 
 const decodeBreakdownBy = Schema.decodeUnknownOption(FunnelBreakdownBy)
 
@@ -121,11 +126,11 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Query Funnel",
 		description:
-			'Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person, or per account with `key_by="group"`. Reports each step\'s count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.',
+			'Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person, or per account with `key_by="group"`. Reports each step\'s count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists; the path of a page step may use `*` for any run of characters (`/dashboards/*`). `details=true` adds time to convert and where the drop-offs went. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.',
 		parameters: Schema.Struct({
 			steps_json: P.json(
 				Schema.Array(FunnelStep),
-				`JSON array of 1-${FUNNEL_MAX_STEPS} steps, in order. A step is {kind:"event", eventName, attributeEquals?}, {kind:"page", pagePath, host?}, or, as step 1 only, {kind:"session", dimension, value} for how the session was acquired (dimension: referrerHost, utmSource, utmMedium, utmCampaign, country or host). Example: ${STEPS_EXAMPLE}`,
+				`JSON array of 1-${FUNNEL_MAX_STEPS} steps, in order. A step is {kind:"event", eventName, attributeEquals?}, {kind:"page", pagePath, host?} (pagePath exact, or with * as a wildcard), or, as step 1 only, {kind:"session", dimension, value} for how the session was acquired (dimension: referrerHost, utmSource, utmMedium, utmCampaign, country or host). Example: ${STEPS_EXAMPLE}`,
 			),
 			key_by: P.optionalOneOf(
 				FunnelKeyBy.literals,
@@ -138,6 +143,9 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				"Group by an acquisition dimension (referrerHost, utmSource, utmMedium, utmCampaign, country, host) or by `attribute:<key>` on the events. Top groups by step-1 count.",
 			),
 			breakdown_limit: P.limit({ default: 10, max: BREAKDOWN_MAX_GROUPS, noun: "breakdown groups" }),
+			details: P.optionalFlag(
+				"Also report how long each step took (median and p90 since the previous step and since step 1) and what the people who dropped off did next. Needs two or more steps; left out with breakdown_by.",
+			),
 			...WINDOW.fields,
 			host: P.optionalText("Only persons with a session on this site host."),
 			page_path: P.optionalText("Only persons with a session that viewed this page path."),
@@ -274,6 +282,39 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 						)
 					: undefined
 
+			// Time to convert and where the drop-offs went: two more reads, only when asked for.
+			const wantsDetails =
+				params.details === true && steps.length >= 2 && breakdownBy === undefined && first > 0
+			const details = wantsDetails
+				? yield* Effect.all(
+						{
+							timing: withTenantExecutor(productEventsFunnelTiming(definition)),
+							leavers: withTenantExecutor(productEventsFunnelLeavers(definition)),
+						},
+						{ concurrency: 2 },
+					).pipe(
+						Effect.map(({ timing, leavers }) => funnelStepDetails(timing, leavers)),
+						orFallback("funnel step details", () => undefined),
+					)
+				: undefined
+			const detailedSteps =
+				details === undefined
+					? stepData
+					: Arr.map(stepData, (stat) => ({ ...stat, ...details.get(stat.step) }))
+
+			// Sessions are kept 30 days, so anything read off them is blind to the part before that.
+			const windowHours = (parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 3_600_000
+			const readsSessions =
+				Arr.some(steps, (step) => step.kind === "session") ||
+				(breakdownBy !== undefined &&
+					!Str.startsWith("attribute:")(breakdownBy) &&
+					breakdownBy !== "host") ||
+				Arr.some(Rec.values(filters), (value) => value !== undefined)
+			const sessionNote =
+				readsSessions && windowHours > SESSION_RETENTION_HOURS
+					? "Sessions are kept 30 days: a session step, a session filter and a session breakdown see only the last 30 days of this window."
+					: undefined
+
 			const breakdown =
 				breakdownBy === undefined || first === 0
 					? undefined
@@ -320,12 +361,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				timeRange: { start: st, end: et },
 				keyBy,
 				windowSeconds,
-				steps: stepData,
+				steps: detailedSteps,
 				conversion,
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
 				...(identity === undefined ? undefined : { identityNote: identity.note }),
 				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
+				...(sessionNote === undefined ? undefined : { sessionNote }),
 			}
 		}),
 		render: (output) => {
@@ -338,7 +380,14 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
-				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
+				...(output.identityNote === undefined && output.sessionNote === undefined
+					? undefined
+					: {
+							notices: [
+								...(output.identityNote === undefined ? [] : [output.identityNote]),
+								...(output.sessionNote === undefined ? [] : [output.sessionNote]),
+							],
+						}),
 				...(first === undefined || first.count === 0
 					? {
 							empty: {
@@ -380,6 +429,53 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 										? "Add a second step to measure conversion."
 										: `**Conversion: ${formatPercent(output.conversion)}** (${formatNumber(last.count)} of ${formatNumber(first.count)} ${noun}).`,
 								),
+								...(Arr.some(steps, (stat) => stat.p50Ms !== undefined)
+									? [
+											doc.heading("Time to convert"),
+											doc.table(
+												[
+													"#",
+													"Step",
+													"Median since previous",
+													"p90 since previous",
+													"Median since step 1",
+												],
+												Arr.map(
+													Arr.filter(
+														steps,
+														(stat) => stat.step > 1 && stat.count > 0,
+													),
+													(stat) => [
+														String(stat.step),
+														truncate(stat.label, 60),
+														formatDuration(stat.p50Ms ?? 0),
+														formatDuration(stat.p90Ms ?? 0),
+														formatDuration(stat.sinceStartP50Ms ?? 0),
+													],
+												),
+											),
+											doc.heading("Where the drop-offs went"),
+											doc.list(
+												Arr.map(
+													Arr.filter(steps, (stat) => stat.step > 1),
+													(stat) =>
+														`Before step ${stat.step} (${truncate(stat.label, 40)}): ${
+															stat.leavers === undefined ||
+															stat.leavers.length === 0
+																? "nobody dropped off"
+																: Arr.join(
+																		Arr.map(
+																			stat.leavers,
+																			(leaver) =>
+																				`${leaver.name === "" ? "nothing after" : truncate(leaver.name, 40)} (${formatNumber(leaver.count)})`,
+																		),
+																		", ",
+																	)
+														}`,
+												),
+											),
+										]
+									: []),
 								...(breakdown === undefined
 									? []
 									: [

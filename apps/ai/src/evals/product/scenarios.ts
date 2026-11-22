@@ -493,12 +493,33 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			["paths"],
 			`For workspaces created ${span(fourWeeks)}: what is the most common thing a user does right after workspace_created (their very next event or page view within a day), and how many users did that?`,
 			[answerMentions(topNext), answerNumber(`users who went on to ${topNext}`, topNextCount)],
+			[
+				{
+					tool: "query_paths",
+					args: {
+						anchor_json: stringifyJson({ kind: "event", eventName: "workspace_created" }),
+						depth: 1,
+						key_by: "user",
+						...window(fourWeeks),
+					},
+				},
+			],
 		),
 		scenario(
 			"time-to-project",
 			["funnel", "timing"],
 			`For users who signed up (signup_completed) ${span(fourWeeks)} and created a project (project_created) within 7 days: what was the median time from sign-up to the project?`,
 			[answerDuration("median time to project", median(toProject), 0.1)],
+			[
+				funnel(
+					[
+						{ kind: "event", eventName: "signup_completed" },
+						{ kind: "event", eventName: "project_created" },
+					],
+					fourWeeks,
+					{ window_seconds: 7 * 86_400, details: true },
+				),
+			],
 		),
 		scenario(
 			"dashboard-then-export",
@@ -507,6 +528,16 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			[
 				answerNumber("viewed a dashboard", dashboardThenExport[0] ?? 0),
 				answerNumber("then exported", dashboardThenExport[1] ?? 0),
+			],
+			[
+				funnel(
+					[
+						{ kind: "page", pagePath: "/dashboards/*" },
+						{ kind: "event", eventName: "report_exported" },
+					],
+					twoWeeks,
+					{ window_seconds: 3_600, key_by: "user" },
+				),
 			],
 		),
 		scenario(
@@ -522,6 +553,7 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 					}),
 				),
 			],
+			[{ tool: "inspect_user", args: { user_id: timelineUser, ...window(twoWeeks) } }],
 		),
 		scenario(
 			"workspace-without-project",
