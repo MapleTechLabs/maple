@@ -45,7 +45,7 @@ const McpToolSecretsLive = Layer.mergeAll(
 )
 
 /** What the tools' services need beyond the app root; a test runtime that serves them provides it too. */
-export const McpToolPlatformLive = ProductEventsService.layer.pipe(
+export const McpToolPlatformLive = ProductEventsService.layerFor("maple-ai").pipe(
 	Layer.provideMerge(Layer.mergeAll(Env.layer, McpToolSecretsLive, EdgeCacheServiceLive)),
 )
 

@@ -54,12 +54,15 @@ export interface ProductEventInput {
 	readonly timestamp?: number | undefined
 }
 
+/** The Worker that emitted the event. */
+export type ProductEventServiceName = "maple-api" | "maple-ai" | "maple-alerting"
+
 /** One NDJSON line as the ingest gateway expects it. Exported for tests. */
 export interface ProductEventLine {
 	readonly name: string
 	readonly timestamp: string
 	readonly source: "server"
-	readonly service_name: "maple-api"
+	readonly service_name: ProductEventServiceName
 	readonly user_id?: string
 	readonly group_id?: string
 	readonly attributes?: Record<string, string>
@@ -99,13 +102,17 @@ const sanitizeAttributes = (
 }
 
 /** Pure projection input → wire line. Exported so the shape is testable without HTTP. */
-export const toProductEventLine = (event: ProductEventInput, nowMs: number): ProductEventLine => {
+export const toProductEventLine = (
+	event: ProductEventInput,
+	nowMs: number,
+	serviceName: ProductEventServiceName = "maple-api",
+): ProductEventLine => {
 	const attributes = sanitizeAttributes(event.attributes)
 	return {
 		name: Str.slice(0, MAX_NAME_LENGTH)(event.name),
 		timestamp: new Date(event.timestamp ?? nowMs).toISOString(),
 		source: "server",
-		service_name: "maple-api",
+		service_name: serviceName,
 		...(event.userId !== undefined && event.userId.length > 0 ? { user_id: event.userId } : undefined),
 		...(event.groupId !== undefined && event.groupId.length > 0
 			? { group_id: event.groupId }
@@ -133,6 +140,7 @@ export const makeProductEvents = (options: {
 	readonly ingestKey: string | undefined
 	/** `MAPLE_ENVIRONMENT`, stamped on every event so dev and preview rows can be told apart. */
 	readonly environment?: string | undefined
+	readonly serviceName?: ProductEventServiceName | undefined
 }): ProductEventsApi => {
 	const url = `${trimTrailingSlash(options.endpoint)}${PRODUCT_EVENTS_PATH}`
 	const ingestKey = options.ingestKey
@@ -184,6 +192,7 @@ export const makeProductEvents = (options: {
 				? event
 				: { ...event, attributes: { ...event.attributes, environment: options.environment } },
 			now,
+			options.serviceName,
 		)
 		yield* post(line).pipe(
 			Effect.retry({ times: RETRIES, while: isRetryable }),
@@ -209,27 +218,30 @@ export const makeProductEvents = (options: {
 	return { track, enabled: ingestKey !== undefined }
 }
 
+const makeService = (serviceName: ProductEventServiceName) =>
+	Effect.gen(function* () {
+		const env = yield* Env
+		const productEventsKey = yield* ProductEventsIngestKey
+		const httpClient = yield* HttpClient.HttpClient
+		const ingestKey = Option.getOrUndefined(Option.orElse(productEventsKey, () => env.MAPLE_INGEST_KEY))
+		const endpoint = Option.getOrElse(env.MAPLE_ENDPOINT, () => env.MAPLE_INGEST_PUBLIC_URL)
+		return makeProductEvents({
+			httpClient,
+			endpoint,
+			ingestKey: ingestKey === undefined ? undefined : Redacted.value(ingestKey),
+			environment: env.MAPLE_ENVIRONMENT,
+			serviceName,
+		})
+	})
+
 export class ProductEventsService extends Context.Service<ProductEventsService, ProductEventsApi>()(
 	"@maple/backend/services/product-events/ProductEventsService",
-	{
-		make: Effect.gen(function* () {
-			const env = yield* Env
-			const productEventsKey = yield* ProductEventsIngestKey
-			const httpClient = yield* HttpClient.HttpClient
-			const ingestKey = Option.getOrUndefined(
-				Option.orElse(productEventsKey, () => env.MAPLE_INGEST_KEY),
-			)
-			const endpoint = Option.getOrElse(env.MAPLE_ENDPOINT, () => env.MAPLE_INGEST_PUBLIC_URL)
-			return makeProductEvents({
-				httpClient,
-				endpoint,
-				ingestKey: ingestKey === undefined ? undefined : Redacted.value(ingestKey),
-				environment: env.MAPLE_ENVIRONMENT,
-			})
-		}),
-	},
+	{ make: makeService("maple-api") },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	/** Emitting as the given Worker; `layer` is the api's. */
+	static readonly layerFor = (serviceName: ProductEventServiceName) =>
+		Layer.effect(this, makeService(serviceName)).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = this.layerFor("maple-api")
 	/** Drop everything — for tests and non-HTTP entrypoints that never emit. */
 	static readonly noop = Layer.succeed(this, { track: () => Effect.void, enabled: false })
 }
