@@ -53,7 +53,11 @@ const OPEN: ReadonlySet<OnboardingAgentRunStatus> = new Set(OPEN_STATUSES)
  */
 export const effectiveRunStatus = (row: OnboardingAgentRunRow, now: number): OnboardingAgentRunStatus => {
 	if (!OPEN.has(row.status)) return row.status
-	const unclaimed = row.status === "waiting_for_agent" && row.createdAt + ONBOARDING_HANDOFF_TTL_MS <= now
+	// Unclaimed: no agent signed in with the code (no key bound) and none reported before it lapsed.
+	const unclaimed =
+		row.status === "waiting_for_agent" &&
+		row.apiKeyId === null &&
+		row.createdAt + ONBOARDING_HANDOFF_TTL_MS <= now
 	return unclaimed || row.expiresAt <= now ? "expired" : row.status
 }
 

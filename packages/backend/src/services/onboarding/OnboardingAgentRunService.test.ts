@@ -4,7 +4,7 @@ import { ApiKeyId, OrgId, UserId } from "@maple/domain/http"
 import { ONBOARDING_AGENT_RUN_TTL_MS, ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OnboardingAgentRunService } from "./OnboardingAgentRunService"
 
 const createdDbs: TestDb[] = []
@@ -94,6 +94,27 @@ describe("OnboardingAgentRunService", () => {
 
 			yield* TestClock.adjust(ONBOARDING_HANDOFF_TTL_MS)
 			expect((yield* runs.current(owner)).status).toBe("expired")
+		}).pipe(provideRuns(db))
+	})
+
+	it.effect("a run whose code was claimed stays open past the code's lapse, even before any report", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			const started = yield* runs.start(owner, nextHash())
+			// What the CLI's claim does: bind the minted key to the run.
+			const apiKeyId = randomUUID()
+			yield* Effect.promise(() =>
+				executeSql(db, "update onboarding_agent_runs set api_key_id = $1 where id = $2", [
+					apiKeyId,
+					started.id,
+				]),
+			)
+			yield* TestClock.adjust(ONBOARDING_HANDOFF_TTL_MS + 60_000)
+			const keyCaller = { ...owner, apiKeyId: Schema.decodeSync(ApiKeyId)(apiKeyId) }
+			expect((yield* runs.current(keyCaller)).status).toBe("waiting_for_agent")
+			const reported = yield* runs.report(keyCaller, { stage: "connect_agent", status: "completed" })
+			expect(reported.status).toBe("in_progress")
 		}).pipe(provideRuns(db))
 	})
 
