@@ -4958,7 +4958,8 @@ impl CookielessVisitors {
     }
 
     /// The visitor id for a request's cookieless rows. Needs the client IP from the trusted
-    /// proxy (the same trust `derive_country` needs); the IP is hashed, never kept.
+    /// proxy (the same trust `derive_country` needs), or from a first-party proxy's
+    /// forwarding headers (`cookieless::CLIENT_IP_HEADERS`); the IP is hashed, never kept.
     async fn visitor_id(
         &self,
         headers: &HeaderMap,
@@ -4968,8 +4969,7 @@ impl CookielessVisitors {
         if !trust_proxy {
             return None;
         }
-        let ip = replay_header(headers, "cf-connecting-ip")
-            .and_then(|raw| cookieless::normalize_ip(&raw))?;
+        let ip = cookieless::client_ip(|name| replay_header(headers, name))?;
         let user_agent = headers
             .get("user-agent")
             .map(|value| String::from_utf8_lossy(value.as_bytes()).trim().to_owned())
@@ -16757,6 +16757,12 @@ mod tests {
         assert_eq!(first, cookieless_visitor(&state, &alice, "org_cl_id").await);
         assert_ne!(first, cookieless_visitor(&state, &bob, "org_cl_id").await);
         assert_ne!(first, cookieless_visitor(&state, &alice, "org_other").await);
+
+        // Behind a first-party proxy every request comes from the proxy's IP; the
+        // forwarded visitor address tells them apart, and matches a direct request.
+        let mut via_proxy = cookieless_headers("maple_sk_test_cl_id", "192.0.2.50", "Firefox");
+        via_proxy.insert("x-forwarded-for", "203.0.113.7, 192.0.2.50".parse().unwrap());
+        assert_eq!(first, cookieless_visitor(&state, &via_proxy, "org_cl_id").await);
 
         let mut stored = serde_json::json!({ "visitor_id": "kept-visitor" });
         let row = stored.as_object_mut().unwrap();

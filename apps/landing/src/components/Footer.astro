@@ -53,10 +53,8 @@ const stars = await getGitHubStars();
             <div>
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4">{m.footer_product()}</h4>
                 <ul class="space-y-2">
-                    <!-- These two anchors were dead until the homepage rebuild:
-                         no page carried #features or #how-it-works. They now
-                         point at the platform sheet and the incident story. -->
-                    <li><a href={`${l("/")}#features`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_features()}</a></li>
+                    <!-- How it works points at the homepage's incident story. -->
+                    <li><a href={l("/features")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_features()}</a></li>
                     <li><a href={`${l("/")}#how-it-works`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_how_it_works()}</a></li>
                     <li><a href={l("/pricing")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_pricing()}</a></li>
                     <!-- English-only, like /about: bare href, not l(). -->

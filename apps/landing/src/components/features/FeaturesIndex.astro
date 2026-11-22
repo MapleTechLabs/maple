@@ -1,0 +1,247 @@
+---
+/**
+ * FeaturesIndex: `/features`, every feature shown in the product. The nine pillars and then the
+ * rest sit in a list beside one preview from lg up; choosing a row swaps the preview (and the
+ * hash, so `/features#log-management` opens on it). Below lg the list goes and every feature
+ * stacks, preview and copy, so the page works with no hover and no script.
+ *
+ * A preview is the feature's real capture (hero shot, else its panel plate); a feature with
+ * neither shows the live artifact its own page leads with.
+ */
+import * as m from "../../paraglide/messages.js";
+import { PILLARS, isPillar } from "../../lib/feature-pillars";
+import { featureBySlug, features } from "../../lib/features";
+import { featurePath, GALLERY_SHOT_SIZE, type Feature } from "../../lib/page-registry";
+import Layout from "../../layouts/Layout.astro";
+import Footer from "../Footer.astro";
+import Icon from "../Icon.astro";
+import Nav from "../Nav.astro";
+import SeoHead from "../SeoHead.astro";
+import PageCta from "../page/PageCta.astro";
+import PageHero from "../page/PageHero.astro";
+import Shot from "../page/Shot.astro";
+import { HERO_ARTIFACTS, HERO_ASIDES } from "../page/slots";
+
+const locale = Astro.currentLocale ?? "en";
+const title = m.feat_index_seo_title();
+const description = m.feat_index_seo_desc();
+
+const pillars = PILLARS.flatMap(({ slug, icon }) => {
+	const feature = featureBySlug(slug);
+	return feature ? [{ feature, icon }] : [];
+});
+const rest = features.filter((feature) => !isPillar(feature.slug)).map((feature) => ({ feature, icon: null }));
+const all = [...pillars, ...rest];
+
+const shotOf = (feature: Feature) => {
+	if (feature.heroShot)
+		return {
+			src: `/screenshots/${feature.heroShot.id}.webp`,
+			width: GALLERY_SHOT_SIZE.width,
+			height: GALLERY_SHOT_SIZE.height,
+			crop: feature.heroShot.crop,
+			route: feature.heroShot.route,
+			title: feature.heroShot.title,
+			alt: feature.heroShot.alt,
+		};
+	const panel = feature.panel;
+	if (panel?.plate.src)
+		return {
+			src: panel.plate.src,
+			width: panel.plate.width,
+			height: panel.plate.height,
+			crop: panel.plate.crop,
+			route: panel.route,
+			title: panel.constant,
+			alt: panel.plate.alt,
+		};
+	return null;
+};
+
+// Resolved here: Astro's compiler can't parse a block-bodied arrow returning a component.
+const previews = all.map(({ feature }) => {
+	const shot = shotOf(feature);
+	const Live =
+		shot !== null
+			? null
+			: feature.heroAside
+				? HERO_ASIDES[feature.heroAside]
+				: feature.artifact
+					? HERO_ARTIFACTS[feature.artifact.id]
+					: null;
+	return { shot, Live };
+});
+---
+
+<Layout title={title} description={description} mdHref={locale === "en" ? "/features.md" : undefined}>
+	<SeoHead title={title} description={description} />
+	<Nav />
+
+	<PageHero
+		title={m.feat_index_title()}
+		lede={m.feat_index_lede()}
+		breadcrumb={[{ label: m.breadcrumb_home(), href: "/" }, { label: m.breadcrumb_features() }]}
+	/>
+
+	<section class="border-t border-border bg-bg" data-fx>
+		<div class="shell grid gap-12 py-16 md:py-24 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-14">
+			<nav aria-label={m.feat_index_list_label()} class="hidden lg:block lg:sticky lg:top-24 lg:self-start">
+				<p class="fx-eyebrow">{m.feat_index_core()}</p>
+				<ul class="mt-2 flex flex-col gap-0.5">
+					{
+						pillars.map(({ feature, icon }, index) => (
+							<li>
+								<a
+									href={`#${feature.slug}`}
+									data-fx-tab={feature.slug}
+									aria-current={index === 0 ? "true" : undefined}
+									class="fx-tab group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium"
+								>
+									<Icon name={icon} size={16} class="shrink-0 fx-tab__icon" />
+									{feature.navLabel()}
+								</a>
+							</li>
+						))
+					}
+				</ul>
+				<p class="fx-eyebrow mt-6">{m.nav_also_in_maple()}</p>
+				<ul class="mt-2 flex flex-col gap-0.5">
+					{
+						rest.map(({ feature }) => (
+							<li>
+								<a
+									href={`#${feature.slug}`}
+									data-fx-tab={feature.slug}
+									class="fx-tab block rounded-md py-1.5 pl-9 pr-2.5 text-[13px]"
+								>
+									{feature.navLabel()}
+								</a>
+							</li>
+						))
+					}
+				</ul>
+			</nav>
+
+			<div class="min-w-0 flex flex-col gap-20 lg:gap-0">
+				{
+					all.map(({ feature }, index) => {
+						const { shot, Live } = previews[index]!;
+						return (
+							<article
+								id={feature.slug}
+								data-fx-panel={feature.slug}
+								data-active={index === 0 ? "" : undefined}
+								aria-labelledby={`${feature.slug}-title`}
+								class="fx-panel min-w-0 scroll-mt-24"
+							>
+								<p class="fx-eyebrow">{feature.navLabel()}</p>
+								<div class="mt-4 rounded-xl bg-bg">
+									{shot && (
+										<Shot
+											src={shot.src}
+											alt={shot.alt}
+											width={shot.width}
+											height={shot.height}
+											crop={shot.crop}
+											route={shot.route}
+											title={shot.title}
+											loading={index === 0 ? "eager" : "lazy"}
+										/>
+									)}
+									{Live && <Live />}
+								</div>
+								<div class="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-10">
+									<h2
+										id={`${feature.slug}-title`}
+										class="font-display text-2xl font-medium leading-tight tracking-[-0.02em] text-fg"
+									>
+										{feature.heroTitle()}
+									</h2>
+									<div>
+										<p class="text-[15px] leading-relaxed text-fg-muted">{feature.heroLede()}</p>
+										<a
+											href={featurePath(locale, feature.slug)}
+											class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+										>
+											{m.feat_index_more_link()}
+											<span aria-hidden="true">→</span>
+										</a>
+									</div>
+								</div>
+							</article>
+						);
+					})
+				}
+			</div>
+		</div>
+	</section>
+
+	<PageCta title={m.page_cta_title()} lede={m.page_cta_lede()} />
+	<Footer />
+</Layout>
+
+<style>
+	.fx-eyebrow {
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--color-primary);
+	}
+	.fx-tab {
+		color: var(--color-fg-muted);
+		transition: color 150ms, background-color 150ms;
+	}
+	.fx-tab:hover {
+		color: var(--color-fg);
+		background: color-mix(in oklab, var(--color-muted) 20%, transparent);
+	}
+	.fx-tab[aria-current="true"] {
+		color: var(--color-fg);
+		background: color-mix(in oklab, var(--color-muted) 30%, transparent);
+	}
+	.fx-tab[aria-current="true"] :global(.fx-tab__icon) {
+		color: var(--color-primary);
+	}
+	/* One feature at a time beside the list; below lg every feature stacks. */
+	@media (min-width: 1024px) {
+		.fx-panel:not([data-active]) {
+			display: none;
+		}
+	}
+</style>
+
+<script>
+	const root = document.querySelector<HTMLElement>("[data-fx]");
+	const tabs = [...(root?.querySelectorAll<HTMLAnchorElement>("[data-fx-tab]") ?? [])];
+	const panels = [...(root?.querySelectorAll<HTMLElement>("[data-fx-panel]") ?? [])];
+	const wide = window.matchMedia("(min-width: 1024px)");
+
+	const show = (slug: string) => {
+		if (!panels.some((panel) => panel.dataset.fxPanel === slug)) return false;
+		for (const panel of panels) panel.toggleAttribute("data-active", panel.dataset.fxPanel === slug);
+		for (const tab of tabs)
+			if (tab.dataset.fxTab === slug) tab.setAttribute("aria-current", "true");
+			else tab.removeAttribute("aria-current");
+		return true;
+	};
+
+	// Beside the list a row swaps the preview in place; the hash keeps the choice shareable.
+	for (const tab of tabs)
+		tab.addEventListener("click", (event) => {
+			// A modified click keeps the browser's own action: a new tab or window on the feature.
+			const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+			if (!wide.matches || modified) return;
+			event.preventDefault();
+			const slug = tab.dataset.fxTab ?? "";
+			if (show(slug)) history.replaceState(null, "", `#${slug}`);
+		});
+
+	const fromHash = () => {
+		// Slugs are plain ASCII, so the raw fragment compares as is; decoding could throw on a stray %.
+		const slug = location.hash.slice(1);
+		if (slug !== "" && show(slug) && wide.matches) root?.scrollIntoView({ block: "start" });
+	};
+	fromHash();
+	window.addEventListener("hashchange", fromHash);
+</script>
