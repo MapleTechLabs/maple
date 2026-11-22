@@ -1,8 +1,12 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../tenant"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { productEventsTotal } from "@maple/query-engine/observability"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { orFallback } from "../lib/fallback"
+import { sessionRetentionNote } from "../lib/product-identity"
 import { maxBreakdownRangeSeconds, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { MetricType, QueryEngineExecuteRequest, QuerySpec } from "@maple/domain/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
@@ -49,6 +53,9 @@ const SESSION_FILTER_PARAMS: ReadonlyArray<SessionFilterParam> = [
 	"browser",
 	"os",
 ]
+
+/** Metrics that count distinct identities; an event that carries none of that identity counts nothing. */
+const DISTINCT_METRICS: ReadonlySet<string> = new Set(["sessions", "persons", "users", "visitors", "groups"])
 
 const isNumericMetric = (metric: string | undefined): boolean =>
 	metric !== undefined && Arr.contains(PRODUCT_EVENTS_NUMERIC_METRICS, metric)
@@ -665,6 +672,17 @@ export const renderQueryData = (output: Output): ToolDoc => {
 					]),
 				),
 				...(hasGaps ? [doc.text("`-`: no rows in that bucket (no data, not a measured 0).")] : []),
+				...(output.total === undefined
+					? []
+					: [
+							doc.text(
+								`**Whole window: ${formatMetricValue(output.metric, output.total)} ${measured}.** ${
+									DISTINCT_METRICS.has(output.metric)
+										? "A distinct count over the window, not the sum of the buckets: the same one can be in several."
+										: "Over every event in the window."
+								}`,
+							),
+						]),
 				...(lastIsPartial ? [doc.text(PARTIAL_BUCKET_NOTE)] : []),
 				...notes,
 			],
@@ -926,6 +944,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				"maple.ai.kind": params.kind,
 			})
 
+			let total: number | undefined
 			const run = Effect.fn("McpQueryData.run")(function* (resolved: ResolvedQuery) {
 				const rawSpec = buildRawSpec(params, resolved)
 				const query = yield* decodeQuerySpec(rawSpec).pipe(
@@ -999,7 +1018,12 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							? {
 									kind: "breakdown",
 									data: Arr.map(result.data, (item) => ({
-										name: item.name,
+										// The group of events with no value (no session, no such prop) is
+										// named as the timeseries names it, not left blank.
+										name:
+											params.source === "product_events" && item.name === ""
+												? "(none)"
+												: item.name,
 										value: item.value,
 									})),
 								}
@@ -1009,6 +1033,18 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						message: `The query engine returned a "${result.kind}" result for a ${params.kind} query.`,
 						pipeName: "query_data",
 					})
+				}
+				// A product question is usually "how many in this period": one number the buckets cannot
+				// give for a distinct count. One more read, only for an ungrouped event series.
+				if (query.source === "product_events" && query.kind === "timeseries" && groupBy === "none") {
+					total = yield* withTenantExecutor(
+						productEventsTotal({
+							startTime: st,
+							endTime: et,
+							metric: query.metric,
+							...(query.filters === undefined ? undefined : { filters: query.filters }),
+						}),
+					).pipe(orFallback("product events window total", () => undefined))
 				}
 				return mapped
 			})
@@ -1036,7 +1072,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				)
 			}
 
-			const emptyHints = isEmptyResult(resolved)
+			const signalHints = isEmptyResult(resolved)
 				? yield* emptyResultHints(
 						{
 							service: params.service,
@@ -1050,9 +1086,26 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						{ traceKeys: params.source === "traces" || params.source === "logs" },
 					)
 				: []
+			// A distinct count is empty for events that exist but carry no such identity.
+			const emptyHints =
+				isEmptyResult(resolved) && params.source === "product_events" && DISTINCT_METRICS.has(metric)
+					? [
+							...signalHints,
+							`metric=${metric} counts only events that carry that identity. An event sent for the account alone (a billing webhook) has a group id and no user: check with metric="count", and count accounts with metric="groups".`,
+						]
+					: signalHints
 
 			const queryContext = queryContextOf(params, resolvedQuery)
-			const warnings = metricsWarningsFor(params, metric)
+			const readsSessions =
+				params.source === "product_events" &&
+				(Rec.keys(sessionFiltersOf(params)).length > 0 ||
+					Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? ""))
+			const nowMs = yield* Clock.currentTimeMillis
+			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
+			const warnings = [
+				...metricsWarningsFor(params, metric),
+				...(sessionNote === undefined ? [] : [sessionNote]),
+			]
 			return {
 				timeRange: { start: st, end: et },
 				kind: params.kind,
@@ -1062,6 +1115,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				...(warnings.length > 0 ? { warnings } : undefined),
 				queryContext,
 				unit: inferQueryDataUnit(params.source, metric, queryContext.metricName),
+				...(total === undefined ? undefined : { total }),
 				result: resolved,
 				...(emptyHints.length > 0 ? { emptyHints } : undefined),
 			}

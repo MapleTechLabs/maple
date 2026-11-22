@@ -32,7 +32,16 @@ import type {
 	ColumnDefs,
 	JoinedColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
+import {
+	type DateTime,
+	Order,
+	Result,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+	Option,
+} from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
@@ -142,6 +151,9 @@ export type FunnelKeyBy = "person" | "visitor" | "user" | "group" | "session"
  * not yet step `before` is dropped the moment the event occurs. With neither bound it is "anywhere
  * between the first step and the last". Dropping is per attempt: the same person can still convert
  * on a later attempt, or from an earlier step of this one that the exclusion did not cover.
+ *
+ * Strictly between: the row that reaches `after` or `before` is that step, never an excluded
+ * event for its own range, even when it matches the exclusion too.
  */
 export interface FunnelExclusion {
 	readonly step: Extract<FunnelStep, { kind: "event" | "page" }>
@@ -214,6 +226,7 @@ export const productEventNamesRowSchema = Schema.Struct({
 	count: CHNumber,
 	sessions: CHNumber,
 	persons: CHNumber,
+	groups: CHNumber,
 })
 export type ProductEventNamesOutput = typeof productEventNamesRowSchema.Type
 
@@ -294,13 +307,77 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			after >= before
 		)
 	})
+	// First: the two checks below read the range, and say the wrong thing about one that is off.
 	if (Option.isSome(misplaced)) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidExclusion",
 			message: `an exclusion's after and before must be steps in 1..${opts.steps.length} with after < before, got after=${String(misplaced.value.after ?? 1)} before=${String(misplaced.value.before ?? opts.steps.length)}`,
 		})
 	}
+	// A step strictly between the two bounds has to happen there, so excluding it leaves nobody.
+	// The bounds themselves may be excluded when the range spans more than one gap: "no return to
+	// the cart between the cart and the payment", in cart, address, payment.
+	const selfExcluding = Arr.findFirst(exclusions, (exclusion) => {
+		const { after, before } = exclusionRange(exclusion, opts.steps.length)
+		const excluded = stepKey(exclusion.step)
+		return Arr.some(
+			opts.steps,
+			(step, index) => index + 1 > after && index + 1 < before && stepKey(step) === excluded,
+		)
+	})
+	if (Option.isSome(selfExcluding)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message:
+				"an exclusion cannot be a step that lies between its own after and before: every attempt has to pass that step, so none would be left",
+		})
+	}
+	// Across a single gap, an exclusion that is the step on either side can never apply: a repeat
+	// of the first starts a new attempt, and the first occurrence of the second ends the gap.
+	// Accepting it would report an exclusion that changes nothing.
+	const vacuous = Arr.findFirst(exclusions, (exclusion) => {
+		const { after, before } = exclusionRange(exclusion, opts.steps.length)
+		const excluded = stepKey(exclusion.step)
+		return (
+			before === after + 1 &&
+			Arr.some([opts.steps[after - 1], opts.steps[before - 1]], (step) =>
+				step === undefined ? false : stepKey(step) === excluded,
+			)
+		)
+	})
+	if (Option.isSome(vacuous)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message:
+				"an exclusion that is the step on either side of a single gap can never apply: a repeat of the first step starts a new attempt, and the second step ends the gap. Name another event, or widen after/before to span more steps",
+		})
+	}
 	return undefined
+}
+
+/** One field of a step key, length first, so no value can be read as two fields or as none. */
+const keyPart = (value: string): string => `${value.length}:${value}`
+
+/** A step as one string, equal only for two steps that match the same rows. */
+const stepKey = (step: FunnelStep): string => {
+	switch (step.kind) {
+		case "event":
+			return `event ${keyPart(step.eventName)}${Arr.join(
+				Arr.map(
+					Arr.sort(
+						Rec.toEntries(step.attributeEquals ?? {}),
+						Order.mapInput(Order.String, (entry: readonly [string, string]) => entry[0]),
+					),
+					([key, value]) => keyPart(key) + keyPart(value),
+				),
+				"",
+			)}`
+		case "page":
+			// No host is any host; an empty one is a different step.
+			return `page ${step.host === undefined ? "any" : keyPart(step.host)} ${keyPart(step.pagePath)}`
+		case "session":
+			return `session ${step.dimension} ${keyPart(step.value)}`
+	}
 }
 
 /** The steps an exclusion sits between, with its defaults filled in. */
@@ -576,7 +653,15 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 			)
 			const d = dimExpr($)
 			const row = { key, ord: orderKey($.Timestamp, $.Seq), ...flags, ...excluded }
-			return d ? { ...row, dim: d } : row
+			if (d === undefined) return row
+			// A row read only for an exclusion is not part of the funnel: it names no group.
+			const stepRow = CH.or(
+				...Arr.filter(
+					Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+					(cond): cond is CH.Condition => cond !== undefined,
+				),
+			)
+			return { ...row, dim: (opts.exclusions ?? []).length > 0 ? CH.if_(stepRow, d, CH.lit("")) : d }
 		})
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
@@ -743,22 +828,28 @@ function walkQuery(plan: FunnelPlan) {
 	// never 1. Without exclusions the marker is unused and the SQL is what it always was.
 	const DROPPED = "toUInt64(1)"
 	const live = exclusions.length > 0 ? "> 1" : "> 0"
-	/** The rows that drop the attempts standing at `step`, or `undefined` when no exclusion covers it. */
-	const dropsAt = (step: number): string | undefined => {
-		const covering = Arr.filter(
-			Arr.map(exclusions, (exclusion, index) => ({ ...exclusionRange(exclusion, n), index })),
-			(range) => range.after <= step && step < range.before,
-		)
-		return covering.length === 0
+	const ranges = Arr.map(exclusions, (exclusion, index) => ({ ...exclusionRange(exclusion, n), index }))
+	const anyOf = (covering: typeof ranges): string | undefined =>
+		covering.length === 0
 			? undefined
 			: `(${Arr.join(
 					Arr.map(covering, (range) => `${exclusionElement(range.index)} = 1`),
 					" OR ",
 				)})`
-	}
-	const dropping = (step: number, state: string): string => {
-		const drops = dropsAt(step)
-		return drops === undefined ? state : `if(${drops}, ${DROPPED}, ${state})`
+	/**
+	 * Step `step`'s state on a row, given `arrival`, the state when the row moves an attempt onto
+	 * it (else 0). An exclusion that starts at this step drops the attempts already standing here
+	 * and lets the arriving one through, which was not past `after` before this row. One that
+	 * started earlier drops the arriving attempt as well: it came from inside the range.
+	 */
+	const dropping = (step: number, arrival: string): string => {
+		const fromHere = anyOf(Arr.filter(ranges, (range) => range.after === step && step < range.before))
+		const fromEarlier = anyOf(Arr.filter(ranges, (range) => range.after < step && step < range.before))
+		const standing =
+			fromHere === undefined
+				? arrival
+				: `if(${arrival} > 0, ${arrival}, if(${fromHere}, ${DROPPED}, toUInt64(0)))`
+		return fromEarlier === undefined ? standing : `if(${fromEarlier}, ${DROPPED}, ${standing})`
 	}
 	const perPerson = funnelSource(plan)
 		.select(($) => {
@@ -975,7 +1066,7 @@ export function productEventsFunnelCoverageQuery(
 				$.Timestamp.gte(param.dateTime("startTime")),
 				$.Timestamp.lte(param.dateTime("endTime")),
 				// Only session steps: no event can match, so read nothing.
-				conditions.length === 0 ? $.Kind.eq("").and($.Kind.neq("")) : CH.or(...conditions),
+				conditions.length === 0 ? CH.rawCond("0") : CH.or(...conditions),
 			]
 		})
 
@@ -998,7 +1089,7 @@ export function productEventsFunnelCoverageQuery(
 
 /**
  * Event names in range for the step picker: `{ eventName, kind, count,
- * sessions, persons }`, most frequent first.
+ * sessions, persons, groups }`, most frequent first.
  *
  * `persons` is the visitor id where the row has one, else the user id: a cheap count that needs
  * no `identity_links` join. A browser row keeps its visitor id after sign-in, so a visitor who
@@ -1017,7 +1108,12 @@ export function productEventNamesQuery(
 			kind: $.Kind,
 			count: CH.count(),
 			sessions: CH.uniqIf($.SessionId, $.SessionId.neq("")),
-			persons: CH.uniq(CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId)),
+			// Not `uniq` over the bare expression: an event with neither id would count `''` as one person.
+			persons: CH.uniqIf(
+				CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId),
+				$.VisitorId.neq("").or($.UserId.neq("")),
+			),
+			groups: CH.uniqIf($.GroupId, $.GroupId.neq("")),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

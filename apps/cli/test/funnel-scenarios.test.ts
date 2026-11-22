@@ -333,6 +333,84 @@ const RETRY: Dataset = {
 	]),
 }
 
+/** Checkouts in which an excluded event is also one of the funnel's steps. */
+const BOUNDS: Dataset = {
+	orgId: "exclusion_bounds",
+	sessions: [],
+	events: [
+		// Straight through: its own cart and its own pay are the range's two ends.
+		...user("direct", [
+			[1_000, "cart"],
+			[2_000, "address"],
+			[3_000, "pay"],
+		]),
+		// Back to the cart before the address: the first attempt is over, the second converts.
+		...user("back", [
+			[1_000, "cart"],
+			[1_500, "cart"],
+			[2_000, "address"],
+			[3_000, "pay"],
+		]),
+		// Paid before giving an address, then went through in order.
+		...user("paidEarly", [
+			[1_000, "cart"],
+			[1_500, "pay"],
+			[2_000, "address"],
+			[3_000, "pay"],
+		]),
+		// Went back to the cart after the address and paid from there, with no address after it.
+		...user("restarted", [
+			[1_000, "cart"],
+			[2_000, "address"],
+			[2_500, "cart"],
+			[3_000, "pay"],
+		]),
+	],
+}
+
+/** Two plans; one account opened support, on another plan's seat, before it ever started. */
+const EXCLUDED_GROUP: Dataset = {
+	orgId: "exclusion_group",
+	sessions: [],
+	events: [
+		event({
+			atMs: 500,
+			userId: "ann",
+			source: "server",
+			eventName: "support_opened",
+			attributes: { plan: "free" },
+		}),
+		event({
+			atMs: 1_000,
+			userId: "ann",
+			source: "server",
+			eventName: "cart",
+			attributes: { plan: "pro" },
+		}),
+		event({
+			atMs: 2_000,
+			userId: "ann",
+			source: "server",
+			eventName: "pay",
+			attributes: { plan: "pro" },
+		}),
+		event({
+			atMs: 1_000,
+			userId: "bo",
+			source: "server",
+			eventName: "cart",
+			attributes: { plan: "free" },
+		}),
+		event({
+			atMs: 2_000,
+			userId: "bo",
+			source: "server",
+			eventName: "pay",
+			attributes: { plan: "free" },
+		}),
+	],
+}
+
 describeWithChdb("product event funnels over example products", () => {
 	let root = ""
 	let db: Chdb
@@ -341,6 +419,7 @@ describeWithChdb("product event funnels over example products", () => {
 	const mobile = mobileOnboarding()
 	const content = contentSite()
 	const random = randomDatasets(40)
+	const interrupted = randomDatasets(30, { seed: 389, prefix: "interrupted", extra: ["d", "e"] })
 
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "maple-funnel-scenarios-"))
@@ -356,6 +435,8 @@ describeWithChdb("product event funnels over example products", () => {
 				ENTRIES,
 				EXCLUSIONS,
 				RETRY,
+				BOUNDS,
+				EXCLUDED_GROUP,
 				...Arr.map(
 					[
 						"repeats",
@@ -371,6 +452,7 @@ describeWithChdb("product event funnels over example products", () => {
 					caseDataset,
 				),
 				...Arr.map(random, (entry) => entry.dataset),
+				...Arr.map(interrupted, (entry) => entry.dataset),
 			],
 			(dataset) => insertDataset(db, dataset),
 		)
@@ -875,12 +957,91 @@ describeWithChdb("product event funnels over example products", () => {
 		).toEqual([1, 1, 0])
 	})
 
+	test("the row that reaches a bound is that step, not an excluded event", () => {
+		const funnel = (exclusions: Opts["exclusions"]): Opts => ({
+			steps: [ev("cart"), ev("address"), ev("pay")],
+			keyBy: "user",
+			windowSeconds: 3_600,
+			exclusions,
+		})
+		expect(counts(BOUNDS, funnel(undefined))).toEqual([4, 4, 4])
+		// No return to the cart before paying. `back` returns before the address and its second
+		// cart is a fresh attempt that converts; `restarted` returns after it, and that attempt
+		// has no address.
+		expect(counts(BOUNDS, funnel([excluding("cart")]))).toEqual([4, 4, 3])
+		// No pay between the cart and the address: `paidEarly` has no other cart to start from.
+		expect(counts(BOUNDS, funnel([excluding("pay", 1, 2)]))).toEqual([4, 3, 3])
+		// A pay anywhere before the final pay: the final pay itself is the `before` bound.
+		expect(counts(BOUNDS, funnel([excluding("pay")]))).toEqual([4, 3, 3])
+		Arr.forEach([[excluding("cart")], [excluding("pay", 1, 2)], [excluding("pay")]], (exclusions) =>
+			expect(counts(BOUNDS, funnel(exclusions))).toEqual([
+				...referenceFunnel(BOUNDS, funnel(exclusions)),
+			]),
+		)
+	})
+
+	test("a row read only for an exclusion does not name the person's breakdown group", () => {
+		const opts = {
+			steps: [ev("cart"), ev("pay")],
+			keyBy: "user",
+			windowSeconds: 3_600,
+			exclusions: [excluding("support_opened")],
+			breakdownBy: "attribute:plan",
+		} as const
+		// ann's earliest row is the support ticket on `free`; her funnel rows are `pro`.
+		expect(sqlBreakdown(db, EXCLUDED_GROUP.orgId, opts)).toEqual([
+			["free", [1, 1]],
+			["pro", [1, 1]],
+		])
+		expect(sqlBreakdown(db, EXCLUDED_GROUP.orgId, opts)).toEqual(
+			Arr.map(
+				referenceBreakdown(EXCLUDED_GROUP, opts),
+				([group, groupCounts]) => [group, [...groupCounts]] as const,
+			),
+		)
+	})
+
 	test("rejects an exclusion that is not between two steps, and details with any", () => {
 		const built = (exclusions: Opts["exclusions"], steps = [ev("cart"), ev("pay")]) =>
 			CH.productEventsFunnelQuery({ steps, keyBy: "user", windowSeconds: 60, exclusions })
 		expect(Result.isFailure(built([excluding("x", 2, 2)]))).toBe(true)
 		expect(Result.isFailure(built([excluding("x", 1, 3)]))).toBe(true)
 		expect(Result.isFailure(built([excluding("x")], [ev("cart")]))).toBe(true)
+		// A step strictly inside the range has to happen there, so excluding it leaves nobody.
+		const checkout = [ev("cart"), ev("address"), ev("pay")]
+		expect(Result.isFailure(built([excluding("address")], checkout))).toBe(true)
+		// A bound can be excluded over more than one gap, and so can a step outside the range.
+		expect(Result.isSuccess(built([excluding("cart")], checkout))).toBe(true)
+		expect(Result.isSuccess(built([excluding("pay")], checkout))).toBe(true)
+		expect(Result.isSuccess(built([excluding("pay", 1, 2)], checkout))).toBe(true)
+		// Two steps are the same only when every field is: a value that spells another attribute is not one.
+		const tagged = [ev("cart"), ev("address", { y: "1", z: "2" }), ev("pay")]
+		expect(
+			Result.isSuccess(
+				built(
+					[{ step: { kind: "event", eventName: "address", attributeEquals: { y: "1&z=2" } } }],
+					tagged,
+				),
+			),
+		).toBe(true)
+		expect(
+			Result.isFailure(
+				built(
+					[{ step: { kind: "event", eventName: "address", attributeEquals: { z: "2", y: "1" } } }],
+					tagged,
+				),
+			),
+		).toBe(true)
+		// A range that is off is reported as that, whatever else the exclusion would also be.
+		const offRange = built(
+			[{ step: { kind: "event", eventName: "address" }, after: 0, before: 3 }],
+			checkout,
+		)
+		expect(Result.isFailure(offRange) ? offRange.failure.message : "").toContain("must be steps in 1..3")
+		// Across a single gap the step on either side can never apply: refused, not ignored.
+		expect(Result.isFailure(built([excluding("cart", 1, 2)], checkout))).toBe(true)
+		expect(Result.isFailure(built([excluding("address", 1, 2)], checkout))).toBe(true)
+		expect(Result.isFailure(built([excluding("cart")]))).toBe(true)
 		expect(Result.isSuccess(built([excluding("x")]))).toBe(true)
 		expect(
 			Result.isFailure(
@@ -898,19 +1059,27 @@ describeWithChdb("product event funnels over example products", () => {
 		"random small histories with exclusions give the reference's counts",
 		() => {
 			const rng = seeded(613)
-			const names = ["a", "b", "c"] as const
-			const asks = Arr.flatMap(random, ({ dataset, funnels }) =>
+			// `d` and `e` are never steps, so they interrupt; `a` to `c` are steps as well.
+			const names = ["a", "b", "c", "d", "e"] as const
+			const asks = Arr.flatMap(interrupted, ({ dataset, funnels }) =>
 				Arr.flatMap(
 					Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),
 					(opts: Opts) => {
 						const n = opts.steps.length
-						const exclusions = Arr.makeBy(1 + rng.int(2), () => {
-							const after = 1 + rng.int(n - 1)
-							return rng.chance(0.4)
-								? excluding(rng.pick(names))
-								: excluding(rng.pick(names), after, after + 1 + rng.int(n - after))
-						})
-						return [{ dataset, opts: { ...opts, exclusions } }]
+						// Any name, a step's own included: four draws per funnel, less the ones the
+						// builder refuses (an exclusion that is a step inside its own range).
+						return Arr.filter(
+							Arr.makeBy(4, () => {
+								const exclusions = Arr.makeBy(1 + rng.int(2), () => {
+									const after = 1 + rng.int(n - 1)
+									return rng.chance(0.4)
+										? excluding(rng.pick(names))
+										: excluding(rng.pick(names), after, after + 1 + rng.int(n - after))
+								})
+								return { dataset, opts: { ...opts, exclusions } }
+							}),
+							(ask) => Result.isSuccess(CH.productEventsFunnelQuery(ask.opts)),
+						)
 					},
 				),
 			)
@@ -929,7 +1098,7 @@ describeWithChdb("product event funnels over example products", () => {
 					JSON.stringify(referenceFunnel(dataset, opts)) !==
 					JSON.stringify(referenceFunnel(dataset, { ...opts, exclusions: [] })),
 			)
-			expect(bitten.length).toBeGreaterThan(10)
+			expect(bitten.length).toBeGreaterThan(50)
 		},
 		RANDOM_TEST_TIMEOUT_MS,
 	)
@@ -972,11 +1141,20 @@ describeWithChdb("product event funnels over example products", () => {
 /** Small random histories over a three-letter alphabet, each in its own org, with funnels to ask of it. */
 function randomDatasets(
 	count: number,
+	// `extra` are event names no funnel step uses: rows only an exclusion can match. With them the
+	// histories are longer and the funnels plainer, so most people get far enough to be interrupted.
+	variant: { readonly seed: number; readonly prefix: string; readonly extra: ReadonlyArray<string> } = {
+		seed: 97,
+		prefix: "random",
+		extra: [],
+	},
 ): ReadonlyArray<{ readonly dataset: Dataset; readonly funnels: ReadonlyArray<Opts> }> {
-	const rng = seeded(97)
+	const rng = seeded(variant.seed)
 	const names = ["a", "b", "c"] as const
+	const eventNames: readonly [string, ...Array<string>] = [...names, ...variant.extra]
+	const dense = variant.extra.length > 0
 	return Arr.makeBy(count, (index) => {
-		const orgId = `random_${index}`
+		const orgId = `${variant.prefix}_${index}`
 		const people = 2 + rng.int(4)
 		const events = Arr.flatMap(Arr.range(1, people), (person) => {
 			const userId = rng.chance(0.7) ? `u${person}` : ""
@@ -985,7 +1163,7 @@ function randomDatasets(
 			// Two people can share an account, so a group's history interleaves theirs.
 			const groupId = rng.chance(0.7) ? `g${person % 2}` : ""
 			let previousMs = -1
-			return Arr.makeBy(1 + rng.int(9), (index) => {
+			return Arr.makeBy(dense ? 6 + rng.int(9) : 1 + rng.int(9), (index) => {
 				// One row in five lands in the millisecond of the one before it, and a server row
 				// has no seq, so some rows tie outright.
 				const atMs = previousMs >= 0 && rng.chance(0.2) ? previousMs : rng.int(4 * HOUR_MS)
@@ -998,19 +1176,19 @@ function randomDatasets(
 					sessionId,
 					groupId,
 					source: sessionId === "" ? "server" : "browser",
-					eventName: rng.pick(names),
+					eventName: rng.pick(eventNames),
 					attributes: rng.chance(0.3) ? { tier: rng.pick(["x", "y"] as const) } : {},
 				})
 			})
 		})
 		const funnels = Arr.makeBy(4, (): Opts => ({
-			steps: Arr.makeBy(1 + rng.int(4), () =>
-				rng.chance(0.2)
+			steps: Arr.makeBy(dense ? 2 + rng.int(2) : 1 + rng.int(4), () =>
+				rng.chance(dense ? 0.05 : 0.2)
 					? ev(rng.pick(names), { tier: rng.pick(["x", "y"] as const) })
 					: ev(rng.pick(names)),
 			),
 			keyBy: rng.pick(["person", "visitor", "user", "group", "session"] as const),
-			windowSeconds: rng.pick([60, 600, 3_600, 86_400] as const),
+			windowSeconds: dense ? 86_400 : rng.pick([60, 600, 3_600, 86_400] as const),
 		}))
 		return { dataset: { orgId, events, sessions: [] }, funnels }
 	})

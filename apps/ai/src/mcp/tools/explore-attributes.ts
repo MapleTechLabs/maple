@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { queryWarehouse, withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
@@ -46,9 +46,13 @@ const sourceLabelOf = (output: Output): string =>
 				: `product events (${output.eventName})`
 			: `${output.source} (${output.scope ?? "span"})`
 
-/** What narrows a product-event read: the event its props were read from. */
-const eventScope = (output: Output) =>
-	output.eventName === undefined ? undefined : { event_name: [output.eventName] }
+/** What narrows a product-event read: its event, the service that sent it, and the window. */
+const eventScope = (output: Output) => ({
+	...(output.eventName === undefined ? undefined : { event_name: [output.eventName] }),
+	...(output.service === undefined ? undefined : { service: output.service }),
+	start_time: output.timeRange.start,
+	end_time: output.timeRange.end,
+})
 
 const renderValues = (output: Output, key: string): ToolDoc => {
 	const values = output.values ?? []
@@ -200,6 +204,10 @@ const renderKeys = (output: Output): ToolDoc => {
 					...(output.metricType === undefined ? undefined : { metric_type: output.metricType }),
 					...(output.service === undefined ? undefined : { service: output.service }),
 					...(output.eventName === undefined ? undefined : { event_name: output.eventName }),
+					// A product question names its dates: the values have to come from the same ones.
+					...(source === "product_events"
+						? { start_time: output.timeRange.start, end_time: output.timeRange.end }
+						: undefined),
 				},
 				"see values for this key",
 			),
@@ -236,8 +244,14 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				"source=product_events: only properties of this event (exact name, from list_product_events)",
 			),
 			key: P.optionalText("Return this key's values instead of the key list"),
-			service: P.service("Only this service (exact `service.name`). Not applied for source=services"),
+			service: P.service(
+				"Only this service (exact `service.name`). For product_events, the service that sent a server-side event. Not applied for source=services",
+			),
 			...WINDOW.fields,
+			start_time: WINDOW.fields.start_time.annotate({
+				description:
+					"Window start, UTC (YYYY-MM-DD HH:mm:ss). Default: 6 hours before end_time, or 7 days for product_events. Covers at most 30 days.",
+			}),
 			limit: P.limit({
 				default: 50,
 				max: 500,
@@ -260,15 +274,24 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			const timeRange = { start: st, end: et }
 			const serviceField = params.service === undefined ? undefined : { service: params.service }
 
+			if (params.source !== "product_events" && params.event_name !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: `\`event_name\` applies to source=product_events only; source=${params.source} has no events to narrow to.`,
+					parameter: "event_name",
+				})
+			}
 			if (params.source === "product_events") {
 				const events = {
 					startTime: st,
 					endTime: et,
 					limit: params.limit,
 					...(params.event_name === undefined ? undefined : { eventName: params.event_name }),
+					...(params.service === undefined ? undefined : { service: params.service }),
 				}
-				const eventField =
-					params.event_name === undefined ? undefined : { eventName: params.event_name }
+				const eventField = {
+					...(params.event_name === undefined ? undefined : { eventName: params.event_name }),
+					...serviceField,
+				}
 				if (params.key !== undefined) {
 					const rows = yield* withTenantExecutor(
 						productEventAttributeValues({ ...events, key: params.key }),

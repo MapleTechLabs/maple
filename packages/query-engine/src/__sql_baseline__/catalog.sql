@@ -4333,7 +4333,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:product-events-explore:productEventsBreakdownQuery:visitors-by-session-dimension  [6172598d]
+-- builder:product-events-explore:productEventsBreakdownQuery:visitors-by-session-dimension  [7d006b85]
 SELECT
           coalesce(sd.utm_source, '') AS name,
           uniqIf(product_events.VisitorId, product_events.VisitorId != '') AS value
@@ -4343,8 +4343,9 @@ SELECT
           max(session_replays.UtmSource) AS utm_source
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.SessionId != ''
         GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4396,20 +4397,21 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- builder:product-events-explore:productEventsTimeseriesQuery:numeric-sum-by-country  [c77539ac]
+-- builder:product-events-explore:productEventsTimeseriesQuery:numeric-sum-by-country  [4345fdb7]
 SELECT
           toStartOfInterval(product_events.Timestamp, INTERVAL 3600 SECOND) AS bucket,
           arrayStringConcat([coalesce(nullIf(coalesce(sd.country, ''), ''), '(none)'), coalesce(nullIf(product_events.EventName, ''), '(none)')], ' · ') AS groupName,
-          ifNull(sum(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL)), 0) AS value,
-          count() AS eventCount
+          ifNull(ifNotFinite(sum(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL)), 0), 0) AS value,
+          countIf(if(isFinite(toFloat64OrNull(product_events.Attributes['amount'])), toFloat64OrNull(product_events.Attributes['amount']), NULL) IS NOT NULL) AS eventCount
         FROM product_events
         LEFT JOIN (SELECT
           session_replays.SessionId AS SessionId,
           max(session_replays.Country) AS country
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.SessionId != ''
         GROUP BY SessionId) AS sd ON product_events.SessionId = sd.SessionId
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4419,7 +4421,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [a3692859]
+-- builder:product-events-explore:productEventsTimeseriesQuery:persons-grouped-filtered  [94543d2b]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -4452,7 +4454,7 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-01 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
           AND session_replays.Country = 'DE'
         GROUP BY sessionId)
@@ -4761,7 +4763,7 @@ SELECT
         ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
         FORMAT JSON
 
--- builder:product-events-retention:productEventsRetentionQuery:daily-in-window-group  [c867657c]
+-- builder:product-events-retention:productEventsRetentionQuery:daily-in-window-group  [712f12e7]
 SELECT
           toString(cohortDay) AS cohort,
           cohorted.period AS period,
@@ -4794,12 +4796,12 @@ SELECT
         GROUP BY key)) AS retention_events
         GROUP BY key) AS per_key
         WHERE per_key.first >= '2026-01-01 10:30:00'
-          AND per_key.first <= '2026-01-03 14:15:00') AS cohorted
+          AND per_key.first < '2026-01-03 14:15:00') AS cohorted
         GROUP BY cohort, period
         ORDER BY cohort ASC, period ASC
         FORMAT JSON
 
--- builder:product-events-retention:productEventsRetentionQuery:weekly-first-ever-person  [10b1504f]
+-- builder:product-events-retention:productEventsRetentionQuery:weekly-first-ever-person  [9974a14a]
 SELECT
           toString(cohortDay) AS cohort,
           cohorted.period AS period,
@@ -4833,18 +4835,19 @@ SELECT
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS retention_events
         GROUP BY key) AS per_key
         WHERE per_key.first >= '2026-01-01 10:30:00'
-          AND per_key.first <= '2026-01-03 14:15:00') AS cohorted
+          AND per_key.first < '2026-01-03 14:15:00') AS cohorted
         GROUP BY cohort, period
         ORDER BY cohort ASC, period ASC
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:default  [d05b039c]
+-- builder:product-events:productEventNamesQuery:default  [26f202a4]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4854,13 +4857,14 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:filtered  [b9a881b9]
+-- builder:product-events:productEventNamesQuery:filtered  [a4fa1221]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
+          uniqIf(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId), (product_events.VisitorId != '' OR product_events.UserId != '')) AS persons,
+          uniqIf(product_events.GroupId, product_events.GroupId != '') AS groups
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -21800,7 +21804,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:product-events-timeseries-grouped:baseline  [8a641280]
+-- spec:product-events-timeseries-grouped:baseline  [2c1003e6]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -21831,7 +21835,7 @@ SELECT
           session_replays.SessionId AS sessionId
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-03 10:30:00'
+          AND session_replays.StartTime >= subtractHours(toDateTime('2026-01-03 10:30:00'), 24)
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
           AND session_replays.Country = 'DE'
         GROUP BY sessionId)

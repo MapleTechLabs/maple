@@ -17,7 +17,29 @@ const isFunnelRead = (sql: string): boolean => Str.includes("funnel_events")(sql
 /** The identity coverage read: the one query that counts events per identity. */
 const isCoverageRead = (sql: string): boolean => Str.includes("withSession")(sql)
 
+/** Every statement a call issued, so a test can tell which reads ran. */
+const issued: Array<string> = []
+
 const fixtures: FixtureRule[] = [
+	{
+		match: (sql) => {
+			issued.push(sql)
+			return false
+		},
+		rows: [],
+	},
+	// A second step nobody reaches; the detail reads below still answer for it.
+	{
+		match: (sql) =>
+			Str.includes("unreached_step")(sql) &&
+			isFunnelRead(sql) &&
+			!Str.includes("sinceStartP50Ms")(sql) &&
+			!/\bAS next\b/.test(sql),
+		rows: [
+			{ step: 1, count: 25 },
+			{ step: 2, count: 0 },
+		],
+	},
 	// Seven events with a session and no visitor id: by visitor nobody can match.
 	{
 		match: (sql) => Str.includes("anon_step")(sql) && isCoverageRead(sql),
@@ -26,6 +48,37 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{ match: (sql) => Str.includes("anon_step")(sql), rows: [] },
+	// A step whose events mostly carry the account, and three of ten thousand a user id.
+	{
+		match: (sql) => Str.includes("mostly_account")(sql) && isCoverageRead(sql),
+		rows: [
+			{
+				step: 1,
+				events: 100,
+				withPerson: 100,
+				withUser: 100,
+				withVisitor: 100,
+				withGroup: 100,
+				withSession: 100,
+			},
+			{
+				step: 2,
+				events: 10_000,
+				withPerson: 3,
+				withUser: 3,
+				withVisitor: 0,
+				withGroup: 9_000,
+				withSession: 0,
+			},
+		],
+	},
+	{
+		match: (sql) => Str.includes("mostly_account")(sql) && isFunnelRead(sql),
+		rows: [
+			{ step: 1, count: 80 },
+			{ step: 2, count: 0 },
+		],
+	},
 	// A billing event that carries the account and no user, after a step that carries both.
 	{
 		match: (sql) => Str.includes("billing_only")(sql) && isCoverageRead(sql),
@@ -59,12 +112,19 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) => /product_events/i.test(sql) && Str.includes("collapsed.test")(sql),
-		rows: [{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 1 }],
+		rows: [
+			{ eventName: "page_view", kind: "navigation", count: 40, sessions: 12, persons: 0, groups: 0 },
+		],
 	},
 	// The breakdown read names the attribute it groups by.
 	{
 		match: (sql) => isFunnelRead(sql) && Str.includes("'plan'")(sql),
 		rows: [{ group: "pro", step: 1, count: 10 }],
+	},
+	// The warehouse gives up on one funnel's detail reads; its counts still come back.
+	{
+		match: (sql) => Str.includes("slow_details")(sql) && Str.includes("sinceStartP50Ms")(sql),
+		failure: { message: "Timeout exceeded", type: "TIMEOUT_EXCEEDED" },
 	},
 	// The two detail reads: the time between steps, then where the drop-offs went.
 	{
@@ -95,7 +155,11 @@ const fixtures: FixtureRule[] = [
 	},
 	{
 		match: (sql) => /product_events/i.test(sql),
-		rows: [{ eventName: "signup_completed", kind: "custom", count: 12, sessions: 10, persons: 9 }],
+		rows: [
+			{ eventName: "signup_completed", kind: "custom", count: 12, sessions: 10, persons: 9, groups: 4 },
+			// A billing webhook's event: the account, and nobody.
+			{ eventName: "plan_started", kind: "custom", count: 6, sessions: 0, persons: 0, groups: 6 },
+		],
 	},
 ]
 
@@ -142,7 +206,37 @@ describe("query_funnel identity", () => {
 		expect(markdown(result)).toMatch(/Next:\n- `query_funnel [^\n]*key_by="group"/)
 	})
 
+	it("offers a key most of every step's events carry, not one a handful happen to", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "mostly_account" },
+			]),
+			key_by: "visitor",
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		// Three of ten thousand events carry a user id: by person or user the 0 would stay a 0.
+		expect(output.suggestedKeyBy).toBe("group")
+		expect(output.identityNote).toContain("Most of every step's events carry a group id")
+	})
+
+	it("keeps the filters, the window and the breakdown in the funnel it offers under another key", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "billing_only" },
+			]),
+			window_seconds: 3600,
+			country: "DE",
+		})
+		// Without them the retry would count the whole organization, not the people asked about.
+		expect(markdown(result)).toMatch(
+			/Next:\n- `query_funnel [^\n]*window_seconds=3600[^\n]*country="DE"[^\n]*key_by="group"/,
+		)
+	})
+
 	it("does not read the coverage when every step has people", async () => {
+		const before = issued.length
 		const result = await call("query_funnel", {
 			steps_json: JSON.stringify([
 				{ kind: "page", pagePath: "/pricing" },
@@ -151,7 +245,17 @@ describe("query_funnel identity", () => {
 		})
 		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
 		expect(output.identityNote).toBeUndefined()
-		expect(output.suggestedKeyBy).toBeUndefined()
+		// The read itself: a normal funnel costs one statement, not two.
+		expect(Arr.filter(issued.slice(before), isCoverageRead)).toEqual([])
+		// And it does run when a step is empty, so the line above is not vacuous.
+		const empty = issued.length
+		await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "billing_only" },
+			]),
+		})
+		expect(Arr.filter(issued.slice(empty), isCoverageRead)).toHaveLength(1)
 	})
 
 	it("counts by group", async () => {
@@ -243,6 +347,21 @@ describe("query_funnel output", () => {
 		expect(text).toContain("`query_funnel steps_json=")
 		expect(text).toContain('breakdown_by="utmSource"')
 	})
+
+	it("offers the breakdown of the same funnel: its key, window and filters", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed" },
+			]),
+			key_by: "group",
+			window_seconds: 7200,
+			utm_source: "newsletter",
+		})
+		expect(markdown(result)).toMatch(
+			/query_funnel [^\n]*window_seconds=7200[^\n]*utm_source="newsletter"[^\n]*key_by="group"[^\n]*breakdown_by="utmSource"/,
+		)
+	})
 })
 
 describe("query_funnel details", () => {
@@ -270,6 +389,21 @@ describe("query_funnel details", () => {
 		expect(text).toContain("Before step 2 (signup_completed): /welcome (45), nothing after (15)")
 	})
 
+	it("reports no time to a step nobody reached", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "signup_completed" },
+				{ kind: "event", eventName: "unreached_step" },
+			]),
+			details: true,
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		// The timing read answers zeros for a step with no converters; they are not a measurement.
+		expect(output.steps[1]?.count).toBe(0)
+		expect(output.steps[1]?.p50Ms).toBeUndefined()
+		expect(output.steps[1]?.leavers).toBeDefined()
+	})
+
 	it("leaves the details out of a breakdown, which has no single chain to time", async () => {
 		const result = await call("query_funnel", {
 			steps_json: steps,
@@ -285,6 +419,44 @@ describe("query_funnel details", () => {
 		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
 		const unfiltered = await call("query_funnel", { steps_json: steps, ...window })
 		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
+	})
+
+	it("says only the earlier part is blind when the window reaches into what is kept", async () => {
+		// Sixty days back to now: the last thirty are readable.
+		const start = Str.replace(
+			"T",
+			" ",
+		)(Str.slice(0, 19)(new Date(Date.now() - 60 * 86_400_000).toISOString()))
+		const result = await call("query_funnel", { steps_json: steps, start_time: start, country: "DE" })
+		expect(markdown(result)).toContain("the earlier part of this window reads as having none")
+	})
+
+	it("goes by how old the window is, not how long: three old days are as blind", async () => {
+		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-04 00:00:00" }
+		const filtered = await call("query_funnel", { steps_json: steps, ...old, country: "DE" })
+		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
+		// All of it is past what is kept: the note does not promise a later part that can be read.
+		expect(markdown(filtered)).toContain("this whole window is older than that")
+		expect(markdown(filtered)).not.toContain("the earlier part of this window")
+		// The default window is the last week, all of it inside what is kept.
+		const recent = await call("query_funnel", { steps_json: steps, country: "DE" })
+		expect(markdown(recent)).not.toContain("Sessions are kept 30 days")
+	})
+
+	it("says the details could not be read instead of leaving the section out silently", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "slow_details" },
+			]),
+			details: true,
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.detailsNote).toContain("could not be read")
+		const text = markdown(result)
+		expect(text).toContain("the counts are complete")
+		expect(text).not.toContain("### Time to convert")
 	})
 })
 
@@ -333,6 +505,51 @@ describe("query_funnel exclusions", () => {
 		expect(text).toContain("after < before")
 	})
 
+	it("rejects an exclusion that is a step inside its own range, and takes one that is a bound", async () => {
+		const three = JSON.stringify([
+			{ kind: "page", pagePath: "/pricing" },
+			{ kind: "event", eventName: "trial_started" },
+			{ kind: "event", eventName: "signup_completed" },
+		])
+		const inside = await call("query_funnel", {
+			steps_json: three,
+			exclusions_json: JSON.stringify([{ step: { kind: "event", eventName: "trial_started" } }]),
+		})
+		expect(inside.isError).toBe(true)
+		expect(markdown(inside)).toContain("`exclusions_json`")
+		// "No signup before the trial": the final signup is past the range, so it still counts.
+		const bound = await call("query_funnel", {
+			steps_json: three,
+			exclusions_json: JSON.stringify([
+				{ step: { kind: "event", eventName: "signup_completed" }, after: 1, before: 2 },
+			]),
+		})
+		expect(bound.isError).toBeUndefined()
+		// Across one gap the step on either side can never apply: refused rather than reported as applied.
+		const vacuous = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([{ step: { kind: "page", pagePath: "/pricing" } }]),
+		})
+		expect(vacuous.isError).toBe(true)
+		expect(markdown(vacuous)).toContain("can never apply")
+	})
+
+	it("does not offer to pin a funnel whose exclusions a dashboard widget would drop", async () => {
+		const result = await call("query_funnel", { steps_json: steps, exclusions_json: exclusions })
+		const text = markdown(result)
+		expect(text).not.toContain("Pin this funnel")
+		expect(text).toContain("does not take exclusions yet")
+	})
+
+	it("rejects an exclusion with no event name", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([{ step: { kind: "event", eventName: " " } }]),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("no event name or page path")
+	})
+
 	it("rejects an exclusion on a one-step funnel", async () => {
 		const result = await call("query_funnel", {
 			steps_json: JSON.stringify([{ kind: "event", eventName: "signup_completed" }]),
@@ -351,6 +568,18 @@ describe("list_product_events output", () => {
 		const text = markdown(result)
 		expect(text).toContain("| signup_completed | custom |")
 		expect(text).toContain("`query_funnel steps_json=")
+	})
+
+	it("points out an event that carries an account and no person, and how to count it", async () => {
+		const result = await call("list_product_events", {})
+		const output = Schema.decodeUnknownSync(ListProductEventsOutput)(result.structuredContent)
+		expect(output.events[1]).toMatchObject({ eventName: "plan_started", persons: 0, groups: 6 })
+		const text = markdown(result)
+		expect(text).toContain("| plan_started | custom | 6 | 0 | 0 | 6 |")
+		expect(text).toContain("`plan_started` carries a group (account) id and no user or visitor id")
+		expect(text).toContain('key_by="group"')
+		// An event people did is not called account-only.
+		expect(text).not.toContain("`signup_completed` carries")
 	})
 
 	it("says when every event collapses onto one person", async () => {

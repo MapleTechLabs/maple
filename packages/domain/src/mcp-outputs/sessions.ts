@@ -198,12 +198,16 @@ export const QueryFunnelOutput = Schema.Struct({
 	definition: Schema.Array(FunnelStep),
 	/** The exclusions as given, when there were any. */
 	exclusions: Schema.optionalKey(Schema.Array(FunnelExclusion)),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	/** Set when a step's events lack the identity `keyBy` counts by, so the step reads as empty. */
 	identityNote: Schema.optionalKey(Schema.String),
 	/** The key every step's events do carry, when `identityNote` is set and there is one. */
 	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
 	/** Set when the window reaches past what sessions are kept and the funnel reads them. */
 	sessionNote: Schema.optionalKey(Schema.String),
+	/** Set when `details` was asked for and could not be read. */
+	detailsNote: Schema.optionalKey(Schema.String),
 })
 
 export const QueryPathsOutput = Schema.Struct({
@@ -215,6 +219,10 @@ export const QueryPathsOutput = Schema.Struct({
 	windowSeconds: Schema.Number,
 	/** Everyone who reached the anchor in the window. */
 	total: Schema.Number,
+	/** Set when a session filter is used and the window starts before sessions are kept. */
+	sessionNote: Schema.optionalKey(Schema.String),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	/** One entry per hop away from the anchor, nearest first. */
 	hops: Schema.Array(
 		Schema.Struct({
@@ -241,6 +249,10 @@ export const QueryCohortOutput = Schema.Struct({
 	/** The cohort's size: those of `didTotal` that did not do `didNot`. */
 	total: Schema.Number,
 	limit: Schema.Number,
+	/** Set when nobody is counted because the events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
 	/** The members listed, the one who did it last first; `total` counts all of them. */
 	members: Schema.Array(
 		Schema.Struct({
@@ -279,6 +291,10 @@ export const QueryRetentionOutput = Schema.Struct({
 	),
 	/** Per period, the share of everyone in a cohort old enough to have finished it; null when none is. */
 	overall: Schema.Array(Schema.NullOr(Schema.Number)),
+	/** Set when there are no cohorts because the start events lack the identity `keyBy` counts by. */
+	identityNote: Schema.optionalKey(Schema.String),
+	/** The key those events do carry, when `identityNote` is set and there is one. */
+	suggestedKeyBy: Schema.optionalKey(RetentionKeyBy),
 })
 
 export const ProductEventKind = Schema.Literals(["custom", "navigation", "screen"])
@@ -293,6 +309,8 @@ export const ListProductEventsOutput = Schema.Struct({
 			count: Schema.Number,
 			sessions: Schema.Number,
 			persons: Schema.Number,
+			/** Distinct accounts (`GroupId`) the event fired for; 0 when it carries none. */
+			groups: Schema.Number,
 		}),
 	),
 	/** The kind filter, when one applied. */

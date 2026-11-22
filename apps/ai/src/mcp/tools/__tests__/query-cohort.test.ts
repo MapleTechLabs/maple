@@ -33,6 +33,23 @@ const fixtures: FixtureRule[] = [
 		rows: [{ ...member("u_1", "2026-11-01 10:00:00"), didTotal: 30, total: 30 }],
 	},
 	{ match: (sql) => Str.includes("nobody_does_this")(sql), rows: [] },
+	// Fifteen events for the account alone: by user nobody, by group everyone. The coverage read
+	// is the one that counts events per identity.
+	{
+		match: (sql) => Str.includes("account_only")(sql) && Str.includes("withSession")(sql),
+		rows: [
+			{
+				step: 1,
+				events: 15,
+				withPerson: 0,
+				withUser: 0,
+				withVisitor: 0,
+				withGroup: 15,
+				withSession: 0,
+			},
+		],
+	},
+	{ match: (sql) => Str.includes("account_only")(sql), rows: [] },
 	{
 		match: (sql) => Str.includes("cohort_events")(sql),
 		rows: [member("u_132", "2026-11-06 05:04:00"), member("u_147", "2026-11-02 20:04:00")],
@@ -113,6 +130,21 @@ describe("query_cohort", () => {
 		)
 	})
 
+	it("opens a user page only for a user key: a person can be a visitor id", async () => {
+		const byPerson = await call({ ...window, did_json: did, did_not_json: didNot })
+		expect(markdown(byPerson)).not.toContain("inspect_user")
+	})
+
+	it("rejects an exclusion with no event name instead of excluding nobody", async () => {
+		const result = await call({
+			...window,
+			did_json: did,
+			did_not_json: JSON.stringify({ kind: "event", eventName: "" }),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`did_not_json`")
+	})
+
 	it("says nobody did it, with what to check", async () => {
 		const result = await call({
 			...window,
@@ -121,7 +153,48 @@ describe("query_cohort", () => {
 		})
 		const text = markdown(result)
 		expect(text).toContain("No users did nobody_does_this in this window.")
-		expect(text).toContain('key_by="person"')
+		expect(text).toContain("check the name against `list_product_events`")
+	})
+
+	it("tells events that lack the key from nobody having done it, and offers the key that works", async () => {
+		const result = await call({
+			...window,
+			did_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			key_by: "user",
+		})
+		const output = Schema.decodeUnknownSync(QueryCohortOutput)(result.structuredContent)
+		expect(output.total).toBe(0)
+		expect(output.suggestedKeyBy).toBe("group")
+		const text = markdown(result)
+		expect(text).toContain("account_only matched 15 events, but none carries a user id")
+		// The first suggested call is the same cohort under the key the events carry.
+		expect(text).toMatch(/Next:\n- `query_cohort [^\n]*account_only[^\n]*key_by="group"/)
+	})
+
+	it("reads the identity of the excluded event too before offering another key", async () => {
+		await call({
+			...window,
+			did_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			did_not_json: didNot,
+			key_by: "user",
+		})
+		// A key the excluded event lacks would make every account a member.
+		const coverage = issued.findLast((sql) => Str.includes("withSession")(sql)) ?? ""
+		expect(coverage).toContain("account_only")
+		expect(coverage).toContain("project_created")
+	})
+
+	it("keeps the window scope in the call under the suggested key", async () => {
+		const result = await call({
+			...window,
+			did_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			did_not_json: didNot,
+			did_not_scope: "window",
+			key_by: "user",
+		})
+		expect(markdown(result)).toMatch(
+			/Next:\n- `query_cohort [^\n]*did_not_scope="window"[^\n]*key_by="group"/,
+		)
 	})
 
 	it("refuses a session step, which nobody does", async () => {

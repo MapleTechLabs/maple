@@ -63,6 +63,21 @@ const fixtures: FixtureRule[] = [
 	},
 	{ match: (sql) => Str.includes("nobody_does_this")(sql), rows: [] },
 	{
+		match: (sql) => Str.includes("account_only")(sql) && Str.includes("withSession")(sql),
+		rows: [
+			{
+				step: 1,
+				events: 15,
+				withPerson: 0,
+				withUser: 0,
+				withVisitor: 0,
+				withGroup: 15,
+				withSession: 0,
+			},
+		],
+	},
+	{ match: (sql) => Str.includes("account_only")(sql), rows: [] },
+	{
 		match: (sql) => Str.includes("retention_events")(sql),
 		rows: [
 			{ cohort: "2026-10-05", period: 0, count: 40 },
@@ -117,6 +132,8 @@ describe("query_retention", () => {
 		])
 		const text = markdown(result)
 		expect(text).toContain("| 2026-10-05 | 40 | 20 (50.00%) | 10 (25.00%) |")
+		// The overall row leads: a long table is cut from the bottom.
+		expect(text.indexOf("| All complete cohorts |")).toBeLessThan(text.indexOf("| 2026-10-05 |"))
 		expect(text).toContain("New means: first time ever, over all history")
 	})
 
@@ -143,6 +160,59 @@ describe("query_retention", () => {
 		const text = markdown(result)
 		expect(text).toContain("for the first time in this window")
 		expect(text).toContain("first_ever=false")
+	})
+
+	it("says when the start event carries an account and no person, and offers cohorts by group", async () => {
+		const result = await call({
+			...window,
+			start_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+		})
+		const output = Schema.decodeUnknownSync(QueryRetentionOutput)(result.structuredContent)
+		expect(output.cohorts).toEqual([])
+		expect(output.suggestedKeyBy).toBe("group")
+		const text = markdown(result)
+		expect(text).toContain("account_only matched 15 events, but none carries a user id or a visitor id")
+		expect(text).toMatch(/Next:\n- `query_retention [^\n]*key_by="group"/)
+		// The generic hint would compete with the reason just given.
+		expect(text).not.toContain("first_ever=false")
+	})
+
+	it("widens the window to whole intervals, so no cohort is part of a week", async () => {
+		// Wednesday afternoon to the next Wednesday morning: two Monday weeks, both whole.
+		const result = await call({ start_time: "2026-10-07 13:00:00", end_time: "2026-10-14 09:00:00" })
+		const output = Schema.decodeUnknownSync(QueryRetentionOutput)(result.structuredContent)
+		expect(output.timeRange).toEqual({ start: "2026-10-05 00:00:00", end: "2026-10-19 00:00:00" })
+		expect(issued.at(-1) ?? "").toContain("first >= '2026-10-05 00:00:00'")
+		expect(markdown(result)).toContain("The window is widened to whole weeks")
+	})
+
+	it("keeps periods and first_ever in the calls it suggests", async () => {
+		const result = await call({ ...window, periods: 2, first_ever: false })
+		expect(markdown(result)).toMatch(
+			/query_retention [^\n]*periods=2[^\n]*first_ever=false[^\n]*key_by="group"/,
+		)
+	})
+
+	it("rejects a step with no event name, which would match nothing", async () => {
+		const result = await call({
+			...window,
+			return_json: JSON.stringify({ kind: "event", eventName: "  " }),
+		})
+		expect(result.isError).toBe(true)
+		const text = markdown(result)
+		expect(text).toContain("`return_json`")
+		expect(text).toContain("leave it out for any event")
+	})
+
+	it("reads the identity of the return event too before offering another key", async () => {
+		await call({
+			...window,
+			start_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			return_json: JSON.stringify({ kind: "event", eventName: "report_exported" }),
+		})
+		const coverage = issued.findLast((sql) => Str.includes("withSession")(sql)) ?? ""
+		expect(coverage).toContain("account_only")
+		expect(coverage).toContain("report_exported")
 	})
 
 	it("rejects a period count it cannot report", async () => {

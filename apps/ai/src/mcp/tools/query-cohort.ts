@@ -15,6 +15,7 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { eventIdentityNote, isBlankStep } from "../lib/product-identity"
 
 const TOOL = "query_cohort"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -73,10 +74,18 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 			const didNot = params.did_not_json
 			const keyBy = params.key_by ?? "person"
 			const didNotScope = params.did_not_scope ?? "ever"
-			if (Str.trim(did.kind === "event" ? did.eventName : did.pagePath) === "") {
+			if (isBlankStep(did)) {
 				return yield* new McpInvalidInputError({
 					message: "did_json needs an event name or a page path.",
 					parameter: "did_json",
+					example: STEP_EXAMPLE,
+				})
+			}
+			if (didNot !== undefined && isBlankStep(didNot)) {
+				return yield* new McpInvalidInputError({
+					message:
+						"did_not_json needs an event name or a page path; leave it out for everyone who did did_json.",
+					parameter: "did_not_json",
 					example: STEP_EXAMPLE,
 				})
 			}
@@ -129,11 +138,31 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 							),
 						)
 
+			// Nobody did it, or the events cannot be counted by this key: only the coverage tells.
+			const identity =
+				didTotal === 0
+					? yield* eventIdentityNote({
+							// Both events: a key the excluded one lacks would make everyone a member.
+							events: [
+								{ step: did, label: funnelStepLabel(did) },
+								...(didNot === undefined
+									? []
+									: [{ step: didNot, label: funnelStepLabel(didNot) }]),
+							],
+							keyBy,
+							candidates: RetentionKeyBy.literals,
+							startTime: st,
+							endTime: et,
+						})
+					: undefined
+
 			return {
 				timeRange: { start: st, end: et },
 				keyBy,
 				did,
 				...(didNot === undefined ? undefined : { didNot, didNotScope }),
+				...(identity === undefined ? undefined : { identityNote: identity.note }),
+				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				didTotal,
 				total: rows[0]?.total ?? 0,
 				limit: params.limit,
@@ -160,7 +189,8 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 								: ` (${formatPercent(output.total / output.didTotal)}).`
 						}`
 			const first = output.members[0]
-			const opensUsers = output.keyBy === "user" || output.keyBy === "person"
+			// A person's key can be a visitor id, which no user page answers to.
+			const opensUsers = output.keyBy === "user"
 			return {
 				title:
 					notLabel === undefined
@@ -177,18 +207,18 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 								: "ever, up to the end of the window",
 					],
 				],
+				...(output.identityNote === undefined ? undefined : { notices: [output.identityNote] }),
 				...(output.didTotal === 0
 					? {
 							empty: {
 								message: `No ${noun} did ${didLabel} in this window.`,
-								hints: [
-									"Widen start_time/end_time, or check the name against `list_product_events`.",
-									...(output.keyBy === "person"
-										? []
-										: [
-												`key_by="${output.keyBy}" leaves out events that carry no such id; try key_by="person".`,
-											]),
-								],
+								// The notice above already says why; a generic hint would only compete with it.
+								hints:
+									output.identityNote === undefined
+										? [
+												"Widen start_time/end_time, or check the name against `list_product_events`.",
+											]
+										: [],
 							},
 						}
 					: undefined),
@@ -219,6 +249,26 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 									: []),
 							],
 				next: [
+					// The cohort under the key its events carry is the answer the caller was after.
+					...(output.suggestedKeyBy === undefined
+						? []
+						: [
+								doc.next(
+									TOOL,
+									{
+										did_json: stringifyJson(output.did),
+										...(output.didNot === undefined
+											? undefined
+											: { did_not_json: stringifyJson(output.didNot) }),
+										...(output.didNotScope === "window"
+											? { did_not_scope: "window" }
+											: undefined),
+										key_by: output.suggestedKeyBy,
+										...window,
+									},
+									`the same cohort counted by ${output.suggestedKeyBy}`,
+								),
+							]),
 					...(first !== undefined && opensUsers
 						? [
 								doc.next(

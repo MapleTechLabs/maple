@@ -295,6 +295,11 @@ export const QueryDataOutput = Schema.Struct({
 	warnings: Schema.optionalKey(Schema.Array(Schema.String)),
 	queryContext: QueryDataQueryContextSchema,
 	unit: QueryDataUnitSchema,
+	/**
+	 * product_events timeseries with no group_by: the metric over the whole window. For a distinct
+	 * count (users, groups...) this is not the sum of the buckets.
+	 */
+	total: Schema.optionalKey(Schema.Number),
 	result: Schema.Union([
 		Schema.Struct({
 			kind: Schema.Literal("timeseries"),

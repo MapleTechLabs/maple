@@ -32,6 +32,33 @@ const fixtures: FixtureRule[] = [
 			{ attributeValue: "pdf", usageCount: 62 },
 		],
 	},
+	// A breakdown in which some events carry no value for the dimension.
+	{
+		match: (sql) => Str.includes("'seat_tier'")(sql),
+		rows: [
+			{ name: "pro", value: 30 },
+			{ name: "", value: 12 },
+		],
+	},
+	// The whole-window read is the one bucket that starts at the window, not on an interval.
+	{
+		match: (sql) => Str.includes("nobody_event")(sql),
+		rows: [],
+	},
+	{
+		match: (sql) =>
+			/FROM product_events/.test(sql) &&
+			Str.includes("AS bucket")(sql) &&
+			!Str.includes("toStartOfInterval")(sql),
+		rows: [{ bucket: "2026-11-01 00:00:00", groupName: "all", value: 99, eventCount: 213 }],
+	},
+	{
+		match: (sql) => /FROM product_events/.test(sql) && Str.includes("AS bucket")(sql),
+		rows: [
+			{ bucket: "2026-11-01 00:00:00", groupName: "all", value: 60, eventCount: 100 },
+			{ bucket: "2026-11-02 00:00:00", groupName: "all", value: 70, eventCount: 113 },
+		],
+	},
 	{ match: (sql) => /FROM product_events/.test(sql), rows: [{ name: "plan_started", value: 1797 }] },
 	{ match: () => true, rows: [] },
 ]
@@ -68,6 +95,50 @@ describe("query_data on product events", () => {
 		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
 		const span = Date.parse(`${output.timeRange.end}Z`) - Date.parse(`${output.timeRange.start}Z`)
 		expect(span).toBe(6 * 3_600_000)
+	})
+
+	it("gives the whole window beside the buckets, which a distinct count cannot be summed from", async () => {
+		const result = await call("query_data", {
+			source: "product_events",
+			kind: "timeseries",
+			metric: "users",
+			event_name: ["report_exported"],
+			start_time: "2026-11-01 00:00:00",
+			end_time: "2026-11-03 00:00:00",
+			bucket_seconds: 86_400,
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		// 60 one day and 70 the next, and 99 people in all: the same one can be in both days.
+		expect(output.total).toBe(99)
+		const text = markdown(result)
+		expect(text).toContain("**Whole window: 99 users.**")
+		expect(text).toContain("not the sum of the buckets")
+	})
+
+	it("reads no total for a grouped series, where one number would name no group", async () => {
+		const result = await call("query_data", {
+			source: "product_events",
+			kind: "timeseries",
+			metric: "users",
+			group_by: "event_name",
+			start_time: "2026-11-01 00:00:00",
+			end_time: "2026-11-03 00:00:00",
+			bucket_seconds: 86_400,
+		})
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(output.total).toBeUndefined()
+	})
+
+	it("says a distinct count is empty for events that carry no such identity", async () => {
+		const result = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			metric: "users",
+			event_name: ["nobody_event"],
+		})
+		const text = markdown(result)
+		expect(text).toContain('check with metric="count", and count accounts with metric="groups"')
 	})
 
 	it("adds up a numeric property", async () => {
@@ -119,6 +190,38 @@ describe("query_data on product events", () => {
 		expect(text).toContain("Server-side events have no session")
 	})
 
+	it("warns that sessions are kept 30 days when an older window groups by one of their dimensions", async () => {
+		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-04 00:00:00" }
+		const grouped = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "country",
+			...old,
+		})
+		expect(markdown(grouped)).toContain("Sessions are kept 30 days")
+		const plain = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "event_name",
+			...old,
+		})
+		expect(markdown(plain)).not.toContain("Sessions are kept 30 days")
+	})
+
+	it("names the group of events that carry no value, as the warning says it does", async () => {
+		const result = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "attribute",
+			attribute_key: "seat_tier",
+		})
+		const output = Schema.decodeUnknownSync(QueryDataOutput)(result.structuredContent)
+		expect(
+			output.result.kind === "breakdown" ? Arr.map(output.result.data, (item) => item.name) : [],
+		).toEqual(["pro", "(none)"])
+		expect(markdown(result)).toContain("(none)")
+	})
+
 	it("refuses a session filter on a source that has no sessions", async () => {
 		const result = await call("query_data", { source: "traces", kind: "timeseries", country: "DE" })
 		expect(result.isError).toBe(true)
@@ -157,6 +260,31 @@ describe("explore_attributes on product events", () => {
 		const text = markdown(result)
 		expect(text).toContain("| csv | 130 |")
 		expect(text).toContain('group_by="attribute" attribute_key="format"')
+	})
+
+	it("narrows to the service that sent a server-side event", async () => {
+		await call("explore_attributes", { source: "product_events", service: "billing" })
+		expect(lastSql()).toContain("'billing'")
+	})
+
+	it("keeps the dates and the service in the calls it suggests", async () => {
+		const old = { start_time: "2026-10-01 00:00:00", end_time: "2026-10-08 00:00:00" }
+		const scope = { source: "product_events", event_name: "report_exported", service: "billing", ...old }
+		const keys = markdown(await call("explore_attributes", scope))
+		// Without the dates the values would be read from the last week, not the one asked about.
+		expect(keys).toMatch(
+			/explore_attributes [^\n]*key="format"[^\n]*service="billing"[^\n]*start_time="2026-10-01 00:00:00"[^\n]*end_time="2026-10-08 00:00:00"/,
+		)
+		const values = markdown(await call("explore_attributes", { ...scope, key: "format" }))
+		expect(values).toMatch(
+			/query_data [^\n]*service="billing"[^\n]*start_time="2026-10-01 00:00:00"[^\n]*end_time="2026-10-08 00:00:00"/,
+		)
+	})
+
+	it("refuses event_name on a source that has no events", async () => {
+		const result = await call("explore_attributes", { source: "traces", event_name: "report_exported" })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`event_name` applies to source=product_events only")
 	})
 
 	it("reads a week by default, where spans read six hours", async () => {
