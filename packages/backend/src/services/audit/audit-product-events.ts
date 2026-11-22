@@ -57,6 +57,32 @@ const FEATURE_ACTION_LIST: ReadonlyArray<AuditAction> = [
 const FEATURE_ACTIONS: ReadonlySet<string> = new Set(FEATURE_ACTION_LIST)
 
 /**
+ * MCP tools that create without an audit entry of their own (their REST twins write one): the
+ * successful `mcp_tool.called` entry stands in for it. Keyed `tool` or `tool:action` for a family.
+ */
+const MCP_CREATIONS: ReadonlyMap<string, AuditAction> = new Map<string, AuditAction>([
+	["create_dashboard", "dashboard.created"],
+	["create_alert_rule", "alert_rule.created"],
+	["manage_alert_silence:create", "alert_silence.created"],
+	["manage_maintenance_window:create", "alert_maintenance_window.created"],
+	["manage_escalation_chain:create", "escalation_chain.created"],
+	["manage_oncall_schedule:create", "oncall_schedule.created"],
+	["manage_slo:create", "slo.created"],
+	["manage_uptime_monitor:create", "uptime_monitor.created"],
+	["manage_ingest_rule:create", "ingest_rule.created"],
+])
+
+/** The feature action an audit entry stands for, if any. */
+const featureActionOf = (event: AuditLogEvent): string | undefined => {
+	if (FEATURE_ACTIONS.has(event.action)) return event.action
+	if (event.action !== "mcp_tool.called" || event.metadata?.is_error !== false) return undefined
+	const tool = event.metadata.tool
+	const toolAction = event.metadata.tool_action
+	if (typeof tool !== "string") return undefined
+	return MCP_CREATIONS.get(typeof toolAction === "string" ? `${tool}:${toolAction}` : tool)
+}
+
+/**
  * The `feature_used` product event for an audit entry, or `undefined` when the entry is not a
  * feature action. Only allowed actions by a person, an API key or an agent count: system
  * actions (auto-resolve, scheduled jobs) are Maple acting, not the customer.
@@ -65,8 +91,9 @@ const FEATURE_ACTIONS: ReadonlySet<string> = new Set(FEATURE_ACTION_LIST)
  */
 export const featureUsedEvent = (event: AuditLogEvent): ProductEventInput | undefined => {
 	if (event.outcome !== "allowed" || event.actorType === "system") return undefined
-	if (!FEATURE_ACTIONS.has(event.action)) return undefined
-	const [feature, action] = Str.split(".")(event.action)
+	const featureAction = featureActionOf(event)
+	if (featureAction === undefined) return undefined
+	const [feature, action] = Str.split(".")(featureAction)
 	if (feature === undefined || action === undefined) return undefined
 	return {
 		name: "feature_used",

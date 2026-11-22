@@ -315,6 +315,25 @@ describe("recordMcpToolAudit", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
+	it.effect("names a family's action, so a create reads apart from an update", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			yield* recordMcpToolAudit({
+				...toolCall,
+				name: "manage_slo",
+				action: "create",
+				tenant: {
+					orgId: ORG,
+					userId: CONNECTOR_PLACEHOLDER_USER,
+					roles: [],
+					authMode: "self_hosted",
+				},
+			})
+			const [entry] = yield* audit.list(ORG, { limit: 10, offset: 0 })
+			expect(entry?.metadata).toMatchObject({ tool: "manage_slo", tool_action: "create" })
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
+	)
+
 	it.effect("stores a tool call's URL parameters without their userinfo and query", () =>
 		Effect.gen(function* () {
 			const audit = yield* AuditLogService

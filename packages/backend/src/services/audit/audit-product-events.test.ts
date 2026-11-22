@@ -68,4 +68,22 @@ describe("featureUsedEvents", () => {
 		])
 		expect(Arr.map(events, (event) => event.attributes?.actor_type)).toEqual(["api_key", "agent"])
 	})
+
+	it("counts a successful MCP create as the creation its REST twin audits", () => {
+		const mcpCall = (metadata: Record<string, unknown>) =>
+			entry({ action: "mcp_tool.called", source: "mcp", actorType: "agent", metadata })
+		const events = featureUsedEvents([
+			mcpCall({ tool: "create_dashboard", is_error: false }),
+			mcpCall({ tool: "manage_slo", tool_action: "create", is_error: false }),
+			// A failed call, an update, and a read create nothing.
+			mcpCall({ tool: "create_alert_rule", is_error: true }),
+			mcpCall({ tool: "manage_slo", tool_action: "update", is_error: false }),
+			mcpCall({ tool: "list_slos", is_error: false }),
+		])
+		expect(Arr.map(events, (event) => [event.attributes?.feature, event.attributes?.action])).toEqual([
+			["dashboard", "created"],
+			["slo", "created"],
+		])
+		expect(events[0]?.attributes?.source).toBe("mcp")
+	})
 })
