@@ -4,7 +4,17 @@
 import * as Argument from "effect/cli/Argument"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
-import { Array as Arr, Console, Duration, Effect, Option, Predicate, Redacted, String as Str } from "effect"
+import {
+	Array as Arr,
+	Console,
+	Duration,
+	Effect,
+	Option,
+	Predicate,
+	Redacted,
+	Schema,
+	String as Str,
+} from "effect"
 import { ONBOARDING_AGENT_STAGES } from "@maple/domain/onboarding-agent-run"
 import type { V2OnboardingAgentReport } from "@maple/domain/http/v2"
 import { MapleConfig } from "../core/config"
@@ -18,9 +28,9 @@ import {
 	type HostedTarget,
 	type ReportOutcome,
 } from "../core/onboarding"
-import * as Remote from "../core/remote-ops"
 import { resolveRangeChecked } from "../core/time"
-import { makeV2Client } from "../core/v2-client"
+import { makeV2Client, toV2Window } from "../core/v2-client"
+import { ServiceName } from "@maple/domain"
 import { CliNotFoundError, CliUsageError } from "../lib/errors"
 import { printResult } from "../lib/output"
 
@@ -161,8 +171,11 @@ export const verifyHints = (apiUrl: string): string =>
 		"; ",
 	)}`
 
-/** The newest root trace from `service` in the verification window, if any. */
-const latestTrace = (target: HostedTarget, service: string) =>
+/**
+ * The newest trace with a span from `service` (anywhere in the trace, not only its root: a service
+ * downstream of a browser never owns the root) in the window, from `environment` when given.
+ */
+const latestTrace = (target: HostedTarget, service: string, environment: Option.Option<string>) =>
 	Effect.gen(function* () {
 		const client = yield* makeV2Client(target.apiUrl, target.token)
 		const range = yield* resolveRangeChecked({
@@ -170,27 +183,58 @@ const latestTrace = (target: HostedTarget, service: string) =>
 			start: Option.none(),
 			end: Option.none(),
 		})
-		const result = yield* Remote.searchTraces(client, { range, service, limit: 1 })
-		return Option.map(Arr.head(result.spans), (span) => Str.toLowerCase(span.traceId))
+		const serviceName = yield* Schema.decodeEffect(ServiceName)(service).pipe(
+			Effect.mapError(() => new CliUsageError({ message: `Not a service name: ${service}` })),
+		)
+		const list = yield* client.traces.search({
+			payload: {
+				...toV2Window(range),
+				limit: 1,
+				filters: {
+					service_name: serviceName,
+					...Option.match(environment, {
+						onNone: () => ({}),
+						onSome: (env) => ({ deployment_environment: env }),
+					}),
+				},
+			},
+		})
+		return Option.map(Arr.head(list.data), (trace) => Str.toLowerCase(trace.id))
 	}).pipe(
 		// Only a transient failure waits for the next tick; a refused key or a bad request never heals.
 		Effect.catchIf(isTransientSearchFailure, () => Effect.succeed(Option.none<string>())),
 	)
 
-/** Network, 5xx and rate-limit failures; the v2 client wraps them in `WarehouseQueryError`. */
+const RETRYABLE_STATUS = (status: number) => status === 429 || status >= 500
+
+/**
+ * A failure worth another poll. A declared API error is the public envelope and says itself
+ * (`error.retryable`); a transport failure or an undeclared 5xx/429 arrives as `HttpClientError`.
+ */
 export const isTransientSearchFailure = (error: unknown): boolean => {
-	if (!Predicate.isTagged(error, "@maple/http/errors/WarehouseQueryError")) return false
-	const cause = Predicate.hasProperty(error, "cause") ? error.cause : undefined
-	const causeTag = Predicate.hasProperty(cause, "_tag") && Predicate.isString(cause._tag) ? cause._tag : ""
-	return causeTag === "" || TRANSIENT_CAUSE.test(causeTag)
+	if (Predicate.hasProperty(error, "error") && Predicate.hasProperty(error.error, "retryable")) {
+		return error.error.retryable === true
+	}
+	if (Predicate.isTagged(error, "HttpClientError")) {
+		const response = Predicate.hasProperty(error, "response") ? error.response : undefined
+		return Predicate.hasProperty(response, "status") && Predicate.isNumber(response.status)
+			? RETRYABLE_STATUS(response.status)
+			: true
+	}
+	return false
 }
-const TRANSIENT_CAUSE =
-	/HttpClientError|RequestError|TransportError|Unavailable|RateLimit|Timeout|Overloaded|WorkerUnavailable/u
 
 const verify = Command.make("verify", {
 	service: Flag.String("service").pipe(
 		Flag.withAlias("s"),
 		Flag.withDescription("The service.name the app sends as"),
+	),
+	env: Flag.optional(
+		Flag.String("env").pipe(
+			Flag.withDescription(
+				"Only count traces from this deployment.environment.name (the one you just configured), so other deployments of the service never verify it",
+			),
+		),
 	),
 	timeout: Flag.Int("timeout").pipe(
 		Flag.withDescription("Seconds to wait for a trace (default: 120)"),
@@ -209,7 +253,7 @@ const verify = Command.make("verify", {
 			const target = yield* hostedTarget
 			yield* Console.error(`Waiting up to ${a.timeout}s for a trace from ${a.service}…`)
 			const found = yield* waitForTrace({
-				find: latestTrace(target, a.service),
+				find: latestTrace(target, a.service, a.env),
 				timeout: Duration.seconds(a.timeout),
 				interval: VERIFY_INTERVAL,
 			})

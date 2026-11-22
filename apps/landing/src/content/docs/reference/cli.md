@@ -454,7 +454,7 @@ echo "$MAPLE_TOKEN" | maple auth login --with-token
 MAPLE_HANDOFF=<code> maple auth login
 ```
 
-A handoff code works once and for 15 minutes. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding).
+A handoff code works once and for 15 minutes, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). It is meant for your coding agent to run; if you type it yourself, start the line with a space (shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip it) so the code stays out of your shell history.
 
 ### `maple auth status`
 
@@ -487,15 +487,15 @@ Commands a coding agent runs while it sets Maple up for you, so the connect step
 | `maple onboarding status`                  | Print your latest onboarding run and each stage's status                                                                                                                                                       |
 | `maple onboarding report <stage> <status>` | Report a stage. Stages: `connect_agent`, `analyze_project`, `instrument_app`, `send_verification`, `receive_verification`, `prepare_production`. Status: `active`, `waiting`, `completed`, `skipped`, `failed` |
 | `maple onboarding keys`                    | Print the ingest endpoint and your organization's public ingest key. Never the private key                                                                                                                     |
-| `maple onboarding verify --service <name>` | Poll for a trace from the service (last 15 minutes, every 5 seconds) and report `receive_verification`                                                                                                         |
+| `maple onboarding verify --service <name>` | Poll for a trace with a span from the service (last 15 minutes, every 5 seconds) and report `receive_verification`                                                                                             |
 
 `report` flags: `--note <text>` (short plain text, never file contents, paths, output or secrets), `--service <name>` (repeatable), `--trace-id <id>`, `--run-status completed|failed` to close the run. Reporting never fails the setup: a closed run prints `run is closed; stop reporting`, a missing run prints a note, and a network error prints a warning, all with exit code 0.
 
-`verify` takes `--timeout <seconds>` (default `120`). On success it prints the trace id and its dashboard link; on timeout it reports the stage as `waiting` and exits 1 with what to check (region, key, init order, exporter errors).
+`verify` takes `--env <name>` to count only traces from that `deployment.environment.name` (pass the one you just configured, so another deployment of the same service never verifies it) and `--timeout <seconds>` (default `120`). A refused key or a bad request fails at once; network and server errors are retried until the timeout. On success it prints the trace id and its dashboard link; on timeout it reports the stage as `waiting` and exits 1 with what to check (region, key, init order, exporter errors).
 
 ```bash
 maple onboarding report instrument_app active --note "Instrumenting 2 services"
-maple onboarding verify --service checkout-api
+maple onboarding verify --service checkout-api --env development
 maple onboarding report prepare_production completed --run-status completed
 ```
 

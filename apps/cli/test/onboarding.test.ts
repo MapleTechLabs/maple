@@ -6,8 +6,8 @@ import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { encodeJson } from "@maple/local-server/json"
 import { HANDOFF_SPENT_MESSAGE, handoffLogin } from "../src/commands/auth"
 import { describeReport, isTransientSearchFailure } from "../src/commands/onboarding"
-import { UnauthorizedError } from "@maple/domain/http"
-import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
+import { AuthorizationUnavailableError, publicHttpErrorBody, UnauthorizedError } from "@maple/domain/http"
+import { makeV2Client } from "../src/core/v2-client"
 import { MapleConfig, type MapleConfigValues } from "../src/core/config"
 import {
 	appUrlFor,
@@ -101,11 +101,11 @@ const fakeConfig = (saved: Array<{ token: string; managed: boolean }>): MapleCon
 const SESSION = { status: 200, body: { orgId: "org_1", userId: "user_1" } }
 
 // Plain promises: `it.effect` hangs under `bun test`.
-const runLogin = (routes: Readonly<Record<string, Route>>) => {
+const runLogin = (routes: Readonly<Record<string, Route>>, apiUrl: string = API) => {
 	const sent: Array<Sent> = []
 	const saved: Array<{ token: string; managed: boolean }> = []
 	const exit = Effect.runPromiseExit(
-		handoffLogin(API, HANDOFF).pipe(
+		handoffLogin(apiUrl, HANDOFF).pipe(
 			Effect.provideService(HttpClient.HttpClient, fakeApi(routes, sent)),
 			Effect.provideService(MapleConfig, fakeConfig(saved)),
 			Effect.provide(BunServices.layer),
@@ -137,6 +137,13 @@ describe("handoff login", () => {
 			status: "completed",
 			note: "maple CLI",
 		})
+	})
+
+	it("never sends the code over plain HTTP to a remote API", async () => {
+		const { exit, sent, saved } = await runLogin({}, "http://api.maple.test")
+		assert.ok(Exit.isFailure(exit))
+		assert.equal(sent.length, 0)
+		assert.deepEqual(saved, [])
 	})
 
 	it("refuses an expired or spent code without saving anything", async () => {
@@ -239,6 +246,7 @@ describe("onboarding keys", () => {
 	it("derives the ingest endpoint and dashboard from the API host", () => {
 		assert.equal(ingestEndpointFor("https://api.maple.dev"), "https://ingest.maple.dev")
 		assert.equal(ingestEndpointFor("https://api.eu.maple.dev"), "https://ingest.eu.maple.dev")
+		assert.equal(ingestEndpointFor("https://api-pr-12.maple.dev"), "https://ingest-pr-12.maple.dev")
 		assert.equal(appUrlFor("https://api.eu.maple.dev"), "https://app.eu.maple.dev")
 		assert.equal(appUrlFor("https://api-pr-12.maple.dev"), "https://app-pr-12.maple.dev")
 	})
@@ -278,15 +286,48 @@ describe("onboarding verify", () => {
 })
 
 describe("verify retries", () => {
-	const failure = (cause: unknown) =>
-		new WarehouseQueryError({ message: "search failed", pipeName: "list_traces", cause })
-
-	it("waits out a network or server failure, but fails at once on a refused key", () => {
-		assert.equal(isTransientSearchFailure(failure(new Error("socket hang up"))), true)
-		assert.equal(isTransientSearchFailure(failure(undefined)), true)
-		assert.equal(
-			isTransientSearchFailure(failure(new UnauthorizedError({ message: "Invalid API key" }))),
-			false,
+	/** What `verify`'s search fails with when the API answers `route`, through the real v2 client. */
+	const searchFailure = (route: Route) =>
+		Effect.gen(function* () {
+			const client = yield* makeV2Client(API, "maple_ak_test")
+			return yield* client.traces
+				.search({
+					payload: {
+						start_time: "2026-11-22T10:00:00.000Z",
+						end_time: "2026-11-22T10:15:00.000Z",
+						limit: 1,
+						filters: {},
+					},
+				})
+				.pipe(Effect.flip)
+		}).pipe(
+			Effect.provideService(HttpClient.HttpClient, fakeApi({ "POST /v2/traces/search": route }, [])),
 		)
+
+	const envelope = (error: Parameters<typeof publicHttpErrorBody>[0]) => ({
+		error: publicHttpErrorBody(error),
+	})
+
+	// Plain promises: `it.effect` hangs under `bun test`.
+	it("fails at once on a refused key, but waits out an outage or a dropped connection", async () => {
+		const failures = await Effect.runPromise(
+			Effect.gen(function* () {
+				const refused = yield* searchFailure({
+					status: 401,
+					body: envelope(new UnauthorizedError({ message: "Invalid API key" })),
+				})
+
+				const outage = yield* searchFailure({
+					status: 503,
+					body: envelope(new AuthorizationUnavailableError({ message: "down" })),
+				})
+
+				const dropped = yield* searchFailure("refuse")
+				return { refused, outage, dropped }
+			}),
+		)
+		assert.equal(isTransientSearchFailure(failures.refused), false)
+		assert.equal(isTransientSearchFailure(failures.outage), true)
+		assert.equal(isTransientSearchFailure(failures.dropped), true)
 	})
 })

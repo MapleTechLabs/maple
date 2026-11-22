@@ -30,7 +30,7 @@ Skip this section when the prompt has no handoff code (`maple_ho_...`). With one
    - `analyze_project`: Step 1, mapping services.
    - `instrument_app`: Steps 2 and 3; add `--service <name>` per configured `service.name`.
    - `send_verification`: Step 4, driving a real request.
-   - `receive_verification`: Step 4, `maple onboarding verify --service <name>` waits for the trace and reports this stage.
+   - `receive_verification`: Step 4, `maple onboarding verify --service <name> --env <deployment.environment.name you set>` waits for a trace from that environment and reports this stage. Always pass `--env`: another deployment of the same service must never count as yours.
    - `prepare_production`: Step 5; add `--run-status completed` when setup is done (`failed` only if it cannot continue).
 3. When the prompt has no key, `maple onboarding keys` prints the ingest endpoint and public key.
 

@@ -68,6 +68,14 @@ const normalizeApiUrl = (value: string) =>
 		catch: () => new CliAuthError({ message: `Invalid Maple API URL: ${value}` }),
 	})
 
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+const isHttpsOrLoopback = (apiUrl: string): boolean =>
+	Option.exists(
+		Option.liftThrowable(() => new URL(apiUrl))(),
+		(url) => url.protocol === "https:" || LOOPBACK_HOSTS.has(url.hostname),
+	)
+
 interface JsonRequestInit {
 	readonly method?: "GET" | "POST" | "DELETE"
 	readonly headers?: Readonly<Record<string, string>>
@@ -190,6 +198,12 @@ export const ONBOARDING_NEXT_STEP =
  * token request completes the login. The code is never printed.
  */
 export const handoffLogin = Effect.fnUntraced(function* (apiUrl: string, code: string) {
+	// The code is a credential: it never crosses the network in clear, only to a local API.
+	if (!isHttpsOrLoopback(apiUrl)) {
+		return yield* new CliAuthError({
+			message: `Refusing to send a handoff code over plain HTTP to ${apiUrl}; use the https:// API URL`,
+		})
+	}
 	const body = yield* encodeJsonEffect({ deviceCode: code }).pipe(Effect.orDie)
 	const answer = yield* requestJson<unknown>(`${apiUrl}/api/auth/cli/device/token`, {
 		method: "POST",

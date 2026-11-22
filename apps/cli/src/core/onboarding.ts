@@ -23,14 +23,24 @@ export interface HostedTarget {
 
 const hostOf = (apiUrl: string): Option.Option<URL> => Option.liftThrowable(() => new URL(apiUrl))()
 
+/** A PR preview's API (`api-pr-12.maple.dev`) has its own ingest gateway beside it. */
+const PREVIEW_API_HOST = /^api-(pr-\d+)\.maple\.dev$/u
+
 /**
- * The API does not expose the ingest endpoint, so it follows the API's region:
- * `api.eu.maple.dev` sends to the EU ingest, anything else to the US one.
+ * The API does not expose the ingest endpoint, so it follows the API's deploy: a PR preview's own
+ * gateway, `api.eu.maple.dev` the EU ingest, anything else the US one.
  */
 export const ingestEndpointFor = (apiUrl: string): string =>
-	Option.exists(hostOf(apiUrl), (url) => Str.endsWith(".eu.maple.dev")(url.hostname))
-		? "https://ingest.eu.maple.dev"
-		: "https://ingest.maple.dev"
+	Option.match(hostOf(apiUrl), {
+		onNone: () => "https://ingest.maple.dev",
+		onSome: (url) => {
+			const preview = PREVIEW_API_HOST.exec(url.hostname)
+			if (preview !== null) return `https://ingest-${preview[1] ?? ""}.maple.dev`
+			return Str.endsWith(".eu.maple.dev")(url.hostname)
+				? "https://ingest.eu.maple.dev"
+				: "https://ingest.maple.dev"
+		},
+	})
 
 /** The dashboard beside an API host: `api.` / `api-pr-1.` becomes `app.` / `app-pr-1.`. */
 export const appUrlFor = (apiUrl: string): string =>
