@@ -95,6 +95,23 @@ pub fn apply(obj: &mut serde_json::Map<String, serde_json::Value>, visitor: Opti
     }
 }
 
+/// Mark an identified cookieless metadata row with `maple.visitor.mode`, so readers can tell
+/// its unknown history from a stored `visitor_is_new` of 0 without trusting the client.
+pub fn mark_metadata_row(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    let attributes = obj
+        .entry("resource_attributes")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if !attributes.is_object() {
+        *attributes = serde_json::Value::Object(serde_json::Map::new());
+    }
+    if let Some(map) = attributes.as_object_mut() {
+        map.insert(
+            "maple.visitor.mode".to_owned(),
+            serde_json::Value::String("cookieless".to_owned()),
+        );
+    }
+}
+
 /// Visit claims kept in process, for a gateway without a shared store
 /// (self-hosted, one task). Visitor ids change daily, so the map is cleared
 /// when the day does.
@@ -267,5 +284,19 @@ mod tests {
         assert!(!throttle.due("org", "v", NOON + 60_000));
         assert!(throttle.due("org", "w", NOON + 60_000));
         assert!(throttle.due("org", "v", NOON + VISIT_TOUCH_INTERVAL_MS));
+    }
+
+    #[test]
+    fn a_metadata_row_is_marked_cookieless_beside_its_other_attributes() {
+        let mut row = serde_json::json!({ "resource_attributes": { "service.name": "web" } });
+        mark_metadata_row(row.as_object_mut().unwrap());
+        assert_eq!(
+            row["resource_attributes"],
+            serde_json::json!({ "service.name": "web", "maple.visitor.mode": "cookieless" })
+        );
+
+        let mut bare = serde_json::json!({ "resource_attributes": "not a map" });
+        mark_metadata_row(bare.as_object_mut().unwrap());
+        assert_eq!(bare["resource_attributes"]["maple.visitor.mode"], "cookieless");
     }
 }

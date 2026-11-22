@@ -5339,6 +5339,9 @@ async fn handle_replay_meta_inner(
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
         let visitor = cookieless.apply(obj).await;
+        if matches!(visitor, CookielessRow::Visitor(_)) {
+            cookieless::mark_metadata_row(obj);
+        }
         // Cookieless starts bill through one visit claim after the loop: every
         // row here shares the visitor, and the browser keeps no visit marker.
         let is_start = session_starts.note(obj);

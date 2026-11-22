@@ -115,7 +115,10 @@ export type V2SessionReplayListItem = Schema.Schema.Type<typeof V2SessionReplayL
 
 export const V2SessionReplay = Schema.Struct({
 	...sessionReplayBaseFields,
-	visitor_is_new: Schema.Boolean,
+	visitor_is_new: Schema.Boolean.annotate({
+		description:
+			"Whether this was the visitor's first session. Always false for a cookieless visitor, whose history is unknown: those sessions carry `maple.visitor.mode: cookieless` in `resource_attributes`.",
+	}),
 	user_traits: Schema.String.annotate({ description: "Identify traits as a JSON-encoded string map." }),
 	referrer: Schema.String,
 	referrer_host: Schema.String,
