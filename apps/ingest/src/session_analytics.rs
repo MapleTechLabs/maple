@@ -191,9 +191,11 @@ impl BillableSessionStarts {
         self.sessions.insert(row_session_id(obj).to_owned())
     }
 
-    /// Whether one more session can still be billed for this request.
-    pub fn has_room(&self) -> bool {
+    /// Whether `session_id` could still add a billed session to this request: a slot is
+    /// free and the id is not already counted.
+    pub fn can_add(&self, session_id: &str) -> bool {
         self.sessions.len() < MAX_BILLABLE_SESSIONS_PER_REQUEST
+            && !self.sessions.contains(session_id)
     }
 
     /// Count a session start the gateway decided to bill on its own (a cookieless visit).

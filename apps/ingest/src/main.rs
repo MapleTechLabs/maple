@@ -5372,10 +5372,12 @@ async fn handle_replay_meta_inner(
     }
     // Claimed once the whole body parsed. A later enqueue failure leaves the visit
     // claimed and unbilled: the gateway errs toward under-billing.
-    // No claim when the request's billing slots are full: a claimed visit it could not
-    // bill would also go unbilled on the visitor's next request.
+    // No claim when this request could not bill it (slots full, or the session id already
+    // counted): a claimed visit it did not bill would go unbilled on the next request too.
     if let Some((visitor_id, session_id)) = cookieless_start {
-        if session_starts.has_room() && state.cookieless.claim_visit(&org_id, &visitor_id).await {
+        if session_starts.can_add(&session_id)
+            && state.cookieless.claim_visit(&org_id, &visitor_id).await
+        {
             session_starts.note_session(session_id);
         }
     } else if let Some(visitor_id) = cookieless_active {
@@ -16861,6 +16863,19 @@ mod tests {
         handle_replay_meta_inner(&state, &frank, start("sess_f2"))
             .await
             .expect("session metadata should be accepted");
+        // A cookieless start reusing a counted session id claims nothing, so Gina's next start bills.
+        let gina = cookieless_headers("maple_sk_test_cl_bill", "192.0.2.77", "Vivaldi");
+        let shared = concat!(
+            r#"{"session_id":"sess_g1","version":1,"billable_start":1,"visitor_id":"00000000-0000-4000-8000-0000000000aa"}"#,
+            "\n",
+            r#"{"session_id":"sess_g1","version":1,"billable_start":1,"visitor_id":"cookieless"}"#,
+        );
+        handle_replay_meta_inner(&state, &gina, Bytes::from_static(shared.as_bytes()))
+            .await
+            .expect("session metadata should be accepted");
+        handle_replay_meta_inner(&state, &gina, start("sess_g2"))
+            .await
+            .expect("session metadata should be accepted");
         // No trusted client IP: no visitor to claim a visit for, so not billed.
         handle_replay_meta_inner(&state, &bearer_headers("maple_sk_test_cl_bill"), start("sess_c1"))
             .await
@@ -16872,8 +16887,9 @@ mod tests {
             .filter(|(feature, _)| *feature == "browser_sessions")
             .map(|(_, count)| count)
             .sum();
-        // Alice, Bob and Dave once each, the four persistent starts, Frank's later start.
-        assert!((billed - 8.0).abs() < f64::EPSILON, "{calls:?}");
+        // Alice, Bob and Dave once each, the four persistent starts, Frank's later start,
+        // Gina's shared-id request once and her later start.
+        assert!((billed - 10.0).abs() < f64::EPSILON, "{calls:?}");
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
