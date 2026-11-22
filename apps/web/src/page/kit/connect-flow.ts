@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { crossfade } from "@maple/views/ui/crossfade"
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { spinner } from "@maple/views/ui/spinner"
@@ -114,33 +115,16 @@ const STATUS_ICON = {
 	error: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<StatusTone, "working">, { name: IconName; className: string }>
 
-// Both layers stay mounted in one grid cell, so "waiting" turning into "found" cross-fades the
-// spinner into the result glyph instead of swapping it (the copy button's recipe).
-const GLYPH_LAYER =
-	"col-start-1 row-start-1 flex transition-[opacity,scale] duration-240 ease-out motion-reduce:transition-[opacity]"
-const GLYPH_HIDDEN = "scale-[0.92] opacity-0"
-
+// "Waiting" turning into "found" cross-fades the spinner into the result glyph instead of swapping it.
 const statusGlyph = <M>(h: HtmlBuilder<M>, tone: StatusTone): Html => {
 	const result = tone === "working" ? STATUS_ICON.ok : STATUS_ICON[tone]
-	return h.span(
-		[h.Class("grid size-3.5 place-items-center")],
-		[
-			h.span(
-				[
-					h.Class(cn(GLYPH_LAYER, tone !== "working" && GLYPH_HIDDEN)),
-					h.AriaHidden(tone !== "working"),
-				],
-				[spinner(h, "text-primary", 14)],
-			),
-			h.span(
-				[
-					h.Class(cn(GLYPH_LAYER, tone === "working" && GLYPH_HIDDEN)),
-					h.AriaHidden(tone === "working"),
-				],
-				[icon(h, result.name, { size: 14, className: result.className })],
-			),
-		],
-	)
+	return crossfade(h, { variant: "glyph", className: "size-3.5" }, [
+		{ isShown: tone === "working", children: [spinner(h, "text-primary", 14)] },
+		{
+			isShown: tone !== "working",
+			children: [icon(h, result.name, { size: 14, className: result.className })],
+		},
+	])
 }
 
 export type StatusRowOptions = Readonly<{

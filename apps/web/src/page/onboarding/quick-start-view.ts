@@ -39,6 +39,7 @@ import { type QuickStartState, resolveQuickStartStep, type StepId } from "./quic
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { crossfade } from "@maple/views/ui/crossfade"
 import { dividedList } from "@maple/views/ui/rule"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
@@ -900,9 +901,6 @@ const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => 
 // The live step's one celebration. When the first data lands the headline cross-fades, the chip
 // row folds open while its chips rise in, and "Still waiting on" folds shut: nothing on the page
 // jumps. Transitions, not keyframes, so none of it plays when the step first opens.
-const SWAP_LAYER =
-	"col-start-1 row-start-1 transition-[opacity,translate,filter] duration-300 ease-out motion-reduce:transition-opacity"
-const SWAP_HIDDEN = "pointer-events-none opacity-0 blur-xs"
 /** A block whose height folds open and shut; its one child clips while it moves. */
 const FOLD =
 	"grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-opacity"
@@ -924,33 +922,28 @@ const chip = (h: H, key: string, index: number, children: ReadonlyArray<Html | s
 		children,
 	)
 
-/** One of the headline's two states, stacked in the same cell so they cross-fade. */
-const headlineLayer = (h: H, isShown: boolean, hiddenOffset: string, children: ReadonlyArray<Html>): Html =>
-	vstack(
-		h,
-		{
-			gap: "3",
-			align: "center",
-			className: cn(SWAP_LAYER, !isShown && SWAP_HIDDEN, !isShown && hiddenOffset),
-			attributes: [h.AriaHidden(!isShown)],
-		},
-		children,
-	)
-
+/** The two headlines share one cell and cross-fade: the waiting one leaves upward, the live one rises in. */
 const headline = (h: H, isLive: boolean, orgName: string): Html =>
-	h.div(
-		[h.Class("grid place-items-center")],
-		[
-			headlineLayer(h, !isLive, "-translate-y-1.5", [
+	crossfade(h, { variant: "text", as: "div" }, [
+		{
+			isShown: !isLive,
+			hiddenClassName: "-translate-y-1.5",
+			className: "flex flex-col items-center gap-3",
+			children: [
 				typography(h, { size: "sm", tone: "muted", as: "p" }, ["All set up"]),
 				heading(h, { level: 1, variant: "display" }, [`${orgName} is ready for its first data`]),
-			]),
-			headlineLayer(h, isLive, "translate-y-1.5", [
+			],
+		},
+		{
+			isShown: isLive,
+			hiddenClassName: "translate-y-1.5",
+			className: "flex flex-col items-center gap-3",
+			children: [
 				h.p([h.Class("text-sm text-severity-info")], ["Data is flowing"]),
 				heading(h, { level: 1, variant: "display" }, [`${orgName} is live`]),
-			]),
-		],
-	)
+			],
+		},
+	])
 
 /** A section that folds away when it has nothing left to say, taking the gap above it along. */
 const foldSection = (h: H, isOpen: boolean, child: Html): Html =>
