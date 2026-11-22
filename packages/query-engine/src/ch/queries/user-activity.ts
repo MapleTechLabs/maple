@@ -601,3 +601,49 @@ export function issueAffectedUserCountQuery(opts: Pick<IssueAffectedUsersOpts, "
 		])
 		.format("JSON")
 }
+
+/** A time param floored to its UTC day, the grain of `user_activity_daily`. */
+const utcDayFloor = <N extends string>(name: N) =>
+	CH.compileTypedFnCall("toStartOfDay", T.dateTime.schema, CH.toDateTime(utcSecondsParam(name)))
+
+export interface UserActivityDayOutput {
+	/** The UTC day, `YYYY-MM-DD`. */
+	readonly day: string
+	readonly requestCount: number
+	readonly failedRequestCount: number
+	readonly errorLogCount: number
+	readonly sessionCount: number
+}
+
+export const userActivityDayRowSchema = Schema.Struct({
+	day: Schema.String,
+	requestCount: CHNumber,
+	failedRequestCount: CHNumber,
+	errorLogCount: CHNumber,
+	sessionCount: CHNumber,
+})
+
+/**
+ * One row per UTC day the user was active in the window, for the activity calendar. Reads the
+ * daily rollup (migration 0070), which keeps a year; the window's ends snap to whole days.
+ */
+export function userActivityDaysQuery(opts: UserScopeOpts) {
+	return from(Datasources.userActivityDaily)
+		.select(($) => ({
+			day: CH.rawExpr<string>("toString(toDate(Day))", T.string),
+			requestCount: CH.sum($.RequestCount),
+			failedRequestCount: CH.sum($.FailedRequestCount),
+			errorLogCount: CH.sum($.ErrorLogCount),
+			sessionCount: CH.rawExpr("uniqIfMerge(SessionIds)", T.uint64),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			namespaceCondition($.ServiceNamespace, opts),
+			$.UserId.eq(opts.userId),
+			$.Day.gte(utcDayFloor("startTime")),
+			$.Day.lte(utcDayFloor("endTime")),
+		])
+		.groupBy("day")
+		.orderBy(["day", "asc"])
+		.format("JSON")
+}

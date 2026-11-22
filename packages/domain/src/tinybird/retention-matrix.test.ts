@@ -78,6 +78,9 @@ const RETENTION_DAYS = {
 	traces_aggregates_hourly: 365,
 	// Users' PII: last seen up to a quarter back, not a year; raw drill-down needs only 30.
 	user_activity_hourly: 90,
+	// Counts per user.id and day only (no name, email or route), as long as product_events keeps
+	// the same user.id: the activity calendar's year.
+	user_activity_daily: 365,
 	// Browser rows past 30 days can never be rebuilt from `session_events`, but
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
@@ -133,6 +136,7 @@ describe("Tinybird retention matrix", () => {
 			"service_endpoint_details_hourly_mv",
 			"user_activity_hourly_traces_mv",
 			"user_activity_hourly_logs_mv",
+			"user_activity_daily_mv",
 		]) {
 			const pipe = Option.getOrUndefined(
 				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),

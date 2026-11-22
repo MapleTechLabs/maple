@@ -8,6 +8,7 @@ import {
 	userIssuesQuery,
 	userActivitySlicesQuery,
 	userActivitySummaryQuery,
+	userActivityDaysQuery,
 	userActivityTotalsQuery,
 	userLogsQuery,
 	userTracesQuery,
@@ -162,5 +163,20 @@ describe("user issues", () => {
 		expect(some.sql).not.toContain("alert:")
 		const none = compileUnsafe(issueAffectedUserCountQuery({ fingerprintHashes: ["alert:r:g"] }), params)
 		expect(none.sql).toContain("1 = 0")
+	})
+})
+
+describe("user activity days", () => {
+	it("reads only the daily rollup for one user, day by day, with the window snapped to whole UTC days", () => {
+		const { sql } = compileUnsafe(userActivityDaysQuery(scope), params)
+		expect(sql).toContain("FROM user_activity_daily")
+		expect(sql).not.toContain("user_activity_hourly")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("UserId = 'u_42'")
+		expect(sql).toMatch(/ServiceNamespace IN \('storefront', 'billing'\)/)
+		expect(sql).toContain("Day >= toStartOfDay(toDateTime('2024-01-01 00:10:00'))")
+		expect(sql).toContain("Day <= toStartOfDay(toDateTime('2024-01-02 00:20:00'))")
+		expect(sql).toContain("uniqIfMerge(SessionIds)")
+		expect(sql).toContain("GROUP BY day")
 	})
 })

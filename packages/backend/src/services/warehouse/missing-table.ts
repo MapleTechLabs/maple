@@ -75,6 +75,9 @@ export const isMissingServiceEndpointDetails = isMissingWarehouseTable(
 /** `user_activity_hourly` (migration 0056) is missing; the users pages degrade. */
 export const isMissingUserActivityHourly = isMissingWarehouseTable(Datasources.userActivityHourly)
 
+/** `user_activity_daily` (migration 0070) is missing; the activity calendar has no days to show. */
+export const isMissingUserActivityDaily = isMissingWarehouseTable(Datasources.userActivityDaily)
+
 /** `profiles` ships in migration 0067; a cluster without it has no profiles to show. */
 export const isMissingProfiles = isMissingWarehouseTable(Datasources.profiles)
 

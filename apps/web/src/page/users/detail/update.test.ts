@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import { ErrorIssueId, OrgId, type UserProfileItem } from "@maple/domain/http"
 import { AppRoute, urlToAppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
-import { activeNamespace, detailInputs } from "./command"
+import { activeNamespace, calendarWindow, detailInputs } from "./command"
 import { activityHref } from "./data-map"
 import { Message } from "./message"
 import { init, routeChanged, tabOf, update, userDetailHref } from "./update"
@@ -129,13 +129,52 @@ describe("tabs and namespaces", () => {
 		expect(errors.commands ?? []).toEqual([])
 	})
 
-	it("loads the profile, the activity and the issues in one request", () => {
+	it("loads the profile, the activity and the issues in one request, the calendar beside it", () => {
 		const loaded = update(
 			page({}),
 			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
 			context,
 		)
-		expect(Arr.map(loaded.commands ?? [], (command) => command.name)).toEqual(["FetchUserOverview"])
+		const names = Arr.map(loaded.commands ?? [], (command) => command.name)
+		expect(names).toContain("FetchUserOverview")
+		expect(names).toContain("FetchUserCalendar")
+	})
+
+	it("reads the calendar only on the Activity tab", () => {
+		const loaded = update(
+			page({ tab: "traces" }),
+			Message.CompletedResolveWindow({ window, nowMs: 0, mode: "Load" }),
+			context,
+		)
+		expect(Arr.map(loaded.commands ?? [], (command) => command.name)).not.toContain("FetchUserCalendar")
+	})
+
+	it("keeps the calendar's year when the page's range changes", () => {
+		const nowMs = Date.UTC(2026, 10, 22, 13, 30)
+		const loaded = update(
+			page({}),
+			Message.CompletedResolveWindow({ window, nowMs, mode: "Load" }),
+			context,
+		).model
+		const ranged = update(
+			loaded,
+			Message.CompletedResolveWindow({
+				window: { startTime: "2026-11-20 00:00:00", endTime: "2026-11-22 00:00:00" },
+				nowMs,
+				mode: "Load",
+			}),
+			context,
+		)
+		const names = Arr.map(ranged.commands ?? [], (command) => command.name)
+		expect(names).toContain("FetchUserOverview")
+		expect(names).not.toContain("FetchUserCalendar")
+	})
+
+	it("asks for the last 365 UTC days up to the current hour", () => {
+		expect(calendarWindow(Date.UTC(2026, 10, 22, 13, 30))).toEqual({
+			startTime: "2025-11-23 00:00:00",
+			endTime: "2026-11-22 13:00:00",
+		})
 	})
 
 	it("settles the issues with the overview, so the Errors tab never stays loading", () => {
@@ -168,7 +207,8 @@ describe("tabs and namespaces", () => {
 			context,
 		)
 		const names = Arr.map(step.commands ?? [], (command) => command.name)
-		expect(names).toEqual(["FetchUserOverview"])
+		expect(names).toContain("FetchUserOverview")
+		expect(names).toContain("FetchUserCalendar")
 	})
 })
 

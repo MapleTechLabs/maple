@@ -60,6 +60,7 @@ import {
 	scannerRequests,
 	serviceRuntimesHourly,
 	userActivityHourly,
+	userActivityDaily,
 	CI_SERVICE_NAME,
 	ciJobs,
 	ciRuns,
@@ -1648,6 +1649,37 @@ export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_ho
         FROM logs
         WHERE ${LOG_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
+      `,
+		}),
+	],
+})
+
+// Cascades from `user_activity_hourly`, so spans and logs are rolled up once and the daily table
+// adds nothing to their ingest. Read by `userActivityDaysQuery` (the user page's calendar).
+export const userActivityDailyMv = defineMaterializedView("user_activity_daily_mv", {
+	description:
+		"Rolls user_activity_hourly up to UTC days per user, service and service.namespace: request, failed request, error span and log counts and distinct sessions.",
+	datasource: userActivityDaily,
+	// A 365-day rollup over the 90-day hourly table: a rebuild would drop days 91-365.
+	deploymentMethod: "alter",
+	nodes: [
+		node({
+			name: "user_activity_daily_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          ServiceNamespace,
+          UserId,
+          toStartOfDay(Hour) AS Day,
+          ServiceName,
+          sum(RequestCount) AS RequestCount,
+          sum(FailedRequestCount) AS FailedRequestCount,
+          sum(ErrorSpanCount) AS ErrorSpanCount,
+          sum(LogCount) AS LogCount,
+          sum(ErrorLogCount) AS ErrorLogCount,
+          uniqIfMergeState(SessionIds) AS SessionIds
+        FROM user_activity_hourly
+        GROUP BY OrgId, ServiceNamespace, UserId, Day, ServiceName
       `,
 		}),
 	],
