@@ -16,7 +16,7 @@ import {
 	String as Str,
 } from "effect"
 import { ONBOARDING_AGENT_STAGES } from "@maple/domain/onboarding-agent-run"
-import type { V2OnboardingAgentReport } from "@maple/domain/http/v2"
+import type { V2OnboardingAgentReport, V2OnboardingAgentRun } from "@maple/domain/http/v2"
 import { MapleConfig } from "../core/config"
 import {
 	fetchRun,
@@ -175,7 +175,12 @@ export const verifyHints = (apiUrl: string): string =>
  * The newest trace with a span from `service` (anywhere in the trace, not only its root: a service
  * downstream of a browser never owns the root) in the window, from `environment` when given.
  */
-const latestTrace = (target: HostedTarget, service: string, environment: Option.Option<string>) =>
+const latestTrace = (
+	target: HostedTarget,
+	service: string,
+	environment: Option.Option<string>,
+	notBefore: Option.Option<string>,
+) =>
 	Effect.gen(function* () {
 		const client = yield* makeV2Client(target.apiUrl, target.token)
 		const range = yield* resolveRangeChecked({
@@ -186,9 +191,13 @@ const latestTrace = (target: HostedTarget, service: string, environment: Option.
 		const serviceName = yield* Schema.decodeEffect(ServiceName)(service).pipe(
 			Effect.mapError(() => new CliUsageError({ message: `Not a service name: ${service}` })),
 		)
+		const window = toV2Window(range)
+		// Only traces sent since the run started count: older traffic proves nothing about this setup.
+		const startTime = verificationStart(window.start_time, notBefore)
 		const list = yield* client.traces.search({
 			payload: {
-				...toV2Window(range),
+				start_time: startTime,
+				end_time: window.end_time,
 				limit: 1,
 				filters: {
 					service_name: serviceName,
@@ -204,6 +213,16 @@ const latestTrace = (target: HostedTarget, service: string, environment: Option.
 		// Only a transient failure waits for the next tick; a refused key or a bad request never heals.
 		Effect.catchIf(isTransientSearchFailure, () => Effect.succeed(Option.none<string>())),
 	)
+
+/** The later of the window's start and the run's: both ISO-8601 UTC, so they order as strings. */
+export const verificationStart = (windowStart: string, runStart: Option.Option<string>): string =>
+	Option.match(runStart, {
+		onNone: () => windowStart,
+		onSome: (start) => (start > windowStart ? start : windowStart),
+	})
+
+export const isVerified = (run: V2OnboardingAgentRun): boolean =>
+	Arr.some(run.stages, (stage) => stage.id === "receive_verification" && stage.status === "completed")
 
 const RETRYABLE_STATUS = (status: number) => status === 429 || status >= 500
 
@@ -251,13 +270,31 @@ const verify = Command.make("verify", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const target = yield* hostedTarget
+			const run = yield* fetchRun(target).pipe(
+				Effect.orElseSucceed(() => Option.none<V2OnboardingAgentRun>()),
+			)
 			yield* Console.error(`Waiting up to ${a.timeout}s for a trace from ${a.service}…`)
 			const found = yield* waitForTrace({
-				find: latestTrace(target, a.service, a.env),
+				find: latestTrace(
+					target,
+					a.service,
+					a.env,
+					Option.map(run, (r) => r.created_at),
+				),
 				timeout: Duration.seconds(a.timeout),
 				interval: VERIFY_INTERVAL,
 			})
 			if (Option.isNone(found)) {
+				// A verification another call already completed is never downgraded by a later miss.
+				const now = yield* fetchRun(target).pipe(
+					Effect.orElseSucceed(() => Option.none<V2OnboardingAgentRun>()),
+				)
+				if (Option.exists(now, isVerified)) {
+					return yield* new CliNotFoundError({
+						message: `no trace from ${a.service} reached Maple in ${a.timeout}s (the run's verification stays completed)`,
+						hint: verifyHints(target.apiUrl),
+					})
+				}
 				const outcome = yield* reportProgress(target, {
 					stage: "receive_verification",
 					status: "waiting",

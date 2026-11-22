@@ -1,13 +1,19 @@
 import { describe, it } from "@effect/vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { strict as assert } from "node:assert"
-import { Array as Arr, Console, Duration, Effect, Exit, Option, Ref, String as Str } from "effect"
+import { Array as Arr, Console, Duration, Effect, Exit, Option, Ref, Schema, String as Str } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { encodeJson } from "@maple/local-server/json"
 import { HANDOFF_SPENT_MESSAGE, handoffLogin } from "../src/commands/auth"
-import { describeReport, isTransientSearchFailure } from "../src/commands/onboarding"
+import {
+	describeReport,
+	isTransientSearchFailure,
+	isVerified,
+	verificationStart,
+} from "../src/commands/onboarding"
 import { AuthorizationUnavailableError, publicHttpErrorBody, UnauthorizedError } from "@maple/domain/http"
 import { makeV2Client } from "../src/core/v2-client"
+import { V2OnboardingAgentRun } from "@maple/domain/http/v2"
 import { MapleConfig, type MapleConfigValues } from "../src/core/config"
 import {
 	appUrlFor,
@@ -344,5 +350,35 @@ describe("verify retries", () => {
 		assert.equal(isTransientSearchFailure(failures.refused), false)
 		assert.equal(isTransientSearchFailure(failures.outage), true)
 		assert.equal(isTransientSearchFailure(failures.dropped), true)
+	})
+})
+
+describe("verify windows and outcomes", () => {
+	it("never counts a trace sent before the run started", () => {
+		const windowStart = "2026-11-22T16:00:00.000Z"
+		assert.equal(
+			verificationStart(windowStart, Option.some("2026-11-22T16:12:50.000Z")),
+			"2026-11-22T16:12:50.000Z",
+		)
+		assert.equal(verificationStart(windowStart, Option.some("2026-11-22T15:00:00.000Z")), windowStart)
+		assert.equal(verificationStart(windowStart, Option.none()), windowStart)
+	})
+
+	it("knows a verified run, so a later miss leaves it verified", () => {
+		const withVerification = (status: string) =>
+			Schema.decodeUnknownSync(V2OnboardingAgentRun)({
+				...RUN,
+				stages: [
+					{
+						object: "onboarding_agent_stage",
+						id: "receive_verification",
+						status,
+						note: null,
+						updated_at: null,
+					},
+				],
+			})
+		assert.equal(isVerified(withVerification("completed")), true)
+		assert.equal(isVerified(withVerification("waiting")), false)
 	})
 })
