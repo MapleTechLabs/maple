@@ -64,6 +64,7 @@ const emitted: Array<ProductEventInput> = []
 const recordingProductEvents = Layer.succeed(ProductEventsService, {
 	enabled: true,
 	track: (productEvent) => Effect.sync(() => void emitted.push(productEvent)),
+	trackAll: (events) => Effect.sync(() => void emitted.push(...events)),
 })
 
 /** The consumer's services over one warehouse stub: the trail writes through the same `ingest`. */

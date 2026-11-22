@@ -52,9 +52,6 @@ const auditEventField = (body: unknown, field: string): string => {
 const auditEventOrgId = (body: unknown) => auditEventField(body, "orgId")
 const auditEventAction = (body: unknown) => auditEventField(body, "action")
 
-/** Product event POSTs in flight per org batch. */
-const PRODUCT_EVENT_CONCURRENCY = 4
-
 interface DecodedMessage {
 	readonly message: Message
 	readonly event: AuditLogEvent
@@ -104,13 +101,10 @@ const copyToTrail = (trail: AuditTrailServiceApi, orgId: OrgId, events: Readonly
 
 /**
  * Feature actions also go out as `feature_used` product events, so adoption is counted from every
- * client (dashboard, API, MCP, CLI) in one place. `track` never fails and is bounded per event.
+ * client (dashboard, API, MCP, CLI) in one place: one request per org batch. Never fails.
  */
 const emitFeatureEvents = (productEvents: ProductEventsApi, events: ReadonlyArray<AuditLogEvent>) =>
-	Effect.forEach(featureUsedEvents(events), productEvents.track, {
-		concurrency: PRODUCT_EVENT_CONCURRENCY,
-		discard: true,
-	})
+	productEvents.trackAll(featureUsedEvents(events))
 
 /**
  * Audit events queue consumer: lowers each event to its `audit_log` row (and, for a change or

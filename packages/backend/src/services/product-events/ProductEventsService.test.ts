@@ -120,6 +120,28 @@ describe("ProductEventsService", () => {
 		}),
 	)
 
+	it.effect("sends a batch as one request, one line per event, and nothing for an empty batch", () =>
+		Effect.gen(function* () {
+			const { client, captured } = stubClient([200])
+			const events = makeProductEvents({
+				httpClient: client,
+				endpoint: "https://ingest.example.test",
+				ingestKey: "maple_sk_test",
+			})
+			yield* events.trackAll([])
+			yield* events.trackAll([
+				{ name: "feature_used", groupId: "org_1", attributes: { feature: "slo" } },
+				{ name: "feature_used", groupId: "org_1", attributes: { feature: "dashboard" } },
+			])
+			assert.strictEqual(captured.length, 1)
+			const lines = Str.split("\n")(Str.trimEnd(captured[0]?.body ?? ""))
+			assert.deepStrictEqual(
+				Arr.map(lines, (line) => JSON.parse(line).attributes.feature),
+				["slo", "dashboard"],
+			)
+		}),
+	)
+
 	it.effect("does not mark its own span as a trace-derived product event", () =>
 		Effect.gen(function* () {
 			const spans: Array<Tracer.NativeSpan> = []

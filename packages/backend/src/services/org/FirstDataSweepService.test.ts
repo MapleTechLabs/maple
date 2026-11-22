@@ -82,6 +82,7 @@ const makeLayer = (testDb: TestDb) =>
 						Layer.succeed(ProductEventsService, {
 							enabled: true,
 							track: (event) => Effect.sync(() => void emitted.push(event)),
+							trackAll: (events) => Effect.sync(() => void emitted.push(...events)),
 						}),
 					),
 				),
@@ -96,7 +97,12 @@ const seed = (testDb: TestDb, orgId: OrgId, createdAt: number, firstDataAt: numb
 			testDb,
 			`INSERT INTO org_onboarding_state (org_id, user_id, demo_data_requested, first_data_received_at, created_at, updated_at)
 			 VALUES ($1, $2, false, $3, $4, $4)`,
-			[orgId, `user_of_${orgId}`, firstDataAt === null ? null : new Date(firstDataAt), new Date(createdAt)],
+			[
+				orgId,
+				`user_of_${orgId}`,
+				firstDataAt === null ? null : new Date(firstDataAt),
+				new Date(createdAt),
+			],
 		),
 	)
 
@@ -148,13 +154,16 @@ describe("FirstDataSweepService", () => {
 
 			assert.deepStrictEqual(
 				// Probes run concurrently, so compare in org order.
-				Arr.map(Arr.sortWith(emitted, (event) => event.groupId ?? "", Order.String), (event) => ({
-					name: event.name,
-					groupId: event.groupId,
-					userId: event.userId,
-					timestamp: event.timestamp,
-					attributes: event.attributes,
-				})),
+				Arr.map(
+					Arr.sortWith(emitted, (event) => event.groupId ?? "", Order.String),
+					(event) => ({
+						name: event.name,
+						groupId: event.groupId,
+						userId: event.userId,
+						timestamp: event.timestamp,
+						attributes: event.attributes,
+					}),
+				),
 				[
 					{
 						name: "first_data_received",

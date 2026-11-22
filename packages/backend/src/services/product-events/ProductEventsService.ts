@@ -1,4 +1,15 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema, Record as Rec, String as Str } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import { ProductEventsIngestKey } from "@maple/infra/secrets"
@@ -71,6 +82,8 @@ export interface ProductEventLine {
 export interface ProductEventsApi {
 	/** Emit an event. Never fails; a dropped event is logged at debug. */
 	readonly track: (event: ProductEventInput) => Effect.Effect<void>
+	/** Emit several events in one request. Never fails; a dropped batch is logged at debug. */
+	readonly trackAll: (events: ReadonlyArray<ProductEventInput>) => Effect.Effect<void>
 	/** Whether an ingest key is configured — `track` is a no-op otherwise. */
 	readonly enabled: boolean
 }
@@ -145,21 +158,25 @@ export const makeProductEvents = (options: {
 	const url = `${trimTrailingSlash(options.endpoint)}${PRODUCT_EVENTS_PATH}`
 	const ingestKey = options.ingestKey
 
-	const post = (line: ProductEventLine): Effect.Effect<void, ProductEventsError> =>
+	/** One request, one NDJSON line per event; `label` names them in errors. */
+	const post = (
+		lines: ReadonlyArray<ProductEventLine>,
+		label: string,
+	): Effect.Effect<void, ProductEventsError> =>
 		Effect.gen(function* () {
-			const body = yield* encodeJson(line).pipe(
-				Effect.mapError(toError("Product event could not be encoded")),
+			const encoded = yield* Effect.forEach(lines, (line) =>
+				encodeJson(line).pipe(Effect.mapError(toError("Product event could not be encoded"))),
 			)
 			const request = HttpClientRequest.post(url, {
 				headers: { Authorization: `Bearer ${ingestKey}` },
-			}).pipe(HttpClientRequest.bodyText(`${body}\n`, "application/x-ndjson"))
+			}).pipe(HttpClientRequest.bodyText(`${Arr.join(encoded, "\n")}\n`, "application/x-ndjson"))
 			const response = yield* options.httpClient
 				.execute(request)
 				.pipe(Effect.mapError(toError("Product event request failed")))
 			yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
 			if (response.status < 200 || response.status >= 300) {
 				return yield* new ProductEventsError({
-					message: `Ingest gateway answered ${response.status} for ${line.name}`,
+					message: `Ingest gateway answered ${response.status} for ${label}`,
 					status: response.status,
 				})
 			}
@@ -167,34 +184,39 @@ export const makeProductEvents = (options: {
 			Effect.timeoutOrElse({
 				duration: REQUEST_TIMEOUT,
 				orElse: () =>
-					new ProductEventsError({ message: `Product event request timed out (${line.name})` }),
+					new ProductEventsError({ message: `Product event request timed out (${label})` }),
 			}),
 		)
 
-	const track = Effect.fn("ProductEvents.track")(function* (event: ProductEventInput) {
+	const send = Effect.fnUntraced(function* (events: ReadonlyArray<ProductEventInput>) {
+		const label = Arr.join(Arr.dedupe(Arr.map(events, (event) => event.name)), ",")
 		// `maple.product_events.*`, not `maple.product_event.*`: a span carrying
 		// `maple.product_event.name` is itself projected into `product_events`
 		// (`Source='trace'`, see `product-event-attributes.ts`), which duplicated
 		// every server event as an unidentified trace row.
 		yield* Effect.annotateCurrentSpan({
-			"maple.product_events.event": event.name,
+			"maple.product_events.event": label,
+			"maple.product_events.count": events.length,
 			"maple.product_events.enabled": ingestKey !== undefined,
 		})
+		if (events.length === 0) return
 		if (ingestKey === undefined) {
 			yield* Effect.logDebug("Product event dropped: no ingest key configured").pipe(
-				Effect.annotateLogs({ event: event.name }),
+				Effect.annotateLogs({ event: label }),
 			)
 			return
 		}
 		const now = yield* Clock.currentTimeMillis
-		const line = toProductEventLine(
-			options.environment === undefined
-				? event
-				: { ...event, attributes: { ...event.attributes, environment: options.environment } },
-			now,
-			options.serviceName,
+		const lines = Arr.map(events, (event) =>
+			toProductEventLine(
+				options.environment === undefined
+					? event
+					: { ...event, attributes: { ...event.attributes, environment: options.environment } },
+				now,
+				options.serviceName,
+			),
 		)
-		yield* post(line).pipe(
+		yield* post(lines, label).pipe(
 			Effect.retry({ times: RETRIES, while: isRetryable }),
 			// TOTAL budget, on top of the per-attempt timeout inside `post`.
 			// A timeout carries no `status`, so `isRetryable` treats it as
@@ -204,18 +226,23 @@ export const makeProductEvents = (options: {
 			// actually afford, not twice it.
 			Effect.timeoutOrElse({
 				duration: REQUEST_TIMEOUT,
-				orElse: () => new ProductEventsError({ message: `Product event gave up (${event.name})` }),
+				orElse: () => new ProductEventsError({ message: `Product event gave up (${label})` }),
 			}),
 			Effect.catchCause((cause) =>
 				Effect.logDebug("Product event dropped").pipe(
-					Effect.annotateLogs({ event: event.name, cause: String(cause) }),
+					Effect.annotateLogs({ event: label, cause: String(cause) }),
 					Effect.tap(() => Effect.annotateCurrentSpan({ "maple.product_events.dropped": true })),
 				),
 			),
 		)
 	})
 
-	return { track, enabled: ingestKey !== undefined }
+	const track = Effect.fn("ProductEvents.track")((event: ProductEventInput) => send([event]))
+	const trackAll = Effect.fn("ProductEvents.trackAll")((events: ReadonlyArray<ProductEventInput>) =>
+		send(events),
+	)
+
+	return { track, trackAll, enabled: ingestKey !== undefined }
 }
 
 const makeService = (serviceName: ProductEventServiceName) =>
@@ -243,5 +270,9 @@ export class ProductEventsService extends Context.Service<ProductEventsService, 
 		Layer.effect(this, makeService(serviceName)).pipe(Layer.provide(FetchHttpClient.layer))
 	static readonly layer = this.layerFor("maple-api")
 	/** Drop everything — for tests and non-HTTP entrypoints that never emit. */
-	static readonly noop = Layer.succeed(this, { track: () => Effect.void, enabled: false })
+	static readonly noop = Layer.succeed(this, {
+		track: () => Effect.void,
+		trackAll: () => Effect.void,
+		enabled: false,
+	})
 }

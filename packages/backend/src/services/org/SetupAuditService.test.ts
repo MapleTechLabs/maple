@@ -105,6 +105,7 @@ const makeLayer = (testDb: TestDb, probe: Probe) =>
 						Layer.succeed(ProductEventsService, {
 							enabled: true,
 							track: (event) => Effect.sync(() => void emitted.push(event)),
+							trackAll: (events) => Effect.sync(() => void emitted.push(...events)),
 						}),
 					),
 				),
