@@ -47,6 +47,7 @@ const summaryRow = {
 	newSessions: 10,
 	bouncedSessions: 5,
 	identifiedSessions: 50,
+	unknownHistorySessions: 0,
 	avgDurationMs: 30_000,
 	botSessions: 0,
 }
