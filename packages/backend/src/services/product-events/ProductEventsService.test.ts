@@ -129,9 +129,12 @@ describe("ProductEventsService", () => {
 				ingestKey: "maple_sk_test",
 				environment: "production",
 			})
-			const attributes: Record<string, string> = { environment: "spoofed" }
-			for (let i = 0; i < 32; i++) attributes[`k${i}`] = "v"
-			yield* events.track({ name: "feature_used", groupId: "org_1", attributes })
+			const filler = Rec.fromEntries(Arr.makeBy(32, (i): [string, string] => [`k${i}`, "v"]))
+			yield* events.track({
+				name: "feature_used",
+				groupId: "org_1",
+				attributes: { environment: "spoofed", ...filler },
+			})
 			const sent = JSON.parse(captured[0]?.body ?? "{}").attributes
 			assert.strictEqual(sent.environment, "production")
 			assert.strictEqual(Rec.keys(sent).length, 32)
