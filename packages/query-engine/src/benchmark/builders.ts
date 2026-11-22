@@ -350,6 +350,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 		),
 		label: "notable",
 	},
+	userActivityFixture("userOperationsQuery", () =>
+		CH.compileUnsafe(CH.userOperationsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
+	),
 	userActivityFixture("userLogsQuery", () =>
 		CH.compileUnsafe(CH.userLogsQuery({ ...USER_SCOPE, serviceNames: ["api"] }), window),
 	),

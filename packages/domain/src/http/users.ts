@@ -330,9 +330,24 @@ export const UserTraceItem = Schema.Struct({
 })
 export type UserTraceItem = typeof UserTraceItem.Type
 
+/** One operation the user called: their entry spans of one service and span name, summed. */
+export const UserOperationItem = Schema.Struct({
+	service: Schema.String,
+	/** The display span name, e.g. `GET /checkout`. */
+	spanName: Schema.String,
+	requests: Schema.Number,
+	errors: Schema.Number,
+	p50Ms: Schema.Number,
+	p95Ms: Schema.Number,
+	lastSeenMs: Schema.Number,
+})
+export type UserOperationItem = typeof UserOperationItem.Type
+
 export class UserTracesResponse extends Schema.Class<UserTracesResponse>("UserTracesResponse")({
 	/** The latest first, capped. */
 	traces: Schema.Array(UserTraceItem),
+	/** The busiest operations first, capped. */
+	operations: Schema.Array(UserOperationItem),
 }) {}
 
 export const UserLogItem = Schema.Struct({

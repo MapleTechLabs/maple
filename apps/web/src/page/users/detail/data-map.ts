@@ -8,6 +8,7 @@ import type {
 	UserIssue,
 	UserLog,
 	UserMcpSession,
+	UserOperation,
 	UserProfile,
 	UserTrace,
 } from "../data"
@@ -31,6 +32,25 @@ export const issueHref = (issueId: string, search: Search): string =>
 	hrefOf(AppRoute.ErrorIssue({ issueId: decodeIssueId(issueId), search: windowSearch(search) }))
 
 export const traceHref = (traceId: string): string => hrefOf(AppRoute.Trace({ traceId, search: {} }))
+
+/** /traces narrowed to one operation's requests from this user (`user.id`, else `enduser.id`). */
+export const operationTracesHref = (
+	userId: string,
+	operation: Readonly<{ service: string; spanName: string }>,
+	search: Search,
+): string =>
+	hrefOf(
+		AppRoute.Traces({
+			search: {
+				...windowSearch(search),
+				services: [operation.service],
+				spanNames: [operation.spanName],
+				attributeFilters: [
+					{ key: "user.id", value: userId, or: [{ key: "enduser.id", value: userId }] },
+				],
+			},
+		}),
+	)
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 
@@ -147,6 +167,16 @@ export const toUserDetail = (
 			status: trace.status,
 			isError: trace.status === "Error",
 			href: traceHref(trace.traceId),
+		})),
+		operations: Arr.map(tabs.traces?.operations ?? [], (operation): UserOperation => ({
+			service: operation.service,
+			name: operation.spanName,
+			requests: operation.requests,
+			errors: operation.errors,
+			p50Ms: operation.p50Ms,
+			p95Ms: operation.p95Ms,
+			lastSeenMs: operation.lastSeenMs,
+			href: operationTracesHref(profile.userId, operation, search),
 		})),
 		logs: Arr.map(tabs.logs?.logs ?? [], (log): UserLog => ({
 			atMs: log.atMs,

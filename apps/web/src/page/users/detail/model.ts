@@ -5,6 +5,7 @@ import {
 	UserIssueItem,
 	UserLogItem,
 	UserMcpSessionItem,
+	UserOperationItem,
 	UserProfileItem,
 	UserSessionItem,
 	UserTraceItem,
@@ -32,7 +33,10 @@ export const ActivityData = Schema.Struct({
 export type ActivityData = typeof ActivityData.Type
 
 /** `getUserTraces`: the Traces tab's requests, read only while the tab is open. */
-export const TracesData = Schema.Struct({ traces: Schema.Array(UserTraceItem) })
+export const TracesData = Schema.Struct({
+	traces: Schema.Array(UserTraceItem),
+	operations: Schema.Array(UserOperationItem),
+})
 export type TracesData = typeof TracesData.Type
 
 /** The overview's issues: the Errors tab, and the timeline's error rows. */
