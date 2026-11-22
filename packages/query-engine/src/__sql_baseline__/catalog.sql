@@ -5989,7 +5989,7 @@ SELECT
         LIMIT 500
         FORMAT JSON
 
--- builder:search-console:searchConsoleLandingPagesQuery:default  [421df049]
+-- builder:search-console:searchConsoleLandingPagesQuery:default  [48bef313]
 SELECT
           latest.page AS page,
           ifNull(sum(latest.positionSum), 0) AS positionSum,
@@ -6003,34 +6003,35 @@ SELECT
           search_console_daily.Query AS query,
           search_console_daily.Country AS country,
           search_console_daily.Device AS device,
-          max(search_console_daily.Clicks) AS clicks,
-          max(search_console_daily.Impressions) AS impressions,
-          max(search_console_daily.PositionSum) AS positionSum
+          argMax(search_console_daily.Clicks, search_console_daily.IngestedAt) AS clicks,
+          argMax(search_console_daily.Impressions, search_console_daily.IngestedAt) AS impressions,
+          argMax(search_console_daily.PositionSum, search_console_daily.IngestedAt) AS positionSum
         FROM search_console_daily
         INNER JOIN (SELECT
           search_console_daily.Date AS date,
-          max(search_console_daily.IngestedAt) AS ingestedAt
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
         FROM search_console_daily
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'page'
-          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
-        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        GROUP BY date) AS newest ON search_console_daily.Date = newest.date
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'page'
           AND search_console_daily.SearchType = 'web'
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
+          AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY page
         ORDER BY clicks DESC, impressions DESC, page ASC
         LIMIT 100
         FORMAT JSON
 
--- builder:search-console:searchConsoleOverviewQuery:default  [01b62779]
+-- builder:search-console:searchConsoleOverviewQuery:default  [bdcd571d]
 SELECT
           ifNull(sumIf(latest.clicks, latest.date >= '2026-10-01 00:00:00'), 0) AS clicks,
           ifNull(sumIf(latest.impressions, latest.date >= '2026-10-01 00:00:00'), 0) AS impressions,
@@ -6046,31 +6047,32 @@ SELECT
           search_console_daily.Query AS query,
           search_console_daily.Country AS country,
           search_console_daily.Device AS device,
-          max(search_console_daily.Clicks) AS clicks,
-          max(search_console_daily.Impressions) AS impressions,
-          max(search_console_daily.PositionSum) AS positionSum
+          argMax(search_console_daily.Clicks, search_console_daily.IngestedAt) AS clicks,
+          argMax(search_console_daily.Impressions, search_console_daily.IngestedAt) AS impressions,
+          argMax(search_console_daily.PositionSum, search_console_daily.IngestedAt) AS positionSum
         FROM search_console_daily
         INNER JOIN (SELECT
           search_console_daily.Date AS date,
-          max(search_console_daily.IngestedAt) AS ingestedAt
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
         FROM search_console_daily
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'site'
-          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
           AND search_console_daily.Date >= '2026-09-03 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
-        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        GROUP BY date) AS newest ON search_console_daily.Date = newest.date
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'site'
           AND search_console_daily.SearchType = 'web'
           AND search_console_daily.Date >= '2026-09-03 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
+          AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
         FORMAT JSON
 
--- builder:search-console:searchConsoleTimeseriesQuery:default  [b00a58d9]
+-- builder:search-console:searchConsoleTimeseriesQuery:default  [917e6d9d]
 SELECT
           latest.date AS date,
           ifNull(sum(latest.clicks), 0) AS clicks,
@@ -6083,33 +6085,34 @@ SELECT
           search_console_daily.Query AS query,
           search_console_daily.Country AS country,
           search_console_daily.Device AS device,
-          max(search_console_daily.Clicks) AS clicks,
-          max(search_console_daily.Impressions) AS impressions,
-          max(search_console_daily.PositionSum) AS positionSum
+          argMax(search_console_daily.Clicks, search_console_daily.IngestedAt) AS clicks,
+          argMax(search_console_daily.Impressions, search_console_daily.IngestedAt) AS impressions,
+          argMax(search_console_daily.PositionSum, search_console_daily.IngestedAt) AS positionSum
         FROM search_console_daily
         INNER JOIN (SELECT
           search_console_daily.Date AS date,
-          max(search_console_daily.IngestedAt) AS ingestedAt
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
         FROM search_console_daily
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'site'
-          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
-        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        GROUP BY date) AS newest ON search_console_daily.Date = newest.date
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'site'
           AND search_console_daily.SearchType = 'web'
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
+          AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY date
         ORDER BY date ASC
         FORMAT JSON
 
--- builder:search-console:searchConsoleTopPagesQuery:default  [421df049]
+-- builder:search-console:searchConsoleTopPagesQuery:default  [48bef313]
 SELECT
           latest.page AS page,
           ifNull(sum(latest.positionSum), 0) AS positionSum,
@@ -6123,34 +6126,35 @@ SELECT
           search_console_daily.Query AS query,
           search_console_daily.Country AS country,
           search_console_daily.Device AS device,
-          max(search_console_daily.Clicks) AS clicks,
-          max(search_console_daily.Impressions) AS impressions,
-          max(search_console_daily.PositionSum) AS positionSum
+          argMax(search_console_daily.Clicks, search_console_daily.IngestedAt) AS clicks,
+          argMax(search_console_daily.Impressions, search_console_daily.IngestedAt) AS impressions,
+          argMax(search_console_daily.PositionSum, search_console_daily.IngestedAt) AS positionSum
         FROM search_console_daily
         INNER JOIN (SELECT
           search_console_daily.Date AS date,
-          max(search_console_daily.IngestedAt) AS ingestedAt
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
         FROM search_console_daily
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'page'
-          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
-        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        GROUP BY date) AS newest ON search_console_daily.Date = newest.date
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'page'
           AND search_console_daily.SearchType = 'web'
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
+          AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY page
         ORDER BY clicks DESC, impressions DESC, page ASC
         LIMIT 50
         FORMAT JSON
 
--- builder:search-console:searchConsoleTopQueriesQuery:filtered  [d31810a4]
+-- builder:search-console:searchConsoleTopQueriesQuery:filtered  [cf9a8b10]
 SELECT
           latest.query AS query,
           ifNull(sum(latest.clicks), 0) AS clicks,
@@ -6163,21 +6167,21 @@ SELECT
           search_console_daily.Query AS query,
           search_console_daily.Country AS country,
           search_console_daily.Device AS device,
-          max(search_console_daily.Clicks) AS clicks,
-          max(search_console_daily.Impressions) AS impressions,
-          max(search_console_daily.PositionSum) AS positionSum
+          argMax(search_console_daily.Clicks, search_console_daily.IngestedAt) AS clicks,
+          argMax(search_console_daily.Impressions, search_console_daily.IngestedAt) AS impressions,
+          argMax(search_console_daily.PositionSum, search_console_daily.IngestedAt) AS positionSum
         FROM search_console_daily
         INNER JOIN (SELECT
           search_console_daily.Date AS date,
-          max(search_console_daily.IngestedAt) AS ingestedAt
+          argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt
         FROM search_console_daily
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'query'
-          AND search_console_daily.SearchType = 'web'
+          AND search_console_daily.SearchType IN ('web', 'web:complete')
           AND search_console_daily.Date >= '2026-10-01 00:00:00'
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
-        GROUP BY date) AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)
+        GROUP BY date) AS newest ON search_console_daily.Date = newest.date
         WHERE search_console_daily.OrgId = 'org_sql_catalog'
           AND search_console_daily.SiteUrl = 'sc-domain:maple.dev'
           AND search_console_daily.Grain = 'query'
@@ -6186,6 +6190,7 @@ SELECT
           AND search_console_daily.Date <= '2026-10-28 00:00:00'
           AND search_console_daily.Country = 'deu'
           AND search_console_daily.Device = 'mobile'
+          AND search_console_daily.IngestedAt >= newest.ingestedAt
         GROUP BY date, page, query, country, device) AS latest
         GROUP BY query
         ORDER BY position ASC, impressions DESC, query ASC
@@ -14863,7 +14868,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- builder:web-analytics:webAnalyticsEntryPagesQuery:landing-paths  [7536a260]
+-- builder:web-analytics:webAnalyticsEntryPagesQuery:landing-paths  [85d388e9]
 SELECT
           session_replays.Host AS host,
           session_replays.EntryPath AS entryPath,
@@ -14876,7 +14881,7 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
           AND NOT (multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http']))
           AND session_replays.EntryPath != ''
-          AND session_replays.EntryPath IN ('/', '/pricing')
+          AND replaceRegexpAll(session_replays.EntryPath, '/{2,}', '/') IN ('/', '/pricing')
         GROUP BY host, entryPath
         ORDER BY sessions DESC
         LIMIT 1000

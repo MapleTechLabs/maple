@@ -70,6 +70,7 @@ export interface WarehouseSqlClient {
 	readonly insert: (
 		datasource: string,
 		rows: ReadonlyArray<unknown>,
+		options?: { readonly durable?: boolean },
 	) => Effect.Effect<void, WarehouseDriverError>
 }
 
@@ -230,6 +231,11 @@ export interface IngestOptions {
 	 * Summed rollups such as `service_map_edges_hourly` must not.
 	 */
 	readonly retryTransient?: boolean
+	/**
+	 * Answer only once the rows are stored, not when they are buffered (Tinybird `wait=true`), so
+	 * a later write the caller orders after these (a completion marker) never lands ahead of them.
+	 */
+	readonly durable?: boolean
 }
 
 export interface WarehouseQueryServiceApi {

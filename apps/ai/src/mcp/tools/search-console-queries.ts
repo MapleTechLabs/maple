@@ -99,12 +99,20 @@ export const lagNotice = (
 	},
 	covered: string,
 ): ReadonlyArray<string> => {
-	const days = daysPastDataThrough(output.timeRange.end, output.site.dataThrough)
-	return days === 0
-		? []
-		: [
-				`Data is complete through ${output.site.dataThrough ?? "?"}, so the last ${days} day${days === 1 ? "" : "s"} of this window are left out (Google reports with a 2 to 3 day lag and today is partial); ${covered} cover the window up to then.`,
-			]
+	const { past, total } = daysPastDataThrough(
+		{ startTime: output.timeRange.start, endTime: output.timeRange.end },
+		output.site.dataThrough,
+	)
+	const through = output.site.dataThrough ?? "?"
+	const lag = "Google reports with a 2 to 3 day lag and today is partial"
+	if (past === 0) return []
+	if (past === total)
+		return [
+			`Data is complete through ${through}, so none of this window's ${total} day${total === 1 ? "" : "s"} are counted yet (${lag}); end the window on ${through} or earlier.`,
+		]
+	return [
+		`Data is complete through ${through}, so the last ${past} day${past === 1 ? "" : "s"} of this window are left out (${lag}); ${covered} cover the window up to then.`,
+	]
 }
 
 export function registerSearchConsoleQueriesTool(server: McpToolRegistrar) {

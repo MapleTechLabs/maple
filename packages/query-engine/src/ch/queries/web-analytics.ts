@@ -733,7 +733,10 @@ export function webAnalyticsPagesQuery(
 }
 
 export interface WebAnalyticsEntryPagesOpts extends WebAnalyticsFilters {
-	/** Only sessions entering on one of these paths; values are inlined as escaped literals. */
+	/**
+	 * Only sessions entering on one of these paths, matched with repeated slashes collapsed, so
+	 * `/docs/` also finds `/docs//`. Values are inlined as escaped literals.
+	 */
 	readonly entryPaths?: ReadonlyArray<string>
 	readonly limit?: number
 }
@@ -767,7 +770,12 @@ export function webAnalyticsEntryPagesQuery(
 		.where(($) => [
 			...replaysWhere($, opts),
 			$.EntryPath.neq(""),
-			opts.entryPaths === undefined ? undefined : CH.inList($.EntryPath, opts.entryPaths),
+			opts.entryPaths === undefined
+				? undefined
+				: CH.inList(
+						compileFnCall<string>("replaceRegexpAll", $.EntryPath, "/{2,}", "/"),
+						opts.entryPaths,
+					),
 		])
 		.groupBy("host", "entryPath")
 		.orderBy(["sessions", "desc"])

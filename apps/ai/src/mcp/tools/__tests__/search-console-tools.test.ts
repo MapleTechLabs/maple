@@ -250,6 +250,16 @@ describe("search_console_queries", () => {
 		expect(sqlSeen.find((s) => Str.includes("previousClicks")(s))).toContain("<= '2026-10-28 00:00:00'")
 	})
 
+	it("counts a window wholly past the last complete day by its own days, not the gap", async () => {
+		const result = await call("search_console_queries", {
+			start_time: "2026-10-30 00:00:00",
+			end_time: "2026-10-31 12:00:00",
+		})
+		const text = markdown(result)
+		expect(text).toContain("none of this window's 2 days are counted yet")
+		expect(text).not.toContain("the last 3 days")
+	})
+
 	it("treats today's import as partial: data runs through yesterday", async () => {
 		const today = pacificToday(Date.now())
 		await sql("UPDATE search_console_sites SET watermark_date = $1", [today])
@@ -355,7 +365,7 @@ describe("search_console_daily in raw SQL", () => {
 		const output = Schema.decodeUnknownSync(DescribeWarehouseTablesOutput)(result.structuredContent)
 		const notes = output.described?.[0]?.notes?.join("\n") ?? ""
 		expect(notes).toContain("never sum across grains")
-		expect(notes).toContain("max(IngestedAt)")
+		expect(notes).toContain("SearchType = 'web:complete', IngestedAt")
 		expect(notes).toContain("sum(PositionSum) / sum(Impressions)")
 	})
 

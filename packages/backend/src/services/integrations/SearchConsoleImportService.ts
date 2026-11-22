@@ -28,6 +28,7 @@ import {
 	pacificToday,
 	planImport,
 	SEARCH_CONSOLE_DATASOURCE,
+	toCompletionMarker,
 	toDailyRows,
 	toWarehouseDateTime64,
 	addDays,
@@ -268,7 +269,10 @@ export class SearchConsoleImportService extends Context.Service<
 				Effect.ignore,
 			)
 
-		// A batch that still fails after its retries leaves the earlier batches newest until a re-import.
+		/**
+		 * A batch that still fails after its retries fails the day before its completion markers are
+		 * written. Durable: each answers once stored, so the markers sent after them never land first.
+		 */
 		const write = (orgId: OrgId, rows: ReadonlyArray<SearchConsoleDailyRow>) =>
 			Effect.forEach(
 				Arr.chunksOf(rows, INGEST_BATCH_ROWS),
@@ -278,6 +282,7 @@ export class SearchConsoleImportService extends Context.Service<
 							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 							SEARCH_CONSOLE_DATASOURCE,
 							batch,
+							{ durable: true },
 						)
 						.pipe(Effect.retry(INGEST_RETRY_SCHEDULE)),
 				{ discard: true },
@@ -327,7 +332,9 @@ export class SearchConsoleImportService extends Context.Service<
 
 		/**
 		 * One day at every grain: all pages of all grains first, then the writes, each grain with one
-		 * `IngestedAt`. A fetch failure writes nothing, so the day's previous complete import stays newest.
+		 * `IngestedAt`, then the grains' completion markers. A failure before the markers land leaves
+		 * the day's previous marked import the one readers keep; a grain Google answered empty is
+		 * just its marker, so it replaces the rows an older import held.
 		 */
 		const importDay = Effect.fn("SearchConsoleImportService.importDay")(function* (
 			accessToken: string,
@@ -354,6 +361,13 @@ export class SearchConsoleImportService extends Context.Service<
 			)
 			const rows = Arr.flatten(fetched)
 			yield* write(site.orgId, rows)
+			// Its own request, after every row batch, so a marker never lands ahead of its rows.
+			yield* write(
+				site.orgId,
+				Arr.map(GRAINS, ({ grain }) =>
+					toCompletionMarker({ orgId: site.orgId, siteUrl: site.siteUrl, grain, day, ingestedAt }),
+				),
+			)
 			yield* Effect.annotateCurrentSpan("maple.search_console.rows_written", rows.length)
 			return rows.length
 		})
