@@ -413,9 +413,8 @@ export const updateConnect = (
 			commands: connect.isActive
 				? [
 						...reads(orgId, platforms),
-						...(AgentHandoff.isPolling(connect.agent)
-							? toAgent([AgentHandoff.LoadAgentRun()])
-							: []),
+						// With no run yet too: a failed first read, or a run started in another tab, still shows up.
+						...agentReads(connect),
 					]
 				: [],
 		}),

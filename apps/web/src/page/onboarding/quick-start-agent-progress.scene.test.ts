@@ -102,6 +102,9 @@ describe("agent progress", () => {
 			expectView(text("The dev server would not start on port 3000")).toExist(),
 			expectAll(all.selector('li[data-state="failed"]')).toHaveCount(1),
 			expectAll(all.selector('li[data-state="active"]')).toHaveCount(1),
+			// The glyphs are hidden from screen readers; each row says its state in words.
+			expectView(text(", needs attention")).toExist(),
+			expectView(text(", in progress")).toExist(),
 			...polledRun(labAgentRun("completed")),
 			tracked("onboarding_agent_run_completed"),
 			expectView(text(/Setup complete for checkout-api, web\./)).toExist(),
@@ -160,6 +163,10 @@ describe("agent run polling", () => {
 		expect(reads(labAgentRun("completed"))).toBe(0)
 		expect(reads(labAgentRun("expired"))).toBe(0)
 		expect(reads({ ...labAgentRun("progress"), status: "failed" })).toBe(0)
+	})
+
+	test("with no run known yet the poll keeps reading, so a run started elsewhere shows up", () => {
+		expect(reads(null)).toBe(1)
 	})
 
 	test("an older run read mid-copy does not replace the newer one", () => {

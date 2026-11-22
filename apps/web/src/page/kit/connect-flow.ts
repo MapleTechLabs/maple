@@ -317,6 +317,17 @@ const checkGlyph = <M>(h: HtmlBuilder<M>, state: CheckState): Html =>
 		? spinner(h, "text-primary", 16)
 		: icon(h, CHECK_ICON[state].name, { size: 16, className: CHECK_ICON[state].className })
 
+/** A row's state as words: the glyph is hidden from assistive technology, so this is what it reads. */
+const CHECK_STATE_LABEL = {
+	done: "done",
+	working: "in progress",
+	active: "in progress",
+	pending: "not started",
+	waiting: "waiting",
+	skipped: "skipped",
+	failed: "needs attention",
+} satisfies Record<CheckState, string>
+
 /** What a screen reader hears when polling moves a row: counts only, so ticking times stay quiet. */
 const checklistSummary = (rows: ReadonlyArray<CheckRow>): string => {
 	const done = Arr.filter(rows, (row) => row.state === "done").length
@@ -384,7 +395,13 @@ export const liveChecklist = <M>(h: HtmlBuilder<M>, options: LiveChecklistOption
 												),
 											),
 										],
-										[row.title],
+										[
+											row.title,
+											h.span(
+												[h.Class("sr-only")],
+												[`, ${CHECK_STATE_LABEL[row.state]}`],
+											),
+										],
 									),
 									...(row.detail == null
 										? []

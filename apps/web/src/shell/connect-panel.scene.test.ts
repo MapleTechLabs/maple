@@ -158,11 +158,29 @@ describe("connect panel scene", () => {
 			),
 			expect(selector("#connect-private-key")).toBeAbsent(),
 			click(role("button", { name: "Copy prompt" })),
-			Command.expectExact(
+			Command.resolve(
+				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_0123456789abcdef",
+					handoff: labHandoff(),
+				}),
+			),
+			Command.expectHas(
 				CopyButton.WriteClipboard({
-					text: agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef"),
+					text: agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", {
+						code: labHandoff().handoff_code,
+						apiUrl: apiPublicUrl,
+					}),
 					generation: 1,
 				}),
+			),
+			Command.resolve(
+				AgentHandoff.TrackAgentEvent({
+					event: "onboarding_agent_prompt_copied",
+					surface: "connect_panel",
+					hasHandoffCode: true,
+				}),
+				AgentHandoff.Message.CompletedTrack(),
 			),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			Command.resolve(
