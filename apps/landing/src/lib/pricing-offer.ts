@@ -71,7 +71,7 @@ const hasOwnUnit = (featureId: string): featureId is keyof typeof FEATURE_UNITS 
 
 const unitFor = (featureId: string): Unit => (hasOwnUnit(featureId) ? FEATURE_UNITS[featureId] : "gb")
 
-/** "$5 / 1M events" reads better than the billed "$0.005 / 1,000 events". */
+/** "$2 / 1M events" reads better than the billed "$0.002 / 1,000 events". */
 const EVENTS_QUOTE_UNITS = 1_000_000
 
 /**
@@ -215,9 +215,9 @@ export async function getOffer(): Promise<Offer> {
 				featureId: "product_events",
 				label: labels.product_events,
 				unit: "events",
-				// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
+				// Mirrors `apps/api/autumn.config.ts`: $0.002 per 1,000, quoted per 1M.
 				included: 1_000_000,
-				rate: 5,
+				rate: 2,
 				rateUnits: EVENTS_QUOTE_UNITS,
 			},
 			{
