@@ -283,10 +283,11 @@ export const deriveReferrerHost = (referrer: string, currentHost: string): strin
  */
 const COOKIELESS_VISITOR_ID = "cookieless"
 
-const withoutCookielessSentinel = (row: Row): Row =>
-	row.visitor_id === COOKIELESS_VISITOR_ID
-		? { ...row, visitor_id: "", ...("visitor_is_new" in row ? { visitor_is_new: 0 } : {}) }
-		: row
+const withoutCookielessSentinel = (row: Row): Row => {
+	if (row.visitor_id !== COOKIELESS_VISITOR_ID) return row
+	const cleared = { ...row, visitor_id: "" }
+	return "visitor_is_new" in row ? { ...cleared, visitor_is_new: 0 } : cleared
+}
 
 /** One metadata row with the server-derived fields set and client fields clamped. */
 export const sanitizeSessionMeta = (input: Row): Row => {
