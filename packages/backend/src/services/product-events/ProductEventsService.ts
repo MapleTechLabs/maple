@@ -129,6 +129,8 @@ export const makeProductEvents = (options: {
 	readonly httpClient: HttpClient.HttpClient
 	readonly endpoint: string
 	readonly ingestKey: string | undefined
+	/** `MAPLE_ENVIRONMENT`, stamped on every event so dev and preview rows can be told apart. */
+	readonly environment?: string | undefined
 }): ProductEventsApi => {
 	const url = `${trimTrailingSlash(options.endpoint)}${PRODUCT_EVENTS_PATH}`
 	const ingestKey = options.ingestKey
@@ -175,7 +177,12 @@ export const makeProductEvents = (options: {
 			return
 		}
 		const now = yield* Clock.currentTimeMillis
-		const line = toProductEventLine(event, now)
+		const line = toProductEventLine(
+			options.environment === undefined
+				? event
+				: { ...event, attributes: { ...event.attributes, environment: options.environment } },
+			now,
+		)
 		yield* post(line).pipe(
 			Effect.retry({ times: RETRIES, while: isRetryable }),
 			// TOTAL budget, on top of the per-attempt timeout inside `post`.
@@ -215,6 +222,7 @@ export class ProductEventsService extends Context.Service<ProductEventsService, 
 				httpClient,
 				endpoint,
 				ingestKey: ingestKey === undefined ? undefined : Redacted.value(ingestKey),
+				environment: env.MAPLE_ENVIRONMENT,
 			})
 		}),
 	},

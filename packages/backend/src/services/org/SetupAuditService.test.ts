@@ -157,12 +157,15 @@ describe("SetupAuditService first-data stamping", () => {
 				Arr.map(emitted, (event) => ({
 					name: event.name,
 					groupId: event.groupId,
+					userId: event.userId,
 					attributes: event.attributes,
 				})),
 				[
 					{
 						name: "first_data_received",
 						groupId: ORG,
+						// The seeded row names no one, so the person running the audit.
+						userId: USER,
 						// Sessions are present too, but only backend telemetry counts as first data.
 						attributes: { signals: "traces", first_signal: "traces" },
 					},

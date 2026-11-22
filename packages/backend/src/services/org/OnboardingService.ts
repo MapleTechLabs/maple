@@ -201,19 +201,32 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 
 			/**
 			 * Stamp first-data time only if not already set. Returns true when newly stamped, and
-			 * only then emits `first_data_received`, so the event fires once per org whoever stamps.
+			 * only then emits `first_data_received`, so the event fires at most once per org whoever
+			 * stamps (`track` swallows a failed send; the stamp is not rolled back for it).
 			 * A missing row is created with the org's real creation time (it dates the reward
 			 * window); when `orgCreatedAt` yields null no row is created and nothing is stamped.
+			 * `userId` is who to attribute the event to when the row names no one.
 			 */
 			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
 				orgId: OrgId,
 				orgCreatedAt: Effect.Effect<number | null>,
 				firstData: FirstDataSeen,
+				userId: string | null,
 			) {
 				const now = yield* Clock.currentTimeMillis
 				const stamped = yield* stampFirstData(orgId, orgCreatedAt, now)
-				if (stamped) yield* productEvents.track(firstDataReceivedEvent(orgId, firstData, now))
-				return stamped
+				if (!stamped) return false
+				const row = yield* findRow(orgId)
+				yield* productEvents.track(
+					firstDataReceivedEvent({
+						orgId,
+						userId: row?.userId ?? userId,
+						firstData,
+						orgCreatedAtMs: row?.createdAt ?? null,
+						nowMs: now,
+					}),
+				)
+				return true
 			})
 
 			/**
