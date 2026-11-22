@@ -50,7 +50,7 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 			stage: P.oneOf(ONBOARDING_AGENT_STAGES, "The setup stage this report is about"),
 			status: P.oneOf(REPORTED_STATUSES, "Where the stage is now"),
 			note: P.optionalText(
-				`One short line for the user, at most ${ONBOARDING_AGENT_NOTE_MAX} characters`,
+				`One short line for the user, at most ${ONBOARDING_AGENT_NOTE_MAX} characters. Never file contents, paths, terminal output, telemetry payloads or secrets`,
 			),
 			services: P.optionalList(
 				`The service.name values the app reports, at most ${ONBOARDING_AGENT_SERVICES_MAX}`,
