@@ -946,10 +946,17 @@ const headline = (h: H, isLive: boolean, orgName: string): Html =>
 		},
 	])
 
-/** A section that folds away when it has nothing left to say, taking the gap above it along. */
+/**
+ * A section that folds away when it has nothing left to say, taking the gap above it along. Shut, it
+ * stays mounted for the animation but leaves the accessibility tree and the tab order.
+ */
 const foldSection = (h: H, isOpen: boolean, child: Html): Html =>
 	h.div(
-		[h.Class(cn(FOLD, "-mt-10", isOpen ? FOLD_OPEN : FOLD_SHUT)), h.AriaHidden(!isOpen)],
+		[
+			h.Class(cn(FOLD, "-mt-10", isOpen ? FOLD_OPEN : FOLD_SHUT)),
+			h.AriaHidden(!isOpen),
+			...(isOpen ? [] : [h.Inert(true)]),
+		],
 		[h.div([h.Class("min-h-0 overflow-hidden pt-10")], [child])],
 	)
 
