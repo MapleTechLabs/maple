@@ -96,8 +96,9 @@ describe("runtime database roles", () => {
 })
 
 // The statement shapes PostgresKeyStore (apps/ingest/src/main.rs) runs, one per query it issues.
+// The gateway's VISIT_WINDOW_MS: the SDK's 30 idle minutes plus its 2-minute touch throttle.
 const claimVisit = (visitor: string, token: string) =>
-	`INSERT INTO cookieless_visits AS v (org_id, visitor_id, visit_token, last_seen_at) VALUES ('o', '${visitor}', '${token}', now()) ON CONFLICT (org_id, visitor_id) DO UPDATE SET visit_token = CASE WHEN v.last_seen_at < now() - 1800000::bigint * interval '1 millisecond' THEN EXCLUDED.visit_token ELSE v.visit_token END, last_seen_at = now() RETURNING visit_token = '${token}' AS new_visit`
+	`INSERT INTO cookieless_visits AS v (org_id, visitor_id, visit_token, last_seen_at) VALUES ('o', '${visitor}', '${token}', now()) ON CONFLICT (org_id, visitor_id) DO UPDATE SET visit_token = CASE WHEN v.last_seen_at < now() - 1920000::bigint * interval '1 millisecond' THEN EXCLUDED.visit_token ELSE v.visit_token END, last_seen_at = now() RETURNING visit_token = '${token}' AS new_visit`
 
 const gatewayStatements = [
 	"SELECT k.org_id, s.sync_status, ds.id FROM org_ingest_keys k LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id LEFT JOIN sources ds ON ds.org_id = k.org_id AND ds.kind = 'default' WHERE k.private_key_hash = 'x' LIMIT 1",
@@ -121,7 +122,7 @@ const gatewayStatements = [
 	"DELETE FROM cookieless_salts WHERE day < '2026-11-21'",
 	"DELETE FROM cookieless_visits WHERE last_seen_at < now() - interval '1 day'",
 	claimVisit("v", "t"),
-	"UPDATE cookieless_visits SET last_seen_at = now() WHERE org_id = 'o' AND visitor_id = 'v' AND last_seen_at >= now() - 1800000::bigint * interval '1 millisecond'",
+	"UPDATE cookieless_visits SET last_seen_at = now() WHERE org_id = 'o' AND visitor_id = 'v' AND last_seen_at >= now() - 1920000::bigint * interval '1 millisecond'",
 ]
 
 const outsideTheGateway = [
@@ -195,17 +196,17 @@ describe("cookieless visit claim", () => {
 		return result.rows[0]?.new_visit
 	}
 
-	it("opens a visit on the first start and keeps it open until 30 idle minutes pass", async () => {
+	it("opens a visit on the first start and keeps it open until the gateway's 32-minute window passes", async () => {
 		expect(await claimAsGateway("visitor_a")).toBe(true)
 		expect(await claimAsGateway("visitor_a")).toBe(false)
 		expect(await claimAsGateway("visitor_b")).toBe(true)
 
 		await pg.exec(
-			"UPDATE cookieless_visits SET last_seen_at = now() - interval '29 minutes' WHERE visitor_id = 'visitor_a'",
+			"UPDATE cookieless_visits SET last_seen_at = now() - interval '31 minutes' WHERE visitor_id = 'visitor_a'",
 		)
 		expect(await claimAsGateway("visitor_a")).toBe(false)
 		await pg.exec(
-			"UPDATE cookieless_visits SET last_seen_at = now() - interval '31 minutes' WHERE visitor_id = 'visitor_a'",
+			"UPDATE cookieless_visits SET last_seen_at = now() - interval '33 minutes' WHERE visitor_id = 'visitor_a'",
 		)
 		expect(await claimAsGateway("visitor_a")).toBe(true)
 	})
