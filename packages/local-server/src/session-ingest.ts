@@ -277,12 +277,27 @@ export const deriveReferrerHost = (referrer: string, currentHost: string): strin
 	return host === "" || host === canonicalHost(`http://${Str.trim(currentHost)}`) ? "" : host
 }
 
+/**
+ * The browser SDK's cookieless visitor sentinel. The hosted gateway hashes it with the
+ * client IP behind its trusted proxy; locally there is none, so the row goes unidentified.
+ */
+const COOKIELESS_VISITOR_ID = "cookieless"
+
+const withoutCookielessSentinel = (row: Row): Row =>
+	row.visitor_id === COOKIELESS_VISITOR_ID
+		? { ...row, visitor_id: "", ...("visitor_is_new" in row ? { visitor_is_new: 0 } : {}) }
+		: row
+
 /** One metadata row with the server-derived fields set and client fields clamped. */
 export const sanitizeSessionMeta = (input: Row): Row => {
 	const referrer = typeof input.referrer === "string" ? input.referrer : ""
 	const host = typeof input.host === "string" ? input.host : ""
 	// No proxy geo locally, so country is the column default, as hosted without trusted geo.
-	const derived = { ...input, country: "", referrer_host: deriveReferrerHost(referrer, host) }
+	const derived = {
+		...withoutCookielessSentinel(input),
+		country: "",
+		referrer_host: deriveReferrerHost(referrer, host),
+	}
 	const row = clampFields(
 		clampFields(derived, META_DIMENSION_FIELDS, META_MAX_DIMENSION_BYTES),
 		META_TEXT_FIELDS,
@@ -306,7 +321,7 @@ export const sanitizeSessionMeta = (input: Row): Row => {
 /** One distilled event clamped, or none when its type is unknown. */
 export const sanitizeSessionEvent = (input: Row): Option.Option<Row> => {
 	if (typeof input.type !== "string" || !SESSION_EVENT_TYPES.has(input.type)) return Option.none()
-	const row = { ...input }
+	const row = { ...withoutCookielessSentinel(input) }
 	if (typeof row.message === "string") row.message = truncateUtf8(row.message, EVENT_MAX_MESSAGE_BYTES)
 	if (isRecord(row.attributes))
 		row.attributes = clampStringMap(
