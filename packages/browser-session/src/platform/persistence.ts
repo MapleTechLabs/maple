@@ -16,9 +16,23 @@ export function configurePersistence(persistence: Persistence | undefined): void
 		owner[MEMORY_ONLY_KEY] = true
 		owner[STRICT_MEMORY_KEY] = true
 	} else if (persistence === "cookieless") {
-		owner[MEMORY_ONLY_KEY] = true
+		// Set without the cookieless flag: an older SDK copy asked for "memory".
+		if (owner[MEMORY_ONLY_KEY] === true && owner[COOKIELESS_KEY] !== true) owner[STRICT_MEMORY_KEY] = true
 		owner[COOKIELESS_KEY] = true
+		watchOlderMemoryCopies(owner)
 	}
+}
+
+/** An older copy initialized later only assigns the memory flag; that assignment means strict memory. */
+function watchOlderMemoryCopies(owner: Record<string, unknown>): void {
+	Object.defineProperty(owner, MEMORY_ONLY_KEY, {
+		configurable: true,
+		enumerable: true,
+		get: () => true,
+		set: () => {
+			owner[STRICT_MEMORY_KEY] = true
+		},
+	})
 }
 
 /** Whether the SDK may write anything to the device. */

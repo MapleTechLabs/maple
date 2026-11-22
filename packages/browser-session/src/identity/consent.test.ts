@@ -11,6 +11,7 @@ import {
 } from "./consent"
 import { getVisitorId, setVisitorTracking } from "./visitor"
 import { COOKIELESS_VISITOR_ID, rowVisitorId } from "./row-visitor"
+import { mayUseStorage } from "../platform/persistence"
 
 /** A page whose visitor id from an earlier, consented load is still on disk. */
 function installReturningVisitor(): { store: Map<string, string>; cookies: Map<string, string> } {
@@ -207,6 +208,22 @@ describe("consent", () => {
 			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
 			expect(store.size).toBe(0)
 			expect(cookies.size).toBe(0)
+		})
+
+		it("loses to an older SDK copy's memory mode, whichever starts first", () => {
+			const olderCopyAsksForMemory = () => {
+				Reflect.set(globalThis, "__MAPLE_BROWSER_MEMORY_ONLY__", true)
+			}
+			olderCopyAsksForMemory()
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe("")
+
+			resetConsentForTests()
+			configurePrivacy({ persistence: "cookieless" })
+			expect(rowVisitorId()).toBe(COOKIELESS_VISITOR_ID)
+			olderCopyAsksForMemory()
+			expect(rowVisitorId()).toBe("")
+			expect(mayUseStorage()).toBe(false)
 		})
 
 		it("only tightens: a second init without the option keeps storage off", () => {

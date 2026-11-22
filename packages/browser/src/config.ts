@@ -107,8 +107,8 @@ export interface MapleBrowserConfig extends SignalOptions {
 		 * nothing. `"cookieless"` also stores nothing on the device, but the
 		 * ingest gateway derives a visitor id that changes every UTC day, from a
 		 * salt it deletes after two days: unique visitors are counted within a
-		 * day, not across days, and new vs returning is unavailable. Consent, GPC
-		 * and `persistVisitorId: false` still turn that id off. `"memory"` wins if
+		 * day, not across days, and new vs returning is unavailable. Consent, GPC,
+		 * `respectDoNotTrack` and `persistVisitorId: false` still turn that id off. `"memory"` wins if
 		 * two SDKs on the page disagree. Default `"browser"`.
 		 */
 		readonly persistence?: Persistence
