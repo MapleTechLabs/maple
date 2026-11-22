@@ -83,6 +83,53 @@ export const productEventsFunnelCoverage = Effect.fn("Observability.productEvent
 	})
 })
 
+export interface ProductEventAttributesInput {
+	readonly startTime: string
+	readonly endTime: string
+	/** Only props seen on this event. */
+	readonly eventName?: string
+	readonly limit: number
+}
+
+const attributeScope = (input: ProductEventAttributesInput) =>
+	input.eventName === undefined ? {} : { eventNames: [input.eventName] }
+
+/** The `track()` prop keys in range, most used first: `{ attributeKey, usageCount }`. */
+export const productEventAttributeKeys = Effect.fn("Observability.productEventAttributeKeys")(function* (
+	input: ProductEventAttributesInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan("orgId", executor.orgId)
+	const compiled = CH.compile(
+		CH.productEventAttributeKeysQuery({ ...attributeScope(input), limit: input.limit }),
+		{ orgId: executor.orgId, startTime: input.startTime, endTime: input.endTime },
+	)
+	return yield* executor.compiledQuery(compiled, {
+		profile: "discovery",
+		context: "productEventAttributeKeys",
+	})
+})
+
+/** One prop's values in range, most used first: `{ attributeValue, usageCount }`. */
+export const productEventAttributeValues = Effect.fn("Observability.productEventAttributeValues")(function* (
+	input: ProductEventAttributesInput & { readonly key: string },
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan("orgId", executor.orgId)
+	const compiled = CH.compile(
+		CH.productEventAttributeValuesQuery({
+			...attributeScope(input),
+			attributeKey: input.key,
+			limit: input.limit,
+		}),
+		{ orgId: executor.orgId, startTime: input.startTime, endTime: input.endTime },
+	)
+	return yield* executor.compiledQuery(compiled, {
+		profile: "discovery",
+		context: "productEventAttributeValues",
+	})
+})
+
 /** The event names in range, most frequent first: `{ eventName, kind, count, sessions, persons }`. */
 export const productEventNames = Effect.fn("Observability.productEventNames")(function* (
 	input: ProductEventNamesInput,

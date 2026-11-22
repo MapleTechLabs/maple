@@ -70,6 +70,8 @@ export {
 	productEventsFunnel,
 	productEventsFunnelBreakdown,
 	productEventsFunnelCoverage,
+	productEventAttributeKeys,
+	productEventAttributeValues,
 	productEventNames,
 	type ProductEventsFunnelInput,
 	type ProductEventsFunnelBreakdownInput,

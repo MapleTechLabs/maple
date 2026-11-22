@@ -159,6 +159,8 @@ export const ExploreAttributesOutput = Schema.Struct({
 	/** source=metrics: the metric the keys/values were scoped to, and its type. */
 	metricName: Schema.optionalKey(Schema.String),
 	metricType: Schema.optionalKey(Schema.String),
+	/** source=product_events: the event the props were read from, when one was named. */
+	eventName: Schema.optionalKey(Schema.String),
 })
 
 const PeriodServiceStats = Schema.Struct({
@@ -255,6 +257,10 @@ export const QueryDataQueryContextSchema = Schema.Struct({
 	eventKind: Schema.optionalKey(Schema.String),
 	host: Schema.optionalKey(Schema.String),
 	pagePath: Schema.optionalKey(Schema.String),
+	/** product_events: the session dimensions filtered on, by parameter name (`country`, `utm_source`...). */
+	sessionFilters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	/** product_events: the numeric property a `sum`/`avg`/percentile metric read. */
+	valueAttribute: Schema.optionalKey(Schema.String),
 	spanName: Schema.optionalKey(Schema.String),
 	rootSpansOnly: Schema.optionalKey(Schema.Boolean),
 	environments: Schema.optionalKey(Schema.Array(Schema.String)),

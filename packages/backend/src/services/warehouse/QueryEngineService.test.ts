@@ -1302,6 +1302,128 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	it.effect("runs a product-event breakdown over a quarter with no filter", () =>
+		Effect.gen(function* () {
+			let sql = ""
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, issued) => {
+						sql = issued
+						return Effect.succeed([{ name: "signup_completed", value: 40 }])
+					},
+				}),
+			)
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-04-01 00:00:00", // 90 days, no filters
+					query: {
+						kind: "breakdown",
+						source: "product_events",
+						metric: "users",
+						groupBy: "event_name",
+					},
+				}),
+			)
+			assert.deepStrictEqual(response.result, {
+				kind: "breakdown",
+				source: "product_events",
+				data: [{ name: "signup_completed", value: 40 }],
+			})
+			assert.include(sql, "FROM product_events")
+		}),
+	)
+
+	it.effect("still bounds a product-event breakdown, at 93 days", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({ sqlQuery: () => Effect.die(new Error("should not be called")) }),
+			)
+			const failure = getFailure(
+				yield* Effect.exit(
+					execute(
+						tenant,
+						new QueryEngineExecuteRequest({
+							startTime: "2026-01-01 00:00:00",
+							endTime: "2026-06-01 00:00:00", // 151 days
+							query: {
+								kind: "breakdown",
+								source: "product_events",
+								metric: "count",
+								groupBy: "event_name",
+							},
+						}),
+					),
+				),
+			)
+			assert.include((failure as { message?: string })?.message ?? "", "Time range too large")
+			assert.include(
+				Arr.join((failure as { details?: ReadonlyArray<string> })?.details ?? [], " "),
+				"93 days",
+			)
+		}),
+	)
+
+	it.effect("sums a numeric prop by the event's session country", () =>
+		Effect.gen(function* () {
+			let sql = ""
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, issued) => {
+						sql = issued
+						return Effect.succeed([{ name: "DE", value: 1280 }])
+					},
+				}),
+			)
+			const response = yield* execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: "2026-01-01 00:00:00",
+					endTime: "2026-01-08 00:00:00",
+					query: {
+						kind: "breakdown",
+						source: "product_events",
+						metric: "sum",
+						groupBy: "country",
+						filters: { eventNames: ["plan_started"], valueAttributeKey: "amount" },
+					},
+				}),
+			)
+			assert.deepStrictEqual(response.result, {
+				kind: "breakdown",
+				source: "product_events",
+				data: [{ name: "DE", value: 1280 }],
+			})
+			assert.include(sql, "toFloat64OrNull(product_events.Attributes['amount'])")
+			assert.include(sql, "max(session_replays.Country)")
+		}),
+	)
+
+	it.effect("refuses a numeric product-event metric that names no prop", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({ sqlQuery: () => Effect.die(new Error("should not be called")) }),
+			)
+			const failure = getFailure(
+				yield* Effect.exit(
+					execute(
+						tenant,
+						new QueryEngineExecuteRequest({
+							startTime: "2026-01-01 00:00:00",
+							endTime: "2026-01-02 00:00:00",
+							query: { kind: "timeseries", source: "product_events", metric: "avg" },
+						}),
+					),
+				),
+			)
+			assert.include(
+				(failure as { message?: string })?.message ?? "",
+				"Invalid product events numeric metric",
+			)
+		}),
+	)
+
 	it.effect("allows breakdown queries over 24h when a serviceName filter is present", () =>
 		Effect.gen(function* () {
 			let called = false
