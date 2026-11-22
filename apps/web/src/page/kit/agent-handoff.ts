@@ -102,37 +102,39 @@ export const ResolveArm = Command.define("ResolveOnboardingHandoffArm", {
 })
 
 /**
- * `POST /v2/onboarding/agent_run` (skipped for a `control` org), then the prompt with its code on the clipboard. The clipboard
- * write opens first, synchronously in the click's task, because Safari refuses one that starts
- * after the request; the prompt fills it once the code is back (without the code if the mint fails).
+ * `POST /v2/onboarding/agent_run` (never for a `control` org), then the prompt with its code on the
+ * clipboard. The clipboard write opens first, synchronously in the click's task, because Safari
+ * refuses one that starts after the request; the prompt fills it once the code is back.
  */
+export const mintHandoff = (publicKey: string, armOf: Effect.Effect<OnboardingHandoffArm>) =>
+	Effect.gen(function* () {
+		const pending = yield* Effect.sync(openPendingClipboardWrite)
+		const arm = yield* armOf
+		const client = yield* MapleApiV2Client
+		const minted =
+			arm === "control"
+				? Option.none<V2OnboardingAgentHandoff>()
+				: yield* Effect.option(client.onboardingAgentRun.start())
+		yield* Effect.sync(() => pending.fill(handoffPrompt(publicKey, minted)))
+		const clipboard = yield* Option.match(pending.written, {
+			onNone: () => Effect.succeed<ClipboardOutcome>("not_attempted"),
+			onSome: (written) =>
+				Effect.map(
+					Effect.promise(() => written),
+					(ok): ClipboardOutcome => (ok ? "written" : "refused"),
+				),
+		})
+		if (arm === "control") return Message.SkippedMint({ publicKey, clipboard })
+		return Option.match(minted, {
+			onNone: () => Message.FailedMint({ publicKey, clipboard }),
+			onSome: (handoff) => Message.SucceededMint({ publicKey, handoff, clipboard }),
+		})
+	})
+
 export const MintHandoff = Command.define("MintOnboardingAgentHandoff", {
 	args: { publicKey: Schema.String },
 	messages: [Message.SucceededMint, Message.FailedMint, Message.SkippedMint],
-	execute: ({ publicKey }) =>
-		Effect.gen(function* () {
-			const pending = yield* Effect.sync(openPendingClipboardWrite)
-			const arm = yield* readArm
-			const client = yield* MapleApiV2Client
-			const minted =
-				arm === "control"
-					? Option.none<V2OnboardingAgentHandoff>()
-					: yield* Effect.option(client.onboardingAgentRun.start())
-			yield* Effect.sync(() => pending.fill(handoffPrompt(publicKey, minted)))
-			const clipboard = yield* Option.match(pending.written, {
-				onNone: () => Effect.succeed<ClipboardOutcome>("not_attempted"),
-				onSome: (written) =>
-					Effect.map(
-						Effect.promise(() => written),
-						(ok): ClipboardOutcome => (ok ? "written" : "refused"),
-					),
-			})
-			if (arm === "control") return Message.SkippedMint({ publicKey, clipboard })
-			return Option.match(minted, {
-				onNone: () => Message.FailedMint({ publicKey, clipboard }),
-				onSome: (handoff) => Message.SucceededMint({ publicKey, handoff, clipboard }),
-			})
-		}),
+	execute: ({ publicKey }) => mintHandoff(publicKey, readArm),
 })
 
 /** The API's 404 for a person with no run yet, as the client decodes it (the public envelope). */
