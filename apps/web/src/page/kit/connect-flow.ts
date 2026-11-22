@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { crossfade } from "@maple/views/ui/crossfade"
 import { eyebrow, eyebrowVariants } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { spinner } from "@maple/views/ui/spinner"
@@ -114,10 +115,17 @@ const STATUS_ICON = {
 	error: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<StatusTone, "working">, { name: IconName; className: string }>
 
-const statusGlyph = <M>(h: HtmlBuilder<M>, tone: StatusTone): Html =>
-	tone === "working"
-		? spinner(h, "text-primary", 14)
-		: icon(h, STATUS_ICON[tone].name, { size: 14, className: STATUS_ICON[tone].className })
+// "Waiting" turning into "found" cross-fades the spinner into the result glyph instead of swapping it.
+const statusGlyph = <M>(h: HtmlBuilder<M>, tone: StatusTone): Html => {
+	const result = tone === "working" ? STATUS_ICON.ok : STATUS_ICON[tone]
+	return crossfade(h, { variant: "glyph", className: "size-3.5" }, [
+		{ isShown: tone === "working", children: [spinner(h, "text-primary", 14)] },
+		{
+			isShown: tone !== "working",
+			children: [icon(h, result.name, { size: 14, className: result.className })],
+		},
+	])
+}
 
 export type StatusRowOptions = Readonly<{
 	tone: StatusTone

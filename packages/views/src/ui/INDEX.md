@@ -50,6 +50,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/contribution-calendar.ts` `contributionLevel`, `contributionCalendar`: One cell per day, a column per week; levels on the amber heatmap ramp.
 - `packages/views/src/ui/copy-button.ts` `afterCopyStatusHold`, `copyIndicator`, `copyButton`, `view` (stateful: Model, init, update): Copy writes the clipboard, holds `copied`/`error` for the timeout, then falls back to `idle`.
 - `packages/views/src/ui/copyable-field.ts` `maskKey`, `copyableField`: A read-only value with a copy button, optionally masked.
+- `packages/views/src/ui/crossfade.ts` `crossfade`: `crossfade`: a few states stacked in one grid cell, the shown one faded in and the rest out, so a swap never blinks or shifts the layout.
 - `packages/views/src/ui/delta.ts` `relativeChange`, `delta`: Change against a previous window.
 - `packages/views/src/ui/detail-rail.ts` `detailRailGroup`, `detailRailRow`, `detailRailStats`, `detailRailField`, `detailRailMetaRow`: The detail page's right rail: eyebrow-titled groups of rows and fields.
 - `packages/views/src/ui/dialog-view.ts` `view`, `dialogHeader`, `dialogTitle`, `dialogDescription`, `dialogPanel`, `dialogFooter`, `dialogFooterHint`: `text` as runs where the JSX interpolates, so the text nodes split the same.
