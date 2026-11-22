@@ -10,7 +10,8 @@ export const trackCommandMotion = (
 	const list = viewport.querySelector<HTMLElement>(':scope > [data-slot="command-list"]')
 	const root = viewport.parentElement
 	const popup = root?.closest<HTMLElement>('[role="dialog"]') ?? null
-	const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+	// Read live: the preference can change while the palette stays open.
+	const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)")
 	const frames = new Set<number>()
 	const nextFrame = (run: () => void) => {
 		const id = requestAnimationFrame(() => {
@@ -38,7 +39,7 @@ export const trackCommandMotion = (
 	// The pill slides after the pointer and snaps to the keyboard: arrow keys are pressed in
 	// quick runs, and a trailing highlight would lag the row the next Enter opens.
 	const onPointerMove = () => {
-		if (!reduced) list?.toggleAttribute("data-highlight-moving", true)
+		if (!reducedMotion.matches) list?.toggleAttribute("data-highlight-moving", true)
 	}
 	const onKeyDown = () => list?.removeAttribute("data-highlight-moving")
 
@@ -59,11 +60,16 @@ export const trackCommandMotion = (
 	list?.toggleAttribute("data-highlight", true)
 	placeHighlight()
 	fitHeight()
+	const applyHeightMotion = () => {
+		if (root !== null) root.style.transition = reducedMotion.matches ? "" : "height 120ms var(--ease-out)"
+	}
+	const onReducedMotionChange = () => {
+		applyHeightMotion()
+		if (reducedMotion.matches) list?.removeAttribute("data-highlight-moving")
+	}
 	// The first height lands in place; later ones ease.
-	if (!reduced && root !== null)
-		nextFrame(() => {
-			root.style.transition = "height 120ms var(--ease-out)"
-		})
+	nextFrame(applyHeightMotion)
+	reducedMotion.addEventListener("change", onReducedMotionChange)
 	list?.addEventListener("pointermove", onPointerMove, { passive: true })
 	document.addEventListener("keydown", onKeyDown, { capture: true })
 	root?.addEventListener("transitionrun", onTransition)
@@ -85,6 +91,7 @@ export const trackCommandMotion = (
 		sizes.disconnect()
 		frames.forEach((id) => cancelAnimationFrame(id))
 		list?.removeEventListener("pointermove", onPointerMove)
+		reducedMotion.removeEventListener("change", onReducedMotionChange)
 		document.removeEventListener("keydown", onKeyDown, { capture: true })
 		root?.removeEventListener("transitionrun", onTransition)
 		root?.removeEventListener("transitionend", onTransition)
