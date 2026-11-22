@@ -27,6 +27,7 @@ import { formatExactCount } from "@maple/views/lib/locale"
 import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
+	ACTIVITY_SLOT,
 	formatLastSeen,
 	GENERIC_TYPES,
 	signalActivity,
@@ -35,7 +36,7 @@ import {
 	sparkOf,
 } from "./view-signal"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { vstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
 /** Lane geometry, shared by the header and the rows so the two cannot drift. */
@@ -43,6 +44,8 @@ export const LANE = {
 	select: "w-4 shrink-0",
 	severity: "w-6 shrink-0",
 	identity: "min-w-0 flex-1",
+	// Investigation, comments, PRs: a lane of its own so each mark lines up down the list.
+	activity: "hidden shrink-0 items-center gap-2 @2xl/page:flex",
 	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-36",
 	spark: "hidden min-w-0 flex-1 @2xl/page:block",
 	count: "w-[52px] shrink-0 text-right",
@@ -80,6 +83,7 @@ export const signalHeader = (h: H, selection: HeaderSelection | null): Html =>
 			),
 			h.span([h.Class(LANE.severity)], []),
 			h.span([h.Class(LANE.identity)], ["Issue"]),
+			activityHeader(h, "Activity"),
 			h.span(
 				[h.Class(LANE.volume)],
 				[h.span([h.Class(LANE.spark)], ["Trend · 24h"]), h.span([h.Class(LANE.count)], ["Events"])],
@@ -96,11 +100,22 @@ export const signalHeader = (h: H, selection: HeaderSelection | null): Html =>
 		],
 	)
 
+/** The activity lane's slots, so the header and skeleton keep the rows' widths. */
+const activityHeader = (h: H, label = ""): Html =>
+	h.span(
+		[h.Class(LANE.activity)],
+		[
+			h.span([h.Class(cn(ACTIVITY_SLOT.investigation, "whitespace-nowrap"))], [label]),
+			h.span([h.Class(ACTIVITY_SLOT.comments)], []),
+			h.span([h.Class(ACTIVITY_SLOT.prs)], []),
+		],
+	)
+
 const SKELETON_WIDTHS = ["72%", "48%", "61%", "39%", "55%", "44%"]
 
 export const signalRowSkeleton = (h: H, index: number): Html =>
 	h.div(
-		[h.Class(cn(ROW_SHELL, "h-11")), h.AriaHidden(true)],
+		[h.Class(cn(ROW_SHELL, "h-14")), h.AriaHidden(true)],
 		[
 			h.span([h.Class(LANE.select)], []),
 			h.span(
@@ -108,9 +123,13 @@ export const signalRowSkeleton = (h: H, index: number): Html =>
 				[skeleton(h, "size-3.5 rounded-sm")],
 			),
 			h.span(
-				[h.Class(LANE.identity)],
-				[skeleton(h, "h-3.5", { width: SKELETON_WIDTHS[index % 6] ?? "72%" })],
+				[h.Class(vstackClass({ gap: "1.5", className: LANE.identity }))],
+				[
+					skeleton(h, "h-3.5", { width: SKELETON_WIDTHS[index % 6] ?? "72%" }),
+					skeleton(h, "h-3", { width: SKELETON_WIDTHS[(index + 3) % 6] ?? "48%" }),
+				],
 			),
+			activityHeader(h),
 			h.span(
 				[h.Class(LANE.volume)],
 				[
@@ -148,14 +167,13 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 	const swap = GENERIC_TYPES.has(signal.title) && messageLine !== ""
 	const rowTitle = swap ? messageLine : signal.title
 	const rowDetail = swap ? signal.title : signal.detail
-	const activity = signalActivity(h, signal)
 	return rowMenuTrigger(h, signal, state, [
 		h.a(
 			[
 				h.Class(
 					cn(
 						ROW_SHELL,
-						"group/row h-11 text-sm",
+						"group/row h-14 text-sm",
 						"hover:bg-surface-sunken active:bg-surface-sunken data-focused:bg-surface-sunken",
 						"data-selected:bg-primary-a2 data-selected:hover:bg-primary-a3 data-selected:active:bg-primary-a3",
 						"focus-visible:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
@@ -185,35 +203,37 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							: severityReadout(h, signal.severity),
 					],
 				),
+				// Title over message: every row's text starts on the same two lines, whatever their lengths.
 				h.span(
-					[h.Class(cn(LANE.identity, hstackClass({ gap: "2", align: "baseline" })))],
+					[h.Class(vstackClass({ gap: "0.5", className: LANE.identity }))],
 					[
 						truncatedText(
 							h,
 							{
 								text: swap ? signal.detail : rowTitle,
-								// The detail (basis 0) gives way first; the title shrinks only so the activity chips fit.
-								className: "font-medium text-foreground @4xl/page:max-w-[75%]",
+								className: typographyClass({ weight: "medium", tone: "foreground" }),
 							},
 							[rowTitle],
 						),
 						...(rowDetail
 							? [
 									// A line clamp, not `truncate`: the ellipsis follows the last glyph, never a space.
-									h.span(
-										[
-											h.Class(
-												"hidden min-w-0 flex-1 break-all text-muted-foreground @4xl/page:line-clamp-1",
-											),
-											h.Title(rowDetail),
-										],
+									typography(
+										h,
+										{
+											as: "span",
+											size: "xs",
+											tone: "muted",
+											className: "line-clamp-1 break-all",
+											attributes: [h.Title(rowDetail)],
+										},
 										[rowDetail],
 									),
 								]
 							: []),
-						...(activity === null ? [] : [activity]),
 					],
 				),
+				signalActivity(h, signal, LANE.activity),
 				volumeLane(h, signal, dense, isSurging, label),
 				...trailingLanes(h, signal, state),
 			],
