@@ -109,10 +109,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 		options.action ??
 		(options.delta === undefined || options.delta === ""
 			? undefined
-			: h.span(
-					[h.Class("shrink-0 font-mono text-3xs tabular-nums text-foreground-subtle")],
-					[options.delta],
-				))
+			: h.span([h.Class("shrink-0 text-3xs tabular-nums text-foreground-subtle")], [options.delta]))
 	const body = [
 		h.div(
 			[h.Class("flex items-baseline justify-between gap-3")],
