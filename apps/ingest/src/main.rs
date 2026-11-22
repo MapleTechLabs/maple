@@ -4993,7 +4993,7 @@ impl CookielessVisitors {
         let touched = tokio::time::timeout(
             COOKIELESS_STORE_TIMEOUT,
             self.store
-                .touch_cookieless_visit(org_id, visitor_id, cookieless::VISIT_IDLE_MS),
+                .touch_cookieless_visit(org_id, visitor_id, cookieless::VISIT_WINDOW_MS),
         )
         .await
         .unwrap_or_else(|_| Err("cookieless visit touch timed out".to_owned()));
@@ -5017,7 +5017,7 @@ impl CookielessVisitors {
         let claim = tokio::time::timeout(
             COOKIELESS_STORE_TIMEOUT,
             self.store
-                .claim_cookieless_visit(org_id, visitor_id, cookieless::VISIT_IDLE_MS),
+                .claim_cookieless_visit(org_id, visitor_id, cookieless::VISIT_WINDOW_MS),
         )
         .await
         .unwrap_or_else(|_| Err("cookieless visit claim timed out".to_owned()));
