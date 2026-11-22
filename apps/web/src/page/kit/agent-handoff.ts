@@ -74,6 +74,14 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
+/** The prompt a copy puts on the clipboard: the one builder, so the copy and "Show prompt" agree. */
+const handoffPrompt = (publicKey: string, handoff: Option.Option<V2OnboardingAgentHandoff>): string =>
+	Option.match(handoff, {
+		onNone: () => agentSetupPrompt(ingestUrl, publicKey),
+		onSome: (minted) =>
+			agentSetupPrompt(ingestUrl, publicKey, { code: minted.handoff_code, apiUrl: apiPublicUrl }),
+	})
+
 /**
  * `POST /v2/onboarding/agent_run`, then the prompt with its code on the clipboard. The clipboard
  * write opens first, synchronously in the click's task, because Safari refuses one that starts
@@ -87,18 +95,7 @@ export const MintHandoff = Command.define("MintOnboardingAgentHandoff", {
 			const pending = yield* Effect.sync(openPendingClipboardWrite)
 			const client = yield* MapleApiV2Client
 			const minted = yield* Effect.option(client.onboardingAgentRun.start())
-			yield* Effect.sync(() =>
-				pending.fill(
-					Option.match(minted, {
-						onNone: () => agentSetupPrompt(ingestUrl, publicKey),
-						onSome: (handoff) =>
-							agentSetupPrompt(ingestUrl, publicKey, {
-								code: handoff.handoff_code,
-								apiUrl: apiPublicUrl,
-							}),
-					}),
-				),
-			)
+			yield* Effect.sync(() => pending.fill(handoffPrompt(publicKey, minted)))
 			const clipboard = yield* Option.match(pending.written, {
 				onNone: () => Effect.succeed<ClipboardOutcome>("not_attempted"),
 				onSome: (written) =>
@@ -269,14 +266,14 @@ export const update = (model: Model, message: Message): Step =>
 		SucceededMint: ({ publicKey, handoff, clipboard }) =>
 			copyPrompt(
 				{ ...model, run: handoff.run, isTrackingUnavailable: false },
-				agentSetupPrompt(ingestUrl, publicKey, { code: handoff.handoff_code, apiUrl: apiPublicUrl }),
+				handoffPrompt(publicKey, Option.some(handoff)),
 				true,
 				clipboard,
 			),
 		FailedMint: ({ publicKey, clipboard }) =>
 			copyPrompt(
 				{ ...model, isTrackingUnavailable: true },
-				agentSetupPrompt(ingestUrl, publicKey),
+				handoffPrompt(publicKey, Option.none()),
 				false,
 				clipboard,
 			),
