@@ -443,11 +443,10 @@ Every query command works in remote mode, `maple query` included. The server com
 
 Sign in to a hosted Maple workspace. Opens your browser to approve the CLI; the credential is stored in the macOS keychain where available, otherwise in `~/.maple/config.json` (mode `0600`). `maple login` is a shorthand for the same command.
 
-| Flag               | Description                                                                                                                  |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--api-url <url>`  | Maple API base URL, default `https://api.maple.dev`                                                                          |
-| `--with-token`     | Read an existing API token from stdin instead of opening a browser, so it stays out of shell history                         |
-| `--handoff <code>` | Sign in with the one-time handoff code from Maple's agent prompt instead of opening a browser. `MAPLE_HANDOFF` does the same |
+| Flag              | Description                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| `--api-url <url>` | Maple API base URL, default `https://api.maple.dev`                                                  |
+| `--with-token`    | Read an existing API token from stdin instead of opening a browser, so it stays out of shell history |
 
 ```bash
 maple auth login

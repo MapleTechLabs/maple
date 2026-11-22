@@ -232,19 +232,11 @@ const loginFlags = {
 		Flag.withDescription("Read an existing API token from standard input instead of opening a browser"),
 		Flag.withDefault(false),
 	),
-	handoff: Flag.optional(
-		Flag.String("handoff").pipe(
-			Flag.withDescription(
-				"Sign in with a handoff code from Maple's agent prompt (or set MAPLE_HANDOFF) instead of opening a browser",
-			),
-		),
-	),
 }
 
 const loginHandler = Effect.fnUntraced(function* (a: {
 	readonly apiUrl: Option.Option<string>
 	readonly withToken: boolean
-	readonly handoff: Option.Option<string>
 }) {
 	const config = yield* MapleConfig
 	if (config.envTokenOverride) {
@@ -254,11 +246,9 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 		})
 	}
 	const apiUrl = yield* normalizeApiUrl(Option.getOrElse(a.apiUrl, () => config.defaultApiUrl))
+	// Env only, never a flag: a flag would leave the code in shell history and `ps`.
 	const envHandoff = yield* handoffFromEnv.pipe(Effect.orElseSucceed(() => Option.none<string>()))
-	const handoff = Option.map(
-		Option.orElse(a.handoff, () => envHandoff),
-		Str.trim,
-	)
+	const handoff = Option.map(envHandoff, Str.trim)
 	if (Option.isSome(handoff)) {
 		if (a.withToken) {
 			return yield* new CliAuthError({

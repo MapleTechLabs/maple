@@ -5,7 +5,9 @@ import { Array as Arr, Duration, Effect, Exit, Option, Ref, String as Str } from
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { encodeJson } from "@maple/local-server/json"
 import { HANDOFF_SPENT_MESSAGE, handoffLogin } from "../src/commands/auth"
-import { describeReport } from "../src/commands/onboarding"
+import { describeReport, isTransientSearchFailure } from "../src/commands/onboarding"
+import { UnauthorizedError } from "@maple/domain/http"
+import { WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { MapleConfig, type MapleConfigValues } from "../src/core/config"
 import {
 	appUrlFor,
@@ -272,5 +274,19 @@ describe("onboarding verify", () => {
 			}),
 		)
 		assert.ok(Option.isNone(found))
+	})
+})
+
+describe("verify retries", () => {
+	const failure = (cause: unknown) =>
+		new WarehouseQueryError({ message: "search failed", pipeName: "list_traces", cause })
+
+	it("waits out a network or server failure, but fails at once on a refused key", () => {
+		assert.equal(isTransientSearchFailure(failure(new Error("socket hang up"))), true)
+		assert.equal(isTransientSearchFailure(failure(undefined)), true)
+		assert.equal(
+			isTransientSearchFailure(failure(new UnauthorizedError({ message: "Invalid API key" }))),
+			false,
+		)
 	})
 })

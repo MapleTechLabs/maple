@@ -4,7 +4,7 @@
 import * as Argument from "effect/cli/Argument"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
-import { Array as Arr, Console, Duration, Effect, Option, Redacted, String as Str } from "effect"
+import { Array as Arr, Console, Duration, Effect, Option, Predicate, Redacted, String as Str } from "effect"
 import { ONBOARDING_AGENT_STAGES } from "@maple/domain/onboarding-agent-run"
 import type { V2OnboardingAgentReport } from "@maple/domain/http/v2"
 import { MapleConfig } from "../core/config"
@@ -173,9 +173,19 @@ const latestTrace = (target: HostedTarget, service: string) =>
 		const result = yield* Remote.searchTraces(client, { range, service, limit: 1 })
 		return Option.map(Arr.head(result.spans), (span) => Str.toLowerCase(span.traceId))
 	}).pipe(
-		// A failed poll is retried on the next tick; the timeout decides when to stop.
-		Effect.orElseSucceed(() => Option.none<string>()),
+		// Only a transient failure waits for the next tick; a refused key or a bad request never heals.
+		Effect.catchIf(isTransientSearchFailure, () => Effect.succeed(Option.none<string>())),
 	)
+
+/** Network, 5xx and rate-limit failures; the v2 client wraps them in `WarehouseQueryError`. */
+export const isTransientSearchFailure = (error: unknown): boolean => {
+	if (!Predicate.isTagged(error, "@maple/http/errors/WarehouseQueryError")) return false
+	const cause = Predicate.hasProperty(error, "cause") ? error.cause : undefined
+	const causeTag = Predicate.hasProperty(cause, "_tag") && Predicate.isString(cause._tag) ? cause._tag : ""
+	return causeTag === "" || TRANSIENT_CAUSE.test(causeTag)
+}
+const TRANSIENT_CAUSE =
+	/HttpClientError|RequestError|TransportError|Unavailable|RateLimit|Timeout|Overloaded|WorkerUnavailable/u
 
 const verify = Command.make("verify", {
 	service: Flag.String("service").pipe(
