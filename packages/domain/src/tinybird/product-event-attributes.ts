@@ -128,7 +128,9 @@ export const PERSON_PROPERTY_NEVER_SQL = "toDateTime64('2199-12-31 23:59:59', 9,
 /**
  * A property's value from its `person_properties` rows, read per (Kind, Id, Key)
  * group: the latest `set` unless an `unset` came after it; with no live `set`,
- * the earliest `set_once` made after the last `unset`; else NULL.
+ * the earliest `set_once`, unless an `unset` came after that; else NULL. Once
+ * unset, only a `set` brings the key back. Two writes at the same instant: either
+ * may win.
  */
 export const PERSON_PROPERTY_VALUE_SQL = `multiIf(
     max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),

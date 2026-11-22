@@ -108,7 +108,9 @@ const edges = (target: string): TableDeletePlan => ({
 })
 const NOT_TELEMETRY = "control-plane history, not telemetry; local mode never writes it"
 const SESSION_DATA = "browser session data, not service telemetry; its TTL removes it"
-const USER_IDENTITY = "user identity and properties, not service telemetry; its TTL removes it"
+/** Kept by a scoped delete: values written by a deleted service's events stay until the TTL. */
+const USER_IDENTITY =
+	"user identity and properties: a scoped delete keeps what deleted events and spans wrote here until its TTL removes it"
 
 /** Delete strategy per table name; keys are checked against the schema at runtime. */
 export type TableDeletePlans = Readonly<Record<string, TableDeletePlan>>
