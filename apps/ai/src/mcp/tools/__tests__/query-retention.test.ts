@@ -132,6 +132,8 @@ describe("query_retention", () => {
 		])
 		const text = markdown(result)
 		expect(text).toContain("| 2026-10-05 | 40 | 20 (50.00%) | 10 (25.00%) |")
+		// The overall row leads: a long table is cut from the bottom.
+		expect(text.indexOf("| All complete cohorts |")).toBeLessThan(text.indexOf("| 2026-10-05 |"))
 		expect(text).toContain("New means: first time ever, over all history")
 	})
 
@@ -200,6 +202,17 @@ describe("query_retention", () => {
 		const text = markdown(result)
 		expect(text).toContain("`return_json`")
 		expect(text).toContain("leave it out for any event")
+	})
+
+	it("reads the identity of the return event too before offering another key", async () => {
+		await call({
+			...window,
+			start_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			return_json: JSON.stringify({ kind: "event", eventName: "report_exported" }),
+		})
+		const coverage = issued.findLast((sql) => Str.includes("withSession")(sql)) ?? ""
+		expect(coverage).toContain("account_only")
+		expect(coverage).toContain("report_exported")
 	})
 
 	it("rejects a period count it cannot report", async () => {

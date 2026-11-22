@@ -166,6 +166,21 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				browserName: params.browser,
 			}
 
+			const givenFilters = Rec.filter(
+				{
+					host: params.host,
+					page_path: params.page_path,
+					referrer_host: params.referrer_host,
+					country: params.country,
+					utm_source: params.utm_source,
+					utm_medium: params.utm_medium,
+					utm_campaign: params.utm_campaign,
+					device_type: params.device_type,
+					browser: params.browser,
+				},
+				(value): value is string => value !== undefined,
+			)
+
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
@@ -278,7 +293,18 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const detailedSteps =
 				details === undefined
 					? stepData
-					: Arr.map(stepData, (stat) => ({ ...stat, ...details.get(stat.step) }))
+					: Arr.map(stepData, (stat) => {
+							const detail = details.get(stat.step)
+							// Nobody reached it: the timing read's zeros are no measurement, only its leavers are.
+							return stat.count > 0 || detail === undefined
+								? { ...stat, ...detail }
+								: {
+										...stat,
+										...(detail.leavers === undefined
+											? undefined
+											: { leavers: detail.leavers }),
+									}
+						})
 
 			// Sessions are kept 30 days, so anything read off them is blind to the part before that.
 			const readsSessions =
@@ -346,6 +372,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				...(breakdown === undefined ? undefined : { breakdown }),
 				definition: steps,
 				...(exclusions.length > 0 ? { exclusions } : undefined),
+				...(Rec.isEmptyRecord(givenFilters) ? undefined : { filters: givenFilters }),
 				...(identity === undefined ? undefined : { identityNote: identity.note }),
 				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				...(sessionNote === undefined ? undefined : { sessionNote }),
@@ -358,7 +385,18 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			const first = steps[0]
 			const last = steps[steps.length - 1]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
-			const stepsJson = stringifyJson(output.definition)
+			// The funnel as asked, so a follow-up changes one thing and not the population.
+			const sameFunnel = {
+				steps_json: stringifyJson(output.definition),
+				...(output.exclusions === undefined
+					? undefined
+					: { exclusions_json: stringifyJson(output.exclusions) }),
+				...(output.windowSeconds === DEFAULT_WINDOW_SECONDS
+					? undefined
+					: { window_seconds: output.windowSeconds }),
+				...output.filters,
+				...window,
+			}
 			return {
 				title: `Funnel (${steps.length} step${steps.length === 1 ? "" : "s"}, by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [
@@ -501,7 +539,9 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 											),
 										]),
 								doc.text(
-									"Pin this funnel to a board with `add_dashboard_widget` (panel_type funnel, the steps under `display_json.funnel.steps`).",
+									output.exclusions === undefined
+										? "Pin this funnel to a board with `add_dashboard_widget` (panel_type funnel, the steps under `display_json.funnel.steps`)."
+										: "A dashboard funnel widget does not take exclusions yet: pinned, this funnel would count the attempts excluded here.",
 								),
 							],
 				next: [
@@ -512,13 +552,11 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 								doc.next(
 									TOOL,
 									{
-										steps_json: stepsJson,
-										...(output.exclusions === undefined
-											? undefined
-											: { exclusions_json: stringifyJson(output.exclusions) }),
+										...sameFunnel,
 										key_by: output.suggestedKeyBy,
-										window_seconds: output.windowSeconds,
-										...window,
+										...(breakdown === undefined
+											? undefined
+											: { breakdown_by: breakdown.by }),
 									},
 									`the same funnel counted by ${output.suggestedKeyBy}`,
 								),
@@ -532,12 +570,9 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 						? doc.next(
 								TOOL,
 								{
-									steps_json: stepsJson,
-									...(output.exclusions === undefined
-										? undefined
-										: { exclusions_json: stringifyJson(output.exclusions) }),
+									...sameFunnel,
+									...(output.keyBy === "person" ? undefined : { key_by: output.keyBy }),
 									breakdown_by: "utmSource",
-									...window,
 								},
 								"see where the converters came from",
 							)

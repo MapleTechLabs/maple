@@ -130,7 +130,8 @@ const referenceRetention = (
 		)
 		if (candidates.length === 0) return
 		const firstMs = Math.min(...Arr.map(candidates, (row) => row.atMs))
-		if (!inRange(firstMs, range)) return
+		// Half-open: a first event on the instant the window ends is the next interval's.
+		if (firstMs < range.fromMs || firstMs >= range.toMs) return
 		const cohortMs = bucketStart(opts.interval, BASE_MS + firstMs)
 		add(cohortMs, 0)
 		const periods = new Set(

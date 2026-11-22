@@ -245,6 +245,20 @@ describe("explore_attributes on product events", () => {
 		expect(lastSql()).toContain("'billing'")
 	})
 
+	it("keeps the dates and the service in the calls it suggests", async () => {
+		const old = { start_time: "2026-10-01 00:00:00", end_time: "2026-10-08 00:00:00" }
+		const scope = { source: "product_events", event_name: "report_exported", service: "billing", ...old }
+		const keys = markdown(await call("explore_attributes", scope))
+		// Without the dates the values would be read from the last week, not the one asked about.
+		expect(keys).toMatch(
+			/explore_attributes [^\n]*key="format"[^\n]*service="billing"[^\n]*start_time="2026-10-01 00:00:00"[^\n]*end_time="2026-10-08 00:00:00"/,
+		)
+		const values = markdown(await call("explore_attributes", { ...scope, key: "format" }))
+		expect(values).toMatch(
+			/query_data [^\n]*service="billing"[^\n]*start_time="2026-10-01 00:00:00"[^\n]*end_time="2026-10-08 00:00:00"/,
+		)
+	})
+
 	it("refuses event_name on a source that has no events", async () => {
 		const result = await call("explore_attributes", { source: "traces", event_name: "report_exported" })
 		expect(result.isError).toBe(true)

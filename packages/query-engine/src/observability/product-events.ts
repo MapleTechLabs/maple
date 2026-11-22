@@ -176,7 +176,7 @@ export interface ProductEventsTotalInput {
 
 /**
  * One metric over the whole window: a distinct count across it, which is not the sum of a
- * timeseries' buckets. The window is half-open, `[startTime, endTime)`.
+ * timeseries' buckets. The window is the one those buckets cover, `endTime` included.
  */
 export const productEventsTotal = Effect.fn("Observability.productEventsTotal")(function* (
 	input: ProductEventsTotalInput,
@@ -188,6 +188,7 @@ export const productEventsTotal = Effect.fn("Observability.productEventsTotal")(
 			...productEventsQueryOptions(input.filters),
 			metric: input.metric,
 			wholeRange: true,
+			closedEnd: true,
 		}),
 		// The bucket width is declared by the builder and unused by a whole-range read.
 		{ orgId: executor.orgId, startTime: input.startTime, endTime: input.endTime, bucketSeconds: 60 },

@@ -238,8 +238,18 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 			const identity =
 				rows.length === 0 && start !== undefined
 					? yield* eventIdentityNote({
-							step: start,
-							label: funnelStepLabel(start),
+							// The return event too: a key it lacks would show cohorts nobody comes back to.
+							events: [
+								{ step: start, label: funnelStepLabel(start) },
+								...(params.return_json === undefined
+									? []
+									: [
+											{
+												step: params.return_json,
+												label: funnelStepLabel(params.return_json),
+											},
+										]),
+							],
 							keyBy,
 							candidates: RetentionKeyBy.literals,
 							startTime: st,
@@ -321,6 +331,15 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 										...Arr.map(indices, (n) => `${unit} ${n}`),
 									],
 									[
+										// First: a long table is cut from the bottom, and this is the row
+										// most questions are after.
+										[
+											"All complete cohorts",
+											"",
+											...Arr.map(output.overall, (value) =>
+												value === null ? "-" : formatPercent(value),
+											),
+										],
 										...Arr.map(output.cohorts, (cohort) => [
 											cohort.cohort,
 											formatNumber(cohort.size),
@@ -331,13 +350,6 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 												return n > cohort.completePeriods ? `${cell}*` : cell
 											}),
 										]),
-										[
-											"All complete cohorts",
-											"",
-											...Arr.map(output.overall, (value) =>
-												value === null ? "-" : formatPercent(value),
-											),
-										],
 									],
 								),
 								doc.text(
@@ -346,7 +358,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 								...(hasOpen
 									? [
 											doc.text(
-												`\`-\`: that ${unit} has not started. \`*\`: it is still running, so the count can grow. The last row counts only cohorts old enough to have finished the ${unit}.`,
+												`\`-\`: that ${unit} has not started. \`*\`: it is still running, so the count can grow. The first row counts only cohorts old enough to have finished the ${unit}.`,
 											),
 										]
 									: []),

@@ -530,7 +530,12 @@ converted in either order.
   the last) is dropped when it does. Dropping is per attempt and per step: the person can convert
   on a later attempt, and an attempt dropped from step 2 still stands at step 1 and can take a
   later step-2 row. In the walk an excluded row writes a marker (1, which no order key is) into
-  the state of the steps it covers, carried forward like a start; nothing advances from it. A
+  the state of the steps it covers, carried forward like a start; nothing advances from it.
+  "Between" is strict: the row that reaches `after` or `before` is that step, not an excluded
+  event for its own range, even when it matches the exclusion too. So "no second cart view
+  between the cart and the payment" works, and an exclusion that is a step strictly inside its
+  own range is refused, since every attempt has to pass it. A row read only for an exclusion
+  takes no part in a breakdown's group. A
   funnel without exclusions compiles to the SQL it always did. Counts and breakdowns honour
   exclusions; timing and leavers refuse them, because the chain they read is rebuilt from the
   person's rows without knowing which attempts were dropped. No dashboard surface sets them yet;

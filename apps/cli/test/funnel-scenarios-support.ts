@@ -402,6 +402,8 @@ interface FunnelRow {
 	readonly matches: ReadonlyArray<boolean>
 	/** `drops[k - 1]`: this row is an excluded event that drops the attempts standing at step k. */
 	readonly drops: ReadonlyArray<boolean>
+	/** `dropsArrival[k - 1]`: it also drops an attempt this same row would move onto step k. */
+	readonly dropsArrival: ReadonlyArray<boolean>
 	/** Which exclusions the row is, as `0`/`1` per exclusion: the tie order's last part. */
 	readonly excluded: string
 	readonly name: string
@@ -469,20 +471,21 @@ const attemptFrom = (
  *
  * Every step-1 row starts an attempt, and an attempt is a set of steps it stands at, not one
  * chain: dropped from step 2, it still stands at step 1 and can take a later step-2 row. A row
- * moves an attempt one step, from where it stood before the row; a row that is itself an excluded
- * event for the step it would move the attempt to does not move it there.
+ * moves an attempt one step, from where it stood before the row. An excluded event is one strictly
+ * between its two bounds: the row that reaches `after` is that step and passes, while a row that
+ * arrives further inside the range came from inside it and is dropped.
  */
 const levelWithExclusions = (rows: ReadonlyArray<FunnelRow>, stepCount: number, windowMs: number): number =>
 	Arr.reduce(rows, 0, (best, start, startIndex) => {
-		if (start.matches[0] !== true || start.drops[0] === true) return best
+		if (start.matches[0] !== true) return best
 		let standing = Arr.makeBy(stepCount, (index) => index === 0)
 		let depth = 1
 		for (const row of Arr.drop(rows, startIndex + 1)) {
 			if (row.atMs > start.atMs + windowMs) break
 			const before = standing
 			standing = Arr.map(before, (stood, index) => {
-				if (row.drops[index] === true) return false
-				return stood || (index > 0 && row.matches[index] === true && before[index - 1] === true)
+				const arrives = index > 0 && row.matches[index] === true && before[index - 1] === true
+				return (stood && row.drops[index] !== true) || (arrives && row.dropsArrival[index] !== true)
 			})
 			depth = Math.max(
 				depth,
@@ -565,12 +568,24 @@ export const referencePersons = (
 							index + 1 < (exclusion.before ?? stepCount),
 					),
 				),
+				dropsArrival: Arr.makeBy(stepCount, (index) =>
+					Arr.some(
+						exclusions,
+						(exclusion, at) =>
+							excluding[at] === true &&
+							(exclusion.after ?? 1) < index + 1 &&
+							index + 1 < (exclusion.before ?? stepCount),
+					),
+				),
 				excluded: Arr.join(
 					Arr.map(excluding, (matched) => (matched ? "1" : "0")),
 					"",
 				),
 				name: displayName(row),
-				dimension: dimensionOfEvent(breakdownBy, row, sessionsById, range),
+				// A row read only for an exclusion is not part of the funnel: it names no group.
+				dimension: Arr.some(matches, (matched) => matched)
+					? dimensionOfEvent(breakdownBy, row, sessionsById, range)
+					: "",
 			},
 		]
 	})
@@ -589,6 +604,7 @@ export const referencePersons = (
 							seq: 0,
 							matches: Arr.map(opts.steps, (_, index) => index === 0),
 							drops: Arr.map(opts.steps, () => false),
+							dropsArrival: Arr.map(opts.steps, () => false),
 							excluded: Arr.join(
 								Arr.map(exclusions, () => "0"),
 								"",

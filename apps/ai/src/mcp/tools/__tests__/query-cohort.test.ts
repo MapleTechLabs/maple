@@ -171,6 +171,19 @@ describe("query_cohort", () => {
 		expect(text).toMatch(/Next:\n- `query_cohort [^\n]*account_only[^\n]*key_by="group"/)
 	})
 
+	it("reads the identity of the excluded event too before offering another key", async () => {
+		await call({
+			...window,
+			did_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			did_not_json: didNot,
+			key_by: "user",
+		})
+		// A key the excluded event lacks would make every account a member.
+		const coverage = issued.findLast((sql) => Str.includes("withSession")(sql)) ?? ""
+		expect(coverage).toContain("account_only")
+		expect(coverage).toContain("project_created")
+	})
+
 	it("keeps the window scope in the call under the suggested key", async () => {
 		const result = await call({
 			...window,

@@ -142,8 +142,13 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 			const identity =
 				didTotal === 0
 					? yield* eventIdentityNote({
-							step: did,
-							label: funnelStepLabel(did),
+							// Both events: a key the excluded one lacks would make everyone a member.
+							events: [
+								{ step: did, label: funnelStepLabel(did) },
+								...(didNot === undefined
+									? []
+									: [{ step: didNot, label: funnelStepLabel(didNot) }]),
+							],
 							keyBy,
 							candidates: RetentionKeyBy.literals,
 							startTime: st,

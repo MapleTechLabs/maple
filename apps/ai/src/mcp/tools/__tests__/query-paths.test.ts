@@ -106,6 +106,21 @@ describe("query_paths", () => {
 		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
 	})
 
+	it("keeps the key, the reach and the filters in the calls it suggests", async () => {
+		const result = await call({
+			anchor_json: anchor,
+			key_by: "group",
+			window_seconds: 3600,
+			country: "DE",
+		})
+		const text = markdown(result)
+		// The funnel into the next step and the reverse path measure the same accounts.
+		expect(text).toMatch(/query_funnel [^\n]*key_by="group"[^\n]*window_seconds=3600[^\n]*country="DE"/)
+		expect(text).toMatch(
+			/query_paths [^\n]*direction="before"[^\n]*key_by="group"[^\n]*window_seconds=3600[^\n]*country="DE"/,
+		)
+	})
+
 	it("says nobody did the anchor instead of printing empty hops", async () => {
 		const result = await call({
 			anchor_json: JSON.stringify({ kind: "event", eventName: "nobody_does_this" }),

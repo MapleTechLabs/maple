@@ -154,6 +154,15 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				utmSource: params.utm_source,
 				deviceType: params.device_type,
 			}
+			const givenFilters = Rec.filter(
+				{
+					host: params.host,
+					country: params.country,
+					utm_source: params.utm_source,
+					device_type: params.device_type,
+				},
+				(value): value is string => value !== undefined,
+			)
 			const nowMs = yield* Clock.currentTimeMillis
 			const sessionNote = sessionRetentionNote(
 				st,
@@ -223,6 +232,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				keyBy,
 				windowSeconds,
 				...(sessionNote === undefined ? undefined : { sessionNote }),
+				...(Rec.isEmptyRecord(givenFilters) ? undefined : { filters: givenFilters }),
 				...pathHops(rows),
 			}
 		}),
@@ -268,6 +278,15 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				Str.startsWith("/")(name)
 					? { kind: "page", pagePath: name }
 					: { kind: "event", eventName: name }
+			// The people and the reach a follow-up has to keep to measure the same thing.
+			const samePopulation = {
+				...(output.keyBy === "person" ? undefined : { key_by: output.keyBy }),
+				...(output.windowSeconds === DEFAULT_WINDOW_SECONDS
+					? undefined
+					: { window_seconds: output.windowSeconds }),
+				...output.filters,
+				...window,
+			}
 			return {
 				title: `Paths ${direction} ${truncate(anchorLabel, 60)} (by ${output.keyBy}, within ${output.windowSeconds}s)`,
 				scope: [
@@ -296,9 +315,12 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 											output.anchor,
 											nextStep(topNext.value.name),
 										]),
-										...window,
+										...samePopulation,
 									},
-									"measure the conversion into the most common next step",
+									// A node is a name alone: a mobile screen reads like an event here.
+									Str.startsWith("/")(topNext.value.name)
+										? "measure the conversion into the most common next step"
+										: 'measure the conversion into the most common next step (if it is a mobile screen and not an event, make it {"kind":"page","pagePath":<the name>})',
 								),
 							]
 						: []),
@@ -307,7 +329,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 						{
 							anchor_json: anchorJson,
 							direction: direction === "after" ? "before" : "after",
-							...window,
+							...samePopulation,
 						},
 						direction === "after" ? "what led up to it" : "what followed it",
 					),

@@ -106,12 +106,15 @@ export const isBlankStep = (step: Extract<FunnelStep, { kind: "event" | "page" }
 	Str.trim(step.kind === "event" ? step.eventName : step.pagePath) === ""
 
 /**
- * The note for tools that count one event: read its coverage and say whether `keyBy` can count
- * it. A failed read is no note, never a failed tool.
+ * The note for tools that count named events: read their coverage and say whether `keyBy` can
+ * count them. Every event the answer depends on goes in, so the key offered is one all of them
+ * carry. A failed read is no note, never a failed tool.
  */
 export const eventIdentityNote = <K extends FunnelKeyBy>(input: {
-	readonly step: Extract<FunnelStep, { kind: "event" | "page" }>
-	readonly label: string
+	readonly events: ReadonlyArray<{
+		readonly step: Extract<FunnelStep, { kind: "event" | "page" }>
+		readonly label: string
+	}>
 	readonly keyBy: K
 	readonly candidates: ReadonlyArray<K>
 	readonly startTime: string
@@ -119,13 +122,20 @@ export const eventIdentityNote = <K extends FunnelKeyBy>(input: {
 }) =>
 	withTenantExecutor(
 		productEventsFunnelCoverage({
-			steps: [input.step],
+			steps: Arr.map(input.events, (event) => event.step),
 			keyBy: input.keyBy,
 			windowSeconds: 86_400,
 			startTime: input.startTime,
 			endTime: input.endTime,
 		}),
 	).pipe(
-		Effect.map((coverage) => identityNoteFor(coverage, input.keyBy, [input.label], input.candidates)),
+		Effect.map((coverage) =>
+			identityNoteFor(
+				coverage,
+				input.keyBy,
+				Arr.map(input.events, (event) => event.label),
+				input.candidates,
+			),
+		),
 		orFallback("event identity coverage", () => undefined),
 	)

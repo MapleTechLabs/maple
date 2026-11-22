@@ -112,7 +112,7 @@ type EventsColumns = typeof Datasources.productEvents.columns
  * `{ cohort, period, count }`, ordered by cohort then period. A cohort with nobody in it is not
  * a row; a period nobody came back in is not one either, so the reader fills zeros.
  *
- * Reads start events up to `endTime` (from `startTime` unless `firstEver`) and return events
+ * Cohorts are the keys whose first start event is in `[startTime, endTime)`. Reads return events
  * from `startTime` to the `returnEndTime` parameter, which lets the last cohorts be followed
  * past the end of the cohort window.
  */
@@ -190,7 +190,8 @@ export function productEventsRetentionQuery(
 				T.int64,
 			),
 		}))
-		.where(($) => [$.first.gte(param.dateTime("startTime")), $.first.lte(param.dateTime("endTime"))])
+		// Half-open: a first event on the instant the window ends belongs to the next interval.
+		.where(($) => [$.first.gte(param.dateTime("startTime")), $.first.lt(param.dateTime("endTime"))])
 
 	return Result.succeed(
 		fromQuery(cohorted, "cohorted")

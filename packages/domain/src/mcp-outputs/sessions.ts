@@ -198,6 +198,8 @@ export const QueryFunnelOutput = Schema.Struct({
 	definition: Schema.Array(FunnelStep),
 	/** The exclusions as given, when there were any. */
 	exclusions: Schema.optionalKey(Schema.Array(FunnelExclusion)),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	/** Set when a step's events lack the identity `keyBy` counts by, so the step reads as empty. */
 	identityNote: Schema.optionalKey(Schema.String),
 	/** The key every step's events do carry, when `identityNote` is set and there is one. */
@@ -219,6 +221,8 @@ export const QueryPathsOutput = Schema.Struct({
 	total: Schema.Number,
 	/** Set when a session filter is used and the window starts before sessions are kept. */
 	sessionNote: Schema.optionalKey(Schema.String),
+	/** The population filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	/** One entry per hop away from the anchor, nearest first. */
 	hops: Schema.Array(
 		Schema.Struct({

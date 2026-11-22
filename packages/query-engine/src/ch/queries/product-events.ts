@@ -151,6 +151,9 @@ export type FunnelKeyBy = "person" | "visitor" | "user" | "group" | "session"
  * not yet step `before` is dropped the moment the event occurs. With neither bound it is "anywhere
  * between the first step and the last". Dropping is per attempt: the same person can still convert
  * on a later attempt, or from an earlier step of this one that the exclusion did not cover.
+ *
+ * Strictly between: the row that reaches `after` or `before` is that step, never an excluded
+ * event for its own range, even when it matches the exclusion too.
  */
 export interface FunnelExclusion {
 	readonly step: Extract<FunnelStep, { kind: "event" | "page" }>
@@ -304,15 +307,21 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			after >= before
 		)
 	})
-	// An excluded row drops the attempts at the steps it covers, the one it would start too: an
-	// exclusion that is also a step leaves nobody in the funnel, which is never what was meant.
-	const stepKeys = new Set(Arr.map(opts.steps, stepKey))
-	const selfExcluding = Arr.findFirst(exclusions, (exclusion) => stepKeys.has(stepKey(exclusion.step)))
+	// A step strictly between the two bounds has to happen there, so excluding it leaves nobody.
+	// The bounds themselves may be excluded: "no second cart view between the cart and the payment".
+	const selfExcluding = Arr.findFirst(exclusions, (exclusion) => {
+		const { after, before } = exclusionRange(exclusion, opts.steps.length)
+		const excluded = stepKey(exclusion.step)
+		return Arr.some(
+			opts.steps,
+			(step, index) => index + 1 > after && index + 1 < before && stepKey(step) === excluded,
+		)
+	})
 	if (Option.isSome(selfExcluding)) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidExclusion",
 			message:
-				"an exclusion cannot be one of the funnel's own steps: it would drop every attempt that reaches it",
+				"an exclusion cannot be a step that lies between its own after and before: every attempt has to pass that step, so none would be left",
 		})
 	}
 	if (Option.isSome(misplaced)) {
@@ -618,7 +627,15 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 			)
 			const d = dimExpr($)
 			const row = { key, ord: orderKey($.Timestamp, $.Seq), ...flags, ...excluded }
-			return d ? { ...row, dim: d } : row
+			if (d === undefined) return row
+			// A row read only for an exclusion is not part of the funnel: it names no group.
+			const stepRow = CH.or(
+				...Arr.filter(
+					Arr.map(opts.steps, (step) => eventStepCondition($, step)),
+					(cond): cond is CH.Condition => cond !== undefined,
+				),
+			)
+			return { ...row, dim: (opts.exclusions ?? []).length > 0 ? CH.if_(stepRow, d, CH.lit("")) : d }
 		})
 		.where(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
@@ -785,22 +802,28 @@ function walkQuery(plan: FunnelPlan) {
 	// never 1. Without exclusions the marker is unused and the SQL is what it always was.
 	const DROPPED = "toUInt64(1)"
 	const live = exclusions.length > 0 ? "> 1" : "> 0"
-	/** The rows that drop the attempts standing at `step`, or `undefined` when no exclusion covers it. */
-	const dropsAt = (step: number): string | undefined => {
-		const covering = Arr.filter(
-			Arr.map(exclusions, (exclusion, index) => ({ ...exclusionRange(exclusion, n), index })),
-			(range) => range.after <= step && step < range.before,
-		)
-		return covering.length === 0
+	const ranges = Arr.map(exclusions, (exclusion, index) => ({ ...exclusionRange(exclusion, n), index }))
+	const anyOf = (covering: typeof ranges): string | undefined =>
+		covering.length === 0
 			? undefined
 			: `(${Arr.join(
 					Arr.map(covering, (range) => `${exclusionElement(range.index)} = 1`),
 					" OR ",
 				)})`
-	}
-	const dropping = (step: number, state: string): string => {
-		const drops = dropsAt(step)
-		return drops === undefined ? state : `if(${drops}, ${DROPPED}, ${state})`
+	/**
+	 * Step `step`'s state on a row, given `arrival`, the state when the row moves an attempt onto
+	 * it (else 0). An exclusion that starts at this step drops the attempts already standing here
+	 * and lets the arriving one through, which was not past `after` before this row. One that
+	 * started earlier drops the arriving attempt as well: it came from inside the range.
+	 */
+	const dropping = (step: number, arrival: string): string => {
+		const fromHere = anyOf(Arr.filter(ranges, (range) => range.after === step && step < range.before))
+		const fromEarlier = anyOf(Arr.filter(ranges, (range) => range.after < step && step < range.before))
+		const standing =
+			fromHere === undefined
+				? arrival
+				: `if(${arrival} > 0, ${arrival}, if(${fromHere}, ${DROPPED}, toUInt64(0)))`
+		return fromEarlier === undefined ? standing : `if(${fromEarlier}, ${DROPPED}, ${standing})`
 	}
 	const perPerson = funnelSource(plan)
 		.select(($) => {

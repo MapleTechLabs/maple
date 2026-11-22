@@ -73,6 +73,8 @@ export interface ProductEventsTimeseriesOpts extends ProductEventsQueryOpts {
 	seriesLimit?: number
 	/** One bucket per group over the whole range; see `timeseriesBucket`. Alert evaluation sets it. */
 	wholeRange?: boolean
+	/** With `wholeRange`: count the instant `endTime` too, as the bucketed read of the window does. */
+	closedEnd?: boolean
 }
 
 export interface ProductEventsTimeseriesOutput {
@@ -140,6 +142,24 @@ function sessionFilters(opts: ProductEventsQueryOpts): WebAnalyticsFilters {
 	}
 }
 
+/** The browser SDK's session lifetime cap: no event is further than this from its session's start. */
+const SESSION_MAX_LIFETIME_HOURS = 24
+
+/**
+ * Where the sessions of a window's events start: a lifetime before it. An event early in the
+ * window belongs to a session that began earlier, and the timeseries cache re-runs a query on
+ * sub-ranges as short as a minute, where nearly every event does.
+ */
+const sessionsFrom = (): CH.Expr<DateTime.Utc> => {
+	const windowStart = CH.toDateTime(utcSecondsParam("startTime"))
+	return CH.compileTypedFnCall(
+		"subtractHours",
+		CH.schemaOf<DateTime.Utc>(windowStart),
+		windowStart,
+		CH.lit(SESSION_MAX_LIFETIME_HOURS),
+	)
+}
+
 function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Condition | undefined {
 	const filters = sessionFilters(opts)
 	if (!needsSessionSemiJoin(filters)) return undefined
@@ -147,7 +167,8 @@ function sessionSemiJoin($: EventsAccessor, opts: ProductEventsQueryOpts): CH.Co
 		$.SessionId,
 		from(Datasources.sessionReplays)
 			.select(($s) => ({ sessionId: $s.SessionId }))
-			.where(($s) => replaysWhere($s, filters))
+			// The same sessions a session group-by reads, so a bucket and the filter on it agree.
+			.where(($s) => replaysWhere($s, filters, undefined, sessionsFrom()))
 			.groupBy("sessionId"),
 	)
 }
@@ -221,7 +242,8 @@ function numericExpr($: EventsAccessor, fn: ProductEventsNumericMetric, key: str
 				return CH.quantile(0.99)(value)
 		}
 	}
-	return CH.ifNull(aggregate(), CH.lit(0))
+	// No values at all is NULL from `sum`, and can be NaN from `avg` or a quantile.
+	return CH.ifNull(CH.ifNotFinite(aggregate(), 0), CH.lit(0))
 }
 
 function metricExpr(
@@ -262,25 +284,11 @@ const isSessionGroupBy = (key: string): key is ProductEventsSessionGroupBy =>
 
 const SESSION_ALIAS = "sd"
 
-/** The browser SDK's session lifetime cap: no event is further than this from its session's start. */
-const SESSION_MAX_LIFETIME_HOURS = 24
-
 /**
  * One row per session with the dimensions asked for. `max()` so the row that carries a value
- * beats an un-merged earlier version's `''`.
- *
- * Sessions are read from a lifetime before the window on: an event early in the window belongs
- * to a session that started before it, and the timeseries cache re-runs a query on sub-ranges as
- * short as a minute, where nearly every event does. A session with no id is nobody's.
+ * beats an un-merged earlier version's `''`. A session with no id is nobody's.
  */
 function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
-	const windowStart = CH.toDateTime(utcSecondsParam("startTime"))
-	const sessionsFrom = CH.compileTypedFnCall(
-		"subtractHours",
-		CH.schemaOf<DateTime.Utc>(windowStart),
-		windowStart,
-		CH.lit(SESSION_MAX_LIFETIME_HOURS),
-	)
 	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			SessionId: $.SessionId,
@@ -290,7 +298,7 @@ function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(sessionsFrom),
+			$.StartTime.gte(sessionsFrom()),
 			$.StartTime.lte(param.dateTime("endTime")),
 			$.SessionId.neq(""),
 		])
@@ -375,7 +383,10 @@ export function productEventsTimeseriesQuery(
 				? CH.countIf(numericValue($, opts.valueAttributeKey ?? "").isNotNull())
 				: CH.count(),
 		}))
-		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
+		.where(($) => [
+			...eventConditions($, opts),
+			wholeRangeEnd($.Timestamp, opts.wholeRange === true && opts.closedEnd !== true),
+		])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(inner, TS_COLUMNS, "value", opts)

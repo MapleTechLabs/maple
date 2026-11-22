@@ -46,9 +46,13 @@ const sourceLabelOf = (output: Output): string =>
 				: `product events (${output.eventName})`
 			: `${output.source} (${output.scope ?? "span"})`
 
-/** What narrows a product-event read: the event its props were read from. */
-const eventScope = (output: Output) =>
-	output.eventName === undefined ? undefined : { event_name: [output.eventName] }
+/** What narrows a product-event read: its event, the service that sent it, and the window. */
+const eventScope = (output: Output) => ({
+	...(output.eventName === undefined ? undefined : { event_name: [output.eventName] }),
+	...(output.service === undefined ? undefined : { service: output.service }),
+	start_time: output.timeRange.start,
+	end_time: output.timeRange.end,
+})
 
 const renderValues = (output: Output, key: string): ToolDoc => {
 	const values = output.values ?? []
@@ -200,6 +204,10 @@ const renderKeys = (output: Output): ToolDoc => {
 					...(output.metricType === undefined ? undefined : { metric_type: output.metricType }),
 					...(output.service === undefined ? undefined : { service: output.service }),
 					...(output.eventName === undefined ? undefined : { event_name: output.eventName }),
+					// A product question names its dates: the values have to come from the same ones.
+					...(source === "product_events"
+						? { start_time: output.timeRange.start, end_time: output.timeRange.end }
+						: undefined),
 				},
 				"see values for this key",
 			),
