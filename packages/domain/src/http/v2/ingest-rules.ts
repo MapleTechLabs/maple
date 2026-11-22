@@ -300,6 +300,46 @@ export const V2IngestRulePreview = Schema.Struct({
 })
 export type V2IngestRulePreview = Schema.Schema.Type<typeof V2IngestRulePreview>
 
+export const V2IngestRuleSuggestion = Schema.Struct({
+	signal: Schema.Literals(["traces", "logs"]),
+	service_name: Schema.String,
+	level: Schema.NullOr(Schema.Literals(["debug", "info"])).annotate({
+		description: "Logs: the rule covers this level and every level below it. `null` for traces.",
+	}),
+	span_name: Schema.NullOr(Schema.String).annotate({
+		description: "Traces: the exact span name the rule covers. `null` for logs.",
+	}),
+	reason: Schema.Literals(["debug_logs", "info_logs", "health_checks", "busy_operation"]).annotate({
+		description:
+			"Why: debug logs and health checks are dropped; a log level or operation that is a tenth of its signal is sampled.",
+	}),
+	keep_percent: Count.annotate({ description: "The rule's `keep_percent`: 0 drops, 10 samples." }),
+	records: Count.annotate({ description: "Records stored in the last 24 hours." }),
+	bytes: Count.annotate({
+		description: "Their bytes; for spans, estimated from the service's average span.",
+	}),
+	saved_bytes: Count.annotate({ description: "Bytes the rule would have kept off the bill." }),
+	share: Schema.Number.annotate({
+		description: "`bytes` as a share (0 to 1) of the signal's stored bytes.",
+	}),
+}).annotate({ identifier: "IngestRuleSuggestion", title: "Suggested ingest rule" })
+export type V2IngestRuleSuggestion = Schema.Schema.Type<typeof V2IngestRuleSuggestion>
+
+export const V2IngestRuleSuggestions = Schema.Struct({
+	object: Schema.Literal("ingest_rule_suggestions"),
+	start_time: Timestamp,
+	end_time: Timestamp,
+	data: Schema.Array(V2IngestRuleSuggestion).annotate({
+		description: "At most 6, most bytes saved first.",
+	}),
+}).annotate({
+	identifier: "IngestRuleSuggestions",
+	title: "Suggested ingest rules",
+	description:
+		"Rules the last 24 hours of stored logs and spans suggest: debug logs and health checks to drop, and a dominant log level or operation to sample.",
+})
+export type V2IngestRuleSuggestions = Schema.Schema.Type<typeof V2IngestRuleSuggestions>
+
 export const V2IngestRuleReorderParams = Schema.Struct({
 	ids: Schema.Array(IngestRulePublicId).annotate({
 		description: "Every rule's id, in the new order. Positions become 0, 1, 2 and so on.",
@@ -350,6 +390,19 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				summary: "Ingest rule stats",
 				description:
 					"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("suggestions", "/suggestions", {
+			success: V2IngestRuleSuggestions,
+			error: [...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listIngestRuleSuggestions",
+				summary: "Suggested ingest rules",
+				description:
+					"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have kept off the bill. Requires the `ingest_rules:read` scope.",
 			}),
 		),
 	)

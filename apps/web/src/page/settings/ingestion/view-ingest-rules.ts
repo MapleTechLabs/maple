@@ -27,6 +27,7 @@ import { denialReason } from "../../kit/session-grants"
 import { detail, effectOf, headline, hourlySeries } from "../ingest-rule/impact"
 import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
+import { ruleSuggestions } from "./view-rule-suggestions"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -291,6 +292,9 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 								? rulesEmpty(h, canManage)
 								: rulesTable(h, model, canManage, rules),
 					}),
+					...ruleSuggestions(h, model, (inner, options, children) =>
+						ruleLink(inner, canManage, options, children),
+					),
 				],
 			),
 		],

@@ -335,3 +335,39 @@ describe("ingest rule 24 hour estimate", () => {
 		expect(names(opened.commands)).not.toContain("DebounceIngestRuleEstimate")
 	})
 })
+
+describe("ingest rule from a suggestion", () => {
+	test("a suggestion link opens a draft for that service and level, ready to save", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				asAdmin(
+					init(
+						{ _tag: "IngestRuleNew", search: { service: "checkout", level: "info", keep: 10 } },
+						context,
+					).model,
+				),
+			),
+			expectView(role("textbox", { name: "Name" })).toHaveValue(
+				"Sample info and debug logs from checkout",
+			),
+			expectView(role("combobox", { name: "Condition 2 operator" })).toHaveValue("lt"),
+			expectView(text("Ready to save")).toExist(),
+		)
+	})
+
+	test("a span suggestion matches the exact span name in traces", () => {
+		const model = init(
+			{ _tag: "IngestRuleNew", search: { service: "api", span: "GET /healthz", keep: 0 } },
+			context,
+		).model
+		expect(model.draft.signals).toEqual(["traces"])
+		expect(
+			Arr.map(model.draft.conditions, (condition) => [condition.field, condition.op, condition.value]),
+		).toEqual([
+			["service_name", "eq", "api"],
+			["name", "eq", "GET /healthz"],
+		])
+		expect(model.draft.name).toBe("Drop GET /healthz in api")
+	})
+})

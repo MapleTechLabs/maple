@@ -1,4 +1,4 @@
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRuleStats, V2IngestRuleSuggestions } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -15,11 +15,14 @@ import { ruleHref } from "../ingest-rule/hrefs"
 const RuleId = V2IngestRule.fields.id
 export const RulesData = AsyncData.Schema(Schema.Array(V2IngestRule), LoadFailure)
 export const StatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
+export const SuggestionsData = AsyncData.Schema(V2IngestRuleSuggestions, LoadFailure)
 
 export const Model = Schema.Struct({
 	rules: RulesData.schema,
 	/** Hits over the last 24 hours; a failure only blanks the column. */
 	stats: StatsData.schema,
+	/** Rules the last 24 hours suggest; a failure only hides them. */
+	suggestions: SuggestionsData.schema,
 	/** Rows with a toggle in flight. */
 	pending: Schema.Array(Schema.String),
 	isMoving: Schema.Boolean,
@@ -33,6 +36,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	CompletedFetch: { result: Schema.Result(Schema.Array(V2IngestRule), LoadFailure) },
 	CompletedFetchStats: { result: Schema.Result(V2IngestRuleStats, LoadFailure) },
+	CompletedFetchSuggestions: { result: Schema.Result(V2IngestRuleSuggestions, LoadFailure) },
 	ClickedRetry: {},
 	Toggled: { id: RuleId },
 	CompletedToggle: { id: RuleId, result: Schema.Result(Schema.Void, LoadFailure) },
@@ -65,6 +69,14 @@ export const FetchIngestRuleStats = Command.define("FetchIngestRuleStats", {
 	messages: [Message.CompletedFetchStats],
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.stats({ query: {} })).pipe(
 		settleTo((result) => Message.CompletedFetchStats({ result })),
+	),
+})
+
+/** Rules the last 24 hours of stored logs and spans suggest. */
+export const FetchIngestRuleSuggestions = Command.define("FetchIngestRuleSuggestions", {
+	messages: [Message.CompletedFetchSuggestions],
+	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.suggestions()).pipe(
+		settleTo((result) => Message.CompletedFetchSuggestions({ result })),
 	),
 })
 
@@ -104,6 +116,7 @@ const DeleteIngestRule = Command.define("DeleteIngestRule", {
 export const init = (): Model => ({
 	rules: AsyncData.Loading(),
 	stats: AsyncData.Loading(),
+	suggestions: AsyncData.Loading(),
 	pending: [],
 	isMoving: false,
 	menus: {},
@@ -176,9 +189,17 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchStats: ({ result }) => ({
 			model: { ...model, stats: AsyncData.settle(model.stats, result) },
 		}),
+		CompletedFetchSuggestions: ({ result }) => ({
+			model: { ...model, suggestions: AsyncData.settle(model.suggestions, result) },
+		}),
 		ClickedRetry: () => ({
-			model: { ...model, rules: AsyncData.Loading(), stats: AsyncData.Loading() },
-			commands: [FetchIngestRules(), FetchIngestRuleStats()],
+			model: {
+				...model,
+				rules: AsyncData.Loading(),
+				stats: AsyncData.Loading(),
+				suggestions: AsyncData.Loading(),
+			},
+			commands: [FetchIngestRules(), FetchIngestRuleStats(), FetchIngestRuleSuggestions()],
 		}),
 		Toggled: ({ id }) =>
 			Option.match(

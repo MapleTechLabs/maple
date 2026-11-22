@@ -506,6 +506,9 @@ describe("v2 ingest_rules over HTTP", () => {
 		})
 		const listed = await harness.request("GET", "/v2/ingest_rules", { token: key.secret })
 		expect(listed.body.data).toEqual([])
+		const suggested = await harness.request("GET", "/v2/ingest_rules/suggestions", { token: key.secret })
+		expect(suggested.status).toBe(200)
+		expect(suggested.body).toMatchObject({ object: "ingest_rule_suggestions", data: [] })
 		const invalid = await harness.request("POST", "/v2/ingest_rules/preview", {
 			token: key.secret,
 			body: {

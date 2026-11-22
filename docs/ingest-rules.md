@@ -226,6 +226,22 @@ regexes run on ClickHouse's RE2, and attribute values are compared as ingest sto
 are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
 above on chDB.
 
+## Suggested rules
+
+`GET /v2/ingest_rules/suggestions` ranks the last 24 hours of stored data from the hourly rollups
+(`logs_aggregates_hourly` by service and level, `service_operations_hourly` by service and span
+name; span bytes come from each service's average span in `service_usage`):
+
+- debug and trace logs of a service: drop;
+- spans whose name is a probe (`healthz`, `readyz`, `livez`, `ping`, `heartbeat`, ...): drop;
+- a service's info logs, or one operation, that is at least a tenth of its signal's bytes: keep
+  10%, sampled by trace id so traces stay whole.
+
+A suggestion must hold 1,000 records and save at least 0.5% of all stored log and span bytes; the
+six with the most bytes saved are listed under the rule list, each opening the editor prefilled
+(`/settings/ingestion/rules/new?service=&level=|span=&keep=`). Data an existing rule drops is not
+stored, so it is never suggested again.
+
 ## Limits
 
 - 50 rules per org and 20 conditions per rule.

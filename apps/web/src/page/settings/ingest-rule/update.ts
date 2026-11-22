@@ -33,6 +33,7 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import type { PreviewSignal } from "./preview"
 import { estimateKeyOf, estimateParamsOf } from "./estimate"
+import { draftFromSuggestion } from "./suggested"
 import { draftFromRule, isTemplateId, TEMPLATES } from "./templates"
 
 type Return = PageReturn<Model, Message>
@@ -110,7 +111,11 @@ const initial = (route: EditorRoute, context: PageContext): Return => {
 	const parsed = route._tag === "IngestRule" ? ruleIdFromUrl(route.ruleId) : Option.none()
 	const editingId = Option.getOrNull(parsed)
 	const template = route._tag === "IngestRuleNew" ? route.search.template : undefined
-	const draft = template !== undefined && isTemplateId(template) ? TEMPLATES[template].draft : emptyDraft
+	const suggested = route._tag === "IngestRuleNew" ? draftFromSuggestion(route.search) : undefined
+	const draft =
+		template !== undefined && isTemplateId(template)
+			? TEMPLATES[template].draft
+			: (suggested ?? emptyDraft)
 	const base: Model = withKeyBoxes({
 		editingId,
 		isBadId: route._tag === "IngestRule" && editingId === null,

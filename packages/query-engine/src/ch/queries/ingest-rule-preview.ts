@@ -9,6 +9,7 @@ import * as Datasources from "@maple/domain/tinybird/datasources"
 import { SEVERITY_LEVELS, type IngestRuleCondition } from "@maple/domain/ingest-rules"
 import { Array as Arr } from "effect"
 import { orgIdParam, utcSecondsParam } from "../tables"
+import { utcHourFloor } from "./query-helpers"
 
 /** The gateway scans at most this much of a value with a regex. */
 const REGEX_WINDOW = 16 * 1024
@@ -171,5 +172,59 @@ export function ingestRuleSpanMatchesQuery(opts: IngestRuleMatchOpts) {
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])
 		.groupBy("serviceName")
+		.format("JSON")
+}
+
+// Suggested rules: the busiest log levels and span names per service, from the hourly rollups so
+// a day costs a few thousand rows, not a scan.
+
+/** `debug` for trace and debug text, `info` for info, `other` for the rest (unknown included). */
+const levelOfText = (text: StringExpr) => {
+	const lower = CH.lower_(text)
+	return CH.multiIf<string>(
+		[
+			[CH.or(lower.startsWith("trace"), lower.startsWith("debug")) ?? CH.rawCond("0"), CH.lit("debug")],
+			[lower.startsWith("info"), CH.lit("info")],
+		],
+		CH.lit("other"),
+	)
+}
+
+/** Stored logs per service and level over the hours the window touches. */
+export function ingestRuleLogVolumeQuery() {
+	return from(Datasources.logsAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			level: levelOfText($.SeverityText),
+			records: CH.sum($.Count),
+			bytes: CH.sum($.SizeBytes),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName", "level")
+		.orderBy(["bytes", "desc"])
+		.limit(200)
+		.format("JSON")
+}
+
+/** Stored spans per service and span name over the hours the window touches, busiest first. */
+export function ingestRuleSpanVolumeQuery() {
+	return from(Datasources.serviceOperationsHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanName: $.SpanName,
+			records: CH.sum($.SpanCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName", "spanName")
+		.orderBy(["records", "desc"])
+		.limit(200)
 		.format("JSON")
 }

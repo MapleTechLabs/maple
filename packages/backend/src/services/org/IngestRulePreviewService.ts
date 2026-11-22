@@ -40,6 +40,15 @@ const dropShare = (spec: IngestRuleSpec): number =>
 /** Bytes per stored record of one signal, per service, from the hourly usage rollup. */
 type RecordSizes = ReadonlyMap<string, number>
 
+const sizesFrom = (usage: ReadonlyArray<CH.ServiceUsageOutput>, signal: PreviewSignal): RecordSizes =>
+	new Map(
+		Arr.map(usage, (row) => {
+			const count = Number(signal === "logs" ? row.totalLogCount : row.totalTraceCount)
+			const bytes = Number(signal === "logs" ? row.totalLogSizeBytes : row.totalTraceSizeBytes)
+			return [row.serviceName, count > 0 ? bytes / count : 0] as const
+		}),
+	)
+
 /**
  * Totals for one signal: each service's matches times the share dropped, and those drops times
  * that service's average record size. A service missing from the usage rollup counts no bytes.
@@ -73,6 +82,133 @@ export const summarize = (
 			TOP_SERVICES,
 		),
 	}
+}
+
+export type SuggestionReason = "debug_logs" | "info_logs" | "health_checks" | "busy_operation"
+
+/** A rule the org's last 24 hours suggest, with what it would have kept off the bill. */
+export interface RuleSuggestion {
+	readonly signal: PreviewSignal
+	readonly serviceName: string
+	/** Logs: the level the rule covers, and every level below it; `null` for traces. */
+	readonly level: "debug" | "info" | null
+	/** Traces: the exact span name the rule covers; `null` for logs. */
+	readonly spanName: string | null
+	readonly reason: SuggestionReason
+	readonly keepPercent: number
+	readonly records: number
+	readonly bytes: number
+	readonly savedBytes: number
+	/** `bytes` as a share of the signal's stored bytes. */
+	readonly share: number
+}
+
+export interface IngestRuleSuggestionsResult {
+	readonly startMs: number
+	readonly endMs: number
+	readonly suggestions: ReadonlyArray<RuleSuggestion>
+}
+
+const SAMPLE_KEEP_PERCENT = 10
+const MAX_SUGGESTIONS = 6
+/** A busy level or operation is worth sampling once it is this much of its signal's bytes. */
+const DOMINANT_SHARE = 0.1
+/** Below this share of all stored bytes, a suggestion is not worth a rule. */
+const MIN_SAVED_SHARE = 0.005
+const MIN_RECORDS = 1000
+/** A probe's span name: a whole word, so `shipping` is not `ping`. */
+const HEALTH_CHECK =
+	/(?:^|[^a-z])(?:healthz?|health[-_]?checks?|readyz?|readiness|livez?|liveness|ping|heartbeat)(?:[^a-z]|$)/iu
+
+/**
+ * Rules worth suggesting from the day's volume: drop debug logs and health-check spans; sample a
+ * log level or an operation that is a tenth of its signal's bytes. Busiest savings first.
+ */
+export const suggestRules = (
+	logs: ReadonlyArray<{
+		readonly serviceName: string
+		readonly level: string
+		readonly records: number
+		readonly bytes: number
+	}>,
+	spans: ReadonlyArray<{
+		readonly serviceName: string
+		readonly spanName: string
+		readonly records: number
+	}>,
+	spanSizes: RecordSizes,
+): ReadonlyArray<RuleSuggestion> => {
+	const logBytes = Arr.reduce(logs, 0, (total, row) => total + Number(row.bytes))
+	const spanRows = Arr.map(spans, (row) => ({
+		...row,
+		records: Number(row.records),
+		bytes: Number(row.records) * (spanSizes.get(row.serviceName) ?? 0),
+	}))
+	const spanBytes = Arr.reduce(spanRows, 0, (total, row) => total + row.bytes)
+	const allBytes = logBytes + spanBytes
+	const sampled = (bytes: number) => bytes * (1 - SAMPLE_KEEP_PERCENT / 100)
+	const fromLogs = Arr.flatMap(logs, (row): ReadonlyArray<RuleSuggestion> => {
+		const bytes = Number(row.bytes)
+		const share = logBytes > 0 ? bytes / logBytes : 0
+		const base = {
+			signal: "logs" as const,
+			spanName: null,
+			serviceName: row.serviceName,
+			records: Number(row.records),
+			bytes,
+			share,
+		}
+		if (row.level === "debug")
+			return [{ ...base, level: "debug", reason: "debug_logs", keepPercent: 0, savedBytes: bytes }]
+		if (row.level === "info" && share >= DOMINANT_SHARE)
+			return [
+				{
+					...base,
+					level: "info",
+					reason: "info_logs",
+					keepPercent: SAMPLE_KEEP_PERCENT,
+					savedBytes: sampled(bytes),
+				},
+			]
+		return []
+	})
+	const fromSpans = Arr.flatMap(spanRows, (row): ReadonlyArray<RuleSuggestion> => {
+		const share = spanBytes > 0 ? row.bytes / spanBytes : 0
+		const base = {
+			signal: "traces" as const,
+			level: null,
+			serviceName: row.serviceName,
+			spanName: row.spanName,
+			records: row.records,
+			bytes: row.bytes,
+			share,
+		}
+		if (HEALTH_CHECK.test(row.spanName))
+			return [{ ...base, reason: "health_checks", keepPercent: 0, savedBytes: row.bytes }]
+		if (share >= DOMINANT_SHARE)
+			return [
+				{
+					...base,
+					reason: "busy_operation",
+					keepPercent: SAMPLE_KEEP_PERCENT,
+					savedBytes: sampled(row.bytes),
+				},
+			]
+		return []
+	})
+	return Arr.take(
+		Arr.sort(
+			Arr.filter(
+				[...fromLogs, ...fromSpans],
+				(suggestion) =>
+					suggestion.records >= MIN_RECORDS &&
+					allBytes > 0 &&
+					suggestion.savedBytes / allBytes >= MIN_SAVED_SHARE,
+			),
+			Order.mapInput(Order.flip(Order.Number), (suggestion: RuleSuggestion) => suggestion.savedBytes),
+		),
+		MAX_SUGGESTIONS,
+	)
 }
 
 const make = Effect.gen(function* () {
@@ -128,25 +264,49 @@ const make = Effect.gen(function* () {
 			],
 			{ concurrency: "unbounded" },
 		)
-		const sizesOf = (signal: PreviewSignal): RecordSizes =>
-			new Map(
-				Arr.map(usage, (row) => {
-					const count = Number(signal === "logs" ? row.totalLogCount : row.totalTraceCount)
-					const bytes = Number(signal === "logs" ? row.totalLogSizeBytes : row.totalTraceSizeBytes)
-					return [row.serviceName, count > 0 ? bytes / count : 0] as const
-				}),
-			)
 		const share = dropShare(spec)
 		return {
 			startMs,
 			endMs,
 			signals: Arr.map(signals, (signal, index) =>
-				summarize(signal, matches[index] ?? [], sizesOf(signal), share),
+				summarize(signal, matches[index] ?? [], sizesFrom(usage, signal), share),
 			),
 		} satisfies IngestRulePreviewResult
 	})
 
-	return { preview }
+	const suggestions = Effect.fn("IngestRulePreviewService.suggestions")(function* (
+		tenant: TenantContext,
+		endMs: number,
+	) {
+		const startMs = endMs - PREVIEW_WINDOW_MS
+		const params = {
+			orgId: tenant.orgId,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		}
+		const [logs, spans, usage] = yield* Effect.all(
+			[
+				warehouse.compiledQuery(tenant, CH.compile(CH.ingestRuleLogVolumeQuery(), params), {
+					profile: "aggregation",
+					context: "ingestRuleSuggestLogs",
+				}),
+				warehouse.compiledQuery(tenant, CH.compile(CH.ingestRuleSpanVolumeQuery(), params), {
+					profile: "aggregation",
+					context: "ingestRuleSuggestSpans",
+				}),
+				warehouse.compiledQuery(tenant, CH.compile(CH.serviceUsageQuery({}), params), {
+					profile: "aggregation",
+					context: "ingestRuleSuggestUsage",
+				}),
+			],
+			{ concurrency: "unbounded" },
+		)
+		const suggested = suggestRules(logs, spans, sizesFrom(usage, "traces"))
+		yield* Effect.annotateCurrentSpan({ "maple.ingest_rule.suggestions": suggested.length })
+		return { startMs, endMs, suggestions: suggested } satisfies IngestRuleSuggestionsResult
+	})
+
+	return { preview, suggestions }
 })
 
 export class IngestRulePreviewService extends Context.Service<IngestRulePreviewService>()(
