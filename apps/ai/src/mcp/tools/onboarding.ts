@@ -19,6 +19,8 @@ const SETUP_TOOL = "get_ingest_setup"
 export const SETUP_GUIDE_URL = "https://maple.dev/SKILL.md"
 const REPORTED_STATUSES = ["active", "waiting", "completed", "skipped", "failed"] as const
 const TRACE_ID = /^[0-9a-f]{32}$/
+// The REST route's `service.name` bounds: these names are rendered on the dashboard.
+const SERVICE_NAME = /^[\w.:@/-]{1,120}$/u
 
 const toRunOutput = (row: OnboardingAgentRunRow): typeof OnboardingRunOutput.Type => ({
 	status: row.status,
@@ -72,6 +74,15 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 				return yield* invalid(
 					"services",
 					`services lists more than ${ONBOARDING_AGENT_SERVICES_MAX} names.`,
+				)
+			}
+			if (
+				params.services !== undefined &&
+				!Arr.every(params.services, (name) => SERVICE_NAME.test(name))
+			) {
+				return yield* invalid(
+					"services",
+					"each service must be a service.name of at most 120 letters, digits and . _ : @ / - characters.",
 				)
 			}
 			if (params.trace_id !== undefined && !TRACE_ID.test(params.trace_id)) {

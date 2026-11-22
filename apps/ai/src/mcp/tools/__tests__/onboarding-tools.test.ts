@@ -103,6 +103,18 @@ describe("onboarding_status_update", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
+	it.effect("refuses a service name the dashboard could not show safely", () =>
+		Effect.gen(function* () {
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-names")
+			const result = yield* call("onboarding_status_update", {
+				stage: "instrument_app",
+				status: "active",
+				services: ["api\u202e"],
+			})
+			expect(Result.isFailure(result)).toBe(true)
+		}).pipe(Effect.provide(layer())),
+	)
+
 	it.effect("refuses a trace id that is not 32 lowercase hex characters", () =>
 		Effect.gen(function* () {
 			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-3")
