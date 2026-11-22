@@ -371,14 +371,17 @@ const createTinybirdSqlClient = (
 						return { data: decoded.data }
 					}),
 				),
-			insert: (datasource, rows) =>
+			insert: (datasource, rows, options) =>
 				rows.length === 0
 					? Effect.void
 					: Effect.scoped(
 							Effect.asVoid(
 								send(
 									HttpClientRequest.post(`${base}/v0/events`).pipe(
-										HttpClientRequest.setUrlParams({ name: datasource, wait: "false" }),
+										HttpClientRequest.setUrlParams({
+											name: datasource,
+											wait: options?.durable === true ? "true" : "false",
+										}),
 										HttpClientRequest.bodyText(
 											Arr.join(
 												Arr.map(rows, (row) => encodeEventRow(row)),

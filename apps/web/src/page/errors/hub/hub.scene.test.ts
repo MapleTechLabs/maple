@@ -253,6 +253,17 @@ describe("errors hub", () => {
 		)
 	})
 
+	test("a row's comment and PR counts read as words, not bare numbers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withPage(windowed(), [issue({ comment_count: 3, open_pull_request_count: 2 })])),
+			measured,
+			railMounted,
+			Mount.resolve(MountRowSelect, Message.ClickedRowSelect({ id: "", isShift: false })),
+			expectView(role("link", { name: /3 comments.*2 open pull requests/ })).toExist(),
+		)
+	})
+
 	test("hovering moves the focus mark between rows and keeps the joined signals", () => {
 		const model = withPage(windowed(), [
 			issue(),

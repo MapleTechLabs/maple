@@ -1,101 +1,164 @@
 ---
 /**
- * Status pages · what a page publishes besides HTML: the statuspage.io-style
- * `status.json`, the feeds, the Slack command and the badge. The JSON is the real
- * `renderStatusJson` output for the artifact's demo page (`lib/status-page-demo.ts`).
- * Media-left so it alternates with the copy-left ledger below, like UptimeCheckTrace.
+ * Status pages · what a page publishes besides HTML, one cell each: the real `badge.svg` in
+ * both states, a feed entry with the Slack command, and the statuspage.io-style
+ * `status.json`, trimmed to the fields a script reads first. Badge and JSON come from the
+ * renderer for the hero's demo page (`lib/status-page-demo.ts`).
  */
 import * as m from "../../../paraglide/messages.js";
-import { demoStatusJson } from "../../../lib/status-page-demo";
-import { STATUS_PAGE_ENDPOINTS } from "../../../lib/feature-sections";
+import { demoBadgeSvg, demoStatusJson } from "../../../lib/status-page-demo";
 
-const json = JSON.stringify(demoStatusJson(), null, 2);
+const full = demoStatusJson();
+const json = JSON.stringify(
+	{
+		status: full.status,
+		components: full.components.slice(0, 3).map((component) => ({ name: component.name, status: component.status })),
+	},
+	null,
+	2,
+);
 
-const rules = [
-	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },
-	{ title: m.status_feeds_rule_2_title(), body: m.status_feeds_rule_2_body() },
-	{ title: m.status_feeds_rule_3_title(), body: m.status_feeds_rule_3_body() },
-];
+const badges = [demoBadgeSvg("operational"), demoBadgeSvg("outage")].map(
+	(svg) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`,
+);
 ---
 
 <section class="border-t border-border bg-bg">
 	<div class="shell py-14 md:py-20">
-		<div class="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20">
-			<div class="live-frame min-w-0 self-start">
-				<div class="live-frame__head">
-					<span>GET /api/v1/status.json</span>
-					<span>200</span>
-				</div>
-				<pre class="spf-json" tabindex="0">{json}</pre>
-				<div class="spf-endpoints">
-					{
-						STATUS_PAGE_ENDPOINTS.map((endpoint) => (
-							<div>
-								<span>{endpoint.path}</span>
-								<span>{endpoint.what}</span>
-							</div>
-						))
-					}
-					<div>
-						<span>/feed subscribe https://status.acme.com/feed.rss</span>
-						<span>slack</span>
-					</div>
-				</div>
-			</div>
-
-			<div class="flex min-w-0 flex-col">
+		<div class="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
+			<div class="min-w-0">
 				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.status_feeds_eyebrow()}</p>
 				<h2
-					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+					class="mt-4 max-w-[18ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
 				>
 					{m.status_feeds_title()}
 				</h2>
-				<p class="mt-5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{m.status_feeds_lede()}</p>
-				<dl class="mt-auto pt-8">
-					{
-						rules.map((rule) => (
-							<div class="border-t border-border py-4">
-								<dt class="text-[13px] font-medium text-fg">{rule.title}</dt>
-								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">{rule.body}</dd>
-							</div>
-						))
-					}
-				</dl>
+			</div>
+			<p class="max-w-[56ch] self-end text-sm leading-relaxed text-fg-muted">{m.status_feeds_lede()}</p>
+		</div>
+
+		<div class="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-3">
+			<!-- Slack and feed readers -->
+			<div class="spf-cell">
+				<div class="spf-media">
+					<div class="spf-feed">
+						<p class="spf-feed__source">Acme status · RSS</p>
+						<p class="spf-feed__title">Failed payments at checkout</p>
+						<p class="spf-feed__body">{m.status_timeline_identified()}: {m.status_timeline_4_body()}</p>
+					</div>
+					<code class="spf-cmd">/feed subscribe https://status.acme.com/feed.rss</code>
+				</div>
+				<h3>{m.status_feeds_rule_1_title()}</h3>
+				<p>{m.status_feeds_rule_1_body()}</p>
+			</div>
+
+			<div class="spf-cell">
+				<div class="spf-media spf-media--code">
+					<p class="spf-path">GET /api/v1/status.json</p>
+					<pre tabindex="0">{json}</pre>
+				</div>
+				<h3>{m.status_feeds_rule_2_title()}</h3>
+				<p>{m.status_feeds_rule_2_body()}</p>
+			</div>
+
+			<div class="spf-cell">
+				<div class="spf-media spf-media--badges">
+					<img src={badges[0]} alt="Badge reading status: operational" height="20" />
+					<img src={badges[1]} alt="Badge reading status: major outage" height="20" />
+					<p class="spf-path">status.acme.com/badge.svg</p>
+				</div>
+				<h3>{m.status_feeds_rule_3_title()}</h3>
+				<p>{m.status_feeds_rule_3_body()}</p>
 			</div>
 		</div>
 	</div>
 </section>
 
 <style>
-	.spf-json {
-		margin: 0;
-		padding: 12px 14px;
-		max-height: 340px;
-		overflow: auto;
-		font-size: 10.5px;
-		line-height: 1.6;
-		color: var(--foreground);
-	}
-	.spf-endpoints {
-		border-top: 1px solid var(--border);
-		padding: 10px 14px 12px;
-		font-size: 10.5px;
-	}
-	.spf-endpoints > div {
+	.spf-cell {
 		display: flex;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 4px 0;
+		flex-direction: column;
+		min-width: 0;
+		padding: 24px;
+		background: var(--background);
+	}
+	.spf-cell h3 {
+		margin-top: 20px;
+		font-size: 14px;
+		font-weight: 500;
 		color: var(--foreground);
 	}
-	.spf-endpoints > div > span:first-child {
-		min-width: 0;
+	.spf-cell > p {
+		margin-top: 6px;
+		font-size: 13px;
+		line-height: 1.6;
+		color: var(--muted-foreground);
+	}
+	.spf-media {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 12px;
+		height: 220px;
+		padding: 18px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg-deep);
+	}
+	.spf-feed {
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-elevated);
+	}
+	.spf-feed__source {
+		font-size: 11px;
+		color: var(--muted-foreground);
+	}
+	.spf-feed__title {
+		margin-top: 4px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.spf-feed__body {
+		margin-top: 2px;
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--muted-foreground);
+	}
+	.spf-cmd,
+	.spf-path {
 		overflow: hidden;
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 11px;
+		color: var(--muted-foreground);
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.spf-endpoints > div > span:last-child {
+	.spf-cmd {
+		color: var(--foreground);
+	}
+	.spf-media--code {
+		justify-content: flex-start;
+	}
+	.spf-media--code .spf-path {
 		flex-shrink: 0;
-		color: var(--muted-foreground);
+	}
+	.spf-media--code pre {
+		min-height: 0;
+		margin: 0;
+		overflow: auto;
+		font-size: 11px;
+		line-height: 1.55;
+		color: var(--foreground);
+	}
+	.spf-media--badges {
+		align-items: center;
+		gap: 16px;
+	}
+	.spf-media--badges img {
+		height: 30px;
+		width: auto;
 	}
 </style>

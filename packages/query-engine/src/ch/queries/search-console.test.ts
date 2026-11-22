@@ -33,11 +33,12 @@ describe("searchConsoleOverviewQuery", () => {
 		expect(flat).toContain("Grain = 'site'")
 		expect(flat).toContain("SiteUrl = 'sc-domain:acme.dev'")
 		expect(flat).toContain("Date >= '2026-09-03 00:00:00'")
-		// Only each day's newest import counts: the join keeps rows at that day's max IngestedAt.
-		expect(flat).toContain("max(search_console_daily.IngestedAt) AS ingestedAt")
+		// Only each day's newest complete import counts: a marked one beats any newer unmarked rows.
 		expect(flat).toContain(
-			"AS newest ON (search_console_daily.Date = newest.date AND search_console_daily.IngestedAt = newest.ingestedAt)",
+			"argMax(search_console_daily.IngestedAt, tuple(search_console_daily.SearchType = 'web:complete', search_console_daily.IngestedAt)) AS ingestedAt",
 		)
+		expect(flat).toContain("AS newest ON search_console_daily.Date = newest.date")
+		expect(flat).toContain("AND search_console_daily.IngestedAt >= newest.ingestedAt")
 		expect(flat).toMatch(/sumIf\(latest\.clicks, latest\.date >= '2026-10-01 00:00:00'\)/)
 		expect(flat).toMatch(/sumIf\(latest\.clicks, NOT \(latest\.date >= '2026-10-01 00:00:00'\)\)/)
 	})
@@ -67,12 +68,13 @@ describe("searchConsoleOverviewQuery", () => {
 })
 
 describe("searchConsoleTimeseriesQuery", () => {
-	it("groups the site grain by day and divides position by impressions", () => {
+	it("puts every imported site-grain day on the axis and divides position by impressions", () => {
 		const flat = oneLine(compileUnsafe(searchConsoleTimeseriesQuery(), params).sql)
 		expect(flat).toContain("Grain = 'site'")
-		expect(flat).toContain("GROUP BY date")
+		// Days come from the imports, so a day Google answered empty still has a (zero) point.
+		expect(flat).toContain("AS days LEFT JOIN")
 		expect(flat).toContain("ORDER BY date ASC")
-		expect(flat).toContain("ifNotFinite(sum(latest.positionSum) / sum(latest.impressions), 0)")
+		expect(flat).toContain("ifNotFinite(daily.positionSum / daily.impressions, 0)")
 	})
 })
 
@@ -96,7 +98,7 @@ describe("searchConsoleTopQueriesQuery / searchConsoleTopPagesQuery", () => {
 		expect(flat).toContain("Page = 'https://acme.dev/docs'")
 		// Filters narrow the rows, never which import is newest: the day's max is taken unfiltered.
 		expect(flat).toMatch(
-			/max\(search_console_daily\.IngestedAt\) AS ingestedAt FROM search_console_daily WHERE (?:(?!Country)[^)])*GROUP BY date\) AS newest/,
+			/AS ingestedAt FROM search_console_daily WHERE (?:(?!Country).)*GROUP BY date\) AS newest/,
 		)
 		expect(flat).toContain("ORDER BY impressions DESC")
 		expect(flat).toContain("LIMIT 20")
@@ -156,7 +158,8 @@ describe("webAnalyticsEntryPagesQuery", () => {
 		const flat = oneLine(sql)
 		expect(tenantScope).toBe("single-tenant")
 		expect(flat).toContain("FROM session_replays")
-		expect(flat).toContain("EntryPath IN ('/', '/docs')")
+		// Repeated slashes collapse before matching, so `/docs//` is found as `/docs/`.
+		expect(flat).toContain("replaceRegexpAll(session_replays.EntryPath, '/{2,}', '/') IN ('/', '/docs')")
 		expect(flat).toContain("GROUP BY host, entryPath")
 		expect(flat).toContain("NOT (multiSearchAnyCaseInsensitive(session_replays.UserAgent")
 	})

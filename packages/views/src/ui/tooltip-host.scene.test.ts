@@ -42,6 +42,28 @@ describe("tooltip host", () => {
 		)
 	})
 
+	test("a titled trigger opens with its title over the description", () => {
+		const hovered = update(
+			init(ID),
+			Message.EnteredTrigger({
+				triggerId: "prs",
+				shown: {
+					text: "Pull requests linked to this issue as fixes.",
+					title: "2 pull requests",
+					isIconButton: false,
+					side: "top",
+				},
+			}),
+		)
+		scene(
+			{ update, view: sceneView },
+			given(elapsed(hovered.model).model),
+			mounted,
+			expect(text("2 pull requests")).toExist(),
+			expect(text("Pull requests linked to this issue as fixes.")).toExist(),
+		)
+	})
+
 	test("moving to another trigger while open re-anchors at once with the new text", () => {
 		const open = elapsed(entered(init(ID), "a", "First").model).model
 		const moved = entered(open, "b", "Second")

@@ -6,6 +6,8 @@ import {
 	HISTORY_MONTHS,
 	historyFloor,
 	pacificToday,
+	SEARCH_TYPE_WEB,
+	SEARCH_TYPE_WEB_COMPLETE,
 } from "@maple/domain/search-console"
 import type { SearchConsoleDailyRow } from "@maple/domain/tinybird"
 import { DateTime, Array as Arr, String as Str } from "effect"
@@ -13,8 +15,7 @@ import type { SearchAnalyticsDimension, SearchAnalyticsRow } from "./client"
 
 export const SEARCH_CONSOLE_DATASOURCE = "search_console_daily"
 
-/** v1 imports web search only; the column leaves room for image, video and news. */
-export const SEARCH_TYPE_WEB = "web"
+export { SEARCH_TYPE_WEB, SEARCH_TYPE_WEB_COMPLETE }
 
 /** Days re-fetched behind the head watermark: Google keeps revising them for about three days. */
 export const HEAD_REFETCH_DAYS = 3
@@ -135,3 +136,26 @@ export const toDailyRows = (
 	context: Parameters<typeof toDailyRow>[0],
 	rows: ReadonlyArray<SearchAnalyticsRow>,
 ): ReadonlyArray<SearchConsoleDailyRow> => Arr.map(rows, (row) => toDailyRow(context, row))
+
+/** The zero row that marks one day of one grain as completely imported at `ingestedAt`. */
+export const toCompletionMarker = (context: {
+	readonly orgId: string
+	readonly siteUrl: string
+	readonly grain: SearchConsoleGrain
+	readonly day: string
+	readonly ingestedAt: string
+}): SearchConsoleDailyRow => ({
+	OrgId: context.orgId,
+	SiteUrl: context.siteUrl,
+	Grain: context.grain,
+	SearchType: SEARCH_TYPE_WEB_COMPLETE,
+	Date: `${context.day} 00:00:00`,
+	Page: "",
+	Query: "",
+	Country: "",
+	Device: "",
+	Clicks: 0,
+	Impressions: 0,
+	PositionSum: 0,
+	IngestedAt: context.ingestedAt,
+})

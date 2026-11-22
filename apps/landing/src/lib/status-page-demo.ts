@@ -8,7 +8,7 @@
  * and an incident is open. `operational` is the same page a minute earlier.
  */
 import type { StatusPageFreshness, StatusPageThemePreset } from "@maple/domain/status-page"
-import { renderPage, renderStatusJson } from "@maple/status-page"
+import { renderBadgeSvg, renderPage, renderStatusJson } from "@maple/status-page"
 import { FIXTURE_NOW, makeComponent, makeDays, makeIncident, makeSnapshot } from "@maple/status-page/fixtures"
 
 export type DemoState = "operational" | "outage"
@@ -19,7 +19,16 @@ export interface DemoTheme {
 	readonly font: "sans" | "mono" | "serif"
 }
 
-export const MAPLE_DARK: DemoTheme = { preset: "maple", appearance: "dark", font: "mono" }
+export const MAPLE_DARK: DemoTheme = { preset: "maple", appearance: "dark", font: "sans" }
+
+/** Every preset in the appearance it was drawn for, as the theme picker on the feature page offers them. */
+export const DEMO_THEMES = [
+	{ label: "Default", theme: { preset: "default", appearance: "light", font: "sans" } },
+	{ label: "Paper", theme: { preset: "paper", appearance: "light", font: "serif" } },
+	{ label: "Midnight", theme: { preset: "midnight", appearance: "dark", font: "sans" } },
+	{ label: "Mono", theme: { preset: "mono", appearance: "dark", font: "mono" } },
+	{ label: "Maple", theme: MAPLE_DARK },
+] as const satisfies ReadonlyArray<{ label: string; theme: DemoTheme }>
 
 const DAY = 86_400_000
 const CHECKOUT_ID = "1c4c9b8e-6f2a-4d1e-9a5b-2f6c8d7e1a01"
@@ -106,3 +115,7 @@ export const demoPageHtml = (theme: DemoTheme, state: DemoState = "outage"): str
 
 /** The page's `/api/v1/status.json` body. */
 export const demoStatusJson = () => renderStatusJson(demoSnapshot(MAPLE_DARK), FRESH, PAGE_URL)
+
+/** The page's `/badge.svg` in either state. */
+export const demoBadgeSvg = (state: DemoState): string =>
+	renderBadgeSvg(demoSnapshot(MAPLE_DARK, state), FRESH)
