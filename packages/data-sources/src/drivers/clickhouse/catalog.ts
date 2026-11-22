@@ -19,8 +19,7 @@ export const MAX_CATALOG_ENTRIES = 2_000
 const MAX_CATALOG_COLUMNS = 200_000
 
 /** A ClickHouse string literal body: backslash and quote escaped. */
-export const escapeString = (value: string): string =>
-	Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))
+export const escapeString = (value: string): string => Str.replace(/[\\']/g, "\\$&")(value)
 
 const TABLE_COLUMNS = "database, name, engine, toString(total_rows) AS total_rows, comment"
 
