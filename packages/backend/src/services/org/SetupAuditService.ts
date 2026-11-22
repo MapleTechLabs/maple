@@ -43,6 +43,7 @@ import { OnboardingService } from "@maple/backend/services/org/OnboardingService
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { readOrgCreatedAt } from "@maple/backend/services/org/org-created-at"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { firstDataSeen } from "@maple/backend/services/org/first-data"
 import * as Integrations from "@maple/query-engine-integrations"
 import type { TenantContext } from "@maple/domain/http"
 
@@ -951,23 +952,23 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 		) {
 			if (recorded === "present") return recorded
 			const report = yield* signals.read(tenant)
-			const hasTelemetry = Arr.some(
-				report.signals,
-				(signal) =>
-					signal.status === "present" &&
-					(signal.signal === "traces" || signal.signal === "logs" || signal.signal === "metrics"),
-			)
+			const firstData = firstDataSeen(report)
 			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
-				? hasTelemetry
+				? firstData !== undefined
 					? "present"
 					: "absent"
 				: "unavailable"
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.audit.first_data_probe": probe })
-			if (probe !== "present") return probe
+			if (firstData === undefined || probe !== "present") return probe
 
 			// A failed write must not hide the audit from an org that has data; the next run retries.
 			const stamped = yield* onboarding
-				.recordFirstDataReceived(tenant.orgId, readOrgCreatedAt(organizations, tenant.orgId))
+				.recordFirstDataReceived(
+					tenant.orgId,
+					readOrgCreatedAt(organizations, tenant.orgId),
+					firstData,
+					tenant.userId,
+				)
 				.pipe(
 					Effect.tapError((error) =>
 						Effect.logWarning("Setup audit could not stamp first data received", error.message),

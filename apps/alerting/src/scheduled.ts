@@ -11,6 +11,8 @@ import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/A
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
+import { FirstDataSweepService } from "@maple/backend/services/org/FirstDataSweepService"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
@@ -23,6 +25,7 @@ import {
 	GithubAppWebhookSecret,
 	LinearOAuthClientSecret,
 	PlanetScaleOAuthClientSecret,
+	ProductEventsIngestKey,
 	SearchConsoleClientSecret,
 	StatusDomainsApiToken,
 	SupabaseOAuthClientSecret,
@@ -93,6 +96,7 @@ const TickSecretsLive = Layer.mergeAll(
 	GithubAppWebhookSecret.layer,
 	LinearOAuthClientSecret.layer,
 	PlanetScaleOAuthClientSecret.layer,
+	ProductEventsIngestKey.layer,
 	SearchConsoleClientSecret.layer,
 	StatusDomainsApiToken.layer,
 	SupabaseOAuthClientSecret.layer,
@@ -134,6 +138,7 @@ export const layerTick = (
 		SupabaseInsightsService.layer,
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
+		FirstDataSweepService.layer,
 		ErrorsService.layer,
 		FixVerificationTickService.layer,
 		EscalationService.layer,
@@ -144,6 +149,7 @@ export const layerTick = (
 		IncidentClassifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
+		Layer.provide(ProductEventsService.layerFor("maple-alerting")),
 		Layer.provide(
 			Layer.mergeAll(
 				Env.layer,
@@ -529,6 +535,15 @@ const vercelTick = makeTick(
 			: undefined,
 )
 
+const firstDataTick = makeTick(
+	FirstDataSweepService.use((sweep) => sweep.runTick()),
+	"first_data",
+	(result) =>
+		result.candidates > 0
+			? { candidates: result.candidates, stamped: result.stamped, failures: result.failures }
+			: undefined,
+)
+
 const searchConsoleTick = makeTick(
 	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
 	"search_console",
@@ -673,6 +688,7 @@ const scheduledTicks = {
 	escalation: escalationTick,
 	fleet: fleetTick,
 	fleetFindings: fleetFindingsTick,
+	firstData: firstDataTick,
 	fixVerification: fixVerificationTick,
 	gcpMetrics: gcpMetricsTick,
 	maintenanceWindows: maintenanceWindowsTick,
@@ -733,6 +749,7 @@ const LANE_TICKS = {
 	supabase_insights: ["supabaseInsights"],
 	maintenance_windows: ["maintenanceWindows"],
 	search_console: ["searchConsole"],
+	first_data: ["firstData"],
 	cost_sync: ["costSync"],
 	aws_security: ["awsSecurity"],
 	fleet: ["fleet"],

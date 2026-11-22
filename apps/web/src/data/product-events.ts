@@ -30,8 +30,6 @@ export type ProductEvent =
 	| "slo_created"
 	/** A status page was created, as a draft or published. */
 	| "status_page_created"
-	/** The onboarding connect step saw the org's first telemetry arrive; `signal` is its kind. */
-	| "first_data_received"
 	| "alert_rule_created"
 	| "api_key_created"
 	| "dashboard_created"
