@@ -16,6 +16,7 @@ import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/ba
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { getError, stubOrgMembersService } from "./alerts-service-test-support"
 import { OnCallSchedulesService } from "./OnCallSchedulesService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -101,10 +102,12 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
 			assert.strictEqual(schedule.onCallNow?.userId, ana)
 
-			const override = yield* schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna)
+			const override = yield* schedules
+				.createOverride(schedule.id, benCoversAna)
+				.pipe(actingAs(ORG, ADMIN, ana))
 			const thursdayEvening = at("2026-11-12T19:00:00Z")
 			const covered = yield* schedules.onCallAt(ORG, schedule.id, thursdayEvening)
 			assert.strictEqual(covered.shift?.userId, ben)
@@ -117,7 +120,7 @@ describe("OnCallSchedulesService", () => {
 				[override.id],
 			)
 
-			yield* schedules.deleteOverride(ORG, ADMIN, schedule.id, override.id)
+			yield* schedules.deleteOverride(schedule.id, override.id).pipe(actingAs(ORG, ADMIN))
 			const back = yield* schedules.onCallAt(ORG, schedule.id, thursdayEvening)
 			assert.strictEqual(back.shift?.userId, ana)
 			assert.deepStrictEqual(back.shift?.source, { kind: "layer", layerIndex: 0 })
@@ -129,8 +132,8 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			yield* schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
+			yield* schedules.createOverride(schedule.id, benCoversAna).pipe(actingAs(ORG, ADMIN, ana))
 
 			const render = yield* schedules.shifts(
 				ORG,
@@ -162,15 +165,14 @@ describe("OnCallSchedulesService", () => {
 			const stranger = asUserId("user_zed")
 			const [layer] = weekly.layers
 			const created = yield* Effect.exit(
-				schedules.create(
-					ORG,
-					ana,
-					ADMIN,
-					new OnCallScheduleCreateRequest({
-						...weekly,
-						layers: [{ ...layer, participants: [ana, stranger] }],
-					}),
-				),
+				schedules
+					.create(
+						new OnCallScheduleCreateRequest({
+							...weekly,
+							layers: [{ ...layer, participants: [ana, stranger] }],
+						}),
+					)
+					.pipe(actingAs(ORG, ADMIN, ana)),
 			)
 			assert.strictEqual(errorTag(created), "@maple/http/errors/AlertValidationError")
 			const createdError = getError(created)
@@ -179,25 +181,23 @@ describe("OnCallSchedulesService", () => {
 					Str.includes("user_zed")(createdError.message),
 			)
 
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
 			const updated = yield* Effect.exit(
-				schedules.update(
-					ORG,
-					ana,
-					ADMIN,
-					schedule.id,
-					new OnCallScheduleUpdateRequest({ layers: [{ ...layer, participants: [stranger] }] }),
-				),
+				schedules
+					.update(
+						schedule.id,
+						new OnCallScheduleUpdateRequest({ layers: [{ ...layer, participants: [stranger] }] }),
+					)
+					.pipe(actingAs(ORG, ADMIN, ana)),
 			)
 			assert.strictEqual(errorTag(updated), "@maple/http/errors/AlertValidationError")
 			const override = yield* Effect.exit(
-				schedules.createOverride(
-					ORG,
-					ana,
-					ADMIN,
-					schedule.id,
-					new OnCallOverrideCreateRequest({ ...benCoversAna, userId: stranger }),
-				),
+				schedules
+					.createOverride(
+						schedule.id,
+						new OnCallOverrideCreateRequest({ ...benCoversAna, userId: stranger }),
+					)
+					.pipe(actingAs(ORG, ADMIN, ana)),
 			)
 			assert.strictEqual(errorTag(override), "@maple/http/errors/AlertValidationError")
 			assert.strictEqual((yield* schedules.list(ORG)).schedules.length, 1)
@@ -209,20 +209,19 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
 			const attempt = (startsAt: string, endsAt: string) =>
 				Effect.exit(
-					schedules.createOverride(
-						ORG,
-						ana,
-						ADMIN,
-						schedule.id,
-						new OnCallOverrideCreateRequest({
-							userId: ben,
-							startsAt: at(startsAt),
-							endsAt: at(endsAt),
-						}),
-					),
+					schedules
+						.createOverride(
+							schedule.id,
+							new OnCallOverrideCreateRequest({
+								userId: ben,
+								startsAt: at(startsAt),
+								endsAt: at(endsAt),
+							}),
+						)
+						.pipe(actingAs(ORG, ADMIN, ana)),
 				)
 			const tags = yield* Effect.all([
 				attempt("2026-11-12T10:00:00Z", "2026-11-12T09:00:00Z"),
@@ -245,7 +244,7 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -256,10 +255,10 @@ describe("OnCallSchedulesService", () => {
 					[ORG, schedule.id],
 				),
 			)
-			const fiftyFirst = yield* Effect.exit(schedules.create(ORG, ana, ADMIN, weekly))
+			const fiftyFirst = yield* Effect.exit(schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana)))
 			assert.strictEqual(errorTag(fiftyFirst), "@maple/http/errors/AlertValidationError")
 			// The cap is per org.
-			yield* schedules.create(OTHER_ORG, ana, ADMIN, weekly)
+			yield* schedules.create(weekly).pipe(actingAs(OTHER_ORG, ADMIN, ana))
 
 			yield* Effect.promise(() =>
 				executeSql(
@@ -273,7 +272,7 @@ describe("OnCallSchedulesService", () => {
 				),
 			)
 			const overCap = yield* Effect.exit(
-				schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna),
+				schedules.createOverride(schedule.id, benCoversAna).pipe(actingAs(ORG, ADMIN, ana)),
 			)
 			assert.strictEqual(errorTag(overCap), "@maple/http/errors/AlertValidationError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -284,15 +283,15 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			yield* schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
+			yield* schedules.createOverride(schedule.id, benCoversAna).pipe(actingAs(ORG, ADMIN, ana))
 
 			const foreign = yield* Effect.exit(schedules.get(OTHER_ORG, schedule.id))
 			assert.strictEqual(errorTag(foreign), "@maple/http/errors/OnCallScheduleNotFoundError")
-			const denied = yield* Effect.exit(schedules.delete(ORG, MEMBER, schedule.id))
+			const denied = yield* Effect.exit(schedules.delete(schedule.id).pipe(actingAs(ORG, MEMBER)))
 			assert.strictEqual(errorTag(denied), "@maple/http/errors/AlertForbiddenError")
 
-			yield* schedules.delete(ORG, ADMIN, schedule.id)
+			yield* schedules.delete(schedule.id).pipe(actingAs(ORG, ADMIN))
 			const left = yield* Effect.promise(() =>
 				testDb.pglite.query<{ n: number }>(
 					`SELECT count(*)::int AS n FROM oncall_overrides WHERE schedule_id = $1`,
@@ -310,8 +309,10 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const override = yield* schedules.createOverride(ORG, ana, ADMIN, schedule.id, benCoversAna)
+			const schedule = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
+			const override = yield* schedules
+				.createOverride(schedule.id, benCoversAna)
+				.pipe(actingAs(ORG, ADMIN, ana))
 			assert.strictEqual(override.userId, ben)
 			assert.strictEqual((yield* schedules.memberNames(ORG)).size, 0)
 		}).pipe(Effect.provide(noDirectoryLayer(testDb)))
@@ -322,13 +323,10 @@ describe("OnCallSchedulesService", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(at("2026-11-12T19:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
-			const busy = yield* schedules.create(
-				ORG,
-				ana,
-				ADMIN,
-				new OnCallScheduleCreateRequest({ ...weekly, name: "Busy" }),
-			)
-			const covered = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const busy = yield* schedules
+				.create(new OnCallScheduleCreateRequest({ ...weekly, name: "Busy" }))
+				.pipe(actingAs(ORG, ADMIN, ana))
+			const covered = yield* schedules.create(weekly).pipe(actingAs(ORG, ADMIN, ana))
 			// Past overrides on another schedule, all starting before the active one.
 			yield* Effect.promise(() =>
 				executeSql(
@@ -341,7 +339,7 @@ describe("OnCallSchedulesService", () => {
 					[ORG, busy.id],
 				),
 			)
-			yield* schedules.createOverride(ORG, ana, ADMIN, covered.id, benCoversAna)
+			yield* schedules.createOverride(covered.id, benCoversAna).pipe(actingAs(ORG, ADMIN, ana))
 			const listed = yield* schedules.list(ORG)
 			const row = Option.getOrUndefined(Arr.findFirst(listed.schedules, (s) => s.id === covered.id))
 			assert.strictEqual(row?.onCallNow?.userId, ben)

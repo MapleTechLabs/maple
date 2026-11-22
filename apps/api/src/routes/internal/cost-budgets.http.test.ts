@@ -72,9 +72,7 @@ const makeHarness = (roles: ReadonlyArray<string>, testDb: TestDb = createTestDb
 			CurrentTenant.SessionAuthorization,
 			CurrentTenant.SessionAuthorization.of({
 				bearer: (httpEffect) =>
-					Effect.provideService(
-						httpEffect,
-						CurrentTenant.Context,
+					CurrentTenant.provide(
 						new CurrentTenant.TenantSchema({
 							orgId: ORG_ID,
 							userId: USER_ID,
@@ -82,7 +80,7 @@ const makeHarness = (roles: ReadonlyArray<string>, testDb: TestDb = createTestDb
 							permissions: Policy.grantsOf(Arr.map(roles, (role) => asRole(role))),
 							authMode: "clerk",
 						}),
-					),
+					)(httpEffect),
 			}),
 		),
 	)

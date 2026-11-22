@@ -104,21 +104,21 @@ export interface AlertRulesServiceApi {
 		orgId: OrgId,
 	) => Effect.Effect<AlertRulesListResponse, AlertPersistenceError | AlertRuleStoredConfigInvalidError>
 	readonly createRule: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: AlertRuleUpsertRequest,
 	) => Effect.Effect<
 		AlertRuleDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertRuleDestinationNotFoundError
+		| AlertForbiddenError
+		| AlertValidationError
+		| AlertPersistenceError
+		| AlertRuleDestinationNotFoundError,
+		Policy.CurrentActor
 	>
 	readonly deleteRule: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		ruleId: AlertRuleDocument["id"],
 	) => Effect.Effect<
 		AlertRuleDeleteResponse,
-		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError | AlertValidationError
+		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError | AlertValidationError,
+		Policy.CurrentActor
 	>
 }
 
@@ -164,31 +164,15 @@ export const makeAlertRulePersistence = (options: {
 
 	const dbExecute = makeDbExecute(database, "AlertRulesService", makePersistenceError)
 
-	const requireAlertsPermission = Effect.fn("AlertRulesService.requireAlertsPermission")(function* (
-		permissions: Policy.Grants,
-	) {
-		return yield* Policy.check(
-			permissions,
-			"alerts:manage",
-			(denial) =>
-				new AlertForbiddenError({
-					message: denial.message,
-				}),
-		)
-	})
+	const forbidden = (denial: Policy.Denial) => new AlertForbiddenError({ message: denial.message })
 
 	/** Writing or running a rule: a raw-SQL one runs its author's ClickHouse every check, so it takes `query:sql` too. */
 	const requireRulePermissions = Effect.fn("AlertRulesService.requireRulePermissions")(function* (
-		permissions: Policy.Grants,
 		signalType: string,
 	) {
-		yield* requireAlertsPermission(permissions)
+		yield* Policy.authorize("alerts:manage", forbidden)
 		if (signalType !== "raw_query") return
-		yield* Policy.check(
-			permissions,
-			"query:sql",
-			(denial) => new AlertForbiddenError({ message: denial.message }),
-		)
+		yield* Policy.authorize("query:sql", forbidden)
 	})
 
 	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
@@ -517,13 +501,9 @@ export const makeAlertRulePersistence = (options: {
 		return new AlertRulesListResponse({ rules })
 	})
 
-	const createRule = Effect.fn("AlertRulesService.createRule")(function* (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
-		request: AlertRuleUpsertRequest,
-	) {
-		yield* requireRulePermissions(permissions, request.signalType)
+	const createRule = Effect.fn("AlertRulesService.createRule")(function* (request: AlertRuleUpsertRequest) {
+		const { orgId, userId } = yield* Policy.CurrentActor
+		yield* requireRulePermissions(request.signalType)
 		const { normalized, timestamp, txid } = yield* writeRuleRow(orgId, userId, null, request)
 		return normalizedRuleToDocument(normalized, {
 			notes: normalizeOptionalString(request.notes),
@@ -533,12 +513,9 @@ export const makeAlertRulePersistence = (options: {
 		})
 	})
 
-	const deleteRule = Effect.fn("AlertRulesService.deleteRule")(function* (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-		ruleId: AlertRuleDocument["id"],
-	) {
-		yield* requireAlertsPermission(permissions)
+	const deleteRule = Effect.fn("AlertRulesService.deleteRule")(function* (ruleId: AlertRuleDocument["id"]) {
+		const { orgId } = yield* Policy.CurrentActor
+		yield* Policy.authorize("alerts:manage", forbidden)
 		const row = yield* requireRuleRow(orgId, ruleId)
 		// Hidden from the generic rule APIs: a managed rule is deleted with its owner.
 		if (isManagedSignalType(row.signalType)) {

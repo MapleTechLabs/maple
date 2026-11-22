@@ -11,7 +11,6 @@ import {
 	PromqlQueryService,
 	type PromqlQuery,
 } from "@maple/backend/services/promql/PromqlQueryService"
-import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { capSeries, defaultStepSeconds, parseStepMs, type PromqlResult } from "../lib/promql-result"
 import { registerQueryPromqlTool } from "./query-promql"
@@ -20,6 +19,7 @@ import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -77,7 +77,7 @@ const run = (
 						return Effect.map(answer(input), (result) => ({ warnings: [], ...result }))
 					},
 				}),
-				Layer.succeed(CurrentMcpTenant, {
+				mcpTenantLayer({
 					orgId: Schema.decodeSync(OrgId)("org_promql"),
 					userId: Schema.decodeSync(UserId)("user_promql"),
 					roles: [],

@@ -263,8 +263,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 			)
 			.handle("telegramChats", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const chats = yield* destinations.listTelegramChats(tenant.permissions, payload.bot_token)
+					const chats = yield* destinations.listTelegramChats(payload.bot_token)
 					return {
 						object: "alert_destination.telegram_chat_list" as const,
 						chats,
@@ -273,13 +272,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const created = yield* destinations.createDestination(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						toCreateRequest(payload),
-					)
+					const created = yield* destinations.createDestination(toCreateRequest(payload))
 
 					yield* recordHttpAudit("alert_destination.created", {
 						resourceId: created.id,
@@ -295,13 +288,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 					const request = toUpdateRequest(payload)
 					const existing = yield* destinations.listDestinations(tenant.orgId)
 					const current = Arr.findFirst(existing.destinations, (doc) => doc.id === params.id)
-					const updated = yield* destinations.updateDestination(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						params.id,
-						request,
-					)
+					const updated = yield* destinations.updateDestination(params.id, request)
 
 					const changes = destinationAuditDiff(
 						payload,
@@ -319,12 +306,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const deleted = yield* destinations.deleteDestination(
-						tenant.orgId,
-						tenant.permissions,
-						params.id,
-					)
+					const deleted = yield* destinations.deleteDestination(params.id)
 					yield* recordHttpAudit("alert_destination.deleted", {
 						resourceId: deleted.id,
 					})
@@ -339,13 +321,7 @@ export const HttpV2AlertDestinationsLive = HttpApiBuilder.group(MapleApiV2, "ale
 			)
 			.handle("test", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const result = yield* destinations.testDestination(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						params.id,
-					)
+					const result = yield* destinations.testDestination(params.id)
 
 					return {
 						object: "alert_destination.test_result" as const,

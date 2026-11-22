@@ -525,14 +525,8 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
 					const request = yield* toUpsertRequest(payload)
-					const created = yield* rules.createRule(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						request,
-					)
+					const created = yield* rules.createRule(request)
 
 					yield* recordHttpAudit("alert_rule.created", {
 						resourceId: created.id,
@@ -547,13 +541,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					const tenant = yield* CurrentTenant.Context
 					const current = yield* findRule(tenant.orgId, params.id)
 					const request = yield* mergeUpsertRequest(current, payload)
-					const updated = yield* alerts.updateRule(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						params.id,
-						request,
-					)
+					const updated = yield* alerts.updateRule(params.id, request)
 
 					yield* recordHttpAudit("alert_rule.updated", {
 						resourceId: updated.id,
@@ -566,8 +554,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const deleted = yield* rules.deleteRule(tenant.orgId, tenant.permissions, params.id)
+					const deleted = yield* rules.deleteRule(params.id)
 					yield* recordHttpAudit("alert_rule.deleted", { resourceId: deleted.id })
 
 					return {
@@ -583,13 +570,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					const tenant = yield* CurrentTenant.Context
 					const rule = yield* toUpsertRequest(payload.rule)
 					yield* requireRuleReadScopes(tenant.scopes, rule)
-					const result = yield* alerts.testRule(
-						tenant.orgId,
-						tenant.userId,
-						tenant.permissions,
-						rule,
-						payload.send_notification,
-					)
+					const result = yield* alerts.testRule(rule, payload.send_notification)
 
 					return {
 						object: "alert_rule.test_result" as const,
@@ -623,8 +604,6 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					}
 					yield* requireRuleReadScopes(tenant.scopes, rule)
 					const preview = yield* alerts.previewRule(
-						tenant.orgId,
-						tenant.permissions,
 						new AlertRulePreviewRequest({
 							rule,
 							startTime: decodeIsoDateTime(payload.start_time),

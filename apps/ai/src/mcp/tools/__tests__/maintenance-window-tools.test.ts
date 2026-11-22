@@ -14,9 +14,9 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { unimplementedMcpToolServices } from "../../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -28,7 +28,7 @@ const layerFor = (testDb: TestDb) =>
 		unimplementedMcpToolServices,
 		AlertMaintenanceWindowsService.layer,
 		AlertSilencesService.layer,
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_mcp_maintenance"),
 			roles: [Schema.decodeSync(RoleName)("root")],

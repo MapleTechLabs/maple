@@ -11,8 +11,8 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const ORG = Schema.decodeSync(OrgId)("org_policy_tools")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_policy_tools_other")
@@ -54,7 +54,7 @@ const makeLayer = (namesFail = false) => {
 	return Layer.mergeAll(
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
 		database,
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: ORG,
 			userId: USER,
 			roles: [Schema.decodeSync(RoleName)("org:admin")],

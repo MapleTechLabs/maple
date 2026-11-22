@@ -35,6 +35,7 @@ import {
 	okFetch,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 
@@ -102,21 +103,20 @@ describe("AlertsService evaluation error persistence", () => {
 			const orgId = asOrgId("org_alert_retry")
 			const userId = asUserId("user_alert_retry")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Retry rule",
-					severity: "warning",
-					enabled: true,
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Retry rule",
+						severity: "warning",
+						enabled: true,
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const tickAndCount = Effect.gen(function* () {
 				yield* alerts.runSchedulerTick()
 				yield* TestClock.adjust(Duration.minutes(1))
@@ -222,23 +222,22 @@ describe("AlertsService evaluation error persistence", () => {
 			const orgId = asOrgId("org_alert_raw_invalid")
 			const userId = asUserId("user_alert_raw_invalid")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Raw rule without value",
-					severity: "warning",
-					enabled: true,
-					signalType: "raw_query",
-					rawQuerySql:
-						"SELECT count() AS count FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
-					comparator: "gt",
-					threshold: 1,
-					windowMinutes: 5,
-					destinationIds: [destination.id],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Raw rule without value",
+						severity: "warning",
+						enabled: true,
+						signalType: "raw_query",
+						rawQuerySql:
+							"SELECT count() AS count FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+						comparator: "gt",
+						threshold: 1,
+						windowMinutes: 5,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 
@@ -393,24 +392,23 @@ describe("AlertsService evaluation error persistence", () => {
 			const orgId = asOrgId("org_alert_on_no_data")
 			const userId = asUserId("user_alert_on_no_data")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Checkout goes blind",
-					severity: "critical",
-					serviceNames: ["checkout"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 1,
-					alertOnNoData: true,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Checkout goes blind",
+						severity: "critical",
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 1,
+						alertOnNoData: true,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(rule.noDataBehavior, "alert")
 
 			yield* alerts.runSchedulerTick()
@@ -451,12 +449,9 @@ describe("AlertsService evaluation error persistence", () => {
 				})
 
 			// Read as zero, an empty window would be skipped under the minimum; alert wins.
-			const throughput = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				request({ serviceNames: ["checkout"] }),
-			)
+			const throughput = yield* alerts
+				.createRule(request({ serviceNames: ["checkout"] }))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(throughput.noDataBehavior, "alert")
 			yield* alerts.runSchedulerTick()
 			assert.lengthOf(
@@ -465,13 +460,8 @@ describe("AlertsService evaluation error persistence", () => {
 			)
 
 			const grouped = yield* alerts
-				.createRule(
-					orgId,
-					userId,
-					adminGrants,
-					request({ name: "Grouped", groupBy: ["service.name"] }),
-				)
-				.pipe(Effect.flip)
+				.createRule(request({ name: "Grouped", groupBy: ["service.name"] }))
+				.pipe(actingAs(orgId, adminGrants, userId), Effect.flip)
 			assert.instanceOf(grouped, AlertValidationError)
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
@@ -549,7 +539,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:30:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminGrants, request)
+			const response = yield* alerts.previewRule(request).pipe(actingAs(orgId, adminGrants))
 
 			assert.strictEqual(response.bucketSeconds, 300)
 			assert.strictEqual(response.windowMinutes, 5)
@@ -600,7 +590,9 @@ describe("AlertsService.previewRule", () => {
 			})
 
 			const error = yield* Effect.flip(
-				alerts.previewRule(asOrgId("org_preview_no_read"), ["uptime_monitors:manage"], request),
+				alerts
+					.previewRule(request)
+					.pipe(actingAs(asOrgId("org_preview_no_read"), ["uptime_monitors:manage"])),
 			)
 			assert.instanceOf(error, AlertForbiddenError)
 			assert.include(error.message, "Read telemetry")
@@ -636,7 +628,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-02T00:00:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminGrants, request)
+			const response = yield* alerts.previewRule(request).pipe(actingAs(orgId, adminGrants))
 
 			// 288 windows — the bucket cap used to stop at 200, so the chart drew
 			// only the newest 16h40m of a full-width 24h axis.
@@ -678,7 +670,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-31T00:00:00.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminGrants, request)
+			const response = yield* alerts.previewRule(request).pipe(actingAs(orgId, adminGrants))
 
 			const points = response.series[0].points
 			assert.lengthOf(points, 1500)
@@ -723,7 +715,7 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:32:30.000Z",
 			})
 
-			const response = yield* alerts.previewRule(orgId, adminGrants, request)
+			const response = yield* alerts.previewRule(request).pipe(actingAs(orgId, adminGrants))
 
 			assert.lengthOf(response.series, 1)
 			const points = response.series[0].points
@@ -777,7 +769,7 @@ describe("AlertsService.previewRule", () => {
 
 			// Raw SQL used to be rejected here even though the UI offers the chart.
 			// It is now just another evaluate source, so the preview renders.
-			const preview = yield* alerts.previewRule(orgId, adminGrants, request)
+			const preview = yield* alerts.previewRule(request).pipe(actingAs(orgId, adminGrants))
 			assert.isAbove(preview.series.length, 0)
 			const points = preview.series[0]?.points ?? []
 			assert.isAbove(points.length, 0)
@@ -809,11 +801,9 @@ describe("AlertsService.previewRule", () => {
 					endTime: "2026-01-01T03:30:00.000Z",
 				})
 
-				const preview = yield* alerts.previewRule(
-					asOrgId("org_preview_untimed"),
-					adminGrants,
-					request,
-				)
+				const preview = yield* alerts
+					.previewRule(request)
+					.pipe(actingAs(asOrgId("org_preview_untimed"), adminGrants))
 				assert.strictEqual(preview.seriesFailure, "not_time_grouped")
 				assert.lengthOf(preview.series, 0)
 				assert.lengthOf(preview.wouldFire, 0)
@@ -860,11 +850,9 @@ describe("AlertsService.previewRule", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const alerts = yield* alertServices
-				const preview = yield* alerts.previewRule(
-					asOrgId("org_timing_fits"),
-					adminGrants,
-					rawPreview(5),
-				)
+				const preview = yield* alerts
+					.previewRule(rawPreview(5))
+					.pipe(actingAs(asOrgId("org_timing_fits"), adminGrants))
 				assert.deepStrictEqual(preview.queryTiming && { ...preview.queryTiming }, {
 					elapsedMs: 7_800,
 					failure: null,
@@ -887,11 +875,9 @@ describe("AlertsService.previewRule", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const alerts = yield* alertServices
-				const preview = yield* alerts.previewRule(
-					asOrgId("org_timing_slow"),
-					adminGrants,
-					rawPreview(5),
-				)
+				const preview = yield* alerts
+					.previewRule(rawPreview(5))
+					.pipe(actingAs(asOrgId("org_timing_slow"), adminGrants))
 				assert.strictEqual(preview.queryTiming?.elapsedMs, null)
 				assert.strictEqual(preview.queryTiming?.failure, "query_too_slow")
 				assert.deepStrictEqual(preview.queryTiming?.fitsIntervalMinutes, [])
@@ -918,11 +904,9 @@ describe("AlertsService.previewRule", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const alerts = yield* alertServices
-				const preview = yield* alerts.previewRule(
-					asOrgId("org_timing_heavy"),
-					adminGrants,
-					rawPreview(5),
-				)
+				const preview = yield* alerts
+					.previewRule(rawPreview(5))
+					.pipe(actingAs(asOrgId("org_timing_heavy"), adminGrants))
 				assert.strictEqual(preview.seriesFailure, "query_too_slow")
 				assert.lengthOf(preview.series, 0)
 				assert.strictEqual(preview.queryTiming?.elapsedMs, 7_800)
@@ -950,23 +934,23 @@ describe("AlertsService.previewRule", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const alerts = yield* alertServices
-				const preview = yield* alerts.previewRule(
-					asOrgId("org_timing_builder"),
-					adminGrants,
-					decodePreviewRequest({
-						rule: {
-							name: "Error rate",
-							severity: "warning",
-							signalType: "error_rate",
-							comparator: "gt",
-							threshold: 5,
-							windowMinutes: 5,
-							destinationIds: [],
-						},
-						startTime: "2026-01-01T00:00:00.000Z",
-						endTime: "2026-01-01T00:30:00.000Z",
-					}),
-				)
+				const preview = yield* alerts
+					.previewRule(
+						decodePreviewRequest({
+							rule: {
+								name: "Error rate",
+								severity: "warning",
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 5,
+								windowMinutes: 5,
+								destinationIds: [],
+							},
+							startTime: "2026-01-01T00:00:00.000Z",
+							endTime: "2026-01-01T00:30:00.000Z",
+						}),
+					)
+					.pipe(actingAs(asOrgId("org_timing_builder"), adminGrants))
 				assert.isUndefined(preview.queryTiming)
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
 		})
@@ -995,7 +979,9 @@ describe("AlertsService.previewRule", () => {
 			})
 
 			// The scheduler sees one no-data observation per tick here, so the preview must too.
-			const preview = yield* alerts.previewRule(asOrgId("org_preview_raw_empty"), adminGrants, request)
+			const preview = yield* alerts
+				.previewRule(request)
+				.pipe(actingAs(asOrgId("org_preview_raw_empty"), adminGrants))
 			assert.lengthOf(preview.series, 1)
 			const points = preview.series[0]?.points ?? []
 			assert.lengthOf(points, 6)
@@ -1032,11 +1018,9 @@ describe("AlertsService.previewRule", () => {
 				endTime: "2026-01-01T00:30:00.000Z",
 			})
 
-			const preview = yield* alerts.previewRule(
-				asOrgId("org_preview_raw_grouped"),
-				adminGrants,
-				request,
-			)
+			const preview = yield* alerts
+				.previewRule(request)
+				.pipe(actingAs(asOrgId("org_preview_raw_grouped"), adminGrants))
 			const byGroup = new Map(Arr.map(preview.series, (series) => [series.groupKey, series.points]))
 			// A group missing from a tick is not evaluated by the scheduler, so it never breaches.
 			const a = byGroup.get("a") ?? []
@@ -1061,36 +1045,34 @@ describe("AlertsService.previewRule", () => {
 			const orgId = asOrgId("org_dedupe")
 			const userId = asUserId("user_dedupe")
 			const first = yield* createWebhookDestination(alerts, orgId, userId)
-			const second = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new WebhookAlertDestinationConfig({
-					type: "webhook",
-					name: "Secondary webhook",
-					enabled: true,
-					url: "https://example.com/maple-alerts-2",
-					signingSecret: "webhook-secret-2",
-				}),
-			)
+			const second = yield* alerts
+				.createDestination(
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Secondary webhook",
+						enabled: true,
+						url: "https://example.com/maple-alerts-2",
+						signingSecret: "webhook-secret-2",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Deduped rule",
-					severity: "warning",
-					enabled: true,
-					serviceNames: ["checkout"],
-					environments: ["  prod  ", "staging", "prod", "   ", "staging"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					destinationIds: [second.id, first.id, second.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Deduped rule",
+						severity: "warning",
+						enabled: true,
+						serviceNames: ["checkout"],
+						environments: ["  prod  ", "staging", "prod", "   ", "staging"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						destinationIds: [second.id, first.id, second.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			assert.deepStrictEqual(rule.destinationIds, [second.id, first.id])
 			// Trimmed, blank-dropped, deduped, first-occurrence order.
@@ -1133,22 +1115,21 @@ describe("AlertsService.previewRule", () => {
 			Effect.forEach(
 				Array.from({ length: count }, (_, index) => from + index),
 				(index) =>
-					alerts.createRule(
-						orgId,
-						userId,
-						adminGrants,
-						new AlertRuleUpsertRequest({
-							name: `Scaling rule ${index}`,
-							severity: "warning",
-							enabled: true,
-							serviceNames: ["checkout"],
-							signalType: "error_rate",
-							comparator: "gt",
-							threshold: 5,
-							windowMinutes: 5,
-							destinationIds: [destinationId],
-						}),
-					),
+					alerts
+						.createRule(
+							new AlertRuleUpsertRequest({
+								name: `Scaling rule ${index}`,
+								severity: "warning",
+								enabled: true,
+								serviceNames: ["checkout"],
+								signalType: "error_rate",
+								comparator: "gt",
+								threshold: 5,
+								windowMinutes: 5,
+								destinationIds: [destinationId],
+							}),
+						)
+						.pipe(actingAs(orgId, adminGrants, userId)),
 				{ concurrency: 1, discard: true },
 			)
 
@@ -1205,26 +1186,25 @@ describe("AlertsService.previewRule", () => {
 			const userId = asUserId("user_orphan_guard")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Grouped error rate",
-					severity: "critical",
-					enabled: true,
-					serviceNames: ["checkout", "payments"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 1,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Grouped error rate",
+						severity: "critical",
+						enabled: true,
+						serviceNames: ["checkout", "payments"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 1,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			const afterFirst = yield* alerts.listIncidents(orgId)

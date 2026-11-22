@@ -1,6 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
 import {
-	CurrentTenant,
 	type CustomRoleResponse,
 	MapleInternalApi,
 	type RoleRef,
@@ -13,15 +12,7 @@ import { RolesService } from "@maple/backend/services/roles/RolesService"
 import { diffAuditChanges } from "@/routes/v2/audit-changes"
 
 const requirePermission = (permission: Policy.Permission) =>
-	Effect.gen(function* () {
-		const tenant = yield* CurrentTenant.Context
-		yield* Policy.check(
-			tenant.permissions,
-			permission,
-			(denial) => new RolesForbiddenError({ message: denial.message }),
-		)
-		return tenant
-	})
+	Policy.authorize(permission, (denial) => new RolesForbiddenError({ message: denial.message }))
 
 /** How the audit log names a role: the Clerk key of a built-in one, the id of a custom one. */
 const roleKey = (ref: RoleRef): string => (ref._tag === "BuiltIn" ? ref.clerkKey : ref.id)
@@ -39,14 +30,12 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 		const roles = yield* RolesService
 
 		return handlers
-			.handle("list", () => CurrentTenant.Context.pipe(Effect.flatMap(roles.list)))
-			.handle("members", ({ params }) =>
-				CurrentTenant.Context.pipe(Effect.flatMap((tenant) => roles.members(tenant, params.roleId))),
-			)
+			.handle("list", () => roles.list)
+			.handle("members", ({ params }) => roles.members(params.roleId))
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* requirePermission("roles:manage")
-					const role = yield* roles.create(tenant, payload)
+					yield* requirePermission("roles:manage")
+					const role = yield* roles.create(payload)
 					yield* recordHttpAudit("role.created", {
 						metadata: {
 							roleId: role.id,
@@ -59,8 +48,8 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* requirePermission("roles:manage")
-					const { before, role } = yield* roles.update(tenant, params.roleId, payload)
+					yield* requirePermission("roles:manage")
+					const { before, role } = yield* roles.update(params.roleId, payload)
 					yield* recordHttpAudit("role.updated", {
 						changes: diffAuditChanges(auditedFields(before), auditedFields(role)),
 						metadata: { roleId: role.id, name: role.name, memberCount: role.memberCount },
@@ -70,8 +59,8 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 			)
 			.handle("delete", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* requirePermission("roles:manage")
-					const deleted = yield* roles.delete(tenant, params.roleId, payload.reassignTo)
+					yield* requirePermission("roles:manage")
+					const deleted = yield* roles.delete(params.roleId, payload.reassignTo)
 					yield* recordHttpAudit("role.deleted", {
 						metadata: {
 							roleId: deleted.id,
@@ -86,8 +75,8 @@ export const HttpRolesLive = HttpApiBuilder.group(MapleInternalApi, "roles", (ha
 			)
 			.handle("setMemberRole", ({ params, payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* requirePermission("members:manage")
-					const change = yield* roles.setMemberRole(tenant, params.userId, payload.role)
+					yield* requirePermission("members:manage")
+					const change = yield* roles.setMemberRole(params.userId, payload.role)
 					yield* recordHttpAudit("member.role_changed", {
 						affectedUserId: params.userId,
 						changes: diffAuditChanges(

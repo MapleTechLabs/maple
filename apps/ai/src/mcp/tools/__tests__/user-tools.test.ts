@@ -19,9 +19,9 @@ import {
 } from "@maple/domain/http"
 import { InspectUserOutput, ListUsersOutput } from "@maple/domain/mcp-outputs"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const WINDOW = { start_time: "2026-11-01 00:00:00", end_time: "2026-11-02 00:00:00" }
 const ISSUE_ID = Schema.decodeSync(ErrorIssueId)("55555555-5555-4555-8555-555555555555")
@@ -219,7 +219,7 @@ const reads = (
 
 /** `scopes` set is a scoped API key; unset is an unscoped key, OAuth token or session. */
 const tenantWith = (scopes?: ReadonlyArray<string>) =>
-	Layer.succeed(CurrentMcpTenant, {
+	mcpTenantLayer({
 		orgId: Schema.decodeSync(OrgId)("org_user_tools"),
 		userId: Schema.decodeSync(UserId)("user_user_tools"),
 		roles: [Schema.decodeSync(RoleName)("org:member")],

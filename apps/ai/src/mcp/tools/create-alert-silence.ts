@@ -3,7 +3,6 @@ import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertSilenceCreateRequest } from "@maple/domain/http"
 import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { CurrentMcpTenant } from "../tenant"
 import { silenceFields, createSilenceErrors, toAlertSilenceRow } from "../lib/alert-silences"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -101,11 +100,8 @@ export const createAlertSilenceAction = (family: McpToolFamilyBuilder<"manage_al
 				),
 			)
 
-			const tenant = yield* CurrentMcpTenant
 			const silences = yield* AlertSilencesService
-			const silence = yield* silences
-				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
-				.pipe(Effect.catchTags(createSilenceErrors))
+			const silence = yield* silences.create(request).pipe(Effect.catchTags(createSilenceErrors))
 
 			return { silence: toAlertSilenceRow(silence) }
 		}),

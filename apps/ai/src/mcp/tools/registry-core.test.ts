@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Schema } from "effect"
 import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
-import { CurrentMcpTenant } from "../tenant"
+import { provideMcpTenant } from "../tenant"
 import { executeRegisteredTool, type MapleToolDefinition, type McpToolLookup } from "./registry-core"
 
 const definition = (name: string, next: ReadonlyArray<string>): MapleToolDefinition => ({
@@ -54,8 +54,7 @@ const callerHolding = (permissions: Policy.Grants): TenantContext => ({
 const withoutUnreachedServices = <A, E, R>(
 	effect: Effect.Effect<A, E, R>,
 	tenant: TenantContext = callerHolding(["telemetry:read"]),
-): Effect.Effect<A, E> =>
-	Effect.provide(Effect.provideService(effect, CurrentMcpTenant, tenant), Context.makeUnsafe<R>(new Map()))
+): Effect.Effect<A, E> => Effect.provide(provideMcpTenant(tenant)(effect), Context.makeUnsafe<R>(new Map()))
 
 describe("executeRegisteredTool", () => {
 	it.effect("keeps the result and drops a suggested call whose tool fails to load", () =>

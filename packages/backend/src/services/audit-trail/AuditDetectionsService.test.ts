@@ -17,6 +17,7 @@ import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { AuditDetectionsService, type CreateAuditDetectionInput } from "./AuditDetectionsService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -387,14 +388,14 @@ describe("AuditDetectionsService", () => {
 
 				assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
 				const refusedCreate = yield* alerts
-					.createRule(orgId, userId, adminGrants, request)
-					.pipe(Effect.flip)
+					.createRule(request)
+					.pipe(actingAs(orgId, adminGrants, userId), Effect.flip)
 				const refusedEdit = yield* alerts
-					.updateRule(orgId, userId, adminGrants, created.id, request)
-					.pipe(Effect.flip)
+					.updateRule(created.id, request)
+					.pipe(actingAs(orgId, adminGrants, userId), Effect.flip)
 				const refusedDelete = yield* alerts
-					.deleteRule(orgId, adminGrants, created.id)
-					.pipe(Effect.flip)
+					.deleteRule(created.id)
+					.pipe(actingAs(orgId, adminGrants), Effect.flip)
 
 				assert.deepStrictEqual(
 					[refusedCreate._tag, refusedEdit._tag, refusedDelete._tag],

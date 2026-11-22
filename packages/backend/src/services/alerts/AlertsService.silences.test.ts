@@ -30,6 +30,7 @@ import {
 	tracesRow,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -81,16 +82,15 @@ const silence = (matchers: AlertSilenceMatchers, minutes = 60) =>
 	Effect.gen(function* () {
 		const silences = yield* AlertSilencesService
 		const now = yield* Clock.currentTimeMillis
-		return yield* silences.create(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertSilenceCreateRequest({
-				reason: "deploy checkout v2.3",
-				matchers,
-				endsAt: at(now + minutes * 60_000),
-			}),
-		)
+		return yield* silences
+			.create(
+				new AlertSilenceCreateRequest({
+					reason: "deploy checkout v2.3",
+					matchers,
+					endsAt: at(now + minutes * 60_000),
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
 	})
 
 const deliveries = (alerts: AlertsServiceApi) =>
@@ -154,7 +154,7 @@ describe("alert silences", () => {
 			const created = yield* silence({ services: ["checkout"] })
 			yield* ticks(alerts, 2)
 
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 3)
 
 			const [incident] = (yield* alerts.listIncidents(orgId)).incidents
@@ -214,7 +214,7 @@ describe("alert silences", () => {
 
 			// Healthy from here on, so no breaching check gets to send the catch-up.
 			state.tracesAggregateRows = errorRateRows(0.5)
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 2)
 
 			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
@@ -247,17 +247,16 @@ describe("alert silences", () => {
 			const silences = yield* AlertSilencesService
 			const rule = yield* createRule(alerts)
 			const now = yield* Clock.currentTimeMillis
-			const scheduled = yield* silences.create(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertSilenceCreateRequest({
-					reason: "planned migration",
-					matchers: { ruleIds: [rule.id] },
-					startsAt: at(now + 10 * 60_000),
-					endsAt: at(now + 70 * 60_000),
-				}),
-			)
+			const scheduled = yield* silences
+				.create(
+					new AlertSilenceCreateRequest({
+						reason: "planned migration",
+						matchers: { ruleIds: [rule.id] },
+						startsAt: at(now + 10 * 60_000),
+						endsAt: at(now + 70 * 60_000),
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(scheduled.status, "scheduled")
 
 			yield* ticks(alerts, 2)
@@ -313,7 +312,7 @@ describe("alert silences, pages in flight and reminders", () => {
 			assert.isNotNull(held?.silencedAt)
 			assert.strictEqual(held?.lastNotifiedAt, before?.lastNotifiedAt)
 
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 2)
 			assert.deepStrictEqual(yield* deliveries(alerts), [
 				"trigger:success",
@@ -352,7 +351,7 @@ describe("alert silences and acknowledgement", () => {
 			if (incident === undefined) return
 			yield* acks.acknowledge(orgId, incident.id, { userId, name: "Dana", source: "web" })
 
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 3)
 
 			assert.deepStrictEqual(yield* deliveries(alerts), ["trigger:silenced"])
@@ -382,46 +381,45 @@ describe("alert silences, acknowledgement and escalation", () => {
 			const silences = yield* AlertSilencesService
 			const acks = yield* AlertIncidentAckService
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Checkout error rate tiers",
-					enabled: true,
-					serviceNames: ["checkout"],
-					signalType: "error_rate",
-					comparator: "gt",
-					thresholds: [
-						{
-							severity: "critical",
-							value: 20,
-							upper: null,
-							recoveryValue: null,
-							destinationIds: [destination.id],
-						},
-						{
-							severity: "warning",
-							value: 5,
-							upper: null,
-							recoveryValue: null,
-							destinationIds: [destination.id],
-						},
-					],
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 2,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-				}),
-			)
+			yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Checkout error rate tiers",
+						enabled: true,
+						serviceNames: ["checkout"],
+						signalType: "error_rate",
+						comparator: "gt",
+						thresholds: [
+							{
+								severity: "critical",
+								value: 20,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+							{
+								severity: "warning",
+								value: 5,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+						],
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 2,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const created = yield* silence({ services: ["checkout"] })
 			yield* ticks(alerts, 2)
 			const incident = (yield* alerts.listIncidents(orgId)).incidents[0]
 			assert.isDefined(incident)
 			if (incident === undefined) return
 			yield* acks.acknowledge(orgId, incident.id, { userId, name: "Dana", source: "web" })
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 2)
 			assert.deepStrictEqual(sent, [])
 
@@ -445,20 +443,25 @@ describe("AlertSilencesService", () => {
 			const request = (endsAtMs: number, matchers: AlertSilenceMatchers = { tags: ["db"] }) =>
 				new AlertSilenceCreateRequest({ reason: "maintenance", matchers, endsAt: at(endsAtMs) })
 
-			const past = yield* Effect.exit(silences.create(orgId, userId, adminGrants, request(now - 1)))
+			const past = yield* Effect.exit(
+				silences.create(request(now - 1)).pipe(actingAs(orgId, adminGrants, userId)),
+			)
 			const tooLong = yield* Effect.exit(
-				silences.create(orgId, userId, adminGrants, request(now + 31 * 24 * 60 * 60_000)),
+				silences
+					.create(request(now + 31 * 24 * 60 * 60_000))
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const unknownRule = yield* Effect.exit(
-				silences.create(
-					orgId,
-					userId,
-					adminGrants,
-					request(now + 60_000, { ruleIds: [asRuleId("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")] }),
-				),
+				silences
+					.create(
+						request(now + 60_000, {
+							ruleIds: [asRuleId("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const forbidden = yield* Effect.exit(
-				silences.create(orgId, userId, memberGrants, request(now + 60_000)),
+				silences.create(request(now + 60_000)).pipe(actingAs(orgId, memberGrants, userId)),
 			)
 
 			assert.isTrue(Exit.isFailure(past) && Schema.is(AlertValidationError)(getError(past)))
@@ -476,17 +479,16 @@ describe("AlertSilencesService", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const silences = yield* AlertSilencesService
 			const created = yield* silence({ tags: ["db"] })
-			const extended = yield* silences.update(
-				orgId,
-				userId,
-				adminGrants,
-				created.id,
-				new AlertSilenceUpdateRequest({ endsAt: at(DEFAULT_CLOCK_EPOCH_MS + 2 * 60 * 60_000) }),
-			)
+			const extended = yield* silences
+				.update(
+					created.id,
+					new AlertSilenceUpdateRequest({ endsAt: at(DEFAULT_CLOCK_EPOCH_MS + 2 * 60 * 60_000) }),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(Date.parse(extended.endsAt) - Date.parse(created.endsAt), 60 * 60_000)
 
 			yield* TestClock.adjust(Duration.minutes(5))
-			const ended = yield* silences.end(orgId, userId, adminGrants, created.id)
+			const ended = yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(ended.status, "ended")
 			assert.lengthOf((yield* silences.list(orgId, { status: "active" })).silences, 0)
 			assert.deepStrictEqual(

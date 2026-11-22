@@ -14,6 +14,7 @@ import { msToDate } from "@maple/backend/platform/time"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import { AlertRulesService } from "./AlertRulesService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 // Compile-time guard: warehouse/query-engine, Env, delivery, scheduler, and
 // incident capabilities cannot enter this layer without failing the assignment.
@@ -106,10 +107,12 @@ describe("AlertRulesService", () => {
 			yield* Effect.promise(() => seedDestination(testDb))
 			const rules = yield* AlertRulesService
 
-			const forbidden = yield* Effect.flip(rules.createRule(ORG, USER, MEMBER_ROLES, request))
+			const forbidden = yield* Effect.flip(
+				rules.createRule(request).pipe(actingAs(ORG, MEMBER_ROLES, USER)),
+			)
 			assert.strictEqual(forbidden._tag, "@maple/http/errors/AlertForbiddenError")
 
-			const created = yield* rules.createRule(ORG, USER, ADMIN_ROLES, request)
+			const created = yield* rules.createRule(request).pipe(actingAs(ORG, ADMIN_ROLES, USER))
 			assert.strictEqual(created.id, RULE)
 			assert.strictEqual(created.createdAt, "2026-08-11T12:00:00.000Z")
 			assert.deepStrictEqual(created.serviceNames, ["checkout"])
@@ -121,10 +124,10 @@ describe("AlertRulesService", () => {
 			)
 			assert.deepStrictEqual((yield* rules.listRules(OTHER_ORG)).rules, [])
 
-			const wrongOrg = yield* Effect.flip(rules.deleteRule(OTHER_ORG, ADMIN_ROLES, RULE))
+			const wrongOrg = yield* Effect.flip(rules.deleteRule(RULE).pipe(actingAs(OTHER_ORG, ADMIN_ROLES)))
 			assert.strictEqual(wrongOrg._tag, "@maple/http/errors/AlertRuleNotFoundError")
 
-			const deleted = yield* rules.deleteRule(ORG, ADMIN_ROLES, RULE)
+			const deleted = yield* rules.deleteRule(RULE).pipe(actingAs(ORG, ADMIN_ROLES))
 			assert.strictEqual(deleted.id, RULE)
 			assert.deepStrictEqual((yield* rules.listRules(ORG)).rules, [])
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -137,12 +140,9 @@ describe("AlertRulesService", () => {
 			const rules = yield* AlertRulesService
 			const unknown = asDestinationId("00000000-0000-4000-8000-000000000099")
 			const error = yield* Effect.flip(
-				rules.createRule(
-					ORG,
-					USER,
-					ADMIN_ROLES,
-					new AlertRuleUpsertRequest({ ...request, destinationIds: [unknown] }),
-				),
+				rules
+					.createRule(new AlertRuleUpsertRequest({ ...request, destinationIds: [unknown] }))
+					.pipe(actingAs(ORG, ADMIN_ROLES, USER)),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/AlertRuleDestinationNotFoundError")
 			assert.strictEqual(error.destinationId, unknown)
@@ -158,7 +158,7 @@ describe("AlertRulesService", () => {
 			Effect.gen(function* () {
 				yield* Effect.promise(() => seedDestination(testDb))
 				const rules = yield* AlertRulesService
-				yield* rules.createRule(ORG, USER, ADMIN_ROLES, ruleRequest)
+				yield* rules.createRule(ruleRequest).pipe(actingAs(ORG, ADMIN_ROLES, USER))
 				yield* Effect.forEach(states, (state) => Effect.promise(() => seedState(testDb, state)))
 				const listed = yield* rules.listRules(ORG)
 				assert.strictEqual(listed.rules.length, 1)

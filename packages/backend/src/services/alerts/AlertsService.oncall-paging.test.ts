@@ -49,6 +49,7 @@ import {
 	tracesRow,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -289,39 +290,41 @@ const runStatus = (testDb: TestDb, orgId: OrgId) =>
 const apiPrimary = (orgId: OrgId, options: { readonly gap?: boolean; readonly override?: boolean } = {}) =>
 	Effect.gen(function* () {
 		const schedules = yield* OnCallSchedulesService
-		const schedule = yield* schedules.create(
-			orgId,
-			ana,
-			adminGrants,
-			new OnCallScheduleCreateRequest({
-				name: "API primary",
-				timeZone: "Europe/Berlin",
-				layers: [
-					{
-						name: "Primary",
-						participants: [ana, ben, chen],
-						rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
-						startsAt: at("2026-11-09T08:00:00Z"),
-						// Saturdays only: nobody is on call on a Tuesday.
-						...(options.gap === true
-							? { restrictions: [{ weekdays: ["sat"], startTime: "09:00", endTime: "17:00" }] }
-							: undefined),
-					},
-				],
-			}),
-		)
-		if (options.override !== false) {
-			yield* schedules.createOverride(
-				orgId,
-				ana,
-				adminGrants,
-				schedule.id,
-				new OnCallOverrideCreateRequest({
-					userId: ben,
-					startsAt: at("2026-11-10T08:00:00Z"),
-					endsAt: at("2026-11-11T08:00:00Z"),
+		const schedule = yield* schedules
+			.create(
+				new OnCallScheduleCreateRequest({
+					name: "API primary",
+					timeZone: "Europe/Berlin",
+					layers: [
+						{
+							name: "Primary",
+							participants: [ana, ben, chen],
+							rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
+							startsAt: at("2026-11-09T08:00:00Z"),
+							// Saturdays only: nobody is on call on a Tuesday.
+							...(options.gap === true
+								? {
+										restrictions: [
+											{ weekdays: ["sat"], startTime: "09:00", endTime: "17:00" },
+										],
+									}
+								: undefined),
+						},
+					],
 				}),
 			)
+			.pipe(actingAs(orgId, adminGrants, ana))
+		if (options.override !== false) {
+			yield* schedules
+				.createOverride(
+					schedule.id,
+					new OnCallOverrideCreateRequest({
+						userId: ben,
+						startsAt: at("2026-11-10T08:00:00Z"),
+						endsAt: at("2026-11-11T08:00:00Z"),
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, ana))
 		}
 		return schedule
 	})
@@ -384,18 +387,17 @@ const setup = (
 		const alerts = yield* alertServices
 		const chains = yield* EscalationChainsService
 		const orgId = asOrgId(orgName)
-		const team = yield* alerts.createDestination(
-			orgId,
-			ana,
-			adminGrants,
-			new WebhookAlertDestinationConfig({
-				type: "webhook",
-				name: "team",
-				enabled: true,
-				url: "https://example.com/team",
-				signingSecret: "team-secret",
-			}),
-		)
+		const team = yield* alerts
+			.createDestination(
+				new WebhookAlertDestinationConfig({
+					type: "webhook",
+					name: "team",
+					enabled: true,
+					url: "https://example.com/team",
+					signingSecret: "team-secret",
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, ana))
 		const schedule = yield* apiPrimary(orgId, options)
 		yield* linkBenOnSlack(testDb, orgId)
 		const steps: [EscalationStep, ...Array<EscalationStep>] = [
@@ -405,39 +407,35 @@ const setup = (
 				waitMinutes: 15,
 			},
 		]
-		const chain = yield* chains.create(
-			orgId,
-			ana,
-			adminGrants,
-			new EscalationChainCreateRequest({ name: "API escalation", steps }),
-		)
-		yield* alerts.createRule(
-			orgId,
-			ana,
-			adminGrants,
-			new AlertRuleUpsertRequest({
-				name: "Checkout error rate",
-				enabled: true,
-				serviceNames: ["checkout"],
-				signalType: "error_rate",
-				comparator: "gt",
-				thresholds: [
-					{
-						severity: "critical",
-						value: 5,
-						upper: null,
-						recoveryValue: null,
-						destinationIds: [team.id],
-						escalationChainId: chain.id,
-					},
-				],
-				windowMinutes: 5,
-				minimumSampleCount: 10,
-				consecutiveBreachesRequired: 2,
-				consecutiveHealthyRequired: 2,
-				renotifyIntervalMinutes: 60,
-			}),
-		)
+		const chain = yield* chains
+			.create(new EscalationChainCreateRequest({ name: "API escalation", steps }))
+			.pipe(actingAs(orgId, adminGrants, ana))
+		yield* alerts
+			.createRule(
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					thresholds: [
+						{
+							severity: "critical",
+							value: 5,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [team.id],
+							escalationChainId: chain.id,
+						},
+					],
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 60,
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, ana))
 		// Two breaching ticks open the incident and send step 1.
 		yield* alerts.runSchedulerTick()
 		yield* tick(alerts)
@@ -992,12 +990,9 @@ describe("escalation chain targets", () => {
 				const orgId = asOrgId("org_page_guards")
 				const schedule = yield* apiPrimary(orgId, { override: false })
 				const create = (steps: [EscalationStep, ...Array<EscalationStep>]) =>
-					chains.create(
-						orgId,
-						ana,
-						adminGrants,
-						new EscalationChainCreateRequest({ name: "Guarded", steps }),
-					)
+					chains
+						.create(new EscalationChainCreateRequest({ name: "Guarded", steps }))
+						.pipe(actingAs(orgId, adminGrants, ana))
 
 				const stranger = getError(
 					yield* Effect.exit(
@@ -1030,12 +1025,14 @@ describe("escalation chain targets", () => {
 					},
 				])
 				assert.deepStrictEqual((yield* schedules.get(orgId, schedule.id)).chainIds, [chain.id])
-				const inUse = getError(yield* Effect.exit(schedules.delete(orgId, adminGrants, schedule.id)))
+				const inUse = getError(
+					yield* Effect.exit(schedules.delete(schedule.id).pipe(actingAs(orgId, adminGrants))),
+				)
 				if (!Schema.is(OnCallScheduleInUseError)(inUse)) return assert.fail("expected in use")
 				assert.deepStrictEqual(inUse.chainNames, ["Guarded"])
 
-				yield* chains.delete(orgId, adminGrants, chain.id)
-				yield* schedules.delete(orgId, adminGrants, schedule.id)
+				yield* chains.delete(chain.id).pipe(actingAs(orgId, adminGrants))
+				yield* schedules.delete(schedule.id).pipe(actingAs(orgId, adminGrants))
 				assert.lengthOf((yield* schedules.list(orgId)).schedules, 0)
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})

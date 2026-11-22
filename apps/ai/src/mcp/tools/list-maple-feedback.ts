@@ -5,7 +5,6 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { McpAuthInvalidError, McpInvalidInputError, McpNotReadyError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -41,7 +40,6 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 		permission: "agent_feedback:triage",
 		phrases: ["Reading agent feedback"],
 		handler: Effect.fn("McpTool.listMapleFeedback")(function* (params) {
-			const tenant = yield* CurrentMcpTenant
 			const actor = yield* CurrentAuditActor
 			if (actor === undefined || actor.type === "system") {
 				return yield* new McpAuthInvalidError({
@@ -66,7 +64,7 @@ export function registerListMapleFeedbackTool(server: McpToolRegistrar) {
 
 			const service = yield* AgentFeedbackService
 			const reports = yield* service
-				.triage(tenant, {
+				.triage({
 					kind: params.kind,
 					impact: params.impact,
 					sinceMs,

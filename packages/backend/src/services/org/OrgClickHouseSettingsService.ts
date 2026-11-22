@@ -19,7 +19,6 @@ import {
 	OrgClickHouseSettingsValidationError,
 	type OrgClickHouseSettingsUpsertRequest,
 	OrgId,
-	UserId,
 } from "@maple/domain/http"
 import {
 	clickHouseSchemaVersion,
@@ -287,17 +286,12 @@ export const decodeSkippedEntries = (
 	Option.getOrElse(decodeSkippedEntriesOption(value), () => [])
 
 export interface OrgClickHouseSettingsServiceApi {
-	readonly get: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly get: Effect.Effect<
 		OrgClickHouseSettingsResponse,
-		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError
+		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError,
+		Policy.CurrentActor
 	>
 	readonly upsert: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		payload: OrgClickHouseSettingsUpsertRequest,
 	) => Effect.Effect<
 		OrgClickHouseSettingsResponse,
@@ -306,43 +300,35 @@ export interface OrgClickHouseSettingsServiceApi {
 		| OrgClickHouseSettingsPersistenceError
 		| OrgClickHouseSettingsEncryptionError
 		| OrgClickHouseSettingsUpstreamRejectedError
-		| OrgClickHouseSettingsUpstreamUnavailableError
+		| OrgClickHouseSettingsUpstreamUnavailableError,
+		Policy.CurrentActor
 	>
-	readonly delete: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly delete: Effect.Effect<
 		OrgClickHouseSettingsDeleteResponse,
-		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError
+		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError,
+		Policy.CurrentActor
 	>
-	readonly schemaDiff: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly schemaDiff: Effect.Effect<
 		OrgClickHouseSchemaDiffResponse,
 		| OrgClickHouseSettingsForbiddenError
 		| OrgClickHouseSettingsValidationError
 		| OrgClickHouseSettingsPersistenceError
 		| OrgClickHouseSettingsEncryptionError
 		| OrgClickHouseSettingsUpstreamRejectedError
-		| OrgClickHouseSettingsUpstreamUnavailableError
+		| OrgClickHouseSettingsUpstreamUnavailableError,
+		Policy.CurrentActor
 	>
-	readonly applySchema: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly applySchema: Effect.Effect<
 		OrgClickHouseApplySchemaStarted,
 		| OrgClickHouseSettingsForbiddenError
 		| OrgClickHouseSettingsValidationError
-		| OrgClickHouseSettingsPersistenceError
+		| OrgClickHouseSettingsPersistenceError,
+		Policy.CurrentActor
 	>
-	readonly applySchemaStatus: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly applySchemaStatus: Effect.Effect<
 		OrgClickHouseApplySchemaStatus,
-		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError
+		OrgClickHouseSettingsForbiddenError | OrgClickHouseSettingsPersistenceError,
+		Policy.CurrentActor
 	>
 	readonly resolveRuntimeConfig: (
 		orgId: OrgId,
@@ -393,15 +379,13 @@ export interface OrgClickHouseSettingsServiceApi {
 	readonly isWarehouseWriteReady: (
 		orgId: OrgId,
 	) => Effect.Effect<boolean, OrgClickHouseSettingsPersistenceError>
-	readonly collectorConfig: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
-	) => Effect.Effect<
+	readonly collectorConfig: Effect.Effect<
 		OrgClickHouseCollectorConfigResponse,
 		| OrgClickHouseSettingsForbiddenError
 		| OrgClickHouseSettingsValidationError
 		| OrgClickHouseSettingsPersistenceError
-		| OrgClickHouseSettingsEncryptionError
+		| OrgClickHouseSettingsEncryptionError,
+		Policy.CurrentActor
 	>
 }
 
@@ -934,15 +918,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			return parsed
 		})
 
-		const requireAdmin = Effect.fn("OrgClickHouseSettingsService.requireAdmin")(function* (
-			permissions: Policy.Grants,
-		) {
-			return yield* Policy.check(
-				permissions,
-				"warehouse:manage",
-				(denial) => new OrgClickHouseSettingsForbiddenError({ message: denial.message }),
-			)
-		})
+		const requireAdmin = Policy.authorize(
+			"warehouse:manage",
+			(denial) => new OrgClickHouseSettingsForbiddenError({ message: denial.message }),
+		)
 
 		const selectActiveRow = Effect.fn("OrgClickHouseSettingsService.selectActiveRow")(function* (
 			orgId: OrgId,
@@ -1056,25 +1035,21 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				schemaVersion: row?.schemaVersion ?? null,
 			})
 
-		const get = Effect.fn("OrgClickHouseSettingsService.get")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const get = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			const row = yield* selectActiveRow(orgId)
 			return toResponse(Option.getOrUndefined(row))
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.get"))
 
 		const upsert = Effect.fn("OrgClickHouseSettingsService.upsert")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
 			payload: OrgClickHouseSettingsUpsertRequest,
 		) {
+			const { orgId, userId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 
 			const url = yield* normalizeHttpUrl(payload.url)
 			const user = Str.trim(payload.user)
@@ -1175,18 +1150,16 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			return toResponse(Option.getOrUndefined(refreshed))
 		})
 
-		const deleteSettings = Effect.fn("OrgClickHouseSettingsService.delete")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const deleteSettings = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			yield* dbExecute((db) =>
 				db.run(PG.deleteFrom(OrgClickHouseSettings).where(($) => [$.orgId.eq(orgId)])),
 			)
 			yield* invalidateRuntimeConfigCache(orgId)
 			return new OrgClickHouseSettingsDeleteResponse({ configured: false })
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.delete"))
 
 		const loadConfigForRow = (row: ActiveRow) =>
 			Effect.gen(function* () {
@@ -1200,12 +1173,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				}
 			})
 
-		const schemaDiff = Effect.fn("OrgClickHouseSettingsService.schemaDiff")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const schemaDiff = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			const row = yield* requireActiveRow(orgId)
 			const config = yield* loadConfigForRow(row)
 			const actual = yield* fetchActualSchema(httpClient, config)
@@ -1253,19 +1224,16 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				appliedSchemaVersion,
 				entries,
 			})
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.schemaDiff"))
 
 		// Kick off the background schema-apply Workflow. The heavy work (chunked
 		// backfill migrations + snapshot-diff reconcile) runs there so it never
 		// hits the Worker request budget; the client polls `applySchemaStatus`.
-		const applySchema = Effect.fn("OrgClickHouseSettingsService.applySchema")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			permissions: Policy.Grants,
-		) {
+		const applySchema = Effect.gen(function* () {
+			const { orgId, userId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			yield* requireActiveRow(orgId)
 
 			// Resolve the binding BEFORE claiming: a missing binding must not leave
@@ -1368,14 +1336,12 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			)
 
 			return new OrgClickHouseApplySchemaStarted({ status: "started" })
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.applySchema"))
 
-		const applySchemaStatus = Effect.fn("OrgClickHouseSettingsService.applySchemaStatus")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const applySchemaStatus = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(OrgClickHouseSchemaApplyRuns)
@@ -1422,7 +1388,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				startedAt: row.startedAt,
 				finishedAt: row.finishedAt,
 			})
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.applySchemaStatus"))
 
 		// The narrow Postgres read behind the memo. Returns the ENCRYPTED row
 		// projection (or `null` for a managed org); decryption happens per-request
@@ -1811,12 +1777,10 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			},
 		)
 
-		const collectorConfig = Effect.fn("OrgClickHouseSettingsService.collectorConfig")(function* (
-			orgId: OrgId,
-			permissions: Policy.Grants,
-		) {
+		const collectorConfig = Effect.gen(function* () {
+			const { orgId } = yield* Policy.CurrentActor
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* requireAdmin(permissions)
+			yield* requireAdmin
 			const row = yield* requireActiveRow(orgId)
 			const password = yield* decryptStoredPassword(row.orgId, row)
 			yield* validateClickHouseCredentialTransport(row.chUrl, password)
@@ -1831,7 +1795,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				image: COLLECTOR_IMAGE_REF,
 				passwordEnvVar: COLLECTOR_PASSWORD_ENV,
 			})
-		})
+		}).pipe(Effect.withSpan("OrgClickHouseSettingsService.collectorConfig"))
 
 		return {
 			get,

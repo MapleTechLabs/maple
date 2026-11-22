@@ -62,9 +62,7 @@ export const updateEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 			}).pipe(Effect.mapError(invalidChainRequest))
 			const tenant = yield* CurrentMcpTenant
 			const chains = yield* EscalationChainsService
-			const chain = yield* chains
-				.update(tenant.orgId, tenant.userId, tenant.permissions, chainId, request)
-				.pipe(Effect.catchTags(updateChainErrors))
+			const chain = yield* chains.update(chainId, request).pipe(Effect.catchTags(updateChainErrors))
 			const directory = yield* targetDirectory(tenant.orgId)
 			return { chain: toEscalationChainRow(chain, directory) }
 		}),

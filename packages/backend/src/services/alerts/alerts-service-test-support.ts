@@ -68,6 +68,7 @@ import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-
 import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
 import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { SloReadService } from "@maple/backend/services/slos/SloReadService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 export const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
@@ -422,18 +423,17 @@ export const createWebhookDestination = (
 	orgId: ReturnType<typeof asOrgId>,
 	userId: ReturnType<typeof asUserId>,
 ) =>
-	alerts.createDestination(
-		orgId,
-		userId,
-		adminGrants,
-		new WebhookAlertDestinationConfig({
-			type: "webhook",
-			name: "Primary webhook",
-			enabled: true,
-			url: "https://example.com/maple-alerts",
-			signingSecret: "webhook-secret",
-		}),
-	)
+	alerts
+		.createDestination(
+			new WebhookAlertDestinationConfig({
+				type: "webhook",
+				name: "Primary webhook",
+				enabled: true,
+				url: "https://example.com/maple-alerts",
+				signingSecret: "webhook-secret",
+			}),
+		)
+		.pipe(actingAs(orgId, adminGrants, userId))
 
 export const createErrorRateRule = (
 	alerts: AlertServices,
@@ -444,26 +444,25 @@ export const createErrorRateRule = (
 	// carries a unique index on (org_id, name).
 	name = "Checkout error rate",
 ) =>
-	alerts.createRule(
-		orgId,
-		userId,
-		adminGrants,
-		new AlertRuleUpsertRequest({
-			name,
-			severity: "critical",
-			enabled: true,
-			serviceNames: ["checkout"],
-			signalType: "error_rate",
-			comparator: "gt",
-			threshold: 5,
-			windowMinutes: 5,
-			minimumSampleCount: 10,
-			consecutiveBreachesRequired: 2,
-			consecutiveHealthyRequired: 2,
-			renotifyIntervalMinutes: 30,
-			destinationIds: [destinationId],
-		}),
-	)
+	alerts
+		.createRule(
+			new AlertRuleUpsertRequest({
+				name,
+				severity: "critical",
+				enabled: true,
+				serviceNames: ["checkout"],
+				signalType: "error_rate",
+				comparator: "gt",
+				threshold: 5,
+				windowMinutes: 5,
+				minimumSampleCount: 10,
+				consecutiveBreachesRequired: 2,
+				consecutiveHealthyRequired: 2,
+				renotifyIntervalMinutes: 30,
+				destinationIds: [destinationId],
+			}),
+		)
+		.pipe(actingAs(orgId, adminGrants, userId))
 
 export const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeApi, "makeUuid"> => {
 	let index = 0

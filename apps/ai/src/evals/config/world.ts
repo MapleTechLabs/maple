@@ -6,6 +6,7 @@
  */
 import { Effect, Option, Schema } from "effect"
 import { RoleName, WebhookAlertDestinationConfig } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { asCaller, runToolDirect, type EvalRuntime } from "../../mcp/__evals__/eval-runtime"
@@ -52,16 +53,13 @@ const seedTool = async (rt: EvalRuntime, name: string, params: unknown): Promise
 
 export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 	const rt = asCaller(base, ADMIN_CALLER)
-	const { orgId, userId, permissions } = rt.tenant
+	const { orgId, userId } = rt.tenant
 
 	const [destination] = await rt.runtime.runPromise(
 		Effect.gen(function* () {
 			const destinations = yield* AlertDestinationsService
 			const sources = yield* SourcesService
 			const used = yield* destinations.createDestination(
-				orgId,
-				userId,
-				permissions,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: CONFIG_WORLD.destination,
@@ -69,9 +67,6 @@ export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 				}),
 			)
 			yield* destinations.createDestination(
-				orgId,
-				userId,
-				permissions,
 				new WebhookAlertDestinationConfig({
 					type: "webhook",
 					name: CONFIG_WORLD.unusedDestination,
@@ -86,7 +81,7 @@ export const seedConfigWorld = async (base: EvalRuntime): Promise<void> => {
 			})
 			yield* sources.pause(orgId, userId, paused.source.id, null)
 			return [used] as const
-		}),
+		}).pipe(Effect.provideService(Policy.CurrentActor, rt.tenant)),
 	)
 
 	await seedTool(rt, "create_alert_rule", {

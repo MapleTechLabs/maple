@@ -1,10 +1,20 @@
-import { Context } from "effect"
+import { Context, Effect } from "effect"
 import type { TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 
 /** The tenant every MCP tool call runs under, provided per call by the executor. */
 export class CurrentMcpTenant extends Context.Service<CurrentMcpTenant, TenantContext>()(
 	"@maple/ai/mcp/CurrentMcpTenant",
 ) {}
+
+/** Run a tool call as `tenant`: the tool's tenant, and the actor the services it calls check. */
+export const provideMcpTenant =
+	(tenant: TenantContext) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(
+			Effect.provideService(CurrentMcpTenant, tenant),
+			Effect.provideService(Policy.CurrentActor, tenant),
+		)
 
 /**
  * Adapter-local copy of the authenticated HTTP tenant.

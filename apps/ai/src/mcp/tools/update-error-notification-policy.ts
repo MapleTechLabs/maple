@@ -80,33 +80,31 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 				),
 			)
 
-			const policy = yield* policies
-				.upsertNotificationPolicy(tenant.orgId, tenant.userId, tenant.permissions, patch)
-				.pipe(
-					Effect.catchTags({
-						"@maple/http/errors/ErrorForbiddenError": (error) =>
-							Effect.fail(
-								new McpUnavailableError({ message: error.message, capability: "org_admin" }),
-							),
-						"@maple/http/errors/ErrorPersistenceError": persistenceFailed(
-							"update_error_notification_policy",
+			const policy = yield* policies.upsertNotificationPolicy(patch).pipe(
+				Effect.catchTags({
+					"@maple/http/errors/ErrorForbiddenError": (error) =>
+						Effect.fail(
+							new McpUnavailableError({ message: error.message, capability: "org_admin" }),
 						),
-						"@maple/http/errors/ErrorNotificationUnknownDestinationError": (error) =>
-							Effect.fail(
-								new McpInvalidInputError({
-									message: `No alert destination ${Arr.join(
-										Arr.map(
-											error.destinationIds,
-											(id) =>
-												`${id} (${encodePublicId(PublicIdPrefixes.alertDestination, id)})`,
-										),
-										", ",
-									)} in this org. list_alert_destinations lists them. Nothing was changed.`,
-									parameter: "destination_ids",
-								}),
-							),
-					}),
-				)
+					"@maple/http/errors/ErrorPersistenceError": persistenceFailed(
+						"update_error_notification_policy",
+					),
+					"@maple/http/errors/ErrorNotificationUnknownDestinationError": (error) =>
+						Effect.fail(
+							new McpInvalidInputError({
+								message: `No alert destination ${Arr.join(
+									Arr.map(
+										error.destinationIds,
+										(id) =>
+											`${id} (${encodePublicId(PublicIdPrefixes.alertDestination, id)})`,
+									),
+									", ",
+								)} in this org. list_alert_destinations lists them. Nothing was changed.`,
+								parameter: "destination_ids",
+							}),
+						),
+				}),
+			)
 
 			return yield* policyOutput(tenant.orgId, policy, "update_error_notification_policy")
 		}),

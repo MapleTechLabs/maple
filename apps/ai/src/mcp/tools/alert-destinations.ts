@@ -172,7 +172,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					),
 				)
 				const created = yield* destinations
-					.createDestination(tenant.orgId, tenant.userId, tenant.permissions, request)
+					.createDestination(request)
 					.pipe(
 						Effect.catchTag(
 							"@maple/http/errors/AlertMemberDirectoryNotConfiguredError",
@@ -252,7 +252,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					),
 				)
 				const updated = yield* destinations
-					.updateDestination(tenant.orgId, tenant.userId, tenant.permissions, current.id, request)
+					.updateDestination(current.id, request)
 					.pipe(
 						Effect.catchTag(
 							"@maple/http/errors/AlertMemberDirectoryNotConfiguredError",
@@ -301,7 +301,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 					})
 				}
 				const current = yield* resolveDestination(tenant.orgId, params.destination)
-				yield* destinations.deleteDestination(tenant.orgId, tenant.permissions, current.id).pipe(
+				yield* destinations.deleteDestination(current.id).pipe(
 					Effect.catchTag("@maple/http/errors/AlertDestinationInUseError", (error) =>
 						Effect.fail(
 							new McpInvalidInputError({
@@ -358,7 +358,7 @@ export function registerAlertDestinationTools(server: McpToolRegistrar) {
 				})
 				// A provider refusing the test is the answer, not a failure of the call.
 				const outcome = yield* destinations
-					.testDestination(tenant.orgId, tenant.userId, tenant.permissions, current.id)
+					.testDestination(current.id)
 					.pipe(
 						Effect.map((sent) => ({ passed: sent.success, message: sent.message })),
 						Effect.catchTags({

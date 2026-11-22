@@ -2,7 +2,6 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, String as Str } from "effect"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import {
 	ALERT_EVALUATION_INTERVALS,
@@ -333,20 +332,17 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				),
 			)
 
-			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
-			const rule = yield* alerts
-				.createRule(tenant.orgId, tenant.userId, tenant.permissions, decoded)
-				.pipe(
-					Effect.catchTags(ruleWriteInputErrors),
-					Effect.catchTags({
-						"@maple/http/errors/AlertForbiddenError": (error) =>
-							Effect.fail(toMcpHttpError("create_alert_rule")(error)),
-						"@maple/http/errors/AlertPersistenceError": (error) =>
-							Effect.fail(toMcpHttpError("create_alert_rule")(error)),
-					}),
-				)
+			const rule = yield* alerts.createRule(decoded).pipe(
+				Effect.catchTags(ruleWriteInputErrors),
+				Effect.catchTags({
+					"@maple/http/errors/AlertForbiddenError": (error) =>
+						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
+					"@maple/http/errors/AlertPersistenceError": (error) =>
+						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
+				}),
+			)
 
 			const evaluated = yield* firstEvaluation(decoded, rule.enabled)
 			const warnings = [...ruleConfigWarnings(rule), ...evaluated.warnings]

@@ -25,6 +25,7 @@ const ON_CALL = roleId("role_oncall000000")
 const VIEWER = roleId("role_viewer000000")
 
 const adminTenant = { orgId: ORG, userId: ADMIN, permissions: Policy.grantsOf(["org:admin"]) }
+const asAdmin = Effect.provideService(Policy.CurrentActor, adminTenant)
 
 const stored = (
 	id: Policy.CustomRoleId,
@@ -180,7 +181,7 @@ describe("RolesService.list", () => {
 			],
 		)
 		return Effect.gen(function* () {
-			const list = yield* (yield* RolesService).list(adminTenant)
+			const list = yield* (yield* RolesService).list.pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(list.builtIn, (role) => [role.clerkKey, role.memberCount]),
 				[
@@ -215,7 +216,7 @@ describe("RolesService.list", () => {
 		const people = Arr.map(Arr.range(1, 7), (index) => ({ userId: `user_${index}`, role: "org:member" }))
 		const { layer } = setup([], people)
 		return Effect.gen(function* () {
-			const list = yield* (yield* RolesService).list(adminTenant)
+			const list = yield* (yield* RolesService).list.pipe(asAdmin)
 			assert.strictEqual(list.builtIn[1]?.memberCount, 7)
 			assert.deepStrictEqual(
 				Arr.map(list.holders.member ?? [], (holder) => holder.userId),
@@ -236,12 +237,12 @@ describe("RolesService.list", () => {
 		)
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
-			const holders = yield* roles.members(adminTenant, "member")
+			const holders = yield* roles.members("member").pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(holders.members, (member) => member.userId),
 				["user_ana", "user_ben"],
 			)
-			const engineers = yield* roles.members(adminTenant, "engineer")
+			const engineers = yield* roles.members("engineer").pipe(asAdmin)
 			assert.deepStrictEqual(engineers.members, [])
 		}).pipe(Effect.provide(layer))
 	})
@@ -253,12 +254,12 @@ describe("RolesService.list", () => {
 		)
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
-			const holders = yield* roles.members(adminTenant, ON_CALL)
+			const holders = yield* roles.members(ON_CALL).pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(holders.members, (member) => [member.userId, member.identifier]),
 				[["user_cat", "user_cat@acme.test"]],
 			)
-			const missing = yield* Effect.flip(roles.members(adminTenant, VIEWER))
+			const missing = yield* Effect.flip(roles.members(VIEWER).pipe(asAdmin))
 			assert.strictEqual(missing._tag, "@maple/http/roles/RoleNotFoundError")
 		}).pipe(Effect.provide(layer))
 	})
@@ -271,10 +272,9 @@ describe("RolesService.create", () => {
 	it.effect("stores a new role with a fresh id and the permissions as codes", () => {
 		const { layer, clerk } = setup([], [{ userId: "user_admin", role: "org:admin" }])
 		return Effect.gen(function* () {
-			const created = yield* (yield* RolesService).create(
-				adminTenant,
-				request("On-call", onCallPermissions),
-			)
+			const created = yield* (yield* RolesService)
+				.create(request("On-call", onCallPermissions))
+				.pipe(asAdmin)
 			assert.match(created.id, /^role_[a-z0-9]{12}$/)
 			assert.strictEqual(created.memberCount, 0)
 			assert.deepStrictEqual(
@@ -289,11 +289,11 @@ describe("RolesService.create", () => {
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
 			assert.strictEqual(
-				yield* conflictReason(roles.create(adminTenant, request("on-CALL"))),
+				yield* conflictReason(roles.create(request("on-CALL")).pipe(asAdmin)),
 				"name_taken",
 			)
 			assert.strictEqual(
-				yield* conflictReason(roles.create(adminTenant, request("Engineer"))),
+				yield* conflictReason(roles.create(request("Engineer")).pipe(asAdmin)),
 				"name_taken",
 			)
 			assert.deepStrictEqual(clerk.state.writes, [])
@@ -310,7 +310,7 @@ describe("RolesService.create", () => {
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
 			assert.strictEqual(
-				yield* conflictReason(roles.create(adminTenant, request("One more"))),
+				yield* conflictReason(roles.create(request("One more")).pipe(asAdmin)),
 				"limit_reached",
 			)
 			assert.deepStrictEqual(clerk.state.writes, [])
@@ -322,7 +322,7 @@ describe("RolesService.create", () => {
 		return Effect.gen(function* () {
 			assert.strictEqual(
 				yield* conflictReason(
-					(yield* RolesService).create(adminTenant, request("Managers", ["members:manage"])),
+					(yield* RolesService).create(request("Managers", ["members:manage"])).pipe(asAdmin),
 				),
 				"not_grantable",
 			)
@@ -333,10 +333,9 @@ describe("RolesService.create", () => {
 	it.effect("stores what the permissions imply, so a role cannot act on telemetry it cannot read", () => {
 		const { layer, clerk } = setup([], [])
 		return Effect.gen(function* () {
-			const created = yield* (yield* RolesService).create(
-				adminTenant,
-				request("Responders", ["incidents:respond", "ingest_keys:roll"]),
-			)
+			const created = yield* (yield* RolesService)
+				.create(request("Responders", ["incidents:respond", "ingest_keys:roll"]))
+				.pipe(asAdmin)
 			const closed: ReadonlyArray<Policy.Permission> = [
 				"telemetry:read",
 				"incidents:respond",
@@ -356,7 +355,7 @@ describe("RolesService.create", () => {
 			() => clerk.writeElsewhere([stored(VIEWER, "Viewer", ["telemetry:read"])]),
 		)
 		return Effect.gen(function* () {
-			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			const created = yield* (yield* RolesService).create(request("On-call")).pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(clerk.state.roles, (role) => role.id),
 				[VIEWER, created.id],
@@ -372,7 +371,7 @@ describe("RolesService.create", () => {
 			clerk.state.roles = [stored(VIEWER, "Viewer", ["telemetry:read"])]
 		})
 		return Effect.gen(function* () {
-			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			const created = yield* (yield* RolesService).create(request("On-call")).pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(clerk.state.roles, (role) => role.id),
 				[VIEWER, created.id],
@@ -388,7 +387,7 @@ describe("RolesService.create", () => {
 			clerk.state.roles = [...clerk.state.roles, stored(VIEWER, "Viewer", ["telemetry:read"])]
 		})
 		return Effect.gen(function* () {
-			const created = yield* (yield* RolesService).create(adminTenant, request("On-call"))
+			const created = yield* (yield* RolesService).create(request("On-call")).pipe(asAdmin)
 			assert.deepStrictEqual(
 				Arr.map(clerk.state.roles, (role) => role.id),
 				[created.id, VIEWER],
@@ -407,7 +406,7 @@ describe("RolesService.create", () => {
 		}
 		return Effect.gen(function* () {
 			assert.strictEqual(
-				yield* conflictReason((yield* RolesService).create(adminTenant, request("On-call"))),
+				yield* conflictReason((yield* RolesService).create(request("On-call")).pipe(asAdmin)),
 				"concurrent_edit",
 			)
 			assert.deepStrictEqual(clerk.state.writes, [])
@@ -423,16 +422,17 @@ describe("RolesService.update", () => {
 		)
 		const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read", "incidents:respond"]
 		return Effect.gen(function* () {
-			const { before, role } = yield* (yield* RolesService).update(
-				adminTenant,
-				ON_CALL,
-				new UpdateRoleRequest({
-					expectedUpdatedAt: 1,
-					name: "On-call",
-					description: "",
-					permissions: narrowed,
-				}),
-			)
+			const { before, role } = yield* (yield* RolesService)
+				.update(
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
+						name: "On-call",
+						description: "",
+						permissions: narrowed,
+					}),
+				)
+				.pipe(asAdmin)
 			assert.deepStrictEqual(before.permissions, [
 				"telemetry:read",
 				"incidents:respond",
@@ -465,16 +465,17 @@ describe("RolesService.update", () => {
 			[onCallHolder("user_cat")],
 		)
 		return Effect.gen(function* () {
-			yield* (yield* RolesService).update(
-				adminTenant,
-				ON_CALL,
-				new UpdateRoleRequest({
-					expectedUpdatedAt: 1,
-					name: "On-call",
-					description: "",
-					permissions: ["alerts:manage"],
-				}),
-			)
+			yield* (yield* RolesService)
+				.update(
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
+						name: "On-call",
+						description: "",
+						permissions: ["alerts:manage"],
+					}),
+				)
+				.pipe(asAdmin)
 			const closed = Policy.encodePermissions(["telemetry:read", "alerts:manage"])
 			assert.deepStrictEqual(clerk.state.roles[0]?.permissions, closed)
 			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, closed)
@@ -487,16 +488,17 @@ describe("RolesService.update", () => {
 			[onCallHolder("user_cat")],
 		)
 		return Effect.gen(function* () {
-			const { role } = yield* (yield* RolesService).update(
-				adminTenant,
-				ON_CALL,
-				new UpdateRoleRequest({
-					expectedUpdatedAt: 1,
-					name: "Responders",
-					description: "",
-					permissions: onCallPermissions,
-				}),
-			)
+			const { role } = yield* (yield* RolesService)
+				.update(
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
+						name: "Responders",
+						description: "",
+						permissions: onCallPermissions,
+					}),
+				)
+				.pipe(asAdmin)
 			assert.strictEqual(role.name, "Responders")
 			assert.deepStrictEqual(clerk.state.writes, ["roles@1"])
 			assert.deepStrictEqual(revocation.demoted, [])
@@ -515,16 +517,17 @@ describe("RolesService.update", () => {
 		)
 		const narrowed: ReadonlyArray<Policy.Permission> = ["telemetry:read"]
 		return Effect.gen(function* () {
-			const { role } = yield* (yield* RolesService).update(
-				adminTenant,
-				ON_CALL,
-				new UpdateRoleRequest({
-					expectedUpdatedAt: 1,
-					name: "On-call",
-					description: "",
-					permissions: narrowed,
-				}),
-			)
+			const { role } = yield* (yield* RolesService)
+				.update(
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
+						name: "On-call",
+						description: "",
+						permissions: narrowed,
+					}),
+				)
+				.pipe(asAdmin)
 			assert.strictEqual(role.memberCount, 1)
 			assert.deepStrictEqual(clerk.customOf("user_ana"), {
 				id: ON_CALL,
@@ -543,16 +546,17 @@ describe("RolesService.update, from a stale editor", () => {
 		)
 		return Effect.gen(function* () {
 			const reason = yield* conflictReason(
-				(yield* RolesService).update(
-					adminTenant,
-					ON_CALL,
-					new UpdateRoleRequest({
-						expectedUpdatedAt: 0,
-						name: "On-call",
-						description: "",
-						permissions: ["telemetry:read"],
-					}),
-				),
+				(yield* RolesService)
+					.update(
+						ON_CALL,
+						new UpdateRoleRequest({
+							expectedUpdatedAt: 0,
+							name: "On-call",
+							description: "",
+							permissions: ["telemetry:read"],
+						}),
+					)
+					.pipe(asAdmin),
 			)
 			assert.strictEqual(reason, "concurrent_edit")
 			assert.deepStrictEqual(clerk.state.writes, [])
@@ -575,16 +579,17 @@ describe("RolesService.update, racing a stale writer", () => {
 		}
 		return Effect.gen(function* () {
 			const reason = yield* conflictReason(
-				(yield* RolesService).update(
-					adminTenant,
-					ON_CALL,
-					new UpdateRoleRequest({
-						expectedUpdatedAt: 1,
-						name: "On-call",
-						description: "",
-						permissions: onCallPermissions,
-					}),
-				),
+				(yield* RolesService)
+					.update(
+						ON_CALL,
+						new UpdateRoleRequest({
+							expectedUpdatedAt: 1,
+							name: "On-call",
+							description: "",
+							permissions: onCallPermissions,
+						}),
+					)
+					.pipe(asAdmin),
 			)
 			assert.strictEqual(reason, "concurrent_edit")
 			assert.deepStrictEqual(clerk.state.roles, [narrow])
@@ -605,16 +610,17 @@ describe("RolesService.update, racing a narrowing save", () => {
 			clerk.state.members.set("user_cat", onCallHolder("user_cat", ["telemetry:read"]))
 		})
 		return Effect.gen(function* () {
-			yield* (yield* RolesService).update(
-				adminTenant,
-				ON_CALL,
-				new UpdateRoleRequest({
-					expectedUpdatedAt: 1,
-					name: "On-call",
-					description: "",
-					permissions: onCallPermissions,
-				}),
-			)
+			yield* (yield* RolesService)
+				.update(
+					ON_CALL,
+					new UpdateRoleRequest({
+						expectedUpdatedAt: 1,
+						name: "On-call",
+						description: "",
+						permissions: onCallPermissions,
+					}),
+				)
+				.pipe(asAdmin)
 			assert.deepStrictEqual(clerk.state.roles, [narrow])
 			assert.deepStrictEqual(clerk.customOf("user_cat")?.permissions, narrow.permissions)
 			assert.deepStrictEqual(revocation.demoted.at(-1), {
@@ -634,16 +640,17 @@ describe("RolesService.update, racing a narrowing save", () => {
 		}
 		return Effect.gen(function* () {
 			const reason = yield* conflictReason(
-				(yield* RolesService).update(
-					adminTenant,
-					ON_CALL,
-					new UpdateRoleRequest({
-						expectedUpdatedAt: 1,
-						name: "On-call",
-						description: "",
-						permissions: onCallPermissions,
-					}),
-				),
+				(yield* RolesService)
+					.update(
+						ON_CALL,
+						new UpdateRoleRequest({
+							expectedUpdatedAt: 1,
+							name: "On-call",
+							description: "",
+							permissions: onCallPermissions,
+						}),
+					)
+					.pipe(asAdmin),
 			)
 			assert.strictEqual(reason, "concurrent_edit")
 		}).pipe(Effect.provide(layer))
@@ -658,9 +665,12 @@ describe("RolesService.delete", () => {
 		)
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
-			assert.strictEqual(yield* conflictReason(roles.delete(adminTenant, ON_CALL, undefined)), "in_use")
 			assert.strictEqual(
-				yield* conflictReason(roles.delete(adminTenant, ON_CALL, { _tag: "Custom", id: ON_CALL })),
+				yield* conflictReason(roles.delete(ON_CALL, undefined).pipe(asAdmin)),
+				"in_use",
+			)
+			assert.strictEqual(
+				yield* conflictReason(roles.delete(ON_CALL, { _tag: "Custom", id: ON_CALL }).pipe(asAdmin)),
 				"in_use",
 			)
 			assert.strictEqual(clerk.state.roles.length, 1)
@@ -673,10 +683,12 @@ describe("RolesService.delete", () => {
 			[onCallHolder("user_cat"), { userId: "user_ana", role: "org:member" }],
 		)
 		return Effect.gen(function* () {
-			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, {
-				_tag: "Custom",
-				id: VIEWER,
-			})
+			const deleted = yield* (yield* RolesService)
+				.delete(ON_CALL, {
+					_tag: "Custom",
+					id: VIEWER,
+				})
+				.pipe(asAdmin)
 			assert.strictEqual(deleted.moved, 1)
 			assert.deepStrictEqual(
 				Arr.map(clerk.state.roles, (role) => role.id),
@@ -698,7 +710,7 @@ describe("RolesService.delete", () => {
 		)
 		return Effect.gen(function* () {
 			const missing = yield* Effect.flip(
-				(yield* RolesService).delete(adminTenant, ON_CALL, { _tag: "Custom", id: VIEWER }),
+				(yield* RolesService).delete(ON_CALL, { _tag: "Custom", id: VIEWER }).pipe(asAdmin),
 			)
 			assert.instanceOf(missing, RoleNotFoundError)
 			assert.strictEqual(missing.roleId, VIEWER)
@@ -719,10 +731,12 @@ describe("RolesService.delete", () => {
 			() => clerk.state.members.set("user_ana", onCallHolder("user_ana")),
 		)
 		return Effect.gen(function* () {
-			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, {
-				_tag: "BuiltIn",
-				clerkKey: "org:member",
-			})
+			const deleted = yield* (yield* RolesService)
+				.delete(ON_CALL, {
+					_tag: "BuiltIn",
+					clerkKey: "org:member",
+				})
+				.pipe(asAdmin)
 			assert.strictEqual(deleted.moved, 2)
 			assert.deepStrictEqual(
 				[clerk.roleOf("user_cat"), clerk.roleOf("user_ana")],
@@ -746,7 +760,7 @@ describe("RolesService.delete, orphans", () => {
 			() => clerk.state.members.set("user_ana", onCallHolder("user_ana")),
 		)
 		return Effect.gen(function* () {
-			const deleted = yield* (yield* RolesService).delete(adminTenant, ON_CALL, undefined)
+			const deleted = yield* (yield* RolesService).delete(ON_CALL, undefined).pipe(asAdmin)
 			assert.strictEqual(deleted.moved, 1)
 			assert.deepStrictEqual(
 				[clerk.roleOf("user_ana"), clerk.customOf("user_ana")],
@@ -767,10 +781,12 @@ describe("RolesService.setMemberRole", () => {
 	it.effect("moves a member onto a custom role: org:custom plus the role on the membership", () => {
 		const { layer, clerk, revocation } = setup([stored(ON_CALL, "On-call", onCallPermissions)], members)
 		return Effect.gen(function* () {
-			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_ana"), {
-				_tag: "Custom",
-				id: ON_CALL,
-			})
+			const change = yield* (yield* RolesService)
+				.setMemberRole(user("user_ana"), {
+					_tag: "Custom",
+					id: ON_CALL,
+				})
+				.pipe(asAdmin)
 			assert.strictEqual(change.previousRole, "org:member")
 			assert.deepStrictEqual(change.member.permissions, [
 				"telemetry:read",
@@ -798,10 +814,12 @@ describe("RolesService.setMemberRole", () => {
 			() => clerk.writeElsewhere([stored(ON_CALL, "On-call", ["telemetry:read"])]),
 		)
 		return Effect.gen(function* () {
-			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_ana"), {
-				_tag: "Custom",
-				id: ON_CALL,
-			})
+			const change = yield* (yield* RolesService)
+				.setMemberRole(user("user_ana"), {
+					_tag: "Custom",
+					id: ON_CALL,
+				})
+				.pipe(asAdmin)
 			assert.deepStrictEqual(change.member.permissions, ["telemetry:read"])
 			assert.deepStrictEqual(
 				clerk.customOf("user_ana")?.permissions,
@@ -822,10 +840,12 @@ describe("RolesService.setMemberRole", () => {
 	it.effect("moves a custom member onto a built-in role and clears the membership's custom role", () => {
 		const { layer, clerk, revocation } = setup([stored(ON_CALL, "On-call", onCallPermissions)], members)
 		return Effect.gen(function* () {
-			const change = yield* (yield* RolesService).setMemberRole(adminTenant, user("user_cat"), {
-				_tag: "BuiltIn",
-				clerkKey: "org:analyst",
-			})
+			const change = yield* (yield* RolesService)
+				.setMemberRole(user("user_cat"), {
+					_tag: "BuiltIn",
+					clerkKey: "org:analyst",
+				})
+				.pipe(asAdmin)
 			assert.strictEqual(change.previousRole, ON_CALL)
 			assert.strictEqual(clerk.roleOf("user_cat"), "org:analyst")
 			assert.strictEqual(clerk.customOf("user_cat"), undefined)
@@ -843,15 +863,19 @@ describe("RolesService.setMemberRole", () => {
 			const roles = yield* RolesService
 			const toMember = { _tag: "BuiltIn", clerkKey: "org:member" } as const
 			assert.strictEqual(
-				yield* conflictReason(roles.setMemberRole(adminTenant, ADMIN, toMember)),
+				yield* conflictReason(roles.setMemberRole(ADMIN, toMember).pipe(asAdmin)),
 				"self",
 			)
 			assert.strictEqual(
-				yield* conflictReason(roles.setMemberRole(operator, ADMIN, toMember)),
+				yield* conflictReason(
+					roles
+						.setMemberRole(ADMIN, toMember)
+						.pipe(Effect.provideService(Policy.CurrentActor, operator)),
+				),
 				"last_admin",
 			)
 			const outsider = yield* Effect.flip(
-				roles.setMemberRole(adminTenant, user("user_nobody"), toMember),
+				roles.setMemberRole(user("user_nobody"), toMember).pipe(asAdmin),
 			)
 			assert.instanceOf(outsider, RoleMemberNotFoundError)
 			assert.deepStrictEqual(clerk.state.writes, [])
@@ -880,13 +904,12 @@ describe("RolesService without Clerk", () => {
 		)
 		return Effect.gen(function* () {
 			const roles = yield* RolesService
-			const listed = yield* Effect.flip(roles.list(adminTenant))
+			const listed = yield* Effect.flip(roles.list.pipe(asAdmin))
 			assert.instanceOf(listed, RolesUnavailableError)
 			const created = yield* Effect.flip(
-				roles.create(
-					adminTenant,
-					new CreateRoleRequest({ name: "On-call", permissions: ["telemetry:read"] }),
-				),
+				roles
+					.create(new CreateRoleRequest({ name: "On-call", permissions: ["telemetry:read"] }))
+					.pipe(asAdmin),
 			)
 			assert.instanceOf(created, RolesUnavailableError)
 		}).pipe(Effect.provide(layer))

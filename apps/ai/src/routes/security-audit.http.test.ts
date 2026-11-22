@@ -99,7 +99,7 @@ const AuthorizationStubLayer = Layer.succeed(
 					permissions: Policy.grantsOf([decodeRole(role)]),
 					authMode: "clerk",
 				})
-				return yield* Effect.provideService(httpEffect, CurrentTenant.Context, tenant)
+				return yield* CurrentTenant.provide(tenant)(httpEffect)
 			}),
 	}),
 )

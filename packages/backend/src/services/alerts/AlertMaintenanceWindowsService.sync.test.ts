@@ -35,6 +35,7 @@ import {
 	makeLayer,
 	makeWarehouseStub,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -68,17 +69,20 @@ const nightly: AlertMaintenanceSchedule = {
 
 const createWindow = (schedule: AlertMaintenanceSchedule, name = "Nightly DB") =>
 	AlertMaintenanceWindowsService.use((windows) =>
-		windows.create(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertMaintenanceWindowCreateRequest({ name, matchers: { services: ["checkout"] }, schedule }),
-		),
+		windows
+			.create(
+				new AlertMaintenanceWindowCreateRequest({
+					name,
+					matchers: { services: ["checkout"] },
+					schedule,
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId)),
 	)
 
 const updateWindow = (windowId: AlertMaintenanceWindowId, request: AlertMaintenanceWindowUpdateRequest) =>
 	AlertMaintenanceWindowsService.use((windows) =>
-		windows.update(orgId, userId, adminGrants, windowId, request),
+		windows.update(windowId, request).pipe(actingAs(orgId, adminGrants, userId)),
 	)
 
 const byStart = Order.mapInput(Order.Number, (silence: { readonly startsAt: string }) =>
@@ -418,16 +422,15 @@ describe("maintenance window sync", () => {
 				),
 			)
 			const created = yield* AlertSilencesService.use((silences) =>
-				silences.create(
-					orgId,
-					userId,
-					adminGrants,
-					new AlertSilenceCreateRequest({
-						reason: "deploy",
-						matchers: { services: ["checkout"] },
-						endsAt: at(NOW + HOUR),
-					}),
-				),
+				silences
+					.create(
+						new AlertSilenceCreateRequest({
+							reason: "deploy",
+							matchers: { services: ["checkout"] },
+							endsAt: at(NOW + HOUR),
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			assert.strictEqual(created.status, "active")
 		}).pipe(Effect.provide(layer))
@@ -440,15 +443,13 @@ describe("maintenance window sync", () => {
 			const window = yield* createWindow(nightly, "Nightly DB")
 			const [first] = yield* occurrenceSilences(window.id)
 			const silences = yield* AlertSilencesService
-			const ended = yield* Effect.exit(silences.end(orgId, userId, adminGrants, first.id))
+			const ended = yield* Effect.exit(
+				silences.end(first.id).pipe(actingAs(orgId, adminGrants, userId)),
+			)
 			const edited = yield* Effect.exit(
-				silences.update(
-					orgId,
-					userId,
-					adminGrants,
-					first.id,
-					new AlertSilenceUpdateRequest({ endsAt: at(NOW + 10 * HOUR) }),
-				),
+				silences
+					.update(first.id, new AlertSilenceUpdateRequest({ endsAt: at(NOW + 10 * HOUR) }))
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			assert.deepStrictEqual(
 				Arr.map([ended, edited], (exit) => {
@@ -495,10 +496,12 @@ describe("maintenance window sync", () => {
 			// Deleted mid-occurrence: that occurrence's silence is kept, ended at the delete.
 			yield* TestClock.setTime(TUE_2330 + 10 * MINUTE)
 			yield* AlertMaintenanceWindowsService.use((service) =>
-				service.delete(orgId, userId, adminGrants, window.id),
+				service.delete(window.id).pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const silences = yield* AlertSilencesService
-			const error = getError(yield* Effect.exit(silences.end(orgId, userId, adminGrants, first.id)))
+			const error = getError(
+				yield* Effect.exit(silences.end(first.id).pipe(actingAs(orgId, adminGrants, userId))),
+			)
 			assert.strictEqual(
 				Schema.is(AlertValidationError)(error) ? error.message : String(error),
 				"This silence came from a maintenance window that was deleted, so it cannot be edited",
@@ -514,7 +517,7 @@ describe("maintenance window sync", () => {
 			const deletedAt = NOW + HOUR
 			yield* TestClock.setTime(deletedAt)
 			yield* AlertMaintenanceWindowsService.use((service) =>
-				service.delete(orgId, userId, adminGrants, window.id),
+				service.delete(window.id).pipe(actingAs(orgId, adminGrants, userId)),
 			)
 
 			const database = yield* Database

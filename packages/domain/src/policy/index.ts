@@ -1,4 +1,5 @@
-import { Array as Arr, Effect, Record as Rec, Schema } from "effect"
+import { Array as Arr, Context, Effect, Record as Rec, Schema } from "effect"
+import type { OrgId, UserId } from "@maple/primitives"
 import { type Permission, permissions } from "./permissions"
 import { builtInRoles, NO_ROLE_PERMISSIONS, permissionsOfRole } from "./roles"
 
@@ -116,6 +117,37 @@ export const check = <E>(
 	onDenied: (denial: Denial) => E,
 ): Effect.Effect<void, E> =>
 	can(grants, permission) ? Effect.void : Effect.fail(onDenied(denialFor(permission)))
+
+/**
+ * Who is acting, in which org, with what authority. A request, tool call or job provides it where
+ * it learns who is calling (the HTTP auth middlewares, the MCP executor, a job naming the person it
+ * acts for); a service reads it inside the method that checks, never at construction.
+ */
+export interface Actor {
+	readonly orgId: OrgId
+	readonly userId: UserId
+	readonly permissions: Grants
+}
+
+/**
+ * Request context, not an implementation detail: services that check the caller require it.
+ *
+ * @effect-leakable-service
+ */
+export class CurrentActor extends Context.Service<CurrentActor, Actor>()(
+	"@maple/domain/policy/CurrentActor",
+) {}
+
+/** {@link check} against the current actor's permissions. */
+export const authorize = <E>(
+	permission: Permission,
+	onDenied: (denial: Denial) => E,
+): Effect.Effect<void, E, CurrentActor> =>
+	CurrentActor.use((actor) => check(actor.permissions, permission, onDenied))
+
+/** Whether the current actor holds `permission`. */
+export const actorCan = (permission: Permission): Effect.Effect<boolean, never, CurrentActor> =>
+	CurrentActor.useSync((actor) => can(actor.permissions, permission))
 
 /** What a person is told when their role reaches no part of an endpoint at all. */
 export const limitedAccessMessage = "Your role doesn't allow this. Ask an org admin for a role that does."

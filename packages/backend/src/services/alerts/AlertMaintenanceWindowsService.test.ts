@@ -26,6 +26,7 @@ import {
 	makeWarehouseStub,
 	memberGrants,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -60,18 +61,17 @@ const createWindow = (
 	} = {},
 ) =>
 	AlertMaintenanceWindowsService.use((windows) =>
-		windows.create(
-			options.org ?? orgId,
-			userId,
-			adminGrants,
-			new AlertMaintenanceWindowCreateRequest({
-				name: "Nightly DB",
-				reason: "vacuum",
-				matchers: options.matchers ?? { services: ["checkout"] },
-				schedule: options.schedule ?? nightly,
-				...(options.enabled === undefined ? undefined : { enabled: options.enabled }),
-			}),
-		),
+		windows
+			.create(
+				new AlertMaintenanceWindowCreateRequest({
+					name: "Nightly DB",
+					reason: "vacuum",
+					matchers: options.matchers ?? { services: ["checkout"] },
+					schedule: options.schedule ?? nightly,
+					...(options.enabled === undefined ? undefined : { enabled: options.enabled }),
+				}),
+			)
+			.pipe(actingAs(options.org ?? orgId, adminGrants, userId)),
 	)
 
 const byStart = Order.mapInput(Order.Number, (silence: { readonly startsAt: string }) =>
@@ -168,13 +168,12 @@ describe("AlertMaintenanceWindowsService", () => {
 			const service = yield* AlertMaintenanceWindowsService
 			const window = yield* createWindow()
 
-			yield* service.update(
-				orgId,
-				userId,
-				adminGrants,
-				window.id,
-				new AlertMaintenanceWindowUpdateRequest({ schedule: { ...nightly, startTime: "23:45" } }),
-			)
+			yield* service
+				.update(
+					window.id,
+					new AlertMaintenanceWindowUpdateRequest({ schedule: { ...nightly, startTime: "23:45" } }),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(yield* windows(window.id), [
 				[at(TUE_2330 + 15 * MINUTE), at(TUE_2330 + 75 * MINUTE)],
 				[at(WED_2330 + 15 * MINUTE), at(WED_2330 + 75 * MINUTE)],
@@ -190,26 +189,27 @@ describe("AlertMaintenanceWindowsService", () => {
 			const seen: Array<ReadonlyArray<string>> = []
 
 			// A duration change, merged into the schedule it was shown; the day moves under its first read.
-			const revised = yield* service.revise(orgId, userId, adminGrants, window.id, (current) =>
-				Effect.gen(function* () {
-					if (current.schedule._tag !== "weekly") return new AlertMaintenanceWindowUpdateRequest({})
-					seen.push(current.schedule.days)
-					if (seen.length === 1) {
-						yield* service.update(
-							orgId,
-							userId,
-							adminGrants,
-							window.id,
-							new AlertMaintenanceWindowUpdateRequest({
-								schedule: { ...nightly, days: ["fri"] },
-							}),
-						)
-					}
-					return new AlertMaintenanceWindowUpdateRequest({
-						schedule: { ...current.schedule, durationMinutes: 120 },
-					})
-				}),
-			)
+			const revised = yield* service
+				.revise(window.id, (current) =>
+					Effect.gen(function* () {
+						if (current.schedule._tag !== "weekly") return new AlertMaintenanceWindowUpdateRequest({})
+						seen.push(current.schedule.days)
+						if (seen.length === 1) {
+							yield* service
+								.update(
+									window.id,
+									new AlertMaintenanceWindowUpdateRequest({
+										schedule: { ...nightly, days: ["fri"] },
+									}),
+								)
+								.pipe(actingAs(orgId, adminGrants, userId))
+						}
+						return new AlertMaintenanceWindowUpdateRequest({
+							schedule: { ...current.schedule, durationMinutes: 120 },
+						})
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			assert.deepStrictEqual(seen, [["tue", "wed", "thu"], ["fri"]])
 			assert.deepStrictEqual(revised.schedule, { ...nightly, days: ["fri"], durationMinutes: 120 })
@@ -224,17 +224,16 @@ describe("AlertMaintenanceWindowsService", () => {
 			const window = yield* createWindow()
 
 			const exit = yield* Effect.exit(
-				service.revise(orgId, userId, adminGrants, window.id, () =>
-					service
-						.update(
-							orgId,
-							userId,
-							adminGrants,
-							window.id,
-							new AlertMaintenanceWindowUpdateRequest({ reason: "moved again" }),
-						)
-						.pipe(Effect.as(new AlertMaintenanceWindowUpdateRequest({ name: "Renamed" }))),
-				),
+				service
+					.revise(window.id, () =>
+						service
+							.update(window.id, new AlertMaintenanceWindowUpdateRequest({ reason: "moved again" }))
+							.pipe(
+								actingAs(orgId, adminGrants, userId),
+								Effect.as(new AlertMaintenanceWindowUpdateRequest({ name: "Renamed" })),
+							),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
@@ -249,16 +248,15 @@ describe("AlertMaintenanceWindowsService", () => {
 			const window = yield* createWindow()
 			yield* TestClock.setTime(TUE_2330 + 10 * MINUTE)
 
-			yield* service.update(
-				orgId,
-				userId,
-				adminGrants,
-				window.id,
-				new AlertMaintenanceWindowUpdateRequest({
-					matchers: { services: ["checkout", "cart"] },
-					schedule: { ...nightly, durationMinutes: 90 },
-				}),
-			)
+			yield* service
+				.update(
+					window.id,
+					new AlertMaintenanceWindowUpdateRequest({
+						matchers: { services: ["checkout", "cart"] },
+						schedule: { ...nightly, durationMinutes: 90 },
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const [running, next] = yield* occurrenceSilences(window.id)
 			assert.strictEqual(running?.status, "active")
 			assert.strictEqual(running?.startsAt, at(TUE_2330))
@@ -276,7 +274,7 @@ describe("AlertMaintenanceWindowsService", () => {
 			const deletedAt = TUE_2330 + 10 * MINUTE
 			yield* TestClock.setTime(deletedAt)
 
-			yield* service.delete(orgId, userId, adminGrants, window.id)
+			yield* service.delete(window.id).pipe(actingAs(orgId, adminGrants, userId))
 
 			assert.deepStrictEqual(yield* windows(window.id), [[at(TUE_2330), at(deletedAt)]])
 			const missing = yield* Effect.exit(service.get(orgId, window.id))
@@ -295,13 +293,9 @@ describe("AlertMaintenanceWindowsService", () => {
 			const disabledAt = TUE_2330 + 10 * MINUTE
 			yield* TestClock.setTime(disabledAt)
 
-			const updated = yield* service.update(
-				orgId,
-				userId,
-				adminGrants,
-				window.id,
-				new AlertMaintenanceWindowUpdateRequest({ enabled: false }),
-			)
+			const updated = yield* service
+				.update(window.id, new AlertMaintenanceWindowUpdateRequest({ enabled: false }))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isNull(updated.nextOccurrence)
 			assert.deepStrictEqual(yield* windows(window.id), [[at(TUE_2330), at(disabledAt)]])
 		}).pipe(Effect.provide(layer())),
@@ -315,32 +309,32 @@ describe("AlertMaintenanceWindowsService", () => {
 				new AlertMaintenanceWindowCreateRequest({ name: "x", matchers, schedule })
 
 			const denied = yield* Effect.exit(
-				service.create(orgId, userId, memberGrants, request(nightly, { services: ["checkout"] })),
+				service
+					.create(request(nightly, { services: ["checkout"] }))
+					.pipe(actingAs(orgId, memberGrants, userId)),
 			)
 			const ended = yield* Effect.exit(
-				service.create(
-					orgId,
-					userId,
-					adminGrants,
-					request(
-						{
-							_tag: "once",
-							startsAt: at(DEFAULT_CLOCK_EPOCH_MS - 120 * MINUTE),
-							endsAt: at(DEFAULT_CLOCK_EPOCH_MS - 60 * MINUTE),
-						},
-						{ services: ["checkout"] },
-					),
-				),
+				service
+					.create(
+						request(
+							{
+								_tag: "once",
+								startsAt: at(DEFAULT_CLOCK_EPOCH_MS - 120 * MINUTE),
+								endsAt: at(DEFAULT_CLOCK_EPOCH_MS - 60 * MINUTE),
+							},
+							{ services: ["checkout"] },
+						),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const unknownRule = yield* Effect.exit(
-				service.create(
-					orgId,
-					userId,
-					adminGrants,
-					request(nightly, {
-						ruleIds: [Schema.decodeSync(AlertRuleId)("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")],
-					}),
-				),
+				service
+					.create(
+						request(nightly, {
+							ruleIds: [Schema.decodeSync(AlertRuleId)("0b8f7c1e-2f61-4f1e-9d2a-3c4b5d6e7f80")],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			assert.instanceOf(getError(denied), AlertForbiddenError)
 			assert.instanceOf(getError(ended), AlertValidationError)

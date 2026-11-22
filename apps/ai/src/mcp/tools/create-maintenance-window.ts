@@ -3,7 +3,6 @@ import { Clock, DateTime, Effect, Schema } from "effect"
 import { AlertMaintenanceWindowCreateRequest, MAINTENANCE_WEEKDAYS } from "@maple/domain/http"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { CurrentMcpTenant } from "../tenant"
 import {
 	createWindowErrors,
 	maintenanceWindowFields,
@@ -139,11 +138,8 @@ export const createMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 					: { excludeFromBaselines: params.exclude_from_baselines }),
 			}).pipe(Effect.mapError((error) => invalid(`Invalid maintenance window: ${error.message}`)))
 
-			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
-			const window = yield* windows
-				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
-				.pipe(Effect.catchTags(createWindowErrors))
+			const window = yield* windows.create(request).pipe(Effect.catchTags(createWindowErrors))
 
 			return { window: toMaintenanceWindowRow(window) }
 		}),

@@ -6,13 +6,13 @@ import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
-import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { registerCompareCommitsTool } from "./compare-commits"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -79,7 +79,7 @@ const run = (params: Readonly<Record<string, unknown>>) =>
 		Effect.provide(
 			Layer.mergeAll(
 				offBranchHead,
-				Layer.succeed(CurrentMcpTenant, {
+				mcpTenantLayer({
 					orgId: Schema.decodeSync(OrgId)("org_compare"),
 					userId: Schema.decodeSync(UserId)("user_compare"),
 					roles: [],

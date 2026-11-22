@@ -11,8 +11,7 @@ export const HttpOrganizationsLive = HttpApiBuilder.group(MapleInternalApi, "org
 
 		return handlers.handle("delete", () =>
 			Effect.gen(function* () {
-				const tenant = yield* CurrentTenant.Context
-				const deleted = yield* organizationDeletion.delete(tenant.orgId, tenant.permissions)
+				const deleted = yield* organizationDeletion.delete
 				// Recorded after the fact so a refused delete cannot leave an entry
 				// claiming the org is gone. The entry outlives the org: the audit
 				// log is never cascaded, which is the point of a trail. It names the
@@ -51,12 +50,7 @@ export const HttpOrganizationRegionLive = HttpApiBuilder.group(
 
 			return handlers.handle("choose", ({ payload }) =>
 				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const chosen = yield* organizationService.chooseRegion(
-						tenant.orgId,
-						tenant.permissions,
-						payload.region,
-					)
+					const chosen = yield* organizationService.chooseRegion(payload.region)
 					yield* recordHttpAudit("organization.region_chosen")
 					return chosen
 				}),

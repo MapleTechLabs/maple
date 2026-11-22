@@ -2,6 +2,7 @@ import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/http-api"
 import { Schema, Array as Arr, String as Str } from "effect"
 import { ApiKeyLookupPersistenceError, type ApiKeyKind } from "../api-keys"
 import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
+import type { CurrentActor } from "../../policy"
 import {
 	V2InsufficientPermissions,
 	V2InsufficientScope,
@@ -28,7 +29,7 @@ import { publicError } from "./public-error"
 export class AuthorizationV2 extends HttpApiMiddleware.Service<
 	AuthorizationV2,
 	{
-		provides: Context
+		provides: Context | CurrentActor
 	}
 >()("AuthorizationV2", {
 	error: [

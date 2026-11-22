@@ -61,6 +61,7 @@ import {
 	okFetch,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 
@@ -70,21 +71,20 @@ describe("AlertsService evaluation cadence", () => {
 	const createCadenceRule = (alerts: AlertsServiceApi, orgId: OrgId, windowMinutes: number) =>
 		createWebhookDestination(alerts, orgId, asUserId("user_cadence")).pipe(
 			Effect.flatMap((destination) =>
-				alerts.createRule(
-					orgId,
-					asUserId("user_cadence"),
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: `Cadence ${windowMinutes}m`,
-						severity: "warning",
-						enabled: true,
-						signalType: "error_rate",
-						comparator: "gt",
-						threshold: 5,
-						windowMinutes,
-						destinationIds: [destination.id],
-					}),
-				),
+				alerts
+					.createRule(
+						new AlertRuleUpsertRequest({
+							name: `Cadence ${windowMinutes}m`,
+							severity: "warning",
+							enabled: true,
+							signalType: "error_rate",
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, asUserId("user_cadence"))),
 			),
 		)
 
@@ -146,22 +146,21 @@ describe("AlertsService evaluation cadence", () => {
 			)!
 			yield* TestClock.adjust(Duration.minutes(idle))
 			// Back on an idle minute: an edit makes the rule due there.
-			yield* alerts.updateRule(
-				orgId,
-				asUserId("user_cadence"),
-				adminGrants,
-				rule.id,
-				new AlertRuleUpsertRequest({
-					name: "Edited",
-					severity: "warning",
-					enabled: true,
-					signalType: rule.signalType,
-					comparator: rule.comparator,
-					threshold: 10,
-					windowMinutes: rule.windowMinutes,
-					destinationIds: [...rule.destinationIds],
-				}),
-			)
+			yield* alerts
+				.updateRule(
+					rule.id,
+					new AlertRuleUpsertRequest({
+						name: "Edited",
+						severity: "warning",
+						enabled: true,
+						signalType: rule.signalType,
+						comparator: rule.comparator,
+						threshold: 10,
+						windowMinutes: rule.windowMinutes,
+						destinationIds: [...rule.destinationIds],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, asUserId("user_cadence")))
 			const afterEdit = yield* alerts.runSchedulerTick()
 			assert.strictEqual(afterEdit.evaluatedCount, 1)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}), { fetch: okFetch })))
@@ -194,23 +193,22 @@ describe("AlertsService check intervals", () => {
 	) =>
 		createWebhookDestination(alerts, orgId, asUserId("user_interval")).pipe(
 			Effect.flatMap((destination) =>
-				alerts.createRule(
-					orgId,
-					asUserId("user_interval"),
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
-						severity: "warning",
-						enabled: true,
-						signalType: rule.signalType,
-						...(rule.signalType === "raw_query" ? { rawQuerySql: RAW_SQL } : undefined),
-						comparator: "gt",
-						threshold: 5,
-						windowMinutes: rule.windowMinutes,
-						evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
-						destinationIds: [destination.id],
-					}),
-				),
+				alerts
+					.createRule(
+						new AlertRuleUpsertRequest({
+							name: `Interval ${rule.signalType} ${rule.evaluationIntervalMinutes}`,
+							severity: "warning",
+							enabled: true,
+							signalType: rule.signalType,
+							...(rule.signalType === "raw_query" ? { rawQuerySql: RAW_SQL } : undefined),
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes: rule.windowMinutes,
+							evaluationIntervalMinutes: rule.evaluationIntervalMinutes,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, asUserId("user_interval"))),
 			),
 		)
 
@@ -466,22 +464,21 @@ describe("AlertsService check intervals", () => {
 			yield* tickBothLanes(alerts, 3)
 			assert.strictEqual((yield* alerts.listRules(orgId)).rules[0]?.slowedIntervalMinutes, 5)
 
-			yield* alerts.updateRule(
-				orgId,
-				asUserId("user_interval"),
-				adminGrants,
-				created.id,
-				new AlertRuleUpsertRequest({
-					name: "Faster query",
-					severity: "warning",
-					signalType: "raw_query",
-					rawQuerySql: RAW_SQL,
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					destinationIds: [...created.destinationIds],
-				}),
-			)
+			yield* alerts
+				.updateRule(
+					created.id,
+					new AlertRuleUpsertRequest({
+						name: "Faster query",
+						severity: "warning",
+						signalType: "raw_query",
+						rawQuerySql: RAW_SQL,
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						destinationIds: [...created.destinationIds],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, asUserId("user_interval")))
 			state.failing = false
 			state.limits.length = 0
 			yield* tickBothLanes(alerts, 3)
@@ -533,21 +530,20 @@ describe("AlertsService scheduler pool", () => {
 			(index) =>
 				createWebhookDestination(alerts, orgAt(index), asUserId("user_pool")).pipe(
 					Effect.flatMap((destination) =>
-						alerts.createRule(
-							orgAt(index),
-							asUserId("user_pool"),
-							adminGrants,
-							new AlertRuleUpsertRequest({
-								name: "Pool rule",
-								severity: "warning",
-								enabled: true,
-								signalType: "error_rate",
-								comparator: "gt",
-								threshold: 5,
-								windowMinutes: 5,
-								destinationIds: [destination.id],
-							}),
-						),
+						alerts
+							.createRule(
+								new AlertRuleUpsertRequest({
+									name: "Pool rule",
+									severity: "warning",
+									enabled: true,
+									signalType: "error_rate",
+									comparator: "gt",
+									threshold: 5,
+									windowMinutes: 5,
+									destinationIds: [destination.id],
+								}),
+							)
+							.pipe(actingAs(orgAt(index), adminGrants, asUserId("user_pool"))),
 					),
 					Effect.andThen(Effect.sleep("2 millis")),
 				),
@@ -1001,26 +997,25 @@ describe("AlertsService claim fence", () => {
 				const orgId = asOrgId("org_claim_fence")
 				const userId = asUserId("user_claim_fence")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
-				const rule = yield* alerts.createRule(
-					orgId,
-					userId,
-					adminGrants,
-					new AlertRuleUpsertRequest({
-						name: "Grouped error rate",
-						severity: "critical",
-						enabled: true,
-						groupBy: ["service.name"],
-						signalType: "error_rate",
-						comparator: "gt",
-						threshold: 5,
-						windowMinutes: 5,
-						minimumSampleCount: 10,
-						consecutiveBreachesRequired: 1,
-						consecutiveHealthyRequired: 1,
-						renotifyIntervalMinutes: 30,
-						destinationIds: [destination.id],
-					}),
-				)
+				const rule = yield* alerts
+					.createRule(
+						new AlertRuleUpsertRequest({
+							name: "Grouped error rate",
+							severity: "critical",
+							enabled: true,
+							groupBy: ["service.name"],
+							signalType: "error_rate",
+							comparator: "gt",
+							threshold: 5,
+							windowMinutes: 5,
+							minimumSampleCount: 10,
+							consecutiveBreachesRequired: 1,
+							consecutiveHealthyRequired: 1,
+							renotifyIntervalMinutes: 30,
+							destinationIds: [destination.id],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 
 				yield* alerts.runSchedulerTick()
 				assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 2)
@@ -1186,23 +1181,22 @@ describe("AlertsService post-evaluation writes", () => {
 			const orgId = asOrgId("org_state_batch")
 			const userId = asUserId("user_state_batch")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Grouped error rate",
-					severity: "warning",
-					enabled: true,
-					groupBy: ["service.name"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Grouped error rate",
+						severity: "warning",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			const startedAt = yield* Clock.currentTimeMillis
 			const tick = yield* alerts.runSchedulerTick().pipe(Effect.withTracer(tracer))
@@ -1275,23 +1269,22 @@ describe("AlertsService post-evaluation writes", () => {
 			const orgId = asOrgId("org_state_batch_retry")
 			const userId = asUserId("user_state_batch_retry")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Grouped error rate",
-					severity: "warning",
-					enabled: true,
-					groupBy: ["service.name"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Grouped error rate",
+						severity: "warning",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 
@@ -1354,23 +1347,22 @@ describe("AlertsService post-evaluation writes", () => {
 			const orgId = asOrgId("org_state_batch_edit")
 			const userId = asUserId("user_state_batch_edit")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Grouped error rate",
-					severity: "warning",
-					enabled: true,
-					groupBy: ["service.name"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Grouped error rate",
+						severity: "warning",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* Ref.set(pendingEdit, rule.id)
 
 			yield* alerts.runSchedulerTick()
@@ -1423,26 +1415,25 @@ describe("AlertsService investigation starts", () => {
 			const orgId = asOrgId("org_triage_storm")
 			const userId = asUserId("user_triage_storm")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				new AlertRuleUpsertRequest({
-					name: "Every service error rate",
-					severity: "critical",
-					enabled: true,
-					groupBy: ["service.name"],
-					signalType: "error_rate",
-					comparator: "gt",
-					threshold: 5,
-					windowMinutes: 5,
-					minimumSampleCount: 10,
-					consecutiveBreachesRequired: 1,
-					consecutiveHealthyRequired: 2,
-					renotifyIntervalMinutes: 30,
-					destinationIds: [destination.id],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					new AlertRuleUpsertRequest({
+						name: "Every service error rate",
+						severity: "critical",
+						enabled: true,
+						groupBy: ["service.name"],
+						signalType: "error_rate",
+						comparator: "gt",
+						threshold: 5,
+						windowMinutes: 5,
+						minimumSampleCount: 10,
+						consecutiveBreachesRequired: 1,
+						consecutiveHealthyRequired: 2,
+						renotifyIntervalMinutes: 30,
+						destinationIds: [destination.id],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -1563,21 +1554,20 @@ describe("AlertsService investigation starts", () => {
 				(index) =>
 					TestClock.adjust("2 millis").pipe(
 						Effect.andThen(
-							alerts.createRule(
-								otherOrg,
-								asUserId("user_other"),
-								adminGrants,
-								new AlertRuleUpsertRequest({
-									name: `Other rule ${index}`,
-									severity: "warning",
-									enabled: true,
-									signalType: "error_rate",
-									comparator: "gt",
-									threshold: 99,
-									windowMinutes: 5,
-									destinationIds: [destination.id],
-								}),
-							),
+							alerts
+								.createRule(
+									new AlertRuleUpsertRequest({
+										name: `Other rule ${index}`,
+										severity: "warning",
+										enabled: true,
+										signalType: "error_rate",
+										comparator: "gt",
+										threshold: 99,
+										windowMinutes: 5,
+										destinationIds: [destination.id],
+									}),
+								)
+								.pipe(actingAs(otherOrg, adminGrants, asUserId("user_other"))),
 						),
 					),
 				{ discard: true },

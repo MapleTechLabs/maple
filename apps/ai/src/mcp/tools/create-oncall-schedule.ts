@@ -47,9 +47,7 @@ export const createOnCallScheduleAction = (family: McpToolFamilyBuilder<"manage_
 			)
 			const tenant = yield* CurrentMcpTenant
 			const schedules = yield* OnCallSchedulesService
-			const schedule = yield* schedules
-				.create(tenant.orgId, tenant.userId, tenant.permissions, request)
-				.pipe(Effect.catchTags(createScheduleErrors))
+			const schedule = yield* schedules.create(request).pipe(Effect.catchTags(createScheduleErrors))
 			const names = yield* memberNames(tenant.orgId)
 			return { schedule: toScheduleRow(schedule, names) }
 		}),

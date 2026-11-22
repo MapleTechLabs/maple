@@ -54,6 +54,7 @@ import {
 	shouldHealSchemaVersion,
 	validateClickHouseCredentialTransport,
 } from "./OrgClickHouseSettingsService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 // `execClickHouse` runs through Effect's HttpClient. We inject a stub `fetch` via
 // `FetchHttpClient.Fetch` (deterministic per run — no global mutation) and assert
@@ -506,8 +507,8 @@ describe("resolveRuntimeConfig caching", () => {
 		return Effect.gen(function* () {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => executeSql(testDb, "DROP TABLE org_clickhouse_settings CASCADE"))
-			const get = getError(yield* service.get(orgId, admin).pipe(Effect.exit))
-			const remove = getError(yield* service.delete(orgId, admin).pipe(Effect.exit))
+			const get = getError(yield* service.get.pipe(actingAs(orgId, admin), Effect.exit))
+			const remove = getError(yield* service.delete.pipe(actingAs(orgId, admin), Effect.exit))
 			expect(get).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
 			expect(remove).toBeInstanceOf(OrgClickHouseSettingsPersistenceError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -603,7 +604,7 @@ describe("resolveRuntimeConfig caching", () => {
 			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isSome(before)).toBe(true)
 
-			yield* service.delete(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
+			yield* service.delete.pipe(actingAs(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")])))
 
 			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			// Would still be a stale `Some` if the write had not busted the cache.
@@ -669,7 +670,7 @@ describe("resolveRuntimeConfig caching", () => {
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 			expect(Option.isSome(yield* service.resolveRuntimeConfig(asOrgId(orgId)))).toBe(true)
 
-			yield* service.delete(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
+			yield* service.delete.pipe(actingAs(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")])))
 
 			// Drop the memo the write just cleared anyway, so this resolve can only
 			// be answered by the shared tier or Postgres. If the write had evicted
@@ -1115,9 +1116,10 @@ describe("resolveRuntimeConfig caching", () => {
 		return Effect.gen(function* () {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://user:secret@clickhouse.example.test"))
-			const exit = yield* service
-				.collectorConfig(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
-				.pipe(Effect.exit)
+			const exit = yield* service.collectorConfig.pipe(
+				actingAs(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")])),
+				Effect.exit,
+			)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsValidationError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -1134,9 +1136,8 @@ describe("resolveRuntimeConfig caching", () => {
 					'we"ird\\user"\\',
 				]),
 			)
-			const config = yield* service.collectorConfig(
-				asOrgId(orgId),
-				Policy.grantsOf([asRole("org:admin")]),
+			const config = yield* service.collectorConfig.pipe(
+				actingAs(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")])),
 			)
 			expect(config.yaml).toContain('    username: "we\\"ird\\\\user\\"\\\\"')
 		}).pipe(Effect.provide(buildLayer(testDb)))
@@ -1155,9 +1156,10 @@ describe("resolveRuntimeConfig caching", () => {
 					[orgId],
 				),
 			)
-			const exit = yield* service
-				.collectorConfig(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")]))
-				.pipe(Effect.exit)
+			const exit = yield* service.collectorConfig.pipe(
+				actingAs(asOrgId(orgId), Policy.grantsOf([asRole("org:admin")])),
+				Effect.exit,
+			)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
@@ -1173,14 +1175,14 @@ describe("resolveRuntimeConfig caching", () => {
 			const save = (password?: string) =>
 				service
 					.upsert(
-						orgId,
-						userId,
-						Policy.grantsOf([asRole("org:admin")]),
 						new OrgClickHouseSettingsUpsertRequest(
 							password === undefined ? endpoint : { ...endpoint, password },
 						),
 					)
-					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
+					.pipe(
+						actingAs(orgId, Policy.grantsOf([asRole("org:admin")]), userId),
+						Effect.provideService(FetchHttpClient.Fetch, fetchImpl),
+					)
 
 			yield* save("s3cret-password")
 			const saved = yield* service.resolveRuntimeConfig(orgId)
@@ -1281,15 +1283,18 @@ describe("applySchema claim lifecycle", () => {
 			yield* Effect.promise(() => seedSettings(testDb, orgId))
 			const service = yield* OrgClickHouseSettingsService
 
-			const first = yield* service
-				.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
-				.pipe(Effect.exit)
+			const first = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+				Effect.exit,
+			)
 			expect(Exit.isFailure(first)).toBe(true)
 			// The claim was released — failed, not queued.
 			expect((yield* Effect.promise(() => runStatus(testDb, orgId)))?.status).toBe("failed")
 
 			// A retry is possible without manual database repair.
-			const second = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
+			const second = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+			)
 			expect(second.status).toBe("started")
 			expect(attempts).toBe(2)
 		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))
@@ -1301,9 +1306,10 @@ describe("applySchema claim lifecycle", () => {
 		return Effect.gen(function* () {
 			yield* Effect.promise(() => seedSettings(testDb, orgId))
 			const service = yield* OrgClickHouseSettingsService
-			const exit = yield* service
-				.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
-				.pipe(Effect.exit)
+			const exit = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+				Effect.exit,
+			)
 			expect(Exit.isFailure(exit)).toBe(true)
 			// No leftover queued row — the next attempt starts from idle.
 			expect(yield* Effect.promise(() => runStatus(testDb, orgId))).toBeUndefined()
@@ -1324,11 +1330,15 @@ describe("applySchema claim lifecycle", () => {
 			yield* Effect.promise(() => seedSettings(testDb, orgId))
 			const service = yield* OrgClickHouseSettingsService
 
-			const first = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
+			const first = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+			)
 			expect(first.status).toBe("started")
 
 			// The row is queued and fresh: the claim is exclusive.
-			const second = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
+			const second = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+			)
 			expect(second.status).toBe("already_running")
 			expect(creates).toBe(1)
 
@@ -1342,7 +1352,9 @@ describe("applySchema claim lifecycle", () => {
 					[orgId],
 				),
 			)
-			const third = yield* service.applySchema(asOrgId(orgId), asUserIdApply("user_a"), ADMIN)
+			const third = yield* service.applySchema.pipe(
+				actingAs(asOrgId(orgId), ADMIN, asUserIdApply("user_a")),
+			)
 			expect(third.status).toBe("started")
 			expect(creates).toBe(2)
 		}).pipe(Effect.provide(buildApplyLayer(testDb, binding)))

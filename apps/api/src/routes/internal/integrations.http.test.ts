@@ -95,9 +95,7 @@ const makeHarness = (role: string) => {
 		CurrentTenant.SessionAuthorization,
 		CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect) =>
-				Effect.provideService(
-					httpEffect,
-					CurrentTenant.Context,
+				CurrentTenant.provide(
 					new CurrentTenant.TenantSchema({
 						orgId: ORG,
 						userId: USER,
@@ -105,7 +103,7 @@ const makeHarness = (role: string) => {
 						permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 						authMode: "clerk",
 					}),
-				),
+				)(httpEffect),
 		}),
 	)
 	const services = Layer.mergeAll(

@@ -5,12 +5,10 @@ import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
 
-const requireKeyAdmin = (permissions: CurrentTenant.TenantSchema["permissions"]) =>
-	Policy.check(
-		permissions,
-		"llm_keys:manage",
-		(denial) => new OpenRouterKeyForbiddenError({ message: denial.message }),
-	)
+const requireKeyAdmin = Policy.authorize(
+	"llm_keys:manage",
+	(denial) => new OpenRouterKeyForbiddenError({ message: denial.message }),
+)
 
 export const HttpOpenRouterKeyLive = HttpApiBuilder.group(MapleInternalApi, "openRouterKey", (handlers) =>
 	Effect.gen(function* () {
@@ -26,7 +24,7 @@ export const HttpOpenRouterKeyLive = HttpApiBuilder.group(MapleInternalApi, "ope
 			.handle("set", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireKeyAdmin(tenant.permissions)
+					yield* requireKeyAdmin
 					const document = yield* keys.set(tenant.orgId, tenant.userId, payload.apiKey)
 					yield* recordHttpAudit("ai_provider_key.updated", {
 						metadata: { provider: "openrouter", keyHint: document.keyHint },
@@ -37,7 +35,7 @@ export const HttpOpenRouterKeyLive = HttpApiBuilder.group(MapleInternalApi, "ope
 			.handle("remove", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireKeyAdmin(tenant.permissions)
+					yield* requireKeyAdmin
 					const document = yield* keys.remove(tenant.orgId)
 					yield* recordHttpAudit("ai_provider_key.deleted", {
 						metadata: { provider: "openrouter" },

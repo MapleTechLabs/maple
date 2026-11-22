@@ -3,7 +3,7 @@ import { Array as Arr, Effect, Layer, Order, Result, Schema, String as Str, Trac
 import { OrgId, SavedViewId, UserId } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
-import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
+import { SAVED_VIEWS_PER_OWNER_LIMIT, SavedViewsService } from "./SavedViewsService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -12,7 +12,7 @@ const ORG = Schema.decodeSync(OrgId)("org_views")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_elsewhere")
 const decodeUser = Schema.decodeSync(UserId)
 
-const caller = (orgId: OrgId, user: string, role: string): SavedViewCaller => ({
+const caller = (orgId: OrgId, user: string, role: string): Policy.Actor => ({
 	orgId,
 	userId: decodeUser(user),
 	permissions: Policy.grantsOf([role]),
@@ -24,6 +24,8 @@ const ADMIN = caller(ORG, "user_admin", "org:admin")
 const ANALYST = caller(ORG, "user_analyst", "org:analyst")
 // The same user id in another org: only the org tells the two apart.
 const ANA_ELSEWHERE = caller(OTHER_ORG, "user_ana", "org:admin")
+
+const asCaller = (actor: Policy.Actor) => Effect.provideService(Policy.CurrentActor, actor)
 
 const provide = <A, E>(effect: Effect.Effect<A, E, SavedViewsService>) =>
 	effect.pipe(Effect.provide(SavedViewsService.layer.pipe(Layer.provide(createTestDb(trackedDbs).layer))))
@@ -46,12 +48,14 @@ describe("SavedViewsService", () => {
 						attributeFilters: [{ key: "http.route", op: "=", value: "/pay" }],
 					},
 				}
-				const created = yield* views.create(ANA, { surface: "logs", name: "Checkout", state })
+				const created = yield* views
+					.create({ surface: "logs", name: "Checkout", state })
+					.pipe(asCaller(ANA))
 				assert.strictEqual(created.visibility, "private")
 				assert.strictEqual(created.isOwner, true)
 				assert.strictEqual(created.canDelete, true)
 
-				const listed = yield* views.list(ANA, "logs")
+				const listed = yield* views.list("logs").pipe(asCaller(ANA))
 				assert.deepStrictEqual(
 					Arr.map(listed, (view) => view.state),
 					[state],
@@ -66,25 +70,37 @@ describe("SavedViewsService", () => {
 			provide(
 				Effect.gen(function* () {
 					const views = yield* SavedViewsService
-					yield* views.create(BEN, {
-						surface: "logs",
-						name: "Api errors",
-						state: errorState,
-						visibility: "org",
-					})
-					yield* views.create(BEN, { surface: "logs", name: "Ben private", state: errorState })
-					yield* views.create(ANA, { surface: "logs", name: "zebra", state: errorState })
-					yield* views.create(ANA, { surface: "logs", name: "Alpha", state: errorState })
-					yield* views.create(ANA, { surface: "traces", name: "Slow traces", state: errorState })
+					yield* views
+						.create({
+							surface: "logs",
+							name: "Api errors",
+							state: errorState,
+							visibility: "org",
+						})
+						.pipe(asCaller(BEN))
+					yield* views
+						.create({ surface: "logs", name: "Ben private", state: errorState })
+						.pipe(asCaller(BEN))
+					yield* views
+						.create({ surface: "logs", name: "zebra", state: errorState })
+						.pipe(asCaller(ANA))
+					yield* views
+						.create({ surface: "logs", name: "Alpha", state: errorState })
+						.pipe(asCaller(ANA))
+					yield* views
+						.create({ surface: "traces", name: "Slow traces", state: errorState })
+						.pipe(asCaller(ANA))
 
-					const listed = yield* views.list(ANA, "logs")
+					const listed = yield* views.list("logs").pipe(asCaller(ANA))
 					assert.deepStrictEqual(names(listed), ["Alpha", "zebra", "Api errors"])
 					assert.deepStrictEqual(
 						Arr.map(listed, (view) => view.isOwner),
 						[true, true, false],
 					)
-					assert.deepStrictEqual(names(yield* views.list(ANA, "traces")), ["Slow traces"])
-					assert.deepStrictEqual(names(yield* views.list(ANA, "metrics")), [])
+					assert.deepStrictEqual(names(yield* views.list("traces").pipe(asCaller(ANA))), [
+						"Slow traces",
+					])
+					assert.deepStrictEqual(names(yield* views.list("metrics").pipe(asCaller(ANA))), [])
 				}),
 			),
 	)
@@ -93,22 +109,24 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const shared = yield* views.create(ANA, {
-					surface: "logs",
-					name: "Shared here",
-					state: errorState,
-					visibility: "org",
-				})
+				const shared = yield* views
+					.create({
+						surface: "logs",
+						name: "Shared here",
+						state: errorState,
+						visibility: "org",
+					})
+					.pipe(asCaller(ANA))
 
-				assert.deepStrictEqual(yield* views.list(ANA_ELSEWHERE, "logs"), [])
+				assert.deepStrictEqual(yield* views.list("logs").pipe(asCaller(ANA_ELSEWHERE)), [])
 				const renamed = yield* Effect.flip(
-					views.update(ANA_ELSEWHERE, shared.id, { name: "Taken over" }),
+					views.update(shared.id, { name: "Taken over" }).pipe(asCaller(ANA_ELSEWHERE)),
 				)
 				assert.strictEqual(renamed._tag, "@maple/http/saved-views/SavedViewNotFoundError")
-				const removed = yield* Effect.flip(views.remove(ANA_ELSEWHERE, shared.id))
+				const removed = yield* Effect.flip(views.remove(shared.id).pipe(asCaller(ANA_ELSEWHERE)))
 				assert.strictEqual(removed._tag, "@maple/http/saved-views/SavedViewNotFoundError")
 
-				assert.deepStrictEqual(names(yield* views.list(ANA, "logs")), ["Shared here"])
+				assert.deepStrictEqual(names(yield* views.list("logs").pipe(asCaller(ANA))), ["Shared here"])
 			}),
 		),
 	)
@@ -117,32 +135,44 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const shared = yield* views.create(ANA, {
-					surface: "traces",
-					name: "Slow checkout",
-					state: errorState,
-					visibility: "org",
-				})
-				const hidden = yield* views.create(ANA, {
-					surface: "traces",
-					name: "Scratch",
-					state: errorState,
-				})
+				const shared = yield* views
+					.create({
+						surface: "traces",
+						name: "Slow checkout",
+						state: errorState,
+						visibility: "org",
+					})
+					.pipe(asCaller(ANA))
+				const hidden = yield* views
+					.create({
+						surface: "traces",
+						name: "Scratch",
+						state: errorState,
+					})
+					.pipe(asCaller(ANA))
 
 				// A shared view is visible to Ben and the admin, so the refusal says who may change it.
-				const byMember = yield* Effect.flip(views.update(BEN, shared.id, { name: "Mine now" }))
+				const byMember = yield* Effect.flip(
+					views.update(shared.id, { name: "Mine now" }).pipe(asCaller(BEN)),
+				)
 				assert.strictEqual(byMember._tag, "@maple/http/saved-views/SavedViewForbiddenError")
-				const byAdmin = yield* Effect.flip(views.update(ADMIN, shared.id, { visibility: "private" }))
+				const byAdmin = yield* Effect.flip(
+					views.update(shared.id, { visibility: "private" }).pipe(asCaller(ADMIN)),
+				)
 				assert.strictEqual(byAdmin._tag, "@maple/http/saved-views/SavedViewForbiddenError")
 				// A private one answers as missing: its existence is not Ben's to learn.
-				const onPrivate = yield* Effect.flip(views.update(BEN, hidden.id, { name: "Found it" }))
+				const onPrivate = yield* Effect.flip(
+					views.update(hidden.id, { name: "Found it" }).pipe(asCaller(BEN)),
+				)
 				assert.strictEqual(onPrivate._tag, "@maple/http/saved-views/SavedViewNotFoundError")
 
 				const nextState = { search: { hasError: true, timePreset: "24h" } }
-				const updated = yield* views.update(ANA, shared.id, {
-					name: "Failing checkout",
-					state: nextState,
-				})
+				const updated = yield* views
+					.update(shared.id, {
+						name: "Failing checkout",
+						state: nextState,
+					})
+					.pipe(asCaller(ANA))
 				assert.strictEqual(updated.name, "Failing checkout")
 				assert.deepStrictEqual(updated.state, nextState)
 				assert.strictEqual(updated.visibility, "org")
@@ -154,18 +184,20 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const view = yield* views.create(ANA, {
-					surface: "metrics",
-					name: "Latency",
-					state: errorState,
-				})
-				assert.deepStrictEqual(yield* views.list(BEN, "metrics"), [])
+				const view = yield* views
+					.create({
+						surface: "metrics",
+						name: "Latency",
+						state: errorState,
+					})
+					.pipe(asCaller(ANA))
+				assert.deepStrictEqual(yield* views.list("metrics").pipe(asCaller(BEN)), [])
 
-				yield* views.update(ANA, view.id, { visibility: "org" })
-				assert.deepStrictEqual(names(yield* views.list(BEN, "metrics")), ["Latency"])
+				yield* views.update(view.id, { visibility: "org" }).pipe(asCaller(ANA))
+				assert.deepStrictEqual(names(yield* views.list("metrics").pipe(asCaller(BEN))), ["Latency"])
 
-				yield* views.update(ANA, view.id, { visibility: "private" })
-				assert.deepStrictEqual(yield* views.list(BEN, "metrics"), [])
+				yield* views.update(view.id, { visibility: "private" }).pipe(asCaller(ANA))
+				assert.deepStrictEqual(yield* views.list("metrics").pipe(asCaller(BEN)), [])
 			}),
 		),
 	)
@@ -174,45 +206,54 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const shared = yield* views.create(ANA, {
-					surface: "logs",
-					name: "Shared",
-					state: errorState,
-					visibility: "org",
-				})
-				const alsoShared = yield* views.create(ANA, {
-					surface: "logs",
-					name: "Shared too",
-					state: errorState,
-					visibility: "org",
-				})
-				const hidden = yield* views.create(ANA, {
-					surface: "logs",
-					name: "Private",
-					state: errorState,
-				})
+				const shared = yield* views
+					.create({
+						surface: "logs",
+						name: "Shared",
+						state: errorState,
+						visibility: "org",
+					})
+					.pipe(asCaller(ANA))
+				const alsoShared = yield* views
+					.create({
+						surface: "logs",
+						name: "Shared too",
+						state: errorState,
+						visibility: "org",
+					})
+					.pipe(asCaller(ANA))
+				const hidden = yield* views
+					.create({
+						surface: "logs",
+						name: "Private",
+						state: errorState,
+					})
+					.pipe(asCaller(ANA))
 
-				const byMember = yield* Effect.flip(views.remove(BEN, shared.id))
+				const byMember = yield* Effect.flip(views.remove(shared.id).pipe(asCaller(BEN)))
 				assert.strictEqual(byMember._tag, "@maple/http/saved-views/SavedViewForbiddenError")
-				const adminOnPrivate = yield* Effect.flip(views.remove(ADMIN, hidden.id))
+				const adminOnPrivate = yield* Effect.flip(views.remove(hidden.id).pipe(asCaller(ADMIN)))
 				assert.strictEqual(adminOnPrivate._tag, "@maple/http/saved-views/SavedViewNotFoundError")
 
 				assert.deepStrictEqual(
-					Arr.map(yield* views.list(ADMIN, "logs"), (view) => [view.name, view.canDelete]),
+					Arr.map(yield* views.list("logs").pipe(asCaller(ADMIN)), (view) => [
+						view.name,
+						view.canDelete,
+					]),
 					[
 						["Shared", true],
 						["Shared too", true],
 					],
 				)
 				assert.deepStrictEqual(
-					Arr.map(yield* views.list(BEN, "logs"), (view) => view.canDelete),
+					Arr.map(yield* views.list("logs").pipe(asCaller(BEN)), (view) => view.canDelete),
 					[false, false],
 				)
 
-				yield* views.remove(ADMIN, shared.id)
-				yield* views.remove(ANA, alsoShared.id)
-				yield* views.remove(ANA, hidden.id)
-				assert.deepStrictEqual(yield* views.list(ANA, "logs"), [])
+				yield* views.remove(shared.id).pipe(asCaller(ADMIN))
+				yield* views.remove(alsoShared.id).pipe(asCaller(ANA))
+				yield* views.remove(hidden.id).pipe(asCaller(ANA))
+				assert.deepStrictEqual(yield* views.list("logs").pipe(asCaller(ANA)), [])
 			}),
 		),
 	)
@@ -221,15 +262,17 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const view = yield* views.create(ANALYST, {
-					surface: "logs",
-					name: "Signups",
-					state: errorState,
-				})
-				const shared = yield* views.update(ANALYST, view.id, { visibility: "org" })
+				const view = yield* views
+					.create({
+						surface: "logs",
+						name: "Signups",
+						state: errorState,
+					})
+					.pipe(asCaller(ANALYST))
+				const shared = yield* views.update(view.id, { visibility: "org" }).pipe(asCaller(ANALYST))
 				assert.strictEqual(shared.visibility, "org")
-				yield* views.remove(ANALYST, view.id)
-				assert.deepStrictEqual(yield* views.list(ANALYST, "logs"), [])
+				yield* views.remove(view.id).pipe(asCaller(ANALYST))
+				assert.deepStrictEqual(yield* views.list("logs").pipe(asCaller(ANALYST)), [])
 			}),
 		),
 	)
@@ -238,24 +281,37 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				yield* views.create(ANA, { surface: "logs", name: "Errors", state: errorState })
-				const other = yield* views.create(ANA, {
-					surface: "logs",
-					name: "Warnings",
-					state: errorState,
-				})
+				yield* views
+					.create({ surface: "logs", name: "Errors", state: errorState })
+					.pipe(asCaller(ANA))
+				const other = yield* views
+					.create({
+						surface: "logs",
+						name: "Warnings",
+						state: errorState,
+					})
+					.pipe(asCaller(ANA))
 
 				const duplicate = yield* Effect.flip(
-					views.create(ANA, { surface: "logs", name: "Errors", state: errorState }),
+					views.create({ surface: "logs", name: "Errors", state: errorState }).pipe(asCaller(ANA)),
 				)
 				assert.strictEqual(duplicate._tag, "@maple/http/saved-views/SavedViewNameTakenError")
-				const renamed = yield* Effect.flip(views.update(ANA, other.id, { name: "Errors" }))
+				const renamed = yield* Effect.flip(
+					views.update(other.id, { name: "Errors" }).pipe(asCaller(ANA)),
+				)
 				assert.strictEqual(renamed._tag, "@maple/http/saved-views/SavedViewNameTakenError")
 
 				// The name is the owner's per explorer: another explorer and another person may use it.
-				yield* views.create(ANA, { surface: "traces", name: "Errors", state: errorState })
-				yield* views.create(BEN, { surface: "logs", name: "Errors", state: errorState })
-				assert.deepStrictEqual(names(yield* views.list(ANA, "logs")), ["Errors", "Warnings"])
+				yield* views
+					.create({ surface: "traces", name: "Errors", state: errorState })
+					.pipe(asCaller(ANA))
+				yield* views
+					.create({ surface: "logs", name: "Errors", state: errorState })
+					.pipe(asCaller(BEN))
+				assert.deepStrictEqual(names(yield* views.list("logs").pipe(asCaller(ANA))), [
+					"Errors",
+					"Warnings",
+				])
 			}),
 		),
 	)
@@ -272,10 +328,16 @@ describe("SavedViewsService", () => {
 		return provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				yield* views.create(ANA, { surface: "logs", name: "Errors", state: errorState })
-				const other = yield* views.create(ANA, { surface: "logs", name: "Other", state: errorState })
-				yield* Effect.flip(views.create(ANA, { surface: "logs", name: "Errors", state: errorState }))
-				yield* Effect.flip(views.update(ANA, other.id, { name: "Errors" }))
+				yield* views
+					.create({ surface: "logs", name: "Errors", state: errorState })
+					.pipe(asCaller(ANA))
+				const other = yield* views
+					.create({ surface: "logs", name: "Other", state: errorState })
+					.pipe(asCaller(ANA))
+				yield* Effect.flip(
+					views.create({ surface: "logs", name: "Errors", state: errorState }).pipe(asCaller(ANA)),
+				)
+				yield* Effect.flip(views.update(other.id, { name: "Errors" }).pipe(asCaller(ANA)))
 				// Only the service call answering the 409 may fail; a database span failing opens an error issue.
 				const failures = Arr.filterMap(spans, (span) =>
 					span.status._tag === "Ended" && span.status.exit._tag === "Failure"
@@ -296,15 +358,23 @@ describe("SavedViewsService", () => {
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
 				yield* Effect.forEach(Arr.range(1, SAVED_VIEWS_PER_OWNER_LIMIT), (index) =>
-					views.create(ANA, { surface: "logs", name: `View ${index}`, state: errorState }),
+					views
+						.create({ surface: "logs", name: `View ${index}`, state: errorState })
+						.pipe(asCaller(ANA)),
 				)
 				const over = yield* Effect.flip(
-					views.create(ANA, { surface: "logs", name: "One too many", state: errorState }),
+					views
+						.create({ surface: "logs", name: "One too many", state: errorState })
+						.pipe(asCaller(ANA)),
 				)
 				assert.strictEqual(over._tag, "@maple/http/saved-views/SavedViewLimitError")
 
-				yield* views.create(ANA, { surface: "traces", name: "Still fine", state: errorState })
-				yield* views.create(BEN, { surface: "logs", name: "Ben is fine", state: errorState })
+				yield* views
+					.create({ surface: "traces", name: "Still fine", state: errorState })
+					.pipe(asCaller(ANA))
+				yield* views
+					.create({ surface: "logs", name: "Ben is fine", state: errorState })
+					.pipe(asCaller(BEN))
 			}),
 		),
 	)
@@ -313,18 +383,26 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const mine = yield* views.create(ANA, { surface: "logs", name: "Mine", state: errorState })
-				yield* views.update(ANA, mine.id, { visibility: "org" })
-				yield* views.create(ANA, { surface: "logs", name: "Mine, private", state: errorState })
-				const theirs = yield* views.create(BEN, {
-					surface: "logs",
-					name: "Theirs",
-					state: errorState,
-				})
-				yield* views.update(BEN, theirs.id, { visibility: "org" })
-				yield* views.create(BEN, { surface: "logs", name: "Theirs, private", state: errorState })
+				const mine = yield* views
+					.create({ surface: "logs", name: "Mine", state: errorState })
+					.pipe(asCaller(ANA))
+				yield* views.update(mine.id, { visibility: "org" }).pipe(asCaller(ANA))
+				yield* views
+					.create({ surface: "logs", name: "Mine, private", state: errorState })
+					.pipe(asCaller(ANA))
+				const theirs = yield* views
+					.create({
+						surface: "logs",
+						name: "Theirs",
+						state: errorState,
+					})
+					.pipe(asCaller(BEN))
+				yield* views.update(theirs.id, { visibility: "org" }).pipe(asCaller(BEN))
+				yield* views
+					.create({ surface: "logs", name: "Theirs, private", state: errorState })
+					.pipe(asCaller(BEN))
 
-				const listed = yield* views.list(ANA, "logs")
+				const listed = yield* views.list("logs").pipe(asCaller(ANA))
 				assert.deepStrictEqual(Arr.sort(names(listed), Order.String), [
 					"Mine",
 					"Mine, private",
@@ -342,13 +420,18 @@ describe("SavedViewsService", () => {
 					Arr.range(1, SAVED_VIEWS_PER_OWNER_LIMIT + 20),
 					(index) =>
 						Effect.result(
-							views.create(ANA, { surface: "logs", name: `View ${index}`, state: errorState }),
+							views
+								.create({ surface: "logs", name: `View ${index}`, state: errorState })
+								.pipe(asCaller(ANA)),
 						),
 					{ concurrency: "unbounded" },
 				)
 				const saved = Arr.filter(outcomes, (outcome) => outcome._tag === "Success")
 				assert.strictEqual(saved.length, SAVED_VIEWS_PER_OWNER_LIMIT)
-				assert.strictEqual((yield* views.list(ANA, "logs")).length, SAVED_VIEWS_PER_OWNER_LIMIT)
+				assert.strictEqual(
+					(yield* views.list("logs").pipe(asCaller(ANA))).length,
+					SAVED_VIEWS_PER_OWNER_LIMIT,
+				)
 			}),
 		),
 	)
@@ -357,8 +440,10 @@ describe("SavedViewsService", () => {
 		provide(
 			Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const saved = yield* views.create(ANA, { surface: "logs", name: "Errors", state: errorState })
-				const same = yield* views.update(ANA, saved.id, {})
+				const saved = yield* views
+					.create({ surface: "logs", name: "Errors", state: errorState })
+					.pipe(asCaller(ANA))
+				const same = yield* views.update(saved.id, {}).pipe(asCaller(ANA))
 				assert.strictEqual(same.updatedAt, saved.updatedAt)
 				assert.strictEqual(same.name, "Errors")
 			}),
@@ -371,7 +456,9 @@ describe("SavedViewsService", () => {
 			const db = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				const views = yield* SavedViewsService
-				const mine = yield* views.create(ANA, { surface: "logs", name: "Mine", state: errorState })
+				const mine = yield* views
+					.create({ surface: "logs", name: "Mine", state: errorState })
+					.pipe(asCaller(ANA))
 				// A shared row written before the schema's limits: its state is not one the schema accepts.
 				yield* Effect.promise(() =>
 					executeSql(
@@ -381,16 +468,17 @@ describe("SavedViewsService", () => {
 						["00000000-0000-4000-8000-0000000000ff", ORG, BEN.userId],
 					),
 				)
-				assert.deepStrictEqual(names(yield* views.list(ANA, "logs")), ["Mine"])
-				assert.deepStrictEqual(names(yield* views.list(BEN, "logs")), [])
+				assert.deepStrictEqual(names(yield* views.list("logs").pipe(asCaller(ANA))), ["Mine"])
+				assert.deepStrictEqual(names(yield* views.list("logs").pipe(asCaller(BEN))), [])
 				assert.strictEqual(mine.name, "Mine")
 
-				yield* views.remove(
-					ADMIN,
-					Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff"),
-				)
+				yield* views
+					.remove(Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff"))
+					.pipe(asCaller(ADMIN))
 				const gone = yield* Effect.flip(
-					views.remove(BEN, Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff")),
+					views
+						.remove(Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff"))
+						.pipe(asCaller(BEN)),
 				)
 				assert.strictEqual(gone._tag, "@maple/http/saved-views/SavedViewNotFoundError")
 			}).pipe(Effect.provide(SavedViewsService.layer.pipe(Layer.provide(db.layer))))

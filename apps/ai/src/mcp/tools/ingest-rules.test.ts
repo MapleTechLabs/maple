@@ -6,12 +6,12 @@ import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
-import { CurrentMcpTenant } from "../tenant"
 import { parameterOfProblem, previewNotes, previewOver, registerIngestRuleTools } from "./ingest-rules"
 import { executeRegisteredMcpToolUnscoped } from "./registry"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -72,7 +72,7 @@ const layerFor = (testDb: TestDb, roles: ReadonlyArray<string>) =>
 	Layer.mergeAll(
 		unimplementedMcpToolServices,
 		IngestRuleService.layer,
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_mcp_rules"),
 			userId: Schema.decodeSync(UserId)("user_mcp_rules"),
 			roles: Arr.map(roles, (role) => Schema.decodeSync(RoleName)(role)),

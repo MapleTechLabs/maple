@@ -14,6 +14,7 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const ORG = Schema.decodeSync(OrgId)("org_get_investigation")
 const INVESTIGATION_UUID = "0190f2b3-4d5e-7f70-8192-a3b4c5d6e7f8"
@@ -111,7 +112,7 @@ const service = (seen: Seen, doc: InvestigationDocument | null) =>
 		},
 	})
 
-const tenant = Layer.succeed(CurrentMcpTenant, {
+const tenant = mcpTenantLayer({
 	orgId: ORG,
 	userId: Schema.decodeSync(UserId)("user_get_investigation"),
 	roles: [Schema.decodeSync(RoleName)("org:member")],
@@ -215,7 +216,7 @@ describe("get_investigation", () => {
 
 	it("refuses a scoped key without investigations:read, as the v2 API does", async () => {
 		const seen: Seen = {}
-		const scoped = Layer.succeed(CurrentMcpTenant, {
+		const scoped = mcpTenantLayer({
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_get_investigation"),
 			roles: [Schema.decodeSync(RoleName)("org:member")],
@@ -233,7 +234,7 @@ describe("get_investigation", () => {
 		)
 		expect(seen.id).toBeUndefined()
 
-		const allowed = Layer.succeed(CurrentMcpTenant, {
+		const allowed = mcpTenantLayer({
 			orgId: ORG,
 			userId: Schema.decodeSync(UserId)("user_get_investigation"),
 			roles: [Schema.decodeSync(RoleName)("org:member")],

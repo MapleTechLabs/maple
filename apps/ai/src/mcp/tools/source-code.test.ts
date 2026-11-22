@@ -13,6 +13,7 @@ import { renderToolDoc } from "../lib/tool-doc"
 import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import { ignoreFamily } from "./types"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 interface Answer {
 	readonly text: string
@@ -39,13 +40,13 @@ registerSourceCodeTools({
 	},
 } satisfies McpToolRegistrar)
 
-const tenant = Layer.succeed(CurrentMcpTenant, {
+const tenant = mcpTenantLayer({
 	orgId: Schema.decodeSync(OrgId)("org_tools"),
 	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	permissions: Policy.grantsOf([]),
 	authMode: "self_hosted",
-} as CurrentMcpTenant["Service"])
+})
 
 const call = (
 	name: string,

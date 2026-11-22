@@ -37,6 +37,7 @@ import {
 	createWebhookDestination,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -807,7 +808,9 @@ describe("AlertsService uptime rules", () => {
 					threshold: 1,
 					windowMinutes: 1,
 				})
-				const created = yield* Effect.flip(alerts.createRule(orgId, userId, adminGrants, request))
+				const created = yield* Effect.flip(
+					alerts.createRule(request).pipe(actingAs(orgId, adminGrants, userId)),
+				)
 				assert.instanceOf(created, AlertValidationError)
 
 				const { ruleId } = yield* seedUptimeMonitor(testDb, {
@@ -820,10 +823,12 @@ describe("AlertsService uptime rules", () => {
 				})
 				assert.lengthOf((yield* alerts.listRules(orgId)).rules, 0)
 				const edited = yield* Effect.flip(
-					alerts.updateRule(orgId, userId, adminGrants, ruleId, request),
+					alerts.updateRule(ruleId, request).pipe(actingAs(orgId, adminGrants, userId)),
 				)
 				assert.strictEqual(edited._tag, "@maple/http/errors/AlertValidationError")
-				const deleted = yield* Effect.flip(alerts.deleteRule(orgId, adminGrants, ruleId))
+				const deleted = yield* Effect.flip(
+					alerts.deleteRule(ruleId).pipe(actingAs(orgId, adminGrants)),
+				)
 				assert.strictEqual(deleted._tag, "@maple/http/errors/AlertRuleNotFoundError")
 			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 		},

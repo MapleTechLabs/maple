@@ -1,9 +1,9 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
-import { Array as Arr, Schema, SchemaGetter, Context as EffectContext } from "effect"
+import { Array as Arr, Effect, Schema, SchemaGetter, Context as EffectContext } from "effect"
 import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
-import { limitedAccessMessage, type Permission, PermissionName } from "../policy"
+import { CurrentActor, limitedAccessMessage, type Permission, PermissionName } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -185,10 +185,16 @@ export class Context extends EffectContext.Service<Context, TenantSchema>()(
 	"@maple/domain/http/CurrentTenant",
 ) {}
 
+/** Run a request as `tenant`: its tenant, and the actor every service's permission check reads. */
+export const provide =
+	(tenant: TenantSchema) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(Effect.provideService(Context, tenant), Effect.provideService(CurrentActor, tenant))
+
 export class Authorization extends HttpApiMiddleware.Service<
 	Authorization,
 	{
-		provides: Context
+		provides: Context | CurrentActor
 	}
 >()("Authorization", {
 	error: [
@@ -237,7 +243,7 @@ export class ApiKeyNotAcceptedError extends HttpTaggedError<ApiKeyNotAcceptedErr
 export class SessionAuthorization extends HttpApiMiddleware.Service<
 	SessionAuthorization,
 	{
-		provides: Context
+		provides: Context | CurrentActor
 	}
 >()("SessionAuthorization", {
 	error: [
@@ -282,7 +288,7 @@ export class UserSessionAuthorization extends HttpApiMiddleware.Service<
 export class RegionlessSessionAuthorization extends HttpApiMiddleware.Service<
 	RegionlessSessionAuthorization,
 	{
-		provides: Context
+		provides: Context | CurrentActor
 	}
 >()("RegionlessSessionAuthorization", {
 	error: [

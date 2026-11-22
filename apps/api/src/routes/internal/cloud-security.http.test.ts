@@ -48,9 +48,7 @@ const makeHarness = (enabled: boolean, role = "org:engineer") => {
 			CurrentTenant.SessionAuthorization,
 			CurrentTenant.SessionAuthorization.of({
 				bearer: (httpEffect) =>
-					Effect.provideService(
-						httpEffect,
-						CurrentTenant.Context,
+					CurrentTenant.provide(
 						new CurrentTenant.TenantSchema({
 							orgId: ORG_ID,
 							userId: USER_ID,
@@ -58,7 +56,7 @@ const makeHarness = (enabled: boolean, role = "org:engineer") => {
 							permissions: Policy.grantsOf([Schema.decodeSync(RoleName)(role)]),
 							authMode: "clerk",
 						}),
-					),
+					)(httpEffect),
 			}),
 		),
 	)

@@ -12,18 +12,11 @@ import {
 } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { SavedViewState, type SavedViewSurface, type SavedViewVisibility } from "@maple/domain/saved-views"
-import { SavedViewId, type OrgId, type UserId } from "@maple/primitives"
+import { SavedViewId, type UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
-
-/** Who is asking: views are scoped to the org, owned by the user, and a shared one is an admin's to delete. */
-export interface SavedViewCaller {
-	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly permissions: Policy.Grants
-}
 
 /** A view as its caller may use it. */
 export interface SavedView {
@@ -55,27 +48,35 @@ export interface UpdateSavedViewInput {
 export interface SavedViewsServiceApi {
 	/** The caller's own views, then the ones shared with the org, each by name. */
 	readonly list: (
-		caller: SavedViewCaller,
 		surface: SavedViewSurface,
-	) => Effect.Effect<ReadonlyArray<SavedView>, SavedViewPersistenceError>
+	) => Effect.Effect<ReadonlyArray<SavedView>, SavedViewPersistenceError, Policy.CurrentActor>
 	readonly create: (
-		caller: SavedViewCaller,
 		input: CreateSavedViewInput,
-	) => Effect.Effect<SavedView, SavedViewPersistenceError | SavedViewNameTakenError | SavedViewLimitError>
+	) => Effect.Effect<
+		SavedView,
+		SavedViewPersistenceError | SavedViewNameTakenError | SavedViewLimitError,
+		Policy.CurrentActor
+	>
 	/** Owner only. A view the caller cannot see answers as missing, never as forbidden. */
 	readonly update: (
-		caller: SavedViewCaller,
 		viewId: SavedViewId,
 		input: UpdateSavedViewInput,
 	) => Effect.Effect<
 		SavedView,
-		SavedViewPersistenceError | SavedViewNotFoundError | SavedViewForbiddenError | SavedViewNameTakenError
+		| SavedViewPersistenceError
+		| SavedViewNotFoundError
+		| SavedViewForbiddenError
+		| SavedViewNameTakenError,
+		Policy.CurrentActor
 	>
 	/** The owner, or an org admin for a shared view. */
 	readonly remove: (
-		caller: SavedViewCaller,
 		viewId: SavedViewId,
-	) => Effect.Effect<void, SavedViewPersistenceError | SavedViewNotFoundError | SavedViewForbiddenError>
+	) => Effect.Effect<
+		void,
+		SavedViewPersistenceError | SavedViewNotFoundError | SavedViewForbiddenError,
+		Policy.CurrentActor
+	>
 }
 
 /**
@@ -98,7 +99,7 @@ const toPersistenceError = makePersistenceErrorMapper(
 const decodeId = Schema.decodeUnknownSync(SavedViewId)
 
 // `members:manage` is Admin's alone: custom roles cannot hold it.
-const isOrgAdmin = (caller: SavedViewCaller): boolean => Policy.can(caller.permissions, "members:manage")
+const isOrgAdmin = (caller: Policy.Actor): boolean => Policy.can(caller.permissions, "members:manage")
 
 /** A row with its state as stored, not yet checked against the schema. */
 type StoredRow = Omit<SavedViewRow, "state"> & { readonly state: unknown }
@@ -119,11 +120,11 @@ const storedColumns = ($: PG.ColumnAccessor<typeof SavedViews.columns>) => ({
 
 const decodeState = Schema.decodeUnknownOption(SavedViewState)
 
-const canDelete = (caller: SavedViewCaller, row: StoredRow): boolean =>
+const canDelete = (caller: Policy.Actor, row: StoredRow): boolean =>
 	row.ownerUserId === caller.userId || (row.visibility === "org" && isOrgAdmin(caller))
 
 /** The row as the caller sees it, or none when its stored state can no longer be read. */
-const toView = (caller: SavedViewCaller, row: StoredRow): Option.Option<SavedView> =>
+const toView = (caller: Policy.Actor, row: StoredRow): Option.Option<SavedView> =>
 	Option.map(decodeState(row.state), (state) => ({
 		id: row.id,
 		surface: row.surface,
@@ -140,7 +141,7 @@ const toView = (caller: SavedViewCaller, row: StoredRow): Option.Option<SavedVie
 const unreadable = () => new SavedViewPersistenceError({ message: "The view's stored state cannot be read" })
 
 /** Serializes one person's saves in one explorer within their transaction. */
-const lockOwner = (db: MapleDb, caller: SavedViewCaller, surface: SavedViewSurface) =>
+const lockOwner = (db: MapleDb, caller: Policy.Actor, surface: SavedViewSurface) =>
 	db.execute(
 		Orm.sql`select pg_advisory_xact_lock(hashtext(${`${caller.orgId}:${caller.userId}:${surface}`}), hashtext('saved_views'))`,
 	)
@@ -169,7 +170,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 
 			/** The view as the caller may see it: missing when it is another org's or someone's private view. */
 			const visibleRow = Effect.fn("SavedViewsService.visibleRow")(function* (
-				caller: SavedViewCaller,
+				caller: Policy.Actor,
 				viewId: SavedViewId,
 			) {
 				const rows = yield* dbExecute((db) =>
@@ -187,10 +188,8 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				return row
 			})
 
-			const list = Effect.fn("SavedViewsService.list")(function* (
-				caller: SavedViewCaller,
-				surface: SavedViewSurface,
-			) {
+			const list = Effect.fn("SavedViewsService.list")(function* (surface: SavedViewSurface) {
+				const caller = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({
 					orgId: caller.orgId,
 					"tenant.userId": caller.userId,
@@ -232,10 +231,8 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				return Arr.sort(views, listOrder)
 			})
 
-			const create = Effect.fn("SavedViewsService.create")(function* (
-				caller: SavedViewCaller,
-				input: CreateSavedViewInput,
-			) {
+			const create = Effect.fn("SavedViewsService.create")(function* (input: CreateSavedViewInput) {
+				const caller = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({
 					orgId: caller.orgId,
 					"tenant.userId": caller.userId,
@@ -293,10 +290,10 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 			})
 
 			const update = Effect.fn("SavedViewsService.update")(function* (
-				caller: SavedViewCaller,
 				viewId: SavedViewId,
 				input: UpdateSavedViewInput,
 			) {
+				const caller = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId: caller.orgId, "tenant.userId": caller.userId })
 				const existing = yield* visibleRow(caller, viewId)
 				if (existing.ownerUserId !== caller.userId) {
@@ -362,10 +359,8 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				})
 			})
 
-			const remove = Effect.fn("SavedViewsService.remove")(function* (
-				caller: SavedViewCaller,
-				viewId: SavedViewId,
-			) {
+			const remove = Effect.fn("SavedViewsService.remove")(function* (viewId: SavedViewId) {
+				const caller = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId: caller.orgId, "tenant.userId": caller.userId })
 				const existing = yield* visibleRow(caller, viewId)
 				if (!canDelete(caller, existing)) {

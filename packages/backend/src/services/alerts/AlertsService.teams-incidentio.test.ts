@@ -16,6 +16,7 @@ import {
 	makeWarehouseStub,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -64,16 +65,16 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
-				alerts.createDestination(
-					orgId,
-					userId,
-					adminGrants,
-					new MicrosoftTeamsAlertDestinationConfig({
-						type: "microsoft-teams",
-						name: "Ops",
-						webhookUrl: "https://contoso.webhook.office.com/webhookb2/a@b/IncomingWebhook/c/d",
-					}),
-				),
+				alerts
+					.createDestination(
+						new MicrosoftTeamsAlertDestinationConfig({
+							type: "microsoft-teams",
+							name: "Ops",
+							webhookUrl:
+								"https://contoso.webhook.office.com/webhookb2/a@b/IncomingWebhook/c/d",
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const error = getError(exit)
 			assert.instanceOf(error, AlertValidationError)
@@ -86,20 +87,21 @@ describe("AlertsService: Microsoft Teams destinations", () => {
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new MicrosoftTeamsAlertDestinationConfig({
-					type: "microsoft-teams",
-					name: "Ops",
-					webhookUrl: TEAMS_URL,
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new MicrosoftTeamsAlertDestinationConfig({
+						type: "microsoft-teams",
+						name: "Ops",
+						webhookUrl: TEAMS_URL,
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(destination.summary, "Workflow 9f8e7d6c…")
 			assert.notInclude(JSON.stringify(destination), "t3ams-s1g")
 
-			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			const response = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isTrue(response.success)
 			assert.lengthOf(requests, 1)
 			assert.strictEqual(new URL(requests[0]?.url ?? "").searchParams.get("sig"), "t3ams-s1g")
@@ -115,18 +117,17 @@ describe("AlertsService: incident.io destinations", () => {
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
 			const exit = yield* Effect.exit(
-				alerts.createDestination(
-					orgId,
-					userId,
-					adminGrants,
-					new IncidentIoAlertDestinationConfig({
-						type: "incident-io",
-						name: "Paging",
-						alertSourceConfigId:
-							"https://api.incident.io/v2/alert_events/http/01GW2G3V0S59R238FAHPDS1R66",
-						token: "tok",
-					}),
-				),
+				alerts
+					.createDestination(
+						new IncidentIoAlertDestinationConfig({
+							type: "incident-io",
+							name: "Paging",
+							alertSourceConfigId:
+								"https://api.incident.io/v2/alert_events/http/01GW2G3V0S59R238FAHPDS1R66",
+							token: "tok",
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			assert.instanceOf(getError(exit), AlertValidationError)
 		}).pipe(Effect.provide(layer(testDb)))
@@ -137,37 +138,42 @@ describe("AlertsService: incident.io destinations", () => {
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new IncidentIoAlertDestinationConfig({
-					type: "incident-io",
-					name: "Paging",
-					alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
-					token: "inc-s3cret",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new IncidentIoAlertDestinationConfig({
+						type: "incident-io",
+						name: "Paging",
+						alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
+						token: "inc-s3cret",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(destination.summary, "Alert source 01GW2G3V0S59R238FAHPDS1R66")
 			assert.strictEqual(destination.channelLabel, "01GW2G3V0S59R238FAHPDS1R66")
 			assert.notInclude(JSON.stringify(destination), "inc-s3cret")
 
 			// Renaming sends no token: the stored one must survive.
-			yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
-				type: "incident-io",
-				name: "Paging (prod)",
-			})
+			yield* alerts
+				.updateDestination(destination.id, {
+					type: "incident-io",
+					name: "Paging (prod)",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			// A different alert source has its own token: moving the id alone is refused.
 			const moved = yield* Effect.exit(
-				alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
-					type: "incident-io",
-					alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
-				}),
+				alerts
+					.updateDestination(destination.id, {
+						type: "incident-io",
+						alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
+					})
+					.pipe(actingAs(orgId, adminGrants, userId)),
 			)
 			const movedError = getError(moved)
 			assert.instanceOf(movedError, AlertValidationError)
 			assert.include(movedError.message, "needs its own token")
-			const response = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			const response = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isTrue(response.success)
 			// A test opens an alert and closes it at once.
 			assert.deepStrictEqual(
@@ -197,24 +203,25 @@ describe("AlertsService: incident.io destinations", () => {
 		const { requests, fetchImpl } = capture()
 		return Effect.gen(function* () {
 			const alerts = yield* alertServices
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new IncidentIoAlertDestinationConfig({
+			const destination = yield* alerts
+				.createDestination(
+					new IncidentIoAlertDestinationConfig({
+						type: "incident-io",
+						name: "Paging",
+						alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
+						token: "old-token",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+			const moved = yield* alerts
+				.updateDestination(destination.id, {
 					type: "incident-io",
-					name: "Paging",
-					alertSourceConfigId: "01GW2G3V0S59R238FAHPDS1R66",
-					token: "old-token",
-				}),
-			)
-			const moved = yield* alerts.updateDestination(orgId, userId, adminGrants, destination.id, {
-				type: "incident-io",
-				alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
-				token: "new-token",
-			})
+					alertSourceConfigId: "01HZZZZZZZZZZZZZZZZZZZZZZZ",
+					token: "new-token",
+				})
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(moved.channelLabel, "01HZZZZZZZZZZZZZZZZZZZZZZZ")
-			yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			yield* alerts.testDestination(destination.id).pipe(actingAs(orgId, adminGrants, userId))
 			assert.deepStrictEqual(
 				Arr.dedupe(Arr.map(requests, (request) => `${request.url} ${request.authorization}`)),
 				["https://api.incident.io/v2/alert_events/http/01HZZZZZZZZZZZZZZZZZZZZZZZ Bearer new-token"],

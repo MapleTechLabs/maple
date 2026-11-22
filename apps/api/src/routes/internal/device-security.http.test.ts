@@ -44,9 +44,7 @@ const devicesAs = async (role: string) => {
 			CurrentTenant.SessionAuthorization,
 			CurrentTenant.SessionAuthorization.of({
 				bearer: (httpEffect) =>
-					Effect.provideService(
-						httpEffect,
-						CurrentTenant.Context,
+					CurrentTenant.provide(
 						new CurrentTenant.TenantSchema({
 							orgId: ORG_ID,
 							userId: USER_ID,
@@ -54,7 +52,7 @@ const devicesAs = async (role: string) => {
 							permissions: Policy.grantsOf([role]),
 							authMode: "clerk",
 						}),
-					),
+					)(httpEffect),
 			}),
 		),
 	)

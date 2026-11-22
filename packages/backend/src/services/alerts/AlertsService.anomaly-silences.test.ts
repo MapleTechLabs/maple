@@ -25,6 +25,7 @@ import {
 	makeWarehouseStub,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -90,45 +91,49 @@ const insertCheckoutAnomaly = Effect.gen(function* () {
 const createUnscopedAnomalyRule = (alerts: AlertsServiceApi) =>
 	Effect.gen(function* () {
 		const destination = yield* createWebhookDestination(alerts, orgId, userId)
-		return yield* alerts.createRule(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertRuleUpsertRequest({
-				name: "Production anomalies",
-				enabled: true,
-				signalType: "anomaly",
-				environments: ["production"],
-				comparator: "gte",
-				windowMinutes: 5,
-				thresholds: [
-					{ severity: "warning", value: 1, upper: null, recoveryValue: null, destinationIds: [] },
-					{
-						severity: "critical",
-						value: 2,
-						upper: null,
-						recoveryValue: null,
-						destinationIds: [destination.id],
-					},
-				],
-			}),
-		)
+		return yield* alerts
+			.createRule(
+				new AlertRuleUpsertRequest({
+					name: "Production anomalies",
+					enabled: true,
+					signalType: "anomaly",
+					environments: ["production"],
+					comparator: "gte",
+					windowMinutes: 5,
+					thresholds: [
+						{
+							severity: "warning",
+							value: 1,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [],
+						},
+						{
+							severity: "critical",
+							value: 2,
+							upper: null,
+							recoveryValue: null,
+							destinationIds: [destination.id],
+						},
+					],
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
 	})
 
 const silence = (matchers: AlertSilenceMatchers) =>
 	Effect.gen(function* () {
 		const silences = yield* AlertSilencesService
 		const now = yield* Clock.currentTimeMillis
-		return yield* silences.create(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertSilenceCreateRequest({
-				reason: "checkout maintenance",
-				matchers,
-				endsAt: iso(new Date(now + 60 * 60_000).toISOString()),
-			}),
-		)
+		return yield* silences
+			.create(
+				new AlertSilenceCreateRequest({
+					reason: "checkout maintenance",
+					matchers,
+					endsAt: iso(new Date(now + 60 * 60_000).toISOString()),
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
 	})
 
 const ticks = (alerts: AlertsServiceApi, count: number) =>
@@ -206,7 +211,7 @@ describe("alert silences on anomaly rules", () => {
 			yield* ticks(alerts, 2)
 			assert.deepStrictEqual(sent, [])
 
-			yield* silences.end(orgId, userId, adminGrants, created.id)
+			yield* silences.end(created.id).pipe(actingAs(orgId, adminGrants, userId))
 			yield* ticks(alerts, 3)
 
 			const [incident] = (yield* alerts.listIncidents(orgId)).incidents

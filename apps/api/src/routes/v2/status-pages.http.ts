@@ -195,16 +195,10 @@ const publishFailed = (error: { readonly message: string }) =>
 	new StatusPagePersistenceError({ message: error.message, cause: error })
 
 /** Changing who can read a page needs `status_pages:access`, whichever endpoint carries it. */
-const checkVisibilityChange = (
-	permissions: Policy.Grants,
-	current: StatusPageVisibility,
-	next: StatusPageVisibility | undefined,
-) =>
+const checkVisibilityChange = (current: StatusPageVisibility, next: StatusPageVisibility | undefined) =>
 	next === undefined || next === current
 		? Effect.void
-		: Policy.check(permissions, "status_pages:access", (denial) =>
-				V2InsufficientPermissions.make(denial.message),
-			)
+		: Policy.authorize("status_pages:access", (denial) => V2InsufficientPermissions.make(denial.message))
 
 export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPages", (handlers) =>
 	Effect.gen(function* () {
@@ -377,7 +371,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
-					yield* checkVisibilityChange(tenant.permissions, current.visibility, payload.visibility)
+					yield* checkVisibilityChange(current.visibility, payload.visibility)
 					const updated = yield* service.update(tenant.orgId, params.id, {
 						...(payload.name === undefined ? undefined : { name: payload.name }),
 						...(payload.slug === undefined ? undefined : { slug: payload.slug }),
@@ -629,7 +623,7 @@ export const HttpV2StatusPagesLive = HttpApiBuilder.group(MapleApiV2, "statusPag
 						V2InsufficientPermissions.make(denial.message),
 					)
 					const current = yield* service.get(tenant.orgId, params.id)
-					yield* checkVisibilityChange(tenant.permissions, current.visibility, payload.visibility)
+					yield* checkVisibilityChange(current.visibility, payload.visibility)
 					const { previous, config, changes } = yield* service.applyConfig(
 						tenant.orgId,
 						params.id,

@@ -39,6 +39,7 @@ import {
 } from "./alerts-service-test-support"
 import { EscalationChainsService } from "./EscalationChainsService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -258,16 +259,15 @@ describe("AlertsService anomaly rules", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout anomalies",
-					serviceNames: ["checkout"],
-					thresholds: criticalRouted(destination.id),
-				}),
-			)
+			yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout anomalies",
+						serviceNames: ["checkout"],
+						thresholds: criticalRouted(destination.id),
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 
 			yield* alerts.runSchedulerTick()
@@ -308,33 +308,35 @@ describe("AlertsService anomaly rules", () => {
 			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const chain = yield* EscalationChainsService.use((chains) =>
-				chains.create(
-					orgId,
-					userId,
-					adminGrants,
-					new EscalationChainCreateRequest({
-						name: "Checkout escalation",
-						steps: [
+				chains
+					.create(
+						new EscalationChainCreateRequest({
+							name: "Checkout escalation",
+							steps: [
+								{
+									targets: [{ type: "destination", destinationId: destination.id }],
+									waitMinutes: 10,
+								},
+							],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId)),
+			)
+			yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout anomalies",
+						serviceNames: ["checkout"],
+						thresholds: [
 							{
-								targets: [{ type: "destination", destinationId: destination.id }],
-								waitMinutes: 10,
+								...criticalTier(destination.id),
+								destinationIds: [],
+								escalationChainId: chain.id,
 							},
 						],
 					}),
-				),
-			)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout anomalies",
-					serviceNames: ["checkout"],
-					thresholds: [
-						{ ...criticalTier(destination.id), destinationIds: [], escalationChainId: chain.id },
-					],
-				}),
-			)
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 
 			yield* alerts.runSchedulerTick()
@@ -358,16 +360,15 @@ describe("AlertsService anomaly rules", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout anomalies",
-					serviceNames: ["checkout"],
-					thresholds: criticalRouted(destination.id),
-				}),
-			)
+			yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout anomalies",
+						serviceNames: ["checkout"],
+						thresholds: criticalRouted(destination.id),
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* insertAnomaly(errorRateSpike)
 
 			yield* alerts.runSchedulerTick()
@@ -413,16 +414,15 @@ describe("AlertsService anomaly rules", () => {
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
 				yield* insertAnomaly(errorRateSpike)
 				yield* AnomalyAlertSource.use((source) => source.backfillDefaultRules)
-				const scoped = yield* alerts.createRule(
-					orgId,
-					userId,
-					adminGrants,
-					anomalyRule({
-						name: "Checkout critical anomalies",
-						serviceNames: ["checkout"],
-						thresholds: [criticalTier(destination.id)],
-					}),
-				)
+				const scoped = yield* alerts
+					.createRule(
+						anomalyRule({
+							name: "Checkout critical anomalies",
+							serviceNames: ["checkout"],
+							thresholds: [criticalTier(destination.id)],
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 
 				// The scoped rule has no warning tier, so the default rule takes the warning, unrouted.
 				yield* alerts.runSchedulerTick()
@@ -477,12 +477,16 @@ describe("AlertsService anomaly rules", () => {
 					],
 					enabled,
 				})
-			const scoped = yield* alerts.createRule(orgId, userId, adminGrants, scopedRequest(true))
+			const scoped = yield* alerts
+				.createRule(scopedRequest(true))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [scoped.id])
 
 			// Disabling it resolves its incident from the stored label, with no observation at hand.
-			yield* alerts.updateRule(orgId, userId, adminGrants, scoped.id, scopedRequest(false))
+			yield* alerts
+				.updateRule(scoped.id, scopedRequest(false))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [defaultRuleId])
 			const sent = Arr.map(
@@ -501,7 +505,9 @@ describe("AlertsService anomaly rules", () => {
 				[{ eventType: "resolve", rule: { groupLabel: "checkout (production)" } }],
 			)
 
-			yield* alerts.updateRule(orgId, userId, adminGrants, scoped.id, scopedRequest(true))
+			yield* alerts
+				.updateRule(scoped.id, scopedRequest(true))
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* nextTick
 			assert.deepStrictEqual(yield* openOn, [scoped.id])
 		}).pipe(Effect.provide(layer))
@@ -548,24 +554,23 @@ describe("AlertsService anomaly rules", () => {
 				lastObservedValue: 1800,
 				baselineMedian: 300,
 			})
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout and cart anomalies",
-					serviceNames: ["checkout", "cart"],
-					thresholds: [
-						{
-							severity: "warning",
-							value: 1,
-							upper: null,
-							recoveryValue: null,
-							destinationIds: [destination.id],
-						},
-					],
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout and cart anomalies",
+						serviceNames: ["checkout", "cart"],
+						thresholds: [
+							{
+								severity: "warning",
+								value: 1,
+								upper: null,
+								recoveryValue: null,
+								destinationIds: [destination.id],
+							},
+						],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 
 			yield* alerts.runSchedulerTick()
 			yield* nextTick
@@ -618,16 +623,15 @@ describe("AlertsService anomaly rules", () => {
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			yield* insertAnomaly({ ...errorRateSpike, severity: "critical" })
 			const testScope = (serviceNames: ReadonlyArray<string>) =>
-				alerts.testRule(
-					orgId,
-					userId,
-					adminGrants,
-					anomalyRule({
-						name: "Unsaved",
-						serviceNames,
-						thresholds: criticalRouted(destination.id),
-					}),
-				)
+				alerts
+					.testRule(
+						anomalyRule({
+							name: "Unsaved",
+							serviceNames,
+							thresholds: criticalRouted(destination.id),
+						}),
+					)
+					.pipe(actingAs(orgId, adminGrants, userId))
 
 			const checkout = yield* testScope(["checkout"])
 			expect(checkout).toMatchObject({
@@ -650,16 +654,15 @@ describe("AlertsService anomaly rules", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			const rule = yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout anomalies",
-					serviceNames: ["checkout"],
-					thresholds: criticalRouted(destination.id),
-				}),
-			)
+			const rule = yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout anomalies",
+						serviceNames: ["checkout"],
+						thresholds: criticalRouted(destination.id),
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.isNull(rule.lastEvaluatedAt)
 
 			yield* alerts.runSchedulerTick()
@@ -708,19 +711,18 @@ describe("AlertsService anomaly rules", () => {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* alertServices
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
-			yield* alerts.createRule(
-				orgId,
-				userId,
-				adminGrants,
-				anomalyRule({
-					name: "Checkout anomalies",
-					serviceNames: ["checkout"],
-					thresholds: [
-						{ ...criticalTier(destination.id), severity: "warning", value: 1 },
-						criticalTier(destination.id),
-					],
-				}),
-			)
+			yield* alerts
+				.createRule(
+					anomalyRule({
+						name: "Checkout anomalies",
+						serviceNames: ["checkout"],
+						thresholds: [
+							{ ...criticalTier(destination.id), severity: "warning", value: 1 },
+							criticalTier(destination.id),
+						],
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			yield* insertAnomaly(errorRateSpike)
 			yield* alerts.runSchedulerTick()
 			expect((yield* alerts.listIncidents(orgId)).incidents[0]).toMatchObject({ status: "open" })

@@ -67,9 +67,7 @@ const authorizationStub = Layer.succeed(
 	CurrentTenant.SessionAuthorization,
 	CurrentTenant.SessionAuthorization.of({
 		bearer: (httpEffect) =>
-			Effect.provideService(
-				httpEffect,
-				CurrentTenant.Context,
+			CurrentTenant.provide(
 				new CurrentTenant.TenantSchema({
 					orgId: ORG_ID,
 					userId: USER_ID,
@@ -77,7 +75,7 @@ const authorizationStub = Layer.succeed(
 					permissions: Policy.grantsOf([]),
 					authMode: "clerk",
 				}),
-			),
+			)(httpEffect),
 	}),
 )
 

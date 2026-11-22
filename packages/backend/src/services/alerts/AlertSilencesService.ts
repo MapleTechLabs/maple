@@ -14,7 +14,6 @@ import {
 	type AlertSilenceStatus,
 	type AlertSilenceUpdateRequest,
 	type OrgId,
-	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertMaintenanceWindows, AlertRules, AlertSilences, type AlertSilenceRow } from "@maple/db/tables"
@@ -52,33 +51,27 @@ export interface AlertSilencesServiceApi {
 		silenceId: AlertSilenceId,
 	) => Effect.Effect<AlertSilenceDocument, AlertPersistenceError | AlertSilenceNotFoundError>
 	readonly create: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: AlertSilenceCreateRequest,
 	) => Effect.Effect<
 		AlertSilenceDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError
+		AlertForbiddenError | AlertValidationError | AlertPersistenceError,
+		Policy.CurrentActor
 	>
 	readonly update: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		silenceId: AlertSilenceId,
 		request: AlertSilenceUpdateRequest,
 	) => Effect.Effect<
 		AlertSilenceDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertSilenceNotFoundError
+		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertSilenceNotFoundError,
+		Policy.CurrentActor
 	>
 	/** Ends a silence now; a scheduled one is cancelled. Rows are kept so history can name them. */
 	readonly end: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		silenceId: AlertSilenceId,
 	) => Effect.Effect<
 		AlertSilenceDocument,
-		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertSilenceNotFoundError
+		AlertForbiddenError | AlertValidationError | AlertPersistenceError | AlertSilenceNotFoundError,
+		Policy.CurrentActor
 	>
 }
 
@@ -92,15 +85,13 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			const runtime = yield* AlertRuntime
 			const dbExecute = makeDbExecute(database, "AlertSilencesService", makePersistenceError)
 
-			const requireManage = (permissions: Policy.Grants) =>
-				Policy.check(
-					permissions,
-					"alerts:manage",
-					(denial) =>
-						new AlertForbiddenError({
-							message: denial.message,
-						}),
-				)
+			const requireManage = Policy.authorize(
+				"alerts:manage",
+				(denial) =>
+					new AlertForbiddenError({
+						message: denial.message,
+					}),
+			)
 
 			const toDocument = (row: StoredSilenceRow, nowMs: number) =>
 				Effect.fromOption(silenceRowToDocument(row, nowMs)).pipe(
@@ -226,12 +217,10 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			})
 
 			const create = Effect.fn("AlertSilencesService.create")(function* (
-				orgId: OrgId,
-				userId: UserId,
-				permissions: Policy.Grants,
 				request: AlertSilenceCreateRequest,
 			) {
-				yield* requireManage(permissions)
+				const { orgId, userId } = yield* Policy.CurrentActor
+				yield* requireManage
 				const nowMs = yield* runtime.now
 				const requestedStart = request.startsAt === undefined ? nowMs : timestampMs(request.startsAt)
 				if (requestedStart < nowMs - START_SKEW_MS)
@@ -280,13 +269,11 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 			})
 
 			const update = Effect.fn("AlertSilencesService.update")(function* (
-				orgId: OrgId,
-				userId: UserId,
-				permissions: Policy.Grants,
 				silenceId: AlertSilenceId,
 				request: AlertSilenceUpdateRequest,
 			) {
-				yield* requireManage(permissions)
+				const { orgId, userId } = yield* Policy.CurrentActor
+				yield* requireManage
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
 				yield* requireUnmanaged(orgId, current)
@@ -332,13 +319,9 @@ export class AlertSilencesService extends Context.Service<AlertSilencesService, 
 				return yield* toDocument(next, nowMs)
 			})
 
-			const end = Effect.fn("AlertSilencesService.end")(function* (
-				orgId: OrgId,
-				userId: UserId,
-				permissions: Policy.Grants,
-				silenceId: AlertSilenceId,
-			) {
-				yield* requireManage(permissions)
+			const end = Effect.fn("AlertSilencesService.end")(function* (silenceId: AlertSilenceId) {
+				const { orgId, userId } = yield* Policy.CurrentActor
+				yield* requireManage
 				const nowMs = yield* runtime.now
 				const current = yield* findRow(orgId, silenceId)
 				yield* requireUnmanaged(orgId, current)

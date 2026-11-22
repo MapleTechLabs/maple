@@ -44,6 +44,7 @@ import {
 	insertDeliveryEventRow,
 	alertServices,
 } from "./alerts-service-test-support"
+import { actingAs } from "@maple/backend/testing/acting-as"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
 const requestBodyText = (body: RequestInit["body"]): string =>
@@ -158,18 +159,17 @@ describe("AlertsService delivery drain across destinations", () => {
 			const orgId = asOrgId("org_drain_fairness")
 			const userId = asUserId("user_drain_fairness")
 			const slow = yield* createWebhookDestination(alerts, orgId, userId)
-			const fast = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new WebhookAlertDestinationConfig({
-					type: "webhook",
-					name: "Fast webhook",
-					enabled: true,
-					url: "https://example.com/fast",
-					signingSecret: "webhook-secret",
-				}),
-			)
+			const fast = yield* alerts
+				.createDestination(
+					new WebhookAlertDestinationConfig({
+						type: "webhook",
+						name: "Fast webhook",
+						enabled: true,
+						url: "https://example.com/fast",
+						signingSecret: "webhook-secret",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, slow.id)
 			// Break the rule's stored query so the tick queues nothing of its own.
 			yield* Effect.promise(() =>
@@ -485,17 +485,16 @@ describe("AlertsService chat digests", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_chat_digest")
 			const userId = asUserId("user_chat_digest")
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new ChatAlertDestinationConfig({
-					type: "chat",
-					name: "Incidents",
-					workspaceId,
-					channelId: "channel-1",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new ChatAlertDestinationConfig({
+						type: "chat",
+						name: "Incidents",
+						workspaceId,
+						channelId: "channel-1",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 			yield* Effect.forEach(Arr.range(1, count), (n) =>
 				Effect.promise(() =>
@@ -625,18 +624,21 @@ describe("AlertsService chat destination test", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_chat_test")
 			const userId = asUserId("user_chat_test")
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new ChatAlertDestinationConfig({
-					type: "chat",
-					name: "Incidents",
-					workspaceId: Schema.decodeSync(ChatWorkspaceId)("45454545-4545-4545-8545-454545454545"),
-					channelId: "channel-1",
-				}),
-			)
-			const tested = yield* alerts.testDestination(orgId, userId, adminGrants, destination.id)
+			const destination = yield* alerts
+				.createDestination(
+					new ChatAlertDestinationConfig({
+						type: "chat",
+						name: "Incidents",
+						workspaceId: Schema.decodeSync(ChatWorkspaceId)(
+							"45454545-4545-4545-8545-454545454545",
+						),
+						channelId: "channel-1",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
+			const tested = yield* alerts
+				.testDestination(destination.id)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			assert.strictEqual(
 				tested.message,
 				"Skipped: alert notifications are off for this Test Chat workspace",
@@ -834,26 +836,25 @@ describe("AlertsService held incidents", () => {
 			groupBy: ["service.name"],
 		},
 	) =>
-		alerts.createRule(
-			orgId,
-			userId,
-			adminGrants,
-			new AlertRuleUpsertRequest({
-				name: "Grouped error rate",
-				severity: "critical",
-				enabled: true,
-				...scope,
-				signalType: "error_rate",
-				comparator: "gt",
-				threshold: 5,
-				windowMinutes: 5,
-				minimumSampleCount: 10,
-				consecutiveBreachesRequired: 1,
-				consecutiveHealthyRequired: 1,
-				renotifyIntervalMinutes: 30,
-				destinationIds: [destinationId],
-			}),
-		)
+		alerts
+			.createRule(
+				new AlertRuleUpsertRequest({
+					name: "Grouped error rate",
+					severity: "critical",
+					enabled: true,
+					...scope,
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					consecutiveHealthyRequired: 1,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destinationId],
+				}),
+			)
+			.pipe(actingAs(orgId, adminGrants, userId))
 
 	const tickAfter = (state: { liveness: LivenessState }, alerts: AlertsServiceApi, minutes: number) =>
 		Effect.gen(function* () {
@@ -1195,17 +1196,16 @@ describe("AlertsService PagerDuty acknowledgements", () => {
 			const alerts = yield* alertServices
 			const orgId = asOrgId("org_pd_ack")
 			const userId = asUserId("user_pd_ack")
-			const destination = yield* alerts.createDestination(
-				orgId,
-				userId,
-				adminGrants,
-				new PagerDutyAlertDestinationConfig({
-					type: "pagerduty",
-					name: "On-call",
-					enabled: true,
-					integrationKey: "abcdefghijklmnopqrstuvwxyz012345",
-				}),
-			)
+			const destination = yield* alerts
+				.createDestination(
+					new PagerDutyAlertDestinationConfig({
+						type: "pagerduty",
+						name: "On-call",
+						enabled: true,
+						integrationKey: "abcdefghijklmnopqrstuvwxyz012345",
+					}),
+				)
+				.pipe(actingAs(orgId, adminGrants, userId))
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 			// Break the rule's stored query so the tick queues nothing of its own.
 			yield* Effect.promise(() =>

@@ -679,11 +679,7 @@ describe("billing writes over HTTP", () => {
 					CurrentTenant.SessionAuthorization,
 					CurrentTenant.SessionAuthorization.of({
 						bearer: (httpEffect) =>
-							Effect.provideService(
-								httpEffect,
-								CurrentTenant.Context,
-								tenantWithRoles(roles, overrides.custom),
-							),
+							CurrentTenant.provide(tenantWithRoles(roles, overrides.custom))(httpEffect),
 					}),
 				),
 			),

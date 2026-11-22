@@ -6,9 +6,9 @@ import { INVESTIGATION_READ_FAMILIES } from "@maple/domain/http/v2"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped, mapleToolCatalog } from "../registry"
 import { FEEDBACK_TOOL, refusalFor } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -28,7 +28,7 @@ const makeLayer = (readOnly: boolean, scopes?: ReadonlyArray<string>, role?: str
 	return Layer.mergeAll(
 		ErrorPolicyService.layer.pipe(Layer.provide(database)),
 		database,
-		Layer.succeed(CurrentMcpTenant, tenant(readOnly, scopes, role)),
+		mcpTenantLayer(tenant(readOnly, scopes, role)),
 		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () => Effect.succeed({ destinations: [] }),
 		} as never),

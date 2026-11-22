@@ -24,13 +24,13 @@ import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { dataSourceJson, widgetJson, withDashboardMutation } from "./dashboard-mutations"
-import { CurrentMcpTenant } from "../tenant"
 import { registerUpdateDashboardTool } from "../tools/update-dashboard"
 import { registerUpdateDashboardWidgetTool } from "../tools/update-dashboard-widget"
 import type { McpToolError, McpToolRegistrar } from "../tools/types"
 import { ignoreFamily } from "../tools/types"
 import type { McpToolRequirements } from "../tools/runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 
@@ -68,7 +68,7 @@ const makeLayer = (
 	Layer.mergeAll(
 		persistence,
 		SharedDashboardService.layer,
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)(ORG),
 			userId: Schema.decodeSync(UserId)("internal-service"),
 			roles: [],

@@ -649,27 +649,8 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleInternalApi, "billing",
 						})
 					}),
 				)
-				.handle("linkBillingOrg", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* billingOrgs.link({
-							orgId: tenant.orgId,
-							userId: tenant.userId,
-							permissions: tenant.permissions,
-							billingOrgId: payload.billingOrgId,
-						})
-					}),
-				)
-				.handle("unlinkBillingOrg", ({ params }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* billingOrgs.unlink({
-							orgId: tenant.orgId,
-							permissions: tenant.permissions,
-							memberOrgId: params.orgId,
-						})
-					}),
-				)
+				.handle("linkBillingOrg", ({ payload }) => billingOrgs.link(payload.billingOrgId))
+				.handle("unlinkBillingOrg", ({ params }) => billingOrgs.unlink(params.orgId))
 		)
 	}),
 )

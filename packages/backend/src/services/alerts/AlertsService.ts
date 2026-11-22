@@ -72,7 +72,6 @@ import {
 	QueryEngineTimeoutError,
 	type QueryEngineValidationError,
 	WarehouseUpstreamError,
-	type UserId,
 	isManagedSignalType,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -558,9 +557,6 @@ const parseDeliveryPayload = (
 /** The alert operations that span rules, destinations and evaluation; the rest live on the narrow services. */
 export interface AlertsServiceApi {
 	readonly updateRule: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		ruleId: AlertRuleDocument["id"],
 		request: AlertRuleUpsertRequest,
 	) => Effect.Effect<
@@ -570,12 +566,10 @@ export interface AlertsServiceApi {
 		| AlertPersistenceError
 		| AlertRuleNotFoundError
 		| AlertRuleDestinationNotFoundError
-		| AlertRuleStoredConfigInvalidError
+		| AlertRuleStoredConfigInvalidError,
+		Policy.CurrentActor
 	>
 	readonly testRule: (
-		orgId: OrgId,
-		userId: UserId,
-		permissions: Policy.Grants,
 		request: AlertRuleUpsertRequest,
 		sendNotification?: boolean,
 	) => Effect.Effect<
@@ -588,16 +582,15 @@ export interface AlertsServiceApi {
 		| AlertDestinationStorageError
 		| QueryEngineValidationError
 		| QueryEngineTimeoutError
-		| WarehouseQueryPathError
+		| WarehouseQueryPathError,
+		Policy.CurrentActor
 	>
 	/**
-	 * `permissions` gate raw-SQL previews only: preview itself needs just `alerts:read`,
-	 * but replaying a raw_query rule executes user-authored ClickHouse, which takes
-	 * `alerts:manage` and `query:sql` as `createRule`/`testRule` do.
+	 * Previewing reads telemetry (`telemetry:read`), but replaying a raw_query rule executes
+	 * user-authored ClickHouse, which takes `alerts:manage` and `query:sql` as
+	 * `createRule`/`testRule` do.
 	 */
 	readonly previewRule: (
-		orgId: OrgId,
-		permissions: Policy.Grants,
 		request: AlertRulePreviewRequest,
 	) => Effect.Effect<
 		AlertRulePreviewResponse,
@@ -605,7 +598,8 @@ export interface AlertsServiceApi {
 		| AlertForbiddenError
 		| QueryEngineValidationError
 		| QueryEngineTimeoutError
-		| WarehouseQueryPathError
+		| WarehouseQueryPathError,
+		Policy.CurrentActor
 	>
 	readonly runSchedulerTick: (lane?: AlertSchedulerLane) => Effect.Effect<
 		{
@@ -1855,18 +1849,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			const updateRule = Effect.fn("AlertsService.updateRule")(function* (
-				orgId: OrgId,
-				userId: UserId,
-				permissions: Policy.Grants,
 				ruleId: AlertRuleDocument["id"],
 				request: AlertRuleUpsertRequest,
 			) {
+				const { orgId, userId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"tenant.userId": userId,
 					"maple.alert.rule_id": ruleId,
 				})
-				yield* requireRulePermissions(permissions, request.signalType)
+				yield* requireRulePermissions(request.signalType)
 				const oldRow = yield* requireRuleRow(orgId, ruleId)
 				if (isManagedSignalType(oldRow.signalType)) {
 					return yield* makeValidationError(managedRuleMessage(oldRow.signalType))
@@ -1897,14 +1889,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			const testRule = Effect.fn("AlertsService.testRule")(function* (
-				orgId: OrgId,
-				userId: UserId,
-				permissions: Policy.Grants,
 				request: AlertRuleUpsertRequest,
 				sendNotification = false,
 			) {
+				const { orgId, userId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan({ orgId, "tenant.userId": userId })
-				yield* requireRulePermissions(permissions, request.signalType)
+				yield* requireRulePermissions(request.signalType)
 				const normalized = yield* normalizeRule(orgId, request)
 				yield* requireDestinationIds(orgId, normalized.destinationIds)
 
@@ -2103,8 +2093,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			 * windows, so `wouldFire` spans are approximate between bucket boundaries.
 			 */
 			const previewRule = Effect.fn("AlertsService.previewRule")(function* (
-				orgId: OrgId,
-				permissions: Policy.Grants,
 				request: AlertRulePreviewRequest,
 			): Effect.fn.Return<
 				AlertRulePreviewResponse,
@@ -2112,12 +2100,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				| AlertForbiddenError
 				| QueryEngineValidationError
 				| QueryEngineTimeoutError
-				| WarehouseQueryPathError
+				| WarehouseQueryPathError,
+				Policy.CurrentActor
 			> {
+				const { orgId } = yield* Policy.CurrentActor
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
 				// The series are telemetry, whatever else the caller may do with alerts.
-				yield* Policy.check(
-					permissions,
+				yield* Policy.authorize(
 					"telemetry:read",
 					(denial) => new AlertForbiddenError({ message: denial.message }),
 				)
@@ -2134,7 +2123,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// capability `createRule`/`testRule` gate behind `alerts:manage` and `query:sql`.
 				// Previewing one must not be a cheaper route to that than creating it.
 				if (plan.kind === "raw_sql") {
-					yield* requireRulePermissions(permissions, normalized.signalType)
+					yield* requireRulePermissions(normalized.signalType)
 				}
 				// Alongside the series query, which spans many windows and so says nothing about one check.
 				const queryTiming = yield* Effect.forkChild(

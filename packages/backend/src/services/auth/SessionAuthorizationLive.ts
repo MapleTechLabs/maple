@@ -64,7 +64,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						CurrentTenant.provide(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						// Telemetry and replay reads are recorded (see `AuditedRead`).
 						withAuditedRead(audit, request, options, {
@@ -103,7 +103,7 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 					yield* checkEndpointAccess(tenant.permissions, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
-						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						CurrentTenant.provide(new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, actor),
 						withAuditedRead(audit, request, options, {
 							orgId: tenant.orgId,

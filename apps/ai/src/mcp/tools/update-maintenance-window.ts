@@ -185,7 +185,7 @@ export const updateMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 				)
 			})
 			const window = yield* windows
-				.revise(tenant.orgId, tenant.userId, tenant.permissions, windowId, changeFor)
+				.revise(windowId, changeFor)
 				.pipe(Effect.catchTags({ ...createWindowErrors, ...deleteWindowErrors }))
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

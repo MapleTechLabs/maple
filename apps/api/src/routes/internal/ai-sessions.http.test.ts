@@ -57,7 +57,7 @@ const TENANT = new CurrentTenant.TenantSchema({
 const AuthorizationStubLayer = Layer.succeed(
 	CurrentTenant.SessionAuthorization,
 	CurrentTenant.SessionAuthorization.of({
-		bearer: (httpEffect) => Effect.provideService(httpEffect, CurrentTenant.Context, TENANT),
+		bearer: (httpEffect) => CurrentTenant.provide(TENANT)(httpEffect),
 	}),
 )
 

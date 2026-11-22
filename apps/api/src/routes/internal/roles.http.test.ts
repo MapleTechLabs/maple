@@ -46,10 +46,10 @@ const makeHarness = (role: string) => {
 	const audited: Array<Pick<AuditLogRecordInput, "action" | "changes" | "metadata">> = []
 	const unused = () => Effect.die("unused")
 	const service = Layer.succeed(RolesService, {
-		list: unused,
+		list: Effect.die("unused"),
 		members: unused,
-		create: (_tenant, request) => Effect.sync(() => (creates.push(request.name), created)),
-		update: (_tenant, _roleId, request) =>
+		create: (request) => Effect.sync(() => (creates.push(request.name), created)),
+		update: (_roleId, request) =>
 			Effect.succeed({
 				before: created,
 				role: new CustomRoleResponse({
@@ -78,9 +78,7 @@ const makeHarness = (role: string) => {
 		CurrentTenant.SessionAuthorization,
 		CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect) =>
-				Effect.provideService(
-					httpEffect,
-					CurrentTenant.Context,
+				CurrentTenant.provide(
 					new CurrentTenant.TenantSchema({
 						orgId: ORG_ID,
 						userId: USER_ID,
@@ -88,7 +86,7 @@ const makeHarness = (role: string) => {
 						permissions: Policy.grantsOf([roleName]),
 						authMode: "clerk",
 					}),
-				),
+				)(httpEffect),
 		}),
 	)
 	const routes = HttpApiBuilder.layer(RolesOnlyApi).pipe(

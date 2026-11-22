@@ -40,7 +40,7 @@ const authorizationAs = (tenant: CurrentTenant.TenantSchema) =>
 		CurrentTenant.SessionAuthorization.of({
 			bearer: (httpEffect, options) =>
 				checkEndpointAccess(tenant.permissions, options).pipe(
-					Effect.andThen(Effect.provideService(httpEffect, CurrentTenant.Context, tenant)),
+					Effect.andThen(CurrentTenant.provide(tenant)(httpEffect)),
 				),
 		}),
 	)

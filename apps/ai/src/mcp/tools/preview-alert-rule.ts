@@ -205,7 +205,7 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 			}
 
 			const alerts = yield* AlertsService
-			const preview = yield* alerts.previewRule(tenant.orgId, tenant.permissions, request).pipe(
+			const preview = yield* alerts.previewRule(request).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertValidationError": (error) =>
 						Effect.fail(invalidRuleInput(error)),

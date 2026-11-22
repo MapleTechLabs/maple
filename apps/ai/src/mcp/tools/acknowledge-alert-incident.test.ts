@@ -7,7 +7,6 @@ import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
-import { CurrentMcpTenant } from "../tenant"
 import { registerAcknowledgeAlertIncidentTool } from "./acknowledge-alert-incident"
 import { executeRegisteredMcpToolUnscoped } from "./registry"
 import { renderToolDoc } from "../lib/tool-doc"
@@ -16,6 +15,7 @@ import type { McpToolError, McpToolRegistrar } from "./types"
 import { ignoreFamily } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
+import { mcpTenantLayer } from "../../../test/mcp/tenant-layer"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -50,7 +50,7 @@ const layerFor = (testDb: TestDb, role?: string) =>
 	Layer.mergeAll(
 		unimplementedMcpToolServices,
 		AlertIncidentAckService.layer,
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)(ORG),
 			userId: Schema.decodeSync(UserId)("user_mcp_ack"),
 			roles: role === undefined ? [] : [Schema.decodeSync(RoleName)(role)],

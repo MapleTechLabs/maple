@@ -47,11 +47,11 @@ import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicySe
 import { ERROR_NOTIFICATION_POLICY_DEFAULTS } from "@maple/db/tables"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
-import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 import { buildUpdatedRequest } from "../update-alert-rule"
 import { invalidRuleInput } from "../../lib/alert-rules"
 import type { McpToolResult } from "../types"
+import { mcpTenantLayer } from "../../../../test/mcp/tenant-layer"
 
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const DEST_ID = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
@@ -186,7 +186,7 @@ interface Seen {
 
 const layer = (seen: Seen) =>
 	Layer.mergeAll(
-		Layer.succeed(CurrentMcpTenant, {
+		mcpTenantLayer({
 			orgId: Schema.decodeSync(OrgId)("org_tools"),
 			userId: Schema.decodeSync(UserId)("user_tools"),
 			roles: [],
@@ -198,7 +198,7 @@ const layer = (seen: Seen) =>
 		Layer.succeed(AlertRulesService, {
 			listRules: () =>
 				Effect.succeed(new AlertRulesListResponse({ rules: seen.rules ?? [rule, ...extraRules] })),
-			createRule: (_org: unknown, _user: unknown, _roles: unknown, request: AlertRuleUpsertRequest) => {
+			createRule: (request: AlertRuleUpsertRequest) => {
 				seen.created = request
 				// Echo the fields the write warnings read, so a raw-SQL create reads back as one.
 				return Effect.succeed(
@@ -218,7 +218,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			deleteRule: (_org: unknown, _roles: unknown, id: string) =>
+			deleteRule: (id: string) =>
 				id === RULE_ID
 					? Effect.succeed({ id })
 					: Effect.fail(
@@ -229,7 +229,7 @@ const layer = (seen: Seen) =>
 						),
 		} as never),
 		Layer.succeed(AlertsService, {
-			previewRule: (_o: unknown, _r: unknown, request: AlertRulePreviewRequest) => {
+			previewRule: (request: AlertRulePreviewRequest) => {
 				seen.previewed = request
 				const point = (bucket: string) => ({
 					bucket,
@@ -275,13 +275,7 @@ const layer = (seen: Seen) =>
 					}),
 				)
 			},
-			updateRule: (
-				_o: unknown,
-				_u: unknown,
-				_r: unknown,
-				id: string,
-				request: AlertRuleUpsertRequest,
-			) => {
+			updateRule: (id: string, request: AlertRuleUpsertRequest) => {
 				seen.updated = request
 				seen.updatedIds = [...(seen.updatedIds ?? []), id]
 				return Effect.succeed(

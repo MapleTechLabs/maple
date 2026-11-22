@@ -29,9 +29,7 @@ export const deleteEscalationChainAction = (family: McpToolFamilyBuilder<"manage
 						deleteChainErrors["@maple/http/errors/AlertPersistenceError"],
 				}),
 			)
-			yield* chains
-				.delete(tenant.orgId, tenant.permissions, chainId)
-				.pipe(Effect.catchTags(deleteChainErrors))
+			yield* chains.delete(chainId).pipe(Effect.catchTags(deleteChainErrors))
 			return { id: chain.id, name: chain.name }
 		}),
 		render: (output) => ({

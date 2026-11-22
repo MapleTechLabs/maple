@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolFamilyBuilder } from "./types"
 import { Effect, Schema } from "effect"
 import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
-import { CurrentMcpTenant } from "../tenant"
 import { deleteWindowErrors } from "../lib/maintenance-windows"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -28,11 +27,8 @@ export const deleteMaintenanceWindowAction = (family: McpToolFamilyBuilder<"mana
 				"alertMaintenanceWindow",
 				"maintenance_window_id",
 			)(params.maintenance_window_id)
-			const tenant = yield* CurrentMcpTenant
 			const windows = yield* AlertMaintenanceWindowsService
-			const deleted = yield* windows
-				.delete(tenant.orgId, tenant.userId, tenant.permissions, windowId)
-				.pipe(Effect.catchTags(deleteWindowErrors))
+			const deleted = yield* windows.delete(windowId).pipe(Effect.catchTags(deleteWindowErrors))
 			return { id: deleted.id, name: deleted.name }
 		}),
 		render: (output) => ({
