@@ -2433,7 +2433,7 @@ describe("v2 users wire mapping over HTTP", () => {
 					timestamp: "2026-11-01T08:10:00.000Z",
 					service_name: "maple-mcp",
 					title: "109 tool calls from claude-code",
-					detail: "maple-mcp · 127 tools · 113 failed",
+					detail: "maple-mcp · 127 distinct tools · 113 failed",
 					tone: "crit",
 					mcp_session_id: "mcp_sess_ada",
 				},

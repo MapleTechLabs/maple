@@ -489,19 +489,22 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const samplesCompiled = CH.compile(
-			CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit }),
-			{
-				orgId,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-			},
-		)
+		const samplesRead = (withUserId: boolean) =>
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit, withUserId }),
+					{
+						orgId,
+						startTime: formatWarehouseDateTime(startMs),
+						endTime: formatWarehouseDateTime(endMs),
+					},
+				),
+				{ profile: "list", context: "errorIssueSampleTraces" },
+			)
+		// A cluster without migration 0057 still gets its samples, with no user on them.
 		const samplesEffect = isErrorKind
-			? warehouse.compiledQuery(tenant, samplesCompiled, {
-					profile: "list",
-					context: "errorIssueSampleTraces",
-				})
+			? samplesRead(true).pipe(Effect.catchIf(isMissingErrorEventsUserId, () => samplesRead(false)))
 			: Effect.succeed([])
 
 		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery({ fingerprintHashes }), {

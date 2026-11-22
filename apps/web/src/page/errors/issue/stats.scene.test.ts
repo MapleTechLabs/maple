@@ -69,7 +69,7 @@ type Model = Readonly<{
 const inputsOf = (model: Model): StatInputs => ({
 	windowCount: model.windowCount,
 	windowLabel: "12h",
-	buckets: { label: "15m", count: 48 },
+	buckets: { label: "15m", count: 48, total: model.windowCount },
 	surge: model.surge,
 	timeZone: "UTC",
 	nowMs: NOW,

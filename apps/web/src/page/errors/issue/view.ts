@@ -22,7 +22,14 @@ import {
 import { MountRightRail } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { chartCaption, formatBucket, occurrenceChart, OCCURRENCE_TOKENS, signalOf } from "./view-chart"
+import {
+	chartCaption,
+	formatBucket,
+	occurrenceChart,
+	occurrencePointsOf,
+	OCCURRENCE_TOKENS,
+	signalOf,
+} from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { exceptionPanel, issueStats } from "./view-overview"
 import { getItFixedPanel } from "./view-agent-handoff"
@@ -177,7 +184,7 @@ const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZon
 				skeletonBlock(h, { height: "44" }),
 			])
 		: occurrenceChart(h, model.chart, {
-				points: detail.timeseries,
+				points: occurrencePointsOf(detail.timeseries, chartWindow),
 				severity: detail.issue.severity,
 				window: chartWindow,
 				markers: occurrenceMarkersOf(detail),
@@ -201,7 +208,11 @@ const overview = (
 		buckets:
 			model.window === null || signal === null
 				? null
-				: { label: formatBucket(chartWindowOf(model.window).bucketMs), count: signal.dense.length },
+				: {
+						label: formatBucket(chartWindowOf(model.window).bucketMs),
+						count: signal.dense.length,
+						total: Arr.reduce(signal.dense, 0, (sum, count) => sum + count),
+					},
 		surge: signal?.surge ?? null,
 		...clock,
 	}
@@ -240,7 +251,13 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	const pullRequests = pullRequestsOf(model)
 	const canTriage = canTriageIssues(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
-		issueSidebar(h, model, detail.issue, detail.environments),
+		issueSidebar(
+			h,
+			model,
+			detail.issue,
+			detail.environments,
+			Arr.reduce(detail.timeseries, 0, (sum, bucket) => sum + bucket.count),
+		),
 		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
 			...(verification !== null
 				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]

@@ -172,11 +172,14 @@ export const occurrenceMarkersOf = (detail: ErrorIssueDetailResponse): ReadonlyA
 	return [...bands, ...lines]
 }
 
-/** A bar's bucket as an absolute window: where a click on the occurrences chart zooms the page. */
+/**
+ * A bar's bucket as an absolute window: where a click on the occurrences chart zooms the page. The
+ * window's end is inclusive, so it stops on the bucket's last second, short of the next bar.
+ */
 export const bucketRangeOf = (
 	bucket: string,
 	bucketMs: number,
 ): Readonly<{ startMs: number; endMs: number }> | null => {
 	const startMs = toEpochMs(bucket)
-	return Number.isFinite(startMs) ? { startMs, endMs: startMs + bucketMs } : null
+	return Number.isFinite(startMs) ? { startMs, endMs: startMs + Math.max(1000, bucketMs - 1000) } : null
 }

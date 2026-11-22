@@ -2,6 +2,7 @@ import type { IssueSeverity } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { densifySpark, surgeRatio } from "../kit/error-signal"
 import { Option, Array as Arr, Record as Rec } from "effect"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
@@ -74,6 +75,34 @@ const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((
 					),
 			}),
 )
+
+/** Longest grid the chart fills; past it the sparse rows are drawn as they are. */
+const MAX_FILLED_BUCKETS = 2000
+
+/**
+ * The window's buckets on the warehouse's grid, quiet ones as zero, so the axis and its markers
+ * span the whole window rather than only the buckets that had errors.
+ */
+export const occurrencePointsOf = (
+	points: ReadonlyArray<Point>,
+	window: ChartWindow,
+): ReadonlyArray<Point> => {
+	if (window.bucketMs <= 0 || window.endMs <= window.startMs) return points
+	const first = Math.floor(window.startMs / window.bucketMs) * window.bucketMs
+	const length = Math.ceil((window.endMs - first) / window.bucketMs)
+	if (length > MAX_FILLED_BUCKETS) return points
+	const counts = new Map<number, number>()
+	for (const point of points) {
+		const ms = toEpochMs(point.bucket)
+		counts.set(ms, (counts.get(ms) ?? 0) + point.count)
+	}
+	const grid = Arr.makeBy(length, (index) => first + index * window.bucketMs)
+	const onGrid = new Set(grid)
+	return [
+		...Arr.map(grid, (ms) => ({ bucket: new Date(ms).toISOString(), count: counts.get(ms) ?? 0 })),
+		...Arr.filter(points, (point) => !onGrid.has(toEpochMs(point.bucket))),
+	]
+}
 
 /** The window's buckets, zero-filled, and how its tail compares with its own average. */
 export const signalOf = (points: ReadonlyArray<Point>, window: ChartWindow) => {

@@ -105,10 +105,10 @@ export type StatInputs = Readonly<{
 	windowCount: number
 	windowLabel: string
 	/**
-	 * The window's bucket width as a label ("15m") and how many buckets it has, so a surge can say
-	 * its rate in counts; `null` leaves the surge as a ratio.
+	 * The window's bucket width as a label ("15m"), how many whole buckets it has and what they hold
+	 * (the surge's own population), so a surge can say its rate in counts; `null` leaves a ratio.
 	 */
-	buckets: Readonly<{ label: string; count: number }> | null
+	buckets: Readonly<{ label: string; count: number; total: number }> | null
 	/** The window's tail against its own average; `null` when there is too little to say. */
 	surge: number | null
 	timeZone: string
@@ -133,7 +133,7 @@ const about = (value: number): string => `~${formatNumber(Math.max(1, Math.round
  */
 const surgeLine = (inputs: StatInputs, surge: number): string => {
 	if (inputs.buckets === null || inputs.buckets.count === 0) return `${surge.toFixed(1)}x the usual rate`
-	const usual = inputs.windowCount / inputs.buckets.count
+	const usual = inputs.buckets.total / inputs.buckets.count
 	return `${about(usual * surge)}/${inputs.buckets.label} now, ${about(usual)} usual`
 }
 

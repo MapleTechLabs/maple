@@ -12,7 +12,10 @@ interface PlacedMarker {
 	readonly x2?: Date
 }
 
-/** Markers inside the window from the first bucket to the end of the last one, at their own instant. */
+/**
+ * Markers inside the window from the first bucket to the end of the last one, at their own instant.
+ * A band keeps the part of it that overlaps the window.
+ */
 export const placeMarkersInWindow = (
 	markers: ReadonlyArray<ChartEventMarker>,
 	bucketIsos: ReadonlyArray<string>,
@@ -33,11 +36,13 @@ export const placeMarkersInWindow = (
 	const inWindow = (t: number) => Number.isFinite(t) && t >= first && t <= end
 	return Arr.flatMap(markers, (marker): ReadonlyArray<PlacedMarker> => {
 		const at = toEpochMs(marker.at)
-		if (!inWindow(at)) return []
-		const x = new Date(at)
-		if (marker.endsAt === undefined) return [{ marker, x }]
-		const until = toEpochMs(marker.endsAt)
-		return [inWindow(until) && until > at ? { marker, x, x2: new Date(until) } : { marker, x }]
+		const until = marker.endsAt === undefined ? Number.NaN : toEpochMs(marker.endsAt)
+		if (Number.isFinite(at) && Number.isFinite(until) && until > at) {
+			const from = Math.max(at, first)
+			const to = Math.min(until, end)
+			return to > from ? [{ marker, x: new Date(from), x2: new Date(to) }] : []
+		}
+		return inWindow(at) ? [{ marker, x: new Date(at) }] : []
 	})
 }
 

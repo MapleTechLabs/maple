@@ -1431,7 +1431,10 @@ export interface ErrorIssueSampleTracesOutput {
 	readonly durationMicros: number
 }
 
-export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limit?: number }) {
+/** `withUserId: false` projects an empty user for a cluster without migration 0057's `UserId`. */
+export function errorIssueSampleTracesQuery(
+	opts: IssueFingerprintsOpts & { limit?: number; withUserId?: boolean },
+) {
 	return from(Datasources.errorEvents)
 		.select(($) => ({
 			traceId: $.TraceId,
@@ -1442,7 +1445,7 @@ export function errorIssueSampleTracesQuery(opts: IssueFingerprintsOpts & { limi
 			durationMicros: CH.intDiv($.Duration, 1000),
 			deploymentEnv: $.DeploymentEnv,
 			serviceVersion: $.ServiceVersion,
-			userId: $.UserId,
+			userId: opts.withUserId === false ? CH.lit("") : $.UserId,
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

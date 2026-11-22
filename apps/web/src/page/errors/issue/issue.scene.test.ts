@@ -118,7 +118,7 @@ describe("error issue", () => {
 		expect(hovered.chart.tooltip).toEqual(Option.some(tooltip))
 	})
 
-	test("a click on a hovered bar zooms the page into that bar's bucket; with none hovered it stays", () => {
+	test("a click on a hovered bar zooms the page into that bar's bucket, short of the next one; with none hovered it stays", () => {
 		const model = windowed()
 		expect(pageUpdate(model, Message.ClickedOccurrenceBar()).outMessage).toBeUndefined()
 		const hovered = pageUpdate(
@@ -134,7 +134,7 @@ describe("error issue", () => {
 				url: hrefOf(
 					AppRoute.ErrorIssue({
 						issueId,
-						search: { startTime: "2026-10-01 10:00:00", endTime: "2026-10-01 10:15:00" },
+						search: { startTime: "2026-10-01 10:00:00", endTime: "2026-10-01 10:14:59" },
 					}),
 				),
 				isReplace: false,

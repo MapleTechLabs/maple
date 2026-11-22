@@ -137,10 +137,19 @@ const readValue = (h: H, mark: Html, label: string): Html =>
 
 const ENVIRONMENT_ROWS_SHOWN = 4
 
-/** Each environment's events in the window and its share of them, as a row over a thin meter. */
-const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironment>): Html => {
+/**
+ * Each environment's events in the window and its share of all of them, as a row over a thin
+ * meter. The share is of the window's count: the rows leave out errors with no environment.
+ */
+const environmentValue = (
+	h: H,
+	environments: ReadonlyArray<ErrorIssueEnvironment>,
+	windowCount: number,
+): Html => {
 	if (environments.length === 0) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
-	const total = Arr.reduce(environments, 0, (sum, env) => sum + env.count)
+	const named = Arr.reduce(environments, 0, (sum, env) => sum + env.count)
+	const total = Math.max(named, windowCount)
+	const showShare = environments.length > 1 || total > named
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
 	return vstack(h, { gap: "2", align: "stretch", shrink: true, as: "ul", className: "w-full" }, [
@@ -153,15 +162,11 @@ const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironmen
 						{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
 						[
 							formatNumber(env.count),
-							...(environments.length > 1 && total > 0
-								? [` · ${formatPercent(env.count / total)}`]
-								: []),
+							...(showShare && total > 0 ? [` · ${formatPercent(env.count / total)}`] : []),
 						],
 					),
 				]),
-				...(environments.length > 1
-					? [meter(h, { value: env.count, max: total, className: "h-1" })]
-					: []),
+				...(showShare ? [meter(h, { value: env.count, max: total, className: "h-1" })] : []),
 			]),
 		),
 		...(hidden > 0
@@ -275,6 +280,7 @@ export const issueSidebar = (
 	model: Model,
 	issue: ErrorIssueDocument,
 	environments: ReadonlyArray<ErrorIssueEnvironment>,
+	windowCount: number,
 ): Html => {
 	const priority = clampPriority(issue.priority)
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
@@ -331,7 +337,7 @@ export const issueSidebar = (
 						"\n",
 					),
 				},
-				[environmentValue(h, environments)],
+				[environmentValue(h, environments, windowCount)],
 			),
 			...(issue.resolvedVersions.length > 0
 				? [

@@ -3,7 +3,7 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
 import { Option, Result, Schema, String as Str } from "effect"
-import { zoomSearchPatch } from "../../kit/chart-zoom"
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { SETUP_CARD_ID } from "./model"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -485,7 +485,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					: bucketRangeOf(bucket, chartWindowOf(window).bucketMs)
 			return range === null
 				? { model }
-				: navigateSearch(model, { ...model.search, ...zoomSearchPatch(range) })
+				: navigateSearch(model, {
+						...model.search,
+						startTime: formatWarehouseDateTime(range.startMs),
+						endTime: formatWarehouseDateTime(range.endMs),
+						timePreset: undefined,
+					})
 		},
 		ClickedInvestigation: ({ id }) => ({
 			model,
