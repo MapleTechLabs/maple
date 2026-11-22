@@ -133,20 +133,40 @@ pub fn mark_metadata_row(obj: &mut serde_json::Map<String, serde_json::Value>) {
 /// Visit claims kept in process, for a gateway without a shared store
 /// (self-hosted, one task). Visitor ids change daily, so the map is cleared
 /// when the day does.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct LocalVisits {
     day: String,
     last_seen_ms: HashMap<(String, String), i64>,
+    capacity: usize,
+}
+
+impl Default for LocalVisits {
+    fn default() -> Self {
+        Self::with_capacity(MAX_TRACKED_VISITORS)
+    }
 }
 
 impl LocalVisits {
     /// Whether a session start at `now_ms` opens a new visit, extending it either way.
+    /// A full map of open visits admits no new visitor: it is not counted (only ever
+    /// billing less) until visits go idle, so the map stays bounded.
     pub fn claim(&mut self, org_id: &str, visitor_id: &str, now_ms: i64) -> bool {
         self.roll(now_ms);
-        let previous = self
-            .last_seen_ms
-            .insert((org_id.to_owned(), visitor_id.to_owned()), now_ms);
+        let key = (org_id.to_owned(), visitor_id.to_owned());
+        if !self.last_seen_ms.contains_key(&key) && self.last_seen_ms.len() >= self.capacity {
+            return false;
+        }
+        let previous = self.last_seen_ms.insert(key, now_ms);
         previous.is_none_or(|last| now_ms - last > VISIT_IDLE_MS)
+    }
+
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            day: String::new(),
+            last_seen_ms: HashMap::new(),
+            capacity,
+        }
     }
 
     /// Extend a visit still open from a heartbeat, without opening or reopening one.
@@ -169,7 +189,7 @@ impl LocalVisits {
         if day != self.day {
             self.day = day;
             self.last_seen_ms.clear();
-        } else if self.last_seen_ms.len() >= MAX_TRACKED_VISITORS {
+        } else if self.last_seen_ms.len() >= self.capacity {
             self.last_seen_ms
                 .retain(|_, last| now_ms - *last <= VISIT_IDLE_MS);
         }
@@ -345,5 +365,16 @@ mod tests {
         let mut identified = serde_json::json!({});
         mark_metadata_row(identified.as_object_mut().unwrap());
         assert_eq!(identified["visitor_is_new"], 2, "unknown even when the client sent none");
+    }
+
+    #[test]
+    fn a_full_map_keeps_open_visits_and_admits_no_new_visitor_until_one_goes_idle() {
+        let mut visits = LocalVisits::with_capacity(2);
+        assert!(visits.claim("org", "a", NOON));
+        assert!(visits.claim("org", "b", NOON));
+        assert!(!visits.claim("org", "c", NOON + 60_000), "full of open visits");
+        assert!(!visits.claim("org", "a", NOON + 120_000), "a's open visit survives");
+        // Once a and b go idle, the full map drops them and admits c.
+        assert!(visits.claim("org", "c", NOON + 120_000 + VISIT_IDLE_MS + 1));
     }
 }
