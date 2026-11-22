@@ -19,12 +19,6 @@ Wire OpenTelemetry traces, logs, and metrics into **every app and service in the
 
 Read `maple-onboarding-style` first (span pattern, resource attributes, framework notes, signal quality, verification), then the skill for each stack in the repo: `maple-nextjs-style`, `maple-nodejs-style`, `maple-python-style`, `maple-effect-style`, `maple-go-style`, `maple-rust-style`, `maple-java-style`, `maple-csharp-style`, `maple-kotlin-style`. If they are not installed next to this skill, fetch them from `https://raw.githubusercontent.com/MapleTechLabs/maple/main/skills/<skill-name>/SKILL.md`, only the ones this repo needs. Stacks without one (Ruby, Elixir, PHP, Deno, ...) use `maple-onboarding-style` and the upstream OTel docs. A service that calls an LLM also gets `maple-agent-tracing`; a browser frontend gets `maple-frontend-tracing`.
 
-## Onboarding progress (handoff code)
-
-If the prompt that sent you here includes a Maple handoff code, follow the steps in this section; otherwise skip it.
-
-<!-- filled in by the handoff PR -->
-
 ## Step 0: Region, endpoint, and key
 
 A key only works in the region that issued it; the other region answers `401`.
