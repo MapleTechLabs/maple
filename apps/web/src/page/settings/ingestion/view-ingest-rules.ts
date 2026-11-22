@@ -1,5 +1,4 @@
 import { fromV2IngestRuleAction, type V2IngestRule } from "@maple/domain/http/v2"
-import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,7 +24,8 @@ import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
 import { denialReason } from "../../kit/session-grants"
-import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
+import { detail, effectOf, headline, hourlySeries } from "../ingest-rule/impact"
+import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
@@ -113,7 +113,7 @@ const rowEntries = (canManage: boolean, index: number, count: number): ReadonlyA
 
 const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
-/** Last 24h: dropped or redacted count and hourly matches; `-` when the stats did not load. */
+/** Last 24h: what the rule did, the bytes or records behind it, and its effect per hour; `-` when the stats did not load. */
 const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 	const content = AsyncData.matchData(model.stats, {
 		onEmpty: () => [skeleton(h, "h-3.5 w-16")],
@@ -122,25 +122,24 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 			const found = Arr.findFirst(stats.rules, (entry) => entry.id === rule.id)
 			if (Option.isNone(found) || found.value.matched === 0) return [muted(h, "No hits")]
 			const totals = found.value
-			const count =
-				rule.action.type === "drop"
-					? `${formatNumber(totals.dropped)} dropped`
-					: `${formatNumber(totals.redacted_values)} redacted`
 			return [
-				typography(h, { size: "xs", numeric: true }, [count]),
+				typography(h, { size: "xs", numeric: true }, [headline(rule.action, totals)]),
+				typography(h, { size: "2xs", tone: "muted", numeric: true, truncate: true }, [
+					detail(rule.action, totals),
+				]),
 				miniBars(h, {
-					values: hourlyMatches(stats, rule.id),
+					values: hourlySeries(stats, rule.id, 24, (entry) => effectOf(rule.action, entry)),
 					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
 					floor: 12.5,
 					floorColor: "var(--input)",
 					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
-					label: `${rule.name} matches per hour`,
+					label: `${rule.name}: ${rule.action.type === "drop" ? "records dropped" : "values redacted"} per hour`,
 				}),
 			]
 		},
 	})
-	return h.div([h.Class("hidden w-28 shrink-0 flex-col gap-1 sm:flex")], content)
+	return h.div([h.Class("hidden w-32 shrink-0 flex-col gap-1 sm:flex")], content)
 }
 
 const ruleRow = (
@@ -218,7 +217,7 @@ const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray
 				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
 				eyebrow(h, { variant: "mono", className: "w-16 shrink-0", as: "div" }, ["Action"]),
 				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-				eyebrow(h, { variant: "mono", className: "hidden w-28 shrink-0 sm:block", as: "div" }, [
+				eyebrow(h, { variant: "mono", className: "hidden w-32 shrink-0 sm:block", as: "div" }, [
 					"Last 24h",
 				]),
 				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),

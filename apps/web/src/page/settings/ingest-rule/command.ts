@@ -8,12 +8,13 @@ import {
 	getSpanAttributeKeys,
 	getTracesFacets,
 } from "@maple/web-data/warehouse/traces"
-import { Effect, Schema, Array as Arr } from "effect"
+import { DateTime, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { currentWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readGrants } from "../../../data/session-tenant"
+import { IMPACT_HOURS, ImpactWindow } from "./impact"
 import { KeyScope, Message } from "./message"
 import { PreviewSignal, type Samples, type SpanSample } from "./preview"
 
@@ -26,6 +27,21 @@ export const FetchRule = Command.define("FetchIngestRule", {
 		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.retrieve({ params: { id } })).pipe(
 			settleTo((result) => Message.CompletedFetchExisting({ result })),
 		),
+})
+
+/** The org's rule stats over the window, ending now; the page picks this rule out of them. */
+export const FetchImpact = Command.define("FetchIngestRuleImpact", {
+	args: { window: ImpactWindow },
+	messages: [Message.CompletedFetchImpact],
+	execute: ({ window }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const end = yield* DateTime.now
+			const start = DateTime.subtract(end, { hours: IMPACT_HOURS[window] })
+			return yield* client.ingestRules.stats({
+				query: { start_time: DateTime.formatIso(start), end_time: DateTime.formatIso(end) },
+			})
+		}).pipe(settleTo((result) => Message.CompletedFetchImpact({ window, result }))),
 })
 
 export const FetchSession = Command.define("FetchIngestRuleSession", {

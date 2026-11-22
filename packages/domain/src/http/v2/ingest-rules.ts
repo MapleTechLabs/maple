@@ -222,16 +222,24 @@ export const V2IngestRuleStats = Schema.Struct({
 	object: Schema.Literal("ingest_rule_stats"),
 	start_time: Timestamp,
 	end_time: Timestamp,
-	rules: Schema.Array(Schema.Struct({ id: IngestRulePublicId, ...countFields })).annotate({
+	rules: Schema.Array(
+		Schema.Struct({
+			id: IngestRulePublicId,
+			...countFields,
+			signals: Schema.Array(Schema.Struct({ signal: IngestRuleSignal, ...countFields })).annotate({
+				description: "The rule's totals per signal; signals without hits are left out.",
+			}),
+		}),
+	).annotate({
 		description: "Totals per rule over the window; rules without hits are left out.",
 	}),
 	signals: Schema.Array(Schema.Struct({ signal: IngestRuleSignal, ...countFields })).annotate({
 		description: "Totals per signal: what rules kept off the bill.",
 	}),
 	hourly: Schema.Array(
-		Schema.Struct({ id: IngestRulePublicId, bucket: Timestamp, matched: Count }),
+		Schema.Struct({ id: IngestRulePublicId, bucket: Timestamp, ...countFields }),
 	).annotate({
-		description: "Matches per rule and UTC hour; empty for windows over 7 days.",
+		description: "Counts per rule and UTC hour; empty for windows over 7 days.",
 	}),
 }).annotate({
 	identifier: "IngestRuleStats",

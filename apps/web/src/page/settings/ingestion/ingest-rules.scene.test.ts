@@ -97,16 +97,15 @@ describe("ingest rules section", () => {
 		)
 	})
 
-	test("the last 24 hours show what each rule dropped or redacted, and No hits for the rest", () => {
+	test("the last 24 hours show what each rule dropped and the bytes it kept off the bill, and No hits for the rest", () => {
+		const counts = { matched: 1520, dropped: 1520, dropped_bytes: 340_000_000, redacted_values: 0 }
 		const stats = Schema.decodeSync(V2IngestRuleStats)({
 			object: "ingest_rule_stats",
 			start_time: "2026-10-27T12:00:00.000Z",
 			end_time: "2026-10-28T12:00:00.000Z",
-			rules: [
-				{ id: dropDebug.id, matched: 1520, dropped: 1520, dropped_bytes: 90000, redacted_values: 0 },
-			],
+			rules: [{ id: dropDebug.id, ...counts, signals: [{ signal: "logs", ...counts }] }],
 			signals: [],
-			hourly: [{ id: dropDebug.id, bucket: "2026-10-28T11:00:00.000Z", matched: 1520 }],
+			hourly: [{ id: dropDebug.id, bucket: "2026-10-28T11:00:00.000Z", ...counts }],
 		})
 		scene(
 			{ update: step, view },
@@ -117,8 +116,33 @@ describe("ingest rules section", () => {
 				).model,
 			),
 			expectView(text("1.5K dropped")).toExist(),
+			expectView(text("340 MB saved")).toExist(),
 			expectView(text("No hits")).toExist(),
-			expectView(role("img", { name: "Drop debug logs matches per hour" })).toExist(),
+			expectView(role("img", { name: "Drop debug logs: records dropped per hour" })).toExist(),
+		)
+	})
+
+	test("a sampling rule says how many matching records it kept", () => {
+		const sampled = { ...dropDebug, action: { type: "drop" as const, keep_percent: 10 } }
+		const counts = { matched: 1000, dropped: 900, dropped_bytes: 2_000_000, redacted_values: 0 }
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
+			object: "ingest_rule_stats",
+			start_time: "2026-10-27T12:00:00.000Z",
+			end_time: "2026-10-28T12:00:00.000Z",
+			rules: [{ id: dropDebug.id, ...counts, signals: [{ signal: "logs", ...counts }] }],
+			signals: [],
+			hourly: [],
+		})
+		scene(
+			{ update: step, view },
+			given(
+				step(
+					withRules([sampled]),
+					rules(RulesMessage.CompletedFetchStats({ result: Result.succeed(stats) })),
+				).model,
+			),
+			expectView(text("900 dropped")).toExist(),
+			expectView(text("2.0 MB saved · 100 kept")).toExist(),
 		)
 	})
 

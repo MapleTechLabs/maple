@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { V2IngestRule } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -153,5 +153,103 @@ describe("ingest rule editor", () => {
 				},
 			}),
 		)
+	})
+})
+
+const savedRule = Schema.decodeSync(V2IngestRule)({
+	id: "irule_YofPTrK9782DWwcnXhpcCw",
+	object: "ingest_rule",
+	name: "Drop debug logs",
+	enabled: true,
+	position: 0,
+	signals: ["logs", "traces"],
+	conditions: [{ field: "service_name", op: "eq", value: "checkout" }],
+	action: { type: "drop", keep_percent: 0 },
+	created_at: "2026-10-28T12:00:00.000Z",
+	updated_at: "2026-10-28T12:00:00.000Z",
+})
+const editing = (): Model => {
+	const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+	return pageUpdate(
+		asAdmin(opened.model),
+		Message.CompletedFetchExisting({ result: Result.succeed(savedRule) }),
+	).model
+}
+const impactOf = (logs: number, traces: number) => {
+	const cell = (dropped: number) => ({
+		matched: dropped,
+		dropped,
+		dropped_bytes: dropped * 1000,
+		redacted_values: 0,
+	})
+	const total = cell(logs + traces)
+	return Schema.decodeSync(V2IngestRuleStats)({
+		object: "ingest_rule_stats",
+		start_time: "2026-10-27T12:00:00.000Z",
+		end_time: "2026-10-28T12:00:00.000Z",
+		rules:
+			logs + traces === 0
+				? []
+				: [
+						{
+							id: savedRule.id,
+							...total,
+							signals: [
+								{ signal: "logs", ...cell(logs) },
+								{ signal: "traces", ...cell(traces) },
+							],
+						},
+					],
+		signals: [],
+		hourly: [],
+	})
+}
+
+describe("ingest rule impact", () => {
+	test("a saved rule loads its last 24 hours of counts", () => {
+		const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toContain("FetchIngestRuleImpact")
+	})
+
+	test("the impact panel shows what the rule dropped, the bytes it saved and a row per signal", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					editing(),
+					Message.CompletedFetchImpact({
+						window: "24h",
+						result: Result.succeed(impactOf(1_200_000, 3000)),
+					}),
+				).model,
+			),
+			expectView(text("Records dropped")).toExist(),
+			expectView(text("1.2M")).toExist(),
+			expectView(text("1.2 GB")).toExist(),
+			expectView(text("3K dropped · 3.0 MB saved")).toExist(),
+		)
+	})
+
+	test("a rule with no hits says so", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					editing(),
+					Message.CompletedFetchImpact({ window: "24h", result: Result.succeed(impactOf(0, 0)) }),
+				).model,
+			),
+			expectView(text("No records matched in the last 24 hours.")).toExist(),
+		)
+	})
+
+	test("switching to 7 days refetches and ignores a late 24 hour answer", () => {
+		const switched = pageUpdate(editing(), Message.PickedImpactWindow({ window: "7d" }))
+		expect(Arr.map(switched.commands ?? [], ({ name }) => name)).toEqual(["FetchIngestRuleImpact"])
+		const late = pageUpdate(
+			switched.model,
+			Message.CompletedFetchImpact({ window: "24h", result: Result.succeed(impactOf(5, 0)) }),
+		)
+		expect(late.model.impact._tag).toBe("Loading")
 	})
 })

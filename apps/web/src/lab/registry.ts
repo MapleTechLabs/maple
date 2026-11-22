@@ -78,6 +78,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ingest-rules",
+		title: "Ingest rules",
+		description:
+			"The ingestion tab's rule list with each rule's last 24 hours, and a saved rule's Impact panel for a drop, a sampling, a redact and an idle rule (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/audit-log",
 		title: "Audit log",
 		description:

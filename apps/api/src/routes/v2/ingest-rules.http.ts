@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, IngestRuleForbiddenError } from "@maple/domain/http"
-import type { IngestRule } from "@maple/domain/ingest-rules"
+import { IngestRuleSignal, type IngestRule } from "@maple/domain/ingest-rules"
 import {
 	MapleApiV2,
 	fromV2IngestRuleAction,
@@ -10,7 +10,7 @@ import {
 	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
-import { Clock, Effect, Array as Arr } from "effect"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { timestampMs } from "@maple/backend/platform/time"
 import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
@@ -18,6 +18,7 @@ import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const isSignal = Schema.is(IngestRuleSignal)
 const MAX_STATS_WINDOW_MS = 62 * DAY_MS
 
 const toV2IngestRule = (rule: IngestRule): V2IngestRule => ({
@@ -96,20 +97,27 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 						dropped_bytes: row.droppedBytes,
 						redacted_values: row.redactedValues,
 					})
+					const knownSignals = (
+						rows: ReadonlyArray<Parameters<typeof counts>[0] & { readonly signal: string }>,
+					) =>
+						Arr.flatMap(rows, (row) => {
+							const signal = row.signal
+							return isSignal(signal) ? [{ signal, ...counts(row) }] : []
+						})
 					return {
 						object: "ingest_rule_stats" as const,
 						start_time: isoTimestamp(startMs),
 						end_time: isoTimestamp(endMs),
-						rules: Arr.map(stats.rules, (row) => ({ id: row.ruleId, ...counts(row) })),
-						signals: Arr.flatMap(stats.signals, (row) =>
-							row.signal === "traces" || row.signal === "logs" || row.signal === "metrics"
-								? [{ signal: row.signal, ...counts(row) }]
-								: [],
-						),
+						rules: Arr.map(stats.rules, (row) => ({
+							id: row.ruleId,
+							...counts(row),
+							signals: knownSignals(row.signals),
+						})),
+						signals: knownSignals(stats.signals),
 						hourly: Arr.map(stats.hourly, (row) => ({
 							id: row.ruleId,
 							bucket: isoTimestamp(row.bucket),
-							matched: row.matched,
+							...counts(row),
 						})),
 					}
 				}),

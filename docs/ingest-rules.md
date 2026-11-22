@@ -207,6 +207,11 @@ character but `\n`", before compiling.
   `org_ingest_rule_stats` every minute and on shutdown. A failed write keeps the counts for the
   next one; after 10 failures in a row they are dropped and counted in
   `ingest_rule_stats_dropped_total`.
+- `GET /v2/ingest_rules/stats` serves them per rule, per rule and signal, and per rule and hour.
+  The ingestion settings list shows each rule's last 24 hours (records dropped and bytes saved,
+  what sampling kept, or values redacted) with an hourly sparkline; a saved rule's page shows
+  the same over 24 hours or 7 days, with a row per signal. A drop rule's `matched - dropped` is
+  what its `keepPercent` kept.
 
 ## Limits
 

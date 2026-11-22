@@ -1,6 +1,6 @@
 import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Array, DateTime, Effect, Option, Result, Schema } from "effect"
+import { Array, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
@@ -252,24 +252,3 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 	})
-
-const HOUR_MS = 3_600_000
-
-/** The UTC hour of a wire timestamp (ISO-8601 UTC, validated by the schema); `NaN` if unreadable. */
-const hourOf = (timestamp: string): number =>
-	Option.match(DateTime.make(timestamp), {
-		onNone: () => Number.NaN,
-		onSome: (time) => Math.floor(DateTime.toEpochMillis(time) / HOUR_MS),
-	})
-
-/** One rule's matches per UTC hour over the last 24 hours of the window, oldest first. */
-export const hourlyMatches = (stats: V2IngestRuleStats, id: string): ReadonlyArray<number> => {
-	const lastHour = hourOf(stats.end_time)
-	const byHour = new Map(
-		Array.map(
-			Array.filter(stats.hourly, (entry) => entry.id === id),
-			(entry) => [hourOf(entry.bucket), entry.matched],
-		),
-	)
-	return Array.makeBy(24, (index) => byHour.get(lastHour - 23 + index) ?? 0)
-}

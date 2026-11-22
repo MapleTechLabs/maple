@@ -5,7 +5,15 @@ import { AsyncData, Command } from "foldkit"
 import type { AppRoute } from "../../../route"
 import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { FetchKeys, FetchRule, FetchSamples, FetchServices, FetchSession, SaveRule } from "./command"
+import {
+	FetchImpact,
+	FetchKeys,
+	FetchRule,
+	FetchSamples,
+	FetchServices,
+	FetchSession,
+	SaveRule,
+} from "./command"
 import {
 	type ConditionDraft,
 	defaultCondition,
@@ -114,6 +122,8 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewService: "",
 		samples: AsyncData.Idle(),
 		samplesKey: "",
+		impact: editingId === null ? AsyncData.Idle() : AsyncData.Loading(),
+		impactWindow: "24h",
 		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
@@ -126,7 +136,11 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		FetchKeys({ scope: "resource" }),
 		FetchServices(),
 	]
-	if (editingId !== null) return { model: base, commands: [...common, FetchRule({ id: editingId })] }
+	if (editingId !== null)
+		return {
+			model: base,
+			commands: [...common, FetchRule({ id: editingId }), FetchImpact({ window: base.impactWindow })],
+		}
 	const sampled = requestSamples(base)
 	return { model: sampled.model, commands: [...common, ...(sampled.commands ?? [])] }
 }
@@ -243,6 +257,17 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: requestSamples({ ...model, previewService: service }),
 		ClickedRetryPreview: () => requestSamples(model),
+		CompletedFetchImpact: ({ window, result }) =>
+			window === model.impactWindow
+				? { model: { ...model, impact: AsyncData.settle(model.impact, result) } }
+				: { model },
+		PickedImpactWindow: ({ window }) =>
+			window === model.impactWindow || model.editingId === null
+				? { model }
+				: {
+						model: { ...model, impactWindow: window, impact: AsyncData.Loading() },
+						commands: [FetchImpact({ window })],
+					},
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
