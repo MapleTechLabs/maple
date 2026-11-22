@@ -1,4 +1,4 @@
-import { Effect, Order, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Effect, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	DEFAULT_PATHS_DEPTH,
 	FunnelKeyBy,
@@ -23,6 +23,7 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
+import { sessionRetentionNote } from "../lib/product-identity"
 
 const TOOL = "query_paths"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -147,6 +148,18 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 		handler: Effect.fn("McpTool.queryPaths")(function* (params) {
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const anchor = params.anchor_json
+			const filters = {
+				host: params.host,
+				country: params.country,
+				utmSource: params.utm_source,
+				deviceType: params.device_type,
+			}
+			const nowMs = yield* Clock.currentTimeMillis
+			const sessionNote = sessionRetentionNote(
+				st,
+				nowMs,
+				Arr.some(Rec.values(filters), (value) => value !== undefined),
+			)
 			const direction = params.direction ?? "after"
 			const depth = params.depth ?? DEFAULT_PATHS_DEPTH
 			const branches = params.branches ?? DEFAULT_BRANCHES
@@ -179,12 +192,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 					windowSeconds,
 					include: params.include ?? "all",
 					...(exclude.length > 0 ? { exclude } : undefined),
-					filters: {
-						host: params.host,
-						country: params.country,
-						utmSource: params.utm_source,
-						deviceType: params.device_type,
-					},
+					filters,
 					startTime: st,
 					endTime: et,
 				}),
@@ -195,7 +203,12 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 					Effect.fail(
 						new McpInvalidInputError({
 							message: error.message,
-							parameter: error.reason === "InvalidWindow" ? "window_seconds" : "depth",
+							parameter:
+								error.reason === "InvalidWindow"
+									? "window_seconds"
+									: Str.includes("branches")(error.message)
+										? "branches"
+										: "depth",
 						}),
 					),
 				),
@@ -209,6 +222,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				depth,
 				keyBy,
 				windowSeconds,
+				...(sessionNote === undefined ? undefined : { sessionNote }),
 				...pathHops(rows),
 			}
 		}),
@@ -233,11 +247,13 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				...(hop.hop === 1
 					? []
 					: [
+							// `from` is the node nearer the anchor: going backward that is the later one,
+							// so the columns swap to keep the table reading forward in time.
 							doc.table(
-								["From", "To", noun],
+								direction === "after" ? ["From", "To", noun] : ["Earlier", "Later", noun],
 								Arr.map(hop.edges.slice(0, EDGE_ROWS), (edge) => [
-									nodeLabel(edge.from, direction),
-									nodeLabel(edge.to, direction),
+									nodeLabel(direction === "after" ? edge.from : edge.to, direction),
+									nodeLabel(direction === "after" ? edge.to : edge.from, direction),
 									formatNumber(edge.count),
 								]),
 							),
@@ -258,6 +274,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 					["Reached the anchor", `${formatNumber(total)} ${noun}`],
 				],
+				...(output.sessionNote === undefined ? undefined : { notices: [output.sessionNote] }),
 				...(total === 0
 					? {
 							empty: {

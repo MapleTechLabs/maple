@@ -19,7 +19,7 @@ import {
 	type ProductEventsSessionGroupBy,
 } from "@maple/domain/query-engine"
 import * as Datasources from "@maple/domain/tinybird/datasources"
-import { orgIdParam } from "../tables"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
 import { soleValue, timeseriesBucket, wholeRangeEnd } from "./query-helpers"
@@ -186,19 +186,23 @@ const isNumericMetric = (metric: ProductEventsMetric): metric is ProductEventsNu
  * `fn` over `Attributes[key]` read as a number. A prop that is missing, text, `NaN` or infinite is
  * no value, so one bad event cannot poison a bucket; a group with no values at all reads 0.
  */
-function numericExpr($: EventsAccessor, fn: ProductEventsNumericMetric, key: string): CH.Expr<number> {
+function numericValue($: EventsAccessor, key: string): CH.Expr<number | null> {
 	const parsed = CH.compileTypedFnCall(
 		"toFloat64OrNull",
 		T.nullable(T.float64).schema,
 		$.Attributes.get(key),
 	)
-	const value = CH.compileTypedFnCall(
+	return CH.compileTypedFnCall(
 		"if",
 		T.nullable(T.float64).schema,
 		CH.compileFnCallCond("isFinite", parsed),
 		parsed,
 		CH.rawExpr("NULL", T.nullable(T.float64)),
 	)
+}
+
+function numericExpr($: EventsAccessor, fn: ProductEventsNumericMetric, key: string): CH.Expr<number> {
+	const value = numericValue($, key)
 	const aggregate = (): CH.Expr<number | null> => {
 		switch (fn) {
 			case "sum":
@@ -258,12 +262,25 @@ const isSessionGroupBy = (key: string): key is ProductEventsSessionGroupBy =>
 
 const SESSION_ALIAS = "sd"
 
+/** The browser SDK's session lifetime cap: no event is further than this from its session's start. */
+const SESSION_MAX_LIFETIME_HOURS = 24
+
 /**
- * One row per session in range with the dimensions asked for. `max()` so the row that carries a
- * value beats an un-merged earlier version's `''`. The same window bound as the session filters,
- * so a filter and a group-by on one dimension read the same sessions.
+ * One row per session with the dimensions asked for. `max()` so the row that carries a value
+ * beats an un-merged earlier version's `''`.
+ *
+ * Sessions are read from a lifetime before the window on: an event early in the window belongs
+ * to a session that started before it, and the timeseries cache re-runs a query on sub-ranges as
+ * short as a minute, where nearly every event does. A session with no id is nobody's.
  */
 function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
+	const windowStart = CH.toDateTime(utcSecondsParam("startTime"))
+	const sessionsFrom = CH.compileTypedFnCall(
+		"subtractHours",
+		CH.schemaOf<DateTime.Utc>(windowStart),
+		windowStart,
+		CH.lit(SESSION_MAX_LIFETIME_HOURS),
+	)
 	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			SessionId: $.SessionId,
@@ -273,8 +290,9 @@ function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.StartTime.gte(param.dateTime("startTime")),
+			$.StartTime.gte(sessionsFrom),
 			$.StartTime.lte(param.dateTime("endTime")),
+			$.SessionId.neq(""),
 		])
 		.groupBy("SessionId")
 }
@@ -351,7 +369,11 @@ export function productEventsTimeseriesQuery(
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
 			value: metricExpr($, opts.metric, opts.valueAttributeKey),
-			eventCount: CH.count(),
+			// The sample count an alert reads: for a numeric metric, the events that carried a number,
+			// so a window with events and no values is no data rather than a measured 0.
+			eventCount: isNumericMetric(opts.metric)
+				? CH.countIf(numericValue($, opts.valueAttributeKey ?? "").isNotNull())
+				: CH.count(),
 		}))
 		.where(($) => [...eventConditions($, opts), wholeRangeEnd($.Timestamp, opts.wholeRange)])
 		.groupBy("bucket", "groupName")

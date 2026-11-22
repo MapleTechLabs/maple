@@ -32,7 +32,16 @@ import type {
 	ColumnDefs,
 	JoinedColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
-import { type DateTime, Result, Schema, Array as Arr, Record as Rec, String as Str, Option } from "effect"
+import {
+	type DateTime,
+	Order,
+	Result,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+	Option,
+} from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
@@ -295,6 +304,17 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			after >= before
 		)
 	})
+	// An excluded row drops the attempts at the steps it covers, the one it would start too: an
+	// exclusion that is also a step leaves nobody in the funnel, which is never what was meant.
+	const stepKeys = new Set(Arr.map(opts.steps, stepKey))
+	const selfExcluding = Arr.findFirst(exclusions, (exclusion) => stepKeys.has(stepKey(exclusion.step)))
+	if (Option.isSome(selfExcluding)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message:
+				"an exclusion cannot be one of the funnel's own steps: it would drop every attempt that reaches it",
+		})
+	}
 	if (Option.isSome(misplaced)) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidExclusion",
@@ -302,6 +322,27 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 		})
 	}
 	return undefined
+}
+
+/** A step as one string, equal for two steps that match the same rows. */
+const stepKey = (step: FunnelStep): string => {
+	switch (step.kind) {
+		case "event":
+			return `event ${step.eventName} ${Arr.join(
+				Arr.map(
+					Arr.sort(
+						Rec.toEntries(step.attributeEquals ?? {}),
+						Order.mapInput(Order.String, (entry: readonly [string, string]) => entry[0]),
+					),
+					([key, value]) => `${key}=${value}`,
+				),
+				"&",
+			)}`
+		case "page":
+			return `page ${step.host ?? ""} ${step.pagePath}`
+		case "session":
+			return `session ${step.dimension} ${step.value}`
+	}
 }
 
 /** The steps an exclusion sits between, with its defaults filled in. */

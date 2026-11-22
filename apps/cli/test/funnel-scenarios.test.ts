@@ -881,6 +881,8 @@ describeWithChdb("product event funnels over example products", () => {
 		expect(Result.isFailure(built([excluding("x", 2, 2)]))).toBe(true)
 		expect(Result.isFailure(built([excluding("x", 1, 3)]))).toBe(true)
 		expect(Result.isFailure(built([excluding("x")], [ev("cart")]))).toBe(true)
+		// An exclusion that is one of the steps would drop every attempt that reaches it.
+		expect(Result.isFailure(built([excluding("cart")]))).toBe(true)
 		expect(Result.isSuccess(built([excluding("x")]))).toBe(true)
 		expect(
 			Result.isFailure(
@@ -904,13 +906,27 @@ describeWithChdb("product event funnels over example products", () => {
 					Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),
 					(opts: Opts) => {
 						const n = opts.steps.length
-						const exclusions = Arr.makeBy(1 + rng.int(2), () => {
-							const after = 1 + rng.int(n - 1)
-							return rng.chance(0.4)
-								? excluding(rng.pick(names))
-								: excluding(rng.pick(names), after, after + 1 + rng.int(n - after))
+						// An exclusion that is one of the funnel's own steps is refused, so it takes a
+						// name no plain step uses; a funnel that uses all three has none to exclude.
+						const stepNames = new Set(
+							Arr.flatMap(opts.steps, (step) =>
+								step.kind === "event" && step.attributeEquals === undefined
+									? [step.eventName]
+									: [],
+							),
+						)
+						const free = Arr.filter(names, (name) => !stepNames.has(name))
+						if (!Arr.isArrayNonEmpty(free)) return []
+						// Three draws per funnel: one alone bites too rarely to prove anything.
+						return Arr.makeBy(3, () => {
+							const exclusions = Arr.makeBy(1 + rng.int(2), () => {
+								const after = 1 + rng.int(n - 1)
+								return rng.chance(0.4)
+									? excluding(rng.pick(free))
+									: excluding(rng.pick(free), after, after + 1 + rng.int(n - after))
+							})
+							return { dataset, opts: { ...opts, exclusions } }
 						})
-						return [{ dataset, opts: { ...opts, exclusions } }]
 					},
 				),
 			)

@@ -182,6 +182,24 @@ describe("query_data on product events", () => {
 		expect(text).toContain("Server-side events have no session")
 	})
 
+	it("warns that sessions are kept 30 days when an older window groups by one of their dimensions", async () => {
+		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-04 00:00:00" }
+		const grouped = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "country",
+			...old,
+		})
+		expect(markdown(grouped)).toContain("Sessions are kept 30 days")
+		const plain = await call("query_data", {
+			source: "product_events",
+			kind: "breakdown",
+			group_by: "event_name",
+			...old,
+		})
+		expect(markdown(plain)).not.toContain("Sessions are kept 30 days")
+	})
+
 	it("refuses a session filter on a source that has no sessions", async () => {
 		const result = await call("query_data", { source: "traces", kind: "timeseries", country: "DE" })
 		expect(result.isError).toBe(true)
@@ -220,6 +238,17 @@ describe("explore_attributes on product events", () => {
 		const text = markdown(result)
 		expect(text).toContain("| csv | 130 |")
 		expect(text).toContain('group_by="attribute" attribute_key="format"')
+	})
+
+	it("narrows to the service that sent a server-side event", async () => {
+		await call("explore_attributes", { source: "product_events", service: "billing" })
+		expect(lastSql()).toContain("'billing'")
+	})
+
+	it("refuses event_name on a source that has no events", async () => {
+		const result = await call("explore_attributes", { source: "traces", event_name: "report_exported" })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`event_name` applies to source=product_events only")
 	})
 
 	it("reads a week by default, where spans read six hours", async () => {

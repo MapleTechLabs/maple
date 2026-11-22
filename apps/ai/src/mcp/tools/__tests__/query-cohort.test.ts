@@ -130,6 +130,21 @@ describe("query_cohort", () => {
 		)
 	})
 
+	it("opens a user page only for a user key: a person can be a visitor id", async () => {
+		const byPerson = await call({ ...window, did_json: did, did_not_json: didNot })
+		expect(markdown(byPerson)).not.toContain("inspect_user")
+	})
+
+	it("rejects an exclusion with no event name instead of excluding nobody", async () => {
+		const result = await call({
+			...window,
+			did_json: did,
+			did_not_json: JSON.stringify({ kind: "event", eventName: "" }),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`did_not_json`")
+	})
+
 	it("says nobody did it, with what to check", async () => {
 		const result = await call({
 			...window,
@@ -154,6 +169,19 @@ describe("query_cohort", () => {
 		expect(text).toContain("account_only matched 15 events, but none carries a user id")
 		// The first suggested call is the same cohort under the key the events carry.
 		expect(text).toMatch(/Next:\n- `query_cohort [^\n]*account_only[^\n]*key_by="group"/)
+	})
+
+	it("keeps the window scope in the call under the suggested key", async () => {
+		const result = await call({
+			...window,
+			did_json: JSON.stringify({ kind: "event", eventName: "account_only" }),
+			did_not_json: didNot,
+			did_not_scope: "window",
+			key_by: "user",
+		})
+		expect(markdown(result)).toMatch(
+			/Next:\n- `query_cohort [^\n]*did_not_scope="window"[^\n]*key_by="group"/,
+		)
 	})
 
 	it("refuses a session step, which nobody does", async () => {

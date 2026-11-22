@@ -1,11 +1,12 @@
 import { McpInvalidInputError, McpQueryBudgetError, McpQueryError, type McpToolRegistrar } from "./types"
 import { describeInvalidQuerySpec, resolveTokenAliases, tokensFor } from "../lib/query-spec-tokens"
-import { Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { CurrentMcpTenant } from "../tenant"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { productEventsTotal } from "@maple/query-engine/observability"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { orFallback } from "../lib/fallback"
+import { sessionRetentionNote } from "../lib/product-identity"
 import { maxBreakdownRangeSeconds, parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import { MetricType, QueryEngineExecuteRequest, QuerySpec } from "@maple/domain/query-engine"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
@@ -1090,7 +1091,16 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					: signalHints
 
 			const queryContext = queryContextOf(params, resolvedQuery)
-			const warnings = metricsWarningsFor(params, metric)
+			const readsSessions =
+				params.source === "product_events" &&
+				(Rec.keys(sessionFiltersOf(params)).length > 0 ||
+					Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? ""))
+			const nowMs = yield* Clock.currentTimeMillis
+			const sessionNote = sessionRetentionNote(st, nowMs, readsSessions)
+			const warnings = [
+				...metricsWarningsFor(params, metric),
+				...(sessionNote === undefined ? [] : [sessionNote]),
+			]
 			return {
 				timeRange: { start: st, end: et },
 				kind: params.kind,

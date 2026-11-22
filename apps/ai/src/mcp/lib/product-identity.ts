@@ -1,11 +1,8 @@
-/**
- * Why a product-event count is empty when the events exist: they lack the identity being counted.
- *
- * A billing webhook's event carries the account and no user, so counted by person it reads as
- * nobody: indistinguishable, in a number, from nobody having done it. Every tool that counts by a
- * key reads the events' identity coverage when it comes back empty and says which key would work.
- */
-import { Effect, Option, Array as Arr } from "effect"
+// Why a product-event count is empty when the events exist: they lack the identity counted by
+// (a billing webhook's event carries the account and no user). The tools that count by a key read
+// the events' identity coverage when they come back empty, and say which key would work.
+import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { parseWarehouseDateTime, warehouseDateTime } from "@maple/query-engine"
 import type { FunnelKeyBy, FunnelStep } from "@maple/query-model"
 import {
 	productEventsFunnelCoverage,
@@ -14,6 +11,7 @@ import {
 import { orFallback } from "./fallback"
 import { formatNumber } from "./format"
 import { withTenantExecutor } from "./query-warehouse"
+import { SESSION_RETENTION_HOURS } from "./time"
 
 /** The identity a key reads off an event, as a notice names it. */
 const KEY_BY_IDENTITY = {
@@ -90,6 +88,22 @@ export const identityNoteFor = <K extends FunnelKeyBy>(
 		onSome: (candidate) => ({ note, keyBy: candidate }),
 	})
 }
+
+/** `Sessions are kept 30 days` once a window that reads them starts before that. */
+export const sessionRetentionNote = (
+	startTime: string,
+	nowMs: number,
+	readsSessions: boolean,
+): string | undefined => {
+	const kept = nowMs - SESSION_RETENTION_HOURS * 3_600_000
+	return readsSessions && parseWarehouseDateTime(startTime) < kept
+		? `Sessions are kept 30 days: session steps, filters and dimensions see nothing before ${warehouseDateTime(kept)}, so the earlier part of this window reads as having none.`
+		: undefined
+}
+
+/** A step with no event name or page path matches nothing a caller meant. */
+export const isBlankStep = (step: Extract<FunnelStep, { kind: "event" | "page" }>): boolean =>
+	Str.trim(step.kind === "event" ? step.eventName : step.pagePath) === ""
 
 /**
  * The note for tools that count one event: read its coverage and say whether `keyBy` can count

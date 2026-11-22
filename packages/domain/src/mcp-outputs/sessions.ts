@@ -204,6 +204,8 @@ export const QueryFunnelOutput = Schema.Struct({
 	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
 	/** Set when the window reaches past what sessions are kept and the funnel reads them. */
 	sessionNote: Schema.optionalKey(Schema.String),
+	/** Set when `details` was asked for and could not be read. */
+	detailsNote: Schema.optionalKey(Schema.String),
 })
 
 export const QueryPathsOutput = Schema.Struct({
@@ -215,6 +217,8 @@ export const QueryPathsOutput = Schema.Struct({
 	windowSeconds: Schema.Number,
 	/** Everyone who reached the anchor in the window. */
 	total: Schema.Number,
+	/** Set when a session filter is used and the window starts before sessions are kept. */
+	sessionNote: Schema.optionalKey(Schema.String),
 	/** One entry per hop away from the anchor, nearest first. */
 	hops: Schema.Array(
 		Schema.Struct({

@@ -20,7 +20,7 @@ import { formatNumber, formatPercent } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { eventIdentityNote } from "../lib/product-identity"
+import { eventIdentityNote, isBlankStep } from "../lib/product-identity"
 
 const TOOL = "query_retention"
 const DAY_MS = 86_400_000
@@ -54,6 +54,22 @@ const intervalAfter = (interval: RetentionIntervalType, startMs: number, n: numb
 		case "month": {
 			const start = new Date(startMs)
 			return Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + n, 1)
+		}
+	}
+}
+
+/** The UTC start of the interval `ms` falls in. */
+const intervalStart = (interval: RetentionIntervalType, ms: number): number => {
+	const day = Math.floor(ms / DAY_MS)
+	switch (interval) {
+		case "day":
+			return day * DAY_MS
+		case "week":
+			// 1970-01-01 was a Thursday: index 3 of a Monday-first week.
+			return (day - ((day + 3) % 7)) * DAY_MS
+		case "month": {
+			const date = new Date(ms)
+			return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)
 		}
 	}
 }
@@ -145,7 +161,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Computing retention", "Building retention cohorts"],
 		handler: Effect.fn("McpTool.queryRetention")(function* (params) {
-			const { st, et } = yield* WINDOW.resolve(params, TOOL)
+			const requested = yield* WINDOW.resolve(params, TOOL)
 			const interval = params.interval ?? "week"
 			const keyBy = params.key_by ?? "person"
 			const periods = params.periods ?? DEFAULT_PERIODS[interval]
@@ -157,9 +173,30 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 				})
 			}
 
+			const blank = Arr.findFirst(
+				[
+					["start_json", params.start_json],
+					["return_json", params.return_json],
+				] as const,
+				([, step]) => step !== undefined && isBlankStep(step),
+			)
+			if (blank._tag === "Some") {
+				return yield* new McpInvalidInputError({
+					message: `${blank.value[0]} needs an event name or a page path; leave it out for any event.`,
+					parameter: blank.value[0],
+					example: STEP_EXAMPLE,
+				})
+			}
+
+			// Whole intervals only: a window that starts mid-week would hold part of that week's
+			// cohort and call it the week's. It is widened to the interval's edges, never past now.
+			const now = yield* Clock.currentTimeMillis
+			const startMs = intervalStart(interval, parseWarehouseDateTime(requested.st))
+			const lastStart = intervalStart(interval, parseWarehouseDateTime(requested.et) - 1)
+			const st = warehouseDateTime(startMs)
+			const et = warehouseDateTime(Math.min(now, intervalAfter(interval, lastStart, 1)))
 			// Returns are followed past the cohort window, up to now: the last cohorts are the
 			// ones a reader looks at first, and they would otherwise always read as lost.
-			const now = yield* Clock.currentTimeMillis
 			const throughMs = Math.min(
 				now,
 				parseWarehouseDateTime(et) + (periods + 1) * MAX_INTERVAL_MS[interval],
@@ -231,11 +268,16 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 			const share = (count: number, size: number): string =>
 				size === 0 ? "-" : `${formatNumber(count)} (${formatPercent(count / size)})`
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
+			// Everything that makes a repeat of this call the same cohorts.
 			const steps = {
 				...(output.start === undefined ? undefined : { start_json: stringifyJson(output.start) }),
 				...(output.return === undefined ? undefined : { return_json: stringifyJson(output.return) }),
+				periods: output.periods,
+				...(output.firstEver ? undefined : { first_ever: false }),
 			}
 			const hasOpen = Arr.some(output.cohorts, (cohort) => cohort.completePeriods < output.periods)
+			// A cohort whose own interval has not ended has started no period after it.
+			const newestOpen = Arr.some(output.cohorts, (cohort) => cohort.startedPeriods === 0)
 			return {
 				title: `Retention by ${unit} (${noun}; ${stepLabel(output.start)}, then ${stepLabel(output.return)})`,
 				scope: [
@@ -259,6 +301,11 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 												output.firstEver
 													? "With first_ever=true only people new to the start event count. Pass first_ever=false to count everyone active in the window, or widen start_time."
 													: "Widen start_time/end_time, or check the event name against `list_product_events`.",
+												...(output.keyBy === "person"
+													? []
+													: [
+															`key_by="${output.keyBy}" leaves out events that carry no such id; try key_by="person".`,
+														]),
 											],
 							},
 						}
@@ -294,7 +341,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 									],
 								),
 								doc.text(
-									`Size is the ${noun} whose first ${stepLabel(output.start)} fell in that ${unit}. A cell is how many of them did ${stepLabel(output.return)} in the ${unit} that many after it, and the share of the cohort.`,
+									`Size is the ${noun} whose first ${stepLabel(output.start)} fell in that ${unit}. A cell is how many of them did ${stepLabel(output.return)} in the ${unit} that many after it, and the share of the cohort. The window is widened to whole ${unit}s, so no cohort is a part of one${newestOpen ? `; the newest ${unit} is not over, so its cohort can still grow` : ""}.`,
 								),
 								...(hasOpen
 									? [

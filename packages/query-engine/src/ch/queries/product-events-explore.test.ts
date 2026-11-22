@@ -68,8 +68,8 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(sqlFor("sum")).toContain(`ifNull(sum(${value}), 0) AS value`)
 		expect(sqlFor("avg")).toContain(`ifNull(avg(${value}), 0) AS value`)
 		expect(sqlFor("p95")).toContain(`ifNull(quantile(0.95)(${value}), 0) AS value`)
-		// The rows behind the value are still counted, for an alert's sample count.
-		expect(sqlFor("sum")).toContain("count() AS eventCount")
+		// The sample count is the rows that carry a number, not every row in the bucket.
+		expect(sqlFor("sum")).toContain(`countIf(${value} IS NOT NULL) AS eventCount`)
 	})
 
 	it("joins the sessions' dimensions only when a group-by reads one", () => {
@@ -88,9 +88,13 @@ describe("productEventsTimeseriesQuery", () => {
 		expect(grouped).toContain("LEFT JOIN (SELECT")
 		expect(grouped).toContain("max(session_replays.Country) AS country")
 		expect(grouped).toContain("max(session_replays.UtmSource) AS utm_source")
-		// The sessions are read under the caller's org and window, like the session filters.
+		// The sessions are read under the caller's org, from a day before the window: a session
+		// that started before it can still hold the window's events.
 		expect(grouped).toContain("session_replays.OrgId = 'org_1'")
-		expect(grouped).toContain("session_replays.StartTime >= '2026-06-24 04:00:00'")
+		expect(grouped).toContain(
+			"session_replays.StartTime >= subtractHours(toDateTime('2026-06-24 04:00:00'), 24)",
+		)
+		expect(grouped).toContain("session_replays.SessionId != ''")
 		expect(grouped).toContain("product_events.SessionId = sd.SessionId")
 		// An event with no session groups as unset, not as a dropped row.
 		expect(grouped).toContain("coalesce(nullIf(coalesce(sd.country, ''), ''), '(none)')")

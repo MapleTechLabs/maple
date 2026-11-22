@@ -225,11 +225,15 @@ export interface ProductEventAttributesInput {
 	readonly endTime: string
 	/** Only props seen on this event. */
 	readonly eventName?: string
+	/** Only props of events this service sent (server-side events; a browser row names none). */
+	readonly service?: string
 	readonly limit: number
 }
 
-const attributeScope = (input: ProductEventAttributesInput) =>
-	input.eventName === undefined ? {} : { eventNames: [input.eventName] }
+const attributeScope = (input: ProductEventAttributesInput) => ({
+	...(input.eventName === undefined ? undefined : { eventNames: [input.eventName] }),
+	...(input.service === undefined ? undefined : { serviceNames: [input.service] }),
+})
 
 /** The `track()` prop keys in range, most used first: `{ attributeKey, usageCount }`. */
 export const productEventAttributeKeys = Effect.fn("Observability.productEventAttributeKeys")(function* (

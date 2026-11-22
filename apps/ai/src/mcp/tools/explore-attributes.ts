@@ -1,4 +1,4 @@
-import type { McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { queryWarehouse, withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
@@ -236,8 +236,14 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				"source=product_events: only properties of this event (exact name, from list_product_events)",
 			),
 			key: P.optionalText("Return this key's values instead of the key list"),
-			service: P.service("Only this service (exact `service.name`). Not applied for source=services"),
+			service: P.service(
+				"Only this service (exact `service.name`). For product_events, the service that sent a server-side event. Not applied for source=services",
+			),
 			...WINDOW.fields,
+			start_time: WINDOW.fields.start_time.annotate({
+				description:
+					"Window start, UTC (YYYY-MM-DD HH:mm:ss). Default: 6 hours before end_time, or 7 days for product_events. Covers at most 30 days.",
+			}),
 			limit: P.limit({
 				default: 50,
 				max: 500,
@@ -260,15 +266,24 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			const timeRange = { start: st, end: et }
 			const serviceField = params.service === undefined ? undefined : { service: params.service }
 
+			if (params.source !== "product_events" && params.event_name !== undefined) {
+				return yield* new McpInvalidInputError({
+					message: `\`event_name\` applies to source=product_events only; source=${params.source} has no events to narrow to.`,
+					parameter: "event_name",
+				})
+			}
 			if (params.source === "product_events") {
 				const events = {
 					startTime: st,
 					endTime: et,
 					limit: params.limit,
 					...(params.event_name === undefined ? undefined : { eventName: params.event_name }),
+					...(params.service === undefined ? undefined : { service: params.service }),
 				}
-				const eventField =
-					params.event_name === undefined ? undefined : { eventName: params.event_name }
+				const eventField = {
+					...(params.event_name === undefined ? undefined : { eventName: params.event_name }),
+					...serviceField,
+				}
 				if (params.key !== undefined) {
 					const rows = yield* withTenantExecutor(
 						productEventAttributeValues({ ...events, key: params.key }),

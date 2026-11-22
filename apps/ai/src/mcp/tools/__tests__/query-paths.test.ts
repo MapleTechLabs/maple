@@ -91,6 +91,19 @@ describe("query_paths", () => {
 		const text = markdown(result)
 		expect(text).toContain("Paths before signup_completed (by group")
 		expect(text).toContain("| (nothing before) |")
+		// Backward, the node nearer the anchor is the later one: the table still reads forward.
+		expect(text).toContain("| Earlier | Later | groups |")
+		expect(text).toContain("| invite_sent | workspace_created | 40 |")
+	})
+
+	it("says sessions are kept 30 days when a filter reads them over an older window", async () => {
+		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-05 00:00:00" }
+		const filtered = await call({ anchor_json: anchor, ...old, country: "DE" })
+		const output = Schema.decodeUnknownSync(QueryPathsOutput)(filtered.structuredContent)
+		expect(output.sessionNote).toContain("Sessions are kept 30 days")
+		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
+		const unfiltered = await call({ anchor_json: anchor, ...old })
+		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
 	})
 
 	it("says nobody did the anchor instead of printing empty hops", async () => {
@@ -104,6 +117,12 @@ describe("query_paths", () => {
 		const result = await call({ anchor_json: anchor, depth: 9 })
 		expect(result.isError).toBe(true)
 		expect(markdown(result)).toContain("paths depth must be an integer in 1..5")
+	})
+
+	it("names branches, not depth, when the branch count is the one it cannot draw", async () => {
+		const result = await call({ anchor_json: anchor, branches: 99 })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`branches`")
 	})
 
 	it("refuses a session step as an anchor", async () => {

@@ -15,7 +15,7 @@ import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
-import { eventIdentityNote } from "../lib/product-identity"
+import { eventIdentityNote, isBlankStep } from "../lib/product-identity"
 
 const TOOL = "query_cohort"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -74,10 +74,18 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 			const didNot = params.did_not_json
 			const keyBy = params.key_by ?? "person"
 			const didNotScope = params.did_not_scope ?? "ever"
-			if (Str.trim(did.kind === "event" ? did.eventName : did.pagePath) === "") {
+			if (isBlankStep(did)) {
 				return yield* new McpInvalidInputError({
 					message: "did_json needs an event name or a page path.",
 					parameter: "did_json",
+					example: STEP_EXAMPLE,
+				})
+			}
+			if (didNot !== undefined && isBlankStep(didNot)) {
+				return yield* new McpInvalidInputError({
+					message:
+						"did_not_json needs an event name or a page path; leave it out for everyone who did did_json.",
+					parameter: "did_not_json",
 					example: STEP_EXAMPLE,
 				})
 			}
@@ -176,7 +184,8 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 								: ` (${formatPercent(output.total / output.didTotal)}).`
 						}`
 			const first = output.members[0]
-			const opensUsers = output.keyBy === "user" || output.keyBy === "person"
+			// A person's key can be a visitor id, which no user page answers to.
+			const opensUsers = output.keyBy === "user"
 			return {
 				title:
 					notLabel === undefined
@@ -246,6 +255,9 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 										...(output.didNot === undefined
 											? undefined
 											: { did_not_json: stringifyJson(output.didNot) }),
+										...(output.didNotScope === "window"
+											? { did_not_scope: "window" }
+											: undefined),
 										key_by: output.suggestedKeyBy,
 										...window,
 									},

@@ -68,6 +68,11 @@ const fixtures: FixtureRule[] = [
 		match: (sql) => isFunnelRead(sql) && Str.includes("'plan'")(sql),
 		rows: [{ group: "pro", step: 1, count: 10 }],
 	},
+	// The warehouse gives up on one funnel's detail reads; its counts still come back.
+	{
+		match: (sql) => Str.includes("slow_details")(sql) && Str.includes("sinceStartP50Ms")(sql),
+		failure: { message: "Timeout exceeded", type: "TIMEOUT_EXCEEDED" },
+	},
 	// The two detail reads: the time between steps, then where the drop-offs went.
 	{
 		match: (sql) => Str.includes("sinceStartP50Ms")(sql),
@@ -292,6 +297,31 @@ describe("query_funnel details", () => {
 		const unfiltered = await call("query_funnel", { steps_json: steps, ...window })
 		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
 	})
+
+	it("goes by how old the window is, not how long: three old days are as blind", async () => {
+		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-04 00:00:00" }
+		const filtered = await call("query_funnel", { steps_json: steps, ...old, country: "DE" })
+		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
+		// The default window is the last week, all of it inside what is kept.
+		const recent = await call("query_funnel", { steps_json: steps, country: "DE" })
+		expect(markdown(recent)).not.toContain("Sessions are kept 30 days")
+	})
+
+	it("says the details could not be read instead of leaving the section out silently", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "slow_details" },
+			]),
+			details: true,
+		})
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.detailsNote).toContain("could not be read")
+		const text = markdown(result)
+		expect(text).toContain("the counts are complete")
+		expect(text).not.toContain("### Time to convert")
+	})
 })
 
 describe("query_funnel exclusions", () => {
@@ -337,6 +367,24 @@ describe("query_funnel exclusions", () => {
 		const text = markdown(result)
 		expect(text).toContain("`exclusions_json`")
 		expect(text).toContain("after < before")
+	})
+
+	it("rejects an exclusion that names one of the funnel's own steps", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([{ step: { kind: "event", eventName: "signup_completed" } }]),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`exclusions_json`")
+	})
+
+	it("rejects an exclusion with no event name", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			exclusions_json: JSON.stringify([{ step: { kind: "event", eventName: " " } }]),
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("no event name or page path")
 	})
 
 	it("rejects an exclusion on a one-step funnel", async () => {

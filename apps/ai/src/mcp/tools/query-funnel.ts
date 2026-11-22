@@ -1,4 +1,4 @@
-import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Clock, Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	FUNNEL_MAX_EXCLUSIONS,
 	FUNNEL_MAX_STEPS,
@@ -21,15 +21,14 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { CurrentMcpTenant } from "../tenant"
-import { MCP_PRODUCT_EVENTS_MAX_HOURS, SESSION_RETENTION_HOURS } from "../lib/time"
+import { MCP_PRODUCT_EVENTS_MAX_HOURS } from "../lib/time"
 import { formatDuration } from "@maple/domain/format"
-import { parseWarehouseDateTime } from "@maple/query-engine"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { orFallback } from "../lib/fallback"
-import { identityNoteFor } from "../lib/product-identity"
+import { identityNoteFor, isBlankStep, sessionRetentionNote } from "../lib/product-identity"
 
 const TOOL = "query_funnel"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_PRODUCT_EVENTS_MAX_HOURS })
@@ -177,6 +176,13 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			})
 
 			const exclusions = params.exclusions_json ?? []
+			if (Arr.some(exclusions, (exclusion) => isBlankStep(exclusion.step))) {
+				return yield* new McpInvalidInputError({
+					message: "An exclusions_json entry has a step with no event name or page path.",
+					parameter: "exclusions_json",
+					example: EXCLUSIONS_EXAMPLE,
+				})
+			}
 			const definition = {
 				steps,
 				keyBy,
@@ -236,7 +242,14 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									coverage,
 									keyBy,
 									Arr.map(stepData, (stat) => `Step ${stat.step} (${stat.label})`),
-									FunnelKeyBy.literals,
+									// An acquisition session has a visitor and no account, so a funnel that
+									// starts at one cannot be offered the group key.
+									Arr.some(steps, (step) => step.kind === "session")
+										? Arr.filter(
+												FunnelKeyBy.literals,
+												(candidate) => candidate !== "group",
+											)
+										: FunnelKeyBy.literals,
 								),
 							),
 							orFallback("funnel identity coverage", () => undefined),
@@ -268,16 +281,18 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					: Arr.map(stepData, (stat) => ({ ...stat, ...details.get(stat.step) }))
 
 			// Sessions are kept 30 days, so anything read off them is blind to the part before that.
-			const windowHours = (parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 3_600_000
 			const readsSessions =
 				Arr.some(steps, (step) => step.kind === "session") ||
 				(breakdownBy !== undefined &&
 					!Str.startsWith("attribute:")(breakdownBy) &&
 					breakdownBy !== "host") ||
 				Arr.some(Rec.values(filters), (value) => value !== undefined)
-			const sessionNote =
-				readsSessions && windowHours > SESSION_RETENTION_HOURS
-					? "Sessions are kept 30 days: a session step, a session filter and a session breakdown see only the last 30 days of this window."
+			const nowMs = yield* Clock.currentTimeMillis
+			const sessionNote = sessionRetentionNote(st, nowMs, readsSessions)
+			// Asked for and not read: say so, or the missing section reads as "nothing to report".
+			const detailsNote =
+				wantsDetails && details === undefined
+					? "The time between steps and the drop-offs' next steps could not be read this time; the counts are complete. Run it again, or narrow the window."
 					: undefined
 
 			const breakdown =
@@ -334,6 +349,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				...(identity === undefined ? undefined : { identityNote: identity.note }),
 				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
 				...(sessionNote === undefined ? undefined : { sessionNote }),
+				...(detailsNote === undefined ? undefined : { detailsNote }),
 			}
 		}),
 		render: (output) => {
@@ -359,12 +375,15 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 								),
 					],
 				],
-				...(output.identityNote === undefined && output.sessionNote === undefined
+				...(output.identityNote === undefined &&
+				output.sessionNote === undefined &&
+				output.detailsNote === undefined
 					? undefined
 					: {
 							notices: [
 								...(output.identityNote === undefined ? [] : [output.identityNote]),
 								...(output.sessionNote === undefined ? [] : [output.sessionNote]),
+								...(output.detailsNote === undefined ? [] : [output.detailsNote]),
 							],
 						}),
 				...(first === undefined || first.count === 0
@@ -494,6 +513,9 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 									TOOL,
 									{
 										steps_json: stepsJson,
+										...(output.exclusions === undefined
+											? undefined
+											: { exclusions_json: stringifyJson(output.exclusions) }),
 										key_by: output.suggestedKeyBy,
 										window_seconds: output.windowSeconds,
 										...window,
