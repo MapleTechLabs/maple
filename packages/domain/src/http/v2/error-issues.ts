@@ -104,6 +104,12 @@ export const V2ErrorIssueSampleTrace = Schema.Struct({
 	timestamp: Timestamp,
 	exception_message: Schema.String,
 	duration_micros: Schema.Number,
+	/** The span's deployment environment; null when it carried none. */
+	deployment_environment: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** The emitting build's `service.version`; null when it carried none. */
+	service_version: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** The end user the span named; null when it named none. */
+	user_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 }).annotate({ identifier: "ErrorIssueSampleTrace" })
 export type V2ErrorIssueSampleTrace = Schema.Schema.Type<typeof V2ErrorIssueSampleTrace>
 
@@ -136,11 +142,13 @@ export const V2ErrorIssueDetail = Schema.Struct({
 	sample_traces: Schema.Array(V2ErrorIssueSampleTrace),
 	incidents: Schema.Array(V2ErrorIncident),
 	environments: Schema.Array(V2ErrorIssueEnvironment),
+	/** The newest stack trace in the window; null when no occurrence there carried one. */
+	latest_stacktrace: Schema.optionalKey(Schema.NullOr(Schema.String)),
 }).annotate({
 	identifier: "ErrorIssueDetail",
 	title: "Error issue detail",
 	description:
-		"The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
+		"The issue resource with its requested timeseries window, sample traces, incidents, the environments it was seen in, and its newest stack trace.",
 })
 export type V2ErrorIssueDetail = Schema.Schema.Type<typeof V2ErrorIssueDetail>
 

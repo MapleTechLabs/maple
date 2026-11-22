@@ -231,6 +231,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/day-label.ts` `dayKey`, `dayLabel`, `dayEyebrow`: Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
 - `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: The alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: A detail page's title block and its loading skeleton.
+- `apps/web/src/page/kit/disclosure-strip.ts` `disclosureStrip`: A panel's last band that opens on a long block of monospace text.
 - `apps/web/src/page/kit/docs.ts` `docsUrl`: Every docs page the app links to from an empty state, as a path under maple.dev.
 - `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
 - `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.

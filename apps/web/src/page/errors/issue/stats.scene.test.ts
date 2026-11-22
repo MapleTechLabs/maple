@@ -69,7 +69,7 @@ type Model = Readonly<{
 const inputsOf = (model: Model): StatInputs => ({
 	windowCount: model.windowCount,
 	windowLabel: "12h",
-	spark: [],
+	buckets: { label: "15m", count: 48, total: model.windowCount },
 	surge: model.surge,
 	timeZone: "UTC",
 	nowMs: NOW,
@@ -81,11 +81,11 @@ const update = (model: Model) => ({ model, commands: [] })
 const noHistory = { lastRegressedAt: null, lastResolvedAt: null }
 
 describe("issue stats", () => {
-	test("a surge reads its rate, a drop reads Fading, the middle reads Steady", () => {
+	test("a surge reads its rate in counts, a drop reads Fading, the middle reads Steady", () => {
 		scene(
 			{ update, view },
-			given<Model>({ surge: 3.2, windowCount: 90, history: noHistory }),
-			expectView(text("3.2x the usual rate")).toExist(),
+			given<Model>({ surge: 3.2, windowCount: 960, history: noHistory }),
+			expectView(text("~64/15m now, ~20 usual")).toExist(),
 		)
 		scene(
 			{ update, view },

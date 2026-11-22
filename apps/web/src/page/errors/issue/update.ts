@@ -3,6 +3,8 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
 import { Option, Result, Schema, String as Str } from "effect"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { SETUP_CARD_ID } from "./model"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -13,6 +15,7 @@ import type { TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Combobox from "@maple/views/ui/combobox"
+import * as HoverCard from "@maple/views/ui/hover-card"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -39,6 +42,8 @@ import {
 	ResolveWindow,
 } from "./command"
 import {
+	bucketRangeOf,
+	chartWindowOf,
 	DEFAULT_PRESET,
 	detailOf,
 	detailQueryOf,
@@ -249,6 +254,13 @@ export const init = (
 		fingerprintCopy: CopyButton.init(),
 		issueIdCopy: CopyButton.init(),
 		promptCopy: CopyButton.init(),
+		setupPromptCopy: CopyButton.init(),
+		setupCard: HoverCard.init(SETUP_CARD_ID, {
+			openDelayMs: 150,
+			side: "top",
+			align: "start",
+			sideOffset: 6,
+		}),
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -464,6 +476,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				endTime: undefined,
 				timePreset: DEFAULT_PRESET,
 			}),
+		ClickedOccurrenceBar: () => {
+			const window = model.window
+			const bucket = Option.getOrNull(model.chart.activeKey)
+			const range =
+				window === null || bucket === null
+					? null
+					: bucketRangeOf(bucket, chartWindowOf(window).bucketMs)
+			return range === null
+				? { model }
+				: navigateSearch(model, {
+						...model.search,
+						startTime: formatWarehouseDateTime(range.startMs),
+						endTime: formatWarehouseDateTime(range.endMs),
+						timePreset: undefined,
+					})
+		},
 		ClickedInvestigation: ({ id }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
@@ -701,6 +729,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				CopyButton.update(model.issueIdCopy, inner),
 				(issueIdCopy) => ({ issueIdCopy }),
 				(next) => Message.GotIssueIdCopyMessage({ message: next }),
+			),
+		GotSetupCardMessage: ({ message: inner }) =>
+			lift(
+				model,
+				HoverCard.update(model.setupCard, inner),
+				(setupCard) => ({ setupCard }),
+				(next) => Message.GotSetupCardMessage({ message: next }),
+			),
+		GotSetupPromptCopyMessage: ({ message: inner }) =>
+			lift(
+				model,
+				CopyButton.update(model.setupPromptCopy, inner),
+				(setupPromptCopy) => ({ setupPromptCopy }),
+				(next) => Message.GotSetupPromptCopyMessage({ message: next }),
 			),
 		GotPromptCopyMessage: ({ message: inner }) =>
 			lift(

@@ -14,6 +14,7 @@ import {
 	eventCountOf,
 	latestVerificationOf,
 	linkedInvestigationOf,
+	occurrenceMarkersOf,
 	pullRequestsOf,
 	tabOf,
 	windowLabel,
@@ -21,15 +22,24 @@ import {
 import { MountRightRail } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { occurrencePanel, OCCURRENCE_TOKENS, signalOf } from "./view-chart"
+import {
+	chartCaption,
+	formatBucket,
+	occurrenceChart,
+	occurrencePointsOf,
+	OCCURRENCE_TOKENS,
+	signalOf,
+} from "./view-chart"
 import { headerActions, headerTitle, issueTabs } from "./view-header"
 import { exceptionPanel, issueStats } from "./view-overview"
 import { getItFixedPanel } from "./view-agent-handoff"
 import { alertSourceCard, attachNudge, bodySection, pullRequestsPanel } from "./view-panels"
 import { issueSidebar } from "./view-sidebar"
+import { affectedUserHref } from "./view-affected-users"
+import { occurrenceSetupFoot } from "./view-occurrence-setup"
 import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
-import { incidentsTable, occurrencesTable } from "./view-tables"
+import { incidentsTable, occurrenceColumnsOf, occurrencesTable } from "./view-tables"
 import { commentComposer, issueTimeline } from "./view-activity"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
@@ -80,11 +90,15 @@ const latestOccurrences = (
 										[`All ${detail.sampleTraces.length} samples`],
 									),
 					}),
-					occurrencesTable(h, detail.sampleTraces.slice(0, LATEST_OCCURRENCES), clock),
+					occurrencesTable(h, detail.sampleTraces.slice(0, LATEST_OCCURRENCES), clock, {
+						columns: occurrenceColumnsOf(detail.sampleTraces.slice(0, LATEST_OCCURRENCES)),
+						userHref: (userId) => affectedUserHref(userId, model.search),
+					}),
+					...occurrenceSetupFoot(h, model, detail),
 				]),
 			]
 
-const LATEST_OCCURRENCES = 3
+const LATEST_OCCURRENCES = 5
 
 const incidentsPanel = (
 	h: H,
@@ -161,19 +175,23 @@ const signalOfDetail = (model: Model, detail: ErrorIssueDetailResponse): Signal 
 const chartSlot = (h: H, model: Model, detail: ErrorIssueDetailResponse, timeZone: string): Html => {
 	const chartWindow = model.window === null ? null : chartWindowOf(model.window)
 	return chartWindow === null || model.themeColors === null || model.chartRuntime._tag === "Loading"
-		? panel(h, { className: "shrink-0 overflow-hidden" }, [
-				panelHeader(h, { title: "Occurrences" }),
-				panelChartBody(h, [skeletonBlock(h, { height: "44" })]),
+		? panelChartBody(h, [
+				chartCaption(
+					h,
+					skeleton(h, "inline-block h-3 w-8 align-middle"),
+					chartWindow?.bucketMs ?? null,
+					false,
+				),
+				skeletonBlock(h, { height: "44" }),
 			])
-		: occurrencePanel(
-				h,
-				model.chart,
-				detail.timeseries,
-				detail.issue.severity,
-				chartWindow,
-				model.themeColors,
+		: occurrenceChart(h, model.chart, {
+				points: occurrencePointsOf(detail.timeseries, chartWindow),
+				severity: detail.issue.severity,
+				window: chartWindow,
+				markers: occurrenceMarkersOf(detail),
+				theme: model.themeColors,
 				timeZone,
-			)
+			})
 }
 
 const overview = (
@@ -185,13 +203,20 @@ const overview = (
 ): Html => {
 	const { issue, timeseries } = detail
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
-	const stats = issueStats(h, issue, {
+	const statInputs = {
 		windowCount: Arr.reduce(timeseries, 0, (sum, bucket) => sum + bucket.count),
 		windowLabel: windowLabel(model.search),
-		spark: signal?.dense ?? [],
+		buckets:
+			model.window === null || signal === null
+				? null
+				: {
+						label: formatBucket(chartWindowOf(model.window).bucketMs),
+						count: signal.dense.length,
+						total: Arr.reduce(signal.dense, 0, (sum, count) => sum + count),
+					},
 		surge: signal?.surge ?? null,
 		...clock,
-	})
+	}
 	// Getting it fixed is a member's job: an analyst only reads an investigation that already ran.
 	const investigation = linkedInvestigationOf(model)
 	const fix =
@@ -203,15 +228,18 @@ const overview = (
 		...(issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
-					stats,
+					issueStats(h, issue, statInputs),
 					...fix,
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
 				]
 			: [
-					exceptionPanel(h, model, issue),
-					stats,
+					exceptionPanel(h, model, issue, detail.latestStacktrace),
+					// How often and since when, over the window's bars: one panel, read top to bottom.
+					panel(h, { className: "shrink-0 overflow-hidden" }, [
+						issueStats(h, issue, statInputs, { isFlush: true }),
+						chartSlot(h, model, detail, inputs.context.timeZone),
+					]),
 					...fix,
-					chartSlot(h, model, detail, inputs.context.timeZone),
 					...latestOccurrences(h, model, detail, clock),
 					incidentsPanel(h, detail, clock),
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
@@ -224,7 +252,13 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 	const pullRequests = pullRequestsOf(model)
 	const canTriage = canTriageIssues(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
-		issueSidebar(h, model, detail.issue, detail.environments),
+		issueSidebar(
+			h,
+			model,
+			detail.issue,
+			detail.environments,
+			Arr.reduce(detail.timeseries, 0, (sum, bucket) => sum + bucket.count),
+		),
 		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
 			...(verification !== null
 				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
@@ -260,7 +294,13 @@ const otherTab = (
 						? undefined
 						: `${detail.sampleTraces.length} sampled in this window`,
 			},
-			[occurrencesTable(h, detail.sampleTraces, clock)],
+			[
+				occurrencesTable(h, detail.sampleTraces, clock, {
+					columns: occurrenceColumnsOf(detail.sampleTraces),
+					userHref: (userId) => affectedUserHref(userId, model.search),
+				}),
+				...occurrenceSetupFoot(h, model, detail),
+			],
 		)
 	const events = Option.getOrNull(AsyncData.getData(model.events.data))?.events ?? []
 	const { issue } = detail

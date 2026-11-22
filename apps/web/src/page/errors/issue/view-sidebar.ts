@@ -8,7 +8,8 @@ import {
 	WORKFLOW_STATE_ORDER,
 	type WorkflowState,
 } from "@maple/domain/http"
-import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { meter } from "@maple/views/ui/meter"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -136,19 +137,36 @@ const readValue = (h: H, mark: Html, label: string): Html =>
 
 const ENVIRONMENT_ROWS_SHOWN = 4
 
-const environmentValue = (h: H, environments: ReadonlyArray<ErrorIssueEnvironment>): Html => {
+/**
+ * Each environment's events in the window and its share of all of them, as a row over a thin
+ * meter. The share is of the window's count: the rows leave out errors with no environment.
+ */
+const environmentValue = (
+	h: H,
+	environments: ReadonlyArray<ErrorIssueEnvironment>,
+	windowCount: number,
+): Html => {
 	if (environments.length === 0) return typography(h, { size: "xs", tone: "muted" }, [EMPTY_VALUE])
+	const named = Arr.reduce(environments, 0, (sum, env) => sum + env.count)
+	const total = Math.max(named, windowCount)
+	const showShare = environments.length > 1 || total > named
 	const shown = environments.slice(0, ENVIRONMENT_ROWS_SHOWN)
 	const hidden = environments.length - shown.length
-	return vstack(h, { gap: "0.5", align: "stretch", shrink: true, as: "ul", className: "w-full" }, [
+	return vstack(h, { gap: "2", align: "stretch", shrink: true, as: "ul", className: "w-full" }, [
 		...Arr.map(shown, (env) =>
-			hstack(h, { gap: "3", align: "baseline", justify: "between", shrink: true, as: "li" }, [
-				typography(h, { size: "sm", tone: "foreground", truncate: true }, [env.name]),
-				typography(
-					h,
-					{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
-					[formatNumber(env.count)],
-				),
+			vstack(h, { gap: "1", align: "stretch", shrink: true, as: "li" }, [
+				hstack(h, { gap: "3", align: "baseline", justify: "between", shrink: true }, [
+					typography(h, { size: "sm", tone: "foreground", truncate: true }, [env.name]),
+					typography(
+						h,
+						{ size: "2xs", tone: "muted", mono: true, numeric: true, className: "shrink-0" },
+						[
+							formatNumber(env.count),
+							...(showShare && total > 0 ? [` · ${formatPercent(env.count / total)}`] : []),
+						],
+					),
+				]),
+				...(showShare ? [meter(h, { value: env.count, max: total, className: "h-1" })] : []),
 			]),
 		),
 		...(hidden > 0
@@ -262,6 +280,7 @@ export const issueSidebar = (
 	model: Model,
 	issue: ErrorIssueDocument,
 	environments: ReadonlyArray<ErrorIssueEnvironment>,
+	windowCount: number,
 ): Html => {
 	const priority = clampPriority(issue.priority)
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
@@ -318,7 +337,7 @@ export const issueSidebar = (
 						"\n",
 					),
 				},
-				[environmentValue(h, environments)],
+				[environmentValue(h, environments, windowCount)],
 			),
 			...(issue.resolvedVersions.length > 0
 				? [

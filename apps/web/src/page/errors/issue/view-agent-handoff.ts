@@ -7,15 +7,16 @@ import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { badge } from "@maple/views/ui/display"
-import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon, type IconName } from "@maple/views/ui/icon"
-import { panel, panelHeader } from "@maple/views/ui/panel"
+import { panel } from "@maple/views/ui/panel"
+import { stripClass } from "@maple/views/ui/rule"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { canRunInvestigations } from "../../kit/session-grants"
+import { disclosureStrip } from "../../kit/disclosure-strip"
 
 type H = HtmlBuilder<Message>
 
@@ -25,11 +26,11 @@ const AGENTS: ReadonlyArray<readonly [string, IconName]> = [
 	["Codex", "OpenAiIcon"],
 ]
 
-/** The agents the prompt is written for, as overlapping glyph tiles. */
+/** The agents the prompt is written for, as small overlapping glyph tiles beside the title. */
 const agentGlyphs = (h: H): Html =>
 	hstack(
 		h,
-		{ align: "stretch", className: "shrink-0 -space-x-1", attributes: [h.AriaHidden(true)] },
+		{ align: "stretch", as: "span", className: "shrink-0 -space-x-1", attributes: [h.AriaHidden(true)] },
 		Arr.map(AGENTS, ([name, glyph]) =>
 			hstack(
 				h,
@@ -37,47 +38,64 @@ const agentGlyphs = (h: H): Html =>
 					align: "center",
 					justify: "center",
 					as: "span",
-					className: "size-6 rounded-md border bg-surface-sunken text-foreground ring-2 ring-card",
-					attributes: [h.Key(name)],
+					className: "size-5 rounded-sm border bg-surface-sunken text-foreground ring-2 ring-card",
+					attributes: [h.Key(name), h.Title(name)],
 				},
-				[icon(h, glyph, { size: 13 })],
+				[icon(h, glyph, { size: 11 })],
 			),
 		),
 	)
 
+/** A row's mark: one glyph in a small sunken tile, the same size on every row so the titles align. */
+const markTile = (h: H, glyph: IconName): Html =>
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className: "size-8 shrink-0 rounded-md border bg-surface-sunken text-muted-foreground",
+			attributes: [h.AriaHidden(true)],
+		},
+		[icon(h, glyph, { size: 15 })],
+	)
+
+/** One way to get it fixed, as a row: its mark, a title over one line of what it does, its actions. */
 const lane = (
 	h: H,
 	options: Readonly<{
-		label: string
-		adornment?: Html
-		body: ReadonlyArray<Html>
+		glyph: IconName
+		title: string
+		/** Beside the title: the agents' glyphs, an investigation's status. */
+		titleAside?: Html
+		note: Html | string
 		actions: ReadonlyArray<Html>
 	}>,
 ): Html =>
-	vstack(h, { gap: "3", shrink: true, className: "p-4" }, [
-		hstack(h, { gap: "3", align: "center", justify: "between", className: "h-6" }, [
-			eyebrow(h, { as: "div" }, [options.label]),
-			...(options.adornment ? [options.adornment] : []),
-		]),
-		vstack(h, { gap: "1", grow: true }, options.body),
-		hstack(h, { gap: "2", wrap: true }, options.actions),
-	])
-
-const lead = (h: H, text: string): Html =>
-	typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [text])
-const note = (h: H, children: ReadonlyArray<Html | string>): Html =>
-	h.p([h.Class("max-w-[60ch] text-xs leading-5 text-muted-foreground")], children)
+	hstack(
+		h,
+		{ gap: "4", align: "center", justify: "between", wrap: true, className: stripClass("row", "py-3") },
+		[
+			hstack(h, { gap: "3", align: "center", shrink: true, className: "min-w-0 flex-1 basis-72" }, [
+				markTile(h, options.glyph),
+				vstack(h, { gap: "0.5", shrink: true, className: "min-w-0" }, [
+					hstack(h, { gap: "2", align: "center", wrap: true }, [
+						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [options.title]),
+						...(options.titleAside === undefined ? [] : [options.titleAside]),
+					]),
+					typography(h, { size: "xs", tone: "muted", as: "p", truncate: true }, [options.note]),
+				]),
+			]),
+			hstack(h, { gap: "1", align: "center", className: "shrink-0" }, options.actions),
+		],
+	)
 
 const agentLane = (h: H, model: Model, prompt: string): Html =>
 	lane(h, {
-		label: "Your coding agent",
-		adornment: agentGlyphs(h),
-		body: [
-			lead(h, "Hand this issue to Claude Code, Cursor or Codex"),
-			note(h, [
-				"The prompt has the agent claim the issue, read its traces and logs through the Maple MCP server, and link its fix here.",
-			]),
-		],
+		glyph: "SquareTerminalIcon",
+		title: "Hand it to your coding agent",
+		titleAside: agentGlyphs(h),
+		note: "Works it over the Maple MCP server and links the fix here.",
 		actions: [
 			CopyButton.view(h, {
 				model: model.promptCopy,
@@ -114,13 +132,9 @@ const investigationSummary = (investigation: V2Investigation): string =>
 const investigationLane = (h: H, investigation: V2Investigation | null, isStarting: boolean): Html =>
 	investigation === null
 		? lane(h, {
-				label: "Maple investigation",
-				body: [
-					lead(h, "Let Maple find the root cause"),
-					note(h, [
-						"Maple works through this issue's traces, logs and deploys, and writes up a diagnosis you can check.",
-					]),
-				],
+				glyph: "PulseIcon",
+				title: "Let Maple find the root cause",
+				note: "Reads traces, logs and deploys, and writes up a diagnosis.",
 				actions: [
 					button(
 						h,
@@ -135,16 +149,13 @@ const investigationLane = (h: H, investigation: V2Investigation | null, isStarti
 				],
 			})
 		: lane(h, {
-				label: "Maple investigation",
-				adornment: badge(h, { variant: "outline" }, [
+				glyph: "PulseIcon",
+				title: "Maple investigation",
+				titleAside: badge(h, { variant: "outline" }, [
 					sentenceCase(investigation.status),
 					...(investigation.confidence ? [` · ${investigation.confidence} confidence`] : []),
 				]),
-				body: [
-					typography(h, { size: "sm", tone: "foreground", as: "p", className: "line-clamp-3" }, [
-						investigationSummary(investigation),
-					]),
-				],
+				note: investigationSummary(investigation),
 				actions: [
 					linkButton(
 						h,
@@ -160,30 +171,7 @@ const investigationLane = (h: H, investigation: V2Investigation | null, isStarti
 
 /** The prompt exactly as it copies, behind a disclosure. */
 const promptPreview = (h: H, prompt: string): Html =>
-	h.details(
-		[h.Class("group/prompt border-t")],
-		[
-			h.summary(
-				[
-					h.Class(
-						"flex cursor-pointer list-none items-center gap-1.5 px-4 py-2.5 text-xs text-muted-foreground select-none hover:text-foreground active:text-foreground [&::-webkit-details-marker]:hidden",
-					),
-				],
-				[
-					icon(h, "ChevronRightIcon", { size: 12, className: "group-open/prompt:rotate-90" }),
-					"Preview the prompt",
-				],
-			),
-			h.pre(
-				[
-					h.Class(
-						"max-h-72 overflow-auto border-t bg-surface-sunken px-4 pt-3 pb-8 [mask-image:linear-gradient(to_bottom,black_80%,transparent)] font-mono text-xs leading-5 whitespace-pre-wrap break-words text-foreground-soft",
-					),
-				],
-				[prompt],
-			),
-		],
-	)
+	disclosureStrip(h, { label: "Preview the prompt", text: prompt })
 
 export const getItFixedPanel = (
 	h: H,
@@ -195,17 +183,15 @@ export const getItFixedPanel = (
 	// The prompt drives the error tools, so alert issues get Maple's lane alone. So does a viewer
 	// who cannot run one: the prompt tells an agent to claim and fix the issue.
 	if (issue.kind !== "error" || !canRunInvestigations(model))
-		return panel(h, { className: "shrink-0 overflow-hidden" }, [
-			panelHeader(h, { title: "Get it fixed" }),
-			maple,
-		])
+		return panel(
+			h,
+			{ className: "shrink-0 overflow-hidden", attributes: [h.AriaLabel("Get it fixed")] },
+			[h.div([], [maple])],
+		)
 	const prompt = agentPromptFromIssue(issue)
-	return panel(h, { className: "shrink-0 overflow-hidden" }, [
-		panelHeader(h, { title: "Get it fixed" }),
-		h.div(
-			[h.Class("grid divide-y xl:grid-cols-2 xl:divide-x xl:divide-y-0")],
-			[agentLane(h, model, prompt), maple],
-		),
+	// Two rows, no header: the headlines say what each path does, so the panel stays short.
+	return panel(h, { className: "shrink-0 overflow-hidden", attributes: [h.AriaLabel("Get it fixed")] }, [
+		h.div([], [agentLane(h, model, prompt), maple]),
 		promptPreview(h, prompt),
 	])
 }
