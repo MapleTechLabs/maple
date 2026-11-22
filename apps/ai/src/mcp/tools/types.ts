@@ -144,14 +144,21 @@ export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
-/** Tools that change only the caller's own state, which an analyst's role reaches (v2's `personal`). */
-export const PERSONAL_STATE_TOOLS: ReadonlySet<string> = new Set(["onboarding_status_update"])
+/**
+ * Writes an analyst's role reaches all the same: `onboarding_status_update` changes only the
+ * caller's own run (v2's `personal`), and `get_ingest_setup` only creates the org's keys the way
+ * the v2 public-key read every member may make already does.
+ */
+export const ANALYST_ALLOWED_WRITE_TOOLS: ReadonlySet<string> = new Set([
+	"onboarding_status_update",
+	"get_ingest_setup",
+])
 
-/** Whether an analyst is refused this tool: one that changes data, not a dashboard or their own state. */
+/** Whether an analyst is refused this tool: one that changes data, unless a dashboard or an allowed write. */
 export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
 	refusesReadOnlyCredential(name, readOnly) &&
 	!DASHBOARD_AUTHORING_TOOLS.has(name) &&
-	!PERSONAL_STATE_TOOLS.has(name)
+	!ANALYST_ALLOWED_WRITE_TOOLS.has(name)
 
 /** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
 export const refusalFor = (

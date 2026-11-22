@@ -7,7 +7,7 @@ import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDe
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped, mapleToolCatalog } from "../registry"
-import { DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL, PERSONAL_STATE_TOOLS, refusalFor } from "../types"
+import { DASHBOARD_AUTHORING_TOOLS, FEEDBACK_TOOL, ANALYST_ALLOWED_WRITE_TOOLS, refusalFor } from "../types"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -104,9 +104,9 @@ describe("what an analyst may change over MCP", () => {
 			(name) => refusalFor(caller, name, false) === undefined,
 		).sort()
 
-	it("is the dashboard tools, their own state and Maple's feedback channel, out of every tool that changes data", () => {
+	it("is the dashboard tools, the allowed writes and Maple's feedback channel, out of every tool that changes data", () => {
 		expect(openTo({ roles: ["org:analyst"] })).toEqual(
-			[...DASHBOARD_AUTHORING_TOOLS, ...PERSONAL_STATE_TOOLS, FEEDBACK_TOOL].sort(),
+			[...DASHBOARD_AUTHORING_TOOLS, ...ANALYST_ALLOWED_WRITE_TOOLS, FEEDBACK_TOOL].sort(),
 		)
 	})
 

@@ -169,6 +169,13 @@ describe("get_ingest_setup", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
+	it.effect("answers an analyst, who may read the public key over v2 as well", () =>
+		Effect.gen(function* () {
+			const result = yield* call("get_ingest_setup", {})
+			expect(Result.isSuccess(result)).toBe(true)
+		}).pipe(Effect.provide(layer({ role: "org:analyst" }))),
+	)
+
 	it.effect("is refused to a read-only key, since it may create the org's ingest keys", () =>
 		Effect.gen(function* () {
 			const result = yield* call("get_ingest_setup", {})
