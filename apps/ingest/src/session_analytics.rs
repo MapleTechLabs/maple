@@ -175,25 +175,30 @@ pub struct BillableSessionStarts {
 
 impl BillableSessionStarts {
     /// Note one row, removing its `billable_start` marker. A row without a
-    /// string `session_id` counts as the empty id.
-    pub fn note(&mut self, obj: &mut serde_json::Map<String, serde_json::Value>) {
+    /// string `session_id` counts as the empty id. True when the row added a session.
+    pub fn note(&mut self, obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
         if !take_billable_session_start(obj)
             || self.sessions.len() >= MAX_BILLABLE_SESSIONS_PER_REQUEST
         {
-            return;
+            return false;
         }
-        let session_id = obj
-            .get("session_id")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        if !self.sessions.contains(session_id) {
-            self.sessions.insert(session_id.to_owned());
-        }
+        self.sessions.insert(row_session_id(obj).to_owned())
+    }
+
+    /// Un-count the session a `note` just added, for a start the gateway decides not to bill.
+    pub fn retract(&mut self, obj: &serde_json::Map<String, serde_json::Value>) {
+        self.sessions.remove(row_session_id(obj));
     }
 
     pub fn count(&self) -> usize {
         self.sessions.len()
     }
+}
+
+fn row_session_id(obj: &serde_json::Map<String, serde_json::Value>) -> &str {
+    obj.get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
 }
 
 /// Clamp the client-supplied fields of one session metadata row in place.

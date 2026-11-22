@@ -77,6 +77,7 @@ import {
 } from "./planetscale-inventory"
 import { CostConnections } from "./cost-connections"
 import { MorphSpendReadings } from "./morph-spend-readings"
+import { CookielessSalts, CookielessVisits } from "./cookieless-visitors"
 import { FeatureRequests } from "./feature-requests"
 import { DevicePolicyFindings, DeviceVulnerabilityFindings } from "./device-findings"
 import { FleetConnections } from "./fleet"
@@ -157,6 +158,7 @@ export * from "./oncall-schedules"
 export * from "./aws-connections"
 export * from "./cost-sources"
 export * from "./morph-spend-readings"
+export * from "./cookieless-visitors"
 export * from "./gcp-connectors"
 export * from "./gcp-cost-exports"
 export * from "./gcp-resources"
@@ -279,6 +281,8 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OpenRouterCostConnections,
 	CostConnections,
 	MorphSpendReadings,
+	CookielessSalts,
+	CookielessVisits,
 	FeatureRequests,
 	OrgErasures,
 	OrgOpenRouterKeys,

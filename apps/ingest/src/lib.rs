@@ -3,6 +3,7 @@ pub mod audit_trail;
 pub mod aws;
 pub mod aws_metric_stream;
 pub mod clickhouse_insert_mappings;
+pub mod cookieless;
 pub mod decode_budget;
 pub mod decompress;
 pub mod gcp_logging;
