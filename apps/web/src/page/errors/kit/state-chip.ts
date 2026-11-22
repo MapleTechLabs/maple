@@ -54,16 +54,16 @@ export const investigationChip = <M>(
 				"max-w-full gap-1.5 rounded-sm text-2xs font-medium whitespace-nowrap focus-visible:rounded-sm",
 				options.className,
 			),
-			attributes: tooltipTrigger(
-				h,
-				`${INVESTIGATION_DESCRIPTION[investigation.status]} Click to open it.`,
-				{
+			attributes: [
+				// The label can be hidden (compact), so the button is named here.
+				h.AriaLabel(`Open investigation: ${label}`),
+				...tooltipTrigger(h, `${INVESTIGATION_DESCRIPTION[investigation.status]} Click to open it.`, {
 					title: investigation.confidence
 						? `${label} · ${investigation.confidence} confidence`
 						: label,
 					...INVESTIGATION_LOOK[investigation.status],
-				},
-			),
+				}),
+			],
 		},
 		[
 			statusDot(h, { tone: INVESTIGATION_LOOK[investigation.status].tone }),

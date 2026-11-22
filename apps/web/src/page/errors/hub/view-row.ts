@@ -36,7 +36,7 @@ import {
 	sparkOf,
 } from "./view-signal"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstackClass, vstackClass } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 
 /** Lane geometry, shared by the header and the rows so the two cannot drift. */
@@ -45,7 +45,9 @@ export const LANE = {
 	severity: "w-6 shrink-0",
 	identity: "min-w-0 flex-1",
 	// Investigation, comments, PRs: a lane of its own so each mark lines up down the list.
-	activity: "hidden shrink-0 items-center gap-2 @2xl/page:flex",
+	// Its own lane only once the row has room; narrower, the same slots end the message line.
+	activity: "hidden shrink-0 items-center gap-2 @4xl/page:flex",
+	activityInline: "ml-auto flex shrink-0 items-center gap-2 pl-3 @4xl/page:hidden",
 	volume: "hidden w-[52px] shrink-0 items-center justify-end gap-2 @lg/page:flex @2xl/page:w-36",
 	spark: "hidden min-w-0 flex-1 @2xl/page:block",
 	count: "w-[52px] shrink-0 text-right",
@@ -215,22 +217,28 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 							},
 							[rowTitle],
 						),
-						...(rowDetail
-							? [
-									// A line clamp, not `truncate`: the ellipsis follows the last glyph, never a space.
-									typography(
-										h,
-										{
-											as: "span",
-											size: "xs",
-											tone: "muted",
-											className: "line-clamp-1 break-all",
-											attributes: [h.Title(rowDetail)],
-										},
-										[rowDetail],
-									),
-								]
-							: []),
+						h.span(
+							[h.Class(hstackClass({ gap: "0", align: "center", className: "min-w-0" }))],
+							[
+								...(rowDetail
+									? [
+											// A line clamp, not `truncate`: the ellipsis follows the last glyph, never a space.
+											typography(
+												h,
+												{
+													as: "span",
+													size: "xs",
+													tone: "muted",
+													className: "line-clamp-1 min-w-0 flex-1 break-all",
+													attributes: [h.Title(rowDetail)],
+												},
+												[rowDetail],
+											),
+										]
+									: []),
+								signalActivity(h, signal, LANE.activityInline),
+							],
+						),
 					],
 				),
 				signalActivity(h, signal, LANE.activity),
