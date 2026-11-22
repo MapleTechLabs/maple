@@ -77,7 +77,7 @@ The setup is done only when Maple shows a trace from the real bootstrap. Per ser
 1. The project's own dev or build command still starts cleanly. Broken startup is a regression: fix it.
 2. Run the app the normal way: offer to start it, or ask the user how they run it.
 3. Drive one real request through an instrumented route (or a real CLI command) so the trace comes from the real bootstrap. No standalone script that bypasses it.
-4. Confirm in Maple that the configured `service.name` has spans: MCP `list_services` / `search_traces`, or the `maple` CLI (`maple services`, `maple traces -s <service> --since 15m`). Then run MCP `audit_setup` and fix what it reports.
+4. Confirm in Maple that the configured `service.name` has spans: MCP `list_services` / `search_traces`, or the `maple` CLI (`maple services`, `maple traces -s <service> --since 15m`). With Maple MCP connected, run `audit_setup` and fix what it reports; with the CLI only, the audit runs in Step 7 once MCP is connected.
 5. Show the user the trace link.
 
 If nothing arrives within about 2 minutes, keep debugging: endpoint region, key, init order, exporter errors (`maple-onboarding-style` "Verify export" has the per-language diagnostics and what to do on a `401`). With `MAPLE_TEST` nothing is stored: confirm export succeeds with no exporter errors, and tell the user that Maple verification waits for their real key.
@@ -98,7 +98,7 @@ Agree with the user, briefly:
 
 ## Step 7: Maple MCP
 
-Skip if Maple MCP tools are already connected to `<mcp>` (a server in the other region answers `401` or reads another organization). Otherwise offer to run, and confirm first: `claude mcp add --transport http maple <mcp>`. Mention without running: Codex `codex mcp add maple --url <mcp>`; Cursor and others copy the snippet at `<dashboard>/mcp`.
+Skip if Maple MCP tools are already connected to `<mcp>` (a server in the other region answers `401` or reads another organization). Otherwise offer to run, and confirm first: `claude mcp add --transport http maple <mcp>`. Mention without running: Codex `codex mcp add maple --url <mcp>`; Cursor and others copy the snippet at `<dashboard>/mcp`. Once it is connected, run `audit_setup` if Step 4 could not, and fix what it reports.
 
 ## Hard rules
 
