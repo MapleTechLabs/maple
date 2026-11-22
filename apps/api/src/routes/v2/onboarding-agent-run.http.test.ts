@@ -2,8 +2,9 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
+import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, V2OnboardingAgentHandoff, V2OnboardingAgentRun } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -104,10 +105,37 @@ const makeHarness = () => {
 			}),
 		)
 
+	/** A key the person made by hand, e.g. for CI: never one a handoff minted. */
+	const plainKey = (userId: string) =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const keys = yield* ApiKeysService
+				const created = yield* keys.create(
+					Schema.decodeSync(OrgId)("default"),
+					Schema.decodeSync(UserId)(userId),
+					{
+						name: "ci",
+					},
+				)
+				return created.secret
+			}),
+		)
+
+	/** The person the session signs in as, read from the run it started. */
+	const runOwner = async () => {
+		const row = await queryFirstRow<{ user_id: string }>(
+			testDb,
+			"select user_id from onboarding_agent_runs limit 1",
+		)
+		return row?.user_id ?? ""
+	}
+
 	return {
 		request,
 		session,
 		signInCli,
+		plainKey,
+		runOwner,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -143,6 +171,60 @@ describe("/v2/onboarding/agent_run", () => {
 					(stage) => stage.status,
 				),
 			).toEqual(Option.some("completed"))
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("a replaced agent's key reaches only its own closed run, never the new one", async () => {
+		const harness = makeHarness()
+		try {
+			const token = await harness.session()
+			const mint = async () =>
+				Schema.decodeUnknownSync(V2OnboardingAgentHandoff)(
+					(await harness.request("POST", "/v2/onboarding/agent_run", token)).body,
+				)
+			const agentA = await harness.signInCli((await mint()).handoff_code)
+			const agentB = await harness.signInCli((await mint()).handoff_code)
+
+			const late = await harness.request("POST", "/v2/onboarding/agent_run/status", agentA.token, {
+				stage: "prepare_production",
+				status: "completed",
+				run_status: "completed",
+			})
+			expect(late.status).toBe(409)
+
+			const fresh = await harness.request("POST", "/v2/onboarding/agent_run/status", agentB.token, {
+				stage: "connect_agent",
+				status: "completed",
+			})
+			expect(fresh.status).toBe(200)
+			const run = Schema.decodeUnknownSync(V2OnboardingAgentRun)(
+				(await harness.request("GET", "/v2/onboarding/agent_run", token)).body,
+			)
+			expect(run.status).toBe("in_progress")
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("a key the person made by hand cannot read or report to their run", async () => {
+		const harness = makeHarness()
+		try {
+			const token = await harness.session()
+			await harness.request("POST", "/v2/onboarding/agent_run", token)
+			const session = await harness.request("GET", "/v2/onboarding/agent_run", token)
+			const owner = Schema.decodeUnknownSync(V2OnboardingAgentRun)(session.body)
+			expect(owner.status).toBe("waiting_for_agent")
+
+			const ciKey = await harness.plainKey(await harness.runOwner())
+			const read = await harness.request("GET", "/v2/onboarding/agent_run", ciKey)
+			expect(read.status).toBe(404)
+			const write = await harness.request("POST", "/v2/onboarding/agent_run/status", ciKey, {
+				stage: "connect_agent",
+				status: "completed",
+			})
+			expect(write.status).toBe(404)
 		} finally {
 			await harness.dispose()
 		}

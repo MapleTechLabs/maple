@@ -13,7 +13,7 @@ import {
 	type OnboardingAgentRunStatus,
 	type OnboardingAgentStage,
 } from "@maple/domain/onboarding-agent-run"
-import type { OrgId, UserId } from "@maple/primitives"
+import type { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schedule, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -30,6 +30,15 @@ export interface OnboardingAgentReport {
 interface Owner {
 	readonly orgId: OrgId
 	readonly userId: UserId
+}
+
+/**
+ * Who reads or reports. With `apiKeyId` (the caller authenticated with an API key) only the run
+ * that key's handoff minted is reachable: another key the person made, or a replaced agent's key,
+ * never reaches their newest run. Without it (the person's session, their MCP grant) the newest run.
+ */
+export interface OnboardingAgentRunCaller extends Owner {
+	readonly apiKeyId?: ApiKeyId | undefined
 }
 
 const OPEN_STATUSES = [
@@ -67,15 +76,16 @@ export class OnboardingAgentRunService extends Context.Service<
 	{
 		readonly start: (
 			owner: Owner,
+			handoffCodeHash: string,
 		) => Effect.Effect<OnboardingAgentRunRow, OnboardingAgentRunUnavailableError>
 		readonly current: (
-			owner: Owner,
+			caller: OnboardingAgentRunCaller,
 		) => Effect.Effect<
 			OnboardingAgentRunRow,
 			OnboardingAgentRunNotFoundError | OnboardingAgentRunUnavailableError
 		>
 		readonly report: (
-			owner: Owner,
+			caller: OnboardingAgentRunCaller,
 			report: OnboardingAgentReport,
 		) => Effect.Effect<
 			OnboardingAgentRunRow,
@@ -98,7 +108,10 @@ export class OnboardingAgentRunService extends Context.Service<
 				}),
 		)
 
-		const start = Effect.fn("OnboardingAgentRunService.start")(function* (owner: Owner) {
+		const start = Effect.fn("OnboardingAgentRunService.start")(function* (
+			owner: Owner,
+			handoffCodeHash: string,
+		) {
 			const now = yield* Clock.currentTimeMillis
 			// One live run per person: the newest copy of the prompt is the one the page follows.
 			yield* dbExecute((db) =>
@@ -136,6 +149,8 @@ export class OnboardingAgentRunService extends Context.Service<
 							stages: [...emptyOnboardingAgentStages()],
 							serviceNames: [],
 							traceId: null,
+							handoffCodeHash,
+							apiKeyId: null,
 							lastReportedAt: null,
 							createdAt: now,
 							expiresAt: now + ONBOARDING_AGENT_RUN_TTL_MS,
@@ -155,12 +170,18 @@ export class OnboardingAgentRunService extends Context.Service<
 			return row
 		})
 
-		const latest = Effect.fn("OnboardingAgentRunService.latest")(function* (owner: Owner) {
+		const latest = Effect.fn("OnboardingAgentRunService.latest")(function* (
+			caller: OnboardingAgentRunCaller,
+		) {
+			const apiKeyId = caller.apiKeyId
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(OnboardingAgentRuns)
 						.select()
-						.where(($) => [$.orgId.eq(owner.orgId), $.userId.eq(owner.userId)])
+						.where(($) => [
+							$.orgId.eq(caller.orgId),
+							apiKeyId === undefined ? $.userId.eq(caller.userId) : $.apiKeyId.eq(apiKeyId),
+						])
 						.orderBy(($) => [[$.createdAt, "desc"]])
 						.limit(1),
 				),
@@ -174,17 +195,19 @@ export class OnboardingAgentRunService extends Context.Service<
 			return row.value
 		})
 
-		const current = Effect.fn("OnboardingAgentRunService.current")(function* (owner: Owner) {
-			const row = yield* latest(owner)
+		const current = Effect.fn("OnboardingAgentRunService.current")(function* (
+			caller: OnboardingAgentRunCaller,
+		) {
+			const row = yield* latest(caller)
 			const now = yield* Clock.currentTimeMillis
 			return { ...row, status: effectiveRunStatus(row, now) }
 		})
 
 		const attemptReport = Effect.fn("OnboardingAgentRunService.attemptReport")(function* (
-			owner: Owner,
+			caller: OnboardingAgentRunCaller,
 			input: OnboardingAgentReport,
 		) {
-			const row = yield* latest(owner)
+			const row = yield* latest(caller)
 			const now = yield* Clock.currentTimeMillis
 			const status = effectiveRunStatus(row, now)
 			if (!OPEN.has(status)) {
@@ -220,7 +243,7 @@ export class OnboardingAgentRunService extends Context.Service<
 							updatedAt: Math.max(now, row.updatedAt + 1),
 						})
 						.where(($) => [
-							$.orgId.eq(owner.orgId),
+							$.orgId.eq(caller.orgId),
 							$.id.eq(row.id),
 							$.updatedAt.eq(row.updatedAt),
 							$.status.eq(row.status),
@@ -236,10 +259,10 @@ export class OnboardingAgentRunService extends Context.Service<
 		})
 
 		const report = Effect.fn("OnboardingAgentRunService.report")(function* (
-			owner: Owner,
+			caller: OnboardingAgentRunCaller,
 			input: OnboardingAgentReport,
 		) {
-			return yield* attemptReport(owner, input).pipe(
+			return yield* attemptReport(caller, input).pipe(
 				Effect.retry({
 					schedule: Schedule.recurs(4),
 					while: (error) => error._tag === "@maple/backend/OnboardingAgentRunReportConflict",

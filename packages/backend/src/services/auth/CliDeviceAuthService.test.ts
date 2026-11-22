@@ -1,7 +1,17 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema, String as Str, DateTime } from "effect"
+import {
+	Array as Arr,
+	ConfigProvider,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+	DateTime,
+} from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -128,6 +138,18 @@ describe("CliDeviceAuthService", () => {
 			// A guessed code next to a real one signs nothing in.
 			const guessed = yield* auth.poll(`${handoff.code}x`)
 			expect(guessed.status).toBe("expired")
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
+	it.effect("two concurrent claims of one handoff code sign in exactly one CLI", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const auth = yield* CliDeviceAuthService
+			const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			const claims = yield* Effect.all([auth.poll(handoff.code), auth.poll(handoff.code)], {
+				concurrency: 2,
+			})
+			expect(Arr.filter(claims, (claim) => claim.status === "complete").length).toBe(1)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

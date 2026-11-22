@@ -20,7 +20,12 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { generateApiKey, hashApiKey, hashLookupToken } from "../../platform/credential-tokens"
-import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
+import {
+	ApiKeys,
+	CliDeviceAuthorizations,
+	OnboardingAgentRuns,
+	type CliDeviceAuthorizationRow,
+} from "@maple/db/tables"
 import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -127,7 +132,7 @@ export class CliDeviceAuthService extends Context.Service<
 		readonly createHandoff: (
 			identity: ApprovalIdentity,
 		) => Effect.Effect<
-			{ readonly code: string; readonly expiresAt: number },
+			{ readonly code: string; readonly codeHash: string; readonly expiresAt: number },
 			CliDevicePersistenceError | CliDeviceRateLimitError
 		>
 	}
@@ -379,6 +384,17 @@ export class CliDeviceAuthService extends Context.Service<
 								.returning("deviceCodeHash"),
 						)
 						if (claimed.length === 0) return false
+						// A handoff's key is the only credential that reports to the run it started.
+						if (row.deviceName === HANDOFF_DEVICE_NAME) {
+							yield* db.run(
+								PG.update(OnboardingAgentRuns)
+									.set({ apiKeyId })
+									.where(($) => [
+										$.orgId.eq(approvedOrgId),
+										$.handoffCodeHash.eq(row.deviceCodeHash),
+									]),
+							)
+						}
 						yield* db.run(
 							PG.insertInto(ApiKeys).values({
 								id: apiKeyId,
@@ -404,6 +420,10 @@ export class CliDeviceAuthService extends Context.Service<
 					}),
 				),
 			)
+			// A handoff is single use: a concurrent claim that lost gets nothing, not the winner's key.
+			if (!won && row.deviceName === HANDOFF_DEVICE_NAME) {
+				return new CliDeviceExpiredResponse({ status: "expired" })
+			}
 			if (!won) {
 				const winner = yield* loadByDeviceCodeHash(row.deviceCodeHash)
 				if (
@@ -470,10 +490,11 @@ export class CliDeviceAuthService extends Context.Service<
 			yield* purgeExpired(now)
 			const code = `${HANDOFF_CODE_PREFIX}${randomBytes(32).toString("base64url")}`
 			const expiresAt = now + ONBOARDING_HANDOFF_TTL_MS
+			const codeHash = hashLookupToken("cli-device/device-code", code, apiKeyHmacKey)
 			yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CliDeviceAuthorizations).values({
-						deviceCodeHash: hashLookupToken("cli-device/device-code", code, apiKeyHmacKey),
+						deviceCodeHash: codeHash,
 						// Never typed: a random user code keeps the unique index without a usable value.
 						userCodeHash: hashLookupToken("cli-device/user-code", randomUUID(), apiKeyHmacKey),
 						deviceName: HANDOFF_DEVICE_NAME,
@@ -487,7 +508,7 @@ export class CliDeviceAuthService extends Context.Service<
 					}),
 				),
 			)
-			return { code, expiresAt }
+			return { code, codeHash, expiresAt }
 		})
 
 		return { start, poll, inspect, approve, deny, createHandoff }

@@ -3,6 +3,7 @@ import { CurrentTenant } from "@maple/domain/http"
 import { MapleApiV2, isoTimestamp, isoTimestampOrNull } from "@maple/domain/http/v2"
 import type { V2OnboardingAgentRun } from "@maple/domain/http/v2"
 import {
+	OnboardingAgentRunNotFoundError,
 	OnboardingAgentRunRateLimitedError,
 	OnboardingAgentRunUnavailableError,
 } from "@maple/domain/onboarding-agent-run"
@@ -12,6 +13,7 @@ import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { CliDeviceAuthService, HANDOFF_DEVICE_NAME } from "@maple/backend/services/auth/CliDeviceAuthService"
 import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { requirePerson } from "./require-person"
 
 export const toV2OnboardingAgentRun = (row: OnboardingAgentRunRow): V2OnboardingAgentRun => ({
@@ -29,6 +31,21 @@ export const toV2OnboardingAgentRun = (row: OnboardingAgentRunRow): V2Onboarding
 	})),
 	service_names: row.serviceNames,
 	trace_id: row.traceId,
+})
+
+/** The tenant, plus the API key it authenticated with: a key only reaches the run it was minted for. */
+const currentCaller = Effect.gen(function* () {
+	const tenant = yield* CurrentTenant.Context
+	const actor = yield* CurrentAuditActor
+	if (actor?.type === "api_key" && actor.apiKeyId === undefined) {
+		// An API key we cannot name never falls back to the person's newest run.
+		return yield* new OnboardingAgentRunNotFoundError({ message: "No onboarding run for this key" })
+	}
+	return {
+		orgId: tenant.orgId,
+		userId: tenant.userId,
+		apiKeyId: actor?.type === "api_key" ? actor.apiKeyId : undefined,
+	}
 })
 
 export const HttpV2OnboardingAgentRunLive = HttpApiBuilder.group(
@@ -72,7 +89,10 @@ export const HttpV2OnboardingAgentRunLive = HttpApiBuilder.group(
 										),
 								}),
 							)
-						const run = yield* runs.start({ orgId: tenant.orgId, userId: tenant.userId })
+						const run = yield* runs.start(
+							{ orgId: tenant.orgId, userId: tenant.userId },
+							handoff.codeHash,
+						)
 						yield* recordHttpAudit("cli_session.approved", {
 							metadata: { deviceName: HANDOFF_DEVICE_NAME, roles: [...tenant.roles] },
 						})
@@ -86,15 +106,15 @@ export const HttpV2OnboardingAgentRunLive = HttpApiBuilder.group(
 				)
 				.handle("retrieve", () =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const run = yield* runs.current(tenant)
+						const caller = yield* currentCaller
+						const run = yield* runs.current(caller)
 						return toV2OnboardingAgentRun(run)
 					}),
 				)
 				.handle("report", ({ payload }) =>
 					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const row = yield* runs.report(tenant, {
+						const caller = yield* currentCaller
+						const row = yield* runs.report(caller, {
 							stage: payload.stage,
 							status: payload.status,
 							note: payload.note,

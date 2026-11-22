@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { OrgId, UserId } from "@maple/domain/http"
+import { randomUUID } from "node:crypto"
+import { ApiKeyId, OrgId, UserId } from "@maple/domain/http"
 import { ONBOARDING_AGENT_RUN_TTL_MS, ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
@@ -15,13 +16,15 @@ const provideRuns = (db: TestDb) =>
 const orgId = Schema.decodeSync(OrgId)("org_onboard")
 const userId = Schema.decodeSync(UserId)("user_onboard")
 const owner = { orgId, userId }
+let hashes = 0
+const nextHash = () => `handoff-hash-${(hashes += 1)}`
 
 describe("OnboardingAgentRunService", () => {
 	it.effect("records stages and keeps the agent's services and verification trace", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			const started = yield* runs.start(owner)
+			const started = yield* runs.start(owner, nextHash())
 			expect(started.status).toBe("waiting_for_agent")
 			expect(Arr.map(started.stages, (stage) => stage.status)).toEqual(Arr.replicate("pending", 6))
 
@@ -59,9 +62,9 @@ describe("OnboardingAgentRunService", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			yield* runs.start(owner)
+			yield* runs.start(owner, nextHash())
 			yield* TestClock.adjust("1 second")
-			const newest = yield* runs.start(owner)
+			const newest = yield* runs.start(owner, nextHash())
 
 			const done = yield* runs.report(owner, {
 				stage: "prepare_production",
@@ -82,10 +85,10 @@ describe("OnboardingAgentRunService", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			const first = yield* runs.start(owner)
+			const first = yield* runs.start(owner, nextHash())
 			yield* runs.report(owner, { stage: "connect_agent", status: "completed" })
 			yield* TestClock.adjust("1 second")
-			const second = yield* runs.start(owner)
+			const second = yield* runs.start(owner, nextHash())
 			expect(second.id).not.toBe(first.id)
 			expect((yield* runs.current(owner)).status).toBe("waiting_for_agent")
 
@@ -98,7 +101,7 @@ describe("OnboardingAgentRunService", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			yield* runs.start(owner)
+			yield* runs.start(owner, nextHash())
 			yield* Effect.forEach(
 				["connect_agent", "analyze_project", "instrument_app"] as const,
 				(stage) => runs.report(owner, { stage, status: "completed" }),
@@ -109,11 +112,26 @@ describe("OnboardingAgentRunService", () => {
 		}).pipe(provideRuns(db))
 	})
 
+	it.effect("an API key reaches only the run it was minted for, never the person's newest", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			yield* runs.start(owner, nextHash())
+			const otherKey = { ...owner, apiKeyId: Schema.decodeSync(ApiKeyId)(randomUUID()) }
+			const read = yield* runs.current(otherKey).pipe(Effect.flip)
+			expect(read._tag).toBe("@maple/http/errors/OnboardingAgentRunNotFoundError")
+			const write = yield* runs
+				.report(otherKey, { stage: "connect_agent", status: "active" })
+				.pipe(Effect.flip)
+			expect(write._tag).toBe("@maple/http/errors/OnboardingAgentRunNotFoundError")
+		}).pipe(provideRuns(db))
+	})
+
 	it.effect("a run a day old reads as expired and takes no more reports", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			yield* runs.start(owner)
+			yield* runs.start(owner, nextHash())
 			yield* TestClock.adjust(ONBOARDING_AGENT_RUN_TTL_MS)
 
 			expect((yield* runs.current(owner)).status).toBe("expired")
@@ -128,7 +146,7 @@ describe("OnboardingAgentRunService", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const runs = yield* OnboardingAgentRunService
-			yield* runs.start(owner)
+			yield* runs.start(owner, nextHash())
 			const otherOrg = { orgId: Schema.decodeSync(OrgId)("org_other"), userId }
 			const otherUser = { orgId, userId: Schema.decodeSync(UserId)("user_other") }
 
