@@ -109,6 +109,7 @@ const userPage = (h: H, model: Model, profile: UserProfileItem, inputs: PageView
 			issues: Option.getOrUndefined(AsyncData.getData(model.issues.data)),
 			traces: Option.getOrUndefined(AsyncData.getData(model.traces.data)),
 			logs: Option.getOrUndefined(AsyncData.getData(model.logs.data)),
+			window: model.window,
 		},
 	)
 	const tabContent = tabState(h, model, tab)

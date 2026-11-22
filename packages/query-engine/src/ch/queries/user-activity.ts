@@ -12,6 +12,7 @@ import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../date
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
+import { displaySpanName } from "./service-operations"
 
 /** The page's namespace scope: the org-global pin, else the rail's picks. Empty means all. */
 export interface UserNamespaceScope {
@@ -369,7 +370,7 @@ export function userTracesQuery(opts: UserTracesOpts) {
 			spanId: $.SpanId,
 			timestamp: $.Timestamp,
 			serviceName: $.ServiceName,
-			spanName: $.SpanName,
+			spanName: displaySpanName($),
 			spanKind: $.SpanKind,
 			durationMs: $.Duration.div(1000000),
 			statusCode: $.StatusCode,
@@ -390,6 +391,53 @@ export function userTracesQuery(opts: UserTracesOpts) {
 		])
 		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 100)
+		.format("JSON")
+}
+
+export interface UserOperationOutput {
+	readonly serviceName: string
+	readonly spanName: string
+	readonly requestCount: number
+	readonly errorCount: number
+	readonly p50DurationMs: number | null
+	readonly p95DurationMs: number | null
+	readonly lastSeen: DateTime.Utc
+}
+
+export const userOperationRowSchema = Schema.Struct({
+	serviceName: Schema.String,
+	spanName: Schema.String,
+	requestCount: CHNumber,
+	errorCount: CHNumber,
+	p50DurationMs: Schema.NullOr(CHNumber),
+	p95DurationMs: Schema.NullOr(CHNumber),
+	lastSeen: DateTimeUtcFromWarehouse64,
+})
+
+/** The user's requests grouped by operation (service and display span name), busiest first. */
+export function userOperationsQuery(opts: UserRawReadOpts) {
+	return from(Datasources.traces)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanName: displaySpanName($),
+			requestCount: CH.count(),
+			errorCount: CH.countIf($.StatusCode.eq("Error")),
+			p50DurationMs: CH.quantile(0.5)($.Duration).div(1_000_000),
+			p95DurationMs: CH.quantile(0.95)($.Duration).div(1_000_000),
+			lastSeen: CH.max_($.Timestamp),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			servicesCondition($.ServiceName, opts.serviceNames),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			namespaceCondition($.ResourceAttributes.get("service.namespace"), opts),
+			$.IsEntryPoint.eq(1),
+			traceUserCondition($, opts.userId),
+		])
+		.groupBy("serviceName", "spanName")
+		.orderBy(["requestCount", "desc"])
+		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
 

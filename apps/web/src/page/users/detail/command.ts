@@ -134,7 +134,10 @@ export const FetchTraces = Command.define("FetchUserTraces", {
 	execute: ({ key, refresh, ...data }) =>
 		readThrough(
 			{ key, refresh, idleTtlMs: IdleTtl.userTraces, schema: TracesData },
-			Effect.map(getUserTraces({ data }), (response): TracesData => ({ traces: response.traces })),
+			Effect.map(getUserTraces({ data }), (response): TracesData => ({
+				traces: response.traces,
+				operations: response.operations,
+			})),
 		).pipe(settleTo((result) => Message.CompletedFetchTraces({ key, result }))),
 })
 

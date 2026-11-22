@@ -28,7 +28,8 @@ export const SEVERITY_LABELS = {
 export const SEVERITY_TONE = {
 	critical: "crit",
 	warn: "warn",
-	info: "neutral",
+	// The blue the Issues caught chart draws a Note in.
+	info: "done",
 } satisfies Record<PrReviewSeverity, Tone>
 
 export const FINDING_STATUS_LABELS = {

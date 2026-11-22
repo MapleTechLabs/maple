@@ -18,6 +18,7 @@ import {
 	type UserListItem,
 	type UserLogItem,
 	type UserMcpSessionItem,
+	type UserOperationItem,
 	type UserProfileItem,
 	type UserService,
 	type UserSessionItem,
@@ -625,6 +626,8 @@ const ACTIVITY_LIMIT = 200
 const EVENT_DETAIL_PROPERTIES = 3
 /** Requests and log lines the Traces and Logs tabs list at most. */
 const USER_TRACES_LIMIT = 100
+/** Operations the Traces tab's summary lists at most. */
+const USER_OPERATIONS_LIMIT = 50
 const USER_LOGS_LIMIT = 200
 /** Failed or slow requests, and warnings, the Activity timeline takes at most, each. */
 const NOTABLE_LIMIT = 50
@@ -1203,6 +1206,41 @@ const toTraceItem = (row: CH.UserTraceOutput): UserTraceItem => ({
 	isRoot: row.isRoot === 1,
 })
 
+const toOperationItem = (row: CH.UserOperationOutput): UserOperationItem => ({
+	service: row.serviceName,
+	spanName: row.spanName,
+	requests: row.requestCount,
+	errors: row.errorCount,
+	p50Ms: row.p50DurationMs ?? 0,
+	p95Ms: row.p95DurationMs ?? 0,
+	lastSeenMs: toMs(row.lastSeen),
+})
+
+/** The user's requests per operation, over the same services and window as the list. */
+const readOperationRows = Effect.fn("UsersReads.operationRows")(function* (
+	tenant: TenantContext,
+	payload: UserDetailRequest,
+	slices: ReadonlyArray<CH.UserActivitySliceOutput>,
+) {
+	const window = sliceWindow(requestHours(slices), payload)
+	if (window === null) return []
+	const warehouse = yield* WarehouseQueryService
+	const rows = yield* warehouse.compiledQuery(
+		tenant,
+		CH.compile(
+			CH.userOperationsQuery({
+				userId: payload.userId,
+				namespaces: payload.namespaces ?? [],
+				serviceNames: window.serviceNames,
+				limit: USER_OPERATIONS_LIMIT,
+			}),
+			{ orgId: tenant.orgId, startTime: window.startTime, endTime: window.endTime },
+		),
+		{ profile: "list", context: "userOperations" },
+	)
+	return Arr.map(rows, toOperationItem)
+})
+
 const toLogItem = (row: CH.UserLogOutput): UserLogItem => ({
 	atMs: toMs(row.timestamp),
 	severity: severityOf(row.severityText, row.severityNumber),
@@ -1272,9 +1310,18 @@ export const readUserTraces = Effect.fn("UsersReads.traces")(function* (
 ) {
 	yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 	const slices = yield* readSlices(tenant, payload)
-	const traces = yield* readTraceRows(tenant, payload, slices, { limit: USER_TRACES_LIMIT, notable: false })
-	yield* Effect.annotateCurrentSpan({ "maple.users.traces": traces.length })
-	return new UserTracesResponse({ traces })
+	const [traces, operations] = yield* Effect.all(
+		[
+			readTraceRows(tenant, payload, slices, { limit: USER_TRACES_LIMIT, notable: false }),
+			readOperationRows(tenant, payload, slices),
+		],
+		{ concurrency: "unbounded" },
+	)
+	yield* Effect.annotateCurrentSpan({
+		"maple.users.traces": traces.length,
+		"maple.users.operations": operations.length,
+	})
+	return new UserTracesResponse({ traces, operations })
 })
 
 /** The Logs tab: the user's log lines, newest first, read only where the rollup saw them. */

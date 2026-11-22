@@ -421,6 +421,16 @@ export const USER_DETAIL: UserDetail = {
 			status: "Error",
 			isError: true,
 		},
+		...Arr.map([0, 1, 2, 3], (index) => ({
+			traceId: `c4a0${index}`,
+			href: `/traces/c4a0${index}`,
+			atMs: ago(2 * MIN + (index + 1) * 8_000),
+			rootSpan: "GET /api/cart",
+			service: "api",
+			durationMs: 60 + index * 9,
+			status: "Ok",
+			isError: false,
+		})),
 		{
 			traceId: "7a1e02",
 			href: "/traces/7a1e02",
@@ -472,6 +482,35 @@ export const USER_DETAIL: UserDetail = {
 			isError: false,
 		},
 	],
+	operations: Arr.map(
+		[
+			{ service: "api", name: "GET /api/cart", requests: 214, errors: 0, p50Ms: 72, p95Ms: 160 },
+			{
+				service: "web",
+				name: "documentLoad /pricing",
+				requests: 61,
+				errors: 0,
+				p50Ms: 610,
+				p95Ms: 1_420,
+			},
+			{ service: "api", name: "POST /api/checkout", requests: 38, errors: 6, p50Ms: 640, p95Ms: 2_300 },
+			{ service: "api", name: "GET /api/pricing", requests: 33, errors: 0, p50Ms: 98, p95Ms: 210 },
+			{ service: "api", name: "POST /api/events", requests: 27, errors: 1, p50Ms: 18, p95Ms: 44 },
+			{
+				service: "search-indexer-worker",
+				name: "GET /reports/:id",
+				requests: 4,
+				errors: 0,
+				p50Ms: 2_900,
+				p95Ms: 3_400,
+			},
+		],
+		(operation, index) => ({
+			...operation,
+			lastSeenMs: ago((index + 1) * 3 * MIN),
+			href: `/traces?spanNames=${encodeURIComponent(operation.name)}`,
+		}),
+	),
 	logs: [
 		{
 			atMs: ago(2 * MIN),

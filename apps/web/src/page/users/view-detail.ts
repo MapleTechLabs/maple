@@ -8,6 +8,7 @@ import {
 	formatPercent,
 } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
+import { errorRateLevel } from "@maple/ui/lib/error-rate"
 import { TONE_SOFT, type Tone } from "@maple/ui/lib/tone"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -52,9 +53,10 @@ import { clientIcon, kindTag } from "../mcp/view-kit"
 import { statRail, statRailItem } from "../kit/stat-rail"
 import { type LinkTab, linkTabStrip } from "../kit/underline-tabs"
 import type { ActivityItem, ActivityKind, UserDetail, UserProfile, UserTab } from "./data"
-import { namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
+import { foldRepeats, namespacesOf, perUserText, USER_TABS, userLabel } from "./data"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/issue-workflow"
 import { userAvatar } from "./view-kit"
+import { sectionHeading } from "../kit/section-heading"
 import { activityCalendar, type ActivityCalendarOptions } from "./activity-calendar"
 
 // `/users/$userId`: one end user's identity, then everything Maple holds for them, by tab.
@@ -242,7 +244,7 @@ const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
 }
 
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
-	statRail(h, { columns: 5, isFlush: true, className: "[&>*]:px-(--page-gutter)" }, [
+	statRail(h, { columns: 5, isFlush: true, isOnPageGutter: true }, [
 		statRailItem(h, {
 			eyebrow: "Sessions",
 			value: formatNumber(profile.sessions),
@@ -264,7 +266,7 @@ const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
 						: profile.failedRate === null
 							? "failure rate not available"
 							: `${formatPercent(profile.failedRate)} failed`,
-			tone: profile.failedRate !== null && profile.failedRate > 0 ? "warn" : "neutral",
+			tone: profile.failedRate === null ? "neutral" : errorRateLevel(profile.failedRate),
 			spark: Arr.some(profile.activity, (count) => count > 0) ? profile.activity : undefined,
 			compact: true,
 		}),
@@ -757,11 +759,11 @@ const KIND_ICON = {
 	mcp: "PlugIcon",
 } satisfies { readonly [K in ActivityKind]: IconName }
 
-/** Each kind keeps its own colour, so a day of mixed rows reads by kind before any text. */
+/** Only the kinds that ask for a look get a colour (errors, replays, MCP); the routine ones stay neutral. */
 const KIND_TONE = {
 	error: "crit",
 	request: "neutral",
-	event: "info",
+	event: "neutral",
 	session: "done",
 	log: "neutral",
 	mcp: "live",
@@ -872,7 +874,7 @@ const activityBody = <M>(h: HtmlBuilder<M>, items: ReadonlyArray<ActivityItem>, 
 			const dayItems = days[key] ?? []
 			const first = dayItems[0]
 			return vstack(h, { as: "section" }, [
-				eyebrow(h, { variant: "mono", className: "px-2.5 pb-1" }, [
+				eyebrow(h, { className: "px-2.5 pb-1" }, [
 					first === undefined ? key : dayLabel(first.atMs, clock),
 				]),
 				vstack(
@@ -1107,41 +1109,137 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 /** A request this slow reads as a warning. */
 const SLOW_MS = 2000
 
-/** The user's requests, one row per entry span; each opens its trace. */
+const latencyCell = <M>(h: HtmlBuilder<M>, ms: number, className = "w-20 shrink-0"): Html =>
+	cellText(h, formatLatency(ms), className, {
+		right: true,
+		mono: false,
+		tone: ms >= SLOW_MS ? "warning" : "foreground",
+	})
+
+/** Operations the API lists at most (`USER_OPERATIONS_LIMIT`); a full list says it is the top ones. */
+const OPERATIONS_CAP = 50
+
+/** Set off from the latency columns beside it, so "P95" and "Last seen" don't read as one. */
+const LAST_SEEN_LANE = "w-24 shrink-0 pl-4"
+
+/** What the user calls, busiest first: requests, failures and latency per operation. */
+const operationsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	toolTable(h, [
+		toolTableHead(h, [
+			th(h, { label: "Operation", width: columnClass({ min: "0" }) }),
+			th(h, { label: "Requests", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Failed", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "P50", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "P95", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Last seen", width: LAST_SEEN_LANE }),
+		]),
+		toolTableBody(
+			h,
+			Arr.map(detail.operations, (operation) =>
+				toolTableRow(h, { href: operation.href, className: "h-12" }, [
+					vstack(h, { gap: "0.5", className: "w-0 min-w-0 flex-1" }, [
+						typography(h, { size: "xs", mono: true, truncate: true }, [operation.name]),
+						serviceLabel(h, { serviceName: operation.service, size: "2xs", tone: "muted" }),
+					]),
+					cellText(h, formatNumber(operation.requests), "w-20 shrink-0", {
+						right: true,
+						mono: false,
+					}),
+					cellText(
+						h,
+						operation.errors === 0
+							? EMPTY_VALUE
+							: formatPercent(operation.errors / operation.requests, { floor: 0.001 }),
+						"w-20 shrink-0",
+						{ right: true, mono: false, tone: operation.errors === 0 ? "muted" : "error" },
+					),
+					latencyCell(h, operation.p50Ms),
+					latencyCell(h, operation.p95Ms),
+					timeCell(h, operation.lastSeenMs, clock, LAST_SEEN_LANE),
+				]),
+			),
+		),
+	])
+
+/** The latest requests, repeats folded into one row that opens the run's slowest. */
+const recentRequestsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
+	toolTable(h, [
+		toolTableHead(h, [
+			th(h, { label: "Time", width: "w-20 shrink-0" }),
+			th(h, { label: "Request", width: columnClass({ min: "0" }) }),
+			th(h, { label: "Service", width: SERVICE_LANE }),
+			th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
+			th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
+		]),
+		toolTableBody(
+			h,
+			Arr.map(foldRepeats(detail.traces), (run) =>
+				toolTableRow(h, { href: run.slowest.href }, [
+					timeCell(h, run.newest.atMs, clock),
+					hstack(h, { gap: "2", as: "span", className: "w-0 min-w-0 flex-1" }, [
+						typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
+							run.newest.rootSpan,
+						]),
+						...(run.count === 1
+							? []
+							: [
+									badge(
+										h,
+										{ variant: "muted", size: "sm", mono: true, className: "shrink-0" },
+										[`×${formatNumber(run.count)}`],
+									),
+								]),
+					]),
+					serviceCell(h, run.newest.service),
+					latencyCell(h, run.slowest.durationMs),
+					cellText(h, run.newest.status, "w-16 shrink-0", {
+						right: true,
+						mono: false,
+						tone: run.newest.isError ? "error" : "muted",
+					}),
+				]),
+			),
+		),
+	])
+
+/** The user's requests: a per-operation summary over the window, then the latest ones. */
 const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>
 	indexedTabState(detail.profile.requests, detail.traces) === "unindexed"
 		? unavailableTab(h, "LayersIcon", "Requests are not indexed per user here", UNINDEXED_DESCRIPTION)
 		: Arr.isReadonlyArrayEmpty(detail.traces)
 			? noRows(h, "No requests from this user in this window")
-			: toolTable(h, [
-					toolTableHead(h, [
-						th(h, { label: "Time", width: "w-20 shrink-0" }),
-						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
-						th(h, { label: "Service", width: SERVICE_LANE }),
-						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
-						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
-					]),
-					toolTableBody(
-						h,
-						Arr.map(detail.traces, (trace) =>
-							toolTableRow(h, { href: trace.href }, [
-								timeCell(h, trace.atMs, clock),
-								cellText(h, trace.rootSpan, "w-0 flex-1"),
-								serviceCell(h, trace.service),
-								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
-									right: true,
-									mono: false,
-									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
-								}),
-								cellText(h, trace.status, "w-16 shrink-0", {
-									right: true,
-									mono: false,
-									tone: trace.isError ? "error" : "muted",
-								}),
+			: vstack(h, { gap: "8", className: "min-w-0" }, [
+					...(Arr.isReadonlyArrayEmpty(detail.operations)
+						? []
+						: [
+								requestSection(
+									h,
+									"Operations",
+									formatNumber(detail.operations.length),
+									detail.operations.length >= OPERATIONS_CAP
+										? `Top ${OPERATIONS_CAP}, busiest first`
+										: "Busiest first",
+									operationsTable(h, detail, clock),
+								),
 							]),
+					requestSection(
+						h,
+						"Recent requests",
+						formatNumber(detail.traces.length),
+						"Newest first, repeats folded",
+						cappedList(
+							h,
+							recentRequestsTable(h, detail, clock),
+							detail.traces.length,
+							detail.profile.requests ?? detail.traces.length,
+							"request",
 						),
 					),
 				])
+
+/** One block of the Traces tab: its titled, counted heading over its table. */
+const requestSection = <M>(h: HtmlBuilder<M>, title: string, count: string, hint: string, body: Html): Html =>
+	vstack(h, { gap: "3", className: "min-w-0" }, [sectionHeading(h, { as: "h3", title, count, hint }), body])
 
 /** The user's log lines; one inside a trace opens it. */
 const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html =>

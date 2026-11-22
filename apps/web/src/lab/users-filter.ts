@@ -135,6 +135,7 @@ export const scopeDetail = (detail: UserDetail, namespace: string | null): UserD
 		sessions,
 		issues,
 		traces,
+		operations: keep(detail.operations),
 		logs,
 		events,
 		mcpSessions,
