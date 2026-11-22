@@ -37,7 +37,11 @@ export interface PrivacyOptions {
 	readonly persistVisitorId?: boolean
 	/**
 	 * `"memory"` keeps every SDK state in memory: no cookies, Web Storage or
-	 * IndexedDB, and no visitor id. A reload starts a new session. Default
+	 * IndexedDB, and no visitor id. A reload starts a new session.
+	 * `"cookieless"` stores nothing on the device either, but the ingest gateway
+	 * derives a visitor id that changes every UTC day, from a salt it deletes
+	 * after two days: unique visitors count within a day, not across days, and
+	 * new vs returning is unavailable. `"memory"` wins if both are set. Default
 	 * `"browser"`.
 	 */
 	readonly persistence?: Persistence
@@ -282,7 +286,15 @@ export function consentAllowedSince(): number {
  * because GPC/DNT suppress the cross-session id without suppressing capture.
  */
 export function mayPersistIdentifier(): boolean {
-	if (!hasConsent() || !mayUseStorage()) return false
+	return mayUseStorage() && mayIdentifyVisitor()
+}
+
+/**
+ * `mayPersistIdentifier` without the storage half: consent, GPC and DNT allow
+ * a visitor identifier. Decides whether cookieless rows ask for a server-side one.
+ */
+export function mayIdentifyVisitor(): boolean {
+	if (!hasConsent()) return false
 	if (typeof navigator === "undefined") return true
 	const nav = navigator as Navigator & { globalPrivacyControl?: boolean }
 	if (nav.globalPrivacyControl === true) return false

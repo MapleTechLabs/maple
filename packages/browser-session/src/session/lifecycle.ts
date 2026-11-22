@@ -23,7 +23,8 @@ import {
 } from "./session"
 import { claimVisit, touchVisit } from "../identity/visit"
 import { IDLE_TIMEOUT_MS } from "./idle"
-import { getVisitorId, isVisitorIdPersisted } from "../identity/visitor"
+import { isVisitorIdPersisted } from "../identity/visitor"
+import { COOKIELESS_VISITOR_ID, rowVisitorId } from "../identity/row-visitor"
 
 /**
  * How often a visible tab re-posts its `active` row.
@@ -195,10 +196,10 @@ export function startSessionLifecycle(
 		const version = nextMetaVersion(record.id)
 		if (version === undefined) return
 		const counts = countsFor(record)
-		const visitorId = getVisitorId()
-		// Tracking off means no visitor id and no persisted claim: billing falls
-		// back to one charge per session record, as before visits existed.
-		const persistVisit = visitorId !== undefined
+		const visitorId = rowVisitorId()
+		// Tracking off (or cookieless) means no persisted claim: billing falls back
+		// to one charge per session record; the gateway dedupes cookieless visits.
+		const persistVisit = visitorId !== "" && visitorId !== COOKIELESS_VISITOR_ID
 		const billableStart = resolveBillable(record.id, () => claimVisit(Date.now(), persistVisit))
 		touchVisit(record.lastActivityAt, persistVisit)
 		hooks.post(
