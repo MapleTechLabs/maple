@@ -279,6 +279,7 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 					tenant,
 					name,
 					title: mcpToolTitle(name),
+					...(action === undefined ? undefined : { action }),
 					input,
 					surface,
 					isError: result.isError === true,

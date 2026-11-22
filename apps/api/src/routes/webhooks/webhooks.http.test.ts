@@ -61,6 +61,7 @@ const recordingProductEvents = () => {
 	const layer = Layer.succeed(ProductEventsService, {
 		enabled: true,
 		track: (event) => Effect.sync(() => void tracked.push(event)),
+		trackAll: (events) => Effect.sync(() => void tracked.push(...events)),
 	})
 	return { tracked, layer }
 }

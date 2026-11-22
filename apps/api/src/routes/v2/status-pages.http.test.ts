@@ -931,6 +931,10 @@ describe("v2 status pages", () => {
 				})
 				expect(draft.body.draft).toBe(true)
 				expect(published).toHaveLength(1)
+				// Publishing from the builder is audited as a publish; saving a draft is not.
+				const builderPublishes = await harness.auditEntries("status_page.published")
+				expect(builderPublishes).toHaveLength(1)
+				expect(builderPublishes[0]?.metadata?.outcome).toBe("published")
 				const publish = await harness.request(
 					"POST",
 					`/v2/status_pages/${draft.body.id}/publish`,
@@ -938,6 +942,7 @@ describe("v2 status pages", () => {
 				)
 				expect(publish.body.outcome).toBe("published")
 				expect(published).toHaveLength(2)
+				expect(await harness.auditEntries("status_page.published")).toHaveLength(2)
 				expect(
 					(await harness.request("GET", `/v2/status_pages/${draft.body.id}`, token)).body.draft,
 				).toBe(false)
@@ -956,6 +961,8 @@ describe("v2 status pages", () => {
 					})
 					expect(created.status).toBe(200)
 					expect(created.body).toMatchObject({ draft: false, published_revision: 0 })
+					const [entry] = await harness.auditEntries("status_page.published")
+					expect(entry?.metadata?.outcome).toBe("queued")
 					expect(
 						(await harness.request("GET", `/v2/status_pages/${created.body.id}`, token)).status,
 					).toBe(200)
