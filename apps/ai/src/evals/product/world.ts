@@ -502,9 +502,9 @@ export const distinct = (
 ): ReadonlySet<string> => new Set(Arr.filter(Arr.map(rows, key), (value) => value !== ""))
 
 /**
- * How many keys reached each step in order, the whole chain inside `windowMs` of step 1. Each key
- * starts from its first step-1 row and takes the first later row of each next step; the world
- * gives nobody a second attempt, so that is the funnel's own answer.
+ * How many keys reached each step in order, the whole chain inside `windowMs` of its step 1.
+ * An attempt starts at any step-1 row and takes the first later row of each next step that is
+ * still inside the window; a key's depth is its best attempt, as the funnel counts it.
  */
 export const funnelCounts = (
 	world: World,
@@ -516,27 +516,29 @@ export const funnelCounts = (
 	},
 ): ReadonlyArray<number> => {
 	const key = keyOf(world, options.keyBy)
+	const [first, ...later] = options.steps
+	if (first === undefined) return []
 	const byKey = Arr.groupBy(
 		Arr.filter(rowsWhere(world, inRange(options.range)), (row) => key(row) !== ""),
 		key,
 	)
-	const depths = Arr.map(Rec.values(byKey), (rows) => {
-		let depth = 0
-		let startAt = 0
-		let after = -1
-		for (const step of options.steps) {
+	const depthFrom = (rows: ReadonlyArray<WorldEvent>, start: WorldEvent): number => {
+		let depth = 1
+		let after = start.atMs
+		for (const step of later) {
 			const next = Arr.findFirst(
 				rows,
-				(row) =>
-					row.atMs > after && step(row) && (depth === 0 || row.atMs <= startAt + options.windowMs),
+				(row) => row.atMs > after && row.atMs <= start.atMs + options.windowMs && step(row),
 			)
 			if (next._tag === "None") break
-			if (depth === 0) startAt = next.value.atMs
 			after = next.value.atMs
 			depth += 1
 		}
 		return depth
-	})
+	}
+	const depths = Arr.map(Rec.values(byKey), (rows) =>
+		Math.max(0, ...Arr.map(Arr.filter(rows, first), (start) => depthFrom(rows, start))),
+	)
 	return Arr.map(options.steps, (_, index) => Arr.filter(depths, (depth) => depth > index).length)
 }
 

@@ -436,7 +436,7 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 		scenario(
 			"user-timeline",
 			["users"],
-			`What were the last three things user ${timelineUser} did in the product (events or page views), most recent first?`,
+			`What were the last three things user ${timelineUser} did in the product (events or page views) ${span(twoWeeks)}, most recent first?`,
 			[
 				answerMentions("report_exported"),
 				answerMentions(
