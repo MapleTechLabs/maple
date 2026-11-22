@@ -48,6 +48,37 @@ const fixtures: FixtureRule[] = [
 		],
 	},
 	{ match: (sql) => Str.includes("anon_step")(sql), rows: [] },
+	// A step whose events mostly carry the account, and three of ten thousand a user id.
+	{
+		match: (sql) => Str.includes("mostly_account")(sql) && isCoverageRead(sql),
+		rows: [
+			{
+				step: 1,
+				events: 100,
+				withPerson: 100,
+				withUser: 100,
+				withVisitor: 100,
+				withGroup: 100,
+				withSession: 100,
+			},
+			{
+				step: 2,
+				events: 10_000,
+				withPerson: 3,
+				withUser: 3,
+				withVisitor: 0,
+				withGroup: 9_000,
+				withSession: 0,
+			},
+		],
+	},
+	{
+		match: (sql) => Str.includes("mostly_account")(sql) && isFunnelRead(sql),
+		rows: [
+			{ step: 1, count: 80 },
+			{ step: 2, count: 0 },
+		],
+	},
 	// A billing event that carries the account and no user, after a step that carries both.
 	{
 		match: (sql) => Str.includes("billing_only")(sql) && isCoverageRead(sql),
@@ -173,6 +204,20 @@ describe("query_funnel identity", () => {
 		expect(output.suggestedKeyBy).toBe("group")
 		// The first suggested call repeats the funnel under the key that works.
 		expect(markdown(result)).toMatch(/Next:\n- `query_funnel [^\n]*key_by="group"/)
+	})
+
+	it("offers a key most of every step's events carry, not one a handful happen to", async () => {
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "checkout_started" },
+				{ kind: "event", eventName: "mostly_account" },
+			]),
+			key_by: "visitor",
+		})
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		// Three of ten thousand events carry a user id: by person or user the 0 would stay a 0.
+		expect(output.suggestedKeyBy).toBe("group")
+		expect(output.identityNote).toContain("Most of every step's events carry a group id")
 	})
 
 	it("keeps the filters, the window and the breakdown in the funnel it offers under another key", async () => {

@@ -62,11 +62,25 @@ export const identityNoteFor = <K extends FunnelKeyBy>(
 	const matched = Arr.filter(coverage, (row) => row.events > 0)
 	const uncounted = Arr.filter(matched, (row) => carried(row, keyBy) === 0)
 	if (uncounted.length === 0) return undefined
+	// A key a handful of a step's events happen to carry would send the caller into the same 0:
+	// it has to be on most of every step's events to be worth a rerun.
 	const fitting = Arr.findFirst(
 		Arr.filter(KEY_BY_PREFERENCE, (candidate): candidate is K => Arr.contains(candidates, candidate)),
-		(candidate) => candidate !== keyBy && Arr.every(matched, (row) => carried(row, candidate) > 0),
+		(candidate) =>
+			candidate !== keyBy && Arr.every(matched, (row) => carried(row, candidate) * 2 >= row.events),
 	)
-	const these = matched.length > 1 ? "Every step's events carry" : "Those events carry"
+	const onAll = Option.match(fitting, {
+		onNone: () => false,
+		onSome: (candidate) => Arr.every(matched, (row) => carried(row, candidate) === row.events),
+	})
+	const these =
+		matched.length > 1
+			? onAll
+				? "Every step's events carry"
+				: "Most of every step's events carry"
+			: onAll
+				? "Those events carry"
+				: "Most of those events carry"
 	const note = Arr.join(
 		[
 			...Arr.map(
@@ -76,7 +90,7 @@ export const identityNoteFor = <K extends FunnelKeyBy>(
 			),
 			Option.match(fitting, {
 				onNone: () =>
-					"No single key is on all of these events; send the same user id or group id with each of them.",
+					"No single key is on most of each of these events; send the same user id or group id with each of them.",
 				onSome: (candidate) =>
 					`${these} ${KEY_BY_IDENTITY[candidate]}: run it again with key_by="${candidate}".`,
 			}),

@@ -1014,6 +1014,30 @@ describeWithChdb("product event funnels over example products", () => {
 		expect(Result.isSuccess(built([excluding("cart")], checkout))).toBe(true)
 		expect(Result.isSuccess(built([excluding("pay")], checkout))).toBe(true)
 		expect(Result.isSuccess(built([excluding("pay", 1, 2)], checkout))).toBe(true)
+		// Two steps are the same only when every field is: a value that spells another attribute is not one.
+		const tagged = [ev("cart"), ev("address", { y: "1", z: "2" }), ev("pay")]
+		expect(
+			Result.isSuccess(
+				built(
+					[{ step: { kind: "event", eventName: "address", attributeEquals: { y: "1&z=2" } } }],
+					tagged,
+				),
+			),
+		).toBe(true)
+		expect(
+			Result.isFailure(
+				built(
+					[{ step: { kind: "event", eventName: "address", attributeEquals: { z: "2", y: "1" } } }],
+					tagged,
+				),
+			),
+		).toBe(true)
+		// A range that is off is reported as that, whatever else the exclusion would also be.
+		const offRange = built(
+			[{ step: { kind: "event", eventName: "address" }, after: 0, before: 3 }],
+			checkout,
+		)
+		expect(Result.isFailure(offRange) ? offRange.failure.message : "").toContain("must be steps in 1..3")
 		// Across a single gap the step on either side can never apply: refused, not ignored.
 		expect(Result.isFailure(built([excluding("cart", 1, 2)], checkout))).toBe(true)
 		expect(Result.isFailure(built([excluding("address", 1, 2)], checkout))).toBe(true)

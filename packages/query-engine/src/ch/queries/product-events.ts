@@ -307,6 +307,13 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			after >= before
 		)
 	})
+	// First: the two checks below read the range, and say the wrong thing about one that is off.
+	if (Option.isSome(misplaced)) {
+		return new ProductEventsFunnelError({
+			reason: "InvalidExclusion",
+			message: `an exclusion's after and before must be steps in 1..${opts.steps.length} with after < before, got after=${String(misplaced.value.after ?? 1)} before=${String(misplaced.value.before ?? opts.steps.length)}`,
+		})
+	}
 	// A step strictly between the two bounds has to happen there, so excluding it leaves nobody.
 	// The bounds themselves may be excluded when the range spans more than one gap: "no return to
 	// the cart between the cart and the payment", in cart, address, payment.
@@ -338,40 +345,38 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			)
 		)
 	})
-	if (Option.isNone(misplaced) && Option.isSome(vacuous)) {
+	if (Option.isSome(vacuous)) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidExclusion",
 			message:
 				"an exclusion that is the step on either side of a single gap can never apply: a repeat of the first step starts a new attempt, and the second step ends the gap. Name another event, or widen after/before to span more steps",
 		})
 	}
-	if (Option.isSome(misplaced)) {
-		return new ProductEventsFunnelError({
-			reason: "InvalidExclusion",
-			message: `an exclusion's after and before must be steps in 1..${opts.steps.length} with after < before, got after=${String(misplaced.value.after ?? 1)} before=${String(misplaced.value.before ?? opts.steps.length)}`,
-		})
-	}
 	return undefined
 }
 
-/** A step as one string, equal for two steps that match the same rows. */
+/** One field of a step key, length first, so no value can be read as two fields or as none. */
+const keyPart = (value: string): string => `${value.length}:${value}`
+
+/** A step as one string, equal only for two steps that match the same rows. */
 const stepKey = (step: FunnelStep): string => {
 	switch (step.kind) {
 		case "event":
-			return `event ${step.eventName} ${Arr.join(
+			return `event ${keyPart(step.eventName)}${Arr.join(
 				Arr.map(
 					Arr.sort(
 						Rec.toEntries(step.attributeEquals ?? {}),
 						Order.mapInput(Order.String, (entry: readonly [string, string]) => entry[0]),
 					),
-					([key, value]) => `${key}=${value}`,
+					([key, value]) => keyPart(key) + keyPart(value),
 				),
-				"&",
+				"",
 			)}`
 		case "page":
-			return `page ${step.host ?? ""} ${step.pagePath}`
+			// No host is any host; an empty one is a different step.
+			return `page ${step.host === undefined ? "any" : keyPart(step.host)} ${keyPart(step.pagePath)}`
 		case "session":
-			return `session ${step.dimension} ${step.value}`
+			return `session ${step.dimension} ${keyPart(step.value)}`
 	}
 }
 
