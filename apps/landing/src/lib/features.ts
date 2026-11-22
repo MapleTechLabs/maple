@@ -650,57 +650,23 @@ export const features: Feature[] = [
 		seoDescription: m.feat_status_seo_desc,
 		heroTitle: m.feat_status_hero_title,
 		heroLede: m.feat_status_hero_lede,
-		// Plates come from the real public-page renderer: `bun run screenshots:status-pages`.
-		// The hero runs the live page mid-incident, so the panel shows what sits below it.
-		panel: {
-			route: "status.acme.com",
-			constant: "theme maple",
-			plate: {
-				src: "/screenshots/gallery-status-page-uptime.webp",
-				width: 2880,
-				height: 1620,
-				alt: "System status with a 90-day bar per component, degraded days and outages marked, above the incident calendar",
-				// The page's own column, without the empty margins either side.
-				crop: { x: 0.14, y: 0, zoom: 1.39, aspect: 1.28, hardRight: true },
-			},
-			facts: [
-				{
-					key: "status",
-					value: "operational · degraded · partial_outage · major_outage · maintenance",
-				},
-				{ key: "incident", value: "investigating → identified → monitoring → resolved" },
-				{ key: "maintenance", value: "scheduled → in_progress → completed" },
-				{ key: "history", value: "90 days per component" },
-				{ key: "theme", value: "default · maple · mono · midnight · paper" },
-				{ key: "feeds", value: "rss · atom · status.json · badge.svg" },
-			],
-			title: m.feat_status_panel_title,
-			lede: m.feat_status_panel_lede,
-		},
+		// No plates: every frame on this page is the real public-page renderer at build time,
+		// so it stays sharp at any width. The hero runs the page mid-incident.
+		panel: null,
 		artifact: {
 			id: "status-page",
 			title: m.feat_status_artifact_title,
 			lede: m.feat_status_artifact_lede,
 			wide: true,
 		},
-		extraSections: ["status-page-feeds"],
-		gallery: [
-			{
-				id: "gallery-status-page-paper",
-				route: "status.acme.com",
-				title: "The same page in the paper theme",
-				alt: "The status page in the light paper theme with a serif font, showing the major outage banner and the open incident",
-				// The page's own column: a phone window from the capture's corner would be mostly margin.
-				crop: { x: 0.14, y: 0, zoom: 1.39, hardRight: true },
-			},
-		],
+		extraSections: ["status-page-timeline", "status-page-themes", "status-page-feeds"],
+		gallery: [],
 		capTitle: m.feat_status_cap_title,
 		capabilities: [
 			{ op: "CNAME", title: m.feat_status_cap_1_title, body: m.feat_status_cap_1_body },
 			{ op: "group", title: m.feat_status_cap_2_title, body: m.feat_status_cap_2_body },
 			{ op: "write / review", title: m.feat_status_cap_3_title, body: m.feat_status_cap_3_body },
 			{ op: "maintenance", title: m.feat_status_cap_4_title, body: m.feat_status_cap_4_body },
-			{ op: "theme", title: m.feat_status_cap_5_title, body: m.feat_status_cap_5_body },
 			{ op: "password · internal", title: m.feat_status_cap_6_title, body: m.feat_status_cap_6_body },
 			{ op: "break glass", title: m.feat_status_cap_7_title, body: m.feat_status_cap_7_body },
 			{
@@ -709,7 +675,8 @@ export const features: Feature[] = [
 				body: m.feat_status_cap_8_body,
 			},
 		],
-		plan: { meters: [], retention: null, limit: null, docs: null },
+		plan: { meters: [], retention: null, limit: null, docs: "/docs/alerting/status-pages" },
+		cta: { title: m.feat_status_cta_title, lede: m.feat_status_cta_lede },
 		related: ["uptime-monitoring", "alerts", "ai-mcp-integration"],
 		relatedUseCases: ["api-performance"],
 		locales: ["en", "ja", "ko"],

@@ -1,0 +1,168 @@
+---
+/**
+ * Status pages · the hero's outage, start to finish. One ruled table: the time, what Maple
+ * did, and what the page printed, with each incident update set the way the page sets it.
+ * Static on purpose: the hero already carries the page's one animation.
+ */
+import * as m from "../../../paraglide/messages.js";
+import { STATUS_PAGE_TIMELINE } from "../../../lib/feature-sections";
+
+const rows = STATUS_PAGE_TIMELINE.map((row) => ({
+	at: row.at,
+	maple: row.maple(),
+	down: row.state === "major_outage",
+	update: row.update ? { status: row.update.status(), body: row.update.body() } : null,
+}));
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-14 md:py-20">
+		<div class="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.status_timeline_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[18ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.status_timeline_title()}
+				</h2>
+			</div>
+			<p class="max-w-[56ch] self-end text-sm leading-relaxed text-fg-muted">{m.status_timeline_lede()}</p>
+		</div>
+
+		<div class="stl mt-12">
+			<div class="stl-head" aria-hidden="true">
+				<span>UTC</span>
+				<span>{m.status_timeline_col_maple()}</span>
+				<span>{m.status_timeline_col_page()}</span>
+			</div>
+			<ol>
+				{
+					rows.map((row) => (
+						<li class="stl-row">
+							<time class="stl-time">{row.at}</time>
+							<p class="stl-maple">{row.maple}</p>
+							<div class="stl-page">
+								<span class:list={["stl-state", row.down ? "stl-state--down" : "stl-state--up"]}>
+									<i />
+									{row.down ? m.status_timeline_state_down() : m.status_timeline_state_up()}
+								</span>
+								{row.update && (
+									<div class="stl-update">
+										<p class="stl-update__status">{row.update.status}</p>
+										<p class="stl-update__body">{row.update.body}</p>
+									</div>
+								)}
+							</div>
+						</li>
+					))
+				}
+			</ol>
+		</div>
+	</div>
+</section>
+
+<style>
+	.stl {
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.stl-head,
+	.stl-row {
+		display: grid;
+		grid-template-columns: 72px minmax(0, 0.9fr) minmax(0, 1.1fr);
+		gap: 24px;
+		padding: 0 24px;
+	}
+	.stl-head {
+		height: 40px;
+		align-items: center;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-elevated);
+		font-size: 10px;
+		font-weight: 500;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+	.stl-row {
+		padding-top: 20px;
+		padding-bottom: 20px;
+		background: var(--background);
+	}
+	.stl-row + .stl-row {
+		border-top: 1px solid var(--border);
+	}
+	.stl-time {
+		font-family: var(--font-mono, ui-monospace, monospace);
+		font-size: 12px;
+		line-height: 22px;
+		color: var(--muted-foreground);
+		font-variant-numeric: tabular-nums;
+	}
+	.stl-maple {
+		font-size: 14px;
+		line-height: 22px;
+		color: var(--foreground);
+	}
+	.stl-page {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 10px;
+	}
+	.stl-state {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		height: 22px;
+		font-size: 13px;
+		color: var(--muted-foreground);
+	}
+	.stl-state i {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+	}
+	.stl-state--up i {
+		background: #22c55e;
+	}
+	.stl-state--down {
+		color: var(--foreground);
+	}
+	.stl-state--down i {
+		background: #ef4444;
+	}
+	.stl-update {
+		width: 100%;
+		padding: 12px 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--bg-deep);
+	}
+	.stl-update__status {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--foreground);
+	}
+	.stl-update__body {
+		margin-top: 4px;
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--muted-foreground);
+	}
+
+	@media (max-width: 767px) {
+		.stl-head {
+			display: none;
+		}
+		.stl-row {
+			grid-template-columns: 52px minmax(0, 1fr);
+			gap: 8px 16px;
+			padding: 18px 16px;
+		}
+		.stl-page {
+			grid-column: 2;
+		}
+	}
+</style>
