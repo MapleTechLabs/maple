@@ -182,8 +182,11 @@ const track = (model: Model, event: typeof AgentEvent.Type) =>
  */
 const loadedRun = (model: Model, run: V2OnboardingAgentRun): Step => {
 	const previous = model.run
+	// A closed run from an earlier visit is not shown, and counts as "none yet": reads pause until a copy.
 	if (previous === null)
-		return isRunOpen(run) ? { model: { ...model, run }, commands: [] } : { model, commands: [] }
+		return isRunOpen(run)
+			? { model: { ...model, run }, commands: [] }
+			: { model: { ...model, isRunMissing: true }, commands: [] }
 	if (run.created_at < previous.created_at) return { model, commands: [] }
 	const isSameRun = run.created_at === previous.created_at
 	return {

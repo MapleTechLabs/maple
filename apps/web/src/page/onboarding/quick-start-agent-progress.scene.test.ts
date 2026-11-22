@@ -182,6 +182,15 @@ describe("agent run polling", () => {
 		expect(AgentHandoff.shouldReadRun(flaky)).toBe(true)
 	})
 
+	test("a finished run from an earlier visit is not shown and stops the reads too", () => {
+		const finished = AgentHandoff.update(
+			AgentHandoff.init("connect_step"),
+			AgentHandoff.Message.SucceededLoadRun({ run: labAgentRun("completed") }),
+		).model
+		expect(finished.run).toBe(null)
+		expect(AgentHandoff.shouldReadRun(finished)).toBe(false)
+	})
+
 	test("an older run read mid-copy does not replace the newer one", () => {
 		const older = { ...labAgentRun("progress"), created_at: timestamp("2026-11-21T10:00:00.000Z") }
 		const next = AgentHandoff.update(
