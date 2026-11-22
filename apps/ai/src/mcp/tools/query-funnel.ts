@@ -314,7 +314,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					breakdownBy !== "host") ||
 				Arr.some(Rec.values(filters), (value) => value !== undefined)
 			const nowMs = yield* Clock.currentTimeMillis
-			const sessionNote = sessionRetentionNote(st, nowMs, readsSessions)
+			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
 			// Asked for and not read: say so, or the missing section reads as "nothing to report".
 			const detailsNote =
 				wantsDetails && details === undefined

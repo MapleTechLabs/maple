@@ -1101,7 +1101,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				(Rec.keys(sessionFiltersOf(params)).length > 0 ||
 					Arr.contains(Rec.keys(SESSION_FILTERS), params.group_by ?? ""))
 			const nowMs = yield* Clock.currentTimeMillis
-			const sessionNote = sessionRetentionNote(st, nowMs, readsSessions)
+			const sessionNote = sessionRetentionNote({ startTime: st, endTime: et }, nowMs, readsSessions)
 			const warnings = [
 				...metricsWarningsFor(params, metric),
 				...(sessionNote === undefined ? [] : [sessionNote]),

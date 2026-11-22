@@ -421,10 +421,23 @@ describe("query_funnel details", () => {
 		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
 	})
 
+	it("says only the earlier part is blind when the window reaches into what is kept", async () => {
+		// Sixty days back to now: the last thirty are readable.
+		const start = Str.replace(
+			"T",
+			" ",
+		)(Str.slice(0, 19)(new Date(Date.now() - 60 * 86_400_000).toISOString()))
+		const result = await call("query_funnel", { steps_json: steps, start_time: start, country: "DE" })
+		expect(markdown(result)).toContain("the earlier part of this window reads as having none")
+	})
+
 	it("goes by how old the window is, not how long: three old days are as blind", async () => {
 		const old = { start_time: "2026-08-01 00:00:00", end_time: "2026-08-04 00:00:00" }
 		const filtered = await call("query_funnel", { steps_json: steps, ...old, country: "DE" })
 		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
+		// All of it is past what is kept: the note does not promise a later part that can be read.
+		expect(markdown(filtered)).toContain("this whole window is older than that")
+		expect(markdown(filtered)).not.toContain("the earlier part of this window")
 		// The default window is the last week, all of it inside what is kept.
 		const recent = await call("query_funnel", { steps_json: steps, country: "DE" })
 		expect(markdown(recent)).not.toContain("Sessions are kept 30 days")

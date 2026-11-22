@@ -105,14 +105,16 @@ export const identityNoteFor = <K extends FunnelKeyBy>(
 
 /** `Sessions are kept 30 days` once a window that reads them starts before that. */
 export const sessionRetentionNote = (
-	startTime: string,
+	window: { readonly startTime: string; readonly endTime: string },
 	nowMs: number,
 	readsSessions: boolean,
 ): string | undefined => {
 	const kept = nowMs - SESSION_RETENTION_HOURS * 3_600_000
-	return readsSessions && parseWarehouseDateTime(startTime) < kept
-		? `Sessions are kept 30 days: session steps, filters and dimensions see nothing before ${warehouseDateTime(kept)}, so the earlier part of this window reads as having none.`
-		: undefined
+	if (!readsSessions || parseWarehouseDateTime(window.startTime) >= kept) return undefined
+	const seesNothing = `Sessions are kept 30 days: session steps, filters and dimensions see nothing before ${warehouseDateTime(kept)}`
+	return parseWarehouseDateTime(window.endTime) <= kept
+		? `${seesNothing}, and this whole window is older than that, so it reads as having none.`
+		: `${seesNothing}, so the earlier part of this window reads as having none.`
 }
 
 /** A step with no event name or page path matches nothing a caller meant. */

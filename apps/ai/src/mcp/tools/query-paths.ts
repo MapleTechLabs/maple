@@ -165,7 +165,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 			)
 			const nowMs = yield* Clock.currentTimeMillis
 			const sessionNote = sessionRetentionNote(
-				st,
+				{ startTime: st, endTime: et },
 				nowMs,
 				Arr.some(Rec.values(filters), (value) => value !== undefined),
 			)
