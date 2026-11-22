@@ -91,7 +91,7 @@ const latestOccurrences = (
 									),
 					}),
 					occurrencesTable(h, detail.sampleTraces.slice(0, LATEST_OCCURRENCES), clock, {
-						columns: occurrenceColumnsOf(detail.sampleTraces),
+						columns: occurrenceColumnsOf(detail.sampleTraces.slice(0, LATEST_OCCURRENCES)),
 						userHref: (userId) => affectedUserHref(userId, model.search),
 					}),
 					...occurrenceSetupFoot(h, model, detail),

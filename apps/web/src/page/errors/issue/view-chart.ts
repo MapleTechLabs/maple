@@ -110,8 +110,8 @@ export const signalOf = (points: ReadonlyArray<Point>, window: ChartWindow) => {
 	return { dense, surge: surgeRatio(dense) }
 }
 
-/** The chart's caption: what a bar counts, the tallest one, and that a bar zooms in. */
-export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null): Html =>
+/** The chart's caption: what a bar counts, the tallest one, and that a bar zooms in when one can. */
+export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null, canZoom = true): Html =>
 	hstack(h, { gap: "3", justify: "between", className: "mb-2" }, [
 		typography(h, { size: "2xs", tone: "muted", weight: "medium" }, [
 			bucketMs === null ? "Occurrences" : `Occurrences per ${formatBucket(bucketMs)}`,
@@ -119,7 +119,7 @@ export const chartCaption = (h: H, peak: Html | string, bucketMs: number | null)
 		typography(h, { size: "2xs", tone: "muted", numeric: true }, [
 			"Peak ",
 			peak,
-			" · click a bar to zoom in",
+			...(canZoom ? [" · click a bar to zoom in"] : []),
 		]),
 	])
 
@@ -158,8 +158,9 @@ export const occurrenceChart = (h: H, chart: Chart.Model, inputs: OccurrenceChar
 		},
 	})
 	return panelChartBody(h, [
-		chartCaption(h, formatNumber(peak), inputs.window.bucketMs),
-		// The chart tracks the hovered bar; a click zooms the page's window into it.
+		chartCaption(h, formatNumber(peak), inputs.window.bucketMs, peak > 0),
+		// The chart tracks the hovered bar; a click zooms the page's window into it. It is a pointer
+		// shortcut only, out of the tab order: the time range picker is the keyboard path.
 		peak === 0
 			? plot
 			: pressable(
@@ -168,6 +169,7 @@ export const occurrenceChart = (h: H, chart: Chart.Model, inputs: OccurrenceChar
 						onClick: Message.ClickedOccurrenceBar(),
 						label: "Zoom into the hovered bar's time range",
 						className: "block w-full cursor-zoom-in rounded-sm text-left",
+						attributes: [h.Tabindex(-1)],
 					},
 					[plot],
 				),
