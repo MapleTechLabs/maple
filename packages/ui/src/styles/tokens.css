@@ -892,7 +892,7 @@
 }
 
 /* A wait stays blank for `--loading-delay` before its skeleton fades in, so a fast load never
-   flashes. A page that already waited sets it to 0ms. Charts share it (`chart-skeleton.css`). */
+   flashes. Charts share it (`chart-skeleton.css`). */
 @keyframes loading-delay {
 	from {
 		opacity: 0;
@@ -901,11 +901,6 @@
 
 @utility loading-delay {
 	animation: loading-delay 150ms var(--ease-out) var(--loading-delay) both;
-}
-
-/* A page shown after a navigation's hold ran out already waited: its skeletons show at once. */
-[data-page-hold="waited"] {
-	--loading-delay: 0ms;
 }
 
 /* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */

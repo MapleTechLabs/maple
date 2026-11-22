@@ -2,25 +2,14 @@ import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
 import { Option, Schema } from "effect"
 import type { HtmlBuilder } from "foldkit/html"
-import {
-	click,
-	Command,
-	expect as expectView,
-	given,
-	Mount,
-	role,
-	scene,
-	selector,
-	text,
-} from "foldkit/scene"
+import { fromString as urlFromString } from "foldkit/url"
+import { click, Command, expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
 import { describe, expect, test, vi } from "vitest"
 
 // The shell's favorites listener targets `window` at import; the scene never touches it.
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
-import type { Message } from "./message"
+import { Message as AppMessage, type Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
-import * as PageHold from "./page/page-hold"
-import type { PageSlot } from "./page/registry"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -32,6 +21,9 @@ import * as Toast from "@maple/views/ui/toast"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountSuggestions, MountWhereEditor } from "./page/traces/list/command"
 import { Message as TracesMessage } from "./page/traces/list/message"
+import { MountFilterRail as MountLogsFilterRail } from "./page/logs/list/command"
+import { Message as LogsMessage } from "./page/logs/list/message"
+import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { settle, update } from "./update"
 import { titleOf, view } from "./view"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
@@ -52,7 +44,6 @@ const signedIn = (): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
-	pageHold: PageHold.Model.None(),
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),
@@ -103,46 +94,20 @@ describe("root view", () => {
 	})
 })
 
-describe("navigation hold", () => {
-	const mounts = [
-		Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
-		Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
-		Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
-	] as const
-	/** The Logs page entered from Traces, under `hold`. */
-	const enteredLogs = (hold: (traces: PageSlot, logs: PageSlot) => PageHold.Model): Model => {
-		const traces = Option.getOrThrow(Option.fromNullishOr(tracesPage().page))
-		const model = settle({ ...signedIn(), route: AppRoute.Logs({ search: {} }) }).model
-		const logs = Option.getOrThrow(Option.fromNullishOr(model.page))
-		return { ...model, pageHold: hold(traces, logs) }
-	}
-
-	test("while held, the page left is drawn and takes no clicks; the page entered is not drawn yet", () => {
+describe("navigation", () => {
+	test("a link draws the page entered at once, before its reads land", () => {
+		const url = Option.getOrThrow(urlFromString("http://localhost/logs"))
+		const toLogs = update(tracesPage(), AppMessage.ChangedUrl({ url }))
 		scene(
 			{ update, view: body },
-			given(
-				enteredLogs((traces, logs) => ({
-					_tag: "Holding",
-					leaving: traces,
-					instance: logs.instance,
-				})),
-			),
-			...mounts,
-			expectView(selector('[data-page-hold="held"]')).toExist(),
-			expectView(role("heading", { name: "Traces" })).toExist(),
-			expectView(role("heading", { name: "Logs" })).not.toExist(),
-		)
-	})
-
-	test("after the hold ran out, the page entered is drawn and its skeletons skip their delay", () => {
-		const traces = tracesPage()
-		const instance = traces.page?.instance ?? 0
-		scene(
-			{ update, view: body },
-			given({ ...traces, pageHold: PageHold.Model.Waited({ instance }) }),
-			...mounts,
-			expectView(selector('[data-page-hold="waited"]')).toExist(),
-			expectView(role("heading", { name: "Traces" })).toExist(),
+			given(toLogs.model),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(Toast.PortalToasts, Toast.Message.CompletedPortalToasts()),
+			Mount.resolve(MeasureSidebarOverflow, ShellMessage.MeasuredSidebarOverflow()),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(MountLogsFilterRail, LogsMessage.MountedFilterRail()),
+			expectView(role("heading", { name: "Logs" })).toExist(),
+			expectView(role("heading", { name: "Traces" })).not.toExist(),
 		)
 	})
 })
