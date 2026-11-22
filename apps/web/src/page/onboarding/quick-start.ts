@@ -109,8 +109,6 @@ export const Message = defineMessageUnion({
 	CompletedSaveQuickStartState: {},
 	/** `trackProduct("onboarding_step_completed")` was handed to the session SDK. */
 	CompletedTrackStepCompleted: {},
-	/** `trackProduct("first_data_received")` was handed to the session SDK. */
-	CompletedTrackFirstData: {},
 	PickedRegion: { region: MapleRegion },
 	ClickedRegionContinue: {},
 	SucceededChooseRegion: { region: MapleRegion },
@@ -140,14 +138,6 @@ export const TrackStepCompleted = Command.define("TrackOnboardingStepCompleted",
 		trackProduct("onboarding_step_completed", { step }).pipe(
 			Effect.as(Message.CompletedTrackStepCompleted()),
 		),
-})
-
-/** The connect step saw the org's first signal arrive. */
-export const TrackFirstData = Command.define("TrackFirstDataReceived", {
-	args: { signal: Schema.String },
-	messages: [Message.CompletedTrackFirstData],
-	execute: ({ signal }) =>
-		trackProduct("first_data_received", { signal }).pipe(Effect.as(Message.CompletedTrackFirstData())),
 })
 
 export const SaveQuickStartState = Command.define("SaveQuickStartState", {
@@ -356,23 +346,6 @@ const presentCount = (connect: Connect): number =>
 		(presence) => presence.status === "present",
 	).length
 
-/**
- * The signal a presence read found arriving after an earlier read found none, `null` otherwise: the
- * flip the step watched happen, not data that was already there when it opened.
- */
-const firstArrivedSignal = (before: Connect, after: Connect): string | null =>
-	Option.isSome(AsyncData.getData(before.presence)) && presentCount(before) === 0
-		? Option.getOrNull(
-				Option.map(
-					Arr.findFirst(
-						Rec.toEntries(AsyncData.getOrElse(after.presence, () => ({}))),
-						([, presence]) => presence.status === "present",
-					),
-					([signal]) => signal,
-				),
-			)
-		: null
-
 const saved = (model: Model, next: (state: QuickStartState) => QuickStartState): UpdateReturn => {
 	if (model.state === null) return { model }
 	const state = next(model.state)
@@ -465,7 +438,6 @@ const step = (model: Model, message: Message, hasPlan: boolean, context: PageCon
 			// On the last screen, a signal that just arrived re-reads the cards' findings.
 			const isOnLive = model.state !== null && resolveQuickStartStep(model.state, hasPlan) === "live"
 			const isNewSignal = presentCount(next.connect) > presentCount(model.connect)
-			const firstSignal = firstArrivedSignal(model.connect, next.connect)
 			return {
 				model: { ...model, connect: next.connect },
 				commands: [
@@ -473,7 +445,6 @@ const step = (model: Model, message: Message, hasPlan: boolean, context: PageCon
 					...(isOnLive && isNewSignal
 						? [Command.mapMessage(toLive)(LoadLiveFindings({ timeZone: "UTC" }))]
 						: []),
-					...(firstSignal === null ? [] : [TrackFirstData({ signal: firstSignal })]),
 				],
 			}
 		},
@@ -527,7 +498,6 @@ const step = (model: Model, message: Message, hasPlan: boolean, context: PageCon
 		ClickedBack: ({ to }) => saved(model, (state) => ({ ...state, activeStep: to })),
 		CompletedSaveQuickStartState: () => ({ model }),
 		CompletedTrackStepCompleted: () => ({ model }),
-		CompletedTrackFirstData: () => ({ model }),
 		PickedRegion: ({ region }) =>
 			model.region.isSaving
 				? { model }

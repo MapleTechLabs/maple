@@ -28,6 +28,8 @@ export const alertingConfiguredEnv = (stage: MapleStage, region: MapleRegion, do
 		linearOAuthEnv,
 		// Signs the chart image URL in notifications; unset sends them text-only.
 		Secrets.ShareTokenHmacKey.optional,
+		// `first_data_received` from the first data sweep; unset falls back to MAPLE_INGEST_KEY.
+		Secrets.ProductEventsIngestKey.optional,
 		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
 		apnsEnv,
 		cloudflareOAuthEnv,

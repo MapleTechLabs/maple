@@ -5,6 +5,8 @@ import type { OrgId } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
+import { type FirstDataSeen, firstDataReceivedEvent } from "./first-data"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -56,6 +58,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
+			const productEvents = yield* ProductEventsService
 			const dbExecute = makeDbExecute(database, "OnboardingService", toPersistenceError)
 
 			const findRow = (orgId: OrgId) =>
@@ -159,16 +162,11 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				return rowToResponse(row)
 			})
 
-			/**
-			 * Stamp first-data time only if not already set. Returns true when newly stamped.
-			 * A missing row is created with the org's real creation time (it dates the reward
-			 * window); when `orgCreatedAt` yields null no row is created and nothing is stamped.
-			 */
-			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
+			const stampFirstData = Effect.fn("OnboardingService.stampFirstData")(function* (
 				orgId: OrgId,
 				orgCreatedAt: Effect.Effect<number | null>,
+				now: number,
 			) {
-				const now = yield* Clock.currentTimeMillis
 				const stampExisting = dbExecute((db) =>
 					db.run(
 						PG.update(OrgOnboardingState)
@@ -199,6 +197,23 @@ export class OnboardingService extends Context.Service<OnboardingService>()(
 				)
 				// Lost a race with another creator: stamp the row it made instead.
 				return inserted.length > 0 ? true : yield* stampExisting
+			})
+
+			/**
+			 * Stamp first-data time only if not already set. Returns true when newly stamped, and
+			 * only then emits `first_data_received`, so the event fires once per org whoever stamps.
+			 * A missing row is created with the org's real creation time (it dates the reward
+			 * window); when `orgCreatedAt` yields null no row is created and nothing is stamped.
+			 */
+			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
+				orgId: OrgId,
+				orgCreatedAt: Effect.Effect<number | null>,
+				firstData: FirstDataSeen,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const stamped = yield* stampFirstData(orgId, orgCreatedAt, now)
+				if (stamped) yield* productEvents.track(firstDataReceivedEvent(orgId, firstData, now))
+				return stamped
 			})
 
 			/**

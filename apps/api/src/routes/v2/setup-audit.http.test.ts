@@ -35,6 +35,7 @@ import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
 import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 /**
  * End-to-end HTTP tests for `GET /v2/instrumentation/audit` over an embedded PGlite. The pure check
@@ -110,7 +111,7 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 				Layer.mergeAll(
 					warehouseLive,
 					IntegrationInventoryService.layer,
-					OnboardingService.layer,
+					OnboardingService.layer.pipe(Layer.provide(ProductEventsService.noop)),
 					// An undatable org: the audit may stamp an existing row but never creates one.
 					Layer.succeed(OrganizationService, {
 						retrieve: () => Effect.die("org lookup not exercised"),

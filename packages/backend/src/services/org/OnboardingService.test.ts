@@ -10,6 +10,7 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -17,7 +18,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const ORG = Schema.decodeSync(OrgId)("org_reward_lease")
 const LEASE_MS = 60_000
 
-const layerFor = (testDb: TestDb) => OnboardingService.layer.pipe(Layer.provideMerge(testDb.layer))
+const layerFor = (testDb: TestDb) =>
+	OnboardingService.layer.pipe(Layer.provideMerge(Layer.mergeAll(testDb.layer, ProductEventsService.noop)))
 
 const seedRow = (testDb: TestDb) =>
 	Effect.promise(() =>

@@ -41,6 +41,7 @@ export type ProductEventName =
 	| "plan_cancelled"
 	| "member_joined"
 	| "member_removed"
+	| "first_data_received"
 
 export interface ProductEventInput {
 	readonly name: ProductEventName

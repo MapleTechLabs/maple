@@ -3,7 +3,6 @@ import { V2ApiKey, V2ApiKeyWithSecret } from "@maple/domain/http/v2"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import type { SignalPresences } from "@maple/views/data/signal-presence"
 import { checkoutSlo } from "../page/alerts/shared/slo-test-fixtures"
 import { httpMonitor } from "../page/kit/uptime/test-monitors"
 import * as SloForm from "../page/alerts/slo-form/update"
@@ -15,7 +14,6 @@ import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { init as initIntegrations, update as updateIntegrations } from "../page/integrations/update"
 import * as PricingCards from "../page/onboarding/pricing-cards"
 import * as QuickStart from "../page/onboarding/quick-start"
-import { ConnectMessage } from "../page/onboarding/quick-start-connect"
 import { DEFAULT_QUICK_START_STATE } from "../page/onboarding/quick-start-state"
 import { loadingTeam, TeamMessage, updateTeam } from "../page/onboarding/quick-start-team"
 import * as CreateDialog from "../page/settings/keys/create-dialog"
@@ -208,29 +206,6 @@ describe("product events", () => {
 		expect(names(created(Result.fail(toLoadFailure(new Error("boom")))))).not.toContain(
 			"TrackStatusPageCreated",
 		)
-	})
-
-	test("the connect step seeing a first signal arrive is first_data_received, once", () => {
-		const presence = (status: "present" | "absent"): SignalPresences => ({
-			traces: { status, lastSeenMs: null },
-			logs: { status: "absent", lastSeenMs: null },
-		})
-		const read = (model: QuickStart.Model, presences: SignalPresences) =>
-			QuickStart.update(
-				model,
-				QuickStart.Message.GotConnectMessage({
-					message: ConnectMessage.LoadedPresence({ result: Result.succeed(presences) }),
-				}),
-				true,
-			)
-		const start = QuickStart.init("maple-onboarding-v6-org_1").model
-		const empty = read(start, presence("absent"))
-		expect(tracked(empty, "TrackFirstDataReceived")).toBeUndefined()
-		const arrived = read(empty.model, presence("present"))
-		expect(tracked(arrived, "TrackFirstDataReceived")).toEqual({ signal: "traces" })
-		expect(tracked(read(arrived.model, presence("present")), "TrackFirstDataReceived")).toBeUndefined()
-		// Data already there when the step opened is not an arrival it saw.
-		expect(tracked(read(start, presence("present")), "TrackFirstDataReceived")).toBeUndefined()
 	})
 })
 
