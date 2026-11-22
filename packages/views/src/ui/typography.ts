@@ -59,6 +59,8 @@ export type TypographyOptions<M> = Readonly<{
 	/** `tabular-nums`, for figures that line up. */
 	numeric?: boolean
 	truncate?: boolean
+	/** `"right"` for a figure that lines up at its end (a count column). */
+	align?: "right"
 	/** The tone on hover and press, for text that is a control (a quiet link, a ghost icon button). */
 	hoverTone?: TypographyHoverTone
 	/** Underlined on hover and press, for a link set in running text. */
@@ -83,6 +85,7 @@ export const typographyClass = (options: Omit<TypographyOptions<never>, "as" | "
 		(options.mono ?? false) && "font-mono",
 		(options.numeric ?? false) && "tabular-nums",
 		(options.truncate ?? false) && "truncate",
+		options.align === "right" && "text-right",
 		options.hoverTone === undefined ? undefined : HOVER_TONE[options.hoverTone],
 		(options.hoverUnderline ?? false) && "underline-offset-4 hover:underline active:underline",
 		options.className,
