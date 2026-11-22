@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { FunnelKeyBy, FunnelStep } from "@maple/query-model"
+import { FunnelKeyBy, FunnelStep, PathsAnchor, RetentionInterval, RetentionKeyBy } from "@maple/query-model"
 import {
 	AiSessionListItem,
 	AiToolErrorBreakdownItem,
@@ -184,6 +184,35 @@ export const QueryFunnelOutput = Schema.Struct({
 	identityNote: Schema.optionalKey(Schema.String),
 	/** The key every step's events do carry, when `identityNote` is set and there is one. */
 	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
+})
+
+export const QueryRetentionOutput = Schema.Struct({
+	/** The cohort window: who first did the start event inside it. */
+	timeRange: OutputTimeRange,
+	/** Returns were read up to here. */
+	returnsThrough: Schema.String,
+	keyBy: RetentionKeyBy,
+	interval: RetentionInterval,
+	periods: Schema.Number,
+	firstEver: Schema.Boolean,
+	/** What put a key in a cohort and what counted as coming back, as given; absent means any event. */
+	start: Schema.optionalKey(PathsAnchor),
+	return: Schema.optionalKey(PathsAnchor),
+	cohorts: Schema.Array(
+		Schema.Struct({
+			/** The cohort interval's first day, `YYYY-MM-DD` (UTC). */
+			cohort: Schema.String,
+			size: Schema.Number,
+			/** `returned[n - 1]`: keys of the cohort with a return event in the n-th interval after it. */
+			returned: Schema.Array(Schema.Number),
+			/** Intervals after the cohort's own that have fully passed; later ones are still open or ahead. */
+			completePeriods: Schema.Number,
+			/** Intervals after the cohort's own that have started. */
+			startedPeriods: Schema.Number,
+		}),
+	),
+	/** Per period, the share of everyone in a cohort old enough to have finished it; null when none is. */
+	overall: Schema.Array(Schema.NullOr(Schema.Number)),
 })
 
 export const ProductEventKind = Schema.Literals(["custom", "navigation", "screen"])

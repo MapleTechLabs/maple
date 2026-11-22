@@ -295,6 +295,19 @@ export const funnelWidgetRowsWithDetails = (
 // labels: `''` for a sequence that ended, `$other` for the folded remainder of
 // a column.
 
+// Retention: of the keys that first did one thing in an interval, how many did another in each
+// interval after it. Mirrors `productEventsRetentionQuery`'s options.
+
+export const RetentionInterval = Schema.Literals(["day", "week", "month"])
+export type RetentionInterval = typeof RetentionInterval.Type
+
+/** A session cannot come back in a later interval, so it is not a retention key. */
+export const RetentionKeyBy = Schema.Literals(["person", "visitor", "user", "group"])
+export type RetentionKeyBy = typeof RetentionKeyBy.Type
+
+/** Mirror `RETENTION_MAX_PERIODS` in the query engine. */
+export const RETENTION_MAX_PERIODS = 26
+
 export const PathsDirection = Schema.Literals(["after", "before"])
 export type PathsDirection = typeof PathsDirection.Type
 

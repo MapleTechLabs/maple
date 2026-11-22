@@ -3,6 +3,10 @@ import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
 export type {
+	ProductEventsRetentionOutput,
+	ProductEventsRetentionError,
+} from "../ch/queries/product-events-retention"
+export type {
 	ProductEventNamesOutput,
 	ProductEventsFunnelBreakdownOutput,
 	ProductEventsFunnelCoverageOutput,
@@ -80,6 +84,35 @@ export const productEventsFunnelCoverage = Effect.fn("Observability.productEvent
 	return yield* executor.compiledQuery(compiled, {
 		profile: "aggregation",
 		context: "productEventsFunnelCoverage",
+	})
+})
+
+export interface ProductEventsRetentionInput extends CH.ProductEventsRetentionOpts {
+	/** The cohort window: a key is in a cohort when its first start event falls inside it. */
+	readonly startTime: string
+	readonly endTime: string
+	/** Returns are read up to here, so the last cohorts can be followed past `endTime`. */
+	readonly returnEndTime: string
+}
+
+/** Retention cohorts: `{ cohort, period, count }`, period 0 being the cohort's size. */
+export const productEventsRetention = Effect.fn("Observability.productEventsRetention")(function* (
+	input: ProductEventsRetentionInput,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({
+		orgId: executor.orgId,
+		"maple.retention.key_by": input.keyBy,
+		"maple.retention.interval": input.interval,
+		"maple.retention.periods": input.periods,
+		"maple.retention.first_ever": input.firstEver,
+	})
+	const { startTime, endTime, returnEndTime, ...opts } = input
+	const query = yield* Effect.fromResult(CH.productEventsRetentionQuery(opts))
+	const compiled = CH.compile(query, { orgId: executor.orgId, startTime, endTime, returnEndTime })
+	return yield* executor.compiledQuery(compiled, {
+		profile: "aggregation",
+		context: "productEventsRetention",
 	})
 })
 
