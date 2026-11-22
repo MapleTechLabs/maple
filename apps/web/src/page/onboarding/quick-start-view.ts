@@ -900,13 +900,14 @@ const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => 
 
 // The live step's one celebration. When the first data lands the headline cross-fades, the chip
 // row folds open while its chips rise in, and "Still waiting on" folds shut: nothing on the page
-// jumps. Transitions, not keyframes, so none of it plays when the step first opens.
+// jumps. The folds and the headline are transitions, so they stay still when the step first opens.
 /** A block whose height folds open and shut; its one child clips while it moves. */
 const FOLD =
 	"grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-opacity"
 const FOLD_OPEN = "grid-rows-[1fr]"
 const FOLD_SHUT = "grid-rows-[0fr] opacity-0"
-// Keyed chips only play this when they are added; the first one waits for the row to start opening.
+// A keyframe: it plays whenever a chip is inserted, so on first paint too (with the step's own entrance).
+// Keyed, so a chip already on screen never replays it; the first waits for the row to start opening.
 const CHIP_IN = "[animation:live-chip-in_320ms_var(--ease-out)_both] motion-reduce:[animation:none]"
 
 const chip = (h: H, key: string, index: number, children: ReadonlyArray<Html | string>): Html =>
