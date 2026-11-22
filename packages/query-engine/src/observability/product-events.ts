@@ -2,10 +2,7 @@ import { Effect } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
-export type {
-	ProductEventsRetentionOutput,
-	ProductEventsRetentionError,
-} from "../ch/queries/product-events-retention"
+export type { ProductEventsRetentionOutput } from "../ch/queries/product-events-retention"
 export type {
 	ProductEventNamesOutput,
 	ProductEventsFunnelBreakdownOutput,
