@@ -20,6 +20,22 @@ Wire OpenTelemetry traces, logs, and metrics into **every app and service in the
 
 Read `maple-onboarding-style` first (span pattern, resource attributes, framework notes, signal quality, verification), then the skill for each stack in the repo: `maple-nextjs-style`, `maple-nodejs-style`, `maple-python-style`, `maple-effect-style`, `maple-go-style`, `maple-rust-style`, `maple-java-style`, `maple-csharp-style`, `maple-kotlin-style`. If they are not installed next to this skill, fetch them from `https://raw.githubusercontent.com/MapleTechLabs/maple/main/skills/<skill-name>/SKILL.md`, only the ones this repo needs. Stacks without one (Ruby, Elixir, PHP, Deno, ...) use `maple-onboarding-style` and the upstream OTel docs. A service that calls an LLM also gets `maple-agent-tracing`; a browser frontend gets `maple-frontend-tracing`.
 
+## Onboarding progress (handoff code)
+
+Skip this section when the prompt has no handoff code (`maple_ho_...`). With one, Maple shows the user your progress live:
+
+1. Ask the user before running the install script, then install and sign in: `curl -fsSL https://maple.dev/cli/install | MAPLE_HANDOFF=<code> sh`. If `maple` is already installed: `MAPLE_HANDOFF=<code> maple auth login`. Sign-in reports `connect_agent` itself.
+2. Report each stage as you go with `maple onboarding report <stage> <status> [--note "..."]`. Status is `active`, `waiting`, `completed`, `skipped` or `failed`.
+   - `connect_agent`: the CLI is signed in.
+   - `analyze_project`: Step 1, mapping services.
+   - `instrument_app`: Steps 2 and 3; add `--service <name>` per configured `service.name`.
+   - `send_verification`: Step 4, driving a real request.
+   - `receive_verification`: Step 4, `maple onboarding verify --service <name>` waits for the trace and reports this stage.
+   - `prepare_production`: Step 5; add `--run-status completed` when setup is done (`failed` only if it cannot continue).
+3. When the prompt has no key, `maple onboarding keys` prints the ingest endpoint and public key.
+
+Rules: report silently and never block setup on reporting. Notes are short plain text: no file contents, paths, terminal output, payloads or secrets. Stop reporting once a report says the run is closed (409). Never print or log the handoff code. With the Maple MCP connected you may use its `onboarding_status_update` tool instead.
+
 ## Step 0: Region, endpoint, and key
 
 A key only works in the region that issued it; the other region answers `401`.
@@ -78,7 +94,7 @@ The setup is done only when Maple shows a trace from the real bootstrap, or, on 
 1. The project's own dev or build command still starts cleanly. Broken startup is a regression: fix it.
 2. Run the app the normal way: offer to start it, or ask the user how they run it.
 3. Drive one real request through an instrumented route (or a real CLI command) so the trace comes from the real bootstrap. No standalone script that bypasses it. Then identify that request's own trace: its trace id (the `traceparent` response header, or the exporter's debug output), or else the `deployment.environment.name` you set for this run, which no other deployment uses. A span from another deployment of the same `service.name` proves nothing.
-4. Confirm in Maple that the configured `service.name` has spans: MCP `list_services` / `search_traces`, or the `maple` CLI (`maple services`, `maple traces -s <service> --since 15m`). With Maple MCP connected, run `audit_setup` and fix what it reports; with the CLI only, the audit runs in Step 7 once MCP is connected. With neither MCP nor the CLI, offer the MCP connection from Step 7 now; if the user declines, ask them to confirm the trace in the dashboard (`<dashboard>/traces/<trace-id>` with the ID from item 3, or the Traces page filtered to the service) instead of claiming it yourself.
+4. Confirm in Maple that the configured `service.name` has spans: MCP `list_services` / `search_traces`, or the `maple` CLI (`maple services`, `maple traces -s <service> --since 15m`; with a handoff code, `maple onboarding verify --service <service> --env <environment>`, which also reports the stage). With Maple MCP connected, run `audit_setup` and fix what it reports; with the CLI only, the audit runs in Step 7 once MCP is connected. With neither MCP nor the CLI, offer the MCP connection from Step 7 now; if the user declines, ask them to confirm the trace in the dashboard (`<dashboard>/traces/<trace-id>` with the ID from item 3, or the Traces page filtered to the service) instead of claiming it yourself.
 5. Show the user the link to that trace: `<dashboard>/traces/<trace-id>` (look it up with MCP `inspect_trace` or `maple trace <trace-id>` first; on the no-tools path, use the trace ID or link the user confirmed).
 
 If nothing arrives within about 2 minutes, keep debugging: endpoint region, key, init order, exporter errors (`maple-onboarding-style` "Verify export" has the per-language diagnostics and what to do on a `401`). With `MAPLE_TEST` nothing is stored: confirm export succeeds with no exporter errors, and tell the user that Maple verification waits for their real key.

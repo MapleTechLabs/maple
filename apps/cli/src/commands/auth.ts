@@ -3,6 +3,7 @@ import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
 import {
 	Clock,
+	Config,
 	Console,
 	Duration,
 	Effect,
@@ -18,6 +19,7 @@ import { HttpClient, HttpClientRequest } from "effect/http"
 import { MapleConfig } from "../core/config"
 import { deleteNativeCredential } from "../core/credential-store"
 import { Mode } from "../core/mode"
+import { reportProgress } from "../core/onboarding"
 import { encodeJsonEffect } from "@maple/local-server/json"
 import { printJson } from "../lib/output"
 
@@ -167,6 +169,59 @@ const saveCredential = (apiUrl: string, token: string, session: Session, managed
 		return store
 	})
 
+const HandoffAnswer = Schema.Union([
+	Schema.Struct({
+		status: Schema.Literal("complete"),
+		token: Schema.String,
+		orgId: Schema.String,
+		userId: Schema.String,
+	}),
+	Schema.Struct({ status: Schema.Literals(["pending", "denied", "expired"]) }),
+])
+const decodeHandoffAnswer = Schema.decodeUnknownEffect(HandoffAnswer)
+
+export const HANDOFF_SPENT_MESSAGE =
+	"handoff code expired or already used: copy the agent prompt from Maple again"
+export const ONBOARDING_NEXT_STEP =
+	"Follow https://maple.dev/SKILL.md; report progress with `maple onboarding report <stage> <status>`."
+
+/**
+ * Sign in with a dashboard handoff code: a device code Maple approved when it minted it, so one
+ * token request completes the login. The code is never printed.
+ */
+export const handoffLogin = Effect.fnUntraced(function* (apiUrl: string, code: string) {
+	const body = yield* encodeJsonEffect({ deviceCode: code }).pipe(Effect.orDie)
+	const answer = yield* requestJson<unknown>(`${apiUrl}/api/auth/cli/device/token`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body,
+	}).pipe(
+		Effect.flatMap((raw) =>
+			decodeHandoffAnswer(raw).pipe(
+				Effect.mapError(
+					() => new CliAuthError({ message: "Maple returned an invalid handoff response" }),
+				),
+			),
+		),
+	)
+	if (answer.status !== "complete") return yield* new CliAuthError({ message: HANDOFF_SPENT_MESSAGE })
+	const session = yield* validateToken(apiUrl, answer.token)
+	const store = yield* saveCredential(apiUrl, answer.token, session, true)
+	yield* Console.log(`✓ Logged in to ${apiUrl} as ${session.userId} (${session.orgId}) via ${store}.`)
+	const reported = yield* reportProgress(
+		{ apiUrl, token: answer.token },
+		{ stage: "connect_agent", status: "completed", note: "maple CLI" },
+	)
+	if (reported._tag === "failed") {
+		yield* Console.error(`Warning: could not report onboarding progress: ${reported.message}`)
+	}
+	yield* Console.log(ONBOARDING_NEXT_STEP)
+})
+
+const handoffFromEnv = Config.option(Config.String("MAPLE_HANDOFF")).pipe(
+	Config.map(Option.filter((value) => Str.trim(value) !== "")),
+)
+
 const loginFlags = {
 	apiUrl: Flag.optional(
 		Flag.String("api-url").pipe(
@@ -177,11 +232,19 @@ const loginFlags = {
 		Flag.withDescription("Read an existing API token from standard input instead of opening a browser"),
 		Flag.withDefault(false),
 	),
+	handoff: Flag.optional(
+		Flag.String("handoff").pipe(
+			Flag.withDescription(
+				"Sign in with a handoff code from Maple's agent prompt (or set MAPLE_HANDOFF) instead of opening a browser",
+			),
+		),
+	),
 }
 
 const loginHandler = Effect.fnUntraced(function* (a: {
 	readonly apiUrl: Option.Option<string>
 	readonly withToken: boolean
+	readonly handoff: Option.Option<string>
 }) {
 	const config = yield* MapleConfig
 	if (config.envTokenOverride) {
@@ -191,6 +254,19 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 		})
 	}
 	const apiUrl = yield* normalizeApiUrl(Option.getOrElse(a.apiUrl, () => config.defaultApiUrl))
+	const envHandoff = yield* handoffFromEnv.pipe(Effect.orElseSucceed(() => Option.none<string>()))
+	const handoff = Option.map(
+		Option.orElse(a.handoff, () => envHandoff),
+		Str.trim,
+	)
+	if (Option.isSome(handoff)) {
+		if (a.withToken) {
+			return yield* new CliAuthError({
+				message: "Pass either a handoff code or --with-token, not both",
+			})
+		}
+		return yield* handoffLogin(apiUrl, handoff.value)
+	}
 
 	if (a.withToken) {
 		const token = yield* Effect.map(readStdinLine, Str.trim)
