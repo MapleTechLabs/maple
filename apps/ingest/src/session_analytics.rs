@@ -154,11 +154,17 @@ fn clamp_string_field(
 /// charged. An absent key is an SDK predating visits: customers pin SDK
 /// versions, so it keeps the old `version == 1` rule rather than going unbilled.
 fn take_billable_session_start(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
-    let marker = obj.remove("billable_start");
-    if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
-        return false;
-    }
-    marker.is_none_or(|value| value.as_u64() == Some(1))
+    let billable = is_billable_session_start(obj);
+    obj.remove("billable_start");
+    billable
+}
+
+/// Whether a session metadata row is a billable start, leaving the row as it is.
+pub fn is_billable_session_start(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+    obj.get("version").and_then(serde_json::Value::as_u64) == Some(1)
+        && obj
+            .get("billable_start")
+            .is_none_or(|value| value.as_u64() == Some(1))
 }
 
 /// Most browser sessions one metadata request can bill. Every SDK posts one
@@ -175,25 +181,44 @@ pub struct BillableSessionStarts {
 
 impl BillableSessionStarts {
     /// Note one row, removing its `billable_start` marker. A row without a
-    /// string `session_id` counts as the empty id.
-    pub fn note(&mut self, obj: &mut serde_json::Map<String, serde_json::Value>) {
+    /// string `session_id` counts as the empty id. True when the row added a session.
+    pub fn note(&mut self, obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
         if !take_billable_session_start(obj)
             || self.sessions.len() >= MAX_BILLABLE_SESSIONS_PER_REQUEST
         {
-            return;
+            return false;
         }
-        let session_id = obj
-            .get("session_id")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        if !self.sessions.contains(session_id) {
-            self.sessions.insert(session_id.to_owned());
+        self.sessions.insert(row_session_id(obj).to_owned())
+    }
+
+    /// Whether `session_id` could still add a billed session to this request: a slot is
+    /// free and the id is not already counted.
+    pub fn can_add(&self, session_id: &str) -> bool {
+        self.sessions.len() < MAX_BILLABLE_SESSIONS_PER_REQUEST
+            && !self.sessions.contains(session_id)
+    }
+
+    /// Count a session start the gateway decided to bill on its own (a cookieless visit).
+    pub fn note_session(&mut self, session_id: String) {
+        if self.sessions.len() < MAX_BILLABLE_SESSIONS_PER_REQUEST {
+            self.sessions.insert(session_id);
         }
+    }
+
+    /// Un-count the session a `note` just added, for a start the gateway decides not to bill.
+    pub fn retract(&mut self, obj: &serde_json::Map<String, serde_json::Value>) {
+        self.sessions.remove(row_session_id(obj));
     }
 
     pub fn count(&self) -> usize {
         self.sessions.len()
     }
+}
+
+pub fn row_session_id(obj: &serde_json::Map<String, serde_json::Value>) -> &str {
+    obj.get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
 }
 
 /// Clamp the client-supplied fields of one session metadata row in place.

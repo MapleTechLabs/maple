@@ -11586,13 +11586,35 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:default  [8247554d]
+-- builder:user-activity:userOperationsQuery:default  [a591efdb]
+SELECT
+          traces.ServiceName AS serviceName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
+          count() AS requestCount,
+          countIf(traces.StatusCode = 'Error') AS errorCount,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('api')
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.ResourceAttributes['service.namespace'] IN ('storefront')
+          AND traces.IsEntryPoint = 1
+          AND (traces.SpanAttributes['user.id'] = 'user_catalog' OR (traces.SpanAttributes['user.id'] = '' AND traces.SpanAttributes['enduser.id'] = 'user_catalog'))
+        GROUP BY serviceName, spanName
+        ORDER BY requestCount DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:user-activity:userTracesQuery:default  [78457797]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
@@ -11609,13 +11631,13 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:user-activity:userTracesQuery:notable  [9c6e1711]
+-- builder:user-activity:userTracesQuery:notable  [d063f52b]
 SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.Timestamp AS timestamp,
           traces.ServiceName AS serviceName,
-          traces.SpanName AS spanName,
+          if(((traces.SpanName LIKE 'http.server %' OR traces.SpanName IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS')) AND (traces.SpanAttributes['http.route'] != '' OR traces.SpanAttributes['url.path'] != '')), concat(if(traces.SpanName LIKE 'http.server %', replaceOne(traces.SpanName, 'http.server ', ''), traces.SpanName), ' ', if(traces.SpanAttributes['http.route'] != '', traces.SpanAttributes['http.route'], traces.SpanAttributes['url.path'])), traces.SpanName) AS spanName,
           traces.SpanKind AS spanKind,
           traces.Duration / 1000000 AS durationMs,
           traces.StatusCode AS statusCode,
@@ -15641,13 +15663,14 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default  [cd960b9b]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15656,13 +15679,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [cd960b9b]
+-- builder:web-analytics:webAnalyticsSummaryQuery:default-rollup  [79589c91]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15671,13 +15695,14 @@ SELECT
           AND session_replays.StartTime <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [8601ff7f]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered  [718208d5]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15715,13 +15740,14 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [d9e8d975]
+-- builder:web-analytics:webAnalyticsSummaryQuery:filtered-rollup  [51688ae7]
 SELECT
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
           uniq(session_replays.SessionId) AS sessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           uniqIf(session_replays.SessionId, multiSearchAnyCaseInsensitive(session_replays.UserAgent, ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'PerplexityBot', 'Google-Extended', 'Applebot-Extended', 'meta-externalagent', 'meta-webindexer', 'Bytespider', 'CCBot', 'Amazonbot', 'DuckAssistBot', 'Googlebot', 'GoogleOther', 'AdsBot-Google', 'Google-Read-Aloud', 'bingbot', 'YandexBot', 'Baiduspider', 'DuckDuckBot', 'Applebot', 'Sogou', 'SeznamBot', 'AhrefsSiteAudit', 'AhrefsBot', 'SemrushBot', 'DataForSeoBot', 'DotBot', 'MJ12bot', 'Barkrowler', 'Screaming Frog', 'facebookexternalhit', 'Twitterbot', 'LinkedInBot', 'Slackbot', 'Discordbot', 'TelegramBot', 'Pinterest', 'HubSpot Crawler', 'Stripebot', 'UptimeRobot', 'Pingdom', 'StatusCake', 'Headless', 'bot/', 'bot\x3B', 'bot)', 'crawler', 'spider', '+http'])) AS botSessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
@@ -15759,7 +15785,7 @@ SELECT
         GROUP BY sessionId)
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [ec93b790]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15767,6 +15793,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'
@@ -15776,7 +15803,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [ec93b790]
+-- builder:web-analytics:webAnalyticsTimeseriesQuery:default-rollup  [1d438366]
 SELECT
           toStartOfInterval(session_replays.StartTime, INTERVAL 3600 SECOND) AS bucket,
           uniqIf(session_replays.VisitorId, session_replays.VisitorId != '') AS visitors,
@@ -15784,6 +15811,7 @@ SELECT
           uniqIf(session_replays.SessionId, session_replays.VisitorIsNew = 1) AS newSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') - uniqIf(session_replays.SessionId, (session_replays.PageViews > 1 AND session_replays.VisitorId != '')) AS bouncedSessions,
           uniqIf(session_replays.SessionId, session_replays.VisitorId != '') AS identifiedSessions,
+          uniqIf(session_replays.SessionId, (session_replays.VisitorIsNew = 2 AND session_replays.VisitorId != '')) AS unknownHistorySessions,
           round(ifNull(ifNotFinite(avgIf(assumeNotNull(session_replays.DurationMs), session_replays.DurationMs > 0), 0), 0)) AS avgDurationMs
         FROM session_replays
         WHERE session_replays.OrgId = 'org_sql_catalog'

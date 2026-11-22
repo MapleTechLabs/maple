@@ -58,6 +58,20 @@ export const recordedMarker = (resourceAttributes: string | null | undefined): b
 	return marker === "true" ? true : marker === "false" ? false : undefined
 }
 
+/**
+ * Whether the visitor is new, returning, or unknown: a cookieless visitor's id changes
+ * daily, so its history cannot be told (`maple.visitor.mode` on the metadata row).
+ */
+export const visitorHistory = (
+	resourceAttributes: string | null | undefined,
+	visitorIsNew: boolean,
+): "New" | "Returning" | "Unknown, cookieless" =>
+	attributeOf(resourceAttributes, "maple.visitor.mode") === "cookieless"
+		? "Unknown, cookieless"
+		: visitorIsNew
+			? "New"
+			: "Returning"
+
 export type ReplayFormat = "rrweb" | "video"
 
 /** Which engine plays the session; unknown falls back to rrweb. */

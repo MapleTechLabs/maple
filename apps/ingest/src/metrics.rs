@@ -86,6 +86,13 @@ static REPLAY_BLOB_PUT_FAILED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static COOKIELESS_FAILED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_cookieless_failed_total")
+        .with_description("Cookieless salt reads, visit claims and touches that failed or timed out")
+        .build()
+});
+
 static CLOUDFLARE_BATCHES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_cloudflare_batches_total")
@@ -678,6 +685,12 @@ pub fn replay_session_chunk_dropped(org_id: &str) {
 /// zero, and it is the signal to watch during the R2 cutover.
 pub fn replay_blob_put_failed(org_id: &str) {
     REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
+}
+
+/// A cookieless store call failed (`stage`: `salt`, `claim` or `touch`). A failed salt
+/// sends rows unidentified and a failed claim bills nothing, so this should sit at zero.
+pub fn cookieless_failed(stage: &'static str) {
+    COOKIELESS_FAILED_TOTAL.add(1, &[KeyValue::new("stage", stage)]);
 }
 
 /// Memory request bodies being decoded hold right now; requests are shed near the budget.

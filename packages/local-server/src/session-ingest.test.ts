@@ -89,6 +89,18 @@ describe("POST /v1/sessionReplays/meta", () => {
 		expect(row).not.toHaveProperty("billable_start")
 	})
 
+	it("stores a cookieless visitor as unidentified, with no proxy to derive an id from", async () => {
+		const sink = recorder()
+		await run(
+			ingestSessionMeta(
+				sink.inserts,
+				new Headers(),
+				ndjson({ ...metaRow, visitor_id: "cookieless", visitor_is_new: 1 }),
+			),
+		)
+		expect(sink.rows()[0]).toMatchObject({ visitor_id: "", visitor_is_new: 0 })
+	})
+
 	it("clamps long values and drops off-type fields instead of failing the insert", async () => {
 		const sink = recorder()
 		const traits = Rec.fromEntries(Arr.map(Arr.range(1, 40), (i) => [`k${i}`, i]))
@@ -181,6 +193,14 @@ describe("POST /v1/sessionEvents", () => {
 		attributes: { amount: 12, currency: "EUR" },
 		net_status: 0,
 	}
+
+	it("stores a cookieless visitor's events as unidentified", async () => {
+		const sink = recorder()
+		await run(
+			ingestSessionEvents(sink.inserts, new Headers(), ndjson({ ...event, visitor_id: "cookieless" })),
+		)
+		expect(sink.rows()[0]).toMatchObject({ visitor_id: "" })
+	})
 
 	it("stores known event types and drops unknown ones", async () => {
 		const sink = recorder()

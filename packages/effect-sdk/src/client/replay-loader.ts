@@ -81,8 +81,15 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 	const removeSanitizer = configurePrivacy(config.privacy)
 	if (!hasConsent()) clearPendingEvents()
 	// React Native exposes window without a browser DOM or Web Crypto.
-	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
+	if (typeof window === "undefined" || typeof document === "undefined") {
 		return { stop: () => Promise.resolve(removeSanitizer()) }
+	}
+	// Another SDK already captures this page. Visitor tracking is page-wide, so this
+	// copy's privacy still applies to the id that owner sends.
+	if (readSessionSink()) {
+		if (!mayPersistIdentifier()) setVisitorTracking(false)
+		return { stop: () => Promise.resolve(removeSanitizer()) }
+	}
 
 	const engineConfig = {
 		endpoint: Str.replace(/\/$/, "")(config.endpoint),

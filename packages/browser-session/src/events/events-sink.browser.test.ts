@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("../session/session", () => ({
 	markActivity: vi.fn(),
@@ -14,6 +14,8 @@ const { resetSinkForTests, setActiveTraceIdProvider, startEventSink } = await im
 const { postSessionEvents } = await import("../platform/transport")
 const session = await import("../session/session")
 const { resetVisitorCacheForTests, setVisitorTracking } = await import("../identity/visitor")
+const { configurePrivacy, mayPersistIdentifier, resetConsentForTests } = await import("../identity/consent")
+const { COOKIELESS_VISITOR_ID } = await import("../identity/row-visitor")
 
 const CONFIG = {
 	endpoint: "https://ingest.test",
@@ -164,6 +166,43 @@ describe("startEventSink identity stamping", () => {
 			expect(row.group_id).toBe("")
 		}
 		sink.stop()
+	})
+
+	describe("cookieless persistence", () => {
+		afterEach(() => resetConsentForTests())
+
+		const rowsFor = async (sessionId: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
+			setVisitorTracking(mayPersistIdentifier())
+			const sink = startEventSink(CONFIG, sessionId)
+			sink.emit({ type: "custom", message: "signup_completed" })
+			await sink.flush()
+			sink.stop()
+			return postedRows()
+		}
+
+		it("asks the gateway for a visitor id and stores nothing", async () => {
+			window.sessionStorage.clear()
+			document.cookie.split(";").forEach((pair) => {
+				const name = pair.split("=")[0]?.trim()
+				if (name) document.cookie = `${name}=; max-age=0; path=/`
+			})
+			configurePrivacy({ persistence: "cookieless" })
+			const rows = await rowsFor("sess-cookieless-1")
+
+			expect(rows.length).toBeGreaterThan(0)
+			expect(rows.every((row) => row.visitor_id === COOKIELESS_VISITOR_ID)).toBe(true)
+			expect(window.localStorage.length).toBe(0)
+			expect(window.sessionStorage.length).toBe(0)
+			expect(document.cookie).toBe("")
+		})
+
+		it("sends an empty visitor id while consent is not granted", async () => {
+			configurePrivacy({ persistence: "cookieless", requireConsent: true })
+			const rows = await rowsFor("sess-cookieless-2")
+
+			expect(rows.length).toBeGreaterThan(0)
+			expect(rows.every((row) => row.visitor_id === "")).toBe(true)
+		})
 	})
 })
 
