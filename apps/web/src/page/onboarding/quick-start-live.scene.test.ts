@@ -1,7 +1,7 @@
 import { Result, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { expect as expectView, given, role, scene, text } from "foldkit/scene"
+import { expect as expectView, given, role, scene, selector, text } from "foldkit/scene"
 import { describe, test } from "vitest"
 import type { SignalPresence } from "@maple/views/data/signal-presence"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
@@ -74,7 +74,9 @@ describe("you're live step", () => {
 			},
 			given({ ...atLive(["traces", "logs", "metrics"], {}), state: codeOnly }),
 			expectView(role("heading", { name: "Acme is live" })).toExist(),
-			expectView(text("Still waiting on")).not.toExist(),
+			// The section stays mounted to fold shut, so it is the hidden, inert one.
+			expectView(selector("[inert]")).toContainText("Still waiting on"),
+			expectView(selector("[inert]")).toHaveAttr("aria-hidden", "true"),
 		)
 	})
 })
