@@ -1056,6 +1056,9 @@ const latencyCell = <M>(h: HtmlBuilder<M>, ms: number, className = "w-20 shrink-
 		tone: ms >= SLOW_MS ? "warning" : "foreground",
 	})
 
+/** Operations the API lists at most (`USER_OPERATIONS_LIMIT`); a full list says it is the top ones. */
+const OPERATIONS_CAP = 50
+
 /** Set off from the latency columns beside it, so "P95" and "Last seen" don't read as one. */
 const LAST_SEEN_LANE = "w-24 shrink-0 pl-4"
 
@@ -1153,7 +1156,9 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 									h,
 									"Operations",
 									formatNumber(detail.operations.length),
-									"Busiest first",
+									detail.operations.length >= OPERATIONS_CAP
+										? `Top ${OPERATIONS_CAP}, busiest first`
+										: "Busiest first",
 									operationsTable(h, detail, clock),
 								),
 							]),
