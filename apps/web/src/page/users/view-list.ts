@@ -263,22 +263,19 @@ const orgSummaryItems = (summary: UsersSummary, scope: ReadonlyArray<string>): R
 	},
 ]
 
-/** The strip's tiles sit on the page edge, like the header above and the table below. */
-const STAT_GUTTER = "[&>*]:px-(--page-gutter)"
-
 const SUMMARY_EYEBROWS = ["Identified users", "Active today", "Hit an error", "Anonymous visitors"]
 
 const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: ReadonlyArray<string>): Html =>
 	summary === "loading"
 		? statRail(
 				h,
-				{ columns: 4, isFlush: true, isBusy: true, className: STAT_GUTTER },
+				{ columns: 4, isFlush: true, isBusy: true, isOnPageGutter: true },
 				Arr.map(SUMMARY_EYEBROWS, () => statRailItemSkeleton(h)),
 			)
 		: summary === "failed"
 			? statRail(
 					h,
-					{ columns: 4, isFlush: true, className: STAT_GUTTER },
+					{ columns: 4, isFlush: true, isOnPageGutter: true },
 					Arr.map(SUMMARY_EYEBROWS, (eyebrow) =>
 						statRailItem(h, {
 							eyebrow,
@@ -290,7 +287,7 @@ const summaryRail = <M>(h: HtmlBuilder<M>, summary: UsersSummaryState, scope: Re
 				)
 			: statRail(
 					h,
-					{ columns: 4, isFlush: true, className: STAT_GUTTER },
+					{ columns: 4, isFlush: true, isOnPageGutter: true },
 					Arr.map(summaryItems(summary, scope), (item) =>
 						statRailItem(h, {
 							eyebrow: item.eyebrow,

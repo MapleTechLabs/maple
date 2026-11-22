@@ -27,6 +27,8 @@ export const statRail = <M>(
 		isBusy?: boolean
 		/** Edge to edge under a page header: square, ruled below only, like the hub's metric strip. */
 		isFlush?: boolean
+		/** Tiles pad to `--page-gutter`, so their text lines up with the page header above. */
+		isOnPageGutter?: boolean
 	}>,
 	children: ReadonlyArray<Html>,
 ): Html =>
@@ -38,6 +40,7 @@ export const statRail = <M>(
 					"grid grid-cols-2 divide-x divide-y divide-border md:divide-y-0",
 					options.isFlush === true ? "border-b border-border" : "rounded-md border bg-card",
 					COLUMNS_CLASS.get(options.columns ?? 4),
+					options.isOnPageGutter === true && "[&>*]:px-(--page-gutter)",
 					options.className,
 				),
 			),

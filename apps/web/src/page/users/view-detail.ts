@@ -243,7 +243,7 @@ const errorsStat = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html => {
 }
 
 const userStats = <M>(h: HtmlBuilder<M>, profile: UserProfile): Html =>
-	statRail(h, { columns: 5, isFlush: true, className: "[&>*]:px-(--page-gutter)" }, [
+	statRail(h, { columns: 5, isFlush: true, isOnPageGutter: true }, [
 		statRailItem(h, {
 			eyebrow: "Sessions",
 			value: formatNumber(profile.sessions),
