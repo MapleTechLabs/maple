@@ -136,7 +136,6 @@ describe("Tinybird retention matrix", () => {
 			"service_endpoint_details_hourly_mv",
 			"user_activity_hourly_traces_mv",
 			"user_activity_hourly_logs_mv",
-			"user_activity_daily_mv",
 		]) {
 			const pipe = Option.getOrUndefined(
 				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),

@@ -1660,8 +1660,8 @@ export const userActivityDailyMv = defineMaterializedView("user_activity_daily_m
 	description:
 		"Rolls user_activity_hourly up to UTC days per user, service and service.namespace: request, failed request, error span and log counts and distinct sessions.",
 	datasource: userActivityDaily,
-	// A 365-day rollup over the 90-day hourly table: a rebuild would drop days 91-365.
-	deploymentMethod: "alter",
+	// Tinybird refuses `alter` on a view's first deploy. Once it exists, set `deploymentMethod: "alter"`
+	// before changing it: it is a 365-day rollup over the 90-day hourly table, so a rebuild drops days 91-365.
 	nodes: [
 		node({
 			name: "user_activity_daily_mv_node",
