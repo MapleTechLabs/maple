@@ -1,5 +1,12 @@
 import { Schema } from "effect"
-import { FunnelKeyBy, FunnelStep, PathsAnchor, RetentionInterval, RetentionKeyBy } from "@maple/query-model"
+import {
+	FunnelKeyBy,
+	FunnelStep,
+	PathsAnchor,
+	PathsDirection,
+	RetentionInterval,
+	RetentionKeyBy,
+} from "@maple/query-model"
 import {
 	AiSessionListItem,
 	AiToolErrorBreakdownItem,
@@ -157,6 +164,14 @@ export const QueryFunnelStepRow = Schema.Struct({
 	/** Conversion from the previous step, 0-1; null on step 1 or when the previous step counted nobody. */
 	ofPrevious: Schema.NullOr(Schema.Number),
 	dropOff: Schema.Number,
+	/** With `details`, steps 2..N: milliseconds from the previous step's event, median and p90. */
+	p50Ms: Schema.optionalKey(Schema.Number),
+	p90Ms: Schema.optionalKey(Schema.Number),
+	/** With `details`, steps 2..N: milliseconds from step 1's event. */
+	sinceStartP50Ms: Schema.optionalKey(Schema.Number),
+	sinceStartP90Ms: Schema.optionalKey(Schema.Number),
+	/** With `details`, steps 2..N: what the people who stopped before this step did next; `''` is nothing. */
+	leavers: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number }))),
 })
 
 export const QueryFunnelOutput = Schema.Struct({
@@ -184,6 +199,31 @@ export const QueryFunnelOutput = Schema.Struct({
 	identityNote: Schema.optionalKey(Schema.String),
 	/** The key every step's events do carry, when `identityNote` is set and there is one. */
 	suggestedKeyBy: Schema.optionalKey(FunnelKeyBy),
+	/** Set when the window reaches past what sessions are kept and the funnel reads them. */
+	sessionNote: Schema.optionalKey(Schema.String),
+})
+
+export const QueryPathsOutput = Schema.Struct({
+	timeRange: OutputTimeRange,
+	anchor: PathsAnchor,
+	direction: PathsDirection,
+	depth: Schema.Number,
+	keyBy: FunnelKeyBy,
+	windowSeconds: Schema.Number,
+	/** Everyone who reached the anchor in the window. */
+	total: Schema.Number,
+	/** One entry per hop away from the anchor, nearest first. */
+	hops: Schema.Array(
+		Schema.Struct({
+			hop: Schema.Number,
+			/** The nodes of this column, most visited first: `''` is "nothing followed", `$other` the folded rest. */
+			nodes: Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number })),
+			/** The hop's transitions, most common first. */
+			edges: Schema.Array(
+				Schema.Struct({ from: Schema.String, to: Schema.String, count: Schema.Number }),
+			),
+		}),
+	),
 })
 
 export const QueryRetentionOutput = Schema.Struct({

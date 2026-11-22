@@ -387,7 +387,7 @@ export const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
 		case "page":
 			return (
 				isView(row) &&
-				row.pagePath === step.pagePath &&
+				CH.pagePathMatches(step.pagePath, row.pagePath) &&
 				(step.host === undefined || row.host === step.host)
 			)
 		case "session":

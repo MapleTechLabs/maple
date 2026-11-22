@@ -16,6 +16,8 @@ const TOOL = "inspect_user"
 const WINDOW = P.timeWindow({ defaultHours: 24 * 7, maxHours: MCP_DISCOVERY_MAX_HOURS })
 /** Rows each section shows; the structured output keeps every row the reads returned. */
 const SECTION_ROWS = 10
+/** A timeline is read in order, so it shows more rows than a ranked section does. */
+const EVENT_ROWS = 25
 
 const at = (epochMs: number): string => formatWarehouseDateTime(epochMs)
 const orDash = (value: string | null | undefined): string =>
@@ -105,7 +107,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "Inspect User",
 		description:
-			"One end user of the org's own apps (an id from `list_users`, or the `user.id` a span or session carries): identity, totals, the services and namespaces they touched, recent browser sessions, MCP sessions (server and session id), the error issues they hit, and their recent failed requests, with calls to open each.",
+			"One end user of the org's own apps (an id from `list_users`, or the `user.id` a span or session carries): identity, totals, the services and namespaces they touched, recent browser sessions, their latest product events and page views in order, MCP sessions (server and session id), the error issues they hit, and their recent failed requests, with calls to open each.",
 		parameters: Schema.Struct({
 			user_id: P.text("The user's id as the app sent it (`identify()` or `user.id`), from list_users"),
 			...WINDOW.fields,
@@ -137,6 +139,7 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 				...(namespaces !== undefined && { namespaces }),
 				profile,
 				sessions: activity.sessions,
+				events: activity.events,
 				mcpSessions: activity.mcpSessions,
 				issues: issues.issues,
 				issuesAttributed: issues.attributed,
@@ -217,6 +220,26 @@ export function registerInspectUserTool(server: McpToolRegistrar) {
 								orDash(session.device),
 							]),
 						),
+				doc.heading("Recent events"),
+				output.events.length === 0
+					? doc.text("No product events or page views in the window.")
+					: doc.table(
+							["When", "Event", "Detail", "Source", "Service"],
+							Arr.map(output.events.slice(0, EVENT_ROWS), (event) => [
+								at(event.atMs),
+								truncate(event.name, 50),
+								truncate(orDash(event.detail), 60),
+								event.source,
+								orDash(event.service),
+							]),
+						),
+				...(output.events.length > EVENT_ROWS
+					? [
+							doc.text(
+								`The latest ${EVENT_ROWS} of ${formatNumber(output.events.length)} read; narrow start_time/end_time for an earlier stretch.`,
+							),
+						]
+					: []),
 				doc.heading("MCP sessions"),
 				output.mcpSessions.length === 0
 					? doc.text("No MCP sessions in the window.")

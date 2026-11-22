@@ -131,7 +131,7 @@ describe("query_retention", () => {
 
 	it("counts accounts with key_by group", async () => {
 		const result = await call({ ...window, key_by: "group" })
-		expect(issued.at(-1) ?? "").toContain("e.GroupId AS key")
+		expect(issued.at(-1) ?? "").toContain("e.GroupId != ''")
 		expect(markdown(result)).toContain("Retention by week (groups;")
 	})
 

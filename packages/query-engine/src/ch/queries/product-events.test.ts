@@ -34,6 +34,40 @@ const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 // `countIf(level >= n)` per step, unpacked to `{ step, count }` rows.
 
 describe("productEventsFunnelQuery", () => {
+	it("matches a page step with a wildcard by pattern, and one without exactly", () => {
+		const sqlFor = (pagePath: string) =>
+			oneLine(
+				compileUnsafe(
+					Result.getOrThrow(
+						productEventsFunnelQuery({
+							steps: [{ kind: "page", pagePath }],
+							keyBy: "user",
+							windowSeconds: 3_600,
+						}),
+					),
+					params,
+				).sql,
+			)
+		expect(sqlFor("/pricing")).toContain("e.PagePath = '/pricing'")
+		expect(sqlFor("/dashboards/*")).toContain("e.PagePath LIKE '/dashboards/%'")
+		// A literal underscore in the path stays an underscore, not LIKE's any-one-character.
+		expect(sqlFor("/user_settings/*")).toContain("e.PagePath LIKE '/user\\\\_settings/%'")
+	})
+
+	it("keys a funnel by the group, dropping rows that carry none", () => {
+		const sql = oneLine(
+			compileUnsafe(
+				Result.getOrThrow(
+					productEventsFunnelQuery({ steps: STEPS, keyBy: "group", windowSeconds: 3_600 }),
+				),
+				params,
+			).sql,
+		)
+		expect(sql).toContain("e.GroupId != ''")
+		// Only the stitched person needs the identity links.
+		expect(sql).not.toContain("identity_links")
+	})
+
 	it("scopes every table it reads to the org and derives an org-scoped result", () => {
 		const compiled = compileUnsafe(
 			Result.getOrThrow(

@@ -66,6 +66,26 @@ const fixtures: FixtureRule[] = [
 		match: (sql) => isFunnelRead(sql) && Str.includes("'plan'")(sql),
 		rows: [{ group: "pro", step: 1, count: 10 }],
 	},
+	// The two detail reads: the time between steps, then where the drop-offs went.
+	{
+		match: (sql) => Str.includes("sinceStartP50Ms")(sql),
+		rows: [
+			{
+				step: 2,
+				p50Ms: 99_000_000,
+				p90Ms: 190_000_000,
+				sinceStartP50Ms: 99_000_000,
+				sinceStartP90Ms: 190_000_000,
+			},
+		],
+	},
+	{
+		match: (sql) => /\bAS next\b/.test(sql) && isFunnelRead(sql),
+		rows: [
+			{ step: 2, next: "/welcome", count: 45 },
+			{ step: 2, next: "", count: 15 },
+		],
+	},
 	{
 		match: (sql) => isFunnelRead(sql),
 		rows: [
@@ -222,6 +242,49 @@ describe("query_funnel output", () => {
 		// The breakdown suggestion repeats the funnel, so it decodes against this tool's schema.
 		expect(text).toContain("`query_funnel steps_json=")
 		expect(text).toContain('breakdown_by="utmSource"')
+	})
+})
+
+describe("query_funnel details", () => {
+	const steps = JSON.stringify([
+		{ kind: "page", pagePath: "/pricing" },
+		{ kind: "event", eventName: "signup_completed" },
+	])
+
+	it("adds the time each step took and where the drop-offs went, only when asked", async () => {
+		const plain = await call("query_funnel", { steps_json: steps })
+		expect(markdown(plain)).not.toContain("Time to convert")
+
+		const result = await call("query_funnel", { steps_json: steps, details: true })
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.steps[1]).toMatchObject({
+			p50Ms: 99_000_000,
+			leavers: [
+				{ name: "/welcome", count: 45 },
+				{ name: "", count: 15 },
+			],
+		})
+		expect(output.steps[0]?.p50Ms).toBeUndefined()
+		const text = markdown(result)
+		expect(text).toContain("| 2 | signup_completed | 1d 4h | 2d 5h | 1d 4h |")
+		expect(text).toContain("Before step 2 (signup_completed): /welcome (45), nothing after (15)")
+	})
+
+	it("leaves the details out of a breakdown, which has no single chain to time", async () => {
+		const result = await call("query_funnel", {
+			steps_json: steps,
+			details: true,
+			breakdown_by: "attribute:plan",
+		})
+		expect(markdown(result)).not.toContain("Time to convert")
+	})
+
+	it("says sessions are kept 30 days when a longer window reads them", async () => {
+		const window = { start_time: "2026-08-01 00:00:00", end_time: "2026-10-15 00:00:00" }
+		const filtered = await call("query_funnel", { steps_json: steps, ...window, country: "DE" })
+		expect(markdown(filtered)).toContain("Sessions are kept 30 days")
+		const unfiltered = await call("query_funnel", { steps_json: steps, ...window })
+		expect(markdown(unfiltered)).not.toContain("Sessions are kept 30 days")
 	})
 })
 

@@ -33,6 +33,10 @@ Turn on **Filter by property** to narrow an event step to events that carry a va
 
 The same event can be two steps with different filters, for example `plan_started` with `plan = "startup"` and later `plan_started` with `plan = "scale"`.
 
+### Match a group of pages
+
+A `*` in a page step's path stands for any run of characters. `/dashboards/*` is every dashboard, `/orders/*/edit` the edit page of any order. A path without one is matched exactly.
+
 ### Repeat a step
 
 List the same event twice to ask who did it twice. `product_viewed`, `product_viewed`, `add_to_cart` counts people who looked at two products before adding one to the cart. One event never counts for two steps.

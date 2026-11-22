@@ -628,6 +628,11 @@ describeWithChdb("product event funnels over example products", () => {
 			},
 		},
 		{
+			name: "Content: any page whose path starts with /p or ends in up, then the signup event",
+			dataset: content,
+			opts: { steps: [page("/p*"), page("*up"), ev("signup_started")], windowSeconds: 3_600 },
+		},
+		{
 			name: "Content: from Hacker News",
 			dataset: content,
 			opts: {

@@ -1,4 +1,4 @@
-import { Schema, Array as Arr, Record as Rec } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 // A product-event funnel definition, as every surface that stores one keeps
 // it: the /analytics URL, a dashboard funnel widget, an MCP tool call, and the
@@ -32,7 +32,11 @@ export const FunnelEventStep = Schema.Struct({
 	eventName: Schema.String,
 	attributeEquals: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
-/** A page view, or a mobile screen view, of `pagePath`, optionally on one `host`. */
+/**
+ * A page view, or a mobile screen view, of `pagePath`, optionally on one `host`. A `*` in the
+ * path stands for any run of characters, so `/dashboards/*` is every dashboard; a path with none
+ * is matched exactly.
+ */
 export const FunnelPageStep = Schema.Struct({
 	kind: Schema.Literal("page"),
 	pagePath: Schema.String,
@@ -46,6 +50,27 @@ export const FunnelSessionStep = Schema.Struct({
 })
 export const FunnelStep = Schema.Union([FunnelEventStep, FunnelPageStep, FunnelSessionStep])
 export type FunnelStep = typeof FunnelStep.Type
+
+const PAGE_WILDCARD = "*"
+
+/** Whether a page step's path is a pattern rather than one exact path. */
+export const isPagePathPattern = (pagePath: string): boolean => Str.includes(PAGE_WILDCARD)(pagePath)
+
+/**
+ * A page step's pattern as a SQL `LIKE` pattern: `*` becomes `%`, and the characters `LIKE` reads
+ * specially (`%`, `_`, `\`) are escaped so they match themselves.
+ */
+export const pagePathLikePattern = (pagePath: string): string =>
+	Str.replaceAll(PAGE_WILDCARD, "%")(Str.replace(/[\\%_]/g, "\\$&")(pagePath))
+
+/** Whether `path` is the page a step names: equal to it, or matching its `*` pattern. */
+export const pagePathMatches = (pagePath: string, path: string): boolean => {
+	if (!isPagePathPattern(pagePath)) return path === pagePath
+	const parts = Arr.map(Str.split(PAGE_WILDCARD)(pagePath), (part) =>
+		Str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")(part),
+	)
+	return new RegExp(`^${Arr.join(parts, "[\\s\\S]*")}$`).test(path)
+}
 
 /** An acquisition dimension of the person's sessions, the event `Host`, or `attribute:<key>`. */
 export const FunnelBreakdownBy = Schema.Union([

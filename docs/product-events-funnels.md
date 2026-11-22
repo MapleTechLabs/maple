@@ -522,7 +522,9 @@ converted in either order.
 - **A leaver** is anyone who stopped short, including a visitor whose session matched step 1 and
   who sent no event at all: they count under "nothing after".
 - **A page step** matches a browser page view or a mobile screen view (`Kind` `navigation` or
-  `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way.
+  `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way. A `*` in
+  the step's path matches any run of characters (`pagePathLikePattern` in `@maple/query-model`,
+  compiled to `LIKE` with `%` and `_` escaped); a path without one is compared with `=`.
 - **The key** is `person`, `visitor`, `user`, `group` or `session`. A row whose key is empty takes
   no part, so a step whose events lack the key can never be reached: `plan_started` from a billing
   webhook carries `GroupId` and no user, and by `person` reads as 0% however many accounts paid.
