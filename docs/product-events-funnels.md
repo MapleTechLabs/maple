@@ -531,6 +531,30 @@ converted in either order.
   and how many carry each identity; `query_funnel` reads it when a step came back empty and says
   which key every step's events do carry.
 
+## How retention is counted (2026-11-22)
+
+`productEventsRetentionQuery` (`packages/query-engine/src/ch/queries/product-events-retention.ts`),
+reached through the MCP tool `query_retention`. There is no dashboard panel for it yet.
+
+- **A cohort** is the interval (UTC day, Monday week or month) of a key's first start event. With
+  `firstEver` (the tool's default) that first is read over the whole table, not the window, so a
+  key that was active before the window is in no cohort. Reading firsts from the window alone
+  puts every existing user into its first interval, which then looks several times larger and
+  better retained than the ones after it. `firstEver: false` is that cheaper read, for when it is
+  what is wanted.
+- **Period 0** is the cohort's size. **Period n** is the keys of it with a return event in the
+  n-th interval after the cohort's own. The start and return events default to any event.
+- **Returns** are read from the window start to a separate `returnEndTime` parameter, so the last
+  cohorts are followed past the end of the cohort window. The tool passes now, and marks a
+  period that has not started as unknown and one still running as open, never as a zero.
+- **The key** is `person`, `user`, `visitor` or `group`. Not `session`: a session cannot return.
+- One pass per key: `minIf(ts, isStart)` and `groupUniqArrayIf(bucket(ts), isReturn)`, then the
+  periods as date arithmetic over that array. No join, and no second read of the cohorts.
+
+`apps/cli/test/retention-scenarios.test.ts` holds the definition as a TypeScript reference and
+runs the compiled SQL against it on chDB: hand-built cases (someone active before the window),
+example products and random histories over every key and interval.
+
 `apps/cli/test/funnel-scenarios.test.ts` holds this definition as a plain TypeScript reference
 funnel and runs the compiled SQL against it on chDB: four example products (a SaaS signup with
 server-side steps, a shop checkout with restarts, a mobile onboarding, a two-host content site),

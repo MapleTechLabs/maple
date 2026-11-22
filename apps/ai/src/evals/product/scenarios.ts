@@ -474,6 +474,19 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 				answerNumber("returned the next week", returnedIn(cohortWeek + 1)),
 				answerNumber("returned four weeks later", returnedIn(cohortWeek + 4)),
 			],
+			[
+				{
+					tool: "query_retention",
+					args: {
+						start_json: stringifyJson({ kind: "event", eventName: "signup_completed" }),
+						key_by: "user",
+						interval: "week",
+						periods: 4,
+						start_time: toolTime(cohortStart),
+						end_time: toolTime(cohortStart + WEEK_MS),
+					},
+				},
+			],
 		),
 		scenario(
 			"next-after-workspace",

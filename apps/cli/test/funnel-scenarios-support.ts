@@ -160,7 +160,7 @@ export interface Range {
 
 export const FULL_RANGE: Range = { fromMs: 0, toMs: RANGE_DAYS * DAY_MS }
 
-const params = (orgId: string, range: Range) => ({
+export const params = (orgId: string, range: Range) => ({
 	orgId,
 	startTime: Str.slice(0, 19)(chTimestamp(range.fromMs)),
 	endTime: Str.slice(0, 19)(chTimestamp(range.toMs)),
@@ -171,7 +171,7 @@ const decodeBreakdown = decodeJsonEachRow(CH.productEventsFunnelBreakdownRowSche
 const decodeTiming = decodeJsonEachRow(CH.productEventsFunnelTimingRowSchema)
 const decodeLeavers = decodeJsonEachRow(CH.productEventsFunnelLeaversRowSchema)
 
-const run = (db: Chdb, sql: string): string => db.query(normalizeSqlForClickHouseClient(sql))
+export const run = (db: Chdb, sql: string): string => db.query(normalizeSqlForClickHouseClient(sql))
 
 export const sqlFunnel = (
 	db: Chdb,
@@ -300,7 +300,7 @@ export const sqlLeavers = (
 type Filters = NonNullable<CH.ProductEventsFunnelOpts["filters"]>
 
 /** The visitor's first linked user, as `identity_links` resolves it. */
-const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
+export const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
 	const first = new Map<string, { userId: string; startMs: number }>()
 	Arr.forEach(dataset.sessions, (row) => {
 		if (row.visitorId === "" || row.userId === "") return
@@ -311,7 +311,7 @@ const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
 	return new Map(Arr.map([...first], ([visitorId, link]) => [visitorId, link.userId]))
 }
 
-const keyOf = (
+export const keyOf = (
 	keyBy: CH.FunnelKeyBy,
 	row: {
 		readonly sessionId: string
@@ -344,7 +344,7 @@ const SESSION_FIELD = {
 	host: "host",
 } as const satisfies Record<CH.FunnelSessionDimension, keyof SimSession>
 
-const inRange = (atMs: number, range: Range): boolean => atMs >= range.fromMs && atMs <= range.toMs
+export const inRange = (atMs: number, range: Range): boolean => atMs >= range.fromMs && atMs <= range.toMs
 
 const sessionMatches = (row: SimSession, filters: Filters): boolean =>
 	(filters.country === undefined || row.country === filters.country) &&
@@ -374,7 +374,7 @@ const isView = (row: SimEvent): boolean => row.kind === "navigation" || row.kind
 const displayName = (row: SimEvent): string =>
 	isView(row) && row.pagePath !== "" ? row.pagePath : row.eventName
 
-const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
+export const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
 	switch (step.kind) {
 		case "event":
 			return (

@@ -131,6 +131,7 @@ import {
 	ListAgentSessionsOutput,
 	ListProductEventsOutput,
 	QueryFunnelOutput,
+	QueryRetentionOutput,
 	SearchSessionsOutput,
 } from "./sessions"
 import {
@@ -318,6 +319,7 @@ export const McpToolOutputs = {
 	propose_fix: ProposeFixOutput,
 	query_data: QueryDataOutput,
 	query_funnel: QueryFunnelOutput,
+	query_retention: QueryRetentionOutput,
 	query_promql: QueryPromqlOutput,
 	read_source_file: ReadSourceFileOutput,
 	register_agent: RegisterAgentOutput,

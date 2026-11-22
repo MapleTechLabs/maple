@@ -105,6 +105,7 @@ import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
 import { registerQueryFunnelTool } from "./query-funnel"
+import { registerQueryRetentionTool } from "./query-retention"
 import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
@@ -147,6 +148,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerSearchTracesTool,
 	registerSearchSessionsTool,
 	registerQueryFunnelTool,
+	registerQueryRetentionTool,
 	registerListProductEventsTool,
 	registerGetSessionTranscriptTool,
 	registerGetSessionTracesTool,

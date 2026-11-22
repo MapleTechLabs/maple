@@ -4671,6 +4671,83 @@ SELECT
         ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
         FORMAT JSON
 
+-- builder:product-events-retention:productEventsRetentionQuery:daily-in-window-group  [c867657c]
+SELECT
+          toString(cohortDay) AS cohort,
+          cohorted.period AS period,
+          count() AS count
+        FROM (SELECT
+          toDate(first, 'UTC') AS cohortDay,
+          arrayJoin(arrayConcat([0], arrayDistinct(arrayFilter(p -> p >= 1 AND p <= 14, arrayMap(b -> dateDiff('day', cohortDay, b), buckets))))) AS period
+        FROM (SELECT
+          retention_events.key AS key,
+          minIf(ts, isStart = 1) AS first,
+          groupUniqArrayIf(toDate(ts, 'UTC'), isReturn = 1) AS buckets
+        FROM (SELECT
+          e.GroupId AS key,
+          e.Timestamp AS ts,
+          toUInt8((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing')) AS isStart,
+          toUInt8(((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro') AND e.Timestamp >= '2026-01-01 10:30:00')) AS isReturn
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND ((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'pro'))
+          AND e.GroupId != ''
+          AND e.GroupId IN (SELECT
+          session_replays.GroupId AS key
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.Country = 'DE'
+        GROUP BY key)) AS retention_events
+        GROUP BY key) AS per_key
+        WHERE per_key.first >= '2026-01-01 10:30:00'
+          AND per_key.first <= '2026-01-03 14:15:00') AS cohorted
+        GROUP BY cohort, period
+        ORDER BY cohort ASC, period ASC
+        FORMAT JSON
+
+-- builder:product-events-retention:productEventsRetentionQuery:weekly-first-ever-person  [10b1504f]
+SELECT
+          toString(cohortDay) AS cohort,
+          cohorted.period AS period,
+          count() AS count
+        FROM (SELECT
+          toStartOfWeek(first, 1, 'UTC') AS cohortDay,
+          arrayJoin(arrayConcat([0], arrayDistinct(arrayFilter(p -> p >= 1 AND p <= 8, arrayMap(b -> intDiv(dateDiff('day', cohortDay, b), 7), buckets))))) AS period
+        FROM (SELECT
+          retention_events.key AS key,
+          minIf(ts, isStart = 1) AS first,
+          groupUniqArrayIf(toStartOfWeek(ts, 1, 'UTC'), isReturn = 1) AS buckets
+        FROM (SELECT
+          multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
+          e.Timestamp AS ts,
+          toUInt8(e.EventName = 'signup_completed') AS isStart,
+          toUInt8(e.Timestamp >= '2026-01-01 10:30:00') AS isReturn
+        FROM product_events AS e
+        LEFT JOIN (SELECT
+          pair_links.VisitorId AS VisitorId,
+          argMin(pair_links.UserId, pair_links.FirstSeen) AS UserId
+        FROM (SELECT
+          identity_links.VisitorId AS VisitorId,
+          identity_links.UserId AS UserId,
+          min(identity_links.FirstSeen) AS FirstSeen
+        FROM identity_links
+        WHERE identity_links.OrgId = 'org_sql_catalog'
+        GROUP BY VisitorId, UserId) AS pair_links
+        GROUP BY VisitorId) AS link ON e.VisitorId = link.VisitorId
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS retention_events
+        GROUP BY key) AS per_key
+        WHERE per_key.first >= '2026-01-01 10:30:00'
+          AND per_key.first <= '2026-01-03 14:15:00') AS cohorted
+        GROUP BY cohort, period
+        ORDER BY cohort ASC, period ASC
+        FORMAT JSON
+
 -- builder:product-events:productEventNamesQuery:default  [d05b039c]
 SELECT
           product_events.EventName AS eventName,

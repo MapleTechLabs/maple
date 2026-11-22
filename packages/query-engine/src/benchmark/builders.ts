@@ -514,6 +514,48 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	{
+		module: "product-events-retention",
+		name: "productEventsRetentionQuery",
+		label: "weekly-first-ever-person",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsRetentionQuery({
+						startEvent: { kind: "event", eventName: "signup_completed" },
+						keyBy: "person",
+						interval: "week",
+						periods: 8,
+						firstEver: true,
+					}),
+				),
+				{ ...window, returnEndTime: window.endTime },
+			),
+	},
+	{
+		module: "product-events-retention",
+		name: "productEventsRetentionQuery",
+		label: "daily-in-window-group",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsRetentionQuery({
+						startEvent: { kind: "page", pagePath: "/pricing" },
+						returnEvent: {
+							kind: "event",
+							eventName: "plan_started",
+							attributeEquals: { plan: "pro" },
+						},
+						keyBy: "group",
+						interval: "day",
+						periods: 14,
+						firstEver: false,
+						filters: { country: "DE" },
+					}),
+				),
+				{ ...window, returnEndTime: window.endTime },
+			),
+	},
 	// Drop-off details and paths share the funnel's person-key axis; one fixture
 	// per builder plus the direction / include / exclude shapes of the paths one.
 	{

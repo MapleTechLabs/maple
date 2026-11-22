@@ -62,6 +62,7 @@ import * as cloudResourceQueries from "../ch/queries/cloud-resources"
 import * as userActivityQueries from "../ch/queries/user-activity"
 import * as productEventQueries from "../ch/queries/product-events"
 import * as productEventPathQueries from "../ch/queries/product-events-paths"
+import * as productEventRetentionQueries from "../ch/queries/product-events-retention"
 import * as productEventExploreQueries from "../ch/queries/product-events-explore"
 import * as topOperationQueries from "../ch/queries/top-operations"
 import * as traceQueries from "../ch/queries/traces"
@@ -319,6 +320,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"user-activity": userActivityQueries,
 	"product-events": productEventQueries,
 	"product-events-paths": productEventPathQueries,
+	"product-events-retention": productEventRetentionQueries,
 	"product-events-explore": productEventExploreQueries,
 	traces: traceQueries,
 	users: userQueries,
