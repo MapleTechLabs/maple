@@ -28,6 +28,7 @@ import { rowMenuEntries } from "./row-menu"
 import { Message } from "./message"
 import {
 	ACTIVITY_SLOT,
+	hasActivity,
 	formatLastSeen,
 	GENERIC_TYPES,
 	signalActivity,
@@ -236,7 +237,10 @@ export const signalRow = (h: H, signal: ErrorSignal, state: RowState): Html => {
 											),
 										]
 									: []),
-								signalActivity(h, signal, LANE.activityInline),
+								// Inline, an untouched row keeps its whole message line.
+								...(hasActivity(signal)
+									? [signalActivity(h, signal, LANE.activityInline)]
+									: []),
 							],
 						),
 					],

@@ -105,6 +105,12 @@ const countMark = (
 		[icon(h, iconName, { size: 12 }), String(count)],
 	)
 
+/** Whether the row has any investigation, comment or PR mark to show. */
+export const hasActivity = (signal: ErrorSignal): boolean =>
+	signal.investigation !== null ||
+	signal.commentCount > 0 ||
+	signal.openPullRequestCount + signal.mergedPullRequestCount > 0
+
 /** `SignalActivity`: the investigation, comment and PR slots; an empty slot keeps its width. */
 export const signalActivity = (h: H, signal: ErrorSignal, className: string): Html => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount

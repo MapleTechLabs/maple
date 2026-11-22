@@ -44,6 +44,10 @@ export const investigationChip = <M>(
 ): Html => {
 	const label = INVESTIGATION_LABEL[investigation.status]
 	const withConfidence = options.withConfidence ?? true
+	const shownConfidence =
+		withConfidence && investigation.confidence && investigation.status === "diagnosed"
+			? investigation.confidence
+			: null
 	return textLink(
 		h,
 		{
@@ -56,7 +60,9 @@ export const investigationChip = <M>(
 			),
 			attributes: [
 				// The label can be hidden (compact), so the button is named here.
-				h.AriaLabel(`Open investigation: ${label}`),
+				h.AriaLabel(
+					`Open investigation: ${label}${shownConfidence === null ? "" : `, ${shownConfidence} confidence`}`,
+				),
 				...tooltipTrigger(h, `${INVESTIGATION_DESCRIPTION[investigation.status]} Click to open it.`, {
 					title: investigation.confidence
 						? `${label} · ${investigation.confidence} confidence`
@@ -68,9 +74,7 @@ export const investigationChip = <M>(
 		[
 			statusDot(h, { tone: INVESTIGATION_LOOK[investigation.status].tone }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @5xl/page:inline"))], [label]),
-			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [typography(h, { tone: "subtle" }, ["· ", investigation.confidence])]
-				: []),
+			...(shownConfidence !== null ? [typography(h, { tone: "subtle" }, ["· ", shownConfidence])] : []),
 		],
 	)
 }
