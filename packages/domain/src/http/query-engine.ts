@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema, String as Str } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
 import { CostCurrency, CostDimension, CostFilters, CostMetric, CostProvider } from "../cost"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
@@ -2775,8 +2775,9 @@ export class WebAnalyticsSummaryResponse extends Schema.Class<WebAnalyticsSummar
 		// block. `identifiedSessions / sessions` is what the page reports so a
 		// visitor count that covers a fraction of traffic never reads as the whole.
 		identifiedSessions: Schema.Number,
-		// Cookieless sessions, whose new-vs-returning is unknown.
-		unknownHistorySessions: Schema.Number,
+		// Cookieless sessions, whose new-vs-returning is unknown. Defaults to 0 so a web
+		// build that deploys before the API still decodes the older response.
+		unknownHistorySessions: Schema.Number.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(0))),
 		avgDurationMs: Schema.Number,
 		// Sessions from crawlers, headless browsers and other non-human agents,
 		// counted within the same filters as every field above — so it is only a
@@ -2831,7 +2832,7 @@ export class WebAnalyticsTimeseriesResponse extends Schema.Class<WebAnalyticsTim
 			// over `identifiedSessions`, not `sessions` — see the query.
 			bouncedSessions: Schema.Number,
 			identifiedSessions: Schema.Number,
-			unknownHistorySessions: Schema.Number,
+			unknownHistorySessions: Schema.Number.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(0))),
 			avgDurationMs: Schema.Number,
 		}),
 	),
