@@ -149,7 +149,7 @@ export const layerTick = (
 		IncidentClassifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
-		Layer.provide(ProductEventsService.layer),
+		Layer.provide(ProductEventsService.layerFor("maple-alerting")),
 		Layer.provide(
 			Layer.mergeAll(
 				Env.layer,
