@@ -9,13 +9,13 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { formatExactCount } from "@maple/views/lib/locale"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 import { stripClass } from "@maple/views/ui/rule"
+import { disclosureStrip } from "../../kit/disclosure-strip"
 
 // `IssueExceptionPanel` and `IssueStats`: what broke, then how often and since when.
 
@@ -38,8 +38,13 @@ export const issueField = (h: H, label: string, children: ReadonlyArray<Html>): 
 const COPY_CLASS =
 	"-my-0.5 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/mono:opacity-100 pointer-coarse:opacity-100"
 
-/** The exception message, then the top frame it was raised from. */
-export const exceptionPanel = (h: H, model: Model, issue: ErrorIssueDocument): Html => {
+/** The exception message, the top frame it was raised from, and the newest full stack trace. */
+export const exceptionPanel = (
+	h: H,
+	model: Model,
+	issue: ErrorIssueDocument,
+	stacktrace: string | null,
+): Html => {
 	const message = stripAnsi(issue.exceptionMessage || issue.errorLabel)
 	return panel(h, { className: "shrink-0 overflow-hidden" }, [
 		panelHeader(h, {
@@ -82,6 +87,9 @@ export const exceptionPanel = (h: H, model: Model, issue: ErrorIssueDocument): H
 						]),
 			]),
 		]),
+		...(stacktrace === null
+			? []
+			: [disclosureStrip(h, { label: "Full stack trace", text: stripAnsi(stacktrace) })]),
 	])
 }
 
@@ -96,8 +104,11 @@ const SEVERITY_STAT_TONE = {
 export type StatInputs = Readonly<{
 	windowCount: number
 	windowLabel: string
-	/** The window's buckets, oldest first, for the Events tile's bars. */
-	spark: ReadonlyArray<number>
+	/**
+	 * The window's bucket width as a label ("15m"), how many whole buckets it has and what they hold
+	 * (the surge's own population), so a surge can say its rate in counts; `null` leaves a ratio.
+	 */
+	buckets: Readonly<{ label: string; count: number; total: number }> | null
 	/** The window's tail against its own average; `null` when there is too little to say. */
 	surge: number | null
 	timeZone: string
@@ -114,6 +125,18 @@ const stamp = (h: H, iso: string, inputs: StatInputs): Html =>
 /** Below this the window's tail has dropped to under half its usual rate. */
 const FADE_THRESHOLD = 0.5
 
+const about = (value: number): string => `~${formatNumber(Math.max(1, Math.round(value)))}`
+
+/**
+ * A surge in counts: the recent rate against the window's average. The header's badge already
+ * says the ratio, so the tile says what it means.
+ */
+const surgeLine = (inputs: StatInputs, surge: number): string => {
+	if (inputs.buckets === null || inputs.buckets.count === 0) return `${surge.toFixed(1)}x the usual rate`
+	const usual = inputs.buckets.total / inputs.buckets.count
+	return `${about(usual * surge)}/${inputs.buckets.label} now, ${about(usual)} usual`
+}
+
 /** What the window's tail says about the trend; nothing when there is too little to say. */
 const trendLine = (inputs: StatInputs): string | undefined =>
 	inputs.windowCount === 0
@@ -121,7 +144,7 @@ const trendLine = (inputs: StatInputs): string | undefined =>
 		: inputs.surge === null
 			? undefined
 			: inputs.surge >= SURGE_THRESHOLD
-				? `${inputs.surge.toFixed(1)}x the usual rate`
+				? surgeLine(inputs, inputs.surge)
 				: inputs.surge < FADE_THRESHOLD
 					? `Fading, ${inputs.surge.toFixed(1)}x the usual rate`
 					: "Steady in this window"
@@ -131,56 +154,69 @@ const isFixHeldSince = (issue: ErrorIssueDocument): boolean =>
 	issue.lastResolvedAt !== null &&
 	(issue.lastRegressedAt === null || toEpochMs(issue.lastResolvedAt) > toEpochMs(issue.lastRegressedAt))
 
-/** `IssueStats`: the window's events and trend, lifetime events, first seen, last seen and any regression. */
-export const issueStats = (h: H, issue: ErrorIssueDocument, inputs: StatInputs): Html => {
+/**
+ * `IssueStats`: the window's events and trend, lifetime events, first seen, last seen and any
+ * regression. `isFlush` draws it as the head strip of the occurrences panel, over its chart.
+ */
+export const issueStats = (
+	h: H,
+	issue: ErrorIssueDocument,
+	inputs: StatInputs,
+	options: Readonly<{ isFlush?: boolean }> = {},
+): Html => {
 	const isSurging = inputs.surge !== null && inputs.surge >= SURGE_THRESHOLD
 	const tone: Tone = issue.severity === null ? "neutral" : SEVERITY_STAT_TONE[issue.severity]
 	// Only error issues read a window timeseries; an alert's window was never queried.
 	const hasWindow = issue.kind === "error"
-	return statRail(h, { columns: hasWindow ? 4 : 3, className: "shrink-0" }, [
-		...(hasWindow
-			? [
-					statRailItem(h, {
-						eyebrow: `Events · ${inputs.windowLabel}`,
-						value: h.span(
-							[h.Title(formatExactCount(inputs.windowCount))],
-							[exact(inputs.windowCount)],
-						),
-						tone: isSurging ? tone : "neutral",
-						spark: inputs.spark,
-						sparkColor:
-							issue.severity === null ? undefined : `var(${SEVERITY_TOKEN[issue.severity]})`,
-						subline: trendLine(inputs),
-					}),
-				]
-			: []),
-		statRailItem(h, {
-			eyebrow: "All time",
-			value: h.span([h.Title(formatExactCount(issue.occurrenceCount))], [exact(issue.occurrenceCount)]),
-			compact: true,
-		}),
-		statRailItem(h, {
-			eyebrow: "First seen",
-			value: stamp(h, issue.firstSeenAt, inputs),
-			compact: true,
-			valueClassName: "text-xl",
-		}),
-		statRailItem(h, {
-			eyebrow: "Last seen",
-			value: stamp(h, issue.lastSeenAt, inputs),
-			compact: true,
-			valueClassName: "text-xl",
-			subline:
-				issue.lastRegressedAt !== null && !isFixHeldSince(issue)
-					? typography(h, { tone: "warning" }, [
-							"regressed ",
-							stamp(h, issue.lastRegressedAt, inputs),
-						])
-					: issue.snoozeUntil !== null
-						? h.span([], ["snoozed until ", stamp(h, issue.snoozeUntil, inputs)])
-						: issue.lastResolvedAt !== null
-							? h.span([], ["fix held since ", stamp(h, issue.lastResolvedAt, inputs)])
-							: undefined,
-		}),
-	])
+	return statRail(
+		h,
+		{ columns: hasWindow ? 4 : 3, isFlush: options.isFlush === true, className: "shrink-0" },
+		[
+			...(hasWindow
+				? [
+						statRailItem(h, {
+							eyebrow: `Events · ${inputs.windowLabel}`,
+							value: h.span(
+								[h.Title(formatExactCount(inputs.windowCount))],
+								[exact(inputs.windowCount)],
+							),
+							tone: isSurging ? tone : "neutral",
+							compact: true,
+							subline: trendLine(inputs),
+						}),
+					]
+				: []),
+			statRailItem(h, {
+				eyebrow: "All time",
+				value: h.span(
+					[h.Title(formatExactCount(issue.occurrenceCount))],
+					[exact(issue.occurrenceCount)],
+				),
+				compact: true,
+			}),
+			statRailItem(h, {
+				eyebrow: "First seen",
+				value: stamp(h, issue.firstSeenAt, inputs),
+				compact: true,
+				valueClassName: "text-xl",
+			}),
+			statRailItem(h, {
+				eyebrow: "Last seen",
+				value: stamp(h, issue.lastSeenAt, inputs),
+				compact: true,
+				valueClassName: "text-xl",
+				subline:
+					issue.lastRegressedAt !== null && !isFixHeldSince(issue)
+						? typography(h, { tone: "warning" }, [
+								"regressed ",
+								stamp(h, issue.lastRegressedAt, inputs),
+							])
+						: issue.snoozeUntil !== null
+							? h.span([], ["snoozed until ", stamp(h, issue.snoozeUntil, inputs)])
+							: issue.lastResolvedAt !== null
+								? h.span([], ["fix held since ", stamp(h, issue.lastResolvedAt, inputs)])
+								: undefined,
+			}),
+		],
+	)
 }

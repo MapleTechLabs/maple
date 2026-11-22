@@ -34,6 +34,40 @@ const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 // `countIf(level >= n)` per step, unpacked to `{ step, count }` rows.
 
 describe("productEventsFunnelQuery", () => {
+	it("matches a page step with a wildcard by pattern, and one without exactly", () => {
+		const sqlFor = (pagePath: string) =>
+			oneLine(
+				compileUnsafe(
+					Result.getOrThrow(
+						productEventsFunnelQuery({
+							steps: [{ kind: "page", pagePath }],
+							keyBy: "user",
+							windowSeconds: 3_600,
+						}),
+					),
+					params,
+				).sql,
+			)
+		expect(sqlFor("/pricing")).toContain("e.PagePath = '/pricing'")
+		expect(sqlFor("/dashboards/*")).toContain("e.PagePath LIKE '/dashboards/%'")
+		// A literal underscore in the path stays an underscore, not LIKE's any-one-character.
+		expect(sqlFor("/user_settings/*")).toContain("e.PagePath LIKE '/user\\\\_settings/%'")
+	})
+
+	it("keys a funnel by the group, dropping rows that carry none", () => {
+		const sql = oneLine(
+			compileUnsafe(
+				Result.getOrThrow(
+					productEventsFunnelQuery({ steps: STEPS, keyBy: "group", windowSeconds: 3_600 }),
+				),
+				params,
+			).sql,
+		)
+		expect(sql).toContain("e.GroupId != ''")
+		// Only the stitched person needs the identity links.
+		expect(sql).not.toContain("identity_links")
+	})
+
 	it("scopes every table it reads to the org and derives an org-scoped result", () => {
 		const compiled = compileUnsafe(
 			Result.getOrThrow(
@@ -331,13 +365,14 @@ describe("productEventsFunnelBreakdownQuery", () => {
 })
 
 describe("productEventNamesQuery", () => {
-	it("lists names with counts, sessions and persons, most frequent first", () => {
+	it("lists names with their counts, most frequent first, counting only identities that are set", () => {
 		const compiled = compileUnsafe(productEventNamesQuery({ limit: 25 }), params)
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
-		expect(flat).toContain(
-			"SELECT product_events.EventName AS eventName, product_events.Kind AS kind, count() AS count, uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions, uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons FROM product_events",
-		)
+		// A person or a group is counted only where the event carries one: a bare `uniq` over the
+		// key would count the empty string of an id-less event as one person.
+		expect(flat).toContain("(product_events.VisitorId != '' OR product_events.UserId != '')")
+		expect(flat).toContain("product_events.GroupId != ''")
 		expect(flat).toContain("WHERE product_events.OrgId = 'org_1'")
 		expect(flat).toContain("GROUP BY eventName, kind ORDER BY count DESC, eventName ASC LIMIT 25")
 		expect(flat).not.toContain("session_replays")

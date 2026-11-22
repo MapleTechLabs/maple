@@ -121,6 +121,9 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 					timestamp: asIso(trace.timestamp),
 					exceptionMessage: trace.exception_message,
 					durationMicros: trace.duration_micros,
+					deploymentEnv: trace.deployment_environment ?? "",
+					serviceVersion: trace.service_version ?? "",
+					userId: trace.user_id ?? "",
 				}),
 		),
 		incidents: Arr.map(
@@ -141,4 +144,5 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 			detail.environments,
 			(env) => new ErrorIssueEnvironment({ name: env.name, count: env.count }),
 		),
+		latestStacktrace: detail.latest_stacktrace ?? null,
 	})

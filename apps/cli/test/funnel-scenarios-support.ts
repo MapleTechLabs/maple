@@ -25,6 +25,8 @@ export interface SimEvent {
 	readonly sessionId: string
 	readonly visitorId: string
 	readonly userId: string
+	/** The account the user belongs to; `''` on a row that names none. */
+	readonly groupId: string
 	readonly kind: "navigation" | "custom" | "screen"
 	readonly eventName: string
 	readonly host: string
@@ -36,6 +38,7 @@ export interface SimSession {
 	readonly sessionId: string
 	readonly visitorId: string
 	readonly userId: string
+	readonly groupId: string
 	readonly startMs: number
 	readonly referrerHost: string
 	readonly utmSource: string
@@ -60,6 +63,7 @@ export const event = (fields: Partial<SimEvent> & Pick<SimEvent, "atMs" | "event
 	sessionId: "",
 	visitorId: "",
 	userId: "",
+	groupId: "",
 	kind: "custom",
 	host: "",
 	pagePath: "",
@@ -72,6 +76,7 @@ export const session = (
 ): SimSession => ({
 	visitorId: "",
 	userId: "",
+	groupId: "",
 	referrerHost: "",
 	utmSource: "",
 	utmMedium: "",
@@ -128,20 +133,20 @@ export const insertDataset = (db: Chdb, dataset: Dataset): void => {
 		const rows = Arr.map(
 			chunk,
 			(row) =>
-				`(${org}, ${quote(chTimestamp(row.atMs, row.micro))}, ${quote(row.source)}, ${quote(row.sessionId)}, ${row.seq}, ${quote(row.visitorId)}, ${quote(row.userId)}, ${quote(row.kind)}, ${quote(row.eventName)}, ${quote(row.host)}, ${quote(row.pagePath)}, ${mapLiteral(row.attributes)})`,
+				`(${org}, ${quote(chTimestamp(row.atMs, row.micro))}, ${quote(row.source)}, ${quote(row.sessionId)}, ${row.seq}, ${quote(row.visitorId)}, ${quote(row.userId)}, ${quote(row.groupId)}, ${quote(row.kind)}, ${quote(row.eventName)}, ${quote(row.host)}, ${quote(row.pagePath)}, ${mapLiteral(row.attributes)})`,
 		)
 		db.exec(
-			`INSERT INTO product_events (OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, Kind, EventName, Host, PagePath, Attributes) VALUES ${Arr.join(rows, ", ")}`,
+			`INSERT INTO product_events (OrgId, Timestamp, Source, SessionId, Seq, VisitorId, UserId, GroupId, Kind, EventName, Host, PagePath, Attributes) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 	Arr.forEach(Arr.chunksOf(dataset.sessions, INSERT_CHUNK), (chunk) => {
 		const rows = Arr.map(
 			chunk,
 			(row) =>
-				`(${org}, ${quote(row.sessionId)}, ${quote(chTimestamp(row.startMs))}, 'ended', ${quote(row.userId)}, 1, ${quote(row.visitorId)}, ${quote(row.referrerHost)}, ${quote(row.utmSource)}, ${quote(row.utmMedium)}, ${quote(row.utmCampaign)}, ${quote(row.country)}, ${quote(row.host)}, ${quote(row.deviceType)}, ${quote(row.browserName)})`,
+				`(${org}, ${quote(row.sessionId)}, ${quote(chTimestamp(row.startMs))}, 'ended', ${quote(row.userId)}, 1, ${quote(row.visitorId)}, ${quote(row.groupId)}, ${quote(row.referrerHost)}, ${quote(row.utmSource)}, ${quote(row.utmMedium)}, ${quote(row.utmCampaign)}, ${quote(row.country)}, ${quote(row.host)}, ${quote(row.deviceType)}, ${quote(row.browserName)})`,
 		)
 		db.exec(
-			`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, ReferrerHost, UtmSource, UtmMedium, UtmCampaign, Country, Host, DeviceType, BrowserName) VALUES ${Arr.join(rows, ", ")}`,
+			`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, GroupId, ReferrerHost, UtmSource, UtmMedium, UtmCampaign, Country, Host, DeviceType, BrowserName) VALUES ${Arr.join(rows, ", ")}`,
 		)
 	})
 }
@@ -155,7 +160,7 @@ export interface Range {
 
 export const FULL_RANGE: Range = { fromMs: 0, toMs: RANGE_DAYS * DAY_MS }
 
-const params = (orgId: string, range: Range) => ({
+export const params = (orgId: string, range: Range) => ({
 	orgId,
 	startTime: Str.slice(0, 19)(chTimestamp(range.fromMs)),
 	endTime: Str.slice(0, 19)(chTimestamp(range.toMs)),
@@ -166,7 +171,7 @@ const decodeBreakdown = decodeJsonEachRow(CH.productEventsFunnelBreakdownRowSche
 const decodeTiming = decodeJsonEachRow(CH.productEventsFunnelTimingRowSchema)
 const decodeLeavers = decodeJsonEachRow(CH.productEventsFunnelLeaversRowSchema)
 
-const run = (db: Chdb, sql: string): string => db.query(normalizeSqlForClickHouseClient(sql))
+export const run = (db: Chdb, sql: string): string => db.query(normalizeSqlForClickHouseClient(sql))
 
 export const sqlFunnel = (
 	db: Chdb,
@@ -295,7 +300,7 @@ export const sqlLeavers = (
 type Filters = NonNullable<CH.ProductEventsFunnelOpts["filters"]>
 
 /** The visitor's first linked user, as `identity_links` resolves it. */
-const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
+export const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
 	const first = new Map<string, { userId: string; startMs: number }>()
 	Arr.forEach(dataset.sessions, (row) => {
 		if (row.visitorId === "" || row.userId === "") return
@@ -306,14 +311,21 @@ const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
 	return new Map(Arr.map([...first], ([visitorId, link]) => [visitorId, link.userId]))
 }
 
-const keyOf = (
+export const keyOf = (
 	keyBy: CH.FunnelKeyBy,
-	row: { readonly sessionId: string; readonly visitorId: string; readonly userId: string },
+	row: {
+		readonly sessionId: string
+		readonly visitorId: string
+		readonly userId: string
+		readonly groupId: string
+	},
 	links: ReadonlyMap<string, string>,
 ): string => {
 	switch (keyBy) {
 		case "session":
 			return row.sessionId
+		case "group":
+			return row.groupId
 		case "visitor":
 			return row.visitorId
 		case "user":
@@ -332,7 +344,7 @@ const SESSION_FIELD = {
 	host: "host",
 } as const satisfies Record<CH.FunnelSessionDimension, keyof SimSession>
 
-const inRange = (atMs: number, range: Range): boolean => atMs >= range.fromMs && atMs <= range.toMs
+export const inRange = (atMs: number, range: Range): boolean => atMs >= range.fromMs && atMs <= range.toMs
 
 const sessionMatches = (row: SimSession, filters: Filters): boolean =>
 	(filters.country === undefined || row.country === filters.country) &&
@@ -362,7 +374,7 @@ const isView = (row: SimEvent): boolean => row.kind === "navigation" || row.kind
 const displayName = (row: SimEvent): string =>
 	isView(row) && row.pagePath !== "" ? row.pagePath : row.eventName
 
-const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
+export const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
 	switch (step.kind) {
 		case "event":
 			return (
@@ -375,7 +387,7 @@ const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
 		case "page":
 			return (
 				isView(row) &&
-				row.pagePath === step.pagePath &&
+				CH.pagePathMatches(step.pagePath, row.pagePath) &&
 				(step.host === undefined || row.host === step.host)
 			)
 		case "session":
@@ -388,16 +400,25 @@ interface FunnelRow {
 	readonly atMs: number
 	readonly seq: number
 	readonly matches: ReadonlyArray<boolean>
+	/** `drops[k - 1]`: this row is an excluded event that drops the attempts standing at step k. */
+	readonly drops: ReadonlyArray<boolean>
+	/** `dropsArrival[k - 1]`: it also drops an attempt this same row would move onto step k. */
+	readonly dropsArrival: ReadonlyArray<boolean>
+	/** Which exclusions the row is, as `0`/`1` per exclusion: the tie order's last part. */
+	readonly excluded: string
 	readonly name: string
 	readonly dimension: string
 }
 
-/** A row matching an earlier step sorts first among rows of one millisecond and seq. */
+/**
+ * A row matching an earlier step sorts first among rows of one millisecond and seq, and an
+ * excluded event after the rows that are none.
+ */
 const stepRank = (row: FunnelRow): string =>
-	Arr.join(
+	`${Arr.join(
 		Arr.map(row.matches, (matched) => (matched ? "0" : "1")),
 		"",
-	)
+	)}${row.excluded}`
 
 const byOrder: Order.Order<FunnelRow> = Order.combineAll([
 	Order.mapInput(Order.Number, (row: FunnelRow) => row.atMs),
@@ -444,6 +465,35 @@ const attemptFrom = (
 	}
 	return chain
 }
+
+/**
+ * The deepest step any attempt reaches when some events drop attempts part way.
+ *
+ * Every step-1 row starts an attempt, and an attempt is a set of steps it stands at, not one
+ * chain: dropped from step 2, it still stands at step 1 and can take a later step-2 row. A row
+ * moves an attempt one step, from where it stood before the row. An excluded event is one strictly
+ * between its two bounds: the row that reaches `after` is that step and passes, while a row that
+ * arrives further inside the range came from inside it and is dropped.
+ */
+const levelWithExclusions = (rows: ReadonlyArray<FunnelRow>, stepCount: number, windowMs: number): number =>
+	Arr.reduce(rows, 0, (best, start, startIndex) => {
+		if (start.matches[0] !== true) return best
+		let standing = Arr.makeBy(stepCount, (index) => index === 0)
+		let depth = 1
+		for (const row of Arr.drop(rows, startIndex + 1)) {
+			if (row.atMs > start.atMs + windowMs) break
+			const before = standing
+			standing = Arr.map(before, (stood, index) => {
+				const arrives = index > 0 && row.matches[index] === true && before[index - 1] === true
+				return (stood && row.drops[index] !== true) || (arrives && row.dropsArrival[index] !== true)
+			})
+			depth = Math.max(
+				depth,
+				1 + Arr.findLastIndex(standing, (stood) => stood).pipe(Option.getOrElse(() => 0)),
+			)
+		}
+		return Math.max(best, depth)
+	})
 
 const walk = (
 	rows: ReadonlyArray<FunnelRow>,
@@ -494,18 +544,48 @@ export const referencePersons = (
 		: undefined
 	const admitted = (key: string): boolean => key !== "" && (population === undefined || population.has(key))
 
+	const exclusions = opts.exclusions ?? []
+	const stepCount = opts.steps.length
 	const eventRows = Arr.flatMap(dataset.events, (row): ReadonlyArray<FunnelRow> => {
 		const key = keyOf(opts.keyBy, row, links)
 		const matches = Arr.map(opts.steps, (step) => stepMatches(step, row))
-		if (!inRange(row.atMs, range) || !admitted(key) || !Arr.some(matches, (matched) => matched)) return []
+		const excluding = Arr.map(exclusions, (exclusion) => stepMatches(exclusion.step, row))
+		const relevant = Arr.some(matches, (matched) => matched) || Arr.some(excluding, (matched) => matched)
+		if (!inRange(row.atMs, range) || !admitted(key) || !relevant) return []
 		return [
 			{
 				key,
 				atMs: row.atMs,
 				seq: row.seq,
 				matches,
+				// Step k is covered by an exclusion sitting between `after` and `before` when after <= k < before.
+				drops: Arr.makeBy(stepCount, (index) =>
+					Arr.some(
+						exclusions,
+						(exclusion, at) =>
+							excluding[at] === true &&
+							(exclusion.after ?? 1) <= index + 1 &&
+							index + 1 < (exclusion.before ?? stepCount),
+					),
+				),
+				dropsArrival: Arr.makeBy(stepCount, (index) =>
+					Arr.some(
+						exclusions,
+						(exclusion, at) =>
+							excluding[at] === true &&
+							(exclusion.after ?? 1) < index + 1 &&
+							index + 1 < (exclusion.before ?? stepCount),
+					),
+				),
+				excluded: Arr.join(
+					Arr.map(excluding, (matched) => (matched ? "1" : "0")),
+					"",
+				),
 				name: displayName(row),
-				dimension: dimensionOfEvent(breakdownBy, row, sessionsById, range),
+				// A row read only for an exclusion is not part of the funnel: it names no group.
+				dimension: Arr.some(matches, (matched) => matched)
+					? dimensionOfEvent(breakdownBy, row, sessionsById, range)
+					: "",
 			},
 		]
 	})
@@ -523,6 +603,12 @@ export const referencePersons = (
 							atMs: row.startMs,
 							seq: 0,
 							matches: Arr.map(opts.steps, (_, index) => index === 0),
+							drops: Arr.map(opts.steps, () => false),
+							dropsArrival: Arr.map(opts.steps, () => false),
+							excluded: Arr.join(
+								Arr.map(exclusions, () => "0"),
+								"",
+							),
 							name: "$session_entry",
 							dimension: dimension === undefined ? "" : row[SESSION_FIELD[dimension]],
 						},
@@ -533,10 +619,14 @@ export const referencePersons = (
 	const byKey = Arr.groupBy([...entryRows, ...eventRows], (row) => row.key)
 	return Arr.map(Rec.toEntries(byKey), ([key, rows]): PersonResult => {
 		const sorted = Arr.sort(rows, byOrder)
-		const chain = walk(sorted, opts.steps.length, opts.windowSeconds * 1_000)
+		// With exclusions only the level is defined: the engine refuses the details too.
+		const chain = exclusions.length > 0 ? [] : walk(sorted, stepCount, opts.windowSeconds * 1_000)
 		return {
 			key,
-			level: chain.length,
+			level:
+				exclusions.length > 0
+					? levelWithExclusions(sorted, stepCount, opts.windowSeconds * 1_000)
+					: chain.length,
 			chain,
 			group: Option.match(
 				Arr.findFirst(sorted, (row) => row.dimension !== ""),

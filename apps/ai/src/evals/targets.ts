@@ -43,6 +43,23 @@ export type Check =
 	| { readonly kind: "no-tools" }
 	/** The final answer names at least one of these (case-insensitive). */
 	| { readonly kind: "answer-mentions"; readonly anyOf: ReadonlyArray<string> }
+	/**
+	 * The final answer states this number, in any digit grouping. With `percent`, `value` is a 0-1
+	 * share and the answer has to give it as a percentage (rounded to a whole percent is fine).
+	 */
+	| {
+			readonly kind: "answer-number"
+			readonly label: string
+			readonly value: number
+			readonly percent?: boolean
+	  }
+	/** The final answer states a duration within `tolerance` (a 0-1 share) of this many milliseconds. */
+	| {
+			readonly kind: "answer-duration"
+			readonly label: string
+			readonly ms: number
+			readonly tolerance: number
+	  }
 
 export const call = (tool: string, args?: CallExpectation["args"]): CallExpectation =>
 	args === undefined ? { tool } : { tool, args }
@@ -51,6 +68,86 @@ export const calls = (...anyOf: ReadonlyArray<CallExpectation>): Check => ({ kin
 export const never = (...tools: ReadonlyArray<string>): Check => ({ kind: "never", tools })
 export const noTools: Check = { kind: "no-tools" }
 export const answerMentions = (...anyOf: ReadonlyArray<string>): Check => ({ kind: "answer-mentions", anyOf })
+export const answerNumber = (label: string, value: number): Check => ({ kind: "answer-number", label, value })
+export const answerPercent = (label: string, share: number): Check => ({
+	kind: "answer-number",
+	label,
+	value: share,
+	percent: true,
+})
+export const answerDuration = (label: string, ms: number, tolerance = 0.05): Check => ({
+	kind: "answer-duration",
+	label,
+	ms,
+	tolerance,
+})
+
+// Dates and clock times are full of digits that are not quantities.
+const DATE_OR_TIME =
+	/\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?Z?)?|\b\d{1,2}:\d{2}(?::\d{2})?\b/g
+// Not inside a word or an identifier: `u_017`, `d12` and `v2` name things.
+const NUMBER = /(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(\s*%)?/g
+
+/** The quantities a text states: plain numbers, and percentages as written (37.5 for `37.5%`). */
+export const numbersIn = (
+	text: string,
+): { readonly plain: ReadonlyArray<number>; readonly percents: ReadonlyArray<number> } => {
+	const matches = Arr.fromIterable(Str.matchAll(NUMBER)(Str.replace(DATE_OR_TIME, " ")(text)))
+	const read = (match: RegExpMatchArray): number =>
+		Number(`${Str.replaceAll(",", "")(match[1] ?? "")}${match[2] ?? ""}`)
+	return {
+		plain: Arr.map(
+			Arr.filter(matches, (match) => match[3] === undefined),
+			read,
+		),
+		percents: Arr.map(
+			Arr.filter(matches, (match) => match[3] !== undefined),
+			read,
+		),
+	}
+}
+
+const UNIT_MS: ReadonlyArray<readonly [RegExp, number]> = [
+	[/^(?:d|days?)$/, 86_400_000],
+	[/^(?:h|hrs?|hours?)$/, 3_600_000],
+	[/^(?:m|mins?|minutes?)$/, 60_000],
+	[/^(?:s|secs?|seconds?)$/, 1_000],
+	[/^ms$/, 1],
+]
+const DURATION_PART = /(\d+(?:\.\d+)?)\s*(days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|ms|d|h|m|s)\b/gi
+/** What may sit between two parts of one duration: `1h 5m`, `1 hour, 5 minutes`, `1 hour and 5 minutes`. */
+const JOINER = /^[\s,]*(?:and)?[\s,]*$/i
+
+/** The durations a text states, in milliseconds: `1h 5m` is one duration, not two. */
+export const durationsIn = (text: string): ReadonlyArray<number> => {
+	const parts = Arr.map(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), (match) => {
+		const unit = Str.toLowerCase(match[2] ?? "")
+		const size = Arr.findFirst(UNIT_MS, ([pattern]) => pattern.test(unit))
+		const start = match.index ?? 0
+		return {
+			ms:
+				Number(match[1]) *
+				Option.getOrElse(
+					Option.map(size, ([, ms]) => ms),
+					() => 0,
+				),
+			start,
+			end: start + match[0].length,
+		}
+	})
+	const totals: Array<number> = []
+	let previousEnd = -1
+	Arr.forEach(parts, (part) => {
+		const last = totals.length - 1
+		if (last >= 0 && previousEnd >= 0 && JOINER.test(Str.slice(previousEnd, part.start)(text))) {
+			totals[last] = (totals[last] ?? 0) + part.ms
+		} else {
+			totals.push(part.ms)
+		}
+		previousEnd = part.end
+	})
+	return totals
+}
 
 /** A call as the model made it, plus how the registry reads it. */
 export interface ObservedCall {
@@ -157,6 +254,35 @@ export const runCheck = (
 					onNone: () => `answer names none of ${showJson(check.anyOf)}`,
 					onSome: (term) => `answer names "${term}"`,
 				}),
+			}
+		}
+		case "answer-number": {
+			const { plain, percents } = numbersIn(answer)
+			const wanted = check.percent === true ? check.value * 100 : check.value
+			const pass =
+				check.percent === true
+					? // A share rounded to a whole percent is still the right share.
+						Arr.some(percents, (stated) => Math.abs(stated - wanted) <= 0.5)
+					: Arr.some(plain, (stated) => stated === wanted)
+			const shown = check.percent === true ? `${Math.round(wanted * 100) / 100}%` : String(wanted)
+			return {
+				pass,
+				detail: pass
+					? `answer states ${check.label} = ${shown}`
+					: `answer does not state ${check.label} = ${shown}`,
+			}
+		}
+		case "answer-duration": {
+			const pass = Arr.some(
+				durationsIn(answer),
+				(stated) => Math.abs(stated - check.ms) <= check.ms * check.tolerance,
+			)
+			const shown = `${Math.round(check.ms / 1_000)}s`
+			return {
+				pass,
+				detail: pass
+					? `answer states ${check.label} near ${shown}`
+					: `answer does not state ${check.label} near ${shown}`,
 			}
 		}
 	}
