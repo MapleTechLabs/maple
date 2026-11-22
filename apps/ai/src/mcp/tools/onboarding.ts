@@ -157,7 +157,8 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 		description:
 			"The values a coding agent inlines to send this org's telemetry: the OTLP ingest endpoint for the org's region, the public ingest key (maple_pk_, write-only and safe in browser and mobile code), the dashboard URL and the setup guide. Never returns the private key. Verify the first data with list_services.",
 		parameters: Schema.Struct({}),
-		hints: { readOnly: true },
+		// Creates the org's ingest keys on first use, so a read-only token is refused.
+		hints: { readOnly: false, idempotent: true },
 		scopeFamily: "ingest_keys",
 		phrases: ["Reading ingest setup"],
 		handler: Effect.fn("McpTool.getIngestSetup")(function* () {

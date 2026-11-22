@@ -149,10 +149,16 @@ describe("get_ingest_setup", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
-	it.effect("runs on a read-only key", () =>
+	it.effect("is refused to a read-only key, since it may create the org's ingest keys", () =>
 		Effect.gen(function* () {
 			const result = yield* call("get_ingest_setup", {})
-			expect(Result.isSuccess(result)).toBe(true)
+			expect(Result.isFailure(result)).toBe(true)
+			if (Result.isFailure(result)) {
+				expect(result.failure).toMatchObject({
+					_tag: "@maple/mcp/errors/McpAuthInvalidError",
+					reason: "insufficient_scope",
+				})
+			}
 		}).pipe(Effect.provide(layer({ readOnly: true }))),
 	)
 })

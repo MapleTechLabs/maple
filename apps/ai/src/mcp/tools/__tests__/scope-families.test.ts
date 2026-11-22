@@ -61,7 +61,7 @@ const REQUIRED = [
 	["update_scrape_target", "scrape_targets:write"],
 	["delete_scrape_target", "scrape_targets:write"],
 	["onboarding_status_update", "onboarding:write"],
-	["get_ingest_setup", "ingest_keys:read"],
+	["get_ingest_setup", "ingest_keys:write"],
 ] as const
 
 describe("MCP tools outside the baseline scope families", () => {
