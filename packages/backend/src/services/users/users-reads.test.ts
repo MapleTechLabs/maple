@@ -137,6 +137,15 @@ describe("mergeActivity", () => {
 		expect(sessionItem).toMatchObject({ sessionId: "s1", title: "Session on /pricing", tone: "crit" })
 	})
 
+	it("names an MCP session with no tool calls as a connection", () => {
+		const [item] = mergeActivity({
+			sessions: [],
+			events: [],
+			mcpSessions: [{ ...mcpSession, calls: 0, tools: 0, errors: 0 }],
+		})
+		expect(item).toMatchObject({ title: "Claude Code connected", detail: "maple-ai · no tool calls" })
+	})
+
 	it("keeps the latest rows when capped", () => {
 		const items = mergeActivity({ sessions: [session], events: [event], mcpSessions: [mcpSession] }, 2)
 		expect(Arr.map(items, (item) => item.kind)).toEqual(["event", "mcp"])
