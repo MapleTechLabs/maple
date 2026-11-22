@@ -15,7 +15,7 @@
 		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",
 		"@maple/strings": "workspace:*",
-		"@takumi-rs/helpers": "2.20.0",
+		"@takumi-rs/helpers": "2.22.1",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

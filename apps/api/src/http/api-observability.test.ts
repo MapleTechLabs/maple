@@ -10,9 +10,13 @@ const tracedFor = (url: string, method = "GET") =>
 	}).pipe(Effect.provide(ApiObservabilityLive), Effect.runSync)
 
 describe("ApiObservabilityLive", () => {
-	it("records no server span for a heartbeat ping, whose path carries the token", () => {
-		expect(tracedFor("/hb/abc123secret")).toBe(false)
-		expect(tracedFor("/hb/abc123secret/fail", "POST")).toBe(false)
+	// The ping routes redact the token themselves; a path no route matches would record it.
+	it("traces heartbeat pings but no other path under /hb/", () => {
+		expect(tracedFor("/hb/abc123secret")).toBe(true)
+		expect(tracedFor("/hb/abc123secret/fail", "POST")).toBe(true)
+		expect(tracedFor("/hb/abc123secret?source=cron")).toBe(true)
+		expect(tracedFor("/hb/abc123secret/typo")).toBe(false)
+		expect(tracedFor("/hb/abc123secret/fail/again")).toBe(false)
 	})
 
 	// The audit log is filtered by a member's email. The span of that request is kept for weeks
