@@ -17,6 +17,12 @@
 //   events.track("plan_started", { userId, attributes: { plan } })
 //   await events.dispose()  // on shutdown: final flush
 //
+// User and account properties ride on any event (`set`, `setOnce`, `unset` and
+// their `group*` forms), or on their own with `identify` / `groupIdentify`:
+//
+//   yield* events.identify(userId, { set: { plan: "pro" }, setOnce: { first_plan: "free" } })
+//   yield* events.groupIdentify(orgId, { seats: 12 })
+//
 // Events are buffered and flushed on an interval, on batch size, and on scope
 // close / `dispose()`. `track` never fails and never throws into the caller —
 // a broken ingest endpoint drops the batch and warns (rate-limited).
@@ -30,6 +36,7 @@ import {
 	Layer,
 	ManagedRuntime,
 	Option,
+	Record as Rec,
 	Redacted,
 	Schedule,
 	Schema,
@@ -98,7 +105,34 @@ export interface TrackOptions {
 	readonly pagePath?: string | undefined
 	/** Free-form properties; coerced to strings and capped like the browser `track()`. */
 	readonly attributes?: TrackProps | undefined
+	/** User properties to set on `userId`; a later `set` replaces each one. */
+	readonly set?: TrackProps | undefined
+	/** User properties to set on `userId` only where they have no value yet. */
+	readonly setOnce?: TrackProps | undefined
+	/** User properties to remove from `userId`. */
+	readonly unset?: ReadonlyArray<string> | undefined
+	/** Account properties to set on `groupId`. */
+	readonly groupSet?: TrackProps | undefined
+	/** Account properties to set on `groupId` only where they have no value yet. */
+	readonly groupSetOnce?: TrackProps | undefined
+	/** Account properties to remove from `groupId`. */
+	readonly groupUnset?: ReadonlyArray<string> | undefined
 }
+
+/** `identify` options: the event's context plus the user's property writes. */
+export type IdentifyOptions = Omit<TrackOptions, "userId" | "attributes">
+
+/** `groupIdentify` options beyond the properties to set. */
+export interface GroupIdentifyOptions {
+	readonly setOnce?: TrackProps | undefined
+	readonly unset?: ReadonlyArray<string> | undefined
+	readonly timestamp?: Date | number | undefined
+}
+
+/** The event name `identify` sends, accepted by the gateway as a carrier of property writes. */
+export const IDENTIFY_EVENT = "$identify"
+/** The event name `groupIdentify` sends. */
+export const GROUP_IDENTIFY_EVENT = "$groupidentify"
 
 /** One NDJSON line for `POST /v1/events`. `org_id` comes from the ingest key. */
 interface ProductEventLine {
@@ -113,11 +147,28 @@ interface ProductEventLine {
 	readonly url: string
 	readonly page_path: string
 	readonly attributes: Record<string, string>
+	readonly set?: Record<string, string>
+	readonly set_once?: Record<string, string>
+	readonly unset?: ReadonlyArray<string>
+	readonly group_set?: Record<string, string>
+	readonly group_set_once?: Record<string, string>
+	readonly group_unset?: ReadonlyArray<string>
 }
 
 export interface MapleEventsApi {
 	/** Buffer one event. Never fails; an invalid name is dropped with a one-shot warning. */
 	readonly track: (name: string, options?: TrackOptions) => Effect.Effect<void>
+	/**
+	 * Write a user's properties (an `$identify` event). With `visitorId`, also links
+	 * the device to the user, so their anonymous events count as theirs.
+	 */
+	readonly identify: (userId: string, options?: IdentifyOptions) => Effect.Effect<void>
+	/** Set an account's properties (a `$groupidentify` event). */
+	readonly groupIdentify: (
+		groupId: string,
+		properties: TrackProps,
+		options?: GroupIdentifyOptions,
+	) => Effect.Effect<void>
 	/** Post everything buffered now. Never fails; a failed POST drops the batch and warns. */
 	readonly flush: Effect.Effect<void>
 }
@@ -138,6 +189,17 @@ export class ProductEventsPostError extends Schema.TaggedError<ProductEventsPost
 
 const toTimestamp = (value: Date | number | undefined): string =>
 	(value instanceof Date ? value : new Date(value ?? Date.now())).toISOString()
+
+/** Coerced property writes, or nothing when there are none, so plain events stay small. */
+const propertyWrites = (props: TrackProps | undefined): Record<string, string> | undefined => {
+	const coerced = coerceTrackProps(props)
+	return Rec.isEmptyRecord(coerced) ? undefined : coerced
+}
+
+const propertyNames = (names: ReadonlyArray<string> | undefined): ReadonlyArray<string> | undefined => {
+	const kept = Arr.filter(names ?? [], (name) => typeof name === "string" && Str.trim(name).length > 0)
+	return kept.length === 0 ? undefined : kept
+}
 
 /**
  * Build the client against whatever `HttpClient` is in context, so tests can
@@ -263,6 +325,12 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 				url: options.url ?? "",
 				page_path: options.pagePath ?? "",
 				attributes: coerceTrackProps(options.attributes),
+				set: propertyWrites(options.set),
+				set_once: propertyWrites(options.setOnce),
+				unset: propertyNames(options.unset),
+				group_set: propertyWrites(options.groupSet),
+				group_set_once: propertyWrites(options.groupSetOnce),
+				group_unset: propertyNames(options.groupUnset),
 			})
 			if (buffer.length > MAX_BUFFERED_EVENTS) buffer.splice(0, buffer.length - MAX_BUFFERED_EVENTS)
 			return buffer.length >= maxBatchSize
@@ -273,6 +341,22 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 			Effect.asVoid,
 		)
 
+	const identify = (userId: string, options: IdentifyOptions = {}): Effect.Effect<void> =>
+		track(IDENTIFY_EVENT, { ...options, userId })
+
+	const groupIdentify = (
+		groupId: string,
+		properties: TrackProps,
+		options: GroupIdentifyOptions = {},
+	): Effect.Effect<void> =>
+		track(GROUP_IDENTIFY_EVENT, {
+			groupId,
+			groupSet: properties,
+			groupSetOnce: options.setOnce,
+			groupUnset: options.unset,
+			timestamp: options.timestamp,
+		})
+
 	const interval = config.flushInterval ?? DEFAULT_FLUSH_INTERVAL
 	if (Duration.toMillis(interval) > 0) {
 		yield* Effect.forkScoped(flush.pipe(Effect.schedule(Schedule.spaced(interval))))
@@ -280,7 +364,7 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 	// Scope close (layer teardown / `dispose()`) drains what is left.
 	yield* Effect.addFinalizer(() => flush)
 
-	return { track, flush } satisfies MapleEventsApi
+	return { track, identify, groupIdentify, flush } satisfies MapleEventsApi
 })
 
 /**
@@ -293,6 +377,10 @@ export const layer = (config: MapleEventsConfig = {}): Layer.Layer<MapleEvents> 
 export interface MapleEventsHandle {
 	/** Buffer one event. Fire-and-forget; never throws. */
 	readonly track: (name: string, options?: TrackOptions) => void
+	/** Write a user's properties. Fire-and-forget; never throws. */
+	readonly identify: (userId: string, options?: IdentifyOptions) => void
+	/** Set an account's properties. Fire-and-forget; never throws. */
+	readonly groupIdentify: (groupId: string, properties: TrackProps, options?: GroupIdentifyOptions) => void
 	/** Post everything buffered now. Never rejects. */
 	readonly flush: () => Promise<void>
 	/** Final flush, then release the runtime. Never rejects. */
@@ -313,6 +401,16 @@ export const makeHandle = (config: MapleEventsConfig = {}): MapleEventsHandle =>
 	return {
 		track: (name, options) => {
 			void swallow(runtime.runPromise(MapleEvents.use((events) => events.track(name, options))))
+		},
+		identify: (userId, options) => {
+			void swallow(runtime.runPromise(MapleEvents.use((events) => events.identify(userId, options))))
+		},
+		groupIdentify: (groupId, properties, options) => {
+			void swallow(
+				runtime.runPromise(
+					MapleEvents.use((events) => events.groupIdentify(groupId, properties, options)),
+				),
+			)
 		},
 		flush: () => swallow(runtime.runPromise(MapleEvents.use((events) => events.flush))),
 		dispose: () => swallow(runtime.dispose()),
