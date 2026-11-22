@@ -1,7 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { strict as assert } from "node:assert"
-import { Array as Arr, Duration, Effect, Exit, Option, Ref, String as Str } from "effect"
+import { Array as Arr, Console, Duration, Effect, Exit, Option, Ref, String as Str } from "effect"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http"
 import { encodeJson } from "@maple/local-server/json"
 import { HANDOFF_SPENT_MESSAGE, handoffLogin } from "../src/commands/auth"
@@ -104,19 +104,32 @@ const SESSION = { status: 200, body: { orgId: "org_1", userId: "user_1" } }
 const runLogin = (routes: Readonly<Record<string, Route>>, apiUrl: string = API) => {
 	const sent: Array<Sent> = []
 	const saved: Array<{ token: string; managed: boolean }> = []
+	const printed: Array<string> = []
+	const capture = (...args: ReadonlyArray<unknown>) => {
+		printed.push(Arr.join(Arr.map(args, String), " "))
+	}
+	// Everything the command prints, so a test can prove the code never appears in it.
+	const capturing: Console.Console = {
+		...globalThis.console,
+		log: capture,
+		error: capture,
+		info: capture,
+		warn: capture,
+	}
 	const exit = Effect.runPromiseExit(
 		handoffLogin(apiUrl, HANDOFF).pipe(
+			Effect.provideService(Console.Console, capturing),
 			Effect.provideService(HttpClient.HttpClient, fakeApi(routes, sent)),
 			Effect.provideService(MapleConfig, fakeConfig(saved)),
 			Effect.provide(BunServices.layer),
 		),
 	)
-	return exit.then((result) => ({ exit: result, sent, saved }))
+	return exit.then((result) => ({ exit: result, sent, saved, printed }))
 }
 
 describe("handoff login", () => {
 	it("signs in with one token request, saves the credential and reports connect_agent", async () => {
-		const { exit, sent, saved } = await runLogin({
+		const { exit, sent, saved, printed } = await runLogin({
 			"POST /api/auth/cli/device/token": {
 				status: 200,
 				body: { status: "complete", token: "maple_ak_issued", orgId: "org_1", userId: "user_1" },
@@ -126,6 +139,8 @@ describe("handoff login", () => {
 		})
 		assert.ok(Exit.isSuccess(exit))
 		assert.deepEqual(saved, [{ token: "maple_ak_issued", managed: true }])
+		assert.ok(printed.length > 0)
+		assert.ok(!Arr.some(printed, Str.includes(HANDOFF)))
 		const tokenRequests = Arr.filter(sent, (r) => r.path === "/api/auth/cli/device/token")
 		assert.equal(tokenRequests.length, 1)
 		assert.deepEqual(JSON.parse(tokenRequests[0]?.body ?? ""), { deviceCode: HANDOFF })
@@ -147,14 +162,14 @@ describe("handoff login", () => {
 	})
 
 	it("refuses an expired or spent code without saving anything", async () => {
-		const { exit, saved } = await runLogin({
+		const { exit, saved, printed } = await runLogin({
 			"POST /api/auth/cli/device/token": { status: 200, body: { status: "expired" } },
 		})
 		assert.ok(Exit.isFailure(exit))
 		assert.ok(Exit.hasFails(exit))
 		const error = Option.getOrUndefined(Arr.findFirst(exit.cause.reasons, (r) => r._tag === "Fail"))
 		assert.equal(error?._tag === "Fail" ? error.error.message : undefined, HANDOFF_SPENT_MESSAGE)
-		assert.ok(!Str.includes(HANDOFF)(HANDOFF_SPENT_MESSAGE))
+		assert.ok(!Arr.some(printed, Str.includes(HANDOFF)))
 		assert.deepEqual(saved, [])
 	})
 
