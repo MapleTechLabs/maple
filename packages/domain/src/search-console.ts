@@ -8,6 +8,16 @@ const pacificDay = new Intl.DateTimeFormat("en-CA", {
 	day: "2-digit",
 })
 
+/** v1 imports web search only; the `SearchType` column leaves room for image, video and news. */
+export const SEARCH_TYPE_WEB = "web"
+
+/**
+ * The `SearchType` of an import's completion marker: one zero row per day and grain, written after
+ * all of that import's rows landed. Readers take a day from its newest marked import, so one that
+ * failed part-way never hides that import's keys, and a grain Google answered empty reads empty.
+ */
+export const SEARCH_TYPE_WEB_COMPLETE = "web:complete"
+
 /** The YYYY-MM-DD it is in Pacific time at `epochMs`: Google's "today". */
 export const pacificToday = (epochMs: number): string => pacificDay.format(new Date(epochMs))
 

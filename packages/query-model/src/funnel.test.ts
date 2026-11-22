@@ -10,6 +10,9 @@ import {
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
 	funnelWidgetRowsWithDetails,
+	isPagePathPattern,
+	pagePathLikePattern,
+	pagePathMatches,
 	type FunnelStep,
 } from "./funnel"
 
@@ -150,5 +153,31 @@ describe("ProductEventsPathsWidgetParams", () => {
 				anchor: { kind: "session", dimension: "utmSource", value: "twitter" },
 			}),
 		).toThrow()
+	})
+})
+
+describe("page step patterns", () => {
+	it("reads a path with no wildcard as that one path", () => {
+		expect(isPagePathPattern("/pricing")).toBe(false)
+		expect(pagePathMatches("/pricing", "/pricing")).toBe(true)
+		expect(pagePathMatches("/pricing", "/pricing/enterprise")).toBe(false)
+	})
+
+	it("lets a wildcard stand for any run of characters, anywhere in the path", () => {
+		expect(isPagePathPattern("/dashboards/*")).toBe(true)
+		expect(pagePathMatches("/dashboards/*", "/dashboards/d12")).toBe(true)
+		expect(pagePathMatches("/dashboards/*", "/dashboards/d12/edit")).toBe(true)
+		expect(pagePathMatches("/dashboards/*", "/dashboards")).toBe(false)
+		expect(pagePathMatches("/orders/*/edit", "/orders/9/edit")).toBe(true)
+		expect(pagePathMatches("/orders/*/edit", "/orders/9")).toBe(false)
+	})
+
+	it("matches the other characters as themselves, in the path and in SQL", () => {
+		// A dot is a dot, not "any character".
+		expect(pagePathMatches("/v1.2/*", "/v1x2/a")).toBe(false)
+		// LIKE reads % and _ specially; a path that holds them has to match them literally.
+		expect(pagePathLikePattern("/dashboards/*")).toBe("/dashboards/%")
+		expect(pagePathLikePattern("/a_b/100%/*")).toBe("/a\\_b/100\\%/%")
+		expect(pagePathLikePattern("/x\\y*")).toBe("/x\\\\y%")
 	})
 })

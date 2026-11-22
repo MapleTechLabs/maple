@@ -10,6 +10,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { skeleton } from "@maple/views/ui/skeleton"
 
 type H = HtmlBuilder<Message>
 
@@ -99,7 +100,8 @@ export const affectedUsersGroup = (h: H, model: Model): Html =>
 		h,
 		"Affected users",
 		AsyncData.matchData(model.affectedUsers.data, {
-			onEmpty: () => [detailRailRow(h, { label: "Users" }, [muted(h, EMPTY_VALUE)])],
+			// Loading, not empty: a dash would read as "nobody".
+			onEmpty: () => [detailRailRow(h, { label: "Users" }, [skeleton(h, "h-4 w-10")])],
 			onFailure: () => [muted(h, "Couldn't load the users this issue hit.")],
 			onData: (response) =>
 				response.attributed

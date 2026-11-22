@@ -1,11 +1,13 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { InvestigationSummary, SignalState } from "./error-signal"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import type { IconName } from "@maple/views/ui/icon"
+import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
 import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
-import { String as Str } from "effect"
 import { typography } from "@maple/views/ui/typography"
 
 const INVESTIGATION_LABEL = {
@@ -16,6 +18,24 @@ const INVESTIGATION_LABEL = {
 	resolved: "Resolved",
 } satisfies Record<V2Investigation["status"], string>
 
+/** Each investigation state's mark and status colour, shared by the chip's dot and its tooltip. */
+const INVESTIGATION_LOOK = {
+	investigating: { icon: "SparkleIcon", tone: "live" },
+	diagnosed: { icon: "MagnifierCheckIcon", tone: "info" },
+	inconclusive: { icon: "CircleQuestionIcon", tone: "warn" },
+	failed: { icon: "CircleXmarkIcon", tone: "crit" },
+	resolved: { icon: "CircleCheckIcon", tone: "done" },
+} as const satisfies Record<V2Investigation["status"], { icon: IconName; tone: Tone }>
+
+/** What each investigation state means, for the chip's tooltip. */
+const INVESTIGATION_DESCRIPTION = {
+	investigating: "Maple's agent is looking into this error now.",
+	diagnosed: "Maple's agent found a likely root cause.",
+	inconclusive: "Maple's agent looked into this error but couldn't pin down a cause.",
+	failed: "The investigation stopped before it reached an answer.",
+	resolved: "The investigation is closed.",
+} satisfies Record<V2Investigation["status"], string>
+
 /** "Investigating" / "Diagnosed". A button inside the row's link; it opens the investigation. */
 export const investigationChip = <M>(
 	h: HtmlBuilder<M>,
@@ -24,6 +44,10 @@ export const investigationChip = <M>(
 ): Html => {
 	const label = INVESTIGATION_LABEL[investigation.status]
 	const withConfidence = options.withConfidence ?? true
+	const shownConfidence =
+		withConfidence && investigation.confidence && investigation.status === "diagnosed"
+			? investigation.confidence
+			: null
 	return textLink(
 		h,
 		{
@@ -35,19 +59,22 @@ export const investigationChip = <M>(
 				options.className,
 			),
 			attributes: [
-				h.Title(
-					investigation.confidence
-						? `Maple ${Str.toLowerCase(label)}, ${investigation.confidence} confidence`
-						: `Maple ${Str.toLowerCase(label)}`,
+				// The label can be hidden (compact), so the button is named here.
+				h.AriaLabel(
+					`Open investigation: ${label}${shownConfidence === null ? "" : `, ${shownConfidence} confidence`}`,
 				),
+				...tooltipTrigger(h, `${INVESTIGATION_DESCRIPTION[investigation.status]} Click to open it.`, {
+					title: investigation.confidence
+						? `${label} · ${investigation.confidence} confidence`
+						: label,
+					...INVESTIGATION_LOOK[investigation.status],
+				}),
 			],
 		},
 		[
-			statusDot(h, { tone: "custom", className: "bg-current" }),
-			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),
-			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [typography(h, { tone: "subtle" }, ["· ", investigation.confidence])]
-				: []),
+			statusDot(h, { tone: INVESTIGATION_LOOK[investigation.status].tone }),
+			h.span([h.Class(cn("truncate", options.compact === true && "hidden @5xl/page:inline"))], [label]),
+			...(shownConfidence !== null ? [typography(h, { tone: "subtle" }, ["· ", shownConfidence])] : []),
 		],
 	)
 }

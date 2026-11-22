@@ -1,9 +1,10 @@
 ---
 /**
  * LiveStatusPage: the real public status page (`@maple/status-page`'s renderer, the same
- * HTML `apps/status` serves), first operational and then with `Checkout API` down and an
- * incident open. Both states render at build time into sandboxed iframes with scripts off,
- * so the page's own styles stay isolated, and they crossfade on one 14s loop.
+ * HTML `apps/status` serves) in a browser window, first operational and then with
+ * `Checkout API` down and an incident open. Both states render at build time into sandboxed
+ * iframes with scripts off, so the page's own styles stay isolated, and they crossfade on
+ * one 14s loop. The strip under the page names the monitor that caused the change.
  *
  * The base (unanimated) state is the outage, which is what `prefers-reduced-motion` shows.
  */
@@ -19,13 +20,19 @@ const operational = demoPageHtml(MAPLE_DARK, "operational")
 const outage = demoPageHtml(MAPLE_DARK, "outage")
 ---
 
-<div class="live-frame">
-	<div class="live-frame__head">
-		<span>status.acme.com</span>
-		<span class="live-frame__live">
-			<span class="live-frame__live-dot"></span>
-			DEMO
+<div class="lsp">
+	<div class="lsp-chrome">
+		<span class="lsp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+		<span class="lsp-url">
+			<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"
+				><path
+					fill="currentColor"
+					d="M8 1.5a3.5 3.5 0 0 0-3.5 3.5v2H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12 7h-.5V5A3.5 3.5 0 0 0 8 1.5Zm2 5.5H6V5a2 2 0 1 1 4 0v2Z"
+				></path></svg
+			>
+			status.acme.com
 		</span>
+		<span class="lsp-tag">Demo</span>
 	</div>
 
 	<!-- inert: the frames are pictures. It keeps their buttons and links out of the tab order
@@ -35,19 +42,70 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 		open incident.
 	</p>
 	<div class="lsp-stage" style={height ? `--lsp-height: ${height};` : undefined}>
-		<iframe class="lsp-page lsp-page--before" srcdoc={operational} sandbox="" loading="lazy" inert title="Acme status page, operational"></iframe>
-		<iframe class="lsp-page lsp-page--after" srcdoc={outage} sandbox="" loading="lazy" inert title="Acme status page, major outage"></iframe>
+		<iframe class="lsp-page" srcdoc={operational} sandbox="" loading="lazy" inert title="Acme status page, operational"></iframe>
+		<iframe class="lsp-page lsp-after" srcdoc={outage} sandbox="" loading="lazy" inert title="Acme status page, major outage"></iframe>
 	</div>
 
-	<div
-		class="flex justify-between gap-4 border-t border-border bg-bg-elevated px-3.5 py-2.5 text-[10px] uppercase tracking-wider text-fg-muted"
-	>
-		<span>status from monitor checkout-api</span>
-		<span class="hidden sm:inline">rss · atom · status.json · badge.svg</span>
+	<div class="lsp-monitor" aria-hidden="true">
+		<span class="lsp-monitor__name">Monitor <b>checkout-api</b></span>
+		<span class="lsp-monitor__state">
+			<span class="lsp-state lsp-state--up"><i></i>Up · 200 in 142 ms</span>
+			<span class="lsp-state lsp-state--down lsp-after"><i></i>Down · 2 failed checks · page updated</span>
+		</span>
 	</div>
 </div>
 
 <style>
+	.lsp {
+		overflow: hidden;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: #1a1714;
+	}
+	.lsp-chrome {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		gap: 12px;
+		height: 40px;
+		padding: 0 14px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-elevated, var(--card));
+	}
+	.lsp-dots {
+		display: flex;
+		gap: 6px;
+	}
+	.lsp-dots i {
+		width: 9px;
+		height: 9px;
+		border-radius: 999px;
+		background: var(--border);
+	}
+	.lsp-url {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		padding: 4px 14px;
+		border-radius: 6px;
+		background: var(--bg-deep, var(--background));
+		font-size: 12px;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	.lsp-url svg {
+		color: var(--muted-foreground);
+		opacity: 0.8;
+	}
+	.lsp-tag {
+		justify-self: end;
+		font-size: 10px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--muted-foreground);
+	}
+
 	.lsp-stage {
 		display: grid;
 		/* Tall enough on desktop to reach Checkout API's 90-day bars below the incident. */
@@ -65,8 +123,54 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 		pointer-events: none;
 	}
 
+	.lsp-monitor {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 16px;
+		padding: 10px 14px;
+		border-top: 1px solid var(--border);
+		background: var(--bg-elevated, var(--card));
+		font-size: 12px;
+		color: var(--muted-foreground);
+	}
+	.lsp-monitor b {
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.lsp-monitor__state {
+		display: grid;
+		justify-items: end;
+		min-width: 0;
+	}
+	.lsp-state {
+		grid-area: 1 / 1;
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.lsp-state i {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+	}
+	.lsp-state--up i {
+		background: #22c55e;
+	}
+	.lsp-state--down {
+		color: var(--foreground);
+	}
+	.lsp-state--down i {
+		background: #ef4444;
+	}
+	.lsp-state--up {
+		animation: lsp-before 14s linear infinite;
+	}
+
 	/* 0–26% operational, then the monitor fails and the outage page holds until 96%. */
-	.lsp-page--after {
+	.lsp-after {
 		animation: lsp-after 14s linear infinite;
 	}
 	@keyframes lsp-after {
@@ -82,17 +186,48 @@ const outage = demoPageHtml(MAPLE_DARK, "outage")
 			opacity: 0;
 		}
 	}
+	@keyframes lsp-before {
+		0%,
+		25% {
+			opacity: 1;
+		}
+		28%,
+		96% {
+			opacity: 0;
+		}
+		100% {
+			opacity: 1;
+		}
+	}
 
 	@media (max-width: 639px) {
 		.lsp-stage {
 			height: 520px;
 		}
+		.lsp-dots,
+		.lsp-tag {
+			display: none;
+		}
+		.lsp-chrome {
+			grid-template-columns: 1fr;
+			justify-items: center;
+		}
+		.lsp-monitor__name {
+			display: none;
+		}
+		.lsp-monitor__state {
+			justify-items: start;
+		}
 	}
 
 	/* Reduced motion: the base state is the outage. */
 	@media (prefers-reduced-motion: reduce) {
-		.lsp-page--after {
+		.lsp-after {
 			animation: none;
+		}
+		.lsp-state--up {
+			animation: none;
+			opacity: 0;
 		}
 	}
 </style>

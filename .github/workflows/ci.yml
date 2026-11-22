@@ -30,6 +30,7 @@ jobs:
             cli: ${{ steps.filter.outputs.cli == 'true' }}
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
+            product-scenarios: ${{ steps.filter.outputs.product-scenarios == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
             workers: ${{ steps.filter.outputs.workers == 'true' }}
             ingest: ${{ steps.filter.outputs.ingest == 'true' }}
@@ -120,6 +121,24 @@ jobs:
                         - 'packages/domain/src/tinybird/**'
                         - 'packages/domain/src/generated/**'
                         - 'scripts/*clickhouse*'
+                      # What decides the number a product analytics tool shows: the tools,
+                      # the queries they compile, and the schema those run on.
+                      product-scenarios:
+                        - *base
+                        - 'apps/ai/src/mcp/**'
+                        - 'apps/ai/src/evals/**'
+                        - 'packages/query-engine/**'
+                        - 'packages/query-model/**'
+                        - 'packages/backend/src/services/users/**'
+                        - 'packages/backend/src/services/warehouse/**'
+                        - 'packages/domain/src/tinybird/**'
+                        - 'packages/local-server/src/schema/**'
+                        - 'packages/local-server/src/chdb.ts'
+                        - 'packages/local-server/src/libchdb-provision.ts'
+                        - 'packages/local-server/libchdb.json'
+                        - 'packages/local-server/test/fixtures/chdb-sql-server.ts'
+                        - 'packages/domain/src/mcp-outputs/**'
+                        - 'scripts/ci/provision-libchdb.ts'
                       # The only place DatabasePgLive meets a real server; keep these broad.
                       postgres:
                         - *base
@@ -514,6 +533,36 @@ jobs:
                   bun run --filter=@maple/api test --
                   scripts/query-bench/catalog.clickhouse.e2e.test.ts
 
+    # Product questions answered by the MCP tools on a real ClickHouse engine (chDB): the SQL a
+    # tool compiles has to show the number the seeded rows give, in the listed number of calls.
+    product-scenarios:
+        name: Product scenarios (chDB)
+        needs: changes
+        if: ${{ needs.changes.outputs.product-scenarios == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: ./.github/actions/setup
+              with:
+                  turbo-cache: "false"
+
+            # The packages @maple/ai imports as built output, as its `test` task depends on.
+            - name: Build the workspace dependencies
+              run: bunx turbo run build --filter='@maple/ai^...'
+
+            - name: Provision libchdb
+              run: bun scripts/ci/provision-libchdb.ts
+
+            # MAPLE_REQUIRE_LIBCHDB turns a missing library into a failure, not a skip.
+            - name: Run the golden tool paths
+              working-directory: apps/ai
+              env:
+                  MAPLE_REQUIRE_LIBCHDB: "1"
+                  MAPLE_TELEMETRY: off
+              run: bunx vitest run src/evals/product/golden.test.ts
+
     local-checkpoint-native:
         name: Local checkpoint native
         needs: changes
@@ -544,7 +593,7 @@ jobs:
                   MAPLE_REQUIRE_LIBCHDB: "1"
                   MAPLE_TELEMETRY: off
               run: |
-                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources traces-numeric-aggregation; do
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios retention-scenarios users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources traces-numeric-aggregation search-console-reads; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 
@@ -847,6 +896,7 @@ jobs:
             - postgres-connection-e2e
             - workers-e2e
             - clickhouse-schema-e2e
+            - product-scenarios
             - local-checkpoint-native
             - local-archive-native
             - ingest-rust

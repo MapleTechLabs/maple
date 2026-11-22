@@ -1,5 +1,25 @@
 # @maple-dev/effect-sdk
 
+## 0.15.0
+
+### Minor Changes
+
+- e604502: Continuous CPU profiling for Node and Bun. `Maple.layer({ profiling: true })` runs the runtime's
+  sampling profiler with no native addon and exports OTLP profiles every window. Each sample is
+  linked to the span that was running, so a span can show its own flame graph. Off by default; a
+  runtime without a profiler (Cloudflare Workers) logs one warning and runs without it.
+- b7842dd: `MapleFlush.make({ profiling: true })` runs the continuous CPU profiler too, on the same endpoint
+  and key as its flushes, and starts no second profiler when its `layer` is built again while one
+  runs. An inspector that takes a session and never answers no longer holds the app's startup up:
+  after 5 seconds profiling turns off with one warning.
+
+### Patch Changes
+
+- 817980c: Session replay and session events stop sending to an endpoint that answers 404 (one without those routes, such as an older Maple Local) instead of retrying on every flush for the rest of the page.
+- dcb4277: `MapleFoldkit.make`: a `routeName` result names the navigation span as is. It no longer goes
+  through `privacy.sanitizeUrl`, which turned a label like `Home` into `[url]` when the sanitizer
+  rejects anything that is not a URL. Without `routeName`, the path fallback is still sanitized.
+
 ## 0.14.1
 
 ### Patch Changes

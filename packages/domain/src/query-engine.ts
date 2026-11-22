@@ -258,8 +258,33 @@ export const MetricsFilters = Schema.Struct({
 })
 export type MetricsFilters = Schema.Schema.Type<typeof MetricsFilters>
 
-export const ProductEventsMetric = Schema.Literals(["count", "sessions", "persons", "users", "visitors"])
+/** Aggregations over a numeric `track()` prop; each needs `filters.valueAttributeKey`. */
+export const PRODUCT_EVENTS_NUMERIC_METRICS = ["sum", "avg", "min", "max", "p50", "p95", "p99"] as const
+export type ProductEventsNumericMetric = (typeof PRODUCT_EVENTS_NUMERIC_METRICS)[number]
+
+export const ProductEventsMetric = Schema.Literals([
+	"count",
+	"sessions",
+	"persons",
+	"users",
+	"visitors",
+	"groups",
+	...PRODUCT_EVENTS_NUMERIC_METRICS,
+])
 export type ProductEventsMetric = Schema.Schema.Type<typeof ProductEventsMetric>
+
+/** Dimensions of the event's session (`session_replays`); a row with no session groups as unset. */
+export const PRODUCT_EVENTS_SESSION_GROUP_BY = [
+	"country",
+	"referrer_host",
+	"utm_source",
+	"utm_medium",
+	"utm_campaign",
+	"device_type",
+	"browser",
+	"os",
+] as const
+export type ProductEventsSessionGroupBy = (typeof PRODUCT_EVENTS_SESSION_GROUP_BY)[number]
 
 export const PRODUCT_EVENTS_GROUP_BY = [
 	"event_name",
@@ -270,6 +295,7 @@ export const PRODUCT_EVENTS_GROUP_BY = [
 	"service",
 	"group",
 	"attribute",
+	...PRODUCT_EVENTS_SESSION_GROUP_BY,
 ] as const
 export const ProductEventsGroupBy = Schema.Literals(PRODUCT_EVENTS_GROUP_BY)
 export type ProductEventsGroupBy = Schema.Schema.Type<typeof ProductEventsGroupBy>
@@ -306,6 +332,8 @@ export const ProductEventsFilters = Schema.Struct({
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	/** Required when `groupBy` includes `attribute`. */
 	groupByAttributeKey: Schema.optional(Schema.String),
+	/** The numeric prop a `sum`/`avg`/`min`/`max`/percentile metric reads; required by those. */
+	valueAttributeKey: Schema.optional(Schema.String),
 	referrerHost: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),

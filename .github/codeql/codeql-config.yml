@@ -1,0 +1,7 @@
+name: Maple CodeQL config
+
+query-filters:
+    # serde has no deserialization gadgets: parsing untrusted JSON into typed structs
+    # is the ingest's job, and this rule flags every serde_json call on request data.
+    - exclude:
+          id: rust/unsafe-deserialization

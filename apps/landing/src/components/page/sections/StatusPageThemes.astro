@@ -1,0 +1,227 @@
+---
+/**
+ * Status pages · themes. The demo page in every preset, rendered at build time by the real
+ * renderer, behind a small picker. Replaces the old screenshot plates: a live render stays
+ * sharp at any width and shows the actual product, not a picture of it.
+ *
+ * Each frame is sized to the whole page, so nothing is cut off. `allow-same-origin` (scripts
+ * stay off) lets this script read the page's height; the HTML is ours, built at deploy time.
+ * Without JavaScript the first theme shows at a fixed height and the picker does nothing.
+ */
+import * as m from "../../../paraglide/messages.js";
+import { DEMO_THEMES, demoPageHtml } from "../../../lib/status-page-demo";
+
+const themes = DEMO_THEMES.map((entry, index) => ({
+	id: `spt-${entry.theme.preset}`,
+	label: entry.label,
+	appearance: entry.theme.appearance,
+	html: demoPageHtml(entry.theme, "outage"),
+	selected: index === 0,
+}));
+
+const facts = [
+	{ title: m.status_themes_fact_1_title(), body: m.status_themes_fact_1_body() },
+	{ title: m.status_themes_fact_2_title(), body: m.status_themes_fact_2_body() },
+	{ title: m.status_themes_fact_3_title(), body: m.status_themes_fact_3_body() },
+];
+---
+
+<section class="border-t border-border bg-bg" data-status-themes>
+	<div class="shell py-14 md:py-20">
+		<div class="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+			<div class="min-w-0">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.status_themes_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.status_themes_title()}
+				</h2>
+				<p class="mt-5 max-w-[56ch] text-sm leading-relaxed text-fg-muted">{m.status_themes_lede()}</p>
+			</div>
+
+			<div class="spt-tabs" role="tablist" aria-label={m.status_themes_picker_label()}>
+				{
+					themes.map((theme) => (
+						<button
+							type="button"
+							role="tab"
+							class="spt-tab"
+							aria-selected={theme.selected ? "true" : "false"}
+							aria-controls={theme.id}
+							data-theme-tab={theme.id}
+						>
+							{theme.label}
+						</button>
+					))
+				}
+			</div>
+		</div>
+
+		<div class="spt-window mt-10">
+			<div class="spt-chrome">
+				<span class="spt-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+				<span class="spt-url">status.acme.com</span>
+				<span></span>
+			</div>
+			<div class="spt-stage">
+				{
+					themes.map((theme) => (
+						<iframe
+							id={theme.id}
+							role="tabpanel"
+							class="spt-page"
+							srcdoc={theme.html}
+							sandbox="allow-same-origin"
+							loading="lazy"
+							inert
+							hidden={!theme.selected}
+							title={`Acme status page, ${theme.label} theme`}
+						/>
+					))
+				}
+			</div>
+		</div>
+
+		<dl class="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+			{
+				facts.map((fact) => (
+					<div class="bg-bg p-6">
+						<dt class="text-[13px] font-medium text-fg">{fact.title}</dt>
+						<dd class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{fact.body}</dd>
+					</div>
+				))
+			}
+		</dl>
+	</div>
+</section>
+
+<script>
+	for (const root of document.querySelectorAll<HTMLElement>("[data-status-themes]")) {
+		const tabs = [...root.querySelectorAll<HTMLButtonElement>("[data-theme-tab]")];
+		const frames = [...root.querySelectorAll<HTMLIFrameElement>("iframe.spt-page")];
+		// Collapse first, so a `min-height: 100vh` body reports its content and not the frame.
+		const fit = (frame: HTMLIFrameElement) => {
+			const doc = frame.contentDocument;
+			if (frame.hidden || !doc?.documentElement) return;
+			frame.style.height = "0px";
+			frame.style.height = `${doc.documentElement.scrollHeight}px`;
+		};
+		for (const frame of frames) {
+			frame.addEventListener("load", () => fit(frame));
+			fit(frame);
+		}
+		window.addEventListener("resize", () => frames.forEach(fit));
+		const select = (tab: HTMLButtonElement) => {
+			for (const other of tabs) {
+				const on = other === tab;
+				other.setAttribute("aria-selected", on ? "true" : "false");
+				other.tabIndex = on ? 0 : -1;
+				const panel = root.querySelector<HTMLElement>(`#${other.dataset.themeTab}`);
+				if (panel instanceof HTMLIFrameElement) {
+					panel.hidden = !on;
+					if (on) fit(panel);
+				}
+			}
+		};
+		tabs.forEach((tab, index) => {
+			tab.tabIndex = index === 0 ? 0 : -1;
+			tab.addEventListener("click", () => select(tab));
+			tab.addEventListener("keydown", (event) => {
+				const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+				if (step === 0) return;
+				event.preventDefault();
+				const next = tabs[(index + step + tabs.length) % tabs.length];
+				if (next) {
+					select(next);
+					next.focus();
+				}
+			});
+		});
+	}
+</script>
+
+<style>
+	.spt-tabs {
+		display: inline-flex;
+		max-width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
+		gap: 4px;
+		align-self: flex-start;
+		padding: 4px;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--bg-deep);
+	}
+	@media (min-width: 1024px) {
+		.spt-tabs {
+			align-self: auto;
+		}
+	}
+	.spt-tab {
+		flex-shrink: 0;
+		height: 32px;
+		padding: 0 14px;
+		border-radius: 7px;
+		font-size: 13px;
+		color: var(--muted-foreground);
+		transition:
+			background-color 150ms,
+			color 150ms;
+	}
+	.spt-tab:hover {
+		color: var(--foreground);
+	}
+	.spt-tab[aria-selected="true"] {
+		background: var(--bg-elevated);
+		color: var(--foreground);
+	}
+	.spt-tab:focus-visible {
+		outline: 2px solid var(--primary);
+		outline-offset: 1px;
+	}
+
+	.spt-window {
+		overflow: hidden;
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		background: var(--bg-deep);
+	}
+	.spt-chrome {
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
+		align-items: center;
+		height: 40px;
+		padding: 0 14px;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-elevated);
+	}
+	.spt-dots {
+		display: flex;
+		gap: 6px;
+	}
+	.spt-dots i {
+		width: 9px;
+		height: 9px;
+		border-radius: 999px;
+		background: var(--border);
+	}
+	.spt-url {
+		padding: 4px 14px;
+		border-radius: 6px;
+		background: var(--bg-deep);
+		font-size: 12px;
+		color: var(--muted-foreground);
+	}
+	.spt-page {
+		display: block;
+		width: 100%;
+		/* Replaced by the page's own height once it loads. */
+		height: 1500px;
+		border: 0;
+		pointer-events: none;
+	}
+	.spt-page[hidden] {
+		display: none;
+	}
+</style>

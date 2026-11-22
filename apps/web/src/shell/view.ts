@@ -124,9 +124,6 @@ export type FrameInputs = Readonly<{
 	topbarActions: () => Html
 	/** The page's source, linked from the top bar. */
 	sourceLink?: SourceLink | null
-	/** `held`: the page left is drawn while the next loads; `waited`: the next page, shown after the hold
-	 * with no skeleton delay (`page/page-hold.ts`). */
-	pageHold?: "held" | "waited" | null
 }>
 
 const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: ShellClerk): Html =>
@@ -191,33 +188,26 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 					],
 					["Skip to main content"],
 				),
-				pageLayoutRoot(
-					h,
-					[
-						topbar(
-							h,
-							model,
-							inputs.breadcrumbs,
-							inputs.topbarActions(),
-							railTriggers,
-							!hidesTopbarConnect(inputs.currentPath) &&
-								shellAudience(inputs.clerk ?? null) !== "analyst",
-							inputs.sourceLink ?? null,
-						),
-						...(inputs.clerk === undefined || inputs.clerk === null
-							? []
-							: billingBanners(
-									h,
-									Option.fromNullishOr(inputs.clerk.customer),
-									model.isQuotaApproachingDismissed,
-								)),
-						page.body,
-					],
-					undefined,
-					inputs.pageHold === undefined || inputs.pageHold === null
+				pageLayoutRoot(h, [
+					topbar(
+						h,
+						model,
+						inputs.breadcrumbs,
+						inputs.topbarActions(),
+						railTriggers,
+						!hidesTopbarConnect(inputs.currentPath) &&
+							shellAudience(inputs.clerk ?? null) !== "analyst",
+						inputs.sourceLink ?? null,
+					),
+					...(inputs.clerk === undefined || inputs.clerk === null
 						? []
-						: [h.DataAttribute("page-hold", inputs.pageHold)],
-				),
+						: billingBanners(
+								h,
+								Option.fromNullishOr(inputs.clerk.customer),
+								model.isQuotaApproachingDismissed,
+							)),
+					page.body,
+				]),
 				...(model.isAppOutdated ? [appUpdatePill(h)] : []),
 				// The rails' sheets below `lg` (each portal moves itself to <body> while open).
 				...railSheets,

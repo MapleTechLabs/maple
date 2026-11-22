@@ -29,6 +29,8 @@ describe("landing page keys", () => {
 	it("drops the query string, fragment and trailing slash but keeps the root", () => {
 		expect(normalizePath("/docs/?ref=x#top")).toBe("/docs")
 		expect(normalizePath("/")).toBe("/")
+		expect(normalizePath("/docs//")).toBe("/docs")
+		expect(normalizePath("//docs//guides/")).toBe("/docs/guides")
 		expect(normalizePath("")).toBe("/")
 		expect(Option.getOrNull(landingKeyOfUrl("HTTPS://WWW.Acme.dev"))).toEqual({
 			host: "www.acme.dev",
@@ -50,7 +52,11 @@ describe("mergeLandingPages", () => {
 	it("joins sessions on host and path, whatever the slash or scheme", () => {
 		const rows = mergeLandingPages({
 			pages: [page("https://acme.dev/docs/", 30, 600, 4), page("http://acme.dev/docs", 10, 400, 9)],
-			entries: [entry("acme.dev", "/docs", 50, 10, 40), entry("ACME.dev", "/docs/", 5, 0, 0)],
+			entries: [
+				entry("acme.dev", "/docs", 50, 10, 40),
+				entry("ACME.dev", "/docs/", 5, 0, 0),
+				entry("acme.dev", "/docs//", 3, 0, 0),
+			],
 			conversions: [entry("acme.dev", "/docs", 7)],
 		})
 		expect(rows).toEqual([
@@ -62,7 +68,7 @@ describe("mergeLandingPages", () => {
 				impressions: 1000,
 				ctr: 0.04,
 				position: (4 * 600 + 9 * 400) / 1000,
-				sessions: 55,
+				sessions: 58,
 				bounceRate: 10 / 40,
 				conversions: 7,
 			},

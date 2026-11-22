@@ -489,19 +489,22 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
-		const samplesCompiled = CH.compile(
-			CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit }),
-			{
-				orgId,
-				startTime: formatWarehouseDateTime(startMs),
-				endTime: formatWarehouseDateTime(endMs),
-			},
-		)
+		const samplesRead = (withUserId: boolean) =>
+			warehouse.compiledQuery(
+				tenant,
+				CH.compile(
+					CH.errorIssueSampleTracesQuery({ fingerprintHashes, limit: sampleLimit, withUserId }),
+					{
+						orgId,
+						startTime: formatWarehouseDateTime(startMs),
+						endTime: formatWarehouseDateTime(endMs),
+					},
+				),
+				{ profile: "list", context: "errorIssueSampleTraces" },
+			)
+		// A cluster without migration 0057 still gets its samples, with no user on them.
 		const samplesEffect = isErrorKind
-			? warehouse.compiledQuery(tenant, samplesCompiled, {
-					profile: "list",
-					context: "errorIssueSampleTraces",
-				})
+			? samplesRead(true).pipe(Effect.catchIf(isMissingErrorEventsUserId, () => samplesRead(false)))
 			: Effect.succeed([])
 
 		const environmentsCompiled = CH.compile(CH.errorIssueEnvironmentsQuery({ fingerprintHashes }), {
@@ -516,6 +519,18 @@ const make: Effect.Effect<
 				})
 			: Effect.succeed([])
 
+		const stacktraceCompiled = CH.compile(CH.errorIssueLatestStacktraceQuery({ fingerprintHashes }), {
+			orgId,
+			startTime: formatWarehouseDateTime(startMs),
+			endTime: formatWarehouseDateTime(endMs),
+		})
+		const stacktraceEffect = isErrorKind
+			? warehouse.compiledQuery(tenant, stacktraceCompiled, {
+					profile: "list",
+					context: "errorIssueLatestStacktrace",
+				})
+			: Effect.succeed([])
+
 		const incidentsEffect = dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIncidents)
@@ -526,10 +541,11 @@ const make: Effect.Effect<
 			),
 		)
 
-		const [timeseriesRows, sampleRows, environmentRows, incidentRows] = yield* Effect.all(
-			[timeseriesEffect, samplesEffect, environmentsEffect, incidentsEffect],
-			{ concurrency: 4 },
+		const [timeseriesRows, sampleRows, environmentRows, stacktraceRows, incidentRows] = yield* Effect.all(
+			[timeseriesEffect, samplesEffect, environmentsEffect, stacktraceEffect, incidentsEffect],
+			{ concurrency: 5 },
 		)
+		const latestStacktrace = stacktraceRows[0]?.stacktrace ?? null
 		const issue = yield* workflow.hydrateIssue(orgId, issueRow)
 		const timeseries = Arr.map(
 			timeseriesRows,
@@ -549,6 +565,9 @@ const make: Effect.Effect<
 					timestamp: decodeIsoDateTimeStringSync(DateTime.formatIso(row.timestamp)),
 					exceptionMessage: row.exceptionMessage,
 					durationMicros: row.durationMicros,
+					deploymentEnv: row.deploymentEnv,
+					serviceVersion: row.serviceVersion,
+					userId: row.userId,
 				}),
 		)
 
@@ -563,6 +582,7 @@ const make: Effect.Effect<
 			sampleTraces,
 			incidents: Arr.map(incidentRows, rowToIncident),
 			environments,
+			latestStacktrace,
 		})
 	})
 

@@ -1150,6 +1150,18 @@ describe("createTinybirdSqlClient.insert wire framing (the production insert pat
 		assert.strictEqual(req.body, '{"trace_id":"a"}\n{"trace_id":"b"}')
 		// Tinybird ingests raw rows — never an `INSERT … FORMAT` statement (CH only).
 		assert.isFalse(Str.includes("INSERT INTO")(req.body))
+		assert.include(req.url, "wait=false")
+	})
+
+	it("waits for the rows to be stored when the insert is durable", async () => {
+		const urls: Array<string> = []
+		const requestFetch = (async (input: RequestInfo | URL) => {
+			urls.push(String(input instanceof Request ? input.url : input))
+			return new Response("", { status: 200 })
+		}) as typeof fetch
+		const client = makeTinybirdTestClient(tbConfig, requestFetch)
+		await Effect.runPromise(client.insert("traces", [{ trace_id: "a" }], { durable: true }))
+		assert.deepStrictEqual(urls, ["https://api.tinybird.co/v0/events?name=traces&wait=true"])
 	})
 
 	it("no-ops on an empty row set (no request issued)", async () => {

@@ -197,6 +197,7 @@ export const productEventsQueryOptions = (
 	excludedServiceNames: filters?.excludedServiceNames,
 	attributeFilters: filters?.attributeFilters,
 	groupByAttributeKey: filters?.groupByAttributeKey,
+	valueAttributeKey: filters?.valueAttributeKey,
 	referrerHost: filters?.referrerHost,
 	country: filters?.country,
 	deviceType: filters?.deviceType,

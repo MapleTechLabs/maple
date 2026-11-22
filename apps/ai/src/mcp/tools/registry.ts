@@ -104,7 +104,10 @@ import { registerCompareLogPatternsTool } from "./compare-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
+import { registerQueryCohortTool } from "./query-cohort"
 import { registerQueryFunnelTool } from "./query-funnel"
+import { registerQueryPathsTool } from "./query-paths"
+import { registerQueryRetentionTool } from "./query-retention"
 import { registerListProductEventsTool } from "./list-product-events"
 import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerGetSessionTracesTool } from "./get-session-traces"
@@ -146,7 +149,10 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerCompareLogPatternsTool,
 	registerSearchTracesTool,
 	registerSearchSessionsTool,
+	registerQueryCohortTool,
 	registerQueryFunnelTool,
+	registerQueryPathsTool,
+	registerQueryRetentionTool,
 	registerListProductEventsTool,
 	registerGetSessionTranscriptTool,
 	registerGetSessionTracesTool,

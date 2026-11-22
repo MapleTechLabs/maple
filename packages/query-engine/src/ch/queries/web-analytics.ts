@@ -8,7 +8,7 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import type { DateTime } from "effect"
+import { Array as Arr, String as Str, type DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor, CHQuery, ColumnDefs, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -316,6 +316,8 @@ export function replaysWhere(
 	$: ReplaysAccessor,
 	filters: WebAnalyticsFilters,
 	exclude?: WebAnalyticsFacetKey,
+	/** Read sessions that started from here on instead of from `startTime`. */
+	sessionsFrom?: CH.Expr<DateTime.Utc>,
 ): Array<CH.Condition | undefined> {
 	// `host` and `pagePath` both narrow through one navigation semi-join rather
 	// than two, so a page filter and a site filter compose into "sessions that
@@ -337,7 +339,7 @@ export function replaysWhere(
 
 	return [
 		$.OrgId.eq(orgIdParam),
-		$.StartTime.gte(param.dateTime("startTime")),
+		$.StartTime.gte(sessionsFrom ?? param.dateTime("startTime")),
 		$.StartTime.lte(param.dateTime("endTime")),
 		navigationFilter,
 		exclude === "referrerHost"
@@ -733,7 +735,10 @@ export function webAnalyticsPagesQuery(
 }
 
 export interface WebAnalyticsEntryPagesOpts extends WebAnalyticsFilters {
-	/** Only sessions entering on one of these paths; values are inlined as escaped literals. */
+	/**
+	 * Only sessions entering on one of these paths, matched with repeated slashes collapsed, so
+	 * `/docs/` also finds `/docs//`. Values are inlined as escaped literals.
+	 */
 	readonly entryPaths?: ReadonlyArray<string>
 	readonly limit?: number
 }
@@ -767,7 +772,12 @@ export function webAnalyticsEntryPagesQuery(
 		.where(($) => [
 			...replaysWhere($, opts),
 			$.EntryPath.neq(""),
-			opts.entryPaths === undefined ? undefined : CH.inList($.EntryPath, opts.entryPaths),
+			opts.entryPaths === undefined
+				? undefined
+				: CH.inList(
+						compileFnCall<string>("replaceRegexpAll", $.EntryPath, "/{2,}", "/"),
+						Arr.map(opts.entryPaths, Str.replace(/\/{2,}/g, "/")),
+					),
 		])
 		.groupBy("host", "entryPath")
 		.orderBy(["sessions", "desc"])

@@ -122,6 +122,66 @@ describe("buildRawSpec", () => {
 	})
 })
 
+describe("product events", () => {
+	it("filters on the event's session and reads a numeric prop for sum", () => {
+		const spec = buildRawSpec(
+			params({
+				source: "product_events",
+				metric: "sum",
+				value_attribute: "amount",
+				group_by: "utm_source",
+				event_name: ["plan_started"],
+				country: "DE",
+				device_type: "mobile",
+			}),
+			resolved({ metric: "sum", groupBy: "utm_source" }),
+		)
+		expect(spec).toMatchObject({
+			source: "product_events",
+			metric: "sum",
+			groupBy: "utm_source",
+			filters: {
+				eventNames: ["plan_started"],
+				valueAttributeKey: "amount",
+				country: "DE",
+				deviceType: "mobile",
+			},
+		})
+		expect(() => decode(spec)).not.toThrow()
+	})
+
+	it("leaves the value prop out of a count, which would not read it", () => {
+		const spec = buildRawSpec(
+			params({ source: "product_events", value_attribute: "amount", group_by: "event_name" }),
+			resolved({ metric: "groups", groupBy: "event_name" }),
+		)
+		expect(spec).not.toHaveProperty("filters.valueAttributeKey")
+		expect(() => decode(spec)).not.toThrow()
+	})
+
+	it("names the measured prop and the session filters in the result", () => {
+		const text = renderToolDoc(
+			renderQueryData({
+				timeRange: { start: "2026-11-01 00:00:00", end: "2026-11-08 00:00:00" },
+				kind: "breakdown",
+				metric: "sum",
+				groupBy: "event_name",
+				queryContext: {
+					source: "product_events",
+					valueAttribute: "amount",
+					sessionFilters: { country: "DE", utm_source: "google" },
+				},
+				unit: "number",
+				result: { kind: "breakdown", data: [{ name: "plan_started", value: 1797 }] },
+			}),
+		)
+		expect(text).toContain("Product_events Breakdown: sum(amount)")
+		expect(text).toContain("country = DE AND utm_source = google")
+		expect(text).toContain("| Name | sum(amount) |")
+		expect(text).toContain("1,797")
+	})
+})
+
 describe("attribute_filters", () => {
 	it("ANDs several conditions with attribute_key, each on the map it resolved to", () => {
 		const spec = buildRawSpec(
