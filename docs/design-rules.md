@@ -80,6 +80,7 @@ Depth comes from surfaces and the hairline. The only shadows are tokens, colour 
 | `shadow-overflow-up`                              | A sticky footer over scrolled content                                 |
 | `shadow-rule-bottom`                              | A sticky table header's bottom rule                                   |
 | `shadow-backdrop-below`                           | The surface continued under a floating action bar                     |
+| `shadow-key`                                      | A keycap (`kbd`): ring, lit top edge, bottom lip, 1px drop            |
 | `inset-shadow-highlight` / `inset-shadow-pressed` | A filled button at rest / pressed                                     |
 
 Corners come from the radius scale (`maple/no-arbitrary-radius`). A fill inset 1px inside a

@@ -185,6 +185,7 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		GotComboboxMessage: ({ message: child }) => foldCombobox(model, child),
 		GotAutocompleteMessage: ({ message: child }) => foldAutocomplete(model, child),
 		GotCommandListMessage: ({ message: child }) => foldCommandList(model, child),
+		CompletedMeasureCommandList: () => ({ model }),
 		GotToastMessage: ({ message: child }) => foldToast(model, child),
 		GotTooltipMessage: ({ message: child }) => foldTooltip(model, child),
 		GotDropdownMenuMessage: ({ message: child }) => foldDropdownMenu(model, child),

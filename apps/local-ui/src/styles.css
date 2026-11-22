@@ -4,6 +4,7 @@
    names here (enforced by `bun run check:tokens`). Must come after tailwindcss. */
 @import "@maple/ui/styles/tokens.css";
 @import "@maple/ui/styles/chart-skeleton.css";
+@import "@maple/ui/styles/command-motion.css";
 @import "@maple/ui/styles/syntax-tokens.css";
 /* Upright faces only (~160 kB): dist/ is inlined into the local binary. */
 @import "@fontsource-variable/geist-mono/wght.css";

@@ -55,6 +55,7 @@ export const Message = defineMessageUnion({
 	GotComboboxMessage: { message: Combobox.Message },
 	GotAutocompleteMessage: { message: Combobox.Message },
 	GotCommandListMessage: { message: Combobox.Message },
+	CompletedMeasureCommandList: {},
 	GotToastMessage: { message: Toast.Message },
 	GotTooltipMessage: { message: Tooltip.Message },
 	GotDropdownMenuMessage: { message: Menu.Message },

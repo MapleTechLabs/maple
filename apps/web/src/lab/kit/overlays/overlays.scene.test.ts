@@ -4,6 +4,8 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Toast from "@maple/views/ui/toast"
 import * as Tooltip from "@maple/views/ui/tooltip"
+import { MeasureCommandList } from "@maple/views/ui/command"
+import { Message } from "./model"
 import { init, update } from "./update"
 import { view } from "./view"
 
@@ -75,6 +77,7 @@ describe("kit overlays gallery", () => {
 			given(init({ item: "command" }).model),
 			...toastPortals(),
 			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(MeasureCommandList, Message.CompletedMeasureCommandList()),
 			expectAll(all.role("option")).toHaveCount(5),
 			type(role("combobox"), "da"),
 			expectAll(all.role("option")).toHaveCount(1),

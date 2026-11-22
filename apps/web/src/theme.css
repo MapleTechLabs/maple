@@ -6,6 +6,7 @@
 /* `scroll-fade-*` / `shimmer` utilities the shadcn chat primitives depend on. */
 @import "@maple/ui/styles/shadcn-utilities.css";
 @import "@maple/ui/styles/chart-skeleton.css";
+@import "@maple/ui/styles/command-motion.css";
 @import "@maple/ui/styles/syntax-tokens.css";
 @import "@fontsource-variable/geist-mono";
 @import "@fontsource-variable/geist";
