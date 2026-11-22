@@ -155,7 +155,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (model.editingId !== null && !AsyncData.isSuccess(model.existing))
 		return dashboardPage(h, header, [skeleton(h, "h-10 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, gap: "lg" }, [
-		impactPanel(h, model),
+		...impactPanel(h, model),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
 			[
