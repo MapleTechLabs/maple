@@ -444,9 +444,18 @@ const platformMark = <M>(h: HtmlBuilder<M>, mark: IconName | undefined, name: st
 	])
 }
 
-/** One pill for the browser and the OS it ran on, since they describe one device; named on hover. */
+/**
+ * One pill for the browser and the OS it ran on, since they describe one device; named on hover
+ * and on focus. A device with only one half known draws that half alone.
+ */
 const deviceBadge = <M>(h: HtmlBuilder<M>, device: Readonly<{ browser: string; os: string }>): Html => {
-	const name = `${device.browser} on ${device.os}`
+	const browser =
+		device.browser === "" ? [] : [platformMark(h, browserIconOf(device.browser), device.browser)]
+	const os = device.os === "" ? [] : [platformMark(h, osIconFor(device.os), device.os)]
+	const name = Arr.join(
+		Arr.filter([device.browser, device.os], (part) => part !== ""),
+		" on ",
+	)
 	return badge(
 		h,
 		{
@@ -454,13 +463,11 @@ const deviceBadge = <M>(h: HtmlBuilder<M>, device: Readonly<{ browser: string; o
 			size: "lg",
 			pill: true,
 			className: "cursor-default gap-2",
-			attributes: [h.AriaLabel(name), h.Role("img"), ...tooltipTrigger(h, name)],
+			attributes: [h.AriaLabel(name), h.Role("img"), h.Tabindex(0), ...tooltipTrigger(h, name)],
 		},
-		[
-			platformMark(h, browserIconOf(device.browser), device.browser),
-			separator(h, "vertical", "h-3"),
-			platformMark(h, osIconFor(device.os), device.os),
-		],
+		Arr.isReadonlyArrayEmpty(browser) || Arr.isReadonlyArrayEmpty(os)
+			? [...browser, ...os]
+			: [...browser, separator(h, "vertical", "h-3"), ...os],
 	)
 }
 

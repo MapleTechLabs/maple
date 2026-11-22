@@ -111,4 +111,17 @@ describe("the user rail", () => {
 			expectView(text("Plan 9")).toExist(),
 		)
 	})
+
+	test("a device with only its OS known is named and drawn by the OS alone", () => {
+		const osOnly: UserProfile = {
+			...SOLO_DETAIL.profile,
+			devices: [{ browser: "", os: "macOS 15", sessions: 4 }],
+		}
+		scene(
+			{ update, view: railView },
+			given({ profile: osOnly, stats: null }),
+			expectView(role("img", { name: "macOS 15" })).toExist(),
+			expectView(role("separator")).not.toExist(),
+		)
+	})
 })

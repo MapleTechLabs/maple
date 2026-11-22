@@ -23,7 +23,7 @@ export const browserIconFor = (name: string): IconName => {
 // The icon for an OS name, or undefined when there is no mark for it.
 export const osIconFor = (name: string): IconName | undefined => {
 	const n = Str.toLowerCase(name)
-	if (/mac|ios|ipados|darwin/.test(n)) return "AppleIcon"
+	if (/\b(?:mac|macos|ios|ipados|darwin)\b/.test(n)) return "AppleIcon"
 	if (Str.includes("windows")(n)) return "MicrosoftIcon"
 	if (Str.includes("android")(n)) return "AndroidIcon"
 	if (/linux|ubuntu|debian|fedora/.test(n)) return "LinuxIcon"
