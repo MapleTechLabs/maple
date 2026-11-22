@@ -43,6 +43,8 @@ import GitHubCi from "./sections/GitHubCi.astro"
 import ProductEventsPaths from "./sections/ProductEventsPaths.astro"
 import ProductEventsSources from "./sections/ProductEventsSources.astro"
 import StatusPageFeeds from "./sections/StatusPageFeeds.astro"
+import StatusPageThemes from "./sections/StatusPageThemes.astro"
+import StatusPageTimeline from "./sections/StatusPageTimeline.astro"
 import UptimeCheckTrace from "./sections/UptimeCheckTrace.astro"
 import UptimeSetup from "./sections/UptimeSetup.astro"
 
@@ -79,6 +81,8 @@ export const EXTRA_SECTIONS = {
 	"github-after-merge": GitHubAfterMerge,
 	"uptime-check-trace": UptimeCheckTrace,
 	"uptime-setup": UptimeSetup,
+	"status-page-timeline": StatusPageTimeline,
+	"status-page-themes": StatusPageThemes,
 	"status-page-feeds": StatusPageFeeds,
 	"cost-explorer": CostExplorer,
 	"cost-sources": CostSources,

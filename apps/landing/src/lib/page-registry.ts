@@ -58,6 +58,8 @@ export type SectionId =
 	| "github-after-merge"
 	| "uptime-check-trace"
 	| "uptime-setup"
+	| "status-page-timeline"
+	| "status-page-themes"
 	| "status-page-feeds"
 	| "cost-explorer"
 	| "cost-sources"
@@ -82,7 +84,12 @@ export interface Crop {
 
 /** The app's main pane at full height: every 1440 px capture has the same 256 px sidebar. */
 const SIDEBAR = 0.1785
-export const APP_MAIN: Crop = { x: SIDEBAR, y: 0, zoom: 1 / (1 - SIDEBAR), aspect: ((1 - SIDEBAR) * 1440) / 810 }
+export const APP_MAIN: Crop = {
+	x: SIDEBAR,
+	y: 0,
+	zoom: 1 / (1 - SIDEBAR),
+	aspect: ((1 - SIDEBAR) * 1440) / 810,
+}
 
 /**
  * A plate. `src` unset renders MediaFrame's placeholder, which prints the
