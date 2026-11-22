@@ -31,6 +31,10 @@ const MAX_TRACKED_VISITORS: usize = 200_000;
 /// matching the SDK's session idle timeout.
 pub const VISIT_IDLE_MS: i64 = 30 * 60_000;
 
+/// The idle bound the gateway applies: the SDK's window plus the touch throttle, since a
+/// stored `last_seen_at` can lag the latest heartbeat by one interval. Errs toward billing less.
+pub const VISIT_WINDOW_MS: i64 = VISIT_IDLE_MS + VISIT_TOUCH_INTERVAL_MS;
+
 /// The UTC day of `now_ms` as `YYYY-MM-DD`, the key a salt is stored under.
 #[must_use]
 pub fn utc_day(now_ms: i64) -> String {
@@ -138,7 +142,10 @@ pub struct LocalVisits {
     day: String,
     last_seen_ms: HashMap<(String, String), i64>,
     capacity: usize,
+    last_sweep_ms: i64,
 }
+
+const SWEEP_INTERVAL_MS: i64 = 60_000;
 
 impl Default for LocalVisits {
     fn default() -> Self {
@@ -157,7 +164,7 @@ impl LocalVisits {
             return false;
         }
         let previous = self.last_seen_ms.insert(key, now_ms);
-        previous.is_none_or(|last| now_ms - last > VISIT_IDLE_MS)
+        previous.is_none_or(|last| now_ms - last > VISIT_WINDOW_MS)
     }
 
     #[must_use]
@@ -166,6 +173,7 @@ impl LocalVisits {
             day: String::new(),
             last_seen_ms: HashMap::new(),
             capacity,
+            last_sweep_ms: i64::MIN / 2,
         }
     }
 
@@ -176,22 +184,26 @@ impl LocalVisits {
             .last_seen_ms
             .get_mut(&(org_id.to_owned(), visitor_id.to_owned()))
         {
-            if now_ms - *last <= VISIT_IDLE_MS {
+            if now_ms - *last <= VISIT_WINDOW_MS {
                 *last = now_ms;
             }
         }
     }
 
     /// A new day clears the map; a full one drops only visits already idle, so an open
-    /// visit is never forgotten (and re-billed) to make room.
+    /// visit is never forgotten (and re-billed) to make room. The sweep runs at most once
+    /// a minute, so a full map of open visits does not cost a scan per request.
     fn roll(&mut self, now_ms: i64) {
         let day = utc_day(now_ms);
         if day != self.day {
             self.day = day;
             self.last_seen_ms.clear();
-        } else if self.last_seen_ms.len() >= self.capacity {
+        } else if self.last_seen_ms.len() >= self.capacity
+            && now_ms - self.last_sweep_ms >= SWEEP_INTERVAL_MS
+        {
+            self.last_sweep_ms = now_ms;
             self.last_seen_ms
-                .retain(|_, last| now_ms - *last <= VISIT_IDLE_MS);
+                .retain(|_, last| now_ms - *last <= VISIT_WINDOW_MS);
         }
     }
 }
@@ -306,7 +318,7 @@ mod tests {
         assert!(!visits.claim("org", "v", NOON + 10 * 60_000));
         // Extended by the last start, so 25 more minutes is still the same visit.
         assert!(!visits.claim("org", "v", NOON + 35 * 60_000));
-        assert!(visits.claim("org", "v", NOON + 35 * 60_000 + VISIT_IDLE_MS + 1));
+        assert!(visits.claim("org", "v", NOON + 35 * 60_000 + VISIT_WINDOW_MS + 1));
         assert!(visits.claim("org_other", "v", NOON + 36 * 60_000));
         assert!(visits.claim("org", "v", NOON + DAY_MS));
     }
@@ -349,8 +361,8 @@ mod tests {
     fn a_late_heartbeat_never_reopens_an_expired_visit() {
         let mut visits = LocalVisits::default();
         assert!(visits.claim("org", "v", NOON));
-        visits.touch("org", "v", NOON + VISIT_IDLE_MS + 60_000);
-        assert!(visits.claim("org", "v", NOON + VISIT_IDLE_MS + 120_000));
+        visits.touch("org", "v", NOON + VISIT_WINDOW_MS + 60_000);
+        assert!(visits.claim("org", "v", NOON + VISIT_WINDOW_MS + 120_000));
     }
 
     #[test]
@@ -375,6 +387,15 @@ mod tests {
         assert!(!visits.claim("org", "c", NOON + 60_000), "full of open visits");
         assert!(!visits.claim("org", "a", NOON + 120_000), "a's open visit survives");
         // Once a and b go idle, the full map drops them and admits c.
-        assert!(visits.claim("org", "c", NOON + 120_000 + VISIT_IDLE_MS + 1));
+        assert!(visits.claim("org", "c", NOON + 120_000 + VISIT_WINDOW_MS + 1));
+    }
+
+    #[test]
+    fn a_throttled_heartbeat_cannot_end_a_visit_early() {
+        // Touch written at 12:29, the 12:30 heartbeat throttled, a start at 12:59:31.
+        let mut visits = LocalVisits::default();
+        assert!(visits.claim("org", "v", NOON));
+        visits.touch("org", "v", NOON + 29 * 60_000);
+        assert!(!visits.claim("org", "v", NOON + 59 * 60_000 + 31_000));
     }
 }
