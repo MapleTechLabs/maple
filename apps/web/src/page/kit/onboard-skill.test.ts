@@ -28,7 +28,7 @@ describe("agentSetupPrompt", () => {
 				apiUrl: "https://api.eu.maple.dev",
 			}),
 		).toMatch(
-			/\nMaple API: https:\/\/api\.eu\.maple\.dev\nHandoff code \(single use, 15 min\): maple_ho_123$/,
+			/\nMaple API: https:\/\/api\.eu\.maple\.dev\nHandoff code \(single use, 1 hour\): maple_ho_123$/,
 		)
 		expect(agentSetupPrompt("https://ingest.maple.dev", "maple_pk_abc")).not.toContain("Handoff code")
 	})

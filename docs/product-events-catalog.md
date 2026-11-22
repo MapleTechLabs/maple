@@ -58,10 +58,10 @@ share the prod ingest key, so filter on it.
 | -------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------- |
 | `onboarding_step_completed`      | web    | Continue on a quick-start step                                                                                                                                                                                                                            | `step`                                                    | user + org                      |
 | `onboarding_reward_claimed`      | web    | Org admin redeems the onboarding-checklist credit                                                                                                                                                                                                         | (none)                                                    | user + org                      |
-| `onboarding_agent_prompt_shown`  | web    | The coding-agent prompt is shown on the connect step or the Connect popover (once per mount)                                                                                                                                                              | `surface` (`connect_step`, `connect_panel`)               | user + org                      |
-| `onboarding_agent_prompt_copied` | web    | Copy prompt on that prompt                                                                                                                                                                                                                                | `surface`, `has_handoff_code`                             | user + org                      |
-| `onboarding_agent_run_reported`  | web    | The connect step first sees the agent report (its run left `waiting_for_agent`)                                                                                                                                                                           | `surface`                                                 | user + org                      |
-| `onboarding_agent_run_completed` | web    | The connect step sees the agent's run completed                                                                                                                                                                                                           | `surface`                                                 | user + org                      |
+| `onboarding_agent_prompt_shown`  | web    | The coding-agent prompt is shown on the connect step or the Connect popover (once per mount)                                                                                                                                                              | `surface` (`connect_step`, `connect_panel`), `arm`        | user + org                      |
+| `onboarding_agent_prompt_copied` | web    | Copy prompt on that prompt                                                                                                                                                                                                                                | `surface`, `arm`, `has_handoff_code`                      | user + org                      |
+| `onboarding_agent_run_reported`  | web    | The connect step first sees the agent report (a run that expires unclaimed never counts)                                                                                                                                                                  | `surface`, `arm`                                          | user + org                      |
+| `onboarding_agent_run_completed` | web    | The connect step sees the agent's run completed                                                                                                                                                                                                           | `surface`, `arm`                                          | user + org                      |
 | `first_data_received`            | server | The org's first traces, logs or metrics are stamped (`first_data_received_at`): the alerting Worker's hourly sweep of orgs younger than 30 days, or the setup audit. At most once per org; dated by the earliest data hour, not before the org's creation | `signals` (`logs,traces`, earliest first), `first_signal` | user (who set the org up) + org |
 
 ### Product usage
@@ -97,6 +97,12 @@ in November 2026). MCP tools that create things (`create_dashboard`, `create_ale
 
 Webhook plan events set `GroupId` to the Autumn customer id, which is the paying org's Clerk id. An
 org billed through another org (`billing-orgs.md`) has its plan events under that billing org.
+
+`arm` is the org's side of the handoff experiment: `handoff` orgs get a code in the agent prompt and
+see live progress, `control` orgs get the same prompt without one. It is `onboardingHandoffArm(orgId)`
+(`packages/domain/src/onboarding-agent-run.ts`, FNV-1a of the org id out of 100, under
+`ONBOARDING_HANDOFF_ROLLOUT_PERCENT`), so it can be recomputed for any org. Compare the arms on
+`first_data_received`. Self-hosted builds are always `handoff`.
 
 ## Not covered
 

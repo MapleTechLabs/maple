@@ -34,6 +34,8 @@ Skip this section when the prompt has no handoff code (`maple_ho_...`). With one
    - `prepare_production`: Step 5; add `--run-status completed` when setup is done (`failed` only if it cannot continue).
 3. When the prompt has no key, `maple onboarding keys` prints the ingest endpoint and public key.
 
+If sign-in fails because the code expired or was used, ask the user (question tool) to click Copy prompt in Maple again and paste the new prompt, and keep setting up while you wait. If the CLI can't be installed (no network, or the user declined), skip this section: setup works without it, the user just sees no progress in Maple.
+
 Rules: report silently and never block setup on reporting. Notes are short plain text: no file contents, paths, terminal output, payloads or secrets. Stop reporting once a report says the run is closed (409). Never print or log the handoff code. With the Maple MCP connected you may use its `onboarding_status_update` tool instead.
 
 ## Step 0: Region, endpoint, and key

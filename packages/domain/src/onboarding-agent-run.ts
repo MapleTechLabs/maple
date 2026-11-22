@@ -47,8 +47,35 @@ export const OnboardingAgentRunStatus = Schema.Literals([
 ])
 export type OnboardingAgentRunStatus = Schema.Schema.Type<typeof OnboardingAgentRunStatus>
 
-/** How long the handoff code signs a CLI in. Matches the device login's code lifetime. */
-export const ONBOARDING_HANDOFF_TTL_MS = 15 * 60 * 1000
+/**
+ * How long the handoff code signs a CLI in. Longer than a typed device login's 15 minutes: the
+ * prompt often waits in an agent's chat while the user does something else, and the code is single use.
+ */
+export const ONBOARDING_HANDOFF_TTL_MS = 60 * 60 * 1000
+/**
+ * The handoff experiment: `handoff` orgs get a code in the agent prompt (live progress), `control`
+ * orgs the same prompt without one. Compare the arms on `first_data_received`.
+ */
+export const OnboardingHandoffArm = Schema.Literals(["handoff", "control"])
+export type OnboardingHandoffArm = typeof OnboardingHandoffArm.Type
+
+/** Share of hosted orgs in the `handoff` arm. Raise to 100 once the comparison is in. */
+export const ONBOARDING_HANDOFF_ROLLOUT_PERCENT = 50
+
+/** 32-bit FNV-1a of the org id's UTF-8 bytes, out of 100: an org stays in one arm, and analysts can recompute it. */
+const orgBucket = (orgId: string): number =>
+	Arr.reduce(
+		Array.from(new TextEncoder().encode(orgId)),
+		0x811c9dc5,
+		(hash, byte) => Math.imul(hash ^ byte, 0x01000193) >>> 0,
+	) % 100
+
+/** The org's arm of the handoff experiment. */
+export const onboardingHandoffArm = (
+	orgId: string,
+	percent: number = ONBOARDING_HANDOFF_ROLLOUT_PERCENT,
+): OnboardingHandoffArm => (orgBucket(orgId) < percent ? "handoff" : "control")
+
 /** How long a run takes reports. An agent setup that outlives a day starts a new run. */
 export const ONBOARDING_AGENT_RUN_TTL_MS = 24 * 60 * 60 * 1000
 export const ONBOARDING_AGENT_NOTE_MAX = 200

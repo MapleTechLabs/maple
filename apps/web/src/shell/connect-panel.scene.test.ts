@@ -37,7 +37,8 @@ const opened = [
 	Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
 	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
 	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
-	// Each opening shows the coding-agent prompt once.
+	// Each opening shows the coding-agent prompt once, after reading the org's handoff arm.
+	Command.resolve(AgentHandoff.ResolveArm, AgentHandoff.Message.ResolvedArm({ arm: "handoff" })),
 	Command.resolve(
 		AgentHandoff.TrackAgentEvent({
 			event: "onboarding_agent_prompt_shown",
@@ -114,7 +115,7 @@ describe("connect panel scene", () => {
 				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
 			),
 			expect(text(/maple_sk_secret/)).toBeAbsent(),
-			expect(text(/Handoff code \(single use, 15 min\): ••••••••••/)).toExist(),
+			expect(text(/Handoff code \(single use, 1 hour\): ••••••••••/)).toExist(),
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),

@@ -84,7 +84,7 @@ describe("agent progress", () => {
 			given(atConnect()),
 			indicatorMeasured(),
 			expectView(role("region", { name: "Agent progress" })).toExist(),
-			expectView(text("Waiting for your agent…")).toExist(),
+			expectView(text(/^Waiting for your agent to sign in\./)).toExist(),
 			expectView(text("Connect agent")).toExist(),
 			expectView(text("Prepare production")).toExist(),
 			expectAll(all.selector('li[data-state="pending"]')).toHaveCount(6),
@@ -124,6 +124,14 @@ describe("agent progress", () => {
 			...polledRun(labAgentRun("expired")),
 			tracked("onboarding_agent_run_reported"),
 			expectView(text(/ran out of time before your agent finished/)).toExist(),
+		)
+		// No agent ever signed in: the code lapsed, so the line says to copy a new one.
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
+			...polledRun({ ...labAgentRun("waiting"), status: "expired" }),
+			expectView(text(/No agent signed in with this code within the hour/)).toExist(),
 		)
 		scene(
 			{ update, view },

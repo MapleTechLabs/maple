@@ -8,7 +8,15 @@ import { Array as Arr, Schema } from "effect"
 
 // `/lab/onboarding?step=connect&agent=<state>`: sample agent runs for the connect step's progress list.
 
-export const LAB_AGENT_STATES = ["none", "waiting", "progress", "completed", "expired"] as const
+export const LAB_AGENT_STATES = [
+	"none",
+	"control",
+	"waiting",
+	"progress",
+	"completed",
+	"expired",
+	"unclaimed",
+] as const
 export const LabAgentState = Schema.Literals(LAB_AGENT_STATES)
 export type LabAgentState = typeof LabAgentState.Type
 
@@ -32,7 +40,7 @@ const run = (
 	status,
 	created_at: timestamp("2026-11-22T10:00:00.000Z"),
 	expires_at: timestamp("2026-11-23T10:00:00.000Z"),
-	last_reported_at: status === "waiting_for_agent" ? null : timestamp("2026-11-22T10:04:00.000Z"),
+	last_reported_at: statuses.length === 0 ? null : timestamp("2026-11-22T10:04:00.000Z"),
 	stages: Arr.map(ONBOARDING_AGENT_STAGES, (id, index) => {
 		const stageStatus = statuses[index] ?? "pending"
 		return {
@@ -47,8 +55,8 @@ const run = (
 	trace_id: extra.trace_id ?? null,
 })
 
-/** The sample run of a lab state other than `none` (the prompt alone). */
-export const labAgentRun = (state: Exclude<LabAgentState, "none">): V2OnboardingAgentRun => {
+/** The sample run of a lab state with one (`none` and `control` show the prompt alone). */
+export const labAgentRun = (state: Exclude<LabAgentState, "none" | "control">): V2OnboardingAgentRun => {
 	switch (state) {
 		case "waiting":
 			return run("waiting_for_agent", [])
@@ -68,6 +76,8 @@ export const labAgentRun = (state: Exclude<LabAgentState, "none">): V2Onboarding
 			)
 		case "expired":
 			return run("expired", ["completed", "active"])
+		case "unclaimed":
+			return run("expired", [])
 	}
 }
 
@@ -75,6 +85,6 @@ export const labAgentRun = (state: Exclude<LabAgentState, "none">): V2Onboarding
 export const labHandoff = (): V2OnboardingAgentHandoff => ({
 	object: "onboarding_agent_handoff",
 	handoff_code: "maple_ho_lab_sample_code",
-	handoff_expires_at: timestamp("2026-11-22T10:15:00.000Z"),
+	handoff_expires_at: timestamp("2026-11-22T12:00:00.000Z"),
 	run: { ...run("waiting_for_agent", []), created_at: timestamp("2026-11-22T11:00:00.000Z") },
 })

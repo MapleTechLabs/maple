@@ -10,7 +10,7 @@ export const IDENTIFY_USERS_PROMPT =
 	"Identify the signed-in users in my app so they show up on Maple's Users page: maple.dev/skills/identify-users.md"
 
 /** The handoff line's label; the code after it signs the agent's `maple` CLI in once. */
-export const HANDOFF_LINE_LABEL = "Handoff code (single use, 15 min):"
+export const HANDOFF_LINE_LABEL = "Handoff code (single use, 1 hour):"
 
 /** What the page shows in place of a handoff code: the real one exists only once Copy mints it. */
 export const MASKED_HANDOFF_CODE = "••••••••••"

@@ -47,7 +47,8 @@ const STAGE_STATES = {
 } as const satisfies Record<V2OnboardingAgentStage["status"], CheckState>
 
 const STATUS_LINES = {
-	waiting_for_agent: "Waiting for your agent…",
+	waiting_for_agent:
+		"Waiting for your agent to sign in. If it can't run the Maple CLI, setup still works, but progress won't show here.",
 	in_progress: "Your agent is setting up Maple.",
 	completed: "Setup complete.",
 	failed: "Your agent stopped before setup finished. Copy the prompt again to start over.",
@@ -68,11 +69,20 @@ const completedSummary = <M>(h: HtmlBuilder<M>, run: V2OnboardingAgentRun): Read
 			]),
 ]
 
+/** An expired run no agent ever signed in to: the code lapsed, not the setup. */
+const UNCLAIMED_LINE =
+	"No agent signed in with this code within the hour. Copy the prompt again for a new one."
+
+const statusLine = (run: V2OnboardingAgentRun): string =>
+	run.status === "expired" && Arr.every(run.stages, (stage) => stage.status === "pending")
+		? UNCLAIMED_LINE
+		: STATUS_LINES[run.status]
+
 /** The run's stages, one row each, under a line on where the run stands. */
 export const agentProgress = <M>(h: HtmlBuilder<M>, run: V2OnboardingAgentRun): Html =>
 	liveChecklist(h, {
 		title: "Agent progress",
-		summary: run.status === "completed" ? h.span([], completedSummary(h, run)) : STATUS_LINES[run.status],
+		summary: run.status === "completed" ? h.span([], completedSummary(h, run)) : statusLine(run),
 		rows: Arr.map(run.stages, (stage) => ({
 			state: STAGE_STATES[stage.status],
 			title: STAGE_LABELS[stage.id],
@@ -108,13 +118,19 @@ const copyFallback = <M>(h: HtmlBuilder<M>, options: AgentPromptOptions<M>): Rea
 /** The prompt block, its Copy prompt, the notes a copy leaves, and the run's progress. */
 export const agentPrompt = <M>(h: HtmlBuilder<M>, options: AgentPromptOptions<M>): Html => {
 	const { model } = options
+	const prompt = {
+		code: agentSetupPrompt(ingestUrl, options.publicKey),
+		isPlain: true,
+		className: REPLAY_BLOCK_CLASS,
+	}
 	return vstack(h, { gap: "2" }, [
-		codeBlock(h, {
-			code: agentSetupPrompt(ingestUrl, options.publicKey),
-			maskedLine: `${HANDOFF_LINE_LABEL} ${MASKED_HANDOFF_CODE}`,
-			isPlain: true,
-			className: REPLAY_BLOCK_CLASS,
-		}),
+		// A `control` org's copy carries no code, so the page shows no code line either.
+		codeBlock(
+			h,
+			model.arm === "control"
+				? prompt
+				: { ...prompt, maskedLine: `${HANDOFF_LINE_LABEL} ${MASKED_HANDOFF_CODE}` },
+		),
 		CopyButton.copyButton(h, {
 			status: model.copy.status,
 			label: "prompt",

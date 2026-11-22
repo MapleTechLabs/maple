@@ -110,7 +110,11 @@ const withAgentRun = (quickStart: QuickStart.Model, agent: LabAgentState): Quick
 	...quickStart,
 	connect: {
 		...quickStart.connect,
-		agent: { ...quickStart.connect.agent, run: agent === "none" ? null : labAgentRun(agent) },
+		agent: {
+			...quickStart.connect.agent,
+			run: agent === "none" || agent === "control" ? null : labAgentRun(agent),
+			arm: agent === "control" ? "control" : "handoff",
+		},
 	},
 })
 
@@ -184,16 +188,21 @@ const copyStep = (model: Model, snippet: string, message: CopyButton.Message): R
 const agentStep = (model: Model, message: AgentHandoff.Message): Return => {
 	const connect = model.quickStart.connect
 	const handled =
-		message._tag === "ClickedCopyPrompt"
-			? AgentHandoff.Message.SucceededMint({
-					publicKey: message.publicKey,
-					handoff: labHandoff(),
-					clipboard: "not_attempted",
-				})
-			: message
+		message._tag !== "ClickedCopyPrompt"
+			? message
+			: connect.agent.arm === "control"
+				? AgentHandoff.Message.SkippedMint({
+						publicKey: message.publicKey,
+						clipboard: "not_attempted",
+					})
+				: AgentHandoff.Message.SucceededMint({
+						publicKey: message.publicKey,
+						handoff: labHandoff(),
+						clipboard: "not_attempted",
+					})
 	const next = AgentHandoff.update(connect.agent, handled)
 	const copy =
-		handled._tag === "SucceededMint"
+		handled._tag === "SucceededMint" || handled._tag === "SkippedMint"
 			? CopyButton.Message.ClickedCopy({ text: next.model.copiedPrompt ?? "" })
 			: handled._tag === "GotCopyMessage"
 				? handled.message

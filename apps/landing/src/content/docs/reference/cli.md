@@ -454,7 +454,7 @@ echo "$MAPLE_TOKEN" | maple auth login --with-token
 MAPLE_HANDOFF=<code> maple auth login
 ```
 
-A handoff code works once and for 15 minutes, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). It is meant for your coding agent to run; if you type it yourself, start the line with a space (shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip it) so the code stays out of your shell history.
+A handoff code works once and for an hour, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). It is meant for your coding agent to run; if you type it yourself, start the line with a space (shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip it) so the code stays out of your shell history.
 
 ### `maple auth status`
 

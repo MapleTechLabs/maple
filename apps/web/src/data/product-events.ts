@@ -19,7 +19,7 @@ export type ProductEvent =
 	| "onboarding_agent_prompt_shown"
 	/** The agent prompt was copied; `has_handoff_code` is false when the mint failed. */
 	| "onboarding_agent_prompt_copied"
-	/** The page saw the agent's first report: its run left `waiting_for_agent`. */
+	/** The page saw the agent's first report (an unclaimed run that expires never counts). */
 	| "onboarding_agent_run_reported"
 	/** The page saw the agent close its run as completed. */
 	| "onboarding_agent_run_completed"

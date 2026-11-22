@@ -71,14 +71,14 @@ describe("use my coding agent", () => {
 			given(atConnect()),
 			indicatorMeasured(),
 			expectView(role("tab", { name: "Use my coding agent" })).toHaveAttr("aria-selected", "true"),
-			expectView(text(/Handoff code \(single use, 15 min\): ••••••••••/)).toExist(),
+			expectView(text(/Handoff code \(single use, 1 hour\): ••••••••••/)).toExist(),
 			expectView(text(/maple_ho_/)).not.toExist(),
 			expectView(text(/maple_sk_test/)).not.toExist(),
 		)
 	})
 
 	test("Copy prompt mints a handoff, then copies the prompt with its code and never the private key", () => {
-		expect(PROMPT_WITH_CODE).toContain("Handoff code (single use, 15 min): maple_ho_")
+		expect(PROMPT_WITH_CODE).toContain("Handoff code (single use, 1 hour): maple_ho_")
 		expect(PROMPT_WITH_CODE).not.toContain("maple_sk_")
 		scene(
 			{ update, view },
@@ -99,7 +99,7 @@ describe("use my coding agent", () => {
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
 			expectView(role("button", { name: "Copy prompt" })).toHaveAttr("data-copy-status", "copied"),
 			// The copy started a run: its progress shows under the prompt.
-			expectView(text("Waiting for your agent…")).toExist(),
+			expectView(text(/^Waiting for your agent to sign in\./)).toExist(),
 			// The page keeps the code masked; it lives only on the clipboard.
 			expectView(text(/maple_ho_/)).not.toExist(),
 			Command.resolve(
@@ -123,6 +123,29 @@ describe("use my coding agent", () => {
 			copyTracked(false),
 			...copySettled(1),
 			expectView(text(/progress tracking is unavailable/)).toExist(),
+			expectView(text("Agent progress")).not.toExist(),
+		)
+	})
+
+	test("an org in the control arm copies the prompt without a code, with no masked line or note", () => {
+		const control = atConnect()
+		scene(
+			{ update, view },
+			given({
+				...control,
+				connect: { ...control.connect, agent: { ...control.connect.agent, arm: "control" } },
+			}),
+			indicatorMeasured(),
+			expectView(text(/Handoff code/)).not.toExist(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SkippedMint({ publicKey: "maple_pk_test", clipboard: "not_attempted" }),
+			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
+			copyTracked(false),
+			...copySettled(1),
+			expectView(text(/progress tracking is unavailable/)).not.toExist(),
 			expectView(text("Agent progress")).not.toExist(),
 		)
 	})

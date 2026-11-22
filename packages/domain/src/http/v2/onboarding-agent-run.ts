@@ -106,7 +106,7 @@ export const V2OnboardingAgentHandoff = Schema.Struct({
 	}),
 	handoff_code: Schema.String.annotate({
 		description:
-			"Signs the `maple` CLI in as you, once, within 15 minutes: `MAPLE_HANDOFF=<code> maple auth login`. Returned only here; treat it like a password.",
+			"Signs the `maple` CLI in as you, once, within an hour: `MAPLE_HANDOFF=<code> maple auth login`. Returned only here; treat it like a password.",
 	}),
 	handoff_expires_at: Timestamp.annotate({ description: "When the code stops signing a CLI in." }),
 	run: V2OnboardingAgentRun,
@@ -172,7 +172,7 @@ export class V2OnboardingAgentRunApiGroup extends HttpApiGroup.make("onboardingA
 					identifier: "startOnboardingAgentRun",
 					summary: "Start an onboarding agent run",
 					description:
-						"Starts a run for the signed-in person, closing any open one, and returns a single-use handoff code that signs the `maple` CLI in as them for 15 minutes. " +
+						"Starts a run for the signed-in person, closing any open one, and returns a single-use handoff code that signs the `maple` CLI in as them within the next hour. " +
 						"Takes a signed-in session: an API key is refused. Requires the `onboarding:write` scope.",
 				}),
 			),

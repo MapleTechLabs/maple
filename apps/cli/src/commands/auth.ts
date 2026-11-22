@@ -189,7 +189,7 @@ const HandoffAnswer = Schema.Union([
 const decodeHandoffAnswer = Schema.decodeUnknownEffect(HandoffAnswer)
 
 export const HANDOFF_SPENT_MESSAGE =
-	"handoff code expired or already used: copy the agent prompt from Maple again"
+	"handoff code expired or already used: ask the user to click Copy prompt in Maple again and paste you the new prompt; keep setting up meanwhile"
 export const ONBOARDING_NEXT_STEP =
 	"Follow https://maple.dev/SKILL.md; report progress with `maple onboarding report <stage> <status>`."
 
