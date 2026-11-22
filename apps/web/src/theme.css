@@ -962,3 +962,12 @@ width = its duration */
 		animation: none;
 	}
 }
+
+/* Onboarding's live step: a chip that arrives rises out of the row folding open above it. */
+@keyframes live-chip-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px) scale(0.96);
+		filter: blur(2px);
+	}
+}

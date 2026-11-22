@@ -114,10 +114,34 @@ const STATUS_ICON = {
 	error: { name: "CircleWarningIcon", className: "text-severity-error" },
 } satisfies Record<Exclude<StatusTone, "working">, { name: IconName; className: string }>
 
-const statusGlyph = <M>(h: HtmlBuilder<M>, tone: StatusTone): Html =>
-	tone === "working"
-		? spinner(h, "text-primary", 14)
-		: icon(h, STATUS_ICON[tone].name, { size: 14, className: STATUS_ICON[tone].className })
+// Both layers stay mounted in one grid cell, so "waiting" turning into "found" cross-fades the
+// spinner into the result glyph instead of swapping it (the copy button's recipe).
+const GLYPH_LAYER =
+	"col-start-1 row-start-1 flex transition-[opacity,scale] duration-240 ease-out motion-reduce:transition-[opacity]"
+const GLYPH_HIDDEN = "scale-[0.92] opacity-0"
+
+const statusGlyph = <M>(h: HtmlBuilder<M>, tone: StatusTone): Html => {
+	const result = tone === "working" ? STATUS_ICON.ok : STATUS_ICON[tone]
+	return h.span(
+		[h.Class("grid size-3.5 place-items-center")],
+		[
+			h.span(
+				[
+					h.Class(cn(GLYPH_LAYER, tone !== "working" && GLYPH_HIDDEN)),
+					h.AriaHidden(tone !== "working"),
+				],
+				[spinner(h, "text-primary", 14)],
+			),
+			h.span(
+				[
+					h.Class(cn(GLYPH_LAYER, tone === "working" && GLYPH_HIDDEN)),
+					h.AriaHidden(tone === "working"),
+				],
+				[icon(h, result.name, { size: 14, className: result.className })],
+			),
+		],
+	)
+}
 
 export type StatusRowOptions = Readonly<{
 	tone: StatusTone

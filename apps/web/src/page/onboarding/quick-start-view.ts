@@ -897,16 +897,66 @@ const startCards = (findings: LiveFindings | null): ReadonlyArray<StartCard> => 
 	},
 ]
 
-const chip = (h: H, children: ReadonlyArray<Html | string>): Html =>
+// The live step's one celebration. When the first data lands the headline cross-fades, the chip
+// row folds open while its chips rise in, and "Still waiting on" folds shut: nothing on the page
+// jumps. Transitions, not keyframes, so none of it plays when the step first opens.
+const SWAP_LAYER =
+	"col-start-1 row-start-1 transition-[opacity,translate,filter] duration-300 ease-out motion-reduce:transition-opacity"
+const SWAP_HIDDEN = "pointer-events-none opacity-0 blur-xs"
+/** A block whose height folds open and shut; its one child clips while it moves. */
+const FOLD =
+	"grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-opacity"
+const FOLD_OPEN = "grid-rows-[1fr]"
+const FOLD_SHUT = "grid-rows-[0fr] opacity-0"
+// Keyed chips only play this when they are added; the first one waits for the row to start opening.
+const CHIP_IN = "[animation:live-chip-in_320ms_var(--ease-out)_both] motion-reduce:[animation:none]"
+
+const chip = (h: H, key: string, index: number, children: ReadonlyArray<Html | string>): Html =>
 	hstack(
 		h,
 		{
 			gap: "1.5",
 			align: "center",
 			as: "li",
-			className: "rounded-md border border-border bg-card px-2.5 py-1 text-xs",
+			className: cn("rounded-md border border-border bg-card px-2.5 py-1 text-xs", CHIP_IN),
+			attributes: [h.Key(key), h.Style({ "animation-delay": `${60 + index * 50}ms` })],
 		},
 		children,
+	)
+
+/** One of the headline's two states, stacked in the same cell so they cross-fade. */
+const headlineLayer = (h: H, isShown: boolean, hiddenOffset: string, children: ReadonlyArray<Html>): Html =>
+	vstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className: cn(SWAP_LAYER, !isShown && SWAP_HIDDEN, !isShown && hiddenOffset),
+			attributes: [h.AriaHidden(!isShown)],
+		},
+		children,
+	)
+
+const headline = (h: H, isLive: boolean, orgName: string): Html =>
+	h.div(
+		[h.Class("grid place-items-center")],
+		[
+			headlineLayer(h, !isLive, "-translate-y-1.5", [
+				typography(h, { size: "sm", tone: "muted", as: "p" }, ["All set up"]),
+				heading(h, { level: 1, variant: "display" }, [`${orgName} is ready for its first data`]),
+			]),
+			headlineLayer(h, isLive, "translate-y-1.5", [
+				h.p([h.Class("text-sm text-severity-info")], ["Data is flowing"]),
+				heading(h, { level: 1, variant: "display" }, [`${orgName} is live`]),
+			]),
+		],
+	)
+
+/** A section that folds away when it has nothing left to say, taking the gap above it along. */
+const foldSection = (h: H, isOpen: boolean, child: Html): Html =>
+	h.div(
+		[h.Class(cn(FOLD, "-mt-10", isOpen ? FOLD_OPEN : FOLD_SHUT)), h.AriaHidden(!isOpen)],
+		[h.div([h.Class("min-h-0 overflow-hidden pt-10")], [child])],
 	)
 
 export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: string): Html => {
@@ -922,46 +972,52 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 	const notConnected = Arr.filter(providers, (platform) => !connected.includes(platform))
 	const isLive = arriving.length > 0
 	const invited = model.team.invited.length
+	const chipCount = arriving.length + connected.length + (invited === 0 ? 0 : 1)
+	// The first-data row stays while the section folds away, so it shuts around what it showed.
+	const isWaiting = notConnected.length > 0 || !isLive
 	return vstack(h, { align: "center", grow: true, className: "relative px-6 pb-12 pt-10 sm:px-12" }, [
 		vstack(h, { className: "w-full max-w-4xl gap-10" }, [
 			vstack(h, { gap: "3", align: "center", className: "text-center" }, [
-				h.p(
-					[h.Class(cn("text-sm", isLive ? "text-severity-info" : "text-muted-foreground"))],
-					[isLive ? "Data is flowing" : "All set up"],
-				),
-				heading(h, { level: 1, variant: "display" }, [
-					isLive ? `${orgName} is live` : `${orgName} is ready for its first data`,
-				]),
-				hstack(
-					h,
-					{
-						gap: "2",
-						align: "stretch",
-						justify: "center",
-						wrap: true,
-						as: "ul",
-						className: "mt-1",
-						attributes: [h.AriaLabel("Connected so far")],
-					},
+				headline(h, isLive, orgName),
+				h.div(
+					[h.Class(cn(FOLD, chipCount === 0 ? FOLD_SHUT : FOLD_OPEN))],
 					[
-						...Arr.map(arriving, (row) =>
-							chip(h, [
-								icon(h, "CircleCheckIcon", {
-									size: 12,
-									className: "text-severity-info",
-								}),
-								row.label,
-							]),
+						hstack(
+							h,
+							{
+								gap: "2",
+								align: "stretch",
+								justify: "center",
+								wrap: true,
+								as: "ul",
+								className: "min-h-0 overflow-hidden py-1",
+								attributes: [h.AriaLabel("Connected so far")],
+							},
+							[
+								...Arr.map(arriving, (row, index) =>
+									chip(h, `signal-${row.signal}`, index, [
+										icon(h, "CircleCheckIcon", {
+											size: 12,
+											className: "text-severity-info",
+										}),
+										row.label,
+									]),
+								),
+								...Arr.map(connected, (platform, index) =>
+									chip(h, `platform-${platform}`, arriving.length + index, [
+										icon(h, STACK_PLATFORMS[platform].icon, { size: 12 }),
+										STACK_PLATFORMS[platform].label,
+									]),
+								),
+								...(invited === 0
+									? []
+									: [
+											chip(h, "invites", arriving.length + connected.length, [
+												`${invited} ${invited === 1 ? "invite" : "invites"} sent`,
+											]),
+										]),
+							],
 						),
-						...Arr.map(connected, (platform) =>
-							chip(h, [
-								icon(h, STACK_PLATFORMS[platform].icon, { size: 12 }),
-								STACK_PLATFORMS[platform].label,
-							]),
-						),
-						...(invited === 0
-							? []
-							: [chip(h, [`${invited} ${invited === 1 ? "invite" : "invites"} sent`])]),
 					],
 				),
 			]),
@@ -1018,87 +1074,85 @@ export const liveStep = (h: H, model: Model, state: QuickStartState, orgName: st
 				),
 			]),
 			// Its rows: providers not connected yet, and the first data while none has arrived.
-			...(notConnected.length === 0 && arriving.length > 0
-				? []
-				: [
-						vstack(h, { gap: "3", as: "section" }, [
-							eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
-							dividedList(
-								h,
-								{
-									as: "ul",
-									className: "overflow-hidden",
-								},
-								[
-									...Arr.map(notConnected, (platform) =>
+			foldSection(
+				h,
+				isWaiting,
+				vstack(h, { gap: "3", as: "section" }, [
+					eyebrow(h, { variant: "label", as: "h2" }, ["Still waiting on"]),
+					dividedList(
+						h,
+						{
+							as: "ul",
+							className: "overflow-hidden",
+						},
+						[
+							...Arr.map(notConnected, (platform) =>
+								hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
+									hstack(
+										h,
+										{
+											align: "stretch",
+											as: "span",
+											attributes: [h.AriaHidden(true)],
+										},
+										[
+											icon(h, STACK_PLATFORMS[platform].icon, {
+												size: 14,
+											}),
+										],
+									),
+									h.span(
+										[h.Class("flex-1 text-sm")],
+										[`Connect ${STACK_PLATFORMS[platform].label}`],
+									),
+									button(
+										h,
+										{
+											variant: "outline",
+											size: "xs",
+											attributes: [
+												h.AriaLabel(`Set up ${STACK_PLATFORMS[platform].label}`),
+												h.OnClick(
+													Message.ClickedSetUp({
+														platform,
+													}),
+												),
+											],
+										},
+										["Set up"],
+									),
+								]),
+							),
+							...(isLive && isWaiting
+								? []
+								: [
 										hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
+											icon(h, "ClockIcon", {
+												size: 14,
+												className: "text-muted-foreground",
+											}),
+											h.span(
+												[h.Class("flex-1 text-sm")],
+												["Your first request, log or metric"],
+											),
 											hstack(
 												h,
 												{
-													align: "stretch",
+													gap: "1.5",
 													as: "span",
-													attributes: [h.AriaHidden(true)],
-												},
-												[
-													icon(h, STACK_PLATFORMS[platform].icon, {
-														size: 14,
+													className: typographyClass({
+														size: "xs",
+														tone: "muted",
 													}),
-												],
-											),
-											h.span(
-												[h.Class("flex-1 text-sm")],
-												[`Connect ${STACK_PLATFORMS[platform].label}`],
-											),
-											button(
-												h,
-												{
-													variant: "outline",
-													size: "xs",
-													attributes: [
-														h.AriaLabel(
-															`Set up ${STACK_PLATFORMS[platform].label}`,
-														),
-														h.OnClick(
-															Message.ClickedSetUp({
-																platform,
-															}),
-														),
-													],
 												},
-												["Set up"],
+												[statusDot(h, { tone: "ok" }), "Listening"],
 											),
 										]),
-									),
-									...(arriving.length > 0
-										? []
-										: [
-												hstack(h, { gap: "3", as: "li", className: "px-4 py-3" }, [
-													icon(h, "ClockIcon", {
-														size: 14,
-														className: "text-muted-foreground",
-													}),
-													h.span(
-														[h.Class("flex-1 text-sm")],
-														["Your first request, log or metric"],
-													),
-													hstack(
-														h,
-														{
-															gap: "1.5",
-															as: "span",
-															className: typographyClass({
-																size: "xs",
-																tone: "muted",
-															}),
-														},
-														[statusDot(h, { tone: "ok" }), "Listening"],
-													),
-												]),
-											]),
-								],
-							),
-						]),
-					]),
+									]),
+						],
+					),
+				]),
+			),
 			vstack(h, { gap: "4", align: "center" }, [
 				hstack(
 					h,

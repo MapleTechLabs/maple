@@ -1,6 +1,7 @@
 import { CatalogPlan, CatalogPlanItem, CatalogPlanItemPrice } from "@maple/domain/http"
-import { Effect, Schema, String as Str } from "effect"
-import { Command, Submodel } from "foldkit"
+import { Array as Arr, Effect, Record as Rec, Schema, String as Str } from "effect"
+import type { SignalPresences } from "@maple/views/data/signal-presence"
+import { AsyncData, Command, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CreateOrg from "../../page/onboarding/create-org"
 import * as CreateOrgView from "../../page/onboarding/create-org-view"
@@ -79,6 +80,7 @@ export const Message = defineMessageUnion({
 	ClickedRestart: {},
 	SimulatedTeamOperation: { message: TeamMessage },
 	GotCreateOrgMessage: { message: CreateOrg.Message },
+	ClickedSimulateArrival: {},
 })
 export type Message = typeof Message.Type
 
@@ -198,7 +200,27 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedRestart: () => ({ model: init("org", model.run + 1) }),
 		SimulatedTeamOperation: ({ message: child }) => teamStep(model, child),
 		GotCreateOrgMessage: ({ message: child }) => createOrgStep(model, child),
+		ClickedSimulateArrival: () => simulateArrival(model),
 	})
+
+/** The live step's "first data arrived" moment, on demand: one more signal turns present per click. */
+const ARRIVAL_ORDER = ["traces", "logs", "metrics", "sessions"] as const
+const simulateArrival = (model: Model): Return => {
+	const connect = model.quickStart.connect
+	const current: SignalPresences = AsyncData.getOrElse(connect.presence, (): SignalPresences => ({}))
+	const present = Arr.filter(ARRIVAL_ORDER, (signal) => current[signal]?.status === "present").length
+	// The first click lands three signals together, so their stagger shows; later clicks add one.
+	const next = present === 0 ? ARRIVAL_ORDER.slice(0, 3) : ARRIVAL_ORDER.slice(0, present + 1)
+	const presence = Rec.fromEntries(
+		Arr.map(next, (signal) => [signal, { status: "present" as const, lastSeenMs: Date.now() }] as const),
+	)
+	return {
+		model: withQuickStart(model, {
+			...model.quickStart,
+			connect: { ...connect, presence: AsyncData.Success({ data: presence }) },
+		}),
+	}
+}
 
 /** The create-org form's own edits; sending it moves on to the region step, nothing is created. */
 const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
@@ -297,6 +319,24 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							view: stepView,
 							toParentMessage: (message) => Message.GotStepMessage({ message }),
 						}),
+						...(model.quickStart.state?.activeStep === "live"
+							? [
+									h.div(
+										[h.Class("fixed bottom-4 left-4 z-50")],
+										[
+											button(
+												h,
+												{
+													size: "sm",
+													variant: "outline",
+													attributes: [h.OnClick(Message.ClickedSimulateArrival())],
+												},
+												["Simulate data arriving"],
+											),
+										],
+									),
+								]
+							: []),
 					],
 				)
 
