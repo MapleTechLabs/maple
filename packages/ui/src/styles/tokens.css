@@ -9,8 +9,6 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* How long a wait stays blank before its skeleton fades in (`loading-delay`, chart ghosts). */
-	--loading-delay: 300ms;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.18 0.006 70);
 	--card: oklch(1 0 0);
@@ -889,18 +887,6 @@
 .react-flow__controls-button svg[fill="none"] {
 	fill: none;
 	color: var(--foreground);
-}
-
-/* A wait stays blank for `--loading-delay` before its skeleton fades in, so a fast load never
-   flashes. Charts share it (`chart-skeleton.css`). */
-@keyframes loading-delay {
-	from {
-		opacity: 0;
-	}
-}
-
-@utility loading-delay {
-	animation: loading-delay 150ms var(--ease-out) var(--loading-delay) both;
 }
 
 /* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */

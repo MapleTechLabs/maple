@@ -143,9 +143,9 @@ instead. Only a reveal (`opacity-0` → `opacity-100`) sets opacity (`maple/no-d
 
 ## Waiting
 
-A skeleton, bar or chart ghost, stays blank for `--loading-delay` (300ms), then fades in over 150ms,
-so a fast load never flashes one; every sweep runs on one clock (`syncSkeletonSweeps`). A navigation
-draws the page entered at once, never holding the page left while it loads. Every tooltip waits the one open delay, `Tooltip.OPEN_DELAY`
+A skeleton, bar or chart ghost, shows at once, with no delay or fade-in; every sweep runs on one
+clock (`syncSkeletonSweeps`). A navigation draws the page entered at once, never holding the page
+left while it loads. Every tooltip waits the one open delay, `Tooltip.OPEN_DELAY`
 (`maple/single-tooltip-delay`).
 
 ## Copy
