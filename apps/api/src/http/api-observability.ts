@@ -23,9 +23,10 @@ const EMAIL_UNSUBSCRIBE_PATH = /^\/api\/email\/unsubscribe(?:\?|$)/
 
 // An uptime heartbeat ping's path segment is the monitor's secret token. The ping routes
 // (`UptimeHeartbeatRouter`: GET and POST on these two shapes) redact it. Any other method or path
-// under `/hb/` matches no route, so nothing would.
+// under `/hb/` matches no route, so nothing would. Only a segment in the token alphabet counts as
+// routed: one with `%` can fail to decode before the router records the redacted path.
 const HEARTBEAT_PATH = /^\/hb\//
-const HEARTBEAT_PING_ROUTE = /^\/hb\/[^/?#]+(?:\/fail)?(?:[?#]|$)/
+const HEARTBEAT_PING_ROUTE = /^\/hb\/[A-Za-z0-9_-]+(?:\/fail)?(?:[?#]|$)/
 const isUnroutedHeartbeat = (request: { url: string; method: string }) =>
 	HEARTBEAT_PATH.test(request.url) &&
 	!(HEARTBEAT_PING_ROUTE.test(request.url) && (request.method === "GET" || request.method === "POST"))

@@ -18,6 +18,8 @@ describe("ApiObservabilityLive", () => {
 		expect(tracedFor("/hb/abc123secret/typo")).toBe(false)
 		expect(tracedFor("/hb/abc123secret/fail/again")).toBe(false)
 		expect(tracedFor("/hb/abc123secret", "HEAD")).toBe(false)
+		expect(tracedFor("/hb/abc123secret%zz")).toBe(false)
+		expect(tracedFor("/hb/abc%41123secret/fail", "POST")).toBe(false)
 		expect(tracedFor("/hb/abc123secret/fail", "PUT")).toBe(false)
 	})
 
