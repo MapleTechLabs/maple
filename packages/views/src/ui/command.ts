@@ -3,17 +3,22 @@ import * as A from "./autocomplete.styles"
 import {
 	commandEmptyStyles,
 	commandFooterStyles,
+	commandHintGroupStyles,
+	commandHintStyles,
 	commandInputStyles,
 	commandInputWrapperStyles,
 	commandItemStyles,
 	commandListStyles,
 	commandShortcutStyles,
 } from "./command.styles"
-import { Array, Effect, Queue, Stream } from "effect"
+import { Array, Effect, Queue, Stream, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { autocompleteField } from "./autocomplete"
+import { kbd } from "./display"
+import { kbdGroupStyles } from "./kbd.styles"
+import { trackCommandMotion } from "./command-motion"
 import { filterItems, itemId, listId, Message, type Model } from "./combobox"
 import { hiddenInput } from "./combobox-view"
 import { applyScrollOverflow, scrollArea, trackScrollbar } from "./scroll-area"
@@ -117,9 +122,13 @@ const commandItem = <M>(
 		...(item.shortcut === undefined
 			? []
 			: [
-					h.kbd(
-						[h.Class(commandShortcutStyles), h.DataAttribute("slot", "command-shortcut")],
-						[item.shortcut],
+					// "G O" is a sequence: one key per stroke.
+					h.span(
+						[
+							h.Class(cn(kbdGroupStyles, commandShortcutStyles)),
+							h.DataAttribute("slot", "command-shortcut"),
+						],
+						Array.map(Str.split(item.shortcut, " "), (key) => kbd(h, undefined, [key])),
 					),
 				]),
 	]
@@ -157,7 +166,11 @@ export const MeasureCommandList = Mount.defineStream("MeasureCommandList", {
 			Effect.acquireRelease(
 				Effect.sync(() => {
 					if (!(element instanceof HTMLElement)) return undefined
-					const measure = () => applyScrollOverflow(element)
+					// While the list eases to a new height its overflow is in flux; measure once it lands.
+					let resizing = false
+					const measure = () => {
+						if (!resizing) applyScrollOverflow(element)
+					}
 					// Base UI keeps focus in the input while an option is pressed.
 					const keepFocus = (event: Event) => {
 						if (
@@ -173,8 +186,12 @@ export const MeasureCommandList = Mount.defineStream("MeasureCommandList", {
 					element.addEventListener("scroll", measure, { passive: true })
 					measure()
 					const untrack = trackScrollbar(element)
+					const untrackMotion = trackCommandMotion(element, (value) => {
+						resizing = value
+						measure()
+					})
 					Queue.offerUnsafe(queue, MeasureMessage.CompletedMeasureCommandList())
-					return { observer, measure, keepFocus, untrack }
+					return { observer, measure, keepFocus, untrack, untrackMotion }
 				}),
 				(handles) =>
 					Effect.sync(() => {
@@ -183,6 +200,7 @@ export const MeasureCommandList = Mount.defineStream("MeasureCommandList", {
 						element.removeEventListener("scroll", handles.measure)
 						element.removeEventListener("mousedown", handles.keepFocus)
 						handles.untrack()
+						handles.untrackMotion()
 					}),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
@@ -306,6 +324,28 @@ export const commandFooter = <M>(
 		[h.Class(cn("relative", commandFooterStyles, className)), h.DataAttribute("slot", "command-footer")],
 		children,
 	)
+
+/** `CommandHint`: a footer hint, its keys as keycaps then what they do (`↑ ↓` navigate). */
+export const commandHint = <M>(h: HtmlBuilder<M>, keys: ReadonlyArray<string>, label: string): Html =>
+	h.span(
+		[h.Class(commandHintStyles), h.DataAttribute("slot", "command-hint")],
+		[
+			h.span(
+				[h.Class(kbdGroupStyles)],
+				Array.map(keys, (key) => kbd(h, undefined, [key])),
+			),
+			label,
+		],
+	)
+
+/** The palette footer's hints: navigate and open on the left, close on the right. */
+export const commandHints = <M>(h: HtmlBuilder<M>): ReadonlyArray<Html> => [
+	h.span(
+		[h.Class(commandHintGroupStyles)],
+		[commandHint(h, ["↑", "↓"], "navigate"), commandHint(h, ["↵"], "open")],
+	),
+	commandHint(h, ["Esc"], "close"),
+]
 
 /** The autocomplete's hidden input, last in the popup. */
 export const commandHiddenInput = hiddenInput

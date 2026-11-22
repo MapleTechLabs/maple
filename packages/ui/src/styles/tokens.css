@@ -249,6 +249,11 @@
 	--border-raised: color-mix(in oklab, var(--border) 60%, transparent);
 	/* The shade under a raised control or card: faint on white, deeper on a dark surface. */
 	--raised-shade: oklch(0 0 0 / 5%);
+	/* A keycap (`kbd`): its face, and its layers: a hairline ring, a lit top edge, a darker
+	   bottom lip and a 1px drop, so it reads as a key standing on any surface. */
+	--key: oklch(1 0 0);
+	--key-shade:
+		0 0 0 1px oklch(0 0 0 / 9%), inset 0 -1px 0 oklch(0 0 0 / 7%), 0 1px 1px oklch(0 0 0 / 7%);
 }
 
 @media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
@@ -401,6 +406,10 @@
 	--scrim-panel: oklch(0 0 0 / 24%);
 	--border-raised: oklch(1 0 0 / 10%);
 	--raised-shade: oklch(0 0 0 / 35%);
+	--key: color-mix(in oklab, var(--foreground) 10%, var(--popover));
+	--key-shade:
+		0 0 0 1px oklch(1 0 0 / 6%), inset 0 1px 0 oklch(1 0 0 / 10%), inset 0 -1px 0 oklch(0 0 0 / 30%),
+		0 1px 1px oklch(0 0 0 / 45%);
 }
 
 @theme inline {
@@ -523,6 +532,8 @@
 	--shadow-backdrop-below: 0 1rem 0 var(--action-bar-backdrop, var(--color-background));
 	/* A sticky table header's bottom rule: a collapsed table's row border scrolls away under it. */
 	--shadow-rule-bottom: inset 0 -1px 0 var(--color-border);
+	--shadow-key: var(--key-shade);
+	--color-key: var(--key);
 	/* A filled button's top-edge light at rest, and its pressed-in shade. */
 	--inset-shadow-highlight: 0 1px oklch(1 0 0 / 16%);
 	--inset-shadow-pressed: 0 1px oklch(0 0 0 / 8%);
@@ -579,6 +590,8 @@
 	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
 	--color-surface-strong: color-mix(in oklab, var(--muted) 90%, transparent);
+	/* The highlighted option on a tinted popup (the command palette), where `accent` matches the tint. */
+	--color-surface-highlight: color-mix(in oklab, var(--foreground) 8%, transparent);
 	/* An inset well on a card (a code block, an input tray, an expanded row's body). */
 	--color-surface-well: color-mix(in oklab, var(--background) 60%, transparent);
 	/* A label or chip floating over a chart, map or media, under `backdrop-blur-sm`. */

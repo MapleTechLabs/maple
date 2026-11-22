@@ -6,13 +6,13 @@ import {
 	commandEmpty,
 	commandFooter,
 	commandHiddenInput,
+	commandHints,
 	commandInput,
 	commandList,
 	MeasureCommandList,
 } from "@maple/views/ui/command"
 import type * as Dialog from "@maple/views/ui/dialog"
 import { view as dialogView } from "@maple/views/ui/dialog-view"
-import { kbd } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
 import { serviceDot } from "@maple/views/ui/values"
@@ -20,8 +20,7 @@ import type { NavAudience } from "../nav"
 import { type Glyph, groupEntries, type PaletteEntry } from "./entries"
 import { Message, type Model } from "./model"
 import { type Context, shownEntries } from "./update"
-import { typographyClass } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 /**
@@ -39,7 +38,7 @@ export type ViewInputs = Readonly<{
 	audience: NavAudience
 }>
 
-const GLYPH_CLASS = "shrink-0 text-muted-foreground"
+const GLYPH_CLASS = "shrink-0 text-muted-foreground in-data-highlighted:text-foreground"
 
 const glyph = <M>(h: HtmlBuilder<M>, value: Glyph): Html => {
 	switch (value._tag) {
@@ -63,12 +62,6 @@ const groupsOf = <M>(h: HtmlBuilder<M>, entries: ReadonlyArray<PaletteEntry>): R
 			href: entry.target._tag === "Href" ? entry.target.href : undefined,
 		})),
 	}))
-
-const hint = <M>(h: HtmlBuilder<M>, key: string, text: string): Html =>
-	hstack(h, { gap: "1.5", as: "span", className: typographyClass({ tone: "muted" }) }, [
-		kbd(h, "text-muted-foreground", [key]),
-		text,
-	])
 
 /** `CommandEmpty`: `No results for “{query}”`, the query its own text run. */
 const empty = <M>(h: HtmlBuilder<M>, query: string): Html =>
@@ -124,7 +117,7 @@ export const paletteView = <M>(
 						}),
 					],
 				),
-				commandFooter(h, [hint(h, "↵", " to open"), hint(h, "Esc", " to close")]),
+				commandFooter(h, commandHints(h)),
 				commandHiddenInput(h, model.list),
 			],
 		},
