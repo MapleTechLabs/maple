@@ -1,4 +1,17 @@
-import { all, click, expect, expectAll, given, Mount, role, scene, text, type } from "foldkit/scene"
+import {
+	all,
+	click,
+	expect,
+	expectAll,
+	first,
+	given,
+	last,
+	Mount,
+	role,
+	scene,
+	text,
+	type,
+} from "foldkit/scene"
 import { describe, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -83,6 +96,21 @@ describe("kit overlays gallery", () => {
 			expectAll(all.role("option")).toHaveCount(1),
 			expect(role("option", { name: "Create dashboard" })).toHaveAttr("data-highlighted", ""),
 			expect(role("group", { name: "Pages" })).toBeAbsent(),
+		)
+	})
+
+	test("the command palette draws a key per shortcut stroke and hints navigate, open and close", () => {
+		scene(
+			config,
+			given(init({ item: "command" }).model),
+			...toastPortals(),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			Mount.resolve(MeasureCommandList, Message.CompletedMeasureCommandList()),
+			// "G O", "G T", "G L": two keys each.
+			expectAll(all.selector('[data-slot="command-shortcut"] [data-slot="kbd"]')).toHaveCount(6),
+			expectAll(all.selector('[data-slot="command-hint"]')).toHaveCount(3),
+			expect(first(all.selector('[data-slot="command-hint"]'))).toHaveText("↑↓navigate"),
+			expect(last(all.selector('[data-slot="command-hint"]'))).toHaveText("Escclose"),
 		)
 	})
 })
