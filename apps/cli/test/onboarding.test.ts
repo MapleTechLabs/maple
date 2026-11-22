@@ -344,12 +344,17 @@ describe("verify retries", () => {
 				})
 
 				const dropped = yield* searchFailure("refuse")
-				return { refused, outage, dropped }
+				// Statuses the contract does not declare reach the client as an HttpClientError.
+				const gateway = yield* searchFailure({ status: 502, body: { message: "bad gateway" } })
+				const malformed = yield* searchFailure({ status: 418, body: { message: "teapot" } })
+				return { refused, outage, dropped, gateway, malformed }
 			}),
 		)
 		assert.equal(isTransientSearchFailure(failures.refused), false)
 		assert.equal(isTransientSearchFailure(failures.outage), true)
 		assert.equal(isTransientSearchFailure(failures.dropped), true)
+		assert.equal(isTransientSearchFailure(failures.gateway), true)
+		assert.equal(isTransientSearchFailure(failures.malformed), false)
 	})
 })
 
