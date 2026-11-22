@@ -1502,6 +1502,20 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
+	// Person and group properties: one user's, and a batch of accounts'.
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "user",
+		compile: () => CH.compileUnsafe(CH.personPropertiesQuery({ kind: "user", ids: ["user_a"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "groups",
+		compile: () =>
+			CH.compileUnsafe(CH.personPropertiesQuery({ kind: "group", ids: ["acme", "globex"] }), window),
+	},
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
 	// empty state (packages/backend/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.

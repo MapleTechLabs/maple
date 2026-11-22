@@ -39,6 +39,12 @@ const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	Datasources.serviceRuntimesHourly._name,
 	// Backfilled by hand in day-sized chunks instead: a replay of 30 days of traces and logs is a CPU burst.
 	Datasources.userActivityHourly._name,
+	// No history to replay: property operations are new, and a replay would scan 30 days of traces
+	// for `person_properties_traces_mv`. Browser traits refill on each user's next session.
+	Datasources.personProperties._name,
+	// `identity_links_events_mv` starts empty rather than risk a rebuild of the links from
+	// `session_replays`' 30 days.
+	Datasources.identityLinks._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>

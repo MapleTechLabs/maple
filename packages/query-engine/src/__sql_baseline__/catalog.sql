@@ -4168,6 +4168,54 @@ SELECT
         LIMIT 1000
         FORMAT JSON
 
+-- builder:person-properties:personPropertiesQuery:groups  [c68acf32]
+SELECT
+          person_properties.Id AS id,
+          person_properties.Key AS key,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value,
+          max(person_properties.LastSeen) AS lastSeen
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'group'
+          AND person_properties.Id IN ('acme', 'globex')
+        GROUP BY id, key
+        HAVING multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ) IS NOT NULL
+        ORDER BY id ASC, key ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:person-properties:personPropertiesQuery:user  [4a77904f]
+SELECT
+          person_properties.Id AS id,
+          person_properties.Key AS key,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value,
+          max(person_properties.LastSeen) AS lastSeen
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+          AND person_properties.Id IN ('user_a')
+        GROUP BY id, key
+        HAVING multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ) IS NOT NULL
+        ORDER BY id ASC, key ASC
+        LIMIT 5000
+        FORMAT JSON
+
 -- builder:pr-review:operationTrafficHourlyQuery:allServices  [e60e4684]
 SELECT
           service_operations_hourly.ServiceName AS serviceName,

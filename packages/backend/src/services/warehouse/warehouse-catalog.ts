@@ -139,6 +139,12 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
 	product_events: [
 		"Event properties live in `Attributes` (Map(String, String)), read with `Attributes['plan']`. There is no `Properties` column.",
+		"Keys starting `$set.`, `$set_once.`, `$unset.` (and `$group_` of each) are person and group property writes, not event properties: read the result from `person_properties`.",
+	],
+	person_properties: [
+		"User (`Kind = 'user'`, `Id` = UserId) and group (`Kind = 'group'`, `Id` = GroupId) properties, from `identify()` traits and property writes on events and spans. One logical row per (`Kind`, `Id`, `Key`) spread over unmerged parts: always GROUP BY `Kind, Id, Key`.",
+		"A key's current value: `multiIf(max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue), min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue), NULL)`; NULL means unset. `SetValue` / `OnceValue` are aggregate states: never `SELECT *`.",
+		"Join it to `product_events` on `UserId = Id` (or `GroupId = Id` for groups), pinning `Kind` and `Key` first: sorting key `(OrgId, Kind, Key, Id)`. Values are current, not as of the event.",
 	],
 	metrics_histogram: [
 		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
@@ -238,6 +244,10 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 	["exceptions", ["error_events"]],
 	["sessions", ["session_replays"]],
 	["events", ["product_events"]],
+	["persons", ["person_properties"]],
+	["person", ["person_properties"]],
+	["people", ["person_properties"]],
+	["groups", ["person_properties"]],
 ])
 
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
