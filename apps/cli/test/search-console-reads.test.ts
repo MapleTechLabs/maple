@@ -12,7 +12,7 @@ import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type:
 import { Chdb } from "@maple/local-server/chdb"
 import { OrgId } from "@maple/domain"
 import { SEARCH_TYPE_WEB, SEARCH_TYPE_WEB_COMPLETE } from "@maple/domain/search-console"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 import { describeWithChdb } from "./libchdb-test-support"
 
 const ORG = "org_search"
@@ -68,8 +68,14 @@ describeWithChdb("Search Console reads on chDB", () => {
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "maple-search-console-"))
 		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		// The warehouse table replaces a key by its newest IngestedAt (`ver`); the local one keeps
+		// the last insert. Rebuild it the warehouse's way, then insert newest first, so a merge
+		// that kept insert order would fail these expectations.
+		const local = db.query("SHOW CREATE TABLE search_console_daily FORMAT TSVRaw")
+		db.exec("DROP TABLE search_console_daily")
+		db.exec(Str.replace("ENGINE = ReplacingMergeTree", "ENGINE = ReplacingMergeTree(IngestedAt)")(local))
 		db.exec(
-			`INSERT INTO search_console_daily (OrgId, SiteUrl, Grain, SearchType, Date, Page, Query, Country, Device, Clicks, Impressions, PositionSum, IngestedAt) VALUES ${Arr.join(Arr.map(SEEDS, row), ", ")}`,
+			`INSERT INTO search_console_daily (OrgId, SiteUrl, Grain, SearchType, Date, Page, Query, Country, Device, Clicks, Impressions, PositionSum, IngestedAt) VALUES ${Arr.join(Arr.map(Arr.reverse(SEEDS), row), ", ")}`,
 		)
 	})
 
@@ -126,6 +132,9 @@ describeWithChdb("Search Console reads on chDB", () => {
 	}
 
 	test("counts each day's newest complete import before a merge", () => {
+		expect(db.query("SHOW CREATE TABLE search_console_daily FORMAT TSVRaw")).toContain(
+			"ReplacingMergeTree(IngestedAt)",
+		)
 		expectations()
 		expect(topQueries("partial")).toEqual([
 			["a", 9],

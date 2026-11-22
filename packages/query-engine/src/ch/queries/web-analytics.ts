@@ -8,7 +8,7 @@
 // use `uniq[If](SessionId)`. Page views come from append-only navigation events.
 // WHERE clauses use only columns written identically to both session versions.
 
-import type { DateTime } from "effect"
+import { Array as Arr, String as Str, type DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param, from, inSubquery, unionAll, compileFnCall } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor, CHQuery, ColumnDefs, CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -774,7 +774,7 @@ export function webAnalyticsEntryPagesQuery(
 				? undefined
 				: CH.inList(
 						compileFnCall<string>("replaceRegexpAll", $.EntryPath, "/{2,}", "/"),
-						opts.entryPaths,
+						Arr.map(opts.entryPaths, Str.replace(/\/{2,}/g, "/")),
 					),
 		])
 		.groupBy("host", "entryPath")
