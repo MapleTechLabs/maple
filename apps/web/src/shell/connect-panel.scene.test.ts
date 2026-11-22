@@ -118,7 +118,11 @@ describe("connect panel scene", () => {
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
-				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_0123456789abcdef", handoff }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_0123456789abcdef",
+					handoff,
+					clipboard: "not_attempted",
+				}),
 			),
 			Command.expectHas(CopyButton.WriteClipboard({ text: prompt, generation: 1 })),
 			Command.resolve(
@@ -163,6 +167,7 @@ describe("connect panel scene", () => {
 				AgentHandoff.Message.SucceededMint({
 					publicKey: "maple_pk_0123456789abcdef",
 					handoff: labHandoff(),
+					clipboard: "not_attempted",
 				}),
 			),
 			Command.expectHas(

@@ -185,7 +185,11 @@ const agentStep = (model: Model, message: AgentHandoff.Message): Return => {
 	const connect = model.quickStart.connect
 	const handled =
 		message._tag === "ClickedCopyPrompt"
-			? AgentHandoff.Message.SucceededMint({ publicKey: message.publicKey, handoff: labHandoff() })
+			? AgentHandoff.Message.SucceededMint({
+					publicKey: message.publicKey,
+					handoff: labHandoff(),
+					clipboard: "not_attempted",
+				})
 			: message
 	const next = AgentHandoff.update(connect.agent, handled)
 	const copy =

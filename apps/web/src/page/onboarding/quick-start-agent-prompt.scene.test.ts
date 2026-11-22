@@ -88,7 +88,11 @@ describe("use my coding agent", () => {
 			Command.expectExact(AgentHandoff.MintHandoff({ publicKey: "maple_pk_test" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff,
-				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_test",
+					handoff: HANDOFF,
+					clipboard: "not_attempted",
+				}),
 			),
 			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT_WITH_CODE, generation: 1 })),
 			copyTracked(true),
@@ -113,7 +117,7 @@ describe("use my coding agent", () => {
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff,
-				AgentHandoff.Message.FailedMint({ publicKey: "maple_pk_test" }),
+				AgentHandoff.Message.FailedMint({ publicKey: "maple_pk_test", clipboard: "not_attempted" }),
 			),
 			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT, generation: 1 })),
 			copyTracked(false),
@@ -131,7 +135,11 @@ describe("use my coding agent", () => {
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff,
-				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_test",
+					handoff: HANDOFF,
+					clipboard: "not_attempted",
+				}),
 			),
 			copyTracked(true),
 			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.FailedCopy({ generation: 1 })),
@@ -140,6 +148,53 @@ describe("use my coding agent", () => {
 				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
 			),
 			expectView(role("textbox", { name: "Setup prompt" })).not.toExist(),
+			click(role("button", { name: "Show prompt" })),
+			expectView(role("textbox", { name: "Setup prompt" })).toHaveValue(PROMPT_WITH_CODE),
+		)
+	})
+
+	test("a copy the click already wrote (Safari's path) shows as copied with no second write", () => {
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_test",
+					handoff: HANDOFF,
+					clipboard: "written",
+				}),
+			),
+			copyTracked(true),
+			expectView(role("button", { name: "Copy prompt" })).toHaveAttr("data-copy-status", "copied"),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
+		)
+	})
+
+	test("a write the browser refused in the click offers the prompt to copy by hand", () => {
+		scene(
+			{ update, view },
+			given(atConnect()),
+			indicatorMeasured(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff,
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_test",
+					handoff: HANDOFF,
+					clipboard: "refused",
+				}),
+			),
+			copyTracked(true),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
 			click(role("button", { name: "Show prompt" })),
 			expectView(role("textbox", { name: "Setup prompt" })).toHaveValue(PROMPT_WITH_CODE),
 		)
@@ -154,7 +209,11 @@ describe("use my coding agent", () => {
 			click(role("button", { name: "Copy prompt" })),
 			Command.resolve(
 				AgentHandoff.MintHandoff,
-				AgentHandoff.Message.SucceededMint({ publicKey: "maple_pk_test", handoff: HANDOFF }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_test",
+					handoff: HANDOFF,
+					clipboard: "not_attempted",
+				}),
 			),
 			Command.expectHas(CopyButton.WriteClipboard({ text: PROMPT_WITH_CODE, generation: 1 })),
 			copyTracked(true),
