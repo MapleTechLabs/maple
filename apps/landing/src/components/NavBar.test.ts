@@ -90,6 +90,10 @@ describe("NavBar island", () => {
 		expect(open).toBeInstanceOf(HTMLButtonElement)
 		open?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 		await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+		const overview = [...document.querySelectorAll('[role="dialog"] a')].find((a) =>
+			a.textContent?.startsWith("Explore all features"),
+		)
+		expect(overview?.getAttribute("href")).toBe("/features")
 		const pricing = [...document.querySelectorAll('[role="dialog"] a')].find(
 			(a) => a.textContent === "Pricing",
 		)

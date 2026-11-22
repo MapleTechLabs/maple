@@ -229,7 +229,9 @@ const previews = all.map(({ feature }) => {
 	// Beside the list a row swaps the preview in place; the hash keeps the choice shareable.
 	for (const tab of tabs)
 		tab.addEventListener("click", (event) => {
-			if (!wide.matches) return;
+			// A modified click keeps the browser's own action: a new tab or window on the feature.
+			const modified = event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+			if (!wide.matches || modified) return;
 			event.preventDefault();
 			const slug = tab.dataset.fxTab ?? "";
 			if (show(slug)) history.replaceState(null, "", `#${slug}`);

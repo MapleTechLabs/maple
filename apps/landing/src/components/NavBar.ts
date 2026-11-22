@@ -718,6 +718,14 @@ const sheetContent = (h: H, model: Model, isSignedIn: boolean): ReadonlyArray<Ht
 							sheetGroup(h, m.nav_also_in_maple(), moreLinks(model.locale)),
 						],
 					),
+					h.a(
+						[
+							h.Href(featuresIndexPath(model.locale)),
+							h.OnClick(Message.ClickedSheetLink()),
+							h.Class("mt-5 inline-flex py-1.5 text-xs font-medium text-primary"),
+						],
+						[m.nav_product_footer_cta()],
+					),
 				],
 			),
 			h.div(
