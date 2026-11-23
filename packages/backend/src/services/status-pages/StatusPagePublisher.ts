@@ -124,7 +124,8 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				const nowMs = yield* Clock.currentTimeMillis
 				if (current.visibility === "internal") {
 					yield* Effect.annotateCurrentSpan({ "maple.status_page.visibility": "internal" })
-					yield* unpublish(pageId, statusPageAddress(current.orgId, current.slug)).pipe(
+					const address = yield* statusPageAddress(current.orgId, current.slug)
+					yield* unpublish(pageId, address).pipe(
 						Effect.catch((error) => recordFailure(pageId, nowMs, error)),
 					)
 					// A lost race leaves the revision ahead, so the next sweep takes the page off again.
@@ -157,7 +158,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 				// An active custom domain routes here too; the snapshot carries it, so its hash covers it.
 				const customDomain = snapshot.page.customDomain
 				const routes = {
-					address: statusPageAddress(current.orgId, snapshot.page.slug),
+					address: yield* statusPageAddress(current.orgId, snapshot.page.slug),
 					hostnames: customDomain === null ? [] : [customDomain],
 				}
 				if (written) {
@@ -301,7 +302,7 @@ export class StatusPagePublisher extends Context.Service<StatusPagePublisher, St
 									.limit(1),
 							),
 						)
-						const address = statusPageAddress(row.orgId, slug)
+						const address = yield* statusPageAddress(row.orgId, slug)
 						const routedTo = yield* store.readSlugRoute(address)
 						const slugIsOurs =
 							owners.length === 0 && (routedTo === null || routedTo === row.pageId)

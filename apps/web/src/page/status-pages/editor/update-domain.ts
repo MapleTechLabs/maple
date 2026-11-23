@@ -43,8 +43,11 @@ export const activeCustomDomain = (model: Model): string | null =>
 		onSome: (domain) => (domain.status === "active" ? domain.hostname : null),
 	})
 
-/** Where visitors read the page: its active custom domain, else its Maple address; null with neither. */
-export const pageUrlOf = (model: Model, page: Pick<V2StatusPage, "slug">): string | null =>
+/**
+ * Where visitors read the page: its active custom domain, else its Maple address; null with neither,
+ * none while the org key of the Maple address is still being derived.
+ */
+export const pageUrlOf = (model: Model, page: Pick<V2StatusPage, "slug">): Option.Option<string | null> =>
 	canonicalUrl(model.publicBaseUrl, model.orgKey, page.slug, activeCustomDomain(model))
 
 /** The hostname field: the draft, else the saved domain. */

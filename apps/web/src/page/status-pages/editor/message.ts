@@ -50,6 +50,7 @@ const PickedFile = Schema.declare((input: unknown): input is File => input insta
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	ComputedOrgKey: { orgKey: Schema.String },
 	CompletedFetchPage: { key: Schema.String, result: LoadOutcome(V2StatusPage) },
 	CompletedFetchComponents: {
 		key: Schema.String,

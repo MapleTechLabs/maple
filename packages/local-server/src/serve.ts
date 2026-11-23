@@ -426,10 +426,7 @@ function decodeProfiles(
 				Result.mapError(checkOtlpProfilesJson(body), (message) => new OtlpDecodeFailed({ message })),
 			),
 		)
-	return Result.try({
-		try: (): unknown => decodeProfilesRequest(bytes),
-		catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
-	})
+	return Result.mapError(decodeProfilesRequest(bytes), ({ message }) => new OtlpDecodeFailed({ message }))
 }
 
 /** Decode an OTLP request body (protobuf by default, JSON when content-type
@@ -450,19 +447,10 @@ function decodeOtlp(
 				Result.mapError(checkOtlpJson(signal, body), (message) => new OtlpDecodeFailed({ message })),
 			),
 		)
-	return Result.try({
-		try: (): unknown => {
-			switch (signal) {
-				case "traces":
-					return decodeTraceRequest(decodedBytes)
-				case "logs":
-					return decodeLogsRequest(decodedBytes)
-				case "metrics":
-					return decodeMetricsRequest(decodedBytes)
-			}
-		},
-		catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
-	})
+	const decode = { traces: decodeTraceRequest, logs: decodeLogsRequest, metrics: decodeMetricsRequest }[
+		signal
+	]
+	return Result.mapError(decode(decodedBytes), ({ message }) => new OtlpDecodeFailed({ message }))
 }
 
 function encodeFor(signal: Signal, req: unknown): EncodedBatch[] {

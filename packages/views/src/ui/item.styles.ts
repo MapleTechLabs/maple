@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const itemVariants = cva(
+export const itemVariants = variants(
 	"[a]:hover:bg-surface-sunken [a]:active:bg-surface-sunken rounded-xl border text-xs w-full group/item focus-visible:border-ring focus-visible:ring-ring/24 flex items-center flex-wrap outline-none duration-100 focus-visible:ring-[3px] [a]:transition-colors",
 	{
 		variants: {
@@ -28,7 +28,7 @@ export const itemVariants = cva(
 	},
 )
 
-export const itemMediaVariants = cva(
+export const itemMediaVariants = variants(
 	"gap-2 group-has-[[data-slot=item-description]]/item:translate-y-0.5 group-has-[[data-slot=item-description]]/item:self-start flex shrink-0 items-center justify-center [&_svg]:pointer-events-none",
 	{
 		variants: {

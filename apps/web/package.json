@@ -50,7 +50,6 @@
 		"d3-scale": "^4.0.3",
 		"effect": "catalog:effect",
 		"foldkit": "0.171.0",
-		"fuse.js": "7.5.0",
 		"three": "^0.187.0",
 		"uqr": "^0.1.3"
 	},

@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { assert, describe, expect, it, vi } from "vitest"
 import { tokenFallback } from "@maple/ui/lib/colors"
 import start from "../../foldkit-island/client"

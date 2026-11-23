@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { buttonLoadingIndicatorStyles, buttonVariants } from "./button.styles"
 import { spinnerStyles } from "./spinner.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { LoaderIcon } from "./control-icons"
 import { iconNode } from "./icon-node"
