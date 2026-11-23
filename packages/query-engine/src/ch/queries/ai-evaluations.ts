@@ -36,20 +36,27 @@ export interface AiEvaluationsSummaryOpts {
 
 /** One row per evaluator in the window: volume, verdicts, mean score, failures of the evaluator itself. */
 export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
-	return from(Datasources.aiEvaluations)
-		.select(($) => ({
-			name: $.Name,
-			...measures($),
-			traceCount: CH.uniq($.TraceId),
-			sources: CH.groupUniqArray($.Source),
-			annotatorKinds: CH.groupUniqArrayIf(8)($.AnnotatorKind, $.AnnotatorKind.neq("")),
-			lastSeen: CH.toString_(CH.max_($.Timestamp)),
-		}))
-		.where(($) => [...windowConds($), opts.name === undefined ? undefined : $.Name.eq(opts.name)])
-		.groupBy("name")
-		.orderBy(["scoreCount", "desc"], ["name", "asc"])
-		.limit(opts.limit ?? 200)
-		.format("JSON")
+	return (
+		from(Datasources.aiEvaluations)
+			.select(($) => ({
+				name: $.Name,
+				...measures($),
+				traceCount: CH.uniq($.TraceId),
+				sources: CH.groupUniqArray($.Source),
+				annotatorKinds: CH.groupUniqArrayIf(8)($.AnnotatorKind, $.AnnotatorKind.neq("")),
+				lastSeen: CH.toString_(CH.max_($.Timestamp)),
+			}))
+			// A score with no `gen_ai.evaluation.name` belongs to no evaluator.
+			.where(($) => [
+				...windowConds($),
+				$.Name.neq(""),
+				opts.name === undefined ? undefined : $.Name.eq(opts.name),
+			])
+			.groupBy("name")
+			.orderBy(["scoreCount", "desc"], ["name", "asc"])
+			.limit(opts.limit ?? 200)
+			.format("JSON")
+	)
 }
 
 /** One evaluator's measures per time bucket (`bucketSeconds` param), oldest first. */
@@ -84,25 +91,24 @@ export function aiEvaluationBreakdownQuery() {
 export interface AiEvaluationScoresOpts {
 	/** Only this evaluator. */
 	readonly name?: string
-	/** Only scores grading these traces (a session's traces). */
+	/** Only scores grading these traces (a session's traces); must not be empty. */
 	readonly traceIds?: ReadonlyArray<string>
-	/** Also session-scope scores naming this session; only with `traceIds`. */
+	/** Only session-scope scores naming this session. */
 	readonly sessionId?: string
 	readonly verdict?: "pass" | "fail"
 	readonly limit?: number
 }
 
 /**
- * Individual scores, failing first then newest. With `traceIds` it is a session's scores: every
- * score grading one of its traces, plus session-scope scores naming the session. `traceIds` must
- * not be empty.
+ * Individual scores, newest first. A session's scores are two reads, by its traces and by its
+ * session id: one `OR` of both would scan every row the org has in the window.
  */
 export function aiEvaluationScoresQuery(opts: AiEvaluationScoresOpts = {}) {
 	const traceIds = opts.traceIds
+	const sessionId = opts.sessionId
 	return from(Datasources.aiEvaluations)
 		.select(($) => ({
 			timestamp: CH.toString_($.Timestamp),
-			failing: CH.if_($.Verdict.eq("fail"), CH.lit(1), CH.lit(0)),
 			name: $.Name,
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -124,15 +130,10 @@ export function aiEvaluationScoresQuery(opts: AiEvaluationScoresOpts = {}) {
 			...windowConds($),
 			opts.name === undefined ? undefined : $.Name.eq(opts.name),
 			opts.verdict === undefined ? undefined : $.Verdict.eq(opts.verdict),
-			traceIds === undefined
-				? undefined
-				: opts.sessionId === undefined
-					? CH.inList($.TraceId, traceIds)
-					: CH.inList($.TraceId, traceIds).or(
-							$.Scope.eq("session").and($.SessionId.eq(opts.sessionId)),
-						),
+			traceIds === undefined ? undefined : CH.inList($.TraceId, traceIds),
+			sessionId === undefined ? undefined : $.Scope.eq("session").and($.SessionId.eq(sessionId)),
 		])
-		.orderBy(["failing", "desc"], ["timestamp", "desc"])
+		.orderBy(["timestamp", "desc"])
 		.limit(opts.limit ?? 200)
 		.format("JSON")
 }

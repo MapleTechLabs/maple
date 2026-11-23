@@ -280,12 +280,11 @@ describeWithChdb("ai_evaluations reads", () => {
 		])
 	})
 
-	test("lists a session's scores by its traces, failing first", () => {
+	test("lists the scores grading a session's traces, newest first", () => {
 		const rows = run(
 			Compile.compileUnsafe(
 				CH.aiEvaluationScoresQuery({
 					traceIds: [TRACE, "22222222222222222222222222222222"],
-					sessionId: "s1",
 				}),
 				params,
 			),
@@ -296,7 +295,8 @@ describeWithChdb("ai_evaluations reads", () => {
 				explanation: Schema.String,
 			}),
 		)
-		expect(rows[0]).toEqual({
+		// Every seed shares one instant, so only membership is defined here.
+		expect(rows).toContainEqual({
 			name: "Task completion",
 			verdict: "fail",
 			traceId: "22222222222222222222222222222222",

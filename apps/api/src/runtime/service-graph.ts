@@ -314,7 +314,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	UsersReadService.layer,
 	McpReadService.layer,
 	AiSessionReadService.layer,
-	AiEvaluationReadService.layer,
+	AiEvaluationReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,

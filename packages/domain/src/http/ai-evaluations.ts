@@ -26,6 +26,9 @@ export class LlmEvalsDisabledError extends HttpTaggedError<LlmEvalsDisabledError
 	},
 ) {}
 
+/** Buckets one evaluator series holds at most; a finer `bucketSeconds` is widened to fit. */
+export const AI_EVALUATION_SERIES_MAX_BUCKETS = 1_000
+
 /** Traces one session-scores read accepts: a session page's loaded traces. */
 export const AI_EVALUATION_SESSION_MAX_TRACES = 500
 

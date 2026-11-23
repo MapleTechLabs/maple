@@ -1,5 +1,4 @@
 import { Effect, Schema, Array as Arr } from "effect"
-import { parseWarehouseDateTime } from "@maple/query-engine"
 import { GetAiEvaluatorRequest, ListAiEvaluatorsRequest } from "@maple/domain/http"
 import type { AiEvaluationMeasures, AiEvaluationScore } from "@maple/domain/http"
 import { GetEvaluationScoresOutput, ListEvaluationsOutput } from "@maple/domain/mcp-outputs"
@@ -36,12 +35,6 @@ const meanScore = (m: AiEvaluationMeasures): string =>
 
 const scoreText = (score: AiEvaluationScore): string =>
 	score.value !== undefined ? String(score.value) : score.label || "-"
-
-/** A whole number of seconds that splits the window into about 48 buckets. */
-const bucketSecondsFor = (st: string, et: string): number => {
-	const spanSeconds = Math.max(60, (parseWarehouseDateTime(et) - parseWarehouseDateTime(st)) / 1000)
-	return Math.max(60, Math.round(spanSeconds / 48 / 60) * 60)
-}
 
 export function registerListEvaluationsTool(server: McpToolRegistrar) {
 	server.define({
@@ -130,7 +123,9 @@ export function registerGetEvaluationScoresTool(server: McpToolRegistrar) {
 		description:
 			"One LLM evaluator's scores (name as `list_evaluations` lists it): its pass rate and mean score, the split by emitting service and environment, and its most recent individual scores, failing first, each with the explanation, the graded trace and span, and the Agent Session that trace belongs to. Pass `verdict: fail` to read only failures. Open a session with `get_agent_session`.",
 		parameters: Schema.Struct({
-			name: P.text("The evaluator's name (`gen_ai.evaluation.name`)"),
+			name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)).annotate({
+				description: "The evaluator's name (`gen_ai.evaluation.name`)",
+			}),
 			verdict: P.optionalOneOf(["pass", "fail"], "Only scores with this verdict"),
 			...WINDOW.fields,
 		}),
@@ -148,9 +143,11 @@ export function registerGetEvaluationScoresTool(server: McpToolRegistrar) {
 						startTime: st,
 						endTime: et,
 						name: params.name,
-						bucketSeconds: bucketSecondsFor(st, et),
+						// No series is read (`series: false`); the request still names a bucket.
+						bucketSeconds: 3600,
 						...(params.verdict === undefined ? undefined : { verdict: params.verdict }),
 					}),
+					{ series: false },
 				)
 				.pipe(
 					Effect.catchTags({
