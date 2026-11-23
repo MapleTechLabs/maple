@@ -7,6 +7,7 @@ import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
 import { AnalystAccess } from "./analyst-access"
 import { AuditedRead } from "./audit-log"
+import { EVALUATION_NAME_MAX } from "../gen-ai-evaluation"
 
 // LLM evaluation reads over `ai_evaluations`: the Evals tab under Agent
 // sessions, a session's scores, and the evaluation MCP tools. Internal tier, gated by the
@@ -84,7 +85,7 @@ const EvaluationWindow = {
 	endTime: TinybirdDateTime,
 }
 
-const EvaluatorName = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
+const EvaluatorName = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(EVALUATION_NAME_MAX))
 
 export class ListAiEvaluatorsRequest extends Schema.Class<ListAiEvaluatorsRequest>("ListAiEvaluatorsRequest")(
 	{

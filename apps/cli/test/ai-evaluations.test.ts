@@ -235,6 +235,13 @@ describeWithChdb("ai_evaluations reads", () => {
 			{ "gen_ai.evaluation.score.label": "fail", "error.type": "timeout" },
 			"33333333333333333333333333333333",
 		)
+		// Offline session scores naming session-9: one emitted on a trace of another session, one on no trace.
+		const named = {
+			"maple_ai.evaluation.scope": "session",
+			"maple_ai.evaluation.session.id": "session-9",
+		}
+		score("Session quality", named)
+		score("Session quality", named, "")
 	})
 
 	afterAll(() => {
@@ -277,6 +284,17 @@ describeWithChdb("ai_evaluations reads", () => {
 				errorCount: 0,
 				traceCount: 1,
 			},
+			// The score on no trace counts no trace.
+			{
+				name: "Session quality",
+				scoreCount: 2,
+				passCount: 0,
+				failCount: 0,
+				valueCount: 0,
+				avgValue: 0,
+				errorCount: 0,
+				traceCount: 1,
+			},
 		])
 	})
 
@@ -285,6 +303,7 @@ describeWithChdb("ai_evaluations reads", () => {
 			Compile.compileUnsafe(
 				CH.aiEvaluationScoresQuery({
 					traceIds: [TRACE, "22222222222222222222222222222222"],
+					excludeNamedSessions: true,
 				}),
 				params,
 			),
@@ -302,6 +321,17 @@ describeWithChdb("ai_evaluations reads", () => {
 			traceId: "22222222222222222222222222222222",
 			explanation: "gave up",
 		})
+		// The session-9 score on TRACE is not this session's: the session-id read owns it.
 		expect(rows.length).toBe(4)
+		expect(Arr.some(rows, (row) => row.name === "Session quality")).toBe(false)
+	})
+
+	test("lists the session-scope scores naming a session, with or without a trace", () => {
+		const rows = run(
+			Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ sessionId: "session-9" }), params),
+			Schema.Struct({ name: Schema.String, traceId: Schema.String }),
+		)
+		expect(rows).toHaveLength(2)
+		expect(new Set(Arr.map(rows, (row) => row.traceId))).toEqual(new Set([TRACE, ""]))
 	})
 })

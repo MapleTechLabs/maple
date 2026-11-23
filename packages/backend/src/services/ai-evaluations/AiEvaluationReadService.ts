@@ -50,8 +50,6 @@ type ScoreRow = Readonly<{
 const sessionOf = (row: ScoreRow, byTrace: Readonly<Record<string, string>>): string | undefined =>
 	row.scope === "session" && row.sessionId !== "" ? row.sessionId : byTrace[row.traceId]
 
-const scoreKey = (row: ScoreRow): string => `${row.timestamp}|${row.traceId}|${row.spanId}|${row.name}`
-
 const newestFirst = Order.mapInput(Order.flip(Order.String), (row: ScoreRow) => row.timestamp)
 
 /** A series bucket no finer than the window allows, so the newest buckets are never cut off. */
@@ -234,7 +232,10 @@ const make = Effect.gen(function* () {
 						{
 							name: payload.name,
 							limit: EVALUATOR_SCORES_LIMIT,
-							...(payload.verdict === undefined ? undefined : { verdict: payload.verdict }),
+							// Disjoint from the failures read, so no score is merged away or shown twice.
+							...(payload.verdict === undefined
+								? { excludeVerdict: "fail" }
+								: { verdict: payload.verdict }),
 						},
 						"aiEvaluationScores",
 					)
@@ -270,11 +271,7 @@ const make = Effect.gen(function* () {
 				Effect.succeed({ summary: [], series: [], breakdown: [], failures: [], recent: [] }),
 			),
 		)
-		const failureKeys = new Set(Arr.map(found.failures, scoreKey))
-		const scoreRows = [
-			...found.failures,
-			...Arr.filter(found.recent, (row) => !failureKeys.has(scoreKey(row))),
-		]
+		const scoreRows = [...found.failures, ...found.recent]
 		const sessions = yield* sessionsOf(tenant, scoreRows, payload)
 		return new GetAiEvaluatorResponse({
 			...Option.match(Arr.head(found.summary), {
@@ -296,13 +293,14 @@ const make = Effect.gen(function* () {
 		payload: GetAiSessionEvaluationsRequest,
 	) {
 		yield* requireEnabled(tenant)
-		// Two reads: by trace id (the bloom index finds them) and session-scope scores by session id.
+		// Two disjoint reads: by trace id (the bloom index finds them), and session-scope scores that
+		// name a session by session id. A score naming another session is not this session's.
 		const halves = yield* Effect.all(
 			[
 				scores(
 					tenant,
 					payload,
-					{ traceIds: payload.traceIds, limit: SESSION_SCORES_LIMIT },
+					{ traceIds: payload.traceIds, excludeNamedSessions: true, limit: SESSION_SCORES_LIMIT },
 					"aiSessionEvaluations",
 				),
 				scores(
@@ -314,10 +312,7 @@ const make = Effect.gen(function* () {
 			],
 			{ concurrency: "unbounded" },
 		).pipe(Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed([[], []] as const)))
-		const rows = Arr.sort(
-			Arr.dedupeWith([...halves[0], ...halves[1]], (a, b) => scoreKey(a) === scoreKey(b)),
-			newestFirst,
-		)
+		const rows = Arr.sort([...halves[0], ...halves[1]], newestFirst)
 		yield* Effect.annotateCurrentSpan({ "maple.ai.session_scores": rows.length })
 		return new GetAiSessionEvaluationsResponse({
 			scores: Arr.map(rows, (row) => toScore(row, payload.sessionId)),
