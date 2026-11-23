@@ -112,6 +112,18 @@ const USER_ACTIVITY_DAILY_BACKFILL = [
 	"INSERT INTO user_activity_daily (OrgId, ServiceNamespace, UserId, Day, ServiceName, RequestCount, FailedRequestCount, ErrorSpanCount, LogCount, ErrorLogCount, SessionIds) SELECT OrgId, ServiceNamespace, UserId, toStartOfDay(Hour) AS Day, ServiceName, sum(RequestCount) AS RequestCount, sum(FailedRequestCount) AS FailedRequestCount, sum(ErrorSpanCount) AS ErrorSpanCount, sum(LogCount) AS LogCount, sum(ErrorLogCount) AS ErrorLogCount, uniqIfMergeState(SessionIds) AS SessionIds FROM user_activity_hourly GROUP BY OrgId, ServiceNamespace, UserId, Day, ServiceName",
 ] as const
 
+/**
+ * Fills person_properties from every source the views read, and links visitors to users from the
+ * retained server, mobile and trace events. Both targets merge duplicates away, so a resumed step
+ * converges without emptying them first.
+ */
+const PERSON_PROPERTIES_BACKFILL = [
+	"INSERT INTO person_properties (OrgId, Kind, Id, Key, SetAt, SetValue, OnceAt, OnceValue, UnsetAt, LastSeen) SELECT OrgId, if(startsWith(OpKey, '$group_'), 'group', 'user') AS Kind, if(startsWith(OpKey, '$group_'), GroupId, UserId) AS Id, substring(OpKey, position(OpKey, '.') + 1) AS Key, maxIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set') AS SetAt, argMaxIfState(Attributes[OpKey], Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set') AS SetValue, if(countIf(replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once') = 0, toDateTime64('2199-12-31 23:59:59', 9, 'UTC'), minIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once')) AS OnceAt, argMinIfState(Attributes[OpKey], Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once') AS OnceValue, maxIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'unset') AS UnsetAt, max(Timestamp) AS LastSeen FROM product_events ARRAY JOIN arrayFilter(k -> (startsWith(k, '$set.') OR startsWith(k, '$set_once.') OR startsWith(k, '$unset.') OR startsWith(k, '$group_set.') OR startsWith(k, '$group_set_once.') OR startsWith(k, '$group_unset.')), mapKeys(Attributes)) AS OpKey WHERE product_events.Kind != 'navigation' AND Source != 'trace' AND if(startsWith(OpKey, '$group_'), GroupId, UserId) != '' AND substring(OpKey, position(OpKey, '.') + 1) != '' GROUP BY OrgId, if(startsWith(OpKey, '$group_'), 'group', 'user'), if(startsWith(OpKey, '$group_'), GroupId, UserId), substring(OpKey, position(OpKey, '.') + 1)",
+	"INSERT INTO person_properties (OrgId, Kind, Id, Key, SetAt, SetValue, OnceAt, OnceValue, UnsetAt, LastSeen) SELECT OrgId, if(startsWith(OpKey, '$group_'), 'group', 'user') AS Kind, if(startsWith(OpKey, '$group_'), SpanAttributes['maple.product_event.group_id'], SpanAttributes['maple.product_event.user_id']) AS Id, substring(OpKey, position(OpKey, '.') + 1) AS Key, maxIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set') AS SetAt, argMaxIfState(SpanAttributes[concat('maple.product_event.', substring(OpKey, 2))], Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set') AS SetValue, if(countIf(replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once') = 0, toDateTime64('2199-12-31 23:59:59', 9, 'UTC'), minIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once')) AS OnceAt, argMinIfState(SpanAttributes[concat('maple.product_event.', substring(OpKey, 2))], Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'set_once') AS OnceValue, maxIf(Timestamp, replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = 'unset') AS UnsetAt, max(Timestamp) AS LastSeen FROM traces ARRAY JOIN arrayMap( k -> concat('$', substring(k, 21)), arrayFilter(k -> (startsWith(k, 'maple.product_event.set.') OR startsWith(k, 'maple.product_event.set_once.') OR startsWith(k, 'maple.product_event.unset.') OR startsWith(k, 'maple.product_event.group_set.') OR startsWith(k, 'maple.product_event.group_set_once.') OR startsWith(k, 'maple.product_event.group_unset.')), mapKeys(SpanAttributes)) ) AS OpKey WHERE SpanAttributes['maple.product_event.name'] != '' AND if(startsWith(OpKey, '$group_'), SpanAttributes['maple.product_event.group_id'], SpanAttributes['maple.product_event.user_id']) != '' AND substring(OpKey, position(OpKey, '.') + 1) != '' GROUP BY OrgId, if(startsWith(OpKey, '$group_'), 'group', 'user'), if(startsWith(OpKey, '$group_'), SpanAttributes['maple.product_event.group_id'], SpanAttributes['maple.product_event.user_id']), substring(OpKey, position(OpKey, '.') + 1)",
+	"INSERT INTO person_properties (OrgId, Kind, Id, Key, SetAt, SetValue, OnceAt, OnceValue, UnsetAt, LastSeen) SELECT OrgId, Trait.1 AS Kind, if(Trait.1 = 'group', GroupId, UserId) AS Id, Trait.2 AS Key, max(StartTime) AS SetAt, argMaxIfState(Trait.3, StartTime, toUInt8(1)) AS SetValue, toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AS OnceAt, argMinIfState('', StartTime, toUInt8(0)) AS OnceValue, toDateTime64(0, 9, 'UTC') AS UnsetAt, max(ifNull(EndTime, StartTime)) AS LastSeen FROM session_replays ARRAY JOIN arrayConcat( arrayMap((k, v) -> ('user', k, v), mapKeys(UserTraits), mapValues(UserTraits)), [('group', 'name', GroupName)] ) AS Trait WHERE if(Trait.1 = 'group', GroupId, UserId) != '' AND Trait.2 != '' AND (Trait.1 = 'user' OR Trait.3 != '') GROUP BY OrgId, Trait.1, if(Trait.1 = 'group', GroupId, UserId), Trait.2",
+	"INSERT INTO identity_links (OrgId, VisitorId, UserId, FirstSeen) SELECT OrgId, VisitorId, UserId, min(Timestamp) AS FirstSeen FROM product_events WHERE Source != 'browser' AND VisitorId != '' AND UserId != '' GROUP BY OrgId, VisitorId, UserId",
+] as const
+
 /** Rebuilds the AWS series rollup from every retained aws.* point; the truncate makes a resumed step converge. */
 const AWS_METRICS_HOURLY_BACKFILL = [
 	"TRUNCATE TABLE IF EXISTS aws_metrics_hourly",
@@ -2140,6 +2152,32 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 					"Rebuilt from every hour user_activity_hourly retains, then filled forward by its view.",
 				preservationInterval: "source retention horizon",
 				sourceRetentionDays: 90,
+				targetRetentionDays: 365,
+			},
+		],
+	},
+	{
+		slug: "person-properties",
+		description:
+			"Create person_properties and its views, and link visitors to users from server, mobile and trace events",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		afterBootstrap: [backfill(...PERSON_PROPERTIES_BACKFILL)],
+		plan: [
+			[
+				"create-person-properties",
+				"Create person_properties, its three views and identity_links_events_mv via the v63 bootstrap, then backfill them from the retained product events, spans and sessions",
+			],
+		],
+		dispositions: [
+			{
+				name: "person_properties",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from the property operations and traits product_events, traces and session_replays retain, then filled forward by its views.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 30,
 				targetRetentionDays: 365,
 			},
 		],

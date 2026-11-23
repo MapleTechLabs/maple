@@ -21,6 +21,7 @@ import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { type DateTime, Result, Schema } from "effect"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import type { AttributeFilter } from "@maple/domain/query-engine"
 import { orgIdParam } from "../tables"
 import { RETENTION_MAX_PERIODS } from "@maple/query-model"
 import { CHNumber } from "../schema"
@@ -32,6 +33,7 @@ import {
 	identityLinksByVisitor,
 	matchingPersonsSubquery,
 	personKey,
+	personPropertyConditions,
 	type FunnelKeyBy,
 	type FunnelStep,
 	type OpenJoinAccessor,
@@ -62,6 +64,9 @@ export interface ProductEventsRetentionOpts {
 	readonly firstEver: boolean
 	/** Narrow the population to keys with a matching session, as a funnel does. */
 	readonly filters?: ProductEventsFilters
+	/** User and account property filters, as a funnel takes them (`personPropertyConditions`). */
+	readonly userPropertyFilters?: ReadonlyArray<AttributeFilter>
+	readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter>
 }
 
 export const productEventsRetentionRowSchema = Schema.Struct({
@@ -169,6 +174,7 @@ export function productEventsRetentionQuery(
 				hasPopulationFilter(filters)
 					? inSubquery(keyOf($), matchingPersonsSubquery(keyBy, filters))
 					: undefined,
+				...personPropertyConditions(keyBy, keyOf($), opts),
 			]
 		})
 

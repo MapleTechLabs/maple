@@ -534,11 +534,9 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 							failureCount: sum.failureCount + batch.failureCount,
 						})),
 					),
-					Effect.flatMap((batch) =>
-						Effect.map(
-							runtime.now,
-							(time) => batch.claimedCount === DRAIN_LIMIT && time < deadline,
-						),
+					Effect.zipWith(
+						runtime.now,
+						(batch, time) => batch.claimedCount === DRAIN_LIMIT && time < deadline,
 					),
 					Effect.repeat({ while: (more) => more }),
 				)

@@ -47,6 +47,8 @@ import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import { replaysWhere, needsSessionSemiJoin, type ProductEventsFilters } from "./web-analytics"
 import * as T from "@maple-dev/effect-orm/clickhouse"
+import type { AttributeFilter } from "@maple/domain/query-engine"
+import { propertyFilterCondition, propertyValuesById, type PersonPropertyKind } from "./person-properties"
 
 export type { ProductEventsFilters } from "./web-analytics"
 // The page-step matcher, for a reference that has to agree with `eventStepCondition`.
@@ -173,14 +175,93 @@ export interface ProductEventsFunnelOpts {
 	readonly windowSeconds: number
 	/** Sidebar filters — narrow the *population* to persons with a matching session. */
 	readonly filters?: ProductEventsFilters
+	/** User and account property filters: see {@link personPropertyConditions}. */
+	readonly userPropertyFilters?: ReadonlyArray<AttributeFilter>
+	readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter>
 }
 
 /**
  * How a breakdown groups persons: an acquisition dimension of the person's
- * sessions, the event `Host`, or `Attributes[<key>]` on the person's events.
- * In every case the group is the first non-empty value seen for that person.
+ * sessions, the event `Host`, `Attributes[<key>]` on the person's events, or the
+ * current value of a property of the event's user (`user:<key>`) or account
+ * (`group:<key>`). In every case the group is the first non-empty value seen for
+ * that person.
  */
-export type FunnelBreakdownBy = FunnelSessionDimension | `attribute:${string}`
+export type FunnelBreakdownBy =
+	| FunnelSessionDimension
+	| `attribute:${string}`
+	| `user:${string}`
+	| `group:${string}`
+
+/** A breakdown read off the event rows rather than a joined session. */
+const isEventDimension = (dim: FunnelBreakdownBy): boolean =>
+	Str.startsWith("attribute:")(dim) ||
+	Str.startsWith("user:")(dim) ||
+	Str.startsWith("group:")(dim) ||
+	dim === "host"
+
+/** The property kind and key of a `user:` / `group:` breakdown. */
+function propertyBreakdown(
+	dim: FunnelBreakdownBy | undefined,
+): { readonly kind: PersonPropertyKind; readonly key: string } | undefined {
+	if (dim === undefined) return undefined
+	if (Str.startsWith("user:")(dim)) return { kind: "user", key: Str.slice("user:".length)(dim) }
+	if (Str.startsWith("group:")(dim)) return { kind: "group", key: Str.slice("group:".length)(dim) }
+	return undefined
+}
+
+const PROPERTY_BREAKDOWN_ALIAS = "bp"
+
+/**
+ * A key-based read's user and account property filters. A user filter matches the key itself when
+ * it is a person or a user (so an identified person's anonymous events count with them), else each
+ * row's own user; an account filter matches the key when it is the group, else each row's group.
+ */
+export function personPropertyConditions(
+	keyBy: FunnelKeyBy,
+	key: CH.Expr<string>,
+	filters: {
+		readonly userPropertyFilters?: ReadonlyArray<AttributeFilter> | undefined
+		readonly groupPropertyFilters?: ReadonlyArray<AttributeFilter> | undefined
+	},
+): Array<CH.Condition> {
+	const condition = (kind: PersonPropertyKind, filter: AttributeFilter): CH.Condition => {
+		// The key is the property's own id: match it directly.
+		if (kind === "user" ? keyBy === "person" || keyBy === "user" : keyBy === "group")
+			return propertyFilterCondition(key, kind, filter)
+		// Otherwise a key belongs when any of its events in the window names a matching user or
+		// account, so its anonymous and group-less rows stay with it.
+		const negated = filter.or === undefined && filter.negated === true
+		const members = inSubquery(
+			key,
+			keysWithProperty(keyBy, kind, negated ? { ...filter, negated: false } : filter),
+		)
+		return negated ? CH.not(members) : members
+	}
+	return [
+		...Arr.map(filters.userPropertyFilters ?? [], (filter) => condition("user", filter)),
+		...Arr.map(filters.groupPropertyFilters ?? [], (filter) => condition("group", filter)),
+	]
+}
+
+/** The keys with an event in the window whose user or account matches `filter`. */
+function keysWithProperty(keyBy: FunnelKeyBy, kind: PersonPropertyKind, filter: AttributeFilter) {
+	let base: OpenJoinQuery<typeof Datasources.productEvents.columns> = from(Datasources.productEvents, "e")
+	if (keyBy === "person") {
+		base = base.leftJoinQuery(identityLinksByVisitor(), LINK_ALIAS, (e, link) =>
+			e.VisitorId.eq(link.VisitorId),
+		)
+	}
+	return base
+		.select(($) => ({ key: personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined) }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			propertyFilterCondition(kind === "user" ? $.UserId : $.GroupId, kind, filter),
+		])
+		.groupBy("key")
+}
 
 export interface ProductEventsFunnelBreakdownOpts extends ProductEventsFunnelOpts {
 	readonly breakdownBy: FunnelBreakdownBy
@@ -597,9 +678,8 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 	// `host` is a session dimension too, but product_events carries it on every
 	// browser row, so it is read there rather than joined in.
 	const sessionDimension =
-		dim !== undefined && !Str.startsWith("attribute:")(dim) && dim !== "host"
-			? (dim as FunnelSessionDimension)
-			: undefined
+		dim !== undefined && !isEventDimension(dim) ? (dim as FunnelSessionDimension) : undefined
+	const property = propertyBreakdown(dim)
 
 	// Per-session acquisition dimension for a session-dimension breakdown.
 	// `max()` so the v2 row's value beats a v1 row's ''.
@@ -629,11 +709,30 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 	if (sessionDims) {
 		base = base.leftJoinQuery(sessionDims, "sd", (e, sd) => e.SessionId.eq(sd.SessionId))
 	}
+	if (property !== undefined) {
+		// A person's anonymous rows carry no user id: for `person` they reach the user through the link.
+		base = base.leftJoinQuery(
+			propertyValuesById(property.kind, property.key),
+			PROPERTY_BREAKDOWN_ALIAS,
+			(e, p) =>
+				property.kind === "group"
+					? e.GroupId.eq(p.Id)
+					: keyBy === "person"
+						? CH.rawCond(
+								`if(e.UserId != '', e.UserId, ${LINK_ALIAS}.UserId) = ${PROPERTY_BREAKDOWN_ALIAS}.Id`,
+							)
+						: e.UserId.eq(p.Id),
+		)
+	}
 
 	const dimExpr = (
 		$: OpenJoinAccessor<typeof Datasources.productEvents.columns>,
 	): CH.Expr<string> | undefined => {
 		if (dim === undefined) return undefined
+		if (property !== undefined) {
+			const value = $[PROPERTY_BREAKDOWN_ALIAS]?.value
+			return value === undefined ? CH.lit("") : compileFnCall<string>("coalesce", value, CH.lit(""))
+		}
 		if (Str.startsWith("attribute:")(dim)) return $.Attributes.get(Str.slice("attribute:".length)(dim))
 		if (dim === "host") return $.Host
 		// The session-dimension join is attached only for a session breakdown.
@@ -683,6 +782,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }
@@ -697,8 +797,11 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 	const { opts, filters, breakdownBy } = plan
 	const keyBy = opts.keyBy
 	const dim = breakdownBy
+	// `host` is on the session row too; only an event property or a user or account property is not.
 	const sessionDimension =
-		dim !== undefined && !Str.startsWith("attribute:")(dim) ? (dim as FunnelSessionDimension) : undefined
+		dim !== undefined && (dim === "host" || !isEventDimension(dim))
+			? (dim as FunnelSessionDimension)
+			: undefined
 
 	let base: OpenJoinQuery<typeof Datasources.sessionReplays.columns> = from(Datasources.sessionReplays, "s")
 	if (keyBy === "person") {
@@ -734,6 +837,7 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }
@@ -1268,6 +1372,7 @@ function personEventsBranch(plan: FunnelPlan) {
 				hasPopulationFilter(filters)
 					? inSubquery(key, matchingPersonsSubquery(keyBy, filters))
 					: undefined,
+				...personPropertyConditions(keyBy, key, opts),
 			]
 		})
 }

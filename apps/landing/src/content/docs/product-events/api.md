@@ -25,21 +25,49 @@ EU organizations use `https://ingest.eu.maple.dev`. The body is **NDJSON**: one 
 
 ## Fields
 
-| Field          | Type   | Notes                                                                                                                                                                                                                                               |
-| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`         | string | **Required.** 1–128 bytes. Names starting with `$` are reserved for Maple's SDKs and dropped, except `$screen` (mobile screen view, stored as `Kind = screen`).                                                                                     |
-| `timestamp`    | string | RFC 3339 (`2026-08-17T10:15:30.123Z`) or `YYYY-MM-DD HH:MM:SS[.fff]` (UTC). Defaults to the time the gateway received the batch. Stored as UTC. Must be within the last 30 days and no more than 1 day ahead; rows outside that window are dropped. |
-| `source`       | string | `server` (default) or `mobile`. `browser` is reserved for the SDKs; other values drop the row.                                                                                                                                                      |
-| `visitor_id`   | string | Anonymous or device id: the browser SDK cookie value, or a persistent mobile install id. ≤ 256 bytes.                                                                                                                                               |
-| `user_id`      | string | Your user id after sign-in, matching what you pass to `identify()`. ≤ 256 bytes.                                                                                                                                                                    |
-| `group_id`     | string | Account / workspace / org id. ≤ 256 bytes.                                                                                                                                                                                                          |
-| `session_id`   | string | Optional link to a browser or mobile session. ≤ 256 bytes.                                                                                                                                                                                          |
-| `service_name` | string | The emitting service (`maple-api`, `acme-ios`). ≤ 128 bytes.                                                                                                                                                                                        |
-| `url`          | string | Optional. `host` (lowercase) and `page_path` (pathname only) are derived from it. ≤ 2048 bytes.                                                                                                                                                     |
-| `page_path`    | string | Optional explicit path; overrides the one derived from `url`. Mobile `$screen` events put the screen name here. ≤ 1024 bytes.                                                                                                                       |
-| `attributes`   | object | Optional properties. ≤ 32 keys, key ≤ 64 bytes, value ≤ 1024 bytes; non-string values are stringified.                                                                                                                                              |
+| Field                                            | Type   | Notes                                                                                                                                                                                                                                               |
+| ------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                           | string | **Required.** 1–128 bytes. Names starting with `$` are reserved for Maple's SDKs and dropped, except `$screen` (mobile screen view, stored as `Kind = screen`), `$identify` and `$groupidentify` (see below).                                       |
+| `timestamp`                                      | string | RFC 3339 (`2026-08-17T10:15:30.123Z`) or `YYYY-MM-DD HH:MM:SS[.fff]` (UTC). Defaults to the time the gateway received the batch. Stored as UTC. Must be within the last 30 days and no more than 1 day ahead; rows outside that window are dropped. |
+| `source`                                         | string | `server` (default) or `mobile`. `browser` is reserved for the SDKs; other values drop the row.                                                                                                                                                      |
+| `visitor_id`                                     | string | Anonymous or device id: the browser SDK cookie value, or a persistent mobile install id. ≤ 256 bytes.                                                                                                                                               |
+| `user_id`                                        | string | Your user id after sign-in, matching what you pass to `identify()`. ≤ 256 bytes.                                                                                                                                                                    |
+| `group_id`                                       | string | Account / workspace / org id. ≤ 256 bytes.                                                                                                                                                                                                          |
+| `session_id`                                     | string | Optional link to a browser or mobile session. ≤ 256 bytes.                                                                                                                                                                                          |
+| `service_name`                                   | string | The emitting service (`maple-api`, `acme-ios`). ≤ 128 bytes.                                                                                                                                                                                        |
+| `url`                                            | string | Optional. `host` (lowercase) and `page_path` (pathname only) are derived from it. ≤ 2048 bytes.                                                                                                                                                     |
+| `page_path`                                      | string | Optional explicit path; overrides the one derived from `url`. Mobile `$screen` events put the screen name here. ≤ 1024 bytes.                                                                                                                       |
+| `attributes`                                     | object | Optional properties. ≤ 32 keys, key ≤ 64 bytes, value ≤ 1024 bytes; non-string values are stringified.                                                                                                                                              |
+| `set`, `set_once`, `group_set`, `group_set_once` | object | Optional user and account properties to write. See below.                                                                                                                                                                                           |
+| `unset`, `group_unset`                           | array  | Optional names of user and account properties to remove.                                                                                                                                                                                            |
 
 Over-long fields are truncated at the caps above, except `name`: a name over 128 bytes drops the row. Unknown fields are discarded.
+
+## User and account properties
+
+Any event can also write properties on its user (`user_id`) and account (`group_id`). They are kept per user and per account, a year past their last write, and charts, funnels, retention, cohorts and paths can filter and break down by them.
+
+```json
+{"name":"$identify","user_id":"user_123","visitor_id":"install-8f3…","set":{"plan":"pro","role":"admin"},"set_once":{"first_plan":"free"}}
+{"name":"$groupidentify","group_id":"org_456","group_set":{"seats":12,"industry":"fintech"}}
+{"name":"plan_started","user_id":"user_123","group_id":"org_456","set":{"plan":"startup"},"unset":["trial_ends"]}
+```
+
+| Field            | Applies to | Effect                                          |
+| ---------------- | ---------- | ----------------------------------------------- |
+| `set`            | `user_id`  | Sets each property; a later `set` replaces it.  |
+| `set_once`       | `user_id`  | Sets each property only if it has no value yet. |
+| `unset`          | `user_id`  | Removes each named property.                    |
+| `group_set`      | `group_id` | As `set`, on the account.                       |
+| `group_set_once` | `group_id` | As `set_once`, on the account.                  |
+| `group_unset`    | `group_id` | As `unset`, on the account.                     |
+
+- "Later" is the event's `timestamp`, not the order rows arrive in.
+- A property is read at its current value: filtering by `plan = pro` applies a user's plan today to their earlier events too.
+- Up to 64 operations per event, names ≤ 64 bytes, values ≤ 1024 bytes; non-string values are stringified and `null` values skipped. An operation without the id it applies to is ignored.
+- `$identify` and `$groupidentify` are ordinary events that exist to carry these fields.
+- Any event with both `visitor_id` and `user_id` links the device to the user, so a funnel counted by person joins what the device did before sign-in with what the user did after.
+- `attributes` keys starting `$set.`, `$set_once.`, `$unset.` or `$group_` are reserved and dropped.
 
 ## Responses
 

@@ -156,62 +156,60 @@ const createClickHouseSqlClient = (
 		Effect.mapError(
 			(error) => new WarehouseDriverError({ reason: "config", message: error.message, cause: error }),
 		),
-		Effect.flatMap((client) =>
-			Effect.map(Ref.make(false), (profileIsReadOnly): WarehouseSqlClient => ({
-				// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
-				// executor has already stripped any FORMAT clause and the client appends
-				// its own.
-				// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
-				// default still applies: it bounds the buffer a single unfinished row can
-				// take and is far above anything a Maple query returns.
-				sql: (statement, options) => {
-					const run = (settings?: Readonly<Record<string, number>>) =>
-						client.query({
-							sql: statement.text,
-							...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
-							...(settings === undefined ? undefined : { settings }),
-						})
-					const limits = options?.readOnly?.settings
-					const query =
-						limits === undefined
-							? run()
-							: Effect.flatMap(Ref.get(profileIsReadOnly), (known) =>
-									known
-										? run(limits)
-										: run({ ...limits, readonly: 1 }).pipe(
-												Effect.catchIf(refusesReadOnlyChange, (error) =>
-													Effect.flatMap(profileForbidsWrites(client), (forbids) =>
-														forbids
-															? Effect.andThen(
-																	Ref.set(profileIsReadOnly, true),
-																	run(limits),
-																)
-															: Effect.fail(error),
-													),
+		Effect.zipWith(Ref.make(false), (client, profileIsReadOnly): WarehouseSqlClient => ({
+			// `wireFormat: "out-of-band"` for every ClickHouse-protocol backend: the
+			// executor has already stripped any FORMAT clause and the client appends
+			// its own.
+			// Trusted queries pass no limits, so the client's 16 MiB `maxRowBytes`
+			// default still applies: it bounds the buffer a single unfinished row can
+			// take and is far above anything a Maple query returns.
+			sql: (statement, options) => {
+				const run = (settings?: Readonly<Record<string, number>>) =>
+					client.query({
+						sql: statement.text,
+						...(options?.responseLimits ? { limits: options.responseLimits } : undefined),
+						...(settings === undefined ? undefined : { settings }),
+					})
+				const limits = options?.readOnly?.settings
+				const query =
+					limits === undefined
+						? run()
+						: Effect.flatMap(Ref.get(profileIsReadOnly), (known) =>
+								known
+									? run(limits)
+									: run({ ...limits, readonly: 1 }).pipe(
+											Effect.catchIf(refusesReadOnlyChange, (error) =>
+												Effect.flatMap(profileForbidsWrites(client), (forbids) =>
+													forbids
+														? Effect.andThen(
+																Ref.set(profileIsReadOnly, true),
+																run(limits),
+															)
+														: Effect.fail(error),
 												),
 											),
-								)
-					return query.pipe(
-						Effect.mapBoth({
-							onSuccess: ({ data }) => ({ data }),
-							onFailure: clickHouseDriverError,
-						}),
-					)
-				},
-				insert: () =>
-					// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
-					// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
-					// supported. Got: InsertQuery"), and a BYO org override is a read concern.
-					// All ingest goes to Tinybird's Events API (the `ingest` route in
-					// `resolveRoute`), so this must never be reached: fail loudly instead of silently 500'ing.
-					Effect.fail(
-						new WarehouseDriverError({
-							reason: "config",
-							message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
-						}),
-					),
-			})),
-		),
+										),
+							)
+				return query.pipe(
+					Effect.mapBoth({
+						onSuccess: ({ data }) => ({ data }),
+						onFailure: clickHouseDriverError,
+					}),
+				)
+			},
+			insert: () =>
+				// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
+				// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
+				// supported. Got: InsertQuery"), and a BYO org override is a read concern.
+				// All ingest goes to Tinybird's Events API (the `ingest` route in
+				// `resolveRoute`), so this must never be reached: fail loudly instead of silently 500'ing.
+				Effect.fail(
+					new WarehouseDriverError({
+						reason: "config",
+						message: "ClickHouse is read-only for Maple — ingest must use Tinybird",
+					}),
+				),
+		})),
 	)
 
 // Tinybird's `/v0/sql` speaks plain HTTP: POST the SQL as text with a bearer

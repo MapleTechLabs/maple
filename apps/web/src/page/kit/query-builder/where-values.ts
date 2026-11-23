@@ -2,10 +2,11 @@ import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 import type { WhereClauseAutocompleteValues } from "./where-clause-autocomplete"
 import type { Keyed } from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import { type AutocompleteLookup, lookupField, type LookupNames } from "../autocomplete-lookups"
 import type { QueryDraft } from "./draft"
+import { KEY_PATTERN } from "./condition-fields"
 import { metricValueOf } from "./metric-options"
 import type { MetricKeys } from "./metrics-body"
 
@@ -94,6 +95,14 @@ export const whereValuesOf = (
 			return {
 				eventNames: field("productEventNames", "keys"),
 				attributeKeys: field("productEventAttributeKeys", "keys"),
+				// Only keys the where-clause grammar can name: a key with a space would parse away.
+				propertyKeys: Arr.filter(
+					[
+						...Arr.map(field("productUserPropertyKeys", "keys"), (key) => `person.${key}`),
+						...Arr.map(field("productGroupPropertyKeys", "keys"), (key) => `account.${key}`),
+					],
+					(key) => KEY_PATTERN.test(key),
+				),
 			}
 	}
 }

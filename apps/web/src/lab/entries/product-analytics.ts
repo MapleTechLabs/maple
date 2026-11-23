@@ -28,6 +28,7 @@ const Scenario = Schema.Literals([
 	"funnels",
 	"funnels-bars",
 	"funnels-breakdown",
+	"funnels-by-plan",
 	"funnels-filter",
 	"funnels-new",
 	"funnels-error",
@@ -129,10 +130,32 @@ const FUNNEL_BY_SOURCE: ReadonlyArray<FunnelGroupRow> = Arr.flatMap(GROUPS, ([gr
 	Arr.map(FUNNEL, (row, index) => ({ name: row.name, value: counts[index] ?? 0, group })),
 )
 
+/** The same funnel split by the users' current `plan` property. */
+const FUNNEL_BY_PLAN: ReadonlyArray<FunnelGroupRow> = Arr.flatMap(
+	[
+		["free", [702, 401, 118, 4]],
+		["pro", [318, 241, 214, 52]],
+		["team", [96, 81, 70, 18]],
+		["(none)", [90, 19, 5, 0]],
+	] as const,
+	([group, counts]) =>
+		Arr.map(FUNNEL, (row, index) => ({ name: row.name, value: counts[index] ?? 0, group })),
+)
+
 const ATTRIBUTE_KEYS: ReadonlyArray<AttributeKeyRow> = [
 	{ attributeKey: "plan", usageCount: 742 },
 	{ attributeKey: "method", usageCount: 742 },
 	{ attributeKey: "source", usageCount: 388 },
+]
+
+const USER_PROPERTY_KEYS: ReadonlyArray<AttributeKeyRow> = [
+	{ attributeKey: "plan", usageCount: 1204 },
+	{ attributeKey: "role", usageCount: 1190 },
+]
+
+const GROUP_PROPERTY_KEYS: ReadonlyArray<AttributeKeyRow> = [
+	{ attributeKey: "tier", usageCount: 318 },
+	{ attributeKey: "industry", usageCount: 140 },
 ]
 
 const PATHS: ReadonlyArray<PathsRow> = [
@@ -227,6 +250,8 @@ const searchOf = (scenario: Scenario): Search => {
 			}
 		case "funnels-breakdown":
 			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, breakdown: "utmSource" }
+		case "funnels-by-plan":
+			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, breakdown: "user:plan" }
 		case "funnels-new":
 			return { tab: "funnels" }
 		case "paths":
@@ -258,8 +283,10 @@ const init = (flags: typeof Flags.Type) => {
 					}
 				: loaded(FUNNEL),
 		previousFunnel: loaded(PREVIOUS_FUNNEL),
-		funnelBreakdown: loaded(FUNNEL_BY_SOURCE),
+		funnelBreakdown: loaded(scenario === "funnels-by-plan" ? FUNNEL_BY_PLAN : FUNNEL_BY_SOURCE),
 		attributeKeys: loaded(ATTRIBUTE_KEYS),
+		userPropertyKeys: loaded(USER_PROPERTY_KEYS),
+		groupPropertyKeys: loaded(GROUP_PROPERTY_KEYS),
 		pages: loaded(
 			Arr.map(BREAKDOWNS.entryPaths, (row) => ({ pagePath: row.name, pageViews: row.count })),
 		),

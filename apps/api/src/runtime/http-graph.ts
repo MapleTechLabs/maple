@@ -98,6 +98,7 @@ import { HttpV2SlosLive } from "@/routes/v2/slos.http"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "@/routes/v2/status-pages.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
+import { HttpV2OnboardingAgentRunLive } from "@/routes/v2/onboarding-agent-run.http"
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
@@ -253,6 +254,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2InstrumentationRecommendationsLive,
 			HttpV2InstrumentationAuditLive,
 			HttpV2OnboardingChecklistLive,
+			HttpV2OnboardingAgentRunLive,
 			HttpV2SupportChannelLive,
 			HttpV2TelemetrySignalsLive,
 			HttpV2SharePublicLive,

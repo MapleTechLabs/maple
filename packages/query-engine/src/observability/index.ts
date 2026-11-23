@@ -88,6 +88,8 @@ export {
 	type ProductEventsRetentionOutput,
 	productEventAttributeKeys,
 	productEventAttributeValues,
+	personPropertyKeys,
+	personPropertyValues,
 	productEventNames,
 	type ProductEventsFunnelInput,
 	type ProductEventsFunnelBreakdownInput,

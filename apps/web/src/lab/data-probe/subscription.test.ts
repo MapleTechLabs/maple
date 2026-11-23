@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
-import { Effect, Equal, Fiber, Queue, Schema, Stream } from "effect"
+import { Effect, Fiber, Queue, Schema, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import { init, Message, ruleCounts, subscriptions, update } from "./index"
@@ -67,13 +67,16 @@ const subscribe = (stream: Stream.Stream<Message>) =>
 
 const next = (received: Queue.Queue<Message>) => Queue.take(received).pipe(Effect.timeout("1 second"))
 
-/** The next message that differs from `last`: a live query may repeat its current rows before a change lands. */
-const nextChange = (received: Queue.Queue<Message>, last: Message): Effect.Effect<Message, unknown> =>
-	next(received).pipe(
-		Effect.filterOrElse(
-			(message) => !Equal.equals(message, last),
-			() => nextChange(received, last),
-		),
+/**
+ * The first message `isWanted` accepts, within a second. A live query may re-emit the current rows
+ * before a change lands, so the message after a change is not always the changed one.
+ */
+const nextWhere = (
+	received: Queue.Queue<Message>,
+	isWanted: (message: Message) => boolean,
+): Effect.Effect<Message, unknown> =>
+	Effect.filterOrElse(next(received), isWanted, () => nextWhere(received, isWanted)).pipe(
+		Effect.timeout("1 second"),
 	)
 
 describe("alert rules liveQuery", () => {
@@ -82,12 +85,13 @@ describe("alert rules liveQuery", () => {
 			Effect.gen(function* () {
 				const rules = rulesOf("org_a", 2)
 				const { received } = yield* subscribe(ruleCounts(orgA, rules))
-				const ready = yield* next(received)
-				expect(ready).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 2 }))
+				expect(yield* next(received)).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 2 }))
 				rules.insert(rule("org_a-new", "org_a"))
-				expect(yield* nextChange(received, ready)).toEqual(
-					Message.UpdatedAlertRules({ orgId: orgA, count: 3 }),
+				const updated = yield* nextWhere(
+					received,
+					(message) => message._tag === "UpdatedAlertRules" && message.count !== 2,
 				)
+				expect(updated).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 3 }))
 			}),
 		))
 

@@ -15,6 +15,26 @@ describe("where clause autocomplete", () => {
 		expect(Arr.some(result.suggestions, (item) => item.insertText === "service.name")).toBe(true)
 	})
 
+	it("suggests a product event query's user and account property keys", () => {
+		const values = { propertyKeys: ["person.plan", "person.role", "account.tier"] }
+		const person = getWhereClauseAutocomplete({
+			expression: "person.",
+			cursor: 7,
+			dataSource: "product_events",
+			values,
+		})
+		expect(Arr.map(person.suggestions, (item) => item.insertText)).toEqual(["person.plan", "person.role"])
+		expect(person.suggestions[0]?.description).toBe("User property")
+
+		const account = getWhereClauseAutocomplete({
+			expression: "account.t",
+			cursor: 9,
+			dataSource: "product_events",
+			values,
+		})
+		expect(Arr.map(account.suggestions, (item) => item.insertText)).toEqual(["account.tier"])
+	})
+
 	it("suggests operator after a key", () => {
 		const expression = "service.name "
 		const result = getWhereClauseAutocomplete({
