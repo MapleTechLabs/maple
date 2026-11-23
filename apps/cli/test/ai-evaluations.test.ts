@@ -99,7 +99,7 @@ describeWithChdb("ai_evaluations views", () => {
 			"event.name": "gen_ai.evaluation.result",
 			"gen_ai.evaluation.name": "Task completion",
 			"gen_ai.evaluation.score.label": "FAIL",
-			"maple_ai.evaluation.scope": "session",
+			"maple_ai.evaluation.scope": "Session",
 			"maple_ai.evaluation.source": "maple_check",
 			"maple_ai.evaluation.target.trace_id": "11111111111111111111111111111111",
 		})
@@ -107,7 +107,7 @@ describeWithChdb("ai_evaluations views", () => {
 		insertLog(db, {
 			"event.name": "gen_ai.evaluation.result",
 			"gen_ai.evaluation.name": "Answer quality",
-			"gen_ai.evaluation.score.label": "pass",
+			"gen_ai.evaluation.score.label": " PASS ",
 			"maple_ai.evaluation.target.trace_id": "4BF92F3577B34DA6A3CE929D0E0E4736",
 		})
 		// A non-finite value is no score: it would poison every mean.
@@ -115,6 +115,9 @@ describeWithChdb("ai_evaluations views", () => {
 			"event.name": "gen_ai.evaluation.result",
 			"gen_ai.evaluation.name": "Toxicity",
 			"gen_ai.evaluation.score.value": "nan",
+			// A categorical label with an explicit verdict: the verdict wins.
+			"gen_ai.evaluation.score.label": "toxic",
+			"maple_ai.evaluation.verdict": "Fail",
 		})
 		// Another event and a plain log: neither is a score.
 		insertLog(db, { "event.name": "gen_ai.client.inference.operation.details" })
@@ -134,7 +137,7 @@ describeWithChdb("ai_evaluations views", () => {
 				Name: "Answer quality",
 				ScoreValue: 0,
 				HasScore: 0,
-				ScoreLabel: "pass",
+				ScoreLabel: " PASS ",
 				Verdict: "pass",
 				Explanation: "",
 				Scope: "trace",
@@ -195,8 +198,8 @@ describeWithChdb("ai_evaluations views", () => {
 				Name: "Toxicity",
 				ScoreValue: 0,
 				HasScore: 0,
-				ScoreLabel: "",
-				Verdict: "",
+				ScoreLabel: "toxic",
+				Verdict: "fail",
 				Explanation: "",
 				Scope: "span",
 				Source: "otel",
