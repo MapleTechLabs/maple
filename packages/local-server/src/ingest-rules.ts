@@ -305,10 +305,14 @@ const writeLog = (
 	log: { attributes?: KeyValue[]; eventName?: string },
 	attributes: AttrMap,
 	lifted: boolean,
+	sentName: AttrMap[string] | undefined,
 ) => {
 	const { "event.name": ruledName, ...rest } = attributes
+	// A rule that changed the record's own `event.name` redacts `eventName` too, so eventing never
+	// keeps the raw name; untouched, `eventName` stays as sent.
+	const isRuled = lifted || ruledName !== sentName
 	if (ruledName === undefined) log.eventName = undefined
-	else if (lifted) log.eventName = typeof ruledName === "string" ? ruledName : log.eventName
+	else if (isRuled && typeof ruledName === "string") log.eventName = ruledName
 	log.attributes = fromMap(lifted ? rest : attributes, log.attributes)
 }
 
@@ -333,7 +337,7 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 				if (output === null) return false
 				const { record } = output
 				kept.push(record)
-				writeLog(log, record.attributes, named !== null)
+				writeLog(log, record.attributes, named !== null, attributes["event.name"])
 				if (record.body !== undefined && record.body !== body) log.body = fromValue(record.body)
 				return true
 			})
