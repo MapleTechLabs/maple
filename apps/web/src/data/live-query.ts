@@ -53,7 +53,14 @@ export const liveQueryStream = <TContext extends Context, Message>(
 			Effect.sync(() => {
 				const collection = createLiveQueryCollection({ query, startSync: true })
 				const emit = () => Queue.offerUnsafe(queue, toMessage(collection.toArray))
-				const subscription = collection.subscribeChanges(emit)
+				// Without the initial state TanStack DB drops later deletes of rows this subscriber never
+				// received, so a deleted row stayed listed. Rows before the first ready are not emitted.
+				const subscription = collection.subscribeChanges(
+					() => {
+						if (collection.isReady()) emit()
+					},
+					{ includeInitialState: true },
+				)
 				collection.onFirstReady(emit)
 				return { collection, subscription }
 			}),
