@@ -13,7 +13,7 @@
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 export const MAX_GROUPING_RULES = 100
-const MAX_GROUPING_PATTERN_CHARS = 300
+export const MAX_GROUPING_PATTERN_CHARS = 300
 
 export const GroupingRuleKind = Schema.Literals(["merge", "library-frames", "app-frames"]).annotate({
 	identifier: "@maple/GroupingRuleKind",
