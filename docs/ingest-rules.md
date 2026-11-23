@@ -247,8 +247,9 @@ above on chDB.
 
 `GET /v2/ingest_rules/suggestions` ranks the last 24 hours of stored data from the hourly rollups
 (`logs_aggregates_hourly` by service and level; `traces_aggregates_hourly` by service and raw span
-name, the name the gateway tests, sampling-weighted; span bytes come from each service's average
-span in `service_usage`):
+name, the name the gateway tests, its sampling-weighted counts scaled back to stored spans by each
+service's stored-to-weighted ratio; span bytes come from each service's average span in
+`service_usage`):
 
 - debug and trace logs of a service: drop;
 - spans whose name is a probe, as a whole word (`health`, `healthz`, `readyz`, `livez`,
