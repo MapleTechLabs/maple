@@ -102,6 +102,7 @@ const answer = (sql: string): Rows => {
 	// The failures read and the read of everything else, as the warehouse would answer them.
 	if (Str.includes("Verdict = 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict === "fail")
 	if (Str.includes("Verdict != 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict !== "fail")
+	if (Str.includes("Verdict = 'pass'")(sql)) return Arr.filter(scores, (row) => row.verdict === "pass")
 	return scores
 }
 
@@ -138,6 +139,30 @@ describe("AiEvaluationReadService", () => {
 			expect(result.scores[1]?.sessionId).toBeUndefined()
 			expect(result.scores[2]).toMatchObject({ scope: "session", sessionId: "session-9" })
 			expect(result.scores).toHaveLength(3)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a verdict filter reads only that verdict's scores", () => {
+		const { layer, statements } = layerWith({ llmEvals: true }, (sql) => Effect.succeed(answer(sql)))
+		return Effect.gen(function* () {
+			const reads = yield* AiEvaluationReadService
+			const request = (verdict: "pass" | "fail") =>
+				reads.evaluator(
+					tenant,
+					new GetAiEvaluatorRequest({
+						...WINDOW,
+						name: "Task completion",
+						bucketSeconds: 3600,
+						verdict,
+					}),
+				)
+			const failing = yield* request("fail")
+			expect(Arr.map(failing.scores, (score) => score.verdict)).toEqual(["fail"])
+			const passing = yield* request("pass")
+			expect(Arr.map(passing.scores, (score) => score.verdict)).toEqual(["pass", "pass"])
+			// Each filtered request reads scores once: the other verdict's read is skipped, not filtered after.
+			const scoreReads = Arr.filter(statements, (sql) => Str.includes("ORDER BY timestamp DESC")(sql))
+			expect(scoreReads).toHaveLength(2)
 		}).pipe(Effect.provide(layer))
 	})
 
