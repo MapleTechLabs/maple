@@ -514,16 +514,25 @@ const renderChanges = (changes: PullRequestDelta | undefined): ReadonlyArray<str
 	return changes.rewritten ? [REWRITTEN, scope] : [scope]
 }
 
-const RECHECK =
-	"A defect is open, or was fixed since the last full pass: review the whole diff, so a fix is checked against the rest of the pull request."
+/** Why a later push's pass reads every file instead of what changed since. */
+export type PrReviewRecheck = "defect" | "approval"
+
+const RECHECK = {
+	defect: "A defect is open, or was fixed since the last full pass: review the whole diff, so a fix is checked against the rest of the pull request.",
+	approval:
+		"This repository approves low-risk pull requests, and only a pass over every file may approve: review the whole diff, not only what changed.",
+} as const satisfies Record<PrReviewRecheck, string>
 
 /** Every file is due, so what changed is a starting point and never parses as a scope. */
-const renderRecheck = (changes: PullRequestDelta | undefined): ReadonlyArray<string> => {
+const renderRecheck = (
+	reason: PrReviewRecheck,
+	changes: PullRequestDelta | undefined,
+): ReadonlyArray<string> => {
 	const paths = changes?.paths ?? []
 	return paths.length === 0
-		? [RECHECK]
+		? [RECHECK[reason]]
 		: [
-				RECHECK,
+				RECHECK[reason],
 				`Start with what changed since then: ${Arr.join(paths.slice(0, MAX_LISTED_CHANGES), ", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`,
 			]
 }
@@ -543,14 +552,13 @@ const quoteReply = (reply: FindingReply) => {
 
 /**
  * The kickoff section for a later push: what changed since, what is still open with each one's
- * latest reply, and what was dismissed. With `recheck`, a defect is open or was fixed since the
- * last whole-diff pass, so this pass is due every file.
+ * latest reply, and what was dismissed. With `recheck`, this pass is due every file.
  */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
 	readonly changes: PullRequestDelta | undefined
 	readonly open: ReadonlyArray<TrackedFinding>
-	readonly recheck?: boolean
+	readonly recheck?: PrReviewRecheck | undefined
 	/** Each finding's latest reply from a person, by handle ({@link latestReplies}). */
 	readonly replies?: ReadonlyMap<string, FindingReply>
 	readonly dismissed?: ReadonlyArray<TrackedFinding>
@@ -562,7 +570,9 @@ export const renderFollowUp = (input: {
 	}
 	const lines = [
 		`This pull request was reviewed before, at ${Str.slice(0, 7)(input.previousSha)}.`,
-		...(input.recheck === true ? renderRecheck(input.changes) : renderChanges(input.changes)),
+		...(input.recheck === undefined
+			? renderChanges(input.changes)
+			: renderRecheck(input.recheck, input.changes)),
 	]
 	// Newest first, so a long pull request's latest dismissals, the likeliest re-raised, are listed.
 	const dismissed = Arr.sort(input.dismissed ?? [], NEWEST_HANDLE_FIRST).slice(0, MAX_LISTED_DISMISSED)
