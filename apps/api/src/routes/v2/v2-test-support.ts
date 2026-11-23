@@ -101,6 +101,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 	Layer.succeed(ErrorIssueMergeService, {
 		mergeIssues: die,
 		unmergeIssue: die,
+		detachFingerprint: die,
 	}),
 	Layer.succeed(ErrorActorsService, {
 		registerAgent: die,

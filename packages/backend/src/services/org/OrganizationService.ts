@@ -112,13 +112,15 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"ErrorIssueEvents",
 	"ErrorIssueStates",
 	"ErrorIncidents",
-	// The aliases go with the issues they point at.
+	// The aliases go with the issues they point at, and the keys that grouped them.
 	"ErrorIssueFingerprints",
+	"ErrorGroupingKeys",
 	// A `waiting` row left behind is due work: the verification tick scans every org's and
 	// would pick it up on each run, for an issue that is purged below.
 	"ErrorIssueVerifications",
 	"ErrorIssues",
 	"ErrorNotificationPolicies",
+	"ErrorGroupingConfigs",
 	"Actors",
 	"VcsInstallations",
 	"VcsRepositories",

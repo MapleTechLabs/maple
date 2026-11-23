@@ -80,6 +80,9 @@ first occurrences ──> (candidate) ──> issue in \`triage\`
   \`propose_fix\` takes \`also_issue_ids\` when one PR fixes several issues.
 - \`merge_error_issues\`: fold duplicates of one bug into one issue. Only after you have confirmed
   they share a root cause; their future occurrences land on the kept issue.
+- \`explain_error_grouping\` shows why an issue holds each fingerprint; \`list_similar_error_issues\`
+  suggests duplicates to check before merging; \`detach_error_fingerprint\` splits off one the grouping
+  key joined by mistake (merged ones are unmerged instead).
 
 ## Attribute Filtering
 - Call \`explore_attributes\` before filtering by custom attributes

@@ -49,7 +49,7 @@ const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 /** Fallback fingerprint-scan window for the issue list's env filter when the
  * caller provides no time range (30d ≈ the issue-list retention horizon). */
 const ENV_FINGERPRINT_DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
-const ACTIONABLE_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
+export const ACTIONABLE_WORKFLOW_STATES: ReadonlyArray<WorkflowState> = [
 	"triage",
 	// A fix that did not hold is the most actionable state there is; omitting it
 	// would hide exactly the issues that most need attention from the open-issue

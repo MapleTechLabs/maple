@@ -40,9 +40,12 @@ export interface FingerprintInputs {
 	readonly label: string
 	/**
 	 * Everything `FingerprintHash` hashes after OrgId and ServiceName. A user key
-	 * (`maple.fingerprint`) replaces the type, frames, message and salt.
+	 * (`maple.fingerprint`) replaces the type, frames, message and salt, unless it holds
+	 * `{{default}}`: then it is appended to them.
 	 */
 	readonly hashInputs: ReadonlyArray<string>
+	/** What a `{{default}}` user key adds to the default grouping; "" when there is none. */
+	readonly customExtension: string
 	/**
 	 * What the previous FINGERPRINT_VERSION hashed, for `PreviousFingerprintHash`: the
 	 * issue evaluator re-keys an issue across a bump through it. Equal to `hashInputs`
@@ -99,6 +102,17 @@ export const CUSTOM_FINGERPRINT_ATTRIBUTE = "maple.fingerprint"
 /** Code points of a user key that reach the hash, so a value can't mint a key per row. */
 export const CUSTOM_FINGERPRINT_MAX_CHARS = 200
 export const CUSTOM_FINGERPRINT_REDACTIONS: Redactions = [["^[ \\t\\n\\r]+|[ \\t\\n\\r]+$", ""]]
+
+/**
+ * A user key holding this keeps the default grouping and splits it further by the rest:
+ * `{{default}} {tenant}` is one issue per tenant per default issue (Sentry's spelling).
+ */
+export const CUSTOM_FINGERPRINT_DEFAULT_PATTERN = "\\{\\{ ?default ?\\}\\}"
+/** What is left of a `{{default}}` key: the placeholder gone, then trimmed. */
+export const CUSTOM_FINGERPRINT_EXTENSION_REDACTIONS: Redactions = [
+	[CUSTOM_FINGERPRINT_DEFAULT_PATTERN, ""],
+	...CUSTOM_FINGERPRINT_REDACTIONS,
+]
 
 /**
  * The raw key `computeFingerprintInputs` takes: the event's value unless it is blank after
@@ -768,12 +782,15 @@ function messageSignature(statusMessage: string, redactions: Redactions): string
 	return entries !== undefined ? jsonSignature(entries) : textSignature(statusMessage, redactions)
 }
 
-/** The frames the hash keeps: matched by shape, normalized, repeats collapsed, the app's own first. */
-function hashedFrames(
+/**
+ * The frames the hash chooses from: matched by shape, normalized, repeats collapsed, in
+ * throw order, and how many it keeps.
+ */
+function frameCandidates(
 	rules: FingerprintRules,
 	args: { readonly exceptionType: string; readonly exceptionStacktrace: string },
 	msgSignature: string,
-): ReadonlyArray<string> {
+): { readonly frames: ReadonlyArray<string>; readonly maxFrames: number } {
 	const frameLineRe = new RegExp(rules.frameLinePattern, "u")
 	// A namespaced type plus its message names the failure, so the throw site is enough.
 	// With no message the frames are the only identity left; keep all three.
@@ -792,7 +809,7 @@ function hashedFrames(
 	)
 	// Repeats collapse after normalizing (`at index.js` twice is two anonymous closures in
 	// one bundle, or recursion), so they do not use up the frames the hash keeps.
-	const distinctFrames = Arr.dedupeAdjacentWith(
+	const frames = Arr.dedupeAdjacentWith(
 		Arr.map(
 			(PYTHON_FRAME_RE.test(frameLines[0] ?? "") ? [...frameLines].reverse() : frameLines).slice(
 				0,
@@ -802,9 +819,33 @@ function hashedFrames(
 		),
 		(a, b) => a === b,
 	)
-	const appFrames = Arr.filter(distinctFrames, (frame) => !LIBRARY_FRAME_RE.test(frame))
-	return (appFrames.length > 0 ? appFrames : distinctFrames).slice(0, maxFrames)
+	return { frames, maxFrames }
 }
+
+/** A frame in a dependency or a runtime's standard library (`LIBRARY_FRAME_PATTERN`). */
+export const isLibraryFrame = (frame: string): boolean => LIBRARY_FRAME_RE.test(frame)
+
+/** The frames the hash keeps: the app's own first, else all of them, cut to the count. */
+function hashedFrames(
+	rules: FingerprintRules,
+	args: { readonly exceptionType: string; readonly exceptionStacktrace: string },
+	msgSignature: string,
+): ReadonlyArray<string> {
+	const { frames, maxFrames } = frameCandidates(rules, args, msgSignature)
+	const appFrames = Arr.filter(frames, (frame) => !isLibraryFrame(frame))
+	return (appFrames.length > 0 ? appFrames : frames).slice(0, maxFrames)
+}
+
+/**
+ * The frames today's hash chooses from and how many it keeps, for a grouping key that
+ * re-chooses them under an org's frame rules (`grouping.ts`).
+ */
+export const currentFrameCandidates = (args: {
+	readonly exceptionType: string
+	readonly exceptionStacktrace: string
+	readonly statusMessage: string
+}): { readonly frames: ReadonlyArray<string>; readonly maxFrames: number } =>
+	frameCandidates(CURRENT_RULES, args, messageSignature(args.statusMessage, CURRENT_RULES.msgRedactions))
 
 /** What a span with no exception at all is keyed and labelled by. */
 export const SPAN_SIGNATURE_PREFIX = "span:"
@@ -863,16 +904,28 @@ export function computeFingerprintInputs(args: {
 		applyRedactions(args.customFingerprint ?? "", CUSTOM_FINGERPRINT_REDACTIONS),
 		CUSTOM_FINGERPRINT_MAX_CHARS,
 	)
+	const extendsDefault = new RegExp(CUSTOM_FINGERPRINT_DEFAULT_PATTERN).test(custom)
+	const customExtension = extendsDefault
+		? applyRedactions(custom, CUSTOM_FINGERPRINT_EXTENSION_REDACTIONS)
+		: ""
+	// `{{default}}` alone is the default grouping, not a new key.
+	const extension = customExtension === "" ? [] : [CUSTOM_FINGERPRINT_ATTRIBUTE, customExtension]
 	const hashInputs =
-		custom !== ""
+		custom !== "" && !extendsDefault
 			? [CUSTOM_FINGERPRINT_ATTRIBUTE, custom]
-			: [args.exceptionType, fpFrames, msgSignature, FINGERPRINT_HASH_SALT]
+			: [args.exceptionType, fpFrames, msgSignature, FINGERPRINT_HASH_SALT, ...extension]
 	const previousHashInputs =
-		custom !== "" || spanKeyed
+		(custom !== "" && !extendsDefault) || spanKeyed
 			? hashInputs
-			: [args.exceptionType, previousFpFrames, previousMsgSignature, PREVIOUS_FINGERPRINT_HASH_SALT]
+			: [
+					args.exceptionType,
+					previousFpFrames,
+					previousMsgSignature,
+					PREVIOUS_FINGERPRINT_HASH_SALT,
+					...extension,
+				]
 
-	return { topFrame, fpFrames, msgSignature, label, hashInputs, previousHashInputs }
+	return { topFrame, fpFrames, msgSignature, label, hashInputs, previousHashInputs, customExtension }
 }
 
 /**

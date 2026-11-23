@@ -1617,6 +1617,42 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
+-- builder:errors:errorGroupingSamplesQuery:default  [025309cc]
+SELECT
+          toString(error_events.FingerprintHash) AS fingerprintHash,
+          argMax(error_events.ServiceName, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS serviceName,
+          max(error_events.Timestamp) AS timestamp,
+          argMax(error_events.TraceId, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS traceId,
+          argMax(error_events.SpanId, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS spanId,
+          argMax(error_events.ExceptionType, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS exceptionType,
+          argMax(if(error_events.StatusMessage = '', error_events.ExceptionMessage, error_events.StatusMessage), concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS statusMessage,
+          argMax(error_events.ExceptionStacktrace, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS exceptionStacktrace
+        FROM error_events
+        WHERE error_events.OrgId = 'org_sql_catalog'
+          AND error_events.Timestamp >= '2026-01-01 10:30:00'
+          AND error_events.Timestamp < '2026-01-03 14:15:00'
+          AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))
+        GROUP BY fingerprintHash
+        FORMAT JSON
+
+-- builder:errors:errorGroupingSpansQuery:default  [72c0ef2e]
+SELECT
+          traces.TraceId AS traceId,
+          traces.SpanId AS spanId,
+          traces.SpanName AS spanName,
+          traces.SpanKind AS spanKind,
+          traces.SpanAttributes['maple.fingerprint'] AS spanFingerprint,
+          toJSONString(traces.EventsName) AS eventsName,
+          toJSONString(traces.EventsAttributes) AS eventsAttributes
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
+          AND traces.ServiceName IN ('api')
+          AND traces.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+          AND traces.SpanId IN ('b7ad6b7169203331')
+        FORMAT JSON
+
 -- builder:errors:errorIssueEnvironmentsQuery:default  [236861f6]
 SELECT
           error_events.DeploymentEnv AS name,

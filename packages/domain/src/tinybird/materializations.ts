@@ -4,6 +4,8 @@ import {
 	chPattern,
 	chRedactChain,
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
+	CUSTOM_FINGERPRINT_DEFAULT_PATTERN,
+	CUSTOM_FINGERPRINT_EXTENSION_REDACTIONS,
 	CUSTOM_FINGERPRINT_MAX_CHARS,
 	CUSTOM_FINGERPRINT_REDACTIONS,
 	EFFECT_SPAN_FRAME_MARKER,
@@ -1120,6 +1122,9 @@ const errorEventsWithSql = `
 			)},
             1, ${CUSTOM_FINGERPRINT_MAX_CHARS}
           ) AS _customFp,
+          -- A user key holding the default placeholder keeps the default grouping and adds the rest.
+          match(_customFp, ${chPattern(CUSTOM_FINGERPRINT_DEFAULT_PATTERN)}) AS _customExtends,
+          ${chRedactChain("_customFp", CUSTOM_FINGERPRINT_EXTENSION_REDACTIONS)} AS _customExtension,
           -- JSON detection for the message signature below.
           isValidJSON(_msgText) AS _isJson,
           _isJson AND JSONType(_msgText) = 'Object' AS _isJsonObj,
@@ -1173,15 +1178,19 @@ const errorEventsWithSql = `
           if(length(_topFrames) > 0, _topFrames[1], '') AS _topFrame,
           arrayStringConcat(_topFrames, '\\n') AS _fpFrames,
           arrayStringConcat(_prevTopFrames, '\\n') AS _prevFpFrames,
-          if(
-            _customFp != '',
+          multiIf(
+            _customExtends AND _customExtension != '',
+            cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)}, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customExtension),
+            _customFp != '' AND NOT _customExtends,
             cityHash64(OrgId, ServiceName, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customFp),
             cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig, ${chPattern(FINGERPRINT_HASH_SALT)})
           ) AS _hash,
           -- A span-keyed error leaves a bucket that held every span: no previous hash.
-          if(
-            _customFp != '' OR _spanKeyed,
+          multiIf(
+            (_customFp != '' AND NOT _customExtends) OR _spanKeyed,
             _hash,
+            _customExtends AND _customExtension != '',
+            cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _prevMsgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)}, ${chPattern(CUSTOM_FINGERPRINT_ATTRIBUTE)}, _customExtension),
             cityHash64(OrgId, ServiceName, _exType, _prevFpFrames, _prevMsgSig, ${chPattern(PREVIOUS_FINGERPRINT_HASH_SALT)})
           ) AS _prevHash,
           -- Display-only, best-effort human label (decoupled from the fingerprint:

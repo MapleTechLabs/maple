@@ -1799,3 +1799,70 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
 		])
 		.format("JSON")
 }
+
+/**
+ * One occurrence per fingerprint, the latest, for the tick's grouping key
+ * (`@maple/domain/tinybird/grouping`). `error_events` sorts by
+ * `(OrgId, FingerprintHash, Timestamp)`, so the hash list seeks.
+ */
+export function errorGroupingSamplesQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
+	return from(Datasources.errorEvents)
+		.select(($) => {
+			// The latest occurrence; trace and span id settle a tie within one second, so a re-read agrees.
+			const latest = CH.concat(CH.toString_($.Timestamp), " ", $.TraceId, " ", $.SpanId)
+			return {
+				fingerprintHash: CH.toString_($.FingerprintHash),
+				serviceName: CH.argMax($.ServiceName, latest),
+				timestamp: CH.max_($.Timestamp),
+				traceId: CH.argMax($.TraceId, latest),
+				spanId: CH.argMax($.SpanId, latest),
+				exceptionType: CH.argMax($.ExceptionType, latest),
+				// The view's message precedence: the span's status message, else the event's.
+				statusMessage: CH.argMax(
+					CH.if_($.StatusMessage.eq(""), $.ExceptionMessage, $.StatusMessage),
+					latest,
+				),
+				exceptionStacktrace: CH.argMax($.ExceptionStacktrace, latest),
+			}
+		})
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
+			fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes),
+		])
+		.groupBy("fingerprintHash")
+		.format("JSON")
+}
+
+/**
+ * The spans behind grouping samples: `error_events` keeps neither the span's name
+ * nor a `maple.fingerprint` key, and both decide a grouping key. `traces` sorts by
+ * `(OrgId, ServiceName, 5-minute bucket, TraceId)`, so services, a tight window and
+ * trace ids seek a handful of granules.
+ */
+export function errorGroupingSpansQuery(opts: {
+	readonly serviceNames: readonly string[]
+	readonly traceIds: readonly string[]
+	readonly spanIds: readonly string[]
+}) {
+	return from(Datasources.traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			spanName: $.SpanName,
+			spanKind: $.SpanKind,
+			spanFingerprint: $.SpanAttributes.get("maple.fingerprint"),
+			eventsName: CH.toJSONString($.EventsName),
+			eventsAttributes: CH.toJSONString($.EventsAttributes),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(utcSecondsParam("startTime")),
+			$.Timestamp.lt(utcSecondsParam("endTime")),
+			CH.inList($.ServiceName, opts.serviceNames),
+			CH.inList($.TraceId, opts.traceIds),
+			CH.inList($.SpanId, opts.spanIds),
+		])
+		.format("JSON")
+}

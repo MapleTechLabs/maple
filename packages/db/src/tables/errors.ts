@@ -17,6 +17,8 @@ import {
 	VerificationStatus,
 	VerificationVerdict,
 } from "@maple/domain/fix-verification"
+import { GroupingRule } from "@maple/domain/tinybird/grouping"
+import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
 import { VcsProviderId } from "@maple/domain/vcs"
 import {
 	ActorId,
@@ -221,6 +223,47 @@ export const ErrorFingerprintCandidates = PG.table("error_fingerprint_candidates
 		// Retention prunes candidates that never reached the threshold.
 		PG.index("error_fingerprint_candidates_last_seen_idx", ["orgId", "lastSeenAt"]),
 	],
+	tenantColumn: "orgId",
+})
+
+/**
+ * Each fingerprint's grouping key (`@maple/domain/tinybird/grouping`), computed by the
+ * tick from one sample the first time it sees the hash. Hashes sharing a key join one
+ * issue. A `pinned` hash was unmerged or detached by hand and is never grouped again.
+ */
+export const ErrorGroupingKeys = PG.table("error_grouping_keys", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		fingerprintHash: PG.column(PG.text, { name: "fingerprint_hash" }),
+		groupingKey: PG.column(PG.text, { name: "grouping_key" }),
+		keyVersion: PG.column(PG.int4, { name: "key_version" }),
+		// The org's grouping rules the key was computed under; a key under other rules is stale.
+		configDigest: PG.column(PG.text, { name: "config_digest", default: "" }),
+		rule: PG.brand(PG.text, GroupingRule),
+		pinned: PG.column(PG.bool, { default: false }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: {
+		columns: ["orgId", "fingerprintHash"],
+		name: "error_grouping_keys_org_id_fingerprint_hash_pk",
+	},
+	indexes: [PG.index("error_grouping_keys_key_idx", ["orgId", "groupingKey"])],
+	tenantColumn: "orgId",
+})
+
+/**
+ * An org's own grouping rules (`@maple/domain/tinybird/grouping-rules`), one row per org.
+ * The tick keys new hashes under them; a change makes every stored key stale.
+ */
+export const ErrorGroupingConfigs = PG.table("error_grouping_configs", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		rulesJson: PG.column(PG.jsonb(Schema.Array(OrgGroupingRule)), { name: "rules_json", default: [] }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+		updatedBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "updated_by" }),
+	},
+	primaryKey: ["orgId"],
 	tenantColumn: "orgId",
 })
 

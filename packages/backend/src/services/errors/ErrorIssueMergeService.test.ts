@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { ErrorIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/primitives"
-import { ErrorIncidents, ErrorIssueEvents, ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
+import {
+	ErrorGroupingKeys,
+	ErrorIncidents,
+	ErrorIssueEvents,
+	ErrorIssueFingerprints,
+	ErrorIssues,
+} from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -202,6 +208,82 @@ describe("ErrorIssueMergeService", () => {
 			])
 			const again = yield* Effect.flip(merges.unmergeIssue(ORG, actorId, source))
 			assert.strictEqual(again._tag, "@maple/http/errors/ErrorValidationError")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("unmerging pins the issue's hashes so the grouping key never folds them back", () =>
+		Effect.gen(function* () {
+			const merges = yield* ErrorIssueMergeService
+			const database = yield* Database
+			const actorId = yield* actor
+			const target = yield* seedIssue("100")
+			const source = yield* seedIssue("200")
+			const carried = yield* seedIssue("250")
+			yield* merges.mergeIssues(ORG, actorId, source, [carried])
+			yield* merges.mergeIssues(ORG, actorId, target, [source])
+
+			yield* merges.unmergeIssue(ORG, actorId, source)
+
+			const keys = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorGroupingKeys)
+						.select("fingerprintHash", "pinned")
+						.where(($) => [$.orgId.eq(ORG)])
+						.orderBy(["fingerprintHash", "asc"]),
+				),
+			)
+			// "250" came with an earlier merge and stays with the kept issue, so only "200" moved.
+			assert.deepStrictEqual(keys, [{ fingerprintHash: "200", pinned: true }])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("detaching a grouped fingerprint hands it back and pins it", () =>
+		Effect.gen(function* () {
+			const merges = yield* ErrorIssueMergeService
+			const database = yield* Database
+			const actorId = yield* actor
+			const issue = yield* seedIssue("100")
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorIssueFingerprints).values({
+						orgId: ORG,
+						fingerprintHash: "110",
+						issueId: issue,
+						source: "group",
+						originIssueId: null,
+						createdAt: 1,
+					}),
+				),
+			)
+
+			const detached = yield* merges.detachFingerprint(ORG, actorId, issue, "110")
+
+			assert.deepStrictEqual(detached.fingerprintHashes, ["100"])
+			const keys = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorGroupingKeys)
+						.select("fingerprintHash", "pinned")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(keys, [{ fingerprintHash: "110", pinned: true }])
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("refuses to detach an issue's own fingerprint or a merged issue's", () =>
+		Effect.gen(function* () {
+			const merges = yield* ErrorIssueMergeService
+			const actorId = yield* actor
+			const target = yield* seedIssue("100")
+			const source = yield* seedIssue("200")
+			yield* merges.mergeIssues(ORG, actorId, target, [source])
+
+			const own = yield* Effect.flip(merges.detachFingerprint(ORG, actorId, target, "100"))
+			const merged = yield* Effect.flip(merges.detachFingerprint(ORG, actorId, target, "200"))
+
+			assert.strictEqual(own._tag, "@maple/http/errors/ErrorValidationError")
+			assert.strictEqual(merged._tag, "@maple/http/errors/ErrorValidationError")
+			assert.include(merged.message, "unmerge")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 

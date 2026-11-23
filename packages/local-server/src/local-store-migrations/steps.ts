@@ -2207,6 +2207,35 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// A custom key with the default placeholder extends the default grouping: the error
+		// and lineage views are recreated. No column change; nothing is backfilled.
+		slug: "error-fingerprint-default-extension",
+		description:
+			"Recreate the error_events views so a custom key with the default placeholder extends the default grouping",
+		clonedBefore: "the views are replaced",
+		beforeBootstrap: [
+			dropViews("error_events_mv", "error_events_by_time_mv", "error_fingerprint_lineage_mv"),
+		],
+		plan: [
+			[
+				"rebuild-error-events-views",
+				"Drop and recreate the error-events and lineage views so placeholder keys extend the default hash",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "error_events",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Existing rows keep their FingerprintHash untouched; only new occurrences whose key holds the default placeholder hash differently.",
+				...ERROR_RETENTION,
+			},
+			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 
