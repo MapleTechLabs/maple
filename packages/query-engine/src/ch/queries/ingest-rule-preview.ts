@@ -4,10 +4,11 @@
 // values already stringified by ingest, data the org's other rules dropped is not there).
 
 import * as CH from "@maple-dev/effect-orm/expr"
+import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { SEVERITY_LEVELS, type IngestRuleCondition } from "@maple/domain/ingest-rules"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option, pipe, Record as Rec, String as Str } from "effect"
 import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 
@@ -15,6 +16,55 @@ import { utcHourFloor } from "./query-helpers"
 const REGEX_WINDOW = 16 * 1024
 
 type StringExpr = CH.Expr<string>
+
+/** The head of a value a regex sees; counted in characters, so the cut never splits one. */
+const regexWindow = (value: StringExpr) =>
+	CH.compileTypedFnCall("leftUTF8", T.string.schema, value, CH.lit(REGEX_WINDOW))
+
+/** Long General_Category names JS accepts in `\\p{...}`; RE2 takes only the short ones. */
+const CATEGORY_SHORT_NAMES = {
+	Letter: "L",
+	Cased_Letter: "LC",
+	Uppercase_Letter: "Lu",
+	Lowercase_Letter: "Ll",
+	Titlecase_Letter: "Lt",
+	Modifier_Letter: "Lm",
+	Other_Letter: "Lo",
+	Mark: "M",
+	Number: "N",
+	Decimal_Number: "Nd",
+	Letter_Number: "Nl",
+	Other_Number: "No",
+	Punctuation: "P",
+	Symbol: "S",
+	Separator: "Z",
+	Space_Separator: "Zs",
+	Other: "C",
+	Control: "Cc",
+} as const satisfies Record<string, string>
+
+/**
+ * A validated rule pattern in ClickHouse's RE2 dialect. The validator accepts what Rust and JS
+ * both accept; RE2 spells some of it differently: `\\u0041` and `\\u{41}` (RE2 `\\x{41}`),
+ * `(?<name>` (RE2 `(?P<name>`), `\\p{Script=Greek}` (RE2 `\\p{Greek}`) and `\\p{Letter}` (RE2 `\\p{L}`).
+ */
+export const toRe2 = (pattern: string): string =>
+	Arr.reduce(
+		Rec.toEntries(CATEGORY_SHORT_NAMES),
+		pipe(
+			pattern,
+			Str.replace(/(?<!\\)((?:\\\\)*)\\u\{([0-9A-Fa-f]{1,6})\}/gu, "$1\\x{$2}"),
+			Str.replace(/(?<!\\)((?:\\\\)*)\\u([0-9A-Fa-f]{4})/gu, "$1\\x{$2}"),
+			Str.replace(/\(\?<(?![=!])/gu, "(?P<"),
+			Str.replace(
+				/\\([pP])\{(?:Script|sc|Script_Extensions|scx|General_Category|gc)=([A-Za-z_]+)\}/gu,
+				"\\$1{$2}",
+			),
+		),
+		(text, [long, short]) =>
+			Str.replace(new RegExp(`\\\\([pP])\\{${long}\\}`, "gu"), `\\$1{${short}}`)(text),
+	)
+
 type MapExpr = CH.Expr<Record<string, string>>
 
 /** A string value under one op; `present` says whether the record has it at all. */
@@ -40,7 +90,7 @@ const compare = (
 		case "contains":
 			return given(value.contains(operand))
 		case "regex":
-			return given(CH.matchCond(CH.left_(value, CH.lit(REGEX_WINDOW)), operand))
+			return given(CH.matchCond(regexWindow(value), toRe2(operand)))
 		case "exists":
 			return present ?? CH.rawCond("1")
 		case "not_exists":
@@ -78,7 +128,12 @@ const severityOf = (number: CH.Expr<number>, text: StringExpr) => {
 }
 
 const severityCondition = (severity: CH.Expr<number>, condition: IngestRuleCondition) => {
-	const level = SEVERITY_LEVELS[(condition.value ?? "") as keyof typeof SEVERITY_LEVELS]
+	const level = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(Rec.toEntries(SEVERITY_LEVELS), ([name]) => name === condition.value),
+			([, number]) => number,
+		),
+	)
 	if (level === undefined) return CH.rawCond("0")
 	const known = severity.gt(0)
 	return CH.and(known, condition.op === "lt" ? severity.lt(level) : severity.gte(level))

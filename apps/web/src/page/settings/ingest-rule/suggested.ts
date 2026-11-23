@@ -1,5 +1,7 @@
 import type { V2IngestRuleSuggestion } from "@maple/domain/http/v2"
 import { AppRoute, hrefOf } from "../../../route"
+import { INGEST_RULE_LIMITS } from "@maple/domain/ingest-rules"
+import { String as Str } from "effect"
 import { type ConditionDraft, type Draft, emptyDraft } from "./form"
 
 // A suggested rule (`GET /v2/ingest_rules/suggestions`) as a link to the editor, and the draft
@@ -37,6 +39,12 @@ const condition = (id: number, field: ConditionDraft["field"], op: ConditionDraf
 /** The level a log suggestion covers, and every level below it, as the bound it stays under. */
 const BELOW = { debug: "info", info: "warn" } as const
 
+/** A generated name the rule accepts: long span names are cut to the limit. */
+const nameOf = (text: string): string =>
+	text.length <= INGEST_RULE_LIMITS.nameLength
+		? text
+		: `${Str.trimEnd(Str.slice(0, INGEST_RULE_LIMITS.nameLength - 3)(text))}...`
+
 /** The draft a suggestion link opens; `undefined` when the search carries no suggestion. */
 export const draftFromSuggestion = (search: SuggestionSearch): Draft | undefined => {
 	const service = search.service
@@ -46,7 +54,7 @@ export const draftFromSuggestion = (search: SuggestionSearch): Draft | undefined
 	if (search.span !== undefined && search.span !== "")
 		return {
 			...emptyDraft,
-			name: `${verb} ${search.span} in ${service}`,
+			name: nameOf(`${verb} ${search.span} in ${service}`),
 			signals: ["traces"],
 			conditions: [
 				condition(1, "service_name", "eq", service),
@@ -58,7 +66,7 @@ export const draftFromSuggestion = (search: SuggestionSearch): Draft | undefined
 	const level = search.level === "info" ? "info" : "debug"
 	return {
 		...emptyDraft,
-		name: `${verb} ${level === "info" ? "info and debug" : "debug"} logs from ${service}`,
+		name: nameOf(`${verb} ${level === "info" ? "info and debug" : "debug"} logs from ${service}`),
 		signals: ["logs"],
 		conditions: [
 			condition(1, "service_name", "eq", service),

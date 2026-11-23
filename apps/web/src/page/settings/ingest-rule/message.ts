@@ -47,7 +47,7 @@ export const Message = defineMessageUnion({
 	ClickedRetryPreview: {},
 	CompletedFetchImpact: { window: ImpactWindow, result: outcome(V2IngestRuleStats) },
 	PickedImpactWindow: { window: ImpactWindow },
-	ElapsedEstimateDebounce: { key: Schema.String },
+	ElapsedEstimateDebounce: { seq: Schema.Number },
 	CompletedFetchEstimate: { key: Schema.String, result: outcome(V2IngestRulePreview) },
 	ClickedRetryEstimate: {},
 	ClickedSave: {},

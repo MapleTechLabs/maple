@@ -216,6 +216,47 @@ describeWithChdb("ingest rule dry run on chDB", () => {
 		})
 	})
 
+	test("regexes JS spells differently run on ClickHouse, and attribute ops read map values", () => {
+		// `\u0041` and `\p{Letter}` are refused by RE2 as written; the preview translates them.
+		expect(
+			matched(logMatches([{ field: "body", op: "regex", value: "^\\u0047ET \\p{Letter}" }])),
+		).toEqual({
+			checkout: 0,
+			api: 0,
+		})
+		expect(
+			matched(logMatches([{ field: "body", op: "regex", value: "^\\u0047ET /\\p{Letter}+" }])),
+		).toEqual({
+			checkout: 0,
+			api: 1,
+		})
+		expect(
+			matched(
+				logMatches([
+					{ field: "attribute", key: "http.route", op: "in", values: ["/healthz", "/readyz"] },
+				]),
+			),
+		).toEqual({ checkout: 0, api: 1 })
+		expect(
+			matched(logMatches([{ field: "attribute", key: "http.route", op: "prefix", value: "/health" }])),
+		).toEqual({
+			checkout: 0,
+			api: 1,
+		})
+		expect(
+			matched(logMatches([{ field: "attribute", key: "user.id", op: "regex", value: "^u[0-9]$" }])),
+		).toEqual({
+			checkout: 1,
+			api: 0,
+		})
+		expect(
+			matched(spanMatches([{ field: "span_kind", op: "not_in", values: ["server", "client"] }])),
+		).toEqual({
+			api: 0,
+			worker: 1,
+		})
+	})
+
 	test("span kind and status read either spelling, lower-cased", () => {
 		expect(matched(spanMatches([{ field: "span_kind", op: "in", values: ["server"] }]))).toEqual({
 			api: 2,

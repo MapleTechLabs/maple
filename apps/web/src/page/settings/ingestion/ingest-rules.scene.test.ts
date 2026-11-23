@@ -287,7 +287,23 @@ describe("suggested ingest rules", () => {
 				"/settings/ingestion/rules/new?service=checkout&level=debug&keep=0",
 			),
 			expectView(text("GET /orders in api")).toExist(),
-			expectView(role("link", { name: "Keep 10%" })).toExist(),
+			expectView(role("link", { name: "Sample 10%" })).toExist(),
+		)
+	})
+
+	test("a suggestion an enabled rule already covers is not shown again", () => {
+		const covering = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([covering])),
+			expectView(text("Debug logs from checkout")).not.toExist(),
+			expectView(text("GET /orders in api")).toExist(),
 		)
 	})
 

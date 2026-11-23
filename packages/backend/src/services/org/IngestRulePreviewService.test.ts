@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { suggestRules, summarize } from "./IngestRulePreviewService"
+import { PREVIEW_MAX_SCAN_ROWS, scanHours, suggestRules, summarize } from "./IngestRulePreviewService"
 
 describe("ingest rule preview totals", () => {
 	const rows = [
@@ -23,6 +23,19 @@ describe("ingest rule preview totals", () => {
 		const preview = summarize("traces", rows, new Map([["api", 1000]]), 0.9)
 		expect(preview.estimatedDropped).toBe(450)
 		expect(preview.estimatedDroppedBytes).toBe(90 * 1000)
+	})
+
+	it("scans the whole day until a day outgrows the budget, then the latest hours scaled to a day", () => {
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS)).toBe(24)
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 4)).toBe(6)
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 1000)).toBe(1)
+		const sixHours = summarize("logs", rows, sizes, 1, 6)
+		expect(sixHours).toMatchObject({
+			scannedHours: 6,
+			stored: 1550 * 4,
+			matched: 500 * 4,
+			estimatedDropped: 2000,
+		})
 	})
 
 	it("lists the services with matches, busiest first", () => {
@@ -50,8 +63,11 @@ describe("suggested ingest rules", () => {
 			[
 				{ serviceName: "api", spanName: "GET /healthz", records: 20_000 },
 				{ serviceName: "shop", spanName: "POST /shipping", records: 2_000 },
+				{ serviceName: "shop", spanName: "GET /orders/:id/ready", records: 2_000 },
+				{ serviceName: "shop", spanName: "GET /streams/live", records: 2_000 },
 			],
 			spanSizes,
+			{ logBytes: 80_000 * KB, spanBytes: 26_000 * 500 },
 		)
 		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
 			[
@@ -71,6 +87,7 @@ describe("suggested ingest rules", () => {
 			],
 			[{ serviceName: "api", spanName: "GET /orders", records: 400_000 }],
 			spanSizes,
+			{ logBytes: 950_010 * KB, spanBytes: 400_000 * 500 },
 		)
 		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
 			[
@@ -82,6 +99,17 @@ describe("suggested ingest rules", () => {
 	})
 
 	it("suggests nothing for an org with no data", () => {
-		expect(suggestRules([], [], new Map())).toEqual([])
+		expect(suggestRules([], [], new Map(), { logBytes: 0, spanBytes: 0 })).toEqual([])
+	})
+
+	it("measures shares against everything stored, not only the busiest rows read", () => {
+		// The rollup read keeps the busiest 200 groups; a level that is 15% of those can be 1.5% of all.
+		const suggestions = suggestRules(
+			[{ serviceName: "api", level: "info", records: 150_000, bytes: 150_000 * KB }],
+			[],
+			spanSizes,
+			{ logBytes: 10_000_000 * KB, spanBytes: 0 },
+		)
+		expect(suggestions).toEqual([])
 	})
 })

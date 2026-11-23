@@ -1,4 +1,4 @@
-import { IngestRuleValidationError, type TenantContext } from "@maple/domain/http"
+import { IngestRuleValidationError, type TenantContext, type WarehouseQueryError } from "@maple/domain/http"
 import { ingestRuleProblems, type IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import { Context, Effect, Layer, Array as Arr, Order } from "effect"
@@ -7,8 +7,20 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 // The settings dry run: what a draft rule's conditions match in recently stored logs and spans,
 // and what dropping it would have kept off the bill.
 
-export const PREVIEW_WINDOW_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+export const PREVIEW_WINDOW_MS = 24 * HOUR_MS
 const TOP_SERVICES = 10
+/**
+ * The most stored records one preview scans per signal. A day above it scans the latest hours
+ * that fit and scales the counts to a day, so a keystroke never reads a large org's whole day.
+ */
+export const PREVIEW_MAX_SCAN_ROWS = 50_000_000
+
+/** Whole hours of a signal the preview scans: all 24, or as many of the latest as fit the budget. */
+export const scanHours = (storedPerDay: number): number =>
+	storedPerDay <= PREVIEW_MAX_SCAN_ROWS
+		? 24
+		: Math.max(1, Math.floor((24 * PREVIEW_MAX_SCAN_ROWS) / storedPerDay))
 
 export type PreviewSignal = "logs" | "traces"
 
@@ -20,6 +32,8 @@ export interface ServiceMatches {
 
 export interface SignalPreview {
 	readonly signal: PreviewSignal
+	/** Hours actually scanned; the counts are scaled to 24 hours when fewer. */
+	readonly scannedHours: number
 	readonly stored: number
 	readonly matched: number
 	readonly estimatedDropped: number
@@ -58,16 +72,19 @@ export const summarize = (
 	rows: ReadonlyArray<{ readonly serviceName: string; readonly total: number; readonly matched: number }>,
 	sizes: RecordSizes,
 	share: number,
+	scannedHours = 24,
 ): SignalPreview => {
+	const toDay = 24 / scannedHours
 	const services = Arr.map(rows, (row) => ({
 		serviceName: row.serviceName,
-		stored: Number(row.total),
-		matched: Number(row.matched),
+		stored: Math.round(Number(row.total) * toDay),
+		matched: Math.round(Number(row.matched) * toDay),
 	}))
 	const sum = (pick: (service: ServiceMatches) => number) =>
 		Arr.reduce(services, 0, (total, service) => total + pick(service))
 	return {
 		signal,
+		scannedHours,
 		stored: sum((service) => service.stored),
 		matched: sum((service) => service.matched),
 		estimatedDropped: Math.round(sum((service) => service.matched) * share),
@@ -118,7 +135,7 @@ const MIN_SAVED_SHARE = 0.005
 const MIN_RECORDS = 1000
 /** A probe's span name: a whole word, so `shipping` is not `ping`. */
 const HEALTH_CHECK =
-	/(?:^|[^a-z])(?:healthz?|health[-_]?checks?|readyz?|readiness|livez?|liveness|ping|heartbeat)(?:[^a-z]|$)/iu
+	/(?:^|[^a-z])(?:healthz?|health[-_]?checks?|readyz|readiness|livez|liveness|ping|heartbeat)(?:[^a-z]|$)/iu
 
 /**
  * Rules worth suggesting from the day's volume: drop debug logs and health-check spans; sample a
@@ -137,14 +154,15 @@ export const suggestRules = (
 		readonly records: number
 	}>,
 	spanSizes: RecordSizes,
+	/** Every stored log and span byte in the window; the rows above are only the busiest groups. */
+	totals: { readonly logBytes: number; readonly spanBytes: number },
 ): ReadonlyArray<RuleSuggestion> => {
-	const logBytes = Arr.reduce(logs, 0, (total, row) => total + Number(row.bytes))
+	const { logBytes, spanBytes } = totals
 	const spanRows = Arr.map(spans, (row) => ({
 		...row,
 		records: Number(row.records),
 		bytes: Number(row.records) * (spanSizes.get(row.serviceName) ?? 0),
 	}))
-	const spanBytes = Arr.reduce(spanRows, 0, (total, row) => total + row.bytes)
 	const allBytes = logBytes + spanBytes
 	const sampled = (bytes: number) => bytes * (1 - SAMPLE_KEEP_PERCENT / 100)
 	const fromLogs = Arr.flatMap(logs, (row): ReadonlyArray<RuleSuggestion> => {
@@ -227,11 +245,11 @@ const make = Effect.gen(function* () {
 			})
 		}
 		const startMs = endMs - PREVIEW_WINDOW_MS
-		const params = {
+		const windowFrom = (fromMs: number) => ({
 			orgId: tenant.orgId,
-			startTime: formatWarehouseDateTime(startMs),
+			startTime: formatWarehouseDateTime(fromMs),
 			endTime: formatWarehouseDateTime(endMs),
-		}
+		})
 		const signals = Arr.filter(
 			spec.signals,
 			(signal): signal is PreviewSignal => signal === "logs" || signal === "traces",
@@ -240,38 +258,63 @@ const make = Effect.gen(function* () {
 			"maple.ingest_rule.signals": Arr.join(signals, ","),
 			"maple.ingest_rule.conditions": spec.conditions.length,
 		})
-		const matchesOf = (signal: PreviewSignal) =>
-			signal === "logs"
-				? warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.ingestRuleLogMatchesQuery({ conditions: spec.conditions }), params),
-						{ profile: "aggregation", context: "ingestRulePreviewLogs" },
-					)
-				: warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.ingestRuleSpanMatchesQuery({ conditions: spec.conditions }), params),
-						{ profile: "aggregation", context: "ingestRulePreviewSpans" },
-					)
-		const [matches, usage] = yield* Effect.all(
-			[
-				Effect.forEach(signals, matchesOf, { concurrency: "unbounded" }),
-				signals.length === 0
-					? Effect.succeed([])
-					: warehouse.compiledQuery(tenant, CH.compile(CH.serviceUsageQuery({}), params), {
-							profile: "aggregation",
-							context: "ingestRulePreviewUsage",
-						}),
-			],
-			{ concurrency: "unbounded" },
+		if (signals.length === 0) return { startMs, endMs, signals: [] } satisfies IngestRulePreviewResult
+		// Sized first from the hourly rollup, so the scan below can stay inside its budget.
+		const usage = yield* warehouse.compiledQuery(
+			tenant,
+			CH.compile(CH.serviceUsageQuery({}), windowFrom(startMs)),
+			{ profile: "aggregation", context: "ingestRulePreviewUsage" },
 		)
-		const share = dropShare(spec)
-		return {
-			startMs,
-			endMs,
-			signals: Arr.map(signals, (signal, index) =>
-				summarize(signal, matches[index] ?? [], sizesFrom(usage, signal), share),
+		const storedPerDay = (signal: PreviewSignal) =>
+			Arr.reduce(
+				usage,
+				0,
+				(total, row) => total + Number(signal === "logs" ? row.totalLogCount : row.totalTraceCount),
+			)
+		const scan = (signal: PreviewSignal) => {
+			const hours = scanHours(storedPerDay(signal))
+			const params = windowFrom(endMs - hours * HOUR_MS)
+			const rows =
+				signal === "logs"
+					? warehouse.compiledQuery(
+							tenant,
+							CH.compile(CH.ingestRuleLogMatchesQuery({ conditions: spec.conditions }), params),
+							{ profile: "aggregation", context: "ingestRulePreviewLogs" },
+						)
+					: warehouse.compiledQuery(
+							tenant,
+							CH.compile(
+								CH.ingestRuleSpanMatchesQuery({ conditions: spec.conditions }),
+								params,
+							),
+							{ profile: "aggregation", context: "ingestRulePreviewSpans" },
+						)
+			return Effect.map(rows, (matched) =>
+				summarize(signal, matched, sizesFrom(usage, signal), dropShare(spec), hours),
+			)
+		}
+		const previews = yield* Effect.forEach(signals, scan, { concurrency: "unbounded" }).pipe(
+			Effect.catchTag(
+				"@maple/http/errors/WarehouseQueryError",
+				(error): Effect.Effect<never, IngestRuleValidationError | WarehouseQueryError> =>
+					error.clickhouseType === "CANNOT_COMPILE_REGEXP" || error.clickhouseCode === "427"
+						? Effect.fail(
+								new IngestRuleValidationError({
+									message:
+										"A pattern in this rule cannot be previewed; the gateway still applies it.",
+									problems: ["a regex uses syntax the preview's engine cannot run"],
+								}),
+							)
+						: Effect.fail(error),
 			),
-		} satisfies IngestRulePreviewResult
+		)
+		yield* Effect.annotateCurrentSpan({
+			"maple.ingest_rule.scanned_hours": Arr.join(
+				Arr.map(previews, (entry) => String(entry.scannedHours)),
+				",",
+			),
+		})
+		return { startMs, endMs, signals: previews } satisfies IngestRulePreviewResult
 	})
 
 	const suggestions = Effect.fn("IngestRulePreviewService.suggestions")(function* (
@@ -301,7 +344,10 @@ const make = Effect.gen(function* () {
 			],
 			{ concurrency: "unbounded" },
 		)
-		const suggested = suggestRules(logs, spans, sizesFrom(usage, "traces"))
+		const suggested = suggestRules(logs, spans, sizesFrom(usage, "traces"), {
+			logBytes: Arr.reduce(usage, 0, (total, row) => total + Number(row.totalLogSizeBytes)),
+			spanBytes: Arr.reduce(usage, 0, (total, row) => total + Number(row.totalTraceSizeBytes)),
+		})
 		yield* Effect.annotateCurrentSpan({ "maple.ingest_rule.suggestions": suggested.length })
 		return { startMs, endMs, suggestions: suggested } satisfies IngestRuleSuggestionsResult
 	})

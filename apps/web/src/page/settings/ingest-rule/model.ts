@@ -42,6 +42,8 @@ export const Model = Schema.Struct({
 	estimate: EstimateData.schema,
 	/** The draft the estimate is for (`estimateKeyOf`); a late answer for another is dropped. */
 	estimateKey: Schema.String,
+	/** Goes up with every change of `estimateKey`; only the newest debounce asks. */
+	estimateSeq: Schema.Number,
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	isSaving: Schema.Boolean,

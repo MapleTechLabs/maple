@@ -221,9 +221,16 @@ A drop rule's estimated drops are the matches times `(100 - keepPercent) / 100`,
 each service's drops times that service's average record size in `service_usage`. The rule editor
 shows it above the sample preview, a moment after the last edit.
 
+- A signal whose day holds more than 50 million stored records (`PREVIEW_MAX_SCAN_ROWS`, sized
+  from `service_usage` first) scans only the latest hours that fit, and its counts are scaled to a
+  day; `scanned_hours` says how many, and the editor says so.
+- Regexes run on ClickHouse's RE2. The preview rewrites the spellings RE2 lacks (`\u0041` and
+  `\u{41}`, `(?<name>`, `\p{Script=Greek}`, long category names such as `\p{Letter}`). A pattern
+  RE2 still cannot compile (a binary property such as `\p{Alphabetic}`) is a 400 that says the rule
+  cannot be previewed; the gateway still applies it.
+
 It is an estimate, not the gateway's verdict: data the org's other rules dropped was never stored,
-regexes run on ClickHouse's RE2, and attribute values are compared as ingest stored them. Metrics
-are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
+and attribute values are compared as ingest stored them. Metrics are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
 above on chDB.
 
 ## Suggested rules
@@ -233,14 +240,20 @@ above on chDB.
 name; span bytes come from each service's average span in `service_usage`):
 
 - debug and trace logs of a service: drop;
-- spans whose name is a probe (`healthz`, `readyz`, `livez`, `ping`, `heartbeat`, ...): drop;
+- spans whose name is a probe, as a whole word (`health`, `healthz`, `readyz`, `livez`,
+  `readiness`, `liveness`, `ping`, `heartbeat`): drop;
 - a service's info logs, or one operation, that is at least a tenth of its signal's bytes: keep
   10%, sampled by trace id so traces stay whole.
 
-A suggestion must hold 1,000 records and save at least 0.5% of all stored log and span bytes; the
-six with the most bytes saved are listed under the rule list, each opening the editor prefilled
-(`/settings/ingestion/rules/new?service=&level=|span=&keep=`). Data an existing rule drops is not
-stored, so it is never suggested again.
+Shares are of everything stored that day (`service_usage`), not only the groups read. A suggestion
+must hold 1,000 records and save at least 0.5% of all stored log and span bytes; the six with the
+most bytes saved are listed under the rule list, each opening the editor prefilled
+(`/settings/ingestion/rules/new?service=&level=|span=&keep=`). The list hides a suggestion an
+enabled drop rule already covers (same service, and a severity condition or the same span name),
+since a sampled operation still stores its kept share and could come back.
+
+The log rollup keeps only `severity_text`, while the rule it opens tests `severity_number` first, so
+a log whose number and text disagree is ranked by its text.
 
 ## Limits
 

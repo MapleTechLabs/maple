@@ -303,6 +303,7 @@ const ESTIMATE = (keepPercent: number) => {
 		signals: [
 			{
 				signal: "logs",
+				scanned_hours: 24,
 				stored,
 				matched,
 				estimated_dropped: dropped,
@@ -343,7 +344,7 @@ const answerEditor = (
 					}),
 				)
 			case "DebounceIngestRuleEstimate":
-				return reply(EditorMessage.Message.ElapsedEstimateDebounce({ key: current.estimateKey }))
+				return reply(EditorMessage.Message.ElapsedEstimateDebounce({ seq: current.estimateSeq }))
 			case "FetchIngestRuleEstimate":
 				return reply(
 					EditorMessage.Message.CompletedFetchEstimate({

@@ -1,5 +1,5 @@
 import { toV2IngestRuleAction, type V2IngestRulePreviewParams } from "@maple/domain/http/v2"
-import { Array as Arr, Schema } from "effect"
+import { Schema } from "effect"
 import { draftProblems, specOf, type Draft } from "./form"
 
 // The 24 hour dry run: the draft's conditions counted over stored logs and spans by the API.
@@ -11,8 +11,8 @@ export const ESTIMATE_DEBOUNCE_MS = 600
 
 /** The request body the draft previews as, or `null` while it cannot be saved or has nothing to count. */
 export const estimateParamsOf = (draft: Draft): V2IngestRulePreviewParams | null => {
-	const blocking = Arr.filter(draftProblems(draft), (problem) => problem !== "give the rule a name")
-	if (blocking.length > 0) return null
+	// The name is not part of the count, so no name problem holds it back.
+	if (draftProblems({ ...draft, name: "draft" }).length > 0) return null
 	if (!draft.signals.includes("logs") && !draft.signals.includes("traces")) return null
 	const spec = specOf(draft)
 	return { signals: spec.signals, conditions: spec.conditions, action: toV2IngestRuleAction(spec.action) }

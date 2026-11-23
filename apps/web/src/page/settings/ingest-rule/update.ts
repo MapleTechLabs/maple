@@ -134,6 +134,7 @@ const initial = (route: EditorRoute, context: PageContext): Return => {
 		impactWindow: "24h",
 		estimate: AsyncData.Idle(),
 		estimateKey: "",
+		estimateSeq: 0,
 		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
@@ -192,14 +193,16 @@ const updateKeyBox = (model: Model, id: number, child: Combobox.Message): Return
 const withEstimate = (step: Return): Return => {
 	const key = estimateKeyOf(step.model.draft)
 	if (key === step.model.estimateKey) return step
+	const seq = step.model.estimateSeq + 1
 	return {
 		...step,
 		model: {
 			...step.model,
 			estimateKey: key,
+			estimateSeq: seq,
 			estimate: key === "" ? AsyncData.Idle() : AsyncData.Loading(),
 		},
-		commands: [...(step.commands ?? []), ...(key === "" ? [] : [DebounceEstimate({ key })])],
+		commands: [...(step.commands ?? []), ...(key === "" ? [] : [DebounceEstimate({ seq })])],
 	}
 }
 
@@ -309,7 +312,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 						model: { ...model, impactWindow: window, impact: AsyncData.Loading() },
 						commands: [FetchImpact({ window })],
 					},
-		ElapsedEstimateDebounce: ({ key }) => (key === model.estimateKey ? fetchEstimate(model) : { model }),
+		ElapsedEstimateDebounce: ({ seq }) => (seq === model.estimateSeq ? fetchEstimate(model) : { model }),
 		CompletedFetchEstimate: ({ key, result }) =>
 			key === model.estimateKey
 				? { model: { ...model, estimate: AsyncData.settle(model.estimate, result) } }
