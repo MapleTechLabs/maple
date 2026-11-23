@@ -78,6 +78,9 @@ export const isMissingUserActivityHourly = isMissingWarehouseTable(Datasources.u
 /** `user_activity_daily` (migration 0070) is missing; the activity calendar has no days to show. */
 export const isMissingUserActivityDaily = isMissingWarehouseTable(Datasources.userActivityDaily)
 
+/** `ai_evaluations` (migration 0072) is missing; evaluation reads degrade to no scores. */
+export const isMissingAiEvaluations = isMissingWarehouseTable(Datasources.aiEvaluations)
+
 /** `profiles` ships in migration 0067; a cluster without it has no profiles to show. */
 export const isMissingProfiles = isMissingWarehouseTable(Datasources.profiles)
 

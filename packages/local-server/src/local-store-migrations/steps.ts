@@ -2182,6 +2182,31 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		slug: "ai-evaluations",
+		description:
+			"Create ai_evaluations and its two views so LLM evaluation scores (gen_ai.evaluation.result) are queryable",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		plan: [
+			[
+				"create-ai-evaluations",
+				"Create ai_evaluations, ai_evaluations_mv and ai_evaluations_span_events_mv via the v64 bootstrap (all new, IF NOT EXISTS)",
+			],
+		],
+		dispositions: [
+			{
+				name: "ai_evaluations",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Scores accrue for records ingested after the migration; older evaluation events stay in raw logs and traces and are not backfilled.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 90,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

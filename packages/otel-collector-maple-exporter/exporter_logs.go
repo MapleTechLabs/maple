@@ -81,6 +81,15 @@ func (l *logsExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
 					severityText = internal.SeverityNumberToText(int32(lr.SeverityNumber()))
 				}
 
+				// The record's event name as `event.name` unless it set that attribute: the
+				// evaluation view keys on it, as with the ingest gateway.
+				logAttrs := internal.AttrMap(lr.Attributes())
+				if name := lr.EventName(); name != "" {
+					if _, set := logAttrs["event.name"]; !set {
+						logAttrs["event.name"] = name
+					}
+				}
+
 				row := map[string]any{
 					"OrgId":              orgID,
 					"Timestamp":          internal.FormatTimestampNano(ts),
@@ -98,7 +107,7 @@ func (l *logsExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
 					"ScopeName":          scopeName,
 					"ScopeVersion":       scopeVersion,
 					"ScopeAttributes":    scopeAttrs,
-					"LogAttributes":      internal.AttrMap(lr.Attributes()),
+					"LogAttributes":      logAttrs,
 				}
 
 				b, err := internal.MarshalRow(l.cfg.LogsTableName, row)

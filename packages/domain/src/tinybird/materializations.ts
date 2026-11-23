@@ -55,6 +55,7 @@ import {
 	errorEventsByTime,
 	errorFingerprintsMinutely,
 	errorFingerprintLineage,
+	aiEvaluations,
 	aiTraceIndex,
 	aiCrawlerRequests,
 	scannerRequests,
@@ -101,6 +102,8 @@ import {
 	PRODUCT_EVENTS_TRACE_PROJECTION_SQL,
 } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import { evaluationColumnsSql } from "./gen-ai-evaluation-sql"
+import { GEN_AI_EVALUATION_EVENT } from "../gen-ai-evaluation"
 import {
 	HTTP_SERVER_SPAN_SQL,
 	HTTP_STATUS_CODE_SQL,
@@ -1474,6 +1477,70 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `ai_evaluations` from OTLP log records named `gen_ai.evaluation.result`, the OTel
+ * spec's encoding of an evaluation. The ingest gateway copies the record's `event_name` into
+ * `LogAttributes['event.name']`; an emitter that sets the attribute itself lands here too. The
+ * record's span context is the evaluated span (the spec parents the event to it).
+ *
+ * Read by `ch/queries/ai-evaluations.ts` in the query engine: the evaluator summary, series, breakdown
+ * and score lists behind `/internal/ai-evaluations`, the Evals pages and the evaluation MCP tools.
+ * Raw logs cannot serve them: every read would scan 30 days of logs for one event name.
+ */
+export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
+	description:
+		"Populates ai_evaluations with OTLP log records named gen_ai.evaluation.result, one row per score, keyed to the span the record's context names.",
+	datasource: aiEvaluations,
+	nodes: [
+		node({
+			name: "ai_evaluations_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,${evaluationColumnsSql({ attrs: "LogAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
+        FROM logs
+        WHERE LogAttributes['event.name'] = '${GEN_AI_EVALUATION_EVENT}'
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `ai_evaluations` from span events named `gen_ai.evaluation.result`: the encoding SDKs
+ * used before events moved to the Logs API (OTEP 4430), and what OpenLIT still emits. The span
+ * carrying the event is the evaluated span unless the event names a target. The row takes the carrying
+ * span's time and service, not the event's, so a scoped delete removes the scores with the span that
+ * sent them; a score is the evaluator's telemetry, like a log that names a trace.
+ *
+ * Read by the same evaluation queries as `ai_evaluations_mv`, so scores from either encoding meet in
+ * one table.
+ */
+export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_span_events_mv", {
+	description:
+		"Populates ai_evaluations with span events named gen_ai.evaluation.result, one row per score, keyed to the span carrying the event.",
+	datasource: aiEvaluations,
+	nodes: [
+		node({
+			name: "ai_evaluations_span_events_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,${evaluationColumnsSql({ attrs: "EventAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
+        FROM traces
+        ARRAY JOIN
+          EventsName AS EventName,
+          EventsAttributes AS EventAttributes
+        WHERE has(EventsName, '${GEN_AI_EVALUATION_EVENT}')
+          AND EventName = '${GEN_AI_EVALUATION_EVENT}'
       `,
 		}),
 	],

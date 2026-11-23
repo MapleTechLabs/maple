@@ -291,6 +291,32 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 	})
 }
 
+/** The rules read a log record's `eventName` as its `event.name` attribute (an own attribute wins). */
+const withEventName = (attributes: AttrMap, eventName: string | undefined): AttrMap | null =>
+	eventName === undefined || eventName === "" || attributes["event.name"] !== undefined
+		? null
+		: { ...attributes, "event.name": eventName }
+
+/**
+ * Writes the rules' result back. The event name returns to `eventName` as the rules left it, so the
+ * encoder and the eventing projection read the same value; a rule that removed `event.name` (lifted
+ * or the record's own) clears `eventName` too, so the encoder cannot restore it.
+ */
+const writeLog = (
+	log: { attributes?: KeyValue[]; eventName?: string },
+	attributes: AttrMap,
+	lifted: boolean,
+	sentName: AttrMap[string] | undefined,
+) => {
+	const { "event.name": ruledName, ...rest } = attributes
+	// A rule that changed the record's own `event.name` redacts `eventName` too, so eventing never
+	// keeps the raw name; untouched, `eventName` stays as sent.
+	const isRuled = lifted || ruledName !== sentName
+	if (ruledName === undefined) log.eventName = undefined
+	else if (isRuled && typeof ruledName === "string") log.eventName = ruledName
+	log.attributes = fromMap(lifted ? rest : attributes, log.attributes)
+}
+
 const applyToLogs = (request: LogsRequest, run: Run) => {
 	request.resourceLogs = Arr.filter(request.resourceLogs ?? [], (resourceLogs) => {
 		const resource = toMap(resourceLogs.resource?.attributes)
@@ -298,10 +324,12 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 		resourceLogs.scopeLogs = Arr.filter(resourceLogs.scopeLogs ?? [], (scopeLogs) => {
 			scopeLogs.logRecords = Arr.filter(scopeLogs.logRecords ?? [], (log) => {
 				const body = log.body === undefined ? undefined : toValue(log.body)
+				const attributes = toMap(log.attributes)
+				const named = withEventName(attributes, log.eventName)
 				const output = run({
 					signal: "logs",
 					resource,
-					attributes: toMap(log.attributes),
+					attributes: named ?? attributes,
 					body,
 					severityNumber: log.severityNumber,
 					severityText: log.severityText,
@@ -310,7 +338,7 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 				if (output === null) return false
 				const { record } = output
 				kept.push(record)
-				log.attributes = fromMap(record.attributes, log.attributes)
+				writeLog(log, record.attributes, named !== null, attributes["event.name"])
 				if (record.body !== undefined && record.body !== body) log.body = fromValue(record.body)
 				// Parse rules can set severity and time.
 				if (record.severityNumber !== log.severityNumber) log.severityNumber = record.severityNumber

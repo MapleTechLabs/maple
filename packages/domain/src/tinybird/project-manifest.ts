@@ -42,6 +42,9 @@ const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	// No history to replay: property operations are new, and a replay would scan 30 days of traces
 	// for `person_properties_traces_mv`. Browser traits refill on each user's next session.
 	Datasources.personProperties._name,
+	// No history to replay: the gateway kept no log `event.name` before it, and a replay of 30 days of
+	// span events would be a CPU burst for the few older scores (migration 0072 backfills nothing either).
+	Datasources.aiEvaluations._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>

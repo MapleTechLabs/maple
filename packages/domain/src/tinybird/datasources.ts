@@ -1382,6 +1382,68 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
 
 /**
+ * One row per LLM evaluation score: the OTel GenAI `gen_ai.evaluation.result` event, from an OTLP
+ * log record (`ai_evaluations_mv`) or a span event (`ai_evaluations_span_events_mv`). See
+ * `gen-ai-evaluation.ts` for the attributes.
+ *
+ * `TraceId`/`SpanId` are the TARGET: the span the score grades, which is the record's own span
+ * context unless `maple_ai.evaluation.target.*` names another. A session-scope score carries its
+ * session in `SessionId`; every other row resolves its session per trace at read time, like Agent
+ * Sessions. `ScoreValue` is 0 where `HasScore` is 0 (a label-only score). `Verdict` is `pass` /
+ * `fail` read from the label, `''` when it says neither.
+ *
+ * TTL 90 days, longer than `traces`: scores are small and their trends outlive the traces, so a
+ * score whose trace has aged out still counts and just cannot be opened.
+ */
+export const aiEvaluations = defineDatasource("ai_evaluations", {
+	tenantColumn: "OrgId",
+	description:
+		"LLM evaluation scores (OTel gen_ai.evaluation.result events from log records and span events), one row per score, keyed to the span it grades. Populated by materialized views.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		Timestamp: utcDateTime64(9),
+		TraceId: t.string(),
+		SpanId: t.string(),
+		Scope: t.string().lowCardinality(),
+		SessionId: t.string(),
+		ResponseId: t.string(),
+		Name: t.string().lowCardinality(),
+		ScoreValue: t.float64(),
+		HasScore: t.uint8(),
+		ScoreLabel: t.string().lowCardinality(),
+		Verdict: t.string().lowCardinality(),
+		Explanation: t.string(),
+		ErrorType: t.string().lowCardinality(),
+		AnnotatorKind: t.string().lowCardinality(),
+		Source: t.string().lowCardinality(),
+		EvaluatorId: t.string().lowCardinality(),
+		EvaluatorVersion: t.string().lowCardinality(),
+		ExperimentId: t.string(),
+		Identifier: t.string(),
+		JudgeModel: t.string().lowCardinality(),
+		ServiceName: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+	},
+	// A session page reads its scores by trace: `TraceId` is not in the sorting key.
+	indexes: [
+		{
+			name: "idx_trace_id",
+			expr: "TraceId",
+			type: "bloom_filter(0.01)",
+			granularity: 1,
+		},
+	],
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "Name", "Timestamp"],
+		ttl: "toDate(Timestamp) + INTERVAL 90 DAY",
+	}),
+})
+
+export type AiEvaluationRow = InferRow<typeof aiEvaluations>
+
+/**
  * AI crawler requests: Server spans whose user agent names a published AI
  * fetcher (GPTBot, ClaudeBot, PerplexityBot, ...), for the Web Analytics AI tab.
  * One row per span, so read requests as `uniq(TraceId)`: a proxied request has several.
