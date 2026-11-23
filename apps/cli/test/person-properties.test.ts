@@ -312,7 +312,7 @@ const decodeSteps = decodeJsonEachRow(CH.productEventsFunnelRowSchema)
 const decodeGroups = decodeJsonEachRow(CH.productEventsFunnelBreakdownRowSchema)
 const decodeCohort = decodeJsonEachRow(CH.productEventsCohortRowSchema)
 
-const event = (eventName: string): CH.FunnelStep => ({ kind: "event", eventName })
+const event = (eventName: string) => ({ kind: "event" as const, eventName })
 
 describeWithChdb("reads by person and group property", () => {
 	let root: string
