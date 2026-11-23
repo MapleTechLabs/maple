@@ -184,7 +184,7 @@ export const V2IngestRuleAction = Schema.Union([
 		type: Schema.Literal("parse"),
 		steps: Schema.Array(V2IngestParseStep).annotate({
 			description:
-				"Run in order on logs the conditions match, after drop rules and before redact rules. A failed step sets `maple.parse.error` and the log is kept.",
+				"Run in order on logs the conditions match, after drop and redact rules, so they read redacted text; redact rules then also cover the attributes they write. A failed step sets `maple.parse.error` and the log is kept.",
 			examples: [[{ type: "json", source: "body" }]],
 		}),
 	}).annotate({ identifier: "IngestRuleParseAction", title: "Parse" }),
@@ -257,7 +257,7 @@ export const V2IngestRule = Schema.Struct({
 	}),
 	position: Position.annotate({
 		description:
-			"Drop rules always run first; parse rules, then redact rules, run in ascending position.",
+			"Drop rules always run first; redact rules, then parse rules, run in ascending position.",
 		examples: [0],
 	}),
 	signals: signalsField,

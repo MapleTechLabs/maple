@@ -29,6 +29,8 @@ pub(super) const PAYLOAD_SCAN_TIME: Duration = Duration::from_secs(1);
 const JSON_BYTES: usize = 64 * 1024;
 const JSON_DEPTH: usize = 16;
 const JSON_FIELDS: usize = 128;
+/// The latest time the warehouse can store: its time columns are signed nanoseconds.
+const MAX_TIME_NANOS: u64 = i64::MAX.unsigned_abs();
 /// Keys and values one step may write; more fails and writes none.
 const OUTPUT_BYTES: usize = 64 * 1024;
 const OUTPUT_FAILURE: &str = "writes more than 64 KiB";
@@ -188,7 +190,10 @@ const GROK_PATTERNS: &[(&str, &str)] = &[
         "IPV4",
         r"(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])",
     ),
-    ("IPV6", r"(?:[A-Fa-f0-9]{0,4}:){2,7}[A-Fa-f0-9]{0,4}"),
+    (
+        "IPV6",
+        r"(?:[A-Fa-f0-9]{0,4}:){2,7}(?:%{IPV4}|[A-Fa-f0-9]{0,4})",
+    ),
     ("IP", r"%{IPV6}|%{IPV4}"),
     (
         "HOSTNAME",
@@ -685,14 +690,15 @@ fn checked_output(
     fields: &[(String, &AnyValue)],
     budget: &mut ScanBudget,
 ) -> Option<&'static str> {
-    if fields.len() > JSON_FIELDS {
-        return Some("more than 128 fields");
-    }
+    // Charged before any refusal, so a rejected wide map still spends the budget.
     let size = output_size(
         prefix,
         fields.iter().map(|(key, value)| (key.as_str(), *value)),
     );
     budget.charge(size);
+    if fields.len() > JSON_FIELDS {
+        return Some("more than 128 fields");
+    }
     (size > OUTPUT_BYTES).then_some(OUTPUT_FAILURE)
 }
 
@@ -854,10 +860,14 @@ fn run_severity(value: &AnyValue) -> Outcome {
     let number = if (1..=24).contains(&numeric) {
         numeric
     } else {
-        let lower = text.to_ascii_lowercase();
+        // Only the prefix is compared, so a long value costs nothing extra.
+        let bytes = text.as_bytes();
         SEVERITY_PREFIXES
             .iter()
-            .find(|(prefix, _)| lower.starts_with(prefix))
+            .find(|(prefix, _)| {
+                bytes.len() >= prefix.len()
+                    && bytes[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+            })
             .map_or(0, |(_, level)| *level)
     };
     if number == 0 {
@@ -1094,9 +1104,17 @@ fn run_timestamp(value: &AnyValue, format: TimestampFormat) -> Outcome {
             .and_then(|c| civil_nanos(&c)),
     };
     match nanos {
+        // 0 means "no time" in OTLP and the warehouse stores signed nanoseconds.
+        Ok(nanos) if nanos == 0 || nanos > MAX_TIME_NANOS => Outcome::Failed("out of range"),
         Ok(nanos) => Outcome::Time(nanos),
         Err(TimeError::Format) => Outcome::FailedOwned(format!("does not match {}", format.name())),
         Err(TimeError::Range) => Outcome::Failed("out of range"),
+    }
+}
+
+fn charge_text(value: &AnyValue, budget: &mut ScanBudget) {
+    if let Some(any_value::Value::StringValue(text)) = value.value.as_ref() {
+        budget.charge(text.len());
     }
 }
 
@@ -1129,14 +1147,14 @@ fn source_value<'a>(record: &'a LogRecord, step: &CompiledStep) -> Option<&'a An
     value.filter(|value| value.value.is_some())
 }
 
-/// Runs one rule's steps in order on a log its conditions matched. Keys written from the body
-/// are appended to `body_keys`. Returns the first failure (`<step>: <reason>`), also set as
+/// Runs one rule's steps in order on a log its conditions matched. Every key written is appended
+/// to `written_keys`. Returns the first failure (`<step>: <reason>`), also set as
 /// `maple.parse.error`.
 pub(super) fn run_steps(
     steps: &[CompiledStep],
     record: &mut LogRecord,
     budget: &mut ScanBudget,
-    body_keys: &mut Vec<String>,
+    written_keys: &mut Vec<String>,
 ) -> Option<String> {
     let mut failure = None;
     for step in steps {
@@ -1153,8 +1171,14 @@ pub(super) fn run_steps(
                 StepKind::Pattern { regex, fields, .. } => {
                     run_pattern(regex, fields, value, budget)
                 }
-                StepKind::Severity => run_severity(value),
-                StepKind::Timestamp(format) => run_timestamp(value, *format),
+                StepKind::Severity => {
+                    charge_text(value, budget);
+                    run_severity(value)
+                }
+                StepKind::Timestamp(format) => {
+                    charge_text(value, budget);
+                    run_timestamp(value, *format)
+                }
             },
         };
         match outcome {
@@ -1189,10 +1213,8 @@ pub(super) fn run_steps(
                 }
                 for (key, value) in fields {
                     let key = format!("{prefix}{key}");
-                    if set_attribute(&mut record.attributes, key.clone(), value)
-                        && step.source == ParseSource::Body
-                    {
-                        body_keys.push(key);
+                    if set_attribute(&mut record.attributes, key.clone(), value) {
+                        written_keys.push(key);
                     }
                 }
             }

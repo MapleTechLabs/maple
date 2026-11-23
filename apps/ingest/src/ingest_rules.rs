@@ -161,7 +161,7 @@ pub enum ActionSpec {
         scopes: Vec<RedactScope>,
         method: RedactMethod,
     },
-    /// Runs after drops and before redaction; logs only.
+    /// Runs after drops and redaction, which then also covers what it wrote; logs only.
     Parse { steps: Vec<ParseStepSpec> },
 }
 
@@ -258,6 +258,9 @@ impl RuleCounters {
 pub struct RuleStats {
     pub per_rule: Vec<RuleCounters>,
     pub total: RuleCounters,
+    /// Encoded bytes parse rules added to kept logs; metering takes them back out, so a parsed
+    /// log is billed at the size it was sent.
+    pub parse_added_bytes: u64,
 }
 
 impl RuleStats {
@@ -1162,8 +1165,6 @@ struct RecordTargets<'a> {
     body: Option<&'a mut AnyValue>,
     /// Span status message, scanned under the `attributes` scope.
     status_message: Option<&'a mut String>,
-    /// Attribute keys a parse rule wrote from the body; the `body` scope covers them.
-    body_keys: &'a [String],
 }
 
 /// One `apply_*` call: scratch space reused across records plus the stats sink.
@@ -1180,8 +1181,8 @@ struct Pass<'a> {
     parse_budgets: Vec<Option<ScanBudget>>,
     /// What all parse rules may spend on this payload together.
     parse_total: Option<ScanBudget>,
-    /// Keys the current record's parse rules wrote from its body.
-    body_keys: Vec<String>,
+    /// Attribute keys the current record's parse rules wrote.
+    written_keys: Vec<String>,
 }
 
 impl<'a> Pass<'a> {
@@ -1196,14 +1197,14 @@ impl<'a> Pass<'a> {
             budget: ScanBudget::new(rules.scan_bytes, rules.scan_time),
             parse_budgets: Vec::new(),
             parse_total: None,
-            body_keys: Vec::new(),
+            written_keys: Vec::new(),
         }
     }
 
     /// Runs the parse rules in order on a kept log, each matched against the log as the
     /// previous ones left it. A rule or payload past its parse budget records a failure.
     fn parse_record(&mut self, resource: &[KeyValue], record: &mut LogRecord) {
-        self.body_keys.clear();
+        self.written_keys.clear();
         let rules = self.rules;
         if !rules.parses {
             return;
@@ -1241,7 +1242,7 @@ impl<'a> Pass<'a> {
             // Steps have their own budgets; their time is kept off the redaction deadline at once,
             // so a later rule's conditions are not judged against a clock parsing used up.
             let started = Instant::now();
-            let failed = parse::run_steps(steps, record, budget, &mut self.body_keys).is_some();
+            let failed = parse::run_steps(steps, record, budget, &mut self.written_keys).is_some();
             self.budget.deadline += started.elapsed();
             total.charge(usize::try_from(before - budget.remaining).unwrap_or(usize::MAX));
             let counters = &mut self.stats.per_rule[index];
@@ -1338,19 +1339,36 @@ impl<'a> Pass<'a> {
                 if let Some(body) = targets.body.as_deref_mut() {
                     redactor.redact_value(body);
                 }
-                // What parsing took from the body stays under the body's redaction.
-                if redaction.scopes & SCOPE_ATTRIBUTES == 0 && !targets.body_keys.is_empty() {
-                    let body_keys = targets.body_keys;
-                    targets.attributes.retain_mut(|kv| {
-                        !body_keys.contains(&kv.key) || redactor.redact_entry(kv, true)
-                    });
-                }
             }
             if redaction.scopes & SCOPE_RESOURCE != 0 {
                 self.resource_hits[index] = true;
             }
             self.stats.per_rule[index].redacted_values += redactor.count;
         }
+    }
+
+    /// Applies the matched `attributes`- and `body`-scoped redact rules to the attributes parse
+    /// rules wrote.
+    fn redact_written(&mut self, attributes: &mut Vec<KeyValue>) {
+        let rules = self.rules;
+        let written = std::mem::take(&mut self.written_keys);
+        for (index, rule) in rules.rules.iter().enumerate() {
+            let CompiledAction::Redact(redaction) = &rule.action else {
+                continue;
+            };
+            if !self.matched[index] || redaction.scopes & (SCOPE_ATTRIBUTES | SCOPE_BODY) == 0 {
+                continue;
+            }
+            let mut redactor = Redactor {
+                redaction,
+                salt: rules.hash_salt.as_bytes(),
+                budget: &mut self.budget,
+                count: 0,
+            };
+            attributes.retain_mut(|kv| !written.contains(&kv.key) || redactor.redact_entry(kv, true));
+            self.stats.per_rule[index].redacted_values += redactor.count;
+        }
+        self.written_keys = written;
     }
 
     /// Redacts the resource once all its records were evaluated, so conditions saw it as received.
@@ -1436,7 +1454,6 @@ impl Pass<'_> {
                 exemplars: &mut [],
                 body: None,
                 status_message: span.status.as_mut().map(|status| &mut status.message),
-                body_keys: &[],
             });
         }
         keep
@@ -1458,20 +1475,25 @@ impl Pass<'_> {
             trace_id: &record.trace_id,
         };
         let (keep, redact) = self.evaluate(&view, || record.encoded_len());
-        if keep {
-            self.parse_record(resource, record);
-        }
+        // Redaction runs before parsing, so a parse step only ever reads redacted text; then the
+        // same rules cover the keys parsing wrote, so key and detector rules reach them too.
         if redact {
-            let body_keys = std::mem::take(&mut self.body_keys);
             self.redact_record(RecordTargets {
                 attributes: &mut record.attributes,
                 events: &mut [],
                 exemplars: &mut [],
                 body: record.body.as_mut(),
                 status_message: None,
-                body_keys: &body_keys,
             });
-            self.body_keys = body_keys;
+        }
+        if keep && self.rules.parses {
+            let before = record.encoded_len();
+            self.parse_record(resource, record);
+            let added = record.encoded_len().saturating_sub(before);
+            self.stats.parse_added_bytes += u64::try_from(added).unwrap_or(u64::MAX);
+            if redact && !self.written_keys.is_empty() {
+                self.redact_written(&mut record.attributes);
+            }
         }
         keep
     }
@@ -1500,7 +1522,6 @@ impl Pass<'_> {
                 exemplars,
                 body: None,
                 status_message: None,
-                body_keys: &[],
             });
         }
         keep
@@ -2676,6 +2697,47 @@ mod tests {
             "the dropped log is never parsed"
         );
         assert_eq!(stats.per_rule[1].dropped, 1);
+    }
+
+    #[test]
+    fn parsing_never_changes_what_a_batch_is_metered_on() {
+        let drop_noise = json!({
+            "signals": ["logs"],
+            "conditions": [{"field": "body", "op": "contains", "value": "noise"}],
+            "action": {"_tag": "drop", "keepPercent": 0}
+        });
+        let parse_json = json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": {"_tag": "parse", "steps": [{"_tag": "json", "source": "body"}]}
+        });
+        let batch = || ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![
+                        log_with_body(r#"{"order":{"id":"ord_1","total":42.5},"user":"u_1"}"#),
+                        log_with_body("noise, dropped"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let metered = |rules: Vec<Value>| {
+            let specs = rules
+                .into_iter()
+                .enumerate()
+                .map(|(index, rule)| (format!("r{index}"), spec(rule)))
+                .collect();
+            let (rules, _) = compile(specs);
+            let mut request = batch();
+            let mut stats = RuleStats::default();
+            apply_logs(&rules, &mut request, &mut stats).expect("within budget");
+            (request.encoded_len() as u64 - stats.parse_added_bytes, stats.total.dropped_bytes)
+        };
+        let without = metered(vec![drop_noise.clone()]);
+        let with = metered(vec![drop_noise, parse_json]);
+        assert_eq!(with, without, "(kept bytes as sent, dropped bytes) must not depend on parsing");
     }
 
     #[test]

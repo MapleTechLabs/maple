@@ -13,7 +13,7 @@ export const OrgIngestRules = PG.table("org_ingest_rules", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		name: PG.text,
 		enabled: PG.column(PG.bool, { default: true }),
-		/** Drop rules run first; parse, then redact rules, run in ascending position. */
+		/** Drop rules run first; redact, then parse rules, run in ascending position. */
 		position: PG.column(PG.int4, { default: 0 }),
 		specJson: PG.column(PG.jsonb(IngestRuleSpec), { name: "spec_json" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at", defaultExpr: "now()" }),

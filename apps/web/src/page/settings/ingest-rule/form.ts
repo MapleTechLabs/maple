@@ -113,9 +113,10 @@ export const defaultStep = (id: number, kind: StepKind): StepDraft => ({
 })
 
 const stepOf = (draft: StepDraft): IngestParseStep => {
-	const key = draft.source === "attribute" ? { key: Str.trim(draft.key) } : {}
+	// Keys and prefixes are literal: a stored rule must round-trip unchanged.
+	const key = draft.source === "attribute" ? { key: draft.key } : {}
 	const source = { source: draft.source, ...key }
-	const prefix = Str.trim(draft.prefix) === "" ? {} : { prefix: Str.trim(draft.prefix) }
+	const prefix = draft.prefix === "" ? {} : { prefix: draft.prefix }
 	switch (draft.kind) {
 		case "json":
 			return { _tag: "json", ...source, ...prefix }

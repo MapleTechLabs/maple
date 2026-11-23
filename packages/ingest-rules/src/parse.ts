@@ -68,8 +68,8 @@ export interface ParseOutcome {
 	readonly record: RuleRecord
 	/** `<step>: <reason>` of the first step that failed, or null. */
 	readonly failure: string | null
-	/** Attribute keys written from the body; body-scoped redaction covers them. */
-	readonly bodyKeys: ReadonlyArray<string>
+	/** Every attribute key written; redaction covers them after parsing. */
+	readonly writtenKeys: ReadonlyArray<string>
 }
 
 const isList = (value: AttrValue): value is ReadonlyArray<AttrValue> => Arr.isArray(value)
@@ -452,7 +452,8 @@ const runTimestamp = (value: AttrValue, format: IngestTimestampFormat): StepResu
 					},
 				)
 	if (nanos === "format") return failed(`does not match ${format}`)
-	if (nanos === "range") return failed("out of range")
+	// 0 means "no time" in OTLP and the warehouse stores signed nanoseconds.
+	if (nanos === "range" || nanos === 0n || nanos > I64_MAX) return failed("out of range")
 	return { _tag: "time", nanos }
 }
 
@@ -464,7 +465,7 @@ export const runParse = (
 ): ParseOutcome => {
 	let current = record
 	let failure: string | null = null
-	const bodyKeys: Array<string> = []
+	const writtenKeys: Array<string> = []
 	for (const step of steps) {
 		const value = step.source === "body" ? current.body : ownValue(current.attributes, step.key ?? "")
 		const result: StepResult =
@@ -503,12 +504,12 @@ export const runParse = (
 				const written = Arr.filter(prefixed, ([key]) => !isProtectedKey(key))
 				if (written.length === 0) break
 				current = { ...current, attributes: { ...current.attributes, ...Rec.fromEntries(written) } }
-				if (step.source === "body") bodyKeys.push(...Arr.map(written, ([key]) => key))
+				writtenKeys.push(...Arr.map(written, ([key]) => key))
 				break
 			}
 		}
 	}
 	if (failure !== null)
 		current = { ...current, attributes: { ...current.attributes, [PARSE_ERROR_KEY]: failure } }
-	return { record: current, failure, bodyKeys }
+	return { record: current, failure, writtenKeys }
 }

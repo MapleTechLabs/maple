@@ -31,10 +31,12 @@ A rule looks at one **record** at a time:
    rule changes it.
 2. **Drop rules run first.** A record matching a drop rule is removed unless the rule keeps it by
    sampling. When several drop rules match, the record survives only if every one of them keeps it.
-3. **Parse rules then run in `position` order** on the logs that survived (see "Parse rules").
-   Each parse rule's conditions see the log as the earlier parse rules left it.
-4. **Redact rules then run in `position` order** on the parsed records, each on the output of the
-   previous one.
+3. **Redact rules then run in `position` order** on the records that survived, each on the
+   output of the previous one.
+4. **Parse rules then run in `position` order** on the redacted logs (see "Parse rules"), so a
+   parse step only ever reads redacted text. Each parse rule's conditions see the log as the
+   earlier parse rules left it. The matched `attributes`- and `body`-scoped redact rules then run
+   once more over the attributes parsing wrote, so key and detector rules reach them too.
 5. A resource or scope left with no records is removed. A metric left with no data points is
    removed.
 
@@ -237,15 +239,20 @@ source fails the step.
   fraction after `.` or `,`, read to 9 digits; `Z`, `+HH:MM`, `+HHMM` or no zone, meaning UTC),
   `unix_s`, `unix_ms`, `unix_us`, `unix_ns` (digits with an optional fraction), or `common_log`
   (`10/Oct/2000:13:55:36 -0700`). Numbers are read as their condition text. Invalid dates, times
-  before 1970 and values past `u64` fail.
+  before 1970, `0` and values past `i64::MAX` nanoseconds (what the warehouse stores) fail.
 - **Failures.** A failed step sets the log attribute `maple.parse.error` to
   `<step>: <reason>` (`regex: no match`, `json: not valid JSON`, `timestamp: out of range`, ...).
   Later steps still run and a rule keeps its first failure. The log is always kept.
 - **Conditions.** Drop and redact rules decide whether they apply before parsing, so a redact
   condition on a parsed attribute never matches; scope the redact rule instead.
-- **Redaction.** A redact rule with the `body` scope (and without `attributes`) also redacts
-  the attributes a parse rule wrote from the body, as if they were kvlist entries of the body, so
-  a field taken out of the body is masked wherever the body's would be.
+- **Redaction.** Redaction runs before parsing, so a value a redact rule masks in the body or an
+  attribute is masked in everything parsed from it, through any number of steps, and a
+  contextual pattern (`password=[^ ]+`) masks the secret before a step could extract it. A parse
+  step may therefore see `[REDACTED]` where it expects a value. Afterwards, the matched
+  `attributes`- and `body`-scoped redact rules run on the keys parsing wrote; their counts add to
+  the rule's `redacted_values`.
+- **Metering.** Bytes parse rules add are not billed: a payload is metered on the size it was
+  sent, less what drop rules removed.
 - **Budget.** In the gateway each parse rule may read 256 MiB and spend 250 ms per payload, and
   all parse rules together 1 GiB and 1 s. Past that, the rule stops parsing for the rest of that
   payload and each log it matches gets `maple.parse.error: budget: ...`; the payload is still

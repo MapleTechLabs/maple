@@ -25,10 +25,13 @@ Most teams send messy text logs. Maple parses them at ingest as a third kind of 
    (named groups), `grok` (a curated library, `%{PATTERN:field:int}`), `severity` and
    `timestamp`. Add/move/remove attribute already exist as attribute mappings; a message remapper
    and logfmt are follow-ups.
-3. **Order: drop, then parse, then redact.** Drops see the log as received, so a dropped log is
-   never parsed and dropped bytes stay what the customer sent. Redaction runs on the parsed log,
-   and a `body`-scoped redact rule also covers attributes a parse rule took from the body, so
-   extracting a field can never leak what the body's redaction would have masked.
+3. **Order: drop, redact, parse, then redact what parsing wrote.** Drops see the log as received,
+   so a dropped log is never parsed and parsing's added bytes are never billed. Parsing reads only
+   redacted text, so no field can carry what a redact rule masked, however many steps derive it
+   and whatever context the redact pattern needed. Attribute and body redact rules then run again
+   on the parsed keys, so key rules like `*password*` reach them. (A first version tracked which
+   attributes came from the body instead; review showed chained steps and contextual patterns
+   escape that.)
 4. **Linear-time regexes in both engines.** The gateway uses the `regex` crate; the preview, MCP
    and local mode use RE2JS (RE2 syntax, like SigNoz). Neither backtracks, so parse patterns need
    none of the repetition limits redact patterns have, and `%{DATA} %{GREEDYDATA}` grok is fine.

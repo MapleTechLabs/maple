@@ -365,7 +365,7 @@ const parseControls = (h: H, model: Model): ReadonlyArray<Html> => {
 			),
 		),
 		typography(h, { size: "xs", tone: "muted", as: "p" }, [
-			"Steps run in order after drop rules and before redact rules. A failed step keeps the log and sets maple.parse.error.",
+			"Steps run in order after drop and redact rules, so they read redacted text. A failed step keeps the log and sets maple.parse.error.",
 		]),
 	]
 }

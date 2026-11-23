@@ -384,20 +384,13 @@ const redactRecord = (
 	record: RuleRecord,
 	rule: CompiledRule,
 	salt: Uint8Array,
-	bodyKeys: ReadonlySet<string>,
 ): { record: RuleRecord; count: number } => {
 	const action = rule.spec.action
 	if (action._tag !== "redact") return { record, count: 0 }
 	const ctx: RedactContext = { rule, method: action.method, detectors: action.detectors, salt, count: 0 }
-	// Values a parse rule took from the body stay under the body's redaction.
-	const attributes = scopeHas(rule, "attributes")
-		? redactMap(record.attributes, ctx)
-		: scopeHas(rule, "body") && bodyKeys.size > 0
-			? redactMap(record.attributes, ctx, true, bodyKeys)
-			: record.attributes
 	const next: RuleRecord = {
 		...record,
-		attributes,
+		attributes: scopeHas(rule, "attributes") ? redactMap(record.attributes, ctx) : record.attributes,
 		resource: scopeHas(rule, "resource") ? redactMap(record.resource, ctx) : record.resource,
 		events: scopeHas(rule, "events")
 			? record.events === undefined
@@ -441,35 +434,58 @@ export const applyRules = (
 			!keepBySample(record.traceId, rule.spec.action.keepPercent, once),
 	)
 	if (Option.isSome(dropper)) return { _tag: "dropped", ruleIndex: dropper.value.index, matched }
-	// Parse rules run after drops, in order, each seeing what the previous ones left.
+	const redactions = new Map<number, number>()
+	const count = (index: number, found: number) => {
+		if (found > 0) redactions.set(index, (redactions.get(index) ?? 0) + found)
+	}
+	const redactRules = Arr.filter(matching, (rule) => rule.spec.action._tag === "redact")
+	// Redaction runs first, so a parse step only ever reads redacted text.
+	const redacted = Arr.reduce(redactRules, record, (current, rule) => {
+		const { record: next, count: found } = redactRecord(current, rule, compiled.salt)
+		count(rule.index, found)
+		return next
+	})
+	// Parse rules run in order, each seeing what the previous ones left.
 	const parseFailures = new Map<number, string>()
 	const parsedMatched: Array<number> = []
-	const bodyKeys = new Set<string>()
+	const written = new Set<string>()
 	const parsed = Arr.reduce(
 		Arr.filter(compiled.rules, (rule) => rule.spec.action._tag === "parse"),
-		record,
+		redacted,
 		(current, rule) => {
 			if (!ruleMatches(rule, current)) return current
 			parsedMatched.push(rule.index)
 			const outcome = runParse(rule.parse, current, scanCut)
 			if (outcome.failure !== null) parseFailures.set(rule.index, outcome.failure)
-			for (const key of outcome.bodyKeys) bodyKeys.add(key)
+			for (const key of outcome.writtenKeys) written.add(key)
 			return outcome.record
 		},
 	)
-	const redactions = new Map<number, number>()
-	const redacted = Arr.reduce(
-		Arr.filter(matching, (rule) => rule.spec.action._tag === "redact"),
-		parsed,
-		(current, rule) => {
-			const { record: next, count } = redactRecord(current, rule, compiled.salt, bodyKeys)
-			if (count > 0) redactions.set(rule.index, count)
-			return next
-		},
-	)
+	// Then the attribute- and body-scoped rules cover the keys parsing wrote.
+	const final =
+		written.size === 0
+			? parsed
+			: Arr.reduce(
+					Arr.filter(redactRules, (rule) => scopeHas(rule, "attributes") || scopeHas(rule, "body")),
+					parsed,
+					(current, rule) => {
+						const action = rule.spec.action
+						if (action._tag !== "redact") return current
+						const ctx: RedactContext = {
+							rule,
+							method: action.method,
+							detectors: action.detectors,
+							salt: compiled.salt,
+							count: 0,
+						}
+						const attributes = redactMap(current.attributes, ctx, true, written)
+						count(rule.index, ctx.count)
+						return { ...current, attributes }
+					},
+				)
 	return {
 		_tag: "kept",
-		record: redacted,
+		record: final,
 		matched: Arr.sort([...matched, ...parsedMatched], Order.Number),
 		redactions,
 		parseFailures,
