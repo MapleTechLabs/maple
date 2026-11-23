@@ -1,3 +1,4 @@
+import { classifyServiceIdentity, type ServiceIdentitySignals } from "@maple/domain/service-identity"
 import { ServiceName } from "@maple/domain"
 import { Schema } from "effect"
 import type { MapBundle } from "../page/service-map/model"
@@ -48,6 +49,7 @@ const platform = (
 		cloudProvider: string
 		faasName: string
 		runtime: string
+		identity: Partial<ServiceIdentitySignals>
 	}>,
 ) => ({
 	serviceName: name(serviceName),
@@ -58,7 +60,22 @@ const platform = (
 	faasName: row.faasName,
 	mapleSdkType: "",
 	runtime: row.runtime,
+	identity: classifyServiceIdentity({ ...NO_SIGNALS, ...row.identity }),
 })
+
+const NO_SIGNALS: ServiceIdentitySignals = {
+	scopeNames: [],
+	sdkName: "",
+	sdkLanguage: "",
+	mapleSdkType: "",
+	runtimeName: "",
+	osName: "",
+	serverSpans: 0,
+	consumerSpans: 0,
+	clientSpans: 0,
+	rootSpans: 0,
+	classifiedSpans: 0,
+}
 
 export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 	edges: [
@@ -87,6 +104,12 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			cloudProvider: "gcp",
 			faasName: "fleet-api",
 			runtime: "go",
+			identity: {
+				scopeNames: ["go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"],
+				serverSpans: 98_000,
+				clientSpans: 40_000,
+				classifiedSpans: 151_480,
+			},
 		}),
 		platform("fleet-worker", {
 			platform: "gcp",
@@ -94,6 +117,7 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			cloudProvider: "gcp",
 			faasName: "fleet-worker",
 			runtime: "go",
+			identity: { consumerSpans: 42_000, clientSpans: 19_900, classifiedSpans: 61_900 },
 		}),
 		platform("fleet-web", {
 			platform: "web",
@@ -101,6 +125,7 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			cloudProvider: "",
 			faasName: "",
 			runtime: "browser",
+			identity: { scopeNames: ["next.js"], serverSpans: 30_000, classifiedSpans: 128_400 },
 		}),
 	],
 	/** No Kubernetes: the bundle's workload rows are empty. */

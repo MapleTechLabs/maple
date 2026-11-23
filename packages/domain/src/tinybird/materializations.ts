@@ -954,7 +954,7 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_exte
  */
 export const servicePlatformsHourlyMv = defineMaterializedView("service_platforms_hourly_mv", {
 	description:
-		"Pre-aggregates per-service hosting-platform resource attributes (k8s.*, cloud.*, faas.*) into hourly buckets for the service map's runtime-icon resolver.",
+		"Pre-aggregates per-service hosting-platform resource attributes (k8s.*, cloud.*, faas.*), instrumentation scopes, SDK self-report and span-kind counts into hourly buckets for the service map's platform and service-identity resolvers.",
 	datasource: servicePlatformsHourly,
 	nodes: [
 		node({
@@ -976,7 +976,17 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
           max(ResourceAttributes['faas.name']) AS FaasName,
           max(ResourceAttributes['maple.sdk.type']) AS MapleSdkType,
           max(ResourceAttributes['process.runtime.name']) AS ProcessRuntimeName,
-          count() AS SpanCount
+          count() AS SpanCount,
+          -- Scope names are code-defined, not data; 32 per service-hour bounds a pathological one.
+          groupUniqArray(32)(ScopeName) AS ScopeNames,
+          max(ResourceAttributes['telemetry.sdk.name']) AS TelemetrySdkName,
+          max(ResourceAttributes['telemetry.sdk.language']) AS TelemetrySdkLanguage,
+          max(ResourceAttributes['os.name']) AS OsName,
+          count() AS ClassifiedSpanCount,
+          countIf(SpanKind = 'Server') AS ServerSpanCount,
+          countIf(SpanKind = 'Consumer') AS ConsumerSpanCount,
+          countIf(SpanKind IN ('Client', 'Producer')) AS ClientSpanCount,
+          countIf(ParentSpanId = '') AS RootSpanCount
         FROM traces
         WHERE ServiceName != ''
         GROUP BY OrgId, Hour, ServiceName, DeploymentEnv

@@ -321,6 +321,7 @@ const toServicePlatformRow = (row: CH.ServicePlatformsOutput) => {
 		faasName,
 		mapleSdkType,
 		processRuntimeName,
+		identity: CH.servicePlatformIdentity(row),
 	}
 }
 

@@ -1,3 +1,9 @@
+import {
+	FRAMEWORKS,
+	SERVICE_KINDS,
+	type ServiceFramework,
+	type ServiceIdentity,
+} from "@maple/domain/service-identity"
 import type { DbIconKey } from "../graph/service-map-db-style"
 import type { ServicePlatform } from "../graph/service-map-types"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -32,6 +38,47 @@ export const PLATFORM_ICON = {
 	unknown: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
 	none: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
 } satisfies Record<ServicePlatform | "none", PlatformGlyph>
+
+/** Brand marks the kit has; every other framework is named in text only. */
+export const FRAMEWORK_ICON = {
+	nextjs: "FrameworkNextjsIcon",
+	effect: "FrameworkEffectIcon",
+	spring: "SpringIcon",
+	astro: null,
+	sveltekit: null,
+	nuxt: null,
+	remix: null,
+	nestjs: null,
+	rails: null,
+	django: null,
+	hono: null,
+	express: null,
+	fastify: null,
+	koa: null,
+	elysia: null,
+	fastapi: null,
+	flask: null,
+	gin: null,
+	echo: null,
+	fiber: null,
+	aspnetcore: null,
+	celery: null,
+	sidekiq: null,
+	inngest: null,
+	bullmq: null,
+	pgboss: null,
+	gohttp: null,
+	rack: null,
+} as const satisfies Record<ServiceFramework, IconName | null>
+
+/** "API · Effect", "Web app · Next.js", or null when nothing was identified. */
+export const identityText = (identity: ServiceIdentity | undefined): string | null => {
+	if (identity === undefined) return null
+	const framework = identity.framework === null ? null : FRAMEWORKS[identity.framework].label
+	if (identity.kind === "unknown") return framework
+	const kind = SERVICE_KINDS[identity.kind]
+	return framework === null ? kind : `${kind} · ${framework}`
+}
 
 export const DB_ICON = {
 	postgres: "PostgresIcon",

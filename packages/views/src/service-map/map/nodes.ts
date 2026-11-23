@@ -17,6 +17,8 @@ import {
 	avgCell,
 	DB_ICON,
 	errCell,
+	FRAMEWORK_ICON,
+	identityText,
 	HANDLE_CLASSES,
 	HEALTH_TONE,
 	metricCell,
@@ -68,6 +70,22 @@ const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
 				])
 			: typography(h, { size: "2xs", tone: "faint", mono: true, numeric: true }, [EMPTY_VALUE]),
 	])
+
+/** What kind of service this is and its framework, under the name; the service panel shows why. */
+const identityLine = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): ReadonlyArray<Html> => {
+	const text = identityText(data.identity)
+	if (text === null) return []
+	const framework = data.identity?.framework ?? null
+	const frameworkIcon = framework === null ? null : FRAMEWORK_ICON[framework]
+	return [
+		hstack(h, { gap: "1.5", className: "-mt-1 min-w-0" }, [
+			...(frameworkIcon === null
+				? []
+				: [icon(h, frameworkIcon, { size: 12, className: "shrink-0 text-foreground-subtle" })]),
+			typography(h, { size: "2xs", tone: "muted", truncate: true }, [text]),
+		]),
+	]
+}
 
 const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
 	const {
@@ -136,6 +154,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 											]),
 								]),
 					]),
+					...identityLine(h, data),
 					hstack(h, { gap: "4", align: "stretch" }, [
 						tooltipTrigger(h, [metricCell(h, "req/s", rateText(throughput, hasSampling))]),
 						errCell(h, errorRate),

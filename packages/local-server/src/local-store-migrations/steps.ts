@@ -2236,6 +2236,54 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			{ ...ERROR_EVENTS_BY_TIME_FORWARD_ONLY, disposition: "preserve-exact" },
 		],
 	},
+	{
+		// Only the post-migration view writes ClassifiedSpanCount, so a 0 there marks an
+		// older bucket's span-kind mix as unknown rather than none. Nothing is backfilled.
+		slug: "service-identity",
+		description:
+			"Keep instrumentation scopes, SDK self-report and span-kind counts per service-hour for service identity",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("service_platforms_hourly", [
+				["ScopeNames", "SimpleAggregateFunction(groupUniqArrayArray, Array(String))"],
+				["TelemetrySdkName", "SimpleAggregateFunction(max, String)"],
+				["TelemetrySdkLanguage", "SimpleAggregateFunction(max, String)"],
+				["OsName", "SimpleAggregateFunction(max, String)"],
+				["ClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+				["ServerSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+				["ConsumerSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+				["ClientSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+				["RootSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
+			]),
+			dropViews("service_platforms_hourly_mv"),
+		],
+		counts: {
+			group: "rollupRows",
+			measure: [["platforms", "SELECT toString(count()) AS count FROM service_platforms_hourly"]],
+			checks: [unchangedRowCount("platforms")],
+		},
+		plan: [
+			[
+				"add-service-identity-columns",
+				"Add scope names, SDK self-report and span-kind counters to service_platforms_hourly",
+			],
+			[
+				"recreate-service-platforms-view",
+				"Recreate service_platforms_hourly_mv so new rows carry the service-identity columns",
+			],
+		],
+		verifies: "Verify the v66 physical schema, retained raw telemetry counts, and the platforms rollup row count",
+		dispositions: [
+			{
+				name: "service_platforms_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"Nine columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and every existing row reads back empty or zero, which ClassifiedSpanCount marks as unclassified.",
+			},
+			TRACES_UNDER_REPLACED_VIEWS,
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

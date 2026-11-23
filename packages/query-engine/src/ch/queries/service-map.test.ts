@@ -12,6 +12,7 @@ import {
 	serviceDependenciesForServiceQuery,
 	serviceExternalEdgesSQL,
 	serviceMapEdgeJoinQuery,
+	servicePlatformIdentity,
 	servicePlatformsSQL,
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
@@ -740,6 +741,16 @@ describe("servicePlatformsSQL", () => {
 					faasName: "",
 					mapleSdkType: "node",
 					processRuntimeName: "nodejs",
+					scopeNames: ["@opentelemetry/instrumentation-express"],
+					telemetrySdkName: "opentelemetry",
+					telemetrySdkLanguage: "nodejs",
+					osName: "",
+					// UInt64 sums arrive as JSON strings.
+					classifiedSpanCount: "120",
+					serverSpanCount: "80",
+					consumerSpanCount: "0",
+					clientSpanCount: "40",
+					rootSpanCount: "80",
 				},
 			])
 
@@ -748,7 +759,10 @@ describe("servicePlatformsSQL", () => {
 				k8sDeploymentName: "artifacts-api",
 				cloudProvider: "aws",
 				mapleSdkType: "node",
+				scopeNames: ["@opentelemetry/instrumentation-express"],
+				serverSpanCount: 80,
 			})
+			expect(servicePlatformIdentity(rows[0]!)).toMatchObject({ kind: "api", framework: "express" })
 		}),
 	)
 

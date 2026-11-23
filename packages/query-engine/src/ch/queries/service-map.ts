@@ -37,6 +37,7 @@ import { DateTimeUtcFromWarehouse } from "../../datetime"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
+import { classifyServiceIdentity, type ServiceIdentity } from "@maple/domain/service-identity"
 import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 
 // Local CH function declarations used by the live topology-join branch's
@@ -1337,17 +1338,28 @@ export interface ServicePlatformsOpts {
 	deploymentEnv?: string
 }
 
-export interface ServicePlatformsOutput {
-	readonly serviceName: string
-	readonly k8sCluster: string
-	readonly k8sPodName: string
-	readonly k8sDeploymentName: string
-	readonly cloudPlatform: string
-	readonly cloudProvider: string
-	readonly faasName: string
-	readonly mapleSdkType: string
-	readonly processRuntimeName: string
-}
+const ServicePlatformsOutputSchema = Schema.Struct({
+	serviceName: Schema.String,
+	k8sCluster: Schema.String,
+	k8sPodName: Schema.String,
+	k8sDeploymentName: Schema.String,
+	cloudPlatform: Schema.String,
+	cloudProvider: Schema.String,
+	faasName: Schema.String,
+	mapleSdkType: Schema.String,
+	processRuntimeName: Schema.String,
+	scopeNames: Schema.Array(Schema.String),
+	telemetrySdkName: Schema.String,
+	telemetrySdkLanguage: Schema.String,
+	osName: Schema.String,
+	classifiedSpanCount: CHNumber,
+	serverSpanCount: CHNumber,
+	consumerSpanCount: CHNumber,
+	clientSpanCount: CHNumber,
+	rootSpanCount: CHNumber,
+})
+
+export type ServicePlatformsOutput = typeof ServicePlatformsOutputSchema.Type
 
 export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
@@ -1368,6 +1380,16 @@ export function servicePlatformsSQL(
 			faasName: CH.max_($.FaasName),
 			mapleSdkType: CH.max_($.MapleSdkType),
 			processRuntimeName: CH.max_($.ProcessRuntimeName),
+			// Service identity inputs (see `classifyServiceIdentity`).
+			scopeNames: CH.groupUniqArrayArray($.ScopeNames),
+			telemetrySdkName: CH.max_($.TelemetrySdkName),
+			telemetrySdkLanguage: CH.max_($.TelemetrySdkLanguage),
+			osName: CH.max_($.OsName),
+			classifiedSpanCount: CH.sum($.ClassifiedSpanCount),
+			serverSpanCount: CH.sum($.ServerSpanCount),
+			consumerSpanCount: CH.sum($.ConsumerSpanCount),
+			clientSpanCount: CH.sum($.ClientSpanCount),
+			rootSpanCount: CH.sum($.RootSpanCount),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1380,12 +1402,28 @@ export function servicePlatformsSQL(
 		.limit(500)
 		.format("JSON")
 
-	return compile(query, {
-		orgId: params.orgId,
-		startTime: params.startTime,
-		endTime: params.endTime,
-	})
+	return compile(
+		query,
+		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
+		{ rowSchema: ServicePlatformsOutputSchema },
+	)
 }
+
+/** The service's kind and framework from its platforms row; shared by the API and Maple Local. */
+export const servicePlatformIdentity = (row: ServicePlatformsOutput): ServiceIdentity =>
+	classifyServiceIdentity({
+		scopeNames: row.scopeNames,
+		sdkName: row.telemetrySdkName,
+		sdkLanguage: row.telemetrySdkLanguage,
+		mapleSdkType: row.mapleSdkType,
+		runtimeName: row.processRuntimeName,
+		osName: row.osName,
+		serverSpans: row.serverSpanCount,
+		consumerSpans: row.consumerSpanCount,
+		clientSpans: row.clientSpanCount,
+		rootSpans: row.rootSpanCount,
+		classifiedSpans: row.classifiedSpanCount,
+	})
 
 // Query shapes across every service and database, not one db system's detail
 // panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,

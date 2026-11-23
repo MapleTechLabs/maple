@@ -803,6 +803,17 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		MapleSdkType: t.simpleAggregateFunction("max", t.string()),
 		ProcessRuntimeName: t.simpleAggregateFunction("max", t.string()),
 		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		// Service identity (migration 0074): instrumentation scopes, SDK self-report and the span-kind
+		// mix. `ClassifiedSpanCount` is 0 on rows written before it, so their kind counts mean unknown.
+		ScopeNames: t.simpleAggregateFunction("groupUniqArrayArray", t.array(t.string())),
+		TelemetrySdkName: t.simpleAggregateFunction("max", t.string()),
+		TelemetrySdkLanguage: t.simpleAggregateFunction("max", t.string()),
+		OsName: t.simpleAggregateFunction("max", t.string()),
+		ClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ServerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ConsumerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ClientSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
+		RootSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",

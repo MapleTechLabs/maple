@@ -14,7 +14,7 @@ import { typography } from "../../ui/typography"
 // The dotted namespace boxes the service map derives from node extents, and their node.
 
 const FALLBACK_NODE_WIDTH = 220
-const FALLBACK_NODE_HEIGHT = 70
+const FALLBACK_NODE_HEIGHT = 88
 
 const nsGroupId = (namespace: string) => `nsgroup:${encodeURIComponent(namespace)}`
 

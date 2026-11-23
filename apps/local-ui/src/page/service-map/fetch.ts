@@ -36,12 +36,16 @@ export const fetchServiceMap = (bounds: TimeBounds, durationSeconds: number, api
 				row.processRuntimeName ? [[row.serviceName, row.processRuntimeName] as const] : [],
 			),
 		)
+		const identities = new Map(
+			Arr.map(platformRows, (row) => [row.serviceName, CH.servicePlatformIdentity(row)] as const),
+		)
 		const data: LocalServiceMapData = {
 			edges: aggregateEdges(edgeRows, durationSeconds),
 			dbEdges: Arr.map(dbEdgeRows, (row) => toDbEdge(row, durationSeconds)),
 			overviews: coerceServiceOverviewRows(overviewRows, durationSeconds),
 			platforms,
 			runtimes,
+			identities,
 		}
 		return data
 	})
