@@ -44,10 +44,6 @@ export function hrTimeDuration(start: HrTime, end: HrTime): HrTime {
 	return nanos < 0 ? [end[0] - start[0] - 1, nanos + NANOS_PER_SECOND] : [end[0] - start[0], nanos]
 }
 
-export function hrTimeToMillis(time: HrTime): number {
-	return time[0] * 1_000 + time[1] / 1_000_000
-}
-
 /** Unix nanoseconds as the decimal string OTLP/JSON carries. */
 export function hrTimeToNanosString(time: HrTime): string {
 	return (BigInt(Math.trunc(time[0])) * 1_000_000_000n + BigInt(Math.trunc(time[1]))).toString()
