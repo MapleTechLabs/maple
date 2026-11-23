@@ -1,6 +1,6 @@
 // Auto-detected platform / runtime resource attributes
 //
-// Maps `std-env` runtime + provider detection plus a small set of
+// Maps runtime + provider detection (`runtime-detect.ts`) plus a small set of
 // platform-specific environment variables onto OpenTelemetry semantic-
 // convention resource attributes (cloud.*, faas.*, process.runtime.*, os.*).
 //
@@ -16,18 +16,18 @@
 // Maple dashboard's hosting-icon resolver matches them.
 //
 // AWS Lambda detection is done via env vars (`AWS_LAMBDA_FUNCTION_NAME`)
-// because std-env's `provider` doesn't enumerate Lambda — Lambda runs node on
-// EC2-managed hosts and isn't a CI/CD provider in std-env's taxonomy.
+// because the provider table doesn't enumerate Lambda: Lambda runs node on
+// EC2-managed hosts and isn't a CI/CD provider in that taxonomy.
 
-import { Match, Option, Schema } from "effect"
-import { platform, provider, runtime } from "std-env"
+import { Match, Option, Record as Rec, Schema } from "effect"
+import { DETECT_ENV_KEYS, detectEnvironment, readProcessEnv, type DetectInput } from "./runtime-detect.js"
 
 export interface PlatformInputs {
-	/** `std-env` runtime: "node" | "bun" | "deno" | "workerd" | "edge-light" | "fastly" | "netlify" | string. */
+	/** Detected runtime: "node" | "bun" | "deno" | "workerd" | "edge-light" | "fastly" | "netlify" | string. */
 	readonly runtime: string
-	/** `std-env` provider: "cloudflare_workers" | "vercel" | "google_cloudrun" | …, or "" / "unknown". */
+	/** Detected provider: "cloudflare_workers" | "vercel" | "google_cloudrun" | …, or "" / "unknown". */
 	readonly provider: string
-	/** `std-env` `platform` (Node `process.platform`): "linux" | "darwin" | "win32" | …. */
+	/** Node `process.platform`: "linux" | "darwin" | "win32" | …. */
 	readonly platform: string
 	/**
 	 * Process architecture from `process.arch` ("x64", "arm64", …). Empty when
@@ -43,7 +43,7 @@ export interface PlatformInputs {
 type Attrs = Record<string, string>
 const empty: Attrs = {}
 
-// `std-env`'s runtime ⇒ OTel canonical `process.runtime.name`. node maps to
+// Detected runtime ⇒ OTel canonical `process.runtime.name`. node maps to
 // "nodejs"; everything else is passed through verbatim because there's no
 // canonical OTel value for workerd / edge-light / fastly.
 const runtimeAttrs = (rt: string): Attrs =>
@@ -91,7 +91,7 @@ const lambdaAttrs = (env: PlatformInputs["env"], functionName: string): Attrs =>
 			: {}),
 })
 
-// `std-env` provider ⇒ OTel cloud.provider / cloud.platform / faas.* /
+// Detected provider ⇒ OTel cloud.provider / cloud.platform / faas.* /
 // cloud.region. Each branch returns the partial record it contributes; the
 // caller spreads it into the final attrs object.
 const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
@@ -150,14 +150,14 @@ const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
 	)
 
 // Cloudflare Workers: in some bundlers (Wrangler dev / Pages Functions)
-// std-env's `provider` doesn't fire but `runtime === "workerd"` does. Fill in
+// the provider doesn't fire but `runtime === "workerd"` does. Fill in
 // the cloud.* attrs so the dashboard still classifies the service correctly.
 const workerdFallback = (rt: string, alreadyResolved: boolean): Attrs =>
 	rt === "workerd" && !alreadyResolved
 		? { "cloud.provider": "cloudflare", "cloud.platform": "cloudflare.workers" }
 		: empty
 
-// Vercel Edge runtime: similar fallback when std-env's `provider` is unset
+// Vercel Edge runtime: similar fallback when the provider is unset
 // but the VERCEL env var is.
 const vercelEdgeFallback = (rt: string, alreadyResolved: boolean, env: PlatformInputs["env"]): Attrs =>
 	rt === "edge-light" && !alreadyResolved && env.VERCEL
@@ -165,7 +165,7 @@ const vercelEdgeFallback = (rt: string, alreadyResolved: boolean, env: PlatformI
 		: empty
 
 /**
- * Derive OpenTelemetry resource attributes from `std-env` outputs and
+ * Derive OpenTelemetry resource attributes from detected runtime / provider and
  * platform-specific environment variables. Pure: no I/O, no globals.
  *
  * Returned keys follow OTel semantic conventions:
@@ -180,8 +180,8 @@ const vercelEdgeFallback = (rt: string, alreadyResolved: boolean, env: PlatformI
 export const derivePlatformAttributes = (inputs: PlatformInputs): PlatformAttributes => {
 	const { runtime: rt, provider: prov, platform: plat, arch, runtimeVersion, env } = inputs
 
-	// Lambda overrides std-env's provider when present; matches the original
-	// short-circuit semantics. Otherwise std-env's provider drives cloud.*.
+	// Lambda overrides the detected provider when present; matches the original
+	// short-circuit semantics. Otherwise the provider drives cloud.*.
 	// The presence of the function name IS the Lambda detection, so hand it to
 	// `lambdaAttrs` rather than have it look the same variable up again.
 	const lambdaFunctionName = env.AWS_LAMBDA_FUNCTION_NAME
@@ -267,25 +267,35 @@ export const readRuntimeVersion = (rt: string, root: unknown = globalThis): stri
 		Match.orElse(() => undefined),
 	)
 
-/**
- * Read live std-env + process.env state and derive OTel platform attributes.
- * Safe to call on any runtime — falls back to empty string for missing inputs
- * rather than throwing.
- */
-export const getAutoPlatformAttributes = (): PlatformAttributes => {
-	const proc = (globalThis as { process?: { env?: Record<string, string | undefined>; arch?: string } })
-		.process
-	const procEnv = proc?.env ?? {}
-	const env: Record<string, string | undefined> = {}
-	for (const key of PLATFORM_ENV_KEYS) env[key] = procEnv[key]
+const ProcessArch = Schema.Struct({ process: Schema.Struct({ arch: Schema.String }) })
+const decodeArch = Schema.decodeUnknownOption(ProcessArch)
 
-	const rt = runtime ?? ""
+/**
+ * Detect the runtime from `globals` and `env`, then derive OTel platform
+ * attributes. Pure; `getAutoPlatformAttributes` feeds it the real globals.
+ */
+export const platformAttributesFrom = (input: DetectInput): PlatformAttributes => {
+	const { runtime, provider, platform } = detectEnvironment(input)
+	const env = Rec.fromIterableWith(PLATFORM_ENV_KEYS, (key) => [key, input.env[key]])
 	return derivePlatformAttributes({
-		runtime: rt,
-		provider: provider ?? "",
-		platform: platform ?? "",
-		arch: proc?.arch ?? "",
-		runtimeVersion: readRuntimeVersion(rt),
+		runtime,
+		provider,
+		platform,
+		arch: Option.getOrElse(
+			Option.map(decodeArch(input.globals), (g) => g.process.arch),
+			() => "",
+		),
+		runtimeVersion: readRuntimeVersion(runtime, input.globals),
 		env,
 	})
 }
+
+/**
+ * Read live globals + process.env and derive OTel platform attributes.
+ * Safe to call on any runtime: missing inputs become empty strings.
+ */
+export const getAutoPlatformAttributes = (): PlatformAttributes =>
+	platformAttributesFrom({
+		globals: globalThis,
+		env: readProcessEnv(globalThis, [...DETECT_ENV_KEYS, ...PLATFORM_ENV_KEYS]),
+	})
