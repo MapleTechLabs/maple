@@ -3,6 +3,8 @@ import {
 	ONBOARDING_AGENT_NOTE_MAX,
 	ONBOARDING_AGENT_SERVICES_MAX,
 	ONBOARDING_AGENT_STAGES,
+	ONBOARDING_SERVICE_NAME_MAX,
+	ONBOARDING_SERVICE_NAME_PATTERN,
 } from "@maple/domain/onboarding-agent-run"
 import type { OnboardingRunOutput, OnboardingStatusUpdateOutput } from "@maple/domain/mcp-outputs"
 import type { OnboardingAgentRunRow } from "@maple/db/tables"
@@ -19,8 +21,9 @@ const SETUP_TOOL = "get_ingest_setup"
 export const SETUP_GUIDE_URL = "https://maple.dev/SKILL.md"
 const REPORTED_STATUSES = ["active", "waiting", "completed", "skipped", "failed"] as const
 const TRACE_ID = /^[0-9a-f]{32}$/
-// The REST route's `service.name` bounds: these names are rendered on the dashboard.
-const SERVICE_NAME = /^[\w.:@/-]{1,120}$/u
+// The REST route's `service.name` rule: any printable name, at most 120 characters.
+const isServiceName = (name: string): boolean =>
+	name.length <= ONBOARDING_SERVICE_NAME_MAX && ONBOARDING_SERVICE_NAME_PATTERN.test(name)
 
 const toRunOutput = (row: OnboardingAgentRunRow): typeof OnboardingRunOutput.Type => ({
 	status: row.status,
@@ -76,13 +79,10 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 					`services lists more than ${ONBOARDING_AGENT_SERVICES_MAX} names.`,
 				)
 			}
-			if (
-				params.services !== undefined &&
-				!Arr.every(params.services, (name) => SERVICE_NAME.test(name))
-			) {
+			if (params.services !== undefined && !Arr.every(params.services, isServiceName)) {
 				return yield* invalid(
 					"services",
-					"each service must be a service.name of at most 120 letters, digits and . _ : @ / - characters.",
+					`each service must be a service.name of at most ${ONBOARDING_SERVICE_NAME_MAX} characters, with no control or invisible characters.`,
 				)
 			}
 			if (params.trace_id !== undefined && !TRACE_ID.test(params.trace_id)) {
@@ -92,7 +92,8 @@ export function registerOnboardingTools(server: McpToolRegistrar) {
 			const runs = yield* OnboardingAgentRunService
 			return yield* runs
 				.report(
-					{ orgId: tenant.orgId, userId: tenant.userId },
+					// A handoff's key reports only to its own run; OAuth and session callers to their newest.
+					{ orgId: tenant.orgId, userId: tenant.userId, apiKeyId: tenant.apiKeyId },
 					{
 						stage: params.stage,
 						status: params.status,

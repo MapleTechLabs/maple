@@ -3,6 +3,8 @@ import { Schema } from "effect"
 import {
 	ONBOARDING_AGENT_NOTE_MAX,
 	ONBOARDING_AGENT_SERVICES_MAX,
+	ONBOARDING_SERVICE_NAME_MAX,
+	ONBOARDING_SERVICE_NAME_PATTERN,
 	OnboardingAgentReportedStatus,
 	OnboardingAgentRunClosedError,
 	OnboardingAgentRunNotFoundError,
@@ -117,8 +119,11 @@ export const V2OnboardingAgentHandoff = Schema.Struct({
 })
 export type V2OnboardingAgentHandoff = Schema.Schema.Type<typeof V2OnboardingAgentHandoff>
 
-// `service.name` characters only: these values are rendered on the dashboard.
-const ServiceName = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[\w.:@/-]+$/u))
+// Any OpenTelemetry `service.name` the user set, without control characters (rendered as text).
+const ServiceName = Schema.String.check(
+	Schema.isMaxLength(ONBOARDING_SERVICE_NAME_MAX),
+	Schema.isPattern(ONBOARDING_SERVICE_NAME_PATTERN),
+)
 const HexTraceId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/u))
 
 export const V2OnboardingAgentReport = Schema.Struct({

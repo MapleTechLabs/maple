@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Array as Arr, Context, Effect, Layer, Result, Schema } from "effect"
 import { OrgId, RoleName, UserId, type TenantContext } from "@maple/domain/http"
+import { ApiKeyId } from "@maple/primitives"
 import { GetIngestSetupOutput, OnboardingStatusUpdateOutput } from "@maple/domain/mcp-outputs"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { IngestSetupService } from "@maple/backend/services/onboarding/IngestSetupService"
@@ -16,15 +17,18 @@ const orgId = Schema.decodeSync(OrgId)("org_onboarding_tools")
 const userId = Schema.decodeSync(UserId)("user_onboarding_tools")
 const owner = { orgId, userId }
 
-const tenant = (readOnly: boolean, role: string): TenantContext => ({
+const tenant = (readOnly: boolean, role: string, apiKeyId?: ApiKeyId): TenantContext => ({
 	orgId,
 	userId,
 	roles: [Schema.decodeSync(RoleName)(role)],
 	authMode: "self_hosted",
 	...(readOnly ? { readOnly: true as const } : undefined),
+	...(apiKeyId === undefined ? undefined : { apiKeyId }),
 })
 
-const layer = (options: { readonly readOnly?: boolean; readonly role?: string } = {}) => {
+const layer = (
+	options: { readonly readOnly?: boolean; readonly role?: string; readonly apiKeyId?: ApiKeyId } = {},
+) => {
 	const db = createTestDb(createdDbs).layer
 	const env = testEnv({
 		MAPLE_INGEST_PUBLIC_URL: "https://ingest.eu.maple.test/",
@@ -33,7 +37,10 @@ const layer = (options: { readonly readOnly?: boolean; readonly role?: string } 
 	return Layer.mergeAll(
 		OnboardingAgentRunService.layer,
 		IngestSetupService.layer,
-		Layer.succeed(CurrentMcpTenant, tenant(options.readOnly ?? false, options.role ?? "root")),
+		Layer.succeed(
+			CurrentMcpTenant,
+			tenant(options.readOnly ?? false, options.role ?? "root", options.apiKeyId),
+		),
 	).pipe(Layer.provide(Layer.mergeAll(db, env)))
 }
 
@@ -95,11 +102,39 @@ describe("onboarding_status_update", () => {
 		}).pipe(Effect.provide(layer())),
 	)
 
+	it.effect("an API key reports only to the run its handoff started, never the person's newer one", () =>
+		Effect.gen(function* () {
+			// A newer copy started this run; the calling key was bound to an earlier one.
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-newer")
+			const { output } = yield* reportStatus({ stage: "connect_agent", status: "active" })
+			expect(output.outcome).toBe("no_run")
+			const runs = yield* OnboardingAgentRunService
+			const newer = yield* runs.current(owner)
+			expect(newer.status).toBe("waiting_for_agent")
+		}).pipe(
+			Effect.provide(
+				layer({ apiKeyId: Schema.decodeSync(ApiKeyId)("00000000-0000-4000-8000-000000000001") }),
+			),
+		),
+	)
+
 	it.effect("answers without failing when the user has no run", () =>
 		Effect.gen(function* () {
 			const { output, text } = yield* reportStatus({ stage: "connect_agent", status: "active" })
 			expect(output).toMatchObject({ outcome: "no_run", run: null })
 			expect(text).toContain("nothing to report")
+		}).pipe(Effect.provide(layer())),
+	)
+
+	it.effect("takes any printable service.name, spaces and accents included", () =>
+		Effect.gen(function* () {
+			yield* (yield* OnboardingAgentRunService).start(owner, "handoff-hash-printable")
+			const { output } = yield* reportStatus({
+				stage: "instrument_app",
+				status: "active",
+				services: ["Checkout API", "café-web"],
+			})
+			expect(output.run?.serviceNames).toEqual(["Checkout API", "café-web"])
 		}).pipe(Effect.provide(layer())),
 	)
 

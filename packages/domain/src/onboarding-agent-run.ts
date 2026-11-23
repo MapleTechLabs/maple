@@ -79,6 +79,9 @@ export const onboardingHandoffArm = (
 /** How long a run takes reports. An agent setup that outlives a day starts a new run. */
 export const ONBOARDING_AGENT_RUN_TTL_MS = 24 * 60 * 60 * 1000
 export const ONBOARDING_AGENT_NOTE_MAX = 200
+/** A reported `service.name`: any printable text (spaces and Unicode too), no control characters. */
+export const ONBOARDING_SERVICE_NAME_PATTERN = /^[^\p{Cc}\p{Cf}]+$/u
+export const ONBOARDING_SERVICE_NAME_MAX = 120
 export const ONBOARDING_AGENT_SERVICES_MAX = 20
 
 export const OnboardingAgentStageRecord = Schema.Struct({
