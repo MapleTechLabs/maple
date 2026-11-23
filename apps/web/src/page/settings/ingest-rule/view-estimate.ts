@@ -36,6 +36,13 @@ const signalLine = (h: H, entry: V2IngestRulePreviewSignal, isDrop: boolean): Ht
 					]),
 				]
 			: []),
+		...(entry.scanned_hours < 24
+			? [
+					typography(h, { size: "xs", tone: "muted", as: "p" }, [
+						`Counted over the last ${entry.scanned_hours} ${entry.scanned_hours === 1 ? "hour" : "hours"}, scaled to a day`,
+					]),
+				]
+			: []),
 		...(services.length > 0 && entry.matched < entry.stored
 			? [
 					typography(h, { size: "xs", tone: "muted", numeric: true, truncate: true, as: "p" }, [

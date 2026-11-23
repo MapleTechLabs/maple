@@ -221,9 +221,16 @@ A drop rule's estimated drops are the matches times `(100 - keepPercent) / 100`,
 each service's drops times that service's average record size in `service_usage`. The rule editor
 shows it above the sample preview, a moment after the last edit.
 
+- A signal whose day holds more than 50 million stored records (`PREVIEW_MAX_SCAN_ROWS`, sized
+  from `service_usage` first) scans only the latest hours that fit, and its counts are scaled to a
+  day; `scanned_hours` says how many, and the editor says so.
+- Regexes run on ClickHouse's RE2. The preview rewrites the spellings RE2 lacks (`\u0041` and
+  `\u{41}`, `(?<name>`, `\p{Script=Greek}`, long category names such as `\p{Letter}`). A pattern
+  RE2 still cannot compile (a binary property such as `\p{Alphabetic}`) is a 400 that says the rule
+  cannot be previewed; the gateway still applies it.
+
 It is an estimate, not the gateway's verdict: data the org's other rules dropped was never stored,
-regexes run on ClickHouse's RE2, and attribute values are compared as ingest stored them. Metrics
-are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
+and attribute values are compared as ingest stored them. Metrics are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
 above on chDB.
 
 ## Limits

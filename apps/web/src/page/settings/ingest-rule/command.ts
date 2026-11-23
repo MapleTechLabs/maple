@@ -46,10 +46,10 @@ export const FetchImpact = Command.define("FetchIngestRuleImpact", {
 })
 
 export const DebounceEstimate = Command.define("DebounceIngestRuleEstimate", {
-	args: { key: Schema.String },
+	args: { seq: Schema.Number },
 	messages: [Message.ElapsedEstimateDebounce],
-	execute: ({ key }) =>
-		Effect.as(Effect.sleep(ESTIMATE_DEBOUNCE_MS), Message.ElapsedEstimateDebounce({ key })),
+	execute: ({ seq }) =>
+		Effect.as(Effect.sleep(ESTIMATE_DEBOUNCE_MS), Message.ElapsedEstimateDebounce({ seq })),
 })
 
 /** The draft's matches over the last 24 hours of stored logs and spans. */

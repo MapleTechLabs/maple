@@ -270,6 +270,10 @@ export type V2IngestRulePreviewParams = Schema.Schema.Type<typeof V2IngestRulePr
 
 export const V2IngestRulePreviewSignal = Schema.Struct({
 	signal: Schema.Literals(["traces", "logs"]),
+	scanned_hours: Count.annotate({
+		description:
+			"Hours scanned: 24, or the latest few when a day holds too many records, with the counts below scaled to 24 hours.",
+	}),
 	stored: Count.annotate({ description: "Records stored in the window." }),
 	matched: Count.annotate({ description: "Stored records every condition matches." }),
 	estimated_dropped: Count.annotate({

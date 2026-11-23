@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { summarize } from "./IngestRulePreviewService"
+import { PREVIEW_MAX_SCAN_ROWS, scanHours, summarize } from "./IngestRulePreviewService"
 
 describe("ingest rule preview totals", () => {
 	const rows = [
@@ -22,6 +22,19 @@ describe("ingest rule preview totals", () => {
 		const preview = summarize("traces", rows, new Map([["api", 1000]]), 0.9)
 		expect(preview.estimatedDropped).toBe(450)
 		expect(preview.estimatedDroppedBytes).toBe(90 * 1000)
+	})
+
+	it("scans the whole day until a day outgrows the budget, then the latest hours scaled to a day", () => {
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS)).toBe(24)
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 4)).toBe(6)
+		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 1000)).toBe(1)
+		const sixHours = summarize("logs", rows, sizes, 1, 6)
+		expect(sixHours).toMatchObject({
+			scannedHours: 6,
+			stored: 1550 * 4,
+			matched: 500 * 4,
+			estimatedDropped: 2000,
+		})
 	})
 
 	it("lists the services with matches, busiest first", () => {

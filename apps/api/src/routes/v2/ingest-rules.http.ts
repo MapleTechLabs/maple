@@ -143,6 +143,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 						end_time: isoTimestamp(result.endMs),
 						signals: Arr.map(result.signals, (entry) => ({
 							signal: entry.signal,
+							scanned_hours: entry.scannedHours,
 							stored: entry.stored,
 							matched: entry.matched,
 							estimated_dropped: entry.estimatedDropped,

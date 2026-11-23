@@ -94,7 +94,7 @@ describe("ingest rule editor", () => {
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("lt"),
 			change(role("combobox", { name: "Condition 1 field" }), "body"),
 			// The edit asks for a fresh 24 hour count; an elapsed debounce for another draft does nothing.
-			Command.resolve(DebounceEstimate, Message.ElapsedEstimateDebounce({ key: "" })),
+			Command.resolve(DebounceEstimate, Message.ElapsedEstimateDebounce({ seq: 0 })),
 			expectView(role("combobox", { name: "Condition 1 field" })).toHaveValue("body"),
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("eq"),
 		)
@@ -277,6 +277,7 @@ describe("ingest rule 24 hour estimate", () => {
 			signals: [
 				{
 					signal: "logs",
+					scanned_hours: 24,
 					stored: 8_000_000,
 					matched: 1_200_000,
 					estimated_dropped: dropped,
@@ -292,10 +293,31 @@ describe("ingest rule 24 hour estimate", () => {
 	test("a template counts the last 24 hours once the debounce elapses", () => {
 		const opened = init({ _tag: "IngestRuleNew", search: { template: "drop-debug-logs" } }, context)
 		expect(names(opened.commands)).toContain("DebounceIngestRuleEstimate")
-		const key = opened.model.estimateKey
-		expect(key).not.toBe("")
-		const fired = pageUpdate(opened.model, Message.ElapsedEstimateDebounce({ key }))
+		expect(opened.model.estimateKey).not.toBe("")
+		const fired = pageUpdate(
+			opened.model,
+			Message.ElapsedEstimateDebounce({ seq: opened.model.estimateSeq }),
+		)
 		expect(names(fired.commands)).toEqual(["FetchIngestRuleEstimate"])
+	})
+
+	test("typing a value and back again asks once, after the last edit", () => {
+		const model = fresh("drop-debug-logs")
+		const typed = pageUpdate(model, Message.ChangedText({ part: "keepPercent", value: "5" })).model
+		const back = pageUpdate(typed, Message.ChangedText({ part: "keepPercent", value: "0" })).model
+		expect(back.estimateKey).toBe(model.estimateKey)
+		expect(
+			names(pageUpdate(back, Message.ElapsedEstimateDebounce({ seq: model.estimateSeq })).commands),
+		).toEqual([])
+		expect(
+			names(pageUpdate(back, Message.ElapsedEstimateDebounce({ seq: back.estimateSeq })).commands),
+		).toEqual(["FetchIngestRuleEstimate"])
+	})
+
+	test("a draft without a name is still counted", () => {
+		const model = fresh("drop-debug-logs")
+		const unnamed = pageUpdate(model, Message.ChangedText({ part: "name", value: "" })).model
+		expect(unnamed.estimateKey).toBe(model.estimateKey)
 	})
 
 	test("the estimate says how much the rule would drop, the bytes and the busiest services", () => {
