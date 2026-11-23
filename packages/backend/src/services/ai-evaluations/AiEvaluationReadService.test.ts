@@ -12,7 +12,7 @@ import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/ex
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { AiEvaluationReadService } from "./AiEvaluationReadService"
 
 const tenant: TenantContext = {
@@ -139,6 +139,27 @@ describe("AiEvaluationReadService", () => {
 			expect(result.scores[1]?.sessionId).toBeUndefined()
 			expect(result.scores[2]).toMatchObject({ scope: "session", sessionId: "session-9" })
 			expect(result.scores).toHaveLength(3)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a bucket too fine for the window is widened to at most 1000 buckets", () => {
+		const { layer, statements } = layerWith({ llmEvals: true }, (sql) => Effect.succeed(answer(sql)))
+		return Effect.gen(function* () {
+			const reads = yield* AiEvaluationReadService
+			const read = (bucketSeconds: number) =>
+				reads.evaluator(
+					tenant,
+					new GetAiEvaluatorRequest({ ...WINDOW, name: "Task completion", bucketSeconds }),
+				)
+			const bucketOf = (sql: string | undefined) => /INTERVAL (\d+) SECOND/.exec(sql ?? "")?.[1]
+			const series = () =>
+				Arr.last(Arr.filter(statements, (sql) => Str.includes("toStartOfInterval")(sql)))
+			// One day at 1s would be 86,400 buckets: widened to ceil(86,400 / 1,000) = 87 seconds.
+			yield* read(1)
+			expect(bucketOf(Option.getOrUndefined(series()))).toBe("87")
+			// A bucket already coarse enough is kept.
+			yield* read(3600)
+			expect(bucketOf(Option.getOrUndefined(series()))).toBe("3600")
 		}).pipe(Effect.provide(layer))
 	})
 
