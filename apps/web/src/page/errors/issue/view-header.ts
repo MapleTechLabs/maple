@@ -151,6 +151,7 @@ const TABS: ReadonlyArray<{ readonly value: Tab; readonly label: string }> = [
 	{ value: "overview", label: "Overview" },
 	{ value: "occurrences", label: "Occurrences" },
 	{ value: "activity", label: "Activity" },
+	{ value: "grouping", label: "Grouping" },
 ]
 
 export const issueTabs = (
@@ -159,6 +160,7 @@ export const issueTabs = (
 	search: Search,
 	options: Readonly<{
 		active: Tab
+		/** Occurrences and Grouping read exceptions; an alert-fed issue has neither. */
 		showOccurrences: boolean
 		occurrenceCount?: number
 		activityCount?: number
@@ -168,7 +170,10 @@ export const issueTabs = (
 		h,
 		{ label: "Issue sections" },
 		Arr.map(
-			Arr.filter(TABS, (tab) => tab.value !== "occurrences" || options.showOccurrences),
+			Arr.filter(
+				TABS,
+				(tab) => (tab.value !== "occurrences" && tab.value !== "grouping") || options.showOccurrences,
+			),
 			(tab) => {
 				const isActive = tab.value === options.active
 				const count =

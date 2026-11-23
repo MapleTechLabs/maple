@@ -623,7 +623,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity).",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. The Grouping tab shows every fingerprint rule and source, a pinned fingerprint, a long frame list and similar issues (?grouping=populated|long|empty|loading|error). As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity|grouping).",
 		kind: "lab",
 		session: "none",
 	},

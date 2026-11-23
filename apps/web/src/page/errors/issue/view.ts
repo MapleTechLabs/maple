@@ -41,6 +41,7 @@ import { attachDialog } from "./attach"
 import { verificationCard } from "./view-verification"
 import { incidentsTable, occurrenceColumnsOf, occurrencesTable } from "./view-tables"
 import { commentComposer, issueTimeline } from "./view-activity"
+import { groupingTab } from "./view-grouping"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { panel, panelHeader, panelChartBody } from "@maple/views/ui/panel"
 import { textLinkClass } from "@maple/views/ui/text-link"
@@ -278,11 +279,12 @@ const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html 
 const otherTab = (
 	h: H,
 	model: Model,
-	tab: "occurrences" | "activity",
+	tab: "occurrences" | "activity" | "grouping",
 	detail: ErrorIssueDetailResponse,
 	inputs: PageViewInputs,
 ): Html => {
 	const clock = { nowMs: model.nowMs, timeZone: inputs.context.timeZone }
+	if (tab === "grouping") return groupingTab(h, model, clock)
 	if (tab === "occurrences")
 		return bodySection(
 			h,
@@ -333,7 +335,9 @@ const otherTab = (
 
 const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: PageViewInputs): Html => {
 	const investigation = linkedInvestigationOf(model)
-	const tab = tabOf(model.search)
+	const picked = tabOf(model.search)
+	// An alert-fed issue has no exceptions to group: its Grouping link is hidden, the URL reads Overview.
+	const tab = picked === "grouping" && detail.issue.kind !== "error" ? "overview" : picked
 	const signal = signalOfDetail(model, detail)
 	return dashboardPage(
 		h,

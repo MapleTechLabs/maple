@@ -76,6 +76,14 @@ import {
 import { isIssueSeverity } from "../../kit/issue-severity"
 import { acceptGrants } from "../../kit/session-grants"
 import { initialGrants, readsSessionGrants } from "../kit/grants"
+import {
+	clickedMergeSimilar,
+	clickedSplitOut,
+	completedGroupingWrite,
+	groupingReads,
+	retryGrouping,
+	toggledSkippedFrames,
+} from "./grouping"
 
 const decodePullRequestId = Schema.decodeUnknownOption(ErrorIssuePullRequestId)
 
@@ -245,6 +253,12 @@ export const init = (
 		escalations: Keyed.idle(),
 		anomalies: Keyed.idle(),
 		githubStatus: Keyed.idle(),
+		grouping: Keyed.idle(),
+		similar: Keyed.idle(),
+		openSkippedFrames: [],
+		splittingHash: null,
+		mergingIssueId: null,
+		groupingError: null,
 		isRightRailMounted: false,
 		vcsPullRequests: Keyed.idle(),
 		destinations: [],
@@ -303,11 +317,17 @@ export const routeChanged = (
 ): Return => {
 	const next = { ...model, search: route.search }
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({
-			model: next,
-			commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))],
-		}),
-		requestAll: () => ({ model: next }),
+		resolve: (): Return =>
+			runSteps(next, [groupingReads(context, "Load")], {
+				model: next,
+				commands: [resolveCommand(route.search, context, snapModeOf(model.refreshVersion))],
+			}),
+		requestAll: () => {
+			const reads = groupingReads(context, "Load")(next)
+			return reads.commands.length === 0
+				? { model: next }
+				: { model: { ...next, ...reads.patch }, commands: reads.commands }
+		},
 	})
 }
 
@@ -412,6 +432,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			runSteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
 				loadedReads(context),
 				vcsStep(context),
+				groupingReads(context, "Load"),
 			]),
 		MountedRightRail: () =>
 			model.isRightRailMounted
@@ -446,19 +467,46 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchVcsPullRequests: ({ key, result }) => ({
 			model: { ...model, vcsPullRequests: Keyed.accept(model.vcsPullRequests, key, result) },
 		}),
+		CompletedFetchGrouping: ({ key, result }) => ({
+			model: { ...model, grouping: Keyed.accept(model.grouping, key, result) },
+		}),
+		CompletedFetchSimilar: ({ key, result }) => ({
+			model: { ...model, similar: Keyed.accept(model.similar, key, result) },
+		}),
+		ClickedRetryGrouping: () => retryGrouping(model, context, "grouping"),
+		ClickedRetrySimilar: () => retryGrouping(model, context, "similar"),
+		ToggledSkippedFrames: ({ fingerprintHash }) => toggledSkippedFrames(model, fingerprintHash),
+		ClickedSplitOut: ({ fingerprintHash }) => clickedSplitOut(model, fingerprintHash),
+		CompletedSplitOut: ({ fingerprintHash, result }) =>
+			completedGroupingWrite(
+				model,
+				context,
+				result,
+				{ target: fingerprintHash, success: "Split out into its own issue" },
+				refreshAfterWrite(context),
+			),
+		ClickedMergeSimilar: ({ sourceIssueId }) => clickedMergeSimilar(model, sourceIssueId),
+		CompletedMergeSimilar: ({ sourceIssueId, result }) =>
+			completedGroupingWrite(
+				model,
+				context,
+				result,
+				{ target: sourceIssueId, success: "Merged into this issue" },
+				refreshAfterWrite(context),
+			),
 		UpdatedDestinations: ({ orgId, destinations }) =>
 			orgId === context.orgId ? { model: { ...model, destinations } } : { model },
 		TickedLeaseClock: ({ nowMs }) => ({ model: { ...model, leaseNowMs: nowMs } }),
 		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
-			return {
+			return runSteps(reloaded, [groupingReads(context, "Refresh")], {
 				model: reloaded,
 				commands: [
 					resolveCommand(model.search, context, "Refresh"),
 					CompleteReloadSpin({ version: reloaded.refreshVersion }),
 				],
-			}
+			})
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
