@@ -139,7 +139,7 @@ export const revisit = (model: Model): Return => {
 	return { model: { ...model, rules: rules.data }, commands: rules.commands }
 }
 
-const draftOf = (rule: OrgGroupingRule): RuleDraft => ({
+export const draftOf = (rule: OrgGroupingRule): RuleDraft => ({
 	id: rule.id,
 	kind: rule.kind,
 	service: rule.service ?? "",
@@ -177,10 +177,16 @@ export const configOf = (draft: ReadonlyArray<RuleDraft>): GroupingConfig =>
 	})
 
 /** A short id no other rule holds; it never changes once the rule exists, so its issues keep their key. */
-export const nextRuleId = (draft: ReadonlyArray<RuleDraft>): string => {
+/**
+ * A new rule's id. An org rule's grouping key is its id, so an id a deleted rule held would
+ * put new errors on that rule's issue: ids are prefixed by the saved rules they start from,
+ * and every save moves that on, so no earlier save's id comes back.
+ */
+export const nextRuleId = (draft: ReadonlyArray<RuleDraft>, baseUpdatedAt: string | null): string => {
+	const prefix = `rule-${baseUpdatedAt === null ? "0" : Str.replace(/[^0-9]/g, "")(baseUpdatedAt)}`
 	const taken = new Set(Arr.map(draft, (rule) => rule.id))
-	const free = Arr.findFirst(Arr.range(1, draft.length + 1), (n) => !taken.has(`rule-${n}`))
-	return `rule-${Option.getOrElse(free, () => draft.length + 1)}`
+	const free = Arr.findFirst(Arr.range(1, draft.length + 1), (n) => !taken.has(`${prefix}-${n}`))
+	return `${prefix}-${Option.getOrElse(free, () => draft.length + 1)}`
 }
 
 const asKind = Schema.decodeUnknownOption(GroupingRuleKind)
@@ -228,7 +234,7 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 					: [
 							...draft,
 							{
-								id: nextRuleId(draft),
+								id: nextRuleId(draft, model.baseUpdatedAt),
 								kind: "merge",
 								service: "",
 								exceptionType: "",

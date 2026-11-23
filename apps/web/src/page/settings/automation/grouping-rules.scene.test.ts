@@ -41,10 +41,14 @@ const viewAs =
 		groupingRulesSection(h, model, { canManage, isKnownMember: true })
 
 describe("grouping rules editor", () => {
-	test("a new rule takes the first free short id, and the save sends only filled fields the kind reads", () => {
+	test("a new rule takes an id no earlier save can hold, and the save sends only filled fields the kind reads", () => {
 		const edited = run(loaded(ADMIN), [
 			Rules.Message.ClickedAddRule(),
-			Rules.Message.ChangedRuleField({ id: "rule-2", field: "exceptionType", value: "  ECONNRESET " }),
+			Rules.Message.ChangedRuleField({
+				id: "rule-0-1",
+				field: "exceptionType",
+				value: "  ECONNRESET ",
+			}),
 			Rules.Message.ChangedRuleField({
 				id: "rule-3",
 				field: "message",
@@ -53,12 +57,20 @@ describe("grouping rules editor", () => {
 		])
 		const saved = Rules.update(edited, Rules.Message.ClickedSaveRules(), ADMIN)
 		const config = Rules.configOf(edited.draft ?? [])
-		expect(Arr.map(config.rules, (rule) => rule.id)).toEqual(["rule-1", "rule-3", "rule-2"])
+		expect(Arr.map(config.rules, (rule) => rule.id)).toEqual(["rule-1", "rule-3", "rule-0-1"])
 		expect(config.rules[2]).toEqual(
-			new OrgGroupingRule({ id: "rule-2", kind: "merge", exceptionType: "ECONNRESET" }),
+			new OrgGroupingRule({ id: "rule-0-1", kind: "merge", exceptionType: "ECONNRESET" }),
 		)
 		expect(config.rules[1]?.message).toBeUndefined()
 		expect(saved.model.isSaving).toBe(true)
+	})
+
+	test("a rule added after a save never takes an id an earlier rule held", () => {
+		const opened = new GroupingConfigDocument({ ...stored, updatedAt: OPENED_AT })
+		const before = Rules.nextRuleId([], null)
+		const after = Rules.nextRuleId(Arr.map(opened.rules, Rules.draftOf), opened.updatedAt)
+		expect(after).not.toBe(before)
+		expect(Arr.map(opened.rules, (rule) => rule.id)).not.toContain(after)
 	})
 
 	test("a save is built on the stored rules the draft started from, not ones loaded behind an edit", () => {
@@ -129,7 +141,7 @@ describe("grouping rules editor", () => {
 			given(empty),
 			expectView(text("No grouping rules yet")).toExist(),
 			click(role("button", { name: "Add rule" })),
-			expectView(text("rule-1")).toExist(),
+			expectView(text("rule-0-1")).toExist(),
 		)
 	})
 })
