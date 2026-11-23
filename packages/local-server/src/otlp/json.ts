@@ -97,6 +97,7 @@ const LogRecord = Schema.Struct({
 	flags: opt(Int64),
 	traceId: opt(Schema.String),
 	spanId: opt(Schema.String),
+	eventName: opt(Schema.String),
 })
 
 const LogsRequest = Schema.Struct({
