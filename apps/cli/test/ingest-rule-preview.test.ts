@@ -18,6 +18,8 @@ import { describeWithChdb } from "./libchdb-test-support"
 
 const ORG = "org_rules"
 const OTHER_ORG = "org_other"
+/** Holds the regex-semantics rows, so the counts above stay as they are. */
+const TEXT_ORG = "org_text"
 const AT = "2026-11-20 10:00:00.000000000"
 const params = {
 	orgId: Schema.decodeSync(OrgId)(ORG),
@@ -78,6 +80,14 @@ const LOGS: ReadonlyArray<LogRow> = [
 		body: "boom",
 		attributes: { "user.id": "" },
 	},
+	{ org: TEXT_ORG, service: "orders", severityNumber: 9, severityText: "INFO", body: "Order ١٢٣" },
+	{
+		org: TEXT_ORG,
+		service: "orders",
+		severityNumber: 13,
+		severityText: "WARN",
+		body: "Error: timeout\nwill retry",
+	},
 	{ org: OTHER_ORG, service: "checkout", severityNumber: 5, severityText: "DEBUG", body: "not ours" },
 ]
 
@@ -134,11 +144,14 @@ const byService = (json: string): Counts =>
 		),
 	)
 
-const logMatches = (conditions: ReadonlyArray<IngestRuleCondition>): Counts =>
+const logMatches = (conditions: ReadonlyArray<IngestRuleCondition>, org = ORG): Counts =>
 	byService(
 		db.query(
 			normalizeSqlForClickHouseClient(
-				CH.compileUnsafe(CH.ingestRuleLogMatchesQuery({ conditions }), params).sql,
+				CH.compileUnsafe(CH.ingestRuleLogMatchesQuery({ conditions }), {
+					...params,
+					orgId: Schema.decodeSync(OrgId)(org),
+				}).sql,
 			),
 		),
 	)
@@ -255,6 +268,18 @@ describeWithChdb("ingest rule dry run on chDB", () => {
 			api: 0,
 			worker: 1,
 		})
+	})
+
+	test("\\d is a Unicode digit and . stops at a newline, as in the gateway", () => {
+		expect(
+			matched(logMatches([{ field: "body", op: "regex", value: "^Order \\d+$" }], TEXT_ORG)).orders,
+		).toBe(1)
+		expect(
+			matched(logMatches([{ field: "body", op: "regex", value: "^Error:.*retry$" }], TEXT_ORG)).orders,
+		).toBe(0)
+		expect(
+			matched(logMatches([{ field: "body", op: "regex", value: "will retry$" }], TEXT_ORG)).orders,
+		).toBe(1)
 	})
 
 	test("span kind and status read either spelling, lower-cased", () => {

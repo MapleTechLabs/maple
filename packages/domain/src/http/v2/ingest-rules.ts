@@ -270,9 +270,9 @@ export type V2IngestRulePreviewParams = Schema.Schema.Type<typeof V2IngestRulePr
 
 export const V2IngestRulePreviewSignal = Schema.Struct({
 	signal: Schema.Literals(["traces", "logs"]),
-	scanned_hours: Count.annotate({
+	scanned_minutes: Count.annotate({
 		description:
-			"Hours scanned: 24, or the latest few when a day holds too many records, with the counts below scaled to 24 hours.",
+			"Minutes scanned: 1440, or the latest stretch that fits the scan budget; then each service's match rate there is applied to its stored records for the day.",
 	}),
 	stored: Count.annotate({ description: "Records stored in the window." }),
 	matched: Count.annotate({ description: "Stored records every condition matches." }),
@@ -369,7 +369,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 					identifier: "previewIngestRule",
 					summary: "Preview an ingest rule",
 					description:
-						"Counts what a draft rule's conditions match in the last 24 hours of stored logs and spans, per service, and estimates the records and bytes it would drop. Saves nothing. Requires the `ingest_rules:read` scope.",
+						"Counts what a draft rule's conditions match in the last 24 hours of stored logs and spans, per service, and estimates the records and bytes it would drop. Saves nothing. Requires the `ingest_rules:read` scope, plus `logs:read` and `traces:read` for the signals it counts.",
 				}),
 			),
 	)

@@ -224,13 +224,20 @@ A drop rule's estimated drops are the matches times `(100 - keepPercent) / 100`,
 each service's drops times that service's average record size in `service_usage`. The rule editor
 shows it above the sample preview, a moment after the last edit.
 
-- A signal whose day holds more than 50 million stored records (`PREVIEW_MAX_SCAN_ROWS`, sized
-  from `service_usage` first) scans only the latest hours that fit, and its counts are scaled to a
-  day; `scanned_hours` says how many, and the editor says so.
-- Regexes run on ClickHouse's RE2. The preview rewrites the spellings RE2 lacks (`\u0041` and
-  `\u{41}`, `(?<name>`, `\p{Script=Greek}`, long category names such as `\p{Letter}`). A pattern
-  RE2 still cannot compile (a binary property such as `\p{Alphabetic}`) is a 400 that says the rule
-  cannot be previewed; the gateway still applies it.
+- A scoped key needs `logs:read` / `traces:read` for the signals it previews, since the counts
+  answer questions about that telemetry.
+- The scan is sized from `service_usage` per UTC hour, newest first: it covers the longest stretch
+  of latest hours whose buckets hold at most 50 million records (`PREVIEW_MAX_SCAN_ROWS`), or, when
+  not even an hour fits, the minutes that do. Under a day, each service's match rate in that
+  stretch is applied to its stored records for the day; `scanned_minutes` says how long it scanned,
+  and the editor says so.
+- Regexes run on ClickHouse's RE2, translated to mean what the gateway means: `\d`, `\w`, `\s` and
+  their negations become Unicode classes, `.` stops at a newline (`(?-s)`), and the spellings RE2
+  lacks are rewritten (`\u0041`, `\u{41}`, `(?<name>`, `\p{Script=Greek}`, `\p{Letter}`). RE2's
+  `\b` stays ASCII. A pattern RE2 still cannot compile (a binary property such as
+  `\p{Alphabetic}`) is a 400 that says the rule cannot be previewed; the gateway still applies it.
+- A map or array log body is opaque to the gateway, but the warehouse stores it as JSON text, so
+  a body condition can count it in the preview while the gateway keeps it.
 
 It is an estimate, not the gateway's verdict: data the org's other rules dropped was never stored,
 and attribute values are compared as ingest stored them. Metrics are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics

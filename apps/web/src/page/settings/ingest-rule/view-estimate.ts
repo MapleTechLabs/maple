@@ -17,6 +17,11 @@ import type { H } from "./view-form"
 const NOUNS = { logs: "logs", traces: "spans" } as const
 const TOP_SERVICES = 3
 
+const scannedLabel = (minutes: number) =>
+	minutes % 60 === 0
+		? `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`
+		: `${minutes} ${minutes === 1 ? "minute" : "minutes"}`
+
 const share = (part: number, total: number) =>
 	total === 0 ? "0%" : `${Math.round((part / total) * 1000) / 10}%`
 
@@ -36,10 +41,10 @@ const signalLine = (h: H, entry: V2IngestRulePreviewSignal, isDrop: boolean): Ht
 					]),
 				]
 			: []),
-		...(entry.scanned_hours < 24
+		...(entry.scanned_minutes < 24 * 60
 			? [
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
-						`Counted over the last ${entry.scanned_hours} ${entry.scanned_hours === 1 ? "hour" : "hours"}, scaled to a day`,
+						`Rates from the last ${scannedLabel(entry.scanned_minutes)}, applied to the day`,
 					]),
 				]
 			: []),

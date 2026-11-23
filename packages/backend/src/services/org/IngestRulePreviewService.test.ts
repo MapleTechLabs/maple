@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { PREVIEW_MAX_SCAN_ROWS, scanHours, summarize } from "./IngestRulePreviewService"
+import { Array as Arr } from "effect"
+import { PREVIEW_MAX_SCAN_ROWS, scanMinutes, summarize } from "./IngestRulePreviewService"
 
 describe("ingest rule preview totals", () => {
 	const rows = [
@@ -24,17 +25,33 @@ describe("ingest rule preview totals", () => {
 		expect(preview.estimatedDroppedBytes).toBe(90 * 1000)
 	})
 
-	it("scans the whole day until a day outgrows the budget, then the latest hours scaled to a day", () => {
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS)).toBe(24)
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 4)).toBe(6)
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 1000)).toBe(1)
-		const sixHours = summarize("logs", rows, sizes, 1, 6)
-		expect(sixHours).toMatchObject({
-			scannedHours: 6,
-			stored: 1550 * 4,
-			matched: 500 * 4,
-			estimatedDropped: 2000,
-		})
+	it("scans the longest stretch of newest hours that fits, even after a burst", () => {
+		const cap = PREVIEW_MAX_SCAN_ROWS
+		expect(scanMinutes(Arr.makeBy(25, () => cap / 100))).toBe(24 * 60)
+		// A burst ten hours back: the newest three hours (four buckets) fit, the rest do not.
+		const burst = [cap / 10, cap / 10, cap / 10, cap / 10, ...Arr.makeBy(21, () => cap)]
+		expect(scanMinutes(burst)).toBe(3 * 60)
+		// Not even an hour fits: the minutes the busier of the two newest buckets allows.
+		expect(scanMinutes([cap * 2, cap * 6])).toBe(10)
+	})
+
+	it("applies each service's match rate in the scanned stretch to its stored records for the day", () => {
+		const scanned = summarize(
+			"logs",
+			rows,
+			sizes,
+			1,
+			60,
+			new Map([
+				["checkout", 24_000],
+				["api", 12_000],
+			]),
+		)
+		expect(scanned.scannedMinutes).toBe(60)
+		expect(scanned.services).toEqual([
+			{ serviceName: "checkout", stored: 24_000, matched: 9600 },
+			{ serviceName: "api", stored: 12_000, matched: 2400 },
+		])
 	})
 
 	it("lists the services with matches, busiest first", () => {

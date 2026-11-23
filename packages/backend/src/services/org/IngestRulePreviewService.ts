@@ -7,20 +7,35 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 // The settings dry run: what a draft rule's conditions match in recently stored logs and spans,
 // and what dropping it would have kept off the bill.
 
-const HOUR_MS = 60 * 60 * 1000
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
 export const PREVIEW_WINDOW_MS = 24 * HOUR_MS
+const DAY_MINUTES = 24 * 60
 const TOP_SERVICES = 10
 /**
- * The most stored records one preview scans per signal. A day above it scans the latest hours
- * that fit and scales the counts to a day, so a keystroke never reads a large org's whole day.
+ * The most stored records one preview scans per signal. A busier day scans only the latest
+ * stretch that fits, so a keystroke never reads a large org's whole day.
  */
 export const PREVIEW_MAX_SCAN_ROWS = 50_000_000
 
-/** Whole hours of a signal the preview scans: all 24, or as many of the latest as fit the budget. */
-export const scanHours = (storedPerDay: number): number =>
-	storedPerDay <= PREVIEW_MAX_SCAN_ROWS
-		? 24
-		: Math.max(1, Math.floor((24 * PREVIEW_MAX_SCAN_ROWS) / storedPerDay))
+/**
+ * Minutes of a signal to scan, from its stored records per UTC hour bucket, newest (the current,
+ * partial hour) first. A window of `k` hours ending now touches `k + 1` buckets, so the longest
+ * `k` whose newest `k + 1` buckets fit the budget wins. When not even the last hour fits, the
+ * minutes that fit at the busier of the two newest buckets' rates, at least one.
+ */
+export const scanMinutes = (newestFirst: ReadonlyArray<number>): number => {
+	const within = (hours: number) =>
+		Arr.reduce(Arr.take(newestFirst, hours + 1), 0, (total, count) => total + count) <=
+		PREVIEW_MAX_SCAN_ROWS
+	const hours = Arr.findFirst(
+		Arr.makeBy(24, (index) => 24 - index),
+		within,
+	)
+	if (hours._tag === "Some") return hours.value * 60
+	const busiest = Math.max(1, ...Arr.take(newestFirst, 2))
+	return Math.max(1, Math.floor((60 * PREVIEW_MAX_SCAN_ROWS) / busiest))
+}
 
 export type PreviewSignal = "logs" | "traces"
 
@@ -32,8 +47,8 @@ export interface ServiceMatches {
 
 export interface SignalPreview {
 	readonly signal: PreviewSignal
-	/** Hours actually scanned; the counts are scaled to 24 hours when fewer. */
-	readonly scannedHours: number
+	/** Minutes actually scanned; under a day, each service's match rate is applied to its day. */
+	readonly scannedMinutes: number
 	readonly stored: number
 	readonly matched: number
 	readonly estimatedDropped: number
@@ -66,25 +81,30 @@ const sizesFrom = (usage: ReadonlyArray<CH.ServiceUsageOutput>, signal: PreviewS
 /**
  * Totals for one signal: each service's matches times the share dropped, and those drops times
  * that service's average record size. A service missing from the usage rollup counts no bytes.
+ * Under a day scanned, each service's share of matches is applied to its stored records for the
+ * day (`dayCounts`), so a burst in the scanned stretch does not stand for the whole day.
  */
 export const summarize = (
 	signal: PreviewSignal,
 	rows: ReadonlyArray<{ readonly serviceName: string; readonly total: number; readonly matched: number }>,
 	sizes: RecordSizes,
 	share: number,
-	scannedHours = 24,
+	scannedMinutes = DAY_MINUTES,
+	dayCounts: ReadonlyMap<string, number> = new Map(),
 ): SignalPreview => {
-	const toDay = 24 / scannedHours
-	const services = Arr.map(rows, (row) => ({
-		serviceName: row.serviceName,
-		stored: Math.round(Number(row.total) * toDay),
-		matched: Math.round(Number(row.matched) * toDay),
-	}))
+	const services = Arr.map(rows, (row) => {
+		const total = Number(row.total)
+		const matched = Number(row.matched)
+		if (scannedMinutes >= DAY_MINUTES || total === 0)
+			return { serviceName: row.serviceName, stored: total, matched }
+		const stored = dayCounts.get(row.serviceName) ?? Math.round((total * DAY_MINUTES) / scannedMinutes)
+		return { serviceName: row.serviceName, stored, matched: Math.round((matched / total) * stored) }
+	})
 	const sum = (pick: (service: ServiceMatches) => number) =>
 		Arr.reduce(services, 0, (total, service) => total + pick(service))
 	return {
 		signal,
-		scannedHours,
+		scannedMinutes,
 		stored: sum((service) => service.stored),
 		matched: sum((service) => service.matched),
 		estimatedDropped: Math.round(sum((service) => service.matched) * share),
@@ -137,15 +157,23 @@ const make = Effect.gen(function* () {
 			CH.compile(CH.serviceUsageQuery({}), windowFrom(startMs)),
 			{ profile: "aggregation", context: "ingestRulePreviewUsage" },
 		)
-		const storedPerDay = (signal: PreviewSignal) =>
-			Arr.reduce(
-				usage,
-				0,
-				(total, row) => total + Number(signal === "logs" ? row.totalLogCount : row.totalTraceCount),
+		const hourly = yield* warehouse.compiledQuery(
+			tenant,
+			CH.compile(CH.ingestRuleHourlyVolumeQuery(), windowFrom(startMs)),
+			{ profile: "aggregation", context: "ingestRulePreviewHourly" },
+		)
+		const newestFirst = (signal: PreviewSignal) =>
+			Arr.map(hourly, (row) => Number(signal === "logs" ? row.logs : row.spans))
+		const dayCounts = (signal: PreviewSignal) =>
+			new Map(
+				Arr.map(usage, (row) => [
+					row.serviceName,
+					Number(signal === "logs" ? row.totalLogCount : row.totalTraceCount),
+				]),
 			)
 		const scan = (signal: PreviewSignal) => {
-			const hours = scanHours(storedPerDay(signal))
-			const params = windowFrom(endMs - hours * HOUR_MS)
+			const minutes = Math.min(DAY_MINUTES, scanMinutes(newestFirst(signal)))
+			const params = windowFrom(endMs - minutes * MINUTE_MS)
 			const rows =
 				signal === "logs"
 					? warehouse.compiledQuery(
@@ -162,7 +190,14 @@ const make = Effect.gen(function* () {
 							{ profile: "aggregation", context: "ingestRulePreviewSpans" },
 						)
 			return Effect.map(rows, (matched) =>
-				summarize(signal, matched, sizesFrom(usage, signal), dropShare(spec), hours),
+				summarize(
+					signal,
+					matched,
+					sizesFrom(usage, signal),
+					dropShare(spec),
+					minutes,
+					dayCounts(signal),
+				),
 			)
 		}
 		const previews = yield* Effect.forEach(signals, scan, { concurrency: "unbounded" }).pipe(
@@ -181,8 +216,8 @@ const make = Effect.gen(function* () {
 			),
 		)
 		yield* Effect.annotateCurrentSpan({
-			"maple.ingest_rule.scanned_hours": Arr.join(
-				Arr.map(previews, (entry) => String(entry.scannedHours)),
+			"maple.ingest_rule.scanned_minutes": Arr.join(
+				Arr.map(previews, (entry) => String(entry.scannedMinutes)),
 				",",
 			),
 		})

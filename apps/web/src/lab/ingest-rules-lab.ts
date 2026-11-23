@@ -252,7 +252,7 @@ const ESTIMATE = (keepPercent: number) => {
 		signals: [
 			{
 				signal: "logs",
-				scanned_hours: 24,
+				scanned_minutes: 1440,
 				stored,
 				matched,
 				estimated_dropped: dropped,

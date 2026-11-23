@@ -5,8 +5,10 @@ import {
 	MapleApiV2,
 	fromV2IngestRuleAction,
 	isoTimestamp,
+	missingReadScopes,
 	paginateArray,
 	toV2IngestRuleAction,
+	V2InsufficientScope,
 	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
@@ -127,6 +129,19 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 			.handle("preview", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					// The counts answer questions about stored telemetry, so a scoped key must read it.
+					const missing = missingReadScopes(
+						tenant.scopes,
+						Arr.filter(payload.signals, (signal) => signal === "logs" || signal === "traces"),
+					)
+					if (missing.length > 0) {
+						return yield* V2InsufficientScope.make(
+							`Previewing this rule requires ${Arr.join(
+								Arr.map(missing, (family) => `"${family}:read"`),
+								", ",
+							)}, because it counts the telemetry it reads.`,
+						)
+					}
 					const now = yield* Clock.currentTimeMillis
 					const result = yield* previews.preview(
 						tenant,
@@ -143,7 +158,7 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 						end_time: isoTimestamp(result.endMs),
 						signals: Arr.map(result.signals, (entry) => ({
 							signal: entry.signal,
-							scanned_hours: entry.scannedHours,
+							scanned_minutes: entry.scannedMinutes,
 							stored: entry.stored,
 							matched: entry.matched,
 							estimated_dropped: entry.estimatedDropped,

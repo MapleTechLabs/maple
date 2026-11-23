@@ -519,6 +519,25 @@ describe("v2 ingest_rules over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses a preview to a key that cannot read the telemetry it counts", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["ingest_rules:read", "logs:read"])
+		const body = {
+			signals: ["logs", "traces"],
+			conditions: [{ field: "service_name", op: "eq", value: "api" }],
+			action: { type: "drop", keep_percent: 0 },
+		}
+		const refused = await harness.request("POST", "/v2/ingest_rules/preview", { token: key.secret, body })
+		expect(refused.status).toBe(403)
+		expect(refused.body.error.message).toContain('"traces:read"')
+		const logsOnly = await harness.request("POST", "/v2/ingest_rules/preview", {
+			token: key.secret,
+			body: { ...body, signals: ["logs"] },
+		})
+		expect(logsOnly.status).toBe(200)
+		await harness.dispose()
+	})
+
 	it("answers an invalid rule with 400 and every problem", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey()

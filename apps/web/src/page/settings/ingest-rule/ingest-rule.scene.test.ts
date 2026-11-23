@@ -311,7 +311,7 @@ describe("ingest rule 24 hour estimate", () => {
 			signals: [
 				{
 					signal: "logs",
-					scanned_hours: 24,
+					scanned_minutes: 1440,
 					stored: 8_000_000,
 					matched: 1_200_000,
 					estimated_dropped: dropped,
