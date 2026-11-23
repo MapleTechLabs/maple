@@ -534,7 +534,9 @@ const rekeyOwners = (
 			Effect.gen(function* () {
 				// The stray goes last whatever its state: the old issue is the one somebody
 				// triaged, and an ignored one must stay ignored.
-				const strayLast = (issue: ErrorIssueRow) => (issue.id === strayId ? 1 : 0)
+				// A stray folded earlier in this pass is reached through its survivor.
+				const stray = strayId === undefined ? undefined : survivor(strayId)
+				const strayLast = (issue: ErrorIssueRow) => (issue.id === stray ? 1 : 0)
 				const order = (a: ErrorIssueRow, b: ErrorIssueRow) =>
 					strayLast(a) === strayLast(b) ? rekeyOrder(a, b) : strayLast(a) - strayLast(b)
 				const reached = Arr.flatMap(Arr.dedupe(Arr.map(issueIds, survivor)), (id) => {
