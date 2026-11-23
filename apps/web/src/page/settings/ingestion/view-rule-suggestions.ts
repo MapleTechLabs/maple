@@ -3,6 +3,7 @@ import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography } from "@maple/views/ui/typography"
@@ -45,7 +46,7 @@ const reasonOf = (suggestion: V2IngestRuleSuggestion): string => {
 }
 
 const suggestionRow = (h: H, link: SuggestionLink, suggestion: V2IngestRuleSuggestion): Html =>
-	hstack(h, { gap: "3", align: "center", className: "border-t px-4 py-2.5" }, [
+	hstack(h, { gap: "3", align: "center", className: stripClass("row") }, [
 		vstack(h, { gap: "1", shrink: true, grow: true }, [
 			truncatedText(h, { text: titleOf(suggestion), className: "text-sm" }),
 			typography(h, { size: "2xs", tone: "muted" }, [reasonOf(suggestion)]),
@@ -98,7 +99,7 @@ export const ruleSuggestions = (h: H, model: Model, link: SuggestionLink): Reado
 		h.div(
 			[h.AriaLabel("Suggested rules"), h.Role("group")],
 			[
-				hstack(h, { gap: "3", align: "center", className: "border-t px-4 py-1.5" }, [
+				hstack(h, { gap: "3", align: "center", className: stripClass("head", "border-t py-1.5") }, [
 					eyebrow(h, { variant: "mono", as: "div" }, ["Suggested from the last 24 hours"]),
 				]),
 				...Arr.map(open, (suggestion) => suggestionRow(h, link, suggestion)),

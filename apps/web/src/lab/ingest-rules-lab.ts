@@ -35,6 +35,7 @@ export const LabState = Schema.Literals([
 	"new-drop",
 	"new-sampled",
 	"list-empty",
+	"rule-week",
 ])
 export type LabState = typeof LabState.Type
 
@@ -390,6 +391,7 @@ export const init = (flags: Flags): Return => {
 	const steps: ReadonlyArray<EditorMessage.Message> = [
 		EditorMessage.Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
 		...(isNew ? [] : [EditorMessage.Message.CompletedFetchExisting({ result: Result.succeed(target) })]),
+		...(flags.state === "rule-week" ? [EditorMessage.Message.PickedImpactWindow({ window: "7d" })] : []),
 		...(flags.state === "new-sampled"
 			? [EditorMessage.Message.ChangedText({ part: "keepPercent", value: "10" })]
 			: []),
