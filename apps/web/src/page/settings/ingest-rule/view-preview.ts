@@ -10,6 +10,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { draftProblems, specOf } from "./form"
+import { estimateBlock } from "./view-estimate"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
@@ -217,6 +218,7 @@ export const previewPanel = (h: H, model: Model): Html =>
 	vstack(h, { gap: "3" }, [
 		panel(h, { className: cn("overflow-hidden") }, [
 			panelHeader(h, { title: "Preview" }),
+			estimateBlock(h, model),
 			controls(h, model),
 			body(h, model),
 		]),

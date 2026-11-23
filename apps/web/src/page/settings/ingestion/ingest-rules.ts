@@ -1,10 +1,11 @@
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRuleStats, V2IngestRuleSuggestions } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Array, DateTime, Effect, Option, Result, Schema } from "effect"
+import { Array, Clock, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { hourWindow } from "../ingest-rule/impact"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -15,11 +16,14 @@ import { ruleHref } from "../ingest-rule/hrefs"
 const RuleId = V2IngestRule.fields.id
 export const RulesData = AsyncData.Schema(Schema.Array(V2IngestRule), LoadFailure)
 export const StatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
+export const SuggestionsData = AsyncData.Schema(V2IngestRuleSuggestions, LoadFailure)
 
 export const Model = Schema.Struct({
 	rules: RulesData.schema,
 	/** Hits over the last 24 hours; a failure only blanks the column. */
 	stats: StatsData.schema,
+	/** Rules the last 24 hours suggest; a failure only hides them. */
+	suggestions: SuggestionsData.schema,
 	/** Rows with a toggle in flight. */
 	pending: Schema.Array(Schema.String),
 	isMoving: Schema.Boolean,
@@ -33,6 +37,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	CompletedFetch: { result: Schema.Result(Schema.Array(V2IngestRule), LoadFailure) },
 	CompletedFetchStats: { result: Schema.Result(V2IngestRuleStats, LoadFailure) },
+	CompletedFetchSuggestions: { result: Schema.Result(V2IngestRuleSuggestions, LoadFailure) },
 	ClickedRetry: {},
 	Toggled: { id: RuleId },
 	CompletedToggle: { id: RuleId, result: Schema.Result(Schema.Void, LoadFailure) },
@@ -60,11 +65,21 @@ export const FetchIngestRules = Command.define("FetchIngestRules", {
 	}).pipe(settleTo((result) => Message.CompletedFetch({ result }))),
 })
 
-/** The stats endpoint's default window: the last 24 hours. */
+/** The last 24 whole UTC hours, the current one included. */
 export const FetchIngestRuleStats = Command.define("FetchIngestRuleStats", {
 	messages: [Message.CompletedFetchStats],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.stats({ query: {} })).pipe(
-		settleTo((result) => Message.CompletedFetchStats({ result })),
+	execute: Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		const now = yield* Clock.currentTimeMillis
+		return yield* client.ingestRules.stats({ query: hourWindow(now, 24) })
+	}).pipe(settleTo((result) => Message.CompletedFetchStats({ result }))),
+})
+
+/** Rules the last 24 hours of stored logs and spans suggest. */
+export const FetchIngestRuleSuggestions = Command.define("FetchIngestRuleSuggestions", {
+	messages: [Message.CompletedFetchSuggestions],
+	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.suggestions()).pipe(
+		settleTo((result) => Message.CompletedFetchSuggestions({ result })),
 	),
 })
 
@@ -104,6 +119,7 @@ const DeleteIngestRule = Command.define("DeleteIngestRule", {
 export const init = (): Model => ({
 	rules: AsyncData.Loading(),
 	stats: AsyncData.Loading(),
+	suggestions: AsyncData.Loading(),
 	pending: [],
 	isMoving: false,
 	menus: {},
@@ -176,9 +192,17 @@ export const update = (model: Model, message: Message): Return =>
 		CompletedFetchStats: ({ result }) => ({
 			model: { ...model, stats: AsyncData.settle(model.stats, result) },
 		}),
+		CompletedFetchSuggestions: ({ result }) => ({
+			model: { ...model, suggestions: AsyncData.settle(model.suggestions, result) },
+		}),
 		ClickedRetry: () => ({
-			model: { ...model, rules: AsyncData.Loading(), stats: AsyncData.Loading() },
-			commands: [FetchIngestRules(), FetchIngestRuleStats()],
+			model: {
+				...model,
+				rules: AsyncData.Loading(),
+				stats: AsyncData.Loading(),
+				suggestions: AsyncData.Loading(),
+			},
+			commands: [FetchIngestRules(), FetchIngestRuleStats(), FetchIngestRuleSuggestions()],
 		}),
 		Toggled: ({ id }) =>
 			Option.match(
@@ -252,24 +276,3 @@ export const update = (model: Model, message: Message): Return =>
 				}),
 			}),
 	})
-
-const HOUR_MS = 3_600_000
-
-/** The UTC hour of a wire timestamp (ISO-8601 UTC, validated by the schema); `NaN` if unreadable. */
-const hourOf = (timestamp: string): number =>
-	Option.match(DateTime.make(timestamp), {
-		onNone: () => Number.NaN,
-		onSome: (time) => Math.floor(DateTime.toEpochMillis(time) / HOUR_MS),
-	})
-
-/** One rule's matches per UTC hour over the last 24 hours of the window, oldest first. */
-export const hourlyMatches = (stats: V2IngestRuleStats, id: string): ReadonlyArray<number> => {
-	const lastHour = hourOf(stats.end_time)
-	const byHour = new Map(
-		Array.map(
-			Array.filter(stats.hourly, (entry) => entry.id === id),
-			(entry) => [hourOf(entry.bucket), entry.matched],
-		),
-	)
-	return Array.makeBy(24, (index) => byHour.get(lastHour - 23 + index) ?? 0)
-}
