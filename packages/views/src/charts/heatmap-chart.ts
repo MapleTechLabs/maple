@@ -28,6 +28,10 @@ import { hstack, vstack } from "../ui/stack"
 // The query-builder heatmap. The definition is ./definitions/heatmap.ts.
 
 export interface HeatmapChartInputs {
+	/** Row labels by row key, when keys are identities rather than text to show. */
+	readonly yLabels?: Readonly<Record<string, string>> | undefined
+	/** Every column in order, so empty ones (quiet minutes) keep their place. */
+	readonly xDomain?: ReadonlyArray<string> | undefined
 	readonly chartId: string
 	readonly data: ReadonlyArray<Record<string, unknown>>
 	readonly theme: ThemeColors
@@ -197,7 +201,7 @@ const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 		: null
 
 export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((chart, inputs, h) => {
-	const model = buildHeatmapModel(deriveHeatmapPoints(inputs.data))
+	const model = buildHeatmapModel(deriveHeatmapPoints(inputs.data), inputs.xDomain)
 	if (model.xDomain.length === 0 || model.yDomain.length === 0) return emptyState(h, inputs)
 	const requested = inputs.colorScale ?? DEFAULT_HEATMAP_COLOR_SCALE
 	const palette = isKnownScale(requested) ? requested : "amber"
@@ -205,7 +209,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const stops = rampStops(inputs.theme, palette)
 	const colorAt = sequentialColorScale({ stops, domain: model.domain, scaleType })
 	const allYIso = Arr.every(model.yDomain, (value) => ISO_RE.test(value))
-	const label = (y: string) => shortenYLabel(y, allYIso, inputs.timeZone)
+	const label = (y: string) => inputs.yLabels?.[y] ?? shortenYLabel(y, allYIso, inputs.timeZone)
 	const allXIso = Arr.every(model.xDomain, (value) => ISO_RE.test(value))
 	const labelX = (x: string) => (allXIso ? shortenYLabel(x, true, inputs.timeZone) : x)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)

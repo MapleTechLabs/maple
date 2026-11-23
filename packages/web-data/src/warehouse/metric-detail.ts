@@ -76,7 +76,7 @@ export const getMetricDistribution = Effect.fn("QueryEngine.getMetricDistributio
 		),
 	)
 	const rows: ReadonlyArray<MetricDistributionRow> = response.data
-	return rows
+	return { rows, bucketSeconds: scope.bucketSeconds }
 })
 
 export const getMetricExemplars = Effect.fn("QueryEngine.getMetricExemplars")(function* ({

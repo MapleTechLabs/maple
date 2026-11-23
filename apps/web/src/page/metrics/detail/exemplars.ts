@@ -1,8 +1,8 @@
 import type { MetricDistributionRow, MetricExemplarRow } from "@maple/domain/http"
 import { formatValueByUnit } from "@maple/ui/lib/format"
 import type { ExemplarDot } from "@maple/views/charts/exemplar-overlay"
-import { Array as Arr, DateTime, Option, Order, String as Str } from "effect"
-import { formatWarehouseDateTime } from "@maple/query-engine"
+import { Array as Arr, DateTime, Option, Order, Record as Rec, String as Str } from "effect"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { keepsMetricUnit } from "./derive"
 
 // The histogram distribution as heatmap points, the exemplars as chart dots and rows, and the
@@ -23,33 +23,73 @@ export const exemplarsFitChart = (aggregation: string, metricType: string): bool
 
 type Format = (value: number) => string
 
-/** One heatmap row's label: the bucket's upper edge, which is unique per merged bucket. */
-export const bucketLabel = (row: MetricDistributionRow, format: Format): string => {
-	if (row.lowerBound === 0 && row.upperBound === 0) return "0"
-	if (row.upperBound === null) return row.lowerBound === null ? "all" : `> ${format(row.lowerBound)}`
-	return `≤ ${format(row.upperBound)}`
+type Edges = Pick<MetricDistributionRow, "lowerBound" | "upperBound">
+
+/** A heatmap row's identity: its exact edges, open ones as -inf and inf. Labels are only text. */
+export const bucketKey = (row: Edges): string => `${row.lowerBound ?? "-inf"}|${row.upperBound ?? "inf"}`
+
+const edgeOf = (text: string | undefined, open: string): number | null | undefined =>
+	text === undefined ? undefined : text === open ? null : Number(text)
+
+/** The edges a row key names, or null when it names none. */
+export const edgesOfKey = (key: string): Edges | null => {
+	const [lower, upper] = Str.split("|")(key)
+	const lowerBound = edgeOf(lower, "-inf")
+	const upperBound = edgeOf(upper, "inf")
+	return lowerBound === undefined || upperBound === undefined ? null : { lowerBound, upperBound }
 }
 
-const byUpperBound = Order.mapInput(
-	Order.Number,
-	(row: MetricDistributionRow) => row.upperBound ?? Number.POSITIVE_INFINITY,
+/** A row's label: its upper edge, or both edges when another layout shares that upper edge. */
+export const bucketLabel = (row: Edges, format: Format, sharesUpper = false): string => {
+	if (row.lowerBound === 0 && row.upperBound === 0) return "0"
+	if (row.upperBound === null) return row.lowerBound === null ? "all" : `> ${format(row.lowerBound)}`
+	return sharesUpper && row.lowerBound !== null
+		? `${format(row.lowerBound)} – ${format(row.upperBound)}`
+		: `≤ ${format(row.upperBound)}`
+}
+
+const byEdges = Order.combine(
+	Order.mapInput(Order.Number, (row: Edges) => row.upperBound ?? Number.POSITIVE_INFINITY),
+	Order.mapInput(Order.Number, (row: Edges) => row.lowerBound ?? Number.NEGATIVE_INFINITY),
 )
 
 export type DistributionCell = Readonly<{ x: string; y: string; value: number }>
 
+/** At most this many time columns; a longer grid is left to the cells that have data. */
+const MAX_COLUMNS = 2000
+
+/** Every time bucket of the window, as the warehouse aligns and writes them. */
+export const timeGrid = (
+	window: { readonly startTime: string; readonly endTime: string },
+	bucketSeconds: number,
+): ReadonlyArray<string> | undefined => {
+	const width = bucketSeconds * 1000
+	const first = Math.floor(parseWarehouseDateTime(window.startTime) / width) * width
+	const count = Math.floor((parseWarehouseDateTime(window.endTime) - first) / width) + 1
+	return width <= 0 || !Number.isFinite(count) || count <= 0 || count > MAX_COLUMNS
+		? undefined
+		: Arr.makeBy(count, (i) => DateTime.formatIso(DateTime.makeUnsafe(first + i * width)))
+}
+
 /**
- * Heatmap points with time on x and value buckets on y, lowest bucket first (the heatmap draws
- * the first row at the bottom).
+ * The heatmap's input: points with time on x and exact bucket keys on y, lowest bucket first
+ * (the heatmap draws the first row at the bottom), and the label each key shows.
  */
 export const distributionCells = (
 	rows: ReadonlyArray<MetricDistributionRow>,
 	format: Format,
-): ReadonlyArray<DistributionCell> =>
-	Arr.map(Arr.sort(rows, byUpperBound), (row) => ({
-		x: row.bucket,
-		y: bucketLabel(row, format),
-		value: row.count,
-	}))
+): { readonly cells: ReadonlyArray<DistributionCell>; readonly labels: Readonly<Record<string, string>> } => {
+	const sorted = Arr.sort(rows, byEdges)
+	const edges = Arr.dedupeWith(sorted, (a, b) => bucketKey(a) === bucketKey(b))
+	const uppers = Arr.map(edges, (row) => row.upperBound)
+	const sharesUpper = (row: Edges) => Arr.filter(uppers, (upper) => upper === row.upperBound).length > 1
+	return {
+		cells: Arr.map(sorted, (row) => ({ x: row.bucket, y: bucketKey(row), value: row.count })),
+		labels: Rec.fromEntries(
+			Arr.map(edges, (row) => [bucketKey(row), bucketLabel(row, format, sharesUpper(row))]),
+		),
+	}
+}
 
 export interface PickedCell {
 	/** The cell's time bucket, as the warehouse writes it. */
@@ -58,28 +98,19 @@ export interface PickedCell {
 	readonly upperBound: number | null
 }
 
-/** The picked cell's bucket and value range, or null when no current cell has that key. */
+/** The picked cell's bucket and exact edges, or null when no current cell has that key. */
 export const pickedCell = (
 	rows: ReadonlyArray<MetricDistributionRow>,
 	cellKey: string,
-	format: Format,
 ): PickedCell | null => {
 	const parts = cellKeyParts(cellKey)
-	const row =
-		parts === null
-			? undefined
-			: Arr.findFirst(
-					rows,
-					(candidate) => candidate.bucket === parts.x && bucketLabel(candidate, format) === parts.y,
-				)
-	return row === undefined || Option.isNone(row)
-		? null
-		: {
-				bucket: formatWarehouseDateTime(isoMs(row.value.bucket)),
-				lowerBound: row.value.lowerBound,
-				upperBound: row.value.upperBound,
-			}
+	const edges = parts === null ? null : edgesOfKey(parts.y)
+	if (parts === null || edges === null) return null
+	const present = Arr.some(rows, (row) => sameInstant(row.bucket, parts.x) && bucketKey(row) === parts.y)
+	return present ? { bucket: formatWarehouseDateTime(isoMs(parts.x)), ...edges } : null
 }
+
+const sameInstant = (a: string, b: string): boolean => isoMs(a) === isoMs(b)
 
 /** The heatmap focus key of a cell: `x`, a NUL, then `y` (`heatmap-chart`'s `focusKeyOf`). */
 export const cellKeyParts = (key: string): { readonly x: string; readonly y: string } | null => {
@@ -128,7 +159,8 @@ export const exemplarDots = (
 ): ReadonlyArray<ExemplarDot> =>
 	Arr.map(exemplars, (exemplar) => ({
 		key: exemplarKey(exemplar),
-		atMs: isoMs(exemplar.timestamp),
+		// At its bucket, the line point whose value it explains (the line is drawn at bucket starts).
+		atMs: isoMs(exemplar.bucket),
 		value: exemplar.value,
 		title: format(exemplar.value),
 		rows: [

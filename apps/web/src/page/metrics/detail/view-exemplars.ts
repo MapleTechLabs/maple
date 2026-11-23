@@ -32,6 +32,7 @@ import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
 import {
 	distributionCells,
+	timeGrid,
 	chartExemplars,
 	exemplarDots,
 	exemplarKey,
@@ -40,7 +41,7 @@ import {
 	valueFormat,
 } from "./exemplars"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { MetricDistribution, Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
@@ -128,6 +129,16 @@ export const exemplarAxis = (
 	}
 }
 
+/** The heatmap's cells, row labels and every time column of the window. */
+const heatmapData = (distribution: MetricDistribution, window: Model["window"], unit: string | undefined) => {
+	const { cells, labels } = distributionCells(distribution.rows, valueFormat(unit))
+	return {
+		data: cells,
+		yLabels: labels,
+		xDomain: window === null ? undefined : timeGrid(window, distribution.bucketSeconds),
+	}
+}
+
 /** The bucket heatmap: time across, value buckets up, observations as colour. A cell picks exemplars. */
 export const distributionBody = (h: H, model: Model, unit: string | undefined, timeZone: string): Html =>
 	AsyncData.matchData(model.distribution.data, {
@@ -138,8 +149,8 @@ export const distributionBody = (h: H, model: Model, unit: string | undefined, t
 				title: "Couldn't load the distribution",
 				onRetry: Message.ClickedRetryChart(),
 			}),
-		onData: (rows) =>
-			rows.length === 0
+		onData: (distribution) =>
+			distribution.rows.length === 0
 				? emptyMessage(h, { className: hstackClass({ justify: "center", className: "h-full" }) }, [
 						"No bucketed observations in this window",
 					])
@@ -153,7 +164,7 @@ export const distributionBody = (h: H, model: Model, unit: string | undefined, t
 								Message.GotDistributionChartMessage({ message }),
 							viewInputs: {
 								chartId: "metric-distribution",
-								data: distributionCells(rows, valueFormat(unit)),
+								...heatmapData(distribution, model.window, unit),
 								theme: model.themeColors,
 								timeZone,
 								scaleType: "log",

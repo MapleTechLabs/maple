@@ -846,21 +846,32 @@ export function histogramDistributionQuery(
 	const samples = histogramSamplesQuery(timeseriesOpts, exponential ? "exponential" : "explicit")
 
 	if (!exponential) {
-		const merged = explicitBucketsMerged(samples, timeseriesOpts)
-		// Select aliases chain inside one SELECT: `dIdx` picks the bucket, the rest read it.
-		const cells = fromQuery(merged, "merged").select(($) => ({
-			bucket: $.bucket,
-			dIdx: CH.rawExpr("arrayJoin(arrayEnumerate(bKeys))", T.uint64),
-			dUpper: CH.rawExpr("bKeys[dIdx]", T.float64),
-			dBelow: CH.rawExpr("arrayFilter(b -> b < dUpper, bBounds)", T.array(T.float64)),
-			dLower: CH.rawExpr("if(empty(dBelow), NULL, arrayMax(dBelow))", T.nullable(T.float64)),
-			dCount: CH.rawExpr("bCounts[dIdx]", T.float64),
-		}))
-		return fromQuery(cells, "cells")
+		// Each sample's buckets under its own edges: two layouts merged by upper bound alone would
+		// count a (10, 20] observation in another layout's (15, 20]. Aliases chain in one SELECT.
+		const perSample = samples
+			.select(($) => ({
+				bucket: timeseriesBucket($.TimeUnix, false),
+				dInc: CH.rawExpr(BUCKET_COUNTS, T.array(T.float64)),
+				dUppers: CH.rawExpr(BUCKET_UPPER_BOUNDS, T.array(T.float64)),
+				dIdx: CH.rawExpr("arrayJoin(arrayEnumerate(dInc))", T.uint64),
+				dLo: CH.rawExpr("if(dIdx = 1, -inf, bounds[dIdx - 1])", T.float64),
+				dUp: CH.rawExpr("dUppers[dIdx]", T.float64),
+				dN: CH.rawExpr("dInc[dIdx]", T.float64),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+		const summed = fromQuery(perSample, "per_sample")
 			.select(($) => ({
 				bucket: $.bucket,
-				lowerBound: $.dLower,
-				upperBound: CH.rawExpr(finiteOrNull("dUpper"), T.nullable(T.float64)),
+				dLo: $.dLo,
+				dUp: $.dUp,
+				dCount: CH.sum($.dN),
+			}))
+			.groupBy("bucket", "dLo", "dUp")
+		return fromQuery(summed, "summed")
+			.select(($) => ({
+				bucket: $.bucket,
+				lowerBound: CH.rawExpr(finiteOrNull("dLo"), T.nullable(T.float64)),
+				upperBound: CH.rawExpr(finiteOrNull("dUp"), T.nullable(T.float64)),
 				count: $.dCount,
 			}))
 			.where(($) => [$.dCount.gt(0)])
@@ -922,14 +933,25 @@ export const METRIC_EXEMPLARS_LIMIT = 500
 const cellConditions = (
 	$: { readonly bucket: CH.Expr<DateTime.Utc>; readonly value: CH.Expr<number> },
 	cell: MetricExemplarsOpts["cell"],
+	metricType: MetricType,
 ): ReadonlyArray<CH.Condition | undefined> => {
 	if (cell === undefined) return []
 	const inBucket = $.bucket.eq(param.dateTime("cellBucket"))
 	if (cell.lowerBound === 0 && cell.upperBound === 0) return [inBucket, $.value.eq(0)]
+	// OTel buckets magnitudes as (a, b], so a negative exponential range mirrors to [-b, -a).
+	const mirrored = metricType === "exponential_histogram" && cell.upperBound !== null && cell.upperBound < 0
 	return [
 		inBucket,
-		cell.lowerBound === null ? undefined : $.value.gt(cell.lowerBound),
-		cell.upperBound === null ? undefined : $.value.lte(cell.upperBound),
+		cell.lowerBound === null
+			? undefined
+			: mirrored
+				? $.value.gte(cell.lowerBound)
+				: $.value.gt(cell.lowerBound),
+		cell.upperBound === null
+			? undefined
+			: mirrored
+				? $.value.lt(cell.upperBound)
+				: $.value.lte(cell.upperBound),
 	]
 }
 
@@ -957,17 +979,18 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			...metricsWhere($, timeseriesOpts),
 			CH.rawCond("notEmpty(ExemplarsTraceId) AND traceId != '' AND isFinite(value)"),
 		])
-	// A cumulative reservoir or a scrape repeats one exemplar on every datapoint: keep its first.
+	// A cumulative reservoir or a scrape repeats one exemplar on every datapoint: the same
+	// observation (trace, span, time, value) is listed once, in the bucket it was first exported in.
 	const distinct = fromQuery(unrolled, "unrolled")
 		.select(($) => ({
 			bucket: CH.min_($.bucket),
-			timestamp: CH.min_($.timestamp),
-			value: CH.max_($.value),
+			timestamp: $.timestamp,
+			value: $.value,
 			traceId: $.traceId,
 			spanId: $.spanId,
 			serviceName: CH.any_($.serviceName),
 		}))
-		.groupBy("traceId", "spanId")
+		.groupBy("traceId", "spanId", "timestamp", "value")
 	const ranked = fromQuery(distinct, "distinct_exemplars")
 		.select(($) => ({
 			bucket: $.bucket,
@@ -978,7 +1001,7 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			serviceName: $.serviceName,
 			exemplarRank: CH.rawExpr("row_number() OVER (PARTITION BY bucket ORDER BY value DESC)", T.uint64),
 		}))
-		.where(($) => cellConditions($, opts.cell))
+		.where(($) => cellConditions($, opts.cell, opts.metricType))
 	return fromQuery(ranked, "ranked")
 		.select(($) => ({
 			bucket: $.bucket,

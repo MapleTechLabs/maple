@@ -48,6 +48,22 @@ const fixtures: FixtureRule[] = [
 			catalogRow("http.server.request.duration.extra", "gauge"),
 		],
 	},
+	// A name one environment still sends as an explicit histogram and another moved to exponential.
+	{
+		match: (sql) => isCatalogRead(sql) && Str.includes("moved.metric")(sql),
+		rows: [catalogRow("moved.metric", "histogram"), catalogRow("moved.metric", "exponential_histogram")],
+	},
+	{
+		match: (sql) =>
+			Str.includes("ExemplarsTraceId")(sql) &&
+			Str.includes("moved.metric")(sql) &&
+			Str.includes("metrics_exponential_histogram")(sql),
+		rows: [exemplar("2026-11-20 10:05:12.250", 2.5, "d".repeat(32))],
+	},
+	{
+		match: (sql) => Str.includes("ExemplarsTraceId")(sql) && Str.includes("moved.metric")(sql),
+		rows: [],
+	},
 	{
 		match: (sql) => isCatalogRead(sql) && Str.includes("quiet.metric")(sql),
 		rows: [catalogRow("quiet.metric", "gauge")],
@@ -138,5 +154,11 @@ describe("get_metric_exemplars", () => {
 		const output = Schema.decodeUnknownSync(GetMetricExemplarsOutput)(result.structuredContent)
 		expect(output.exemplars).toEqual([])
 		expect(markdown(result)).toContain("find_slow_traces")
+	})
+
+	it("reads the metric's other type when the preferred one has no exemplars under the filters", async () => {
+		const result = await call({ metric_name: "moved.metric", ...window })
+		const output = Schema.decodeUnknownSync(GetMetricExemplarsOutput)(result.structuredContent)
+		expect(output.exemplars.map((e) => e.traceId)).toEqual(["d".repeat(32)])
 	})
 })

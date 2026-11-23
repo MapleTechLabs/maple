@@ -1,8 +1,8 @@
-import { Array as Arr, DateTime, Effect, Option, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Order, Schema } from "effect"
 import { type AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "../ch"
 import { formatWarehouseDateTimeMs } from "../datetime"
-import { WarehouseExecutor } from "./WarehouseExecutor"
+import { WarehouseExecutor, type WarehouseExecutorError } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
 
 export interface MetricExemplarsInput {
@@ -79,48 +79,63 @@ export const metricExemplars = Effect.fn("Observability.metricExemplars")(functi
 			{ profile: "discovery", context: "metricExemplars.catalog" },
 		)
 
-	let metricType = input.metricType
-	if (metricType === undefined) {
-		const exact = yield* catalogRows({ exactName: input.metricName })
-		const types = Arr.filter(
-			Arr.map(
-				Arr.filter(exact, (row) => row.metricName === input.metricName),
-				(row) => row.metricType,
+	const readFor = (metricType: MetricType) =>
+		executor.compiledQuery(
+			CH.compile(
+				CH.metricExemplarsQuery({
+					metricType,
+					...(input.service === undefined ? undefined : { serviceName: input.service }),
+					...(input.environment === undefined ? undefined : { environments: [input.environment] }),
+					...(input.attributeFilters === undefined || input.attributeFilters.length === 0
+						? undefined
+						: { attributeFilters: input.attributeFilters }),
+					...(input.perBucket === undefined ? undefined : { perBucket: input.perBucket }),
+					...(input.limit === undefined ? undefined : { limit: input.limit }),
+				}),
+				{ ...window, metricName: input.metricName, bucketSeconds: input.bucketSeconds },
 			),
-			isMetricType,
+			{ profile: "list", context: "metricExemplars" },
 		)
-		const preferred = Arr.head(
-			Arr.sort(types, (a: MetricType, b: MetricType) => {
-				const d = typePreference(a) - typePreference(b)
-				return d < 0 ? -1 : d > 0 ? 1 : 0
-			}),
+
+	// A name recorded as several types (one environment moved to exponential histograms) is read
+	// type by type, preferred first, until one has exemplars under the filters.
+	type Read = Effect.Success<ReturnType<typeof readFor>>
+	const firstWithExemplars = (
+		types: Arr.NonEmptyReadonlyArray<MetricType>,
+	): Effect.Effect<{ readonly metricType: MetricType; readonly rows: Read }, WarehouseExecutorError> => {
+		const [first, ...rest] = types
+		return Effect.flatMap(readFor(first), (rows) =>
+			rows.length > 0 || !Arr.isReadonlyArrayNonEmpty(rest)
+				? Effect.succeed({ metricType: first, rows })
+				: firstWithExemplars(rest),
 		)
-		if (Option.isNone(preferred)) {
-			const similar = yield* catalogRows({ search: input.metricName })
-			return {
-				_tag: "missing",
-				similar: Arr.dedupe(Arr.map(similar, (row) => row.metricName)),
-			} satisfies MetricExemplarsResult
-		}
-		metricType = preferred.value
 	}
 
-	const rows = yield* executor.compiledQuery(
-		CH.compile(
-			CH.metricExemplarsQuery({
-				metricType,
-				...(input.service === undefined ? undefined : { serviceName: input.service }),
-				...(input.environment === undefined ? undefined : { environments: [input.environment] }),
-				...(input.attributeFilters === undefined || input.attributeFilters.length === 0
-					? undefined
-					: { attributeFilters: input.attributeFilters }),
-				...(input.perBucket === undefined ? undefined : { perBucket: input.perBucket }),
-				...(input.limit === undefined ? undefined : { limit: input.limit }),
-			}),
-			{ ...window, metricName: input.metricName, bucketSeconds: input.bucketSeconds },
-		),
-		{ profile: "list", context: "metricExemplars" },
-	)
+	const exact = input.metricType === undefined ? yield* catalogRows({ exactName: input.metricName }) : []
+	const candidates: ReadonlyArray<MetricType> =
+		input.metricType !== undefined
+			? [input.metricType]
+			: Arr.sort(
+					Arr.dedupe(
+						Arr.filter(
+							Arr.map(
+								Arr.filter(exact, (row) => row.metricName === input.metricName),
+								(row) => row.metricType,
+							),
+							isMetricType,
+						),
+					),
+					Order.mapInput(Order.Number, typePreference),
+				)
+	if (!Arr.isReadonlyArrayNonEmpty(candidates)) {
+		const similar = yield* catalogRows({ search: input.metricName })
+		return {
+			_tag: "missing",
+			similar: Arr.dedupe(Arr.map(similar, (row) => row.metricName)),
+		} satisfies MetricExemplarsResult
+	}
+
+	const { metricType, rows } = yield* firstWithExemplars(candidates)
 	yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 	return {
 		_tag: "found",

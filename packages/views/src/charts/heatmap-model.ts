@@ -73,7 +73,11 @@ const EMPTY_MODEL: HeatmapModel = {
 }
 
 /** All-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
-export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapModel => {
+export const buildHeatmapModel = (
+	points: ReadonlyArray<HeatmapPoint>,
+	/** Every column in order, empty ones included (a time grid); none of them is pruned. */
+	fullXDomain?: ReadonlyArray<string>,
+): HeatmapModel => {
 	if (points.length === 0) return EMPTY_MODEL
 	// Time columns read left to right whatever order the rows came in.
 	const seenX = [...new Set(Arr.map(points, (p) => p.x))]
@@ -85,7 +89,7 @@ export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapM
 	const keptX = Arr.filter(xs, (x) => liveX.has(x))
 	const keptY = Arr.filter(ys, (y) => liveY.has(y))
 	const pruned = keptX.length > 0 && keptY.length > 0
-	const xDomain = pruned ? keptX : xs
+	const xDomain = fullXDomain ?? (pruned ? keptX : xs)
 	const yDomain = [...(pruned ? keptY : ys)].reverse()
 	const slotKey = (x: string, y: string) => `${x}\u0000${y}`
 	const lookup = new Map(Arr.map(points, (point) => [slotKey(point.x, point.y), point.value]))
@@ -104,7 +108,7 @@ export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapM
 		holes: Arr.filter(slots, (slot) => slot.value === null),
 		domain: span > 0 ? [min, max] : [min, min + 1],
 		span,
-		hiddenX: pruned ? xs.length - keptX.length : 0,
+		hiddenX: fullXDomain === undefined && pruned ? xs.length - keptX.length : 0,
 		hiddenY: pruned ? ys.length - keptY.length : 0,
 	}
 }

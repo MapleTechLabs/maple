@@ -24,6 +24,13 @@ export const TimeseriesRows = Schema.Array(
 )
 export type TimeseriesRows = typeof TimeseriesRows.Type
 
+/** A histogram's bucket counts and the time-bucket width they were counted at. */
+export const MetricDistribution = Schema.Struct({
+	rows: Schema.Array(MetricDistributionRow),
+	bucketSeconds: Schema.Number,
+})
+export type MetricDistribution = typeof MetricDistribution.Type
+
 export const BreakdownRow = Schema.Struct({ name: Schema.String, value: Schema.Number })
 export type BreakdownRow = typeof BreakdownRow.Type
 
@@ -46,7 +53,7 @@ export const Model = Schema.Struct({
 	/** The traces behind the chart's values, highest per time bucket. */
 	exemplars: KeyedSchema(Schema.Array(MetricExemplarRow), LoadFailure),
 	/** A histogram's bucket counts per time bucket, read while the distribution shows. */
-	distribution: KeyedSchema(Schema.Array(MetricDistributionRow), LoadFailure),
+	distribution: KeyedSchema(MetricDistribution, LoadFailure),
 	distributionChart: Chart.Model,
 	/** The heatmap cell the exemplars list is narrowed to (its focus key), if one was clicked. */
 	selectedCell: Schema.NullOr(Schema.String),

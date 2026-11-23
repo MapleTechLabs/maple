@@ -21,9 +21,7 @@ import {
 	EXEMPLARS_TIMESERIES,
 } from "../metric-exemplars-fixture"
 import { defineShellLab } from "../shell-lab"
-import { bucketLabel, cellKeyParts, valueFormat } from "../../page/metrics/detail/exemplars"
-
-const FORMAT = valueFormat("duration_s")
+import { bucketKey, cellKeyParts } from "../../page/metrics/detail/exemplars"
 
 // `/lab/metric-exemplars`: the metric page for a latency histogram over one hour, in the real
 // shell: exemplar dots on the p95 line, the Distribution heatmap (?display=distribution), the
@@ -65,8 +63,7 @@ const cellRows = (cellKey: string | null) => {
 			: Option.getOrUndefined(
 					Arr.findFirst(
 						EXEMPLARS_DISTRIBUTION,
-						(candidate) =>
-							candidate.bucket === parts.x && bucketLabel(candidate, FORMAT) === parts.y,
+						(candidate) => candidate.bucket === parts.x && bucketKey(candidate) === parts.y,
 					),
 				)
 	return row === undefined
@@ -155,7 +152,7 @@ const answers = (model: PageModel, state: LabState): ReadonlyArray<PageMessage> 
 		? [
 				PageMessage.CompletedFetchDistribution({
 					key: model.distribution.key ?? "",
-					result: failedOr(state, EXEMPLARS_DISTRIBUTION),
+					result: failedOr(state, { rows: EXEMPLARS_DISTRIBUTION, bucketSeconds: 60 }),
 				}),
 			]
 		: []),

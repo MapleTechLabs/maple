@@ -10,7 +10,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
 import { MountWhereCaret } from "./command"
-import { distributionCells, valueFormat } from "./exemplars"
+import { distributionCells, timeGrid, valueFormat } from "./exemplars"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update, type Search } from "./update"
@@ -97,7 +97,7 @@ const loaded = (metricType: string, search: Search = {}): Model => {
 		Message.CompletedFetchExemplars({ key: base.exemplars.key ?? "", result: Result.succeed(EXEMPLARS) }),
 		Message.CompletedFetchDistribution({
 			key: base.distribution.key ?? "",
-			result: Result.succeed(DISTRIBUTION),
+			result: Result.succeed({ rows: DISTRIBUTION, bucketSeconds: 60 }),
 		}),
 		Message.CompletedLoadChartRuntime(),
 		Message.ResolvedThemeColors({ colors: {} }),
@@ -161,7 +161,7 @@ describe("metric exemplars and distribution", () => {
 
 	test("picking a heatmap cell reads that cell's exemplars and lists them; picking it again shows all", () => {
 		const shown = loaded("histogram", { display: "distribution" })
-		const slowCell = `${MINUTE_A}\u0000> 1.00s`
+		const slowCell = `${MINUTE_A}\u00001|inf`
 		const picked = pageUpdate(shown, pick(slowCell))
 		expect(names(picked.commands)).toEqual(["FetchMetricCellExemplars"])
 		const answered = step(
@@ -190,12 +190,12 @@ describe("metric exemplars and distribution", () => {
 
 	test("a pick of a cell the new buckets no longer have is dropped", () => {
 		const shown = loaded("histogram", { display: "distribution" })
-		const picked = step(shown, pick(`${MINUTE_A}\u0000> 1.00s`))
+		const picked = step(shown, pick(`${MINUTE_A}\u00001|inf`))
 		const moved = step(
 			picked,
 			Message.CompletedFetchDistribution({
 				key: picked.distribution.key ?? "",
-				result: Result.succeed([cell(MINUTE_B, 0.1, 1, 12)]),
+				result: Result.succeed({ rows: [cell(MINUTE_B, 0.1, 1, 12)], bucketSeconds: 60 }),
 			}),
 		)
 		expect(moved.selectedCell).toBeNull()
@@ -210,8 +210,37 @@ describe("metric exemplars and distribution", () => {
 		)
 	})
 
-	test("heatmap rows run from the lowest bucket up", () => {
-		const cells = distributionCells(DISTRIBUTION, valueFormat("duration_s"))
-		expect(Arr.dedupe(Arr.map(cells, (c) => c.y))).toEqual(["≤ 100ms", "≤ 1.00s", "> 1.00s"])
+	test("heatmap rows are keyed by their exact edges, lowest first, and labelled for reading", () => {
+		const { cells, labels } = distributionCells(DISTRIBUTION, valueFormat("duration_s"))
+		const keys = Arr.dedupe(Arr.map(cells, (c) => c.y))
+		expect(keys).toEqual(["-inf|0.1", "0.1|1", "1|inf"])
+		expect(Arr.map(keys, (key) => labels[key])).toEqual(["≤ 100ms", "≤ 1.00s", "> 1.00s"])
+	})
+
+	test("two layouts sharing an upper edge, or edges that format alike, stay separate rows", () => {
+		const { cells, labels } = distributionCells(
+			[
+				cell(MINUTE_A, 0.01, 0.02, 3),
+				cell(MINUTE_A, 0.015, 0.02, 1),
+				cell(MINUTE_A, 1.001, 1.002, 2),
+				cell(MINUTE_A, 1.002, 1.003, 5),
+			],
+			valueFormat("duration_s"),
+		)
+		expect(cells.length).toBe(4)
+		expect(labels["0.01|0.02"]).toBe("10.0ms – 20.0ms")
+		expect(labels["0.015|0.02"]).toBe("15.0ms – 20.0ms")
+	})
+
+	test("the heatmap gets every minute of the window, so a quiet stretch keeps its width", () => {
+		const grid = timeGrid({ startTime: "2026-10-01 11:00:30", endTime: "2026-10-01 11:05:00" }, 60)
+		expect(grid).toEqual([
+			"2026-10-01T11:00:00.000Z",
+			"2026-10-01T11:01:00.000Z",
+			"2026-10-01T11:02:00.000Z",
+			"2026-10-01T11:03:00.000Z",
+			"2026-10-01T11:04:00.000Z",
+			"2026-10-01T11:05:00.000Z",
+		])
 	})
 })

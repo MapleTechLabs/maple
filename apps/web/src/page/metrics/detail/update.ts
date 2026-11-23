@@ -58,8 +58,7 @@ import {
 	SERVICE_KEY,
 	summarizeCatalogRows,
 } from "./derive"
-import { isHistogramType, pickedCell, valueFormat } from "./exemplars"
-import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
+import { isHistogramType, pickedCell } from "./exemplars"
 import { Message } from "./message"
 import { AutocompleteLookup, type Model } from "./model"
 
@@ -201,15 +200,14 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 /** The picked cell's exemplars, read while a current cell is picked; a pick of a gone cell drops. */
 const requestCell = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const summary = summaryOf(model)
-	const rows = Option.getOrElse(AsyncData.getData(model.distribution.data), () => [])
+	const rows = Option.match(AsyncData.getData(model.distribution.data), {
+		onNone: () => [],
+		onSome: (distribution) => distribution.rows,
+	})
 	const cell =
 		summary === null || model.window === null || model.selectedCell === null
 			? null
-			: pickedCell(
-					rows,
-					model.selectedCell,
-					valueFormat(chartUnitFromOtel(summary.unit, summary.metricName)),
-				)
+			: pickedCell(rows, model.selectedCell)
 	if (summary === null || model.window === null || cell === null) {
 		return {
 			model: AsyncData.isSuccess(model.distribution.data) ? { ...model, selectedCell: null } : model,

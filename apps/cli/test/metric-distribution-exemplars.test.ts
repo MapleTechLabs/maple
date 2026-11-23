@@ -100,8 +100,11 @@ const EXPONENTIAL_WORLD: ReadonlyArray<ExponentialSeries> = [
 type Cell = readonly [number, number | null, number | null, number]
 
 const byCell: Order.Order<Cell> = Order.combine(
-	Order.mapInput(Order.Number, (c: Cell) => c[0]),
-	Order.mapInput(Order.Number, (c: Cell) => c[2] ?? Number.POSITIVE_INFINITY),
+	Order.combine(
+		Order.mapInput(Order.Number, (c: Cell) => c[0]),
+		Order.mapInput(Order.Number, (c: Cell) => c[2] ?? Number.POSITIVE_INFINITY),
+	),
+	Order.mapInput(Order.Number, (c: Cell) => c[1] ?? Number.NEGATIVE_INFINITY),
 )
 
 const DistributionRow = Schema.Struct({
@@ -145,31 +148,23 @@ const sumCells = (cells: ReadonlyArray<Cell>): ReadonlyArray<Cell> => {
 	)
 }
 
-/** The explicit reference: bucket counts by upper bound, the lower edge the nearest bound below. */
+/** The explicit reference: each export's bucket counts under its own layout's edges. */
 const explicitReference = (
 	world: ReadonlyArray<HistogramSeries>,
 	fromMs: number,
 	toMs: number,
 	widthMs: number,
-): ReadonlyArray<Cell> => {
-	const exports = exportsIn(world, fromMs, toMs)
-	const raw = Arr.flatMap(exports, ({ series, tick, values }) =>
-		Arr.map(bucketCounts(series.bounds, values), (count, i): Cell => {
-			const upper = series.bounds[i] ?? null
-			return [bucketOf(tick, widthMs), null, upper, count]
-		}),
+): ReadonlyArray<Cell> =>
+	sumCells(
+		Arr.flatMap(exportsIn(world, fromMs, toMs), ({ series, tick, values }) =>
+			Arr.map(bucketCounts(series.bounds, values), (count, i): Cell => [
+				bucketOf(tick, widthMs),
+				series.bounds[i - 1] ?? null,
+				series.bounds[i] ?? null,
+				count,
+			]),
+		),
 	)
-	return Arr.map(sumCells(raw), ([bucket, , upper, count]): Cell => {
-		// Bounds of the exports that added observations in this time bucket.
-		const contributing = Arr.filter(
-			exports,
-			(e) => bucketOf(e.tick, widthMs) === bucket && e.values.length > 0,
-		)
-		const bounds: ReadonlyArray<number> = Arr.flatMap(contributing, (e) => e.series.bounds)
-		const below = Arr.filter(bounds, (b) => upper === null || b < upper)
-		return [bucket, below.length === 0 ? null : Math.max(...below), upper, count]
-	})
-}
 
 /** The exponential reference: each observation in its power-of-two bucket. */
 const exponentialReference = (
@@ -252,8 +247,15 @@ const RECORDED_ROWS: ReadonlyArray<readonly [number, ReadonlyArray<readonly [num
 			[0.1, "t-lowest", 52 * SECOND_MS],
 		],
 	],
-	// A cumulative reservoir carries t-late forward on the next export.
-	[120_500, [[3, "t-late", 45 * SECOND_MS]]],
+	// A cumulative reservoir carries t-late forward on the next export, beside a new observation
+	// from the same span.
+	[
+		120_500,
+		[
+			[3, "t-late", 45 * SECOND_MS],
+			[0.7, "t-late", 110 * SECOND_MS],
+		],
+	],
 	[180_500, [[3, "t-late", 45 * SECOND_MS]]],
 ]
 
@@ -266,6 +268,16 @@ const insertRecordedRows = (db: Chdb) => {
 	})
 	db.exec(
 		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, ExemplarsTraceId, ExemplarsSpanId, ExemplarsTimestamp, ExemplarsValue, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+	)
+}
+
+const SIGNED_ORG = "org_exemplars_signed"
+
+/** One exponential datapoint at 0:10 whose exemplar sits exactly on a negative bucket edge (-4). */
+const insertSignedExemplar = (db: Chdb) => {
+	const ts = quote(chTimestamp(10 * SECOND_MS))
+	db.exec(
+		`INSERT INTO metrics_exponential_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, Scale, ZeroCount, PositiveOffset, PositiveBucketCounts, NegativeOffset, NegativeBucketCounts, ExemplarsTraceId, ExemplarsSpanId, ExemplarsTimestamp, ExemplarsValue, AggregationTemporality) VALUES (${quote(SIGNED_ORG)}, 'api', ${quote(METRIC)}, ${ts}, ${ts}, 1, -4, 0, 0, 0, [], 1, [1], ['t-edge'], ['t-edge-span'], [${ts}], [-4], 1)`,
 	)
 }
 
@@ -290,6 +302,7 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		insertExponentialHistograms(db, EXPONENTIAL_WORLD)
 		insertExemplarRows(db)
 		insertRecordedRows(db)
+		insertSignedExemplar(db)
 	})
 
 	afterAll(() => {
@@ -335,6 +348,21 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		return decodeExemplars(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
 	}
 
+	const CH_EXEMPLARS = (database: Chdb, opts: CH.MetricExemplarsOpts) =>
+		decodeExemplars(
+			database.query(
+				normalizeSqlForClickHouseClient(
+					CH.compileUnsafe(CH.metricExemplarsQuery(opts), {
+						orgId: SIGNED_ORG,
+						metricName: METRIC,
+						bucketSeconds: 60,
+						cellBucket: Str.slice(0, 19)(chTimestamp(0)),
+						...window(0, 5 * MINUTE_MS),
+					}).sql,
+				),
+			),
+		)
+
 	test("each explicit cell counts the observations exported into it, however they were exported", () => {
 		for (const bucketSeconds of [60, 120]) {
 			const width = bucketSeconds * SECOND_MS
@@ -359,11 +387,18 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		)
 	})
 
-	test("series with different bucket layouts merge, each cell bounded by the nearest bound below", () => {
+	test("series with different bucket layouts keep their own edges, so no count moves to a narrower range", () => {
 		const mixed = Arr.filter(EXPLICIT_WORLD, (s) => s.org === "org_mixed")
 		expect(distribution("org_mixed", { metricType: "histogram" })).toEqual(
 			explicitReference(mixed, 0, 5 * MINUTE_MS, MINUTE_MS),
 		)
+		// api's 12 and 18 stay in api's (10, 20]; nothing is counted in a (15, 20] neither layout has.
+		expect(
+			Arr.filter(
+				distribution("org_mixed", { metricType: "histogram" }),
+				(c) => c[1] === 15 && c[2] === 20,
+			),
+		).toEqual([])
 		// The worker alone: its single bound splits the minute in two.
 		expect(distribution("org_mixed", { metricType: "histogram", serviceName: "worker" })).toEqual([
 			[0, null, 15, 1],
@@ -412,9 +447,22 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		expect(offsetOf(late?.bucket ?? "")).toBe(MINUTE_MS)
 	})
 
-	test("an exemplar repeated on later datapoints is listed once", () => {
+	test("an exemplar repeated on later datapoints is listed once, a new one from its span is not", () => {
 		const late = Arr.filter(exemplars({ perBucket: 20 }, 60, RECORDED_ORG), (e) => e.traceId === "t-late")
-		expect(late.length).toBe(1)
+		expect(Arr.map(late, (e) => [e.value, offsetOf(e.bucket)])).toEqual([
+			[3, MINUTE_MS],
+			[0.7, 2 * MINUTE_MS],
+		])
+	})
+
+	test("a negative exponential cell holds its own far edge, as OTel buckets magnitudes", () => {
+		const cell = (lowerBound: number, upperBound: number) =>
+			Arr.map(
+				CH_EXEMPLARS(db, { metricType: "exponential_histogram", cell: { lowerBound, upperBound } }),
+				(e) => e.value,
+			)
+		expect(cell(-4, -2)).toEqual([-4])
+		expect(cell(-8, -4)).toEqual([])
 	})
 
 	test("a cell's read finds exemplars below the bucket's top values", () => {
