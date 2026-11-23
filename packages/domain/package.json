@@ -82,6 +82,7 @@
 		"./executor": "./src/executor.ts",
 		"./dependency-scan": "./src/dependency-scan.ts",
 		"./security-audit": "./src/security-audit.ts",
+		"./onboarding-agent-run": "./src/onboarding-agent-run.ts",
 		"./onboarding-checklist": "./src/onboarding-checklist.ts",
 		"./setup-audit": "./src/setup-audit.ts",
 		"./support-channel": "./src/support-channel.ts",
@@ -130,7 +131,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",
-		"fast-check": "^4.10.2",
+		"fast-check": "^4.11.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

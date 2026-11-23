@@ -27,6 +27,7 @@ import { V2AgentFeedbackApiGroup } from "./agent-feedback"
 import { V2MobileDevicesApiGroup } from "./mobile-devices"
 import { V2McpConnectionsApiGroup } from "./mcp-connections"
 import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
+import { V2OnboardingAgentRunApiGroup } from "./onboarding-agent-run"
 import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
@@ -138,6 +139,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AnomaliesApiGroup)
 	.add(V2OrganizationApiGroup)
 	.add(V2OnboardingChecklistApiGroup)
+	.add(V2OnboardingAgentRunApiGroup)
 	.add(V2SupportChannelApiGroup)
 	.add(V2MobileDevicesApiGroup)
 	.add(V2McpConnectionsApiGroup)

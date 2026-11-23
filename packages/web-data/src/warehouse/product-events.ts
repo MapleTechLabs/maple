@@ -324,6 +324,8 @@ const GetProductEventAttributeKeysInputSchema = Schema.Struct({
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
 	limit: Schema.optional(PositiveInt),
+	/** `user` / `group`: the users' or accounts' property keys, which the window does not narrow. */
+	scope: Schema.optional(Schema.Literals(["user", "group"])),
 })
 
 export type GetProductEventAttributeKeysInput = (typeof GetProductEventAttributeKeysInputSchema)["Encoded"]
@@ -347,7 +349,12 @@ const getProductEventAttributeKeysEffect = Effect.fn("QueryEngine.getProductEven
 		new QueryEngineExecuteRequest({
 			startTime: input.startTime,
 			endTime: input.endTime,
-			query: { kind: "attributeKeys", source: "product_events", limit: input.limit },
+			query: {
+				kind: "attributeKeys",
+				source: "product_events",
+				limit: input.limit,
+				...(input.scope === undefined ? undefined : { scope: input.scope }),
+			},
 		}),
 	)
 	const result = response.result

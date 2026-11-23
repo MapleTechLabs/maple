@@ -583,7 +583,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/product-analytics",
 		title: "Product analytics",
 		description:
-			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
+			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, a breakdown by a user property, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},

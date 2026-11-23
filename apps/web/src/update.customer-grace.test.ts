@@ -60,7 +60,6 @@ const snapshot: ClerkSnapshot = {
 			cloudSecurity: false,
 			dataSources: false,
 			llmEvals: false,
-			productAnalytics: false,
 			profiling: false,
 			securityAudit: false,
 		},
@@ -113,34 +112,11 @@ describe("plan gate splash on a slow customer read", () => {
 	})
 })
 
-describe("productAnalytics rollout", () => {
-	const withFlag = (productAnalytics: boolean): ClerkSnapshot => ({
-		...snapshot,
-		maybeOrganization: Option.map(snapshot.maybeOrganization, (organization) => ({
-			...organization,
-			flags: { ...organization.flags, productAnalytics },
-		})),
-	})
-	const atProductAnalytics = (): Model => ({
-		...base({ [orgId]: true }),
-		route: AppRoute.ProductAnalytics({ search: {} }),
-	})
-	const linksOf = (model: Model) =>
-		Option.map(pageContextOf(model), (context) => context.hasProductAnalytics)
-
-	test("an org outside the rollout is sent home, and its pages are told not to link there", () => {
-		const loaded = update(atProductAnalytics(), Message.CompletedLoadClerk({ snapshot: withFlag(false) }))
-		expect(loaded.model.page).toBeNull()
-		expect(namesOf(loaded)).toContain("ReplaceUrl")
-		expect(linksOf(loaded.model)).toEqual(Option.some(false))
-	})
-
-	test("an org in the rollout gets the page, and its pages may link there", () => {
-		const loaded = update(atProductAnalytics(), Message.CompletedLoadClerk({ snapshot: withFlag(true) }))
-		expect(loaded.model.page).not.toBeNull()
-		expect(namesOf(loaded)).not.toContain("ReplaceUrl")
-		expect(linksOf(loaded.model)).toEqual(Option.some(true))
-	})
+test("every org gets the Product analytics page, with no rollout flag", () => {
+	const at: Model = { ...base({ [orgId]: true }), route: AppRoute.ProductAnalytics({ search: {} }) }
+	const loaded = update(at, Message.CompletedLoadClerk({ snapshot }))
+	expect(loaded.model.page).not.toBeNull()
+	expect(namesOf(loaded)).not.toContain("ReplaceUrl")
 })
 
 describe("profiling rollout", () => {

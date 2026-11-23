@@ -208,8 +208,16 @@ export const addOnToggles = (
 const sectionLabel = (h: H, text: string): Html =>
 	h.span([h.Class("text-2xs text-muted-foreground w-16 shrink-0")], [text])
 
-/** The source's built-in dimensions as chips. TODO(widget-editor): `attr.*` keys. */
-const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
+/**
+ * The source's built-in dimensions as chips, and for product events the user and account property
+ * keys (`person.plan`). TODO(widget-editor): `attr.*` keys.
+ */
+const groupBySelect = (
+	h: H,
+	model: Model,
+	query: QueryDraft,
+	values: WhereClauseAutocompleteValues,
+): Html => {
 	const current = model.groupBys[query.id] ?? Combobox.init(`group-by-${query.id}`, "multiple")
 	return h.submodel({
 		slotId: `${model.slotPrefix}-group-by-${query.id}`,
@@ -217,10 +225,13 @@ const groupBySelect = (h: H, model: Model, query: QueryDraft): Html => {
 		view: chipsView,
 		toParentMessage: (message) => Message.GotGroupByMessage({ queryId: query.id, message }),
 		viewInputs: {
-			items: Arr.map(
-				Arr.filter(GROUP_BY_OPTIONS[query.dataSource], (option) => option.value !== "none"),
-				(option) => option.value,
-			),
+			items: [
+				...Arr.map(
+					Arr.filter(GROUP_BY_OPTIONS[query.dataSource], (option) => option.value !== "none"),
+					(option) => option.value,
+				),
+				...(query.dataSource === "product_events" ? (values.propertyKeys ?? []) : []),
+			],
 			placeholder: groupBySelectionOf(query).length === 0 ? "service.name" : "",
 			emptyText: "No fields match",
 			className: "text-xs font-mono",
@@ -233,7 +244,12 @@ const row = (h: H, label: string, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class("flex items-center gap-2")], [sectionLabel(h, label), ...children])
 
 /** The inputs each enabled add-on reveals. */
-export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyArray<Html> => {
+export const addOnSections = (
+	h: H,
+	model: Model,
+	query: QueryDraft,
+	values: WhereClauseAutocompleteValues = {},
+): ReadonlyArray<Html> => {
 	if (!Arr.some(Rec.values(query.addOns), Boolean)) return []
 	const text = (field: "having" | "orderBy" | "limit" | "legend") => (value: string) =>
 		Message.ChangedText({ queryId: query.id, field, value })
@@ -242,7 +258,7 @@ export const addOnSections = (h: H, model: Model, query: QueryDraft): ReadonlyAr
 			[h.Class("space-y-2 pt-1")],
 			[
 				...(query.addOns.groupBy && query.dataSource !== "metrics"
-					? [row(h, "Group By", [groupBySelect(h, model, query)])]
+					? [row(h, "Group By", [groupBySelect(h, model, query, values)])]
 					: []),
 				...(query.addOns.having
 					? [

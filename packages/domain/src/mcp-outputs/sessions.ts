@@ -238,6 +238,8 @@ export const QueryPathsOutput = Schema.Struct({
 })
 
 export const QueryCohortOutput = Schema.Struct({
+	/** The user and account property filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	timeRange: OutputTimeRange,
 	keyBy: RetentionKeyBy,
 	did: PathsAnchor,
@@ -265,6 +267,8 @@ export const QueryCohortOutput = Schema.Struct({
 })
 
 export const QueryRetentionOutput = Schema.Struct({
+	/** The user and account property filters as given, by parameter name, so a follow-up call keeps them. */
+	filters: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 	/** The cohort window: who first did the start event inside it. */
 	timeRange: OutputTimeRange,
 	/** Returns were read up to here. */

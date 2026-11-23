@@ -110,7 +110,27 @@ const onSubscriptionCreated = Effect.fn("onSubscriptionCreated")(function* (
 
 `track(name, options)` buffers the event and returns immediately; batches go out every 5 seconds, at 100 events, and when the layer's scope closes. It never fails the caller: a rejected batch is dropped with a rate-limited console warning. `options` are all optional: `userId`, `groupId`, `visitorId` (the browser cookie value, if your backend has it), `sessionId`, `timestamp`, `url`, `pagePath`, and `attributes` (coerced and capped exactly like the browser `track()`).
 
-The endpoint and ingest key resolve the same way as the tracer (`endpoint`/`ingestKey` in config, else `MAPLE_ENDPOINT`, `OTEL_EXPORTER_OTLP_ENDPOINT` or the region, and `MAPLE_INGEST_KEY`). Without a key, events are dropped with a one-shot warning. Outside an Effect runtime, `MapleEvents.makeHandle(config)` returns a plain `{ track, flush, dispose }`. Call `dispose()` on shutdown so the last batch is sent.
+The endpoint and ingest key resolve the same way as the tracer (`endpoint`/`ingestKey` in config, else `MAPLE_ENDPOINT`, `OTEL_EXPORTER_OTLP_ENDPOINT` or the region, and `MAPLE_INGEST_KEY`). Without a key, events are dropped with a one-shot warning. Outside an Effect runtime, `MapleEvents.makeHandle(config)` returns a plain `{ track, identify, groupIdentify, flush, dispose }`. Call `dispose()` on shutdown so the last batch is sent.
+
+### User and account properties
+
+Properties such as a user's plan or an account's seat count ride on any event, or go on their own with `identify` and `groupIdentify`:
+
+```typescript
+yield * events.track("plan_started", { userId, groupId: orgId, set: { plan }, groupSet: { plan } })
+
+// After sign-in: the user's properties, and the device they used before it.
+yield *
+	events.identify(userId, {
+		visitorId,
+		set: { role: "admin" },
+		setOnce: { signup_channel: "api" },
+	})
+
+yield * events.groupIdentify(orgId, { seats: 12, industry: "fintech" })
+```
+
+`set` replaces a property, `setOnce` keeps the first value it ever had, and `unset` removes it; the `group*` forms do the same on the account. See [User and account properties](/docs/product-events/api#user-and-account-properties) for the rules.
 
 ## Verify
 

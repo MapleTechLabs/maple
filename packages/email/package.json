@@ -22,7 +22,7 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@types/bun": "^1.4.4",
+		"@types/bun": "^1.4.5",
 		"foldkit": "0.171.0",
 		"tailwindcss": "^4.3.5",
 		"typescript": "catalog:tooling",

@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import {
 	MobileDeviceNotFoundError,
@@ -257,6 +257,8 @@ export class V2MobileDevicesApiGroup extends HttpApiGroup.make("mobileDevices")
 	)
 	.prefix("/v2/mobile_devices")
 	.middleware(AuthorizationV2)
+	// The path's push token addresses the device: server spans and request logs record it as `REDACTED`.
+	.annotate(HttpApi.RedactedNames, { params: ["token"] })
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Mobile Devices",

@@ -11,11 +11,11 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@lezer/common": "1.2.3",
-		"@lezer/lr": "1.4.2",
-		"@prometheus-io/lezer-promql": "0.315.1",
+		"@lezer/common": "1.5.6",
+		"@lezer/lr": "1.4.12",
+		"@prometheus-io/lezer-promql": "0.316.0",
 		"effect": "catalog:effect",
-		"re2js": "2.9.0"
+		"re2js": "2.10.0"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",
