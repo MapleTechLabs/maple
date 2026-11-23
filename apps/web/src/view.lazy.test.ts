@@ -106,6 +106,8 @@ const SAMPLE_PATHS = [
 	"/agent-sessions",
 	"/agent-sessions/tools",
 	"/agent-sessions/tools/run_sql",
+	"/agent-sessions/evals",
+	"/agent-sessions/evals/faithfulness",
 	"/agent-sessions/session_1",
 	"/mcp-servers",
 	"/mcp-servers/maple-ai",
