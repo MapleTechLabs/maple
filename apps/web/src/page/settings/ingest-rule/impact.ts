@@ -18,30 +18,63 @@ const hourOf = (timestamp: string): number =>
 		onSome: (time) => Math.floor(DateTime.toEpochMillis(time) / HOUR_MS),
 	})
 
-/** The counter that says what the rule did: dropped records, or redacted values. */
-export const effectOf = (action: V2IngestRule["action"], counts: RuleCounts): number =>
-	action.type === "drop" ? counts.dropped : counts.redacted_values
+export type Effect = "drop" | "redact"
 
-/** Matching records a sampling drop rule let through. */
-export const keptOf = (counts: RuleCounts): number => Math.max(0, counts.matched - counts.dropped)
+/**
+ * What the rule did in the window: its current action's effect, unless only the other one was
+ * counted (the rule changed action inside the window).
+ */
+export const effectKind = (action: V2IngestRule["action"], counts: RuleCounts): Effect => {
+	const own: Effect = action.type === "drop" ? "drop" : "redact"
+	const ownCount = own === "drop" ? counts.dropped : counts.redacted_values
+	const otherCount = own === "drop" ? counts.redacted_values : counts.dropped
+	return ownCount === 0 && otherCount > 0 ? (own === "drop" ? "redact" : "drop") : own
+}
+
+/** The counter behind an effect: records dropped, or values redacted. */
+export const effectCount = (effect: Effect, counts: RuleCounts): number =>
+	effect === "drop" ? counts.dropped : counts.redacted_values
 
 /** "1.2M dropped" / "340 values redacted". */
-export const headline = (action: V2IngestRule["action"], counts: RuleCounts): string =>
-	action.type === "drop"
+export const headline = (effect: Effect, counts: RuleCounts): string =>
+	effect === "drop"
 		? `${formatNumber(counts.dropped)} dropped`
 		: `${formatNumber(counts.redacted_values)} values redacted`
 
-/** The line under the headline: bytes kept off the bill and what sampling kept, or the records touched. */
-export const detail = (action: V2IngestRule["action"], counts: RuleCounts): string => {
-	if (action.type !== "drop") return `in ${formatNumber(counts.matched)} records`
-	const kept = keptOf(counts)
-	const bytes = `${formatStorageBytes(counts.dropped_bytes)} saved`
-	return kept > 0 ? `${bytes} · ${formatNumber(kept)} kept` : bytes
+/**
+ * The line under the headline. Bytes are the dropped records' encoded size, which is not always
+ * what metering discounts (a converted payload is metered by its original body). Matches above
+ * the drops are not "kept": the gateway credits a record dropped by several rules to the first.
+ */
+export const detail = (effect: Effect, counts: RuleCounts): string => {
+	const matched = `${formatNumber(counts.matched)} matched`
+	if (effect !== "drop") return `${formatNumber(counts.matched)} records matched`
+	const bytes = `${formatStorageBytes(counts.dropped_bytes)} dropped`
+	return counts.matched > counts.dropped ? `${bytes} · ${matched}` : bytes
 }
 
 /** Sums of `size` consecutive values: 168 hours as 28 six-hour bars. */
 export const bucketed = (values: ReadonlyArray<number>, size: number): ReadonlyArray<number> =>
 	Arr.map(Arr.chunksOf(values, size), (chunk) => Arr.reduce(chunk, 0, (total, value) => total + value))
+
+/** The UTC hour holding the last instant before an exclusive end. */
+const lastHourOf = (timestamp: string): number =>
+	Option.match(DateTime.make(timestamp), {
+		onNone: () => Number.NaN,
+		onSome: (time) => Math.floor((DateTime.toEpochMillis(time) - 1) / HOUR_MS),
+	})
+
+/**
+ * Whole UTC hours ending with the current one: the gateway counts per hour bucket, so a window
+ * that starts mid-hour would leave out that hour's bucket entirely.
+ */
+export const hourWindow = (nowMs: number, hours: number) => {
+	const endMs = (Math.floor(nowMs / HOUR_MS) + 1) * HOUR_MS
+	return {
+		start_time: new Date(endMs - hours * HOUR_MS).toISOString(),
+		end_time: new Date(endMs).toISOString(),
+	}
+}
 
 /** One rule's `pick` per UTC hour over the last `hours` hours of the window, oldest first. */
 export const hourlySeries = (
@@ -50,7 +83,8 @@ export const hourlySeries = (
 	hours: number,
 	pick: (entry: V2IngestRuleStats["hourly"][number]) => number,
 ): ReadonlyArray<number> => {
-	const lastHour = hourOf(stats.end_time)
+	// The end is exclusive: an end on the hour leaves that hour out.
+	const lastHour = lastHourOf(stats.end_time)
 	const byHour = new Map(
 		Arr.map(
 			Arr.filter(stats.hourly, (entry) => entry.id === id),

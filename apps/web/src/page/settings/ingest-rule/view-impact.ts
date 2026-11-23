@@ -15,13 +15,13 @@ import { Array as Arr, Option } from "effect"
 import {
 	bucketed,
 	detail,
-	effectOf,
+	effectCount,
+	effectKind,
 	headline,
 	hourlySeries,
 	IMPACT_BAR_HOURS,
 	IMPACT_HOURS,
 	type ImpactWindow,
-	keptOf,
 	type RuleCounts,
 } from "./impact"
 import { Message } from "./message"
@@ -39,26 +39,34 @@ const WINDOW_LABELS = { "24h": "last 24 hours", "7d": "last 7 days" } as const s
 const ZERO: RuleCounts = { matched: 0, dropped: 0, dropped_bytes: 0, redacted_values: 0 }
 
 const figures = (h: H, rule: V2IngestRule, totals: RuleCounts): ReadonlyArray<Html> => {
-	const action = rule.action
-	if (action.type !== "drop")
-		return [
-			statFigure(h, {
-				label: "Values redacted",
-				value: formatNumber(totals.redacted_values),
-				size: "sm",
-			}),
-			statFigure(h, { label: "Records matched", value: formatNumber(totals.matched), size: "sm" }),
-		]
+	// A rule that changed action inside the window shows both effects.
+	const showsDrops = rule.action.type === "drop" || totals.dropped > 0
+	const showsRedactions = rule.action.type === "redact" || totals.redacted_values > 0
 	return [
-		statFigure(h, { label: "Records dropped", value: formatNumber(totals.dropped), size: "sm" }),
-		statFigure(h, {
-			label: "Kept off the bill",
-			value: formatStorageBytes(totals.dropped_bytes),
-			size: "sm",
-		}),
-		...(action.keep_percent > 0
-			? [statFigure(h, { label: "Kept by sampling", value: formatNumber(keptOf(totals)), size: "sm" })]
+		...(showsDrops
+			? [
+					statFigure(h, {
+						label: "Records dropped",
+						value: formatNumber(totals.dropped),
+						size: "sm",
+					}),
+					statFigure(h, {
+						label: "Bytes dropped",
+						value: formatStorageBytes(totals.dropped_bytes),
+						size: "sm",
+					}),
+				]
 			: []),
+		...(showsRedactions
+			? [
+					statFigure(h, {
+						label: "Values redacted",
+						value: formatNumber(totals.redacted_values),
+						size: "sm",
+					}),
+				]
+			: []),
+		statFigure(h, { label: "Records matched", value: formatNumber(totals.matched), size: "sm" }),
 	]
 }
 
@@ -68,6 +76,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 		() => ({ ...ZERO, signals: [] }),
 	)
 	const window = WINDOW_LABELS[model.impactWindow]
+	const effect = effectKind(rule.action, totals)
 	if (totals.matched === 0)
 		return vstack(h, { gap: "1", className: "px-4 py-6" }, [
 			typography(h, { size: "sm" }, [`No records matched in the ${window}.`]),
@@ -78,12 +87,12 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 			]),
 		])
 	return vstack(h, { gap: "4", className: "p-4" }, [
-		h.div([h.Class("grid grid-cols-2 gap-4 sm:grid-cols-3")], [...figures(h, rule, totals)]),
+		h.div([h.Class("grid grid-cols-2 gap-4 sm:grid-cols-4")], [...figures(h, rule, totals)]),
 		vstack(h, { gap: "1" }, [
 			miniBars(h, {
 				values: bucketed(
 					hourlySeries(stats, rule.id, IMPACT_HOURS[model.impactWindow], (entry) =>
-						effectOf(rule.action, entry),
+						effectCount(effect, entry),
 					),
 					IMPACT_BAR_HOURS[model.impactWindow],
 				),
@@ -91,7 +100,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 				floorColor: "var(--input)",
 				gap: 1,
 				className: "text-primary h-12 w-full",
-				label: `${rule.name}: ${rule.action.type === "drop" ? "records dropped" : "values redacted"} per ${model.impactWindow === "24h" ? "hour" : "6 hours"}`,
+				label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per ${model.impactWindow === "24h" ? "hour" : "6 hours"}`,
 			}),
 			hstack(h, { justify: "between" }, [
 				typography(h, { size: "2xs", tone: "muted" }, [
@@ -109,7 +118,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 					{ divided: true },
 					Arr.map(totals.signals, (entry) =>
 						keyValue(h, { label: SIGNAL_LABELS[entry.signal] }, [
-							`${headline(rule.action, entry)} · ${detail(rule.action, entry)}`,
+							`${headline(effect, entry)} · ${detail(effect, entry)}`,
 						]),
 					),
 				)
