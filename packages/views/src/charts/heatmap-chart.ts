@@ -15,6 +15,7 @@ import {
 	formatScalar,
 	ISO_RE,
 	shortenYLabel,
+	timeColumnLabeler,
 	truncateYLabel,
 } from "./heatmap-model"
 import { plotFrame } from "./plot-frame"
@@ -211,7 +212,8 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const allYIso = Arr.every(model.yDomain, (value) => ISO_RE.test(value))
 	const label = (y: string) => inputs.yLabels?.[y] ?? shortenYLabel(y, allYIso, inputs.timeZone)
 	const allXIso = Arr.every(model.xDomain, (value) => ISO_RE.test(value))
-	const labelX = (x: string) => (allXIso ? shortenYLabel(x, true, inputs.timeZone) : x)
+	const timeLabel = timeColumnLabeler(model.xDomain, inputs.timeZone)
+	const labelX = (x: string) => (allXIso ? timeLabel(x) : x)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)
 	const layout = solveHeatmapLayout({
 		containerW: chart.containerWidth,

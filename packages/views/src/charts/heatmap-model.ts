@@ -176,5 +176,29 @@ const clockLabel = (iso: string, timeZone: string | undefined): string =>
 export const shortenYLabel = (raw: string, allIso: boolean, timeZone: string | undefined): string =>
 	allIso ? clockLabel(raw, timeZone) : raw
 
+/** The calendar day of an ISO timestamp in `timeZone`, e.g. `22 Nov`. */
+const dayLabel = (iso: string, timeZone: string | undefined): string =>
+	Option.match(DateTime.make(iso), {
+		onNone: () => "",
+		onSome: (date) =>
+			new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short" }).format(
+				DateTime.toEpochMillis(date),
+			),
+	})
+
+/**
+ * Time-column labels: `HH:MM` while every column is on one day in `timeZone`, else the day too
+ * (`22 Nov 00:00`), so a 7-day window does not repeat one clock time per day.
+ */
+export const timeColumnLabeler = (
+	columns: ReadonlyArray<string>,
+	timeZone: string | undefined,
+): ((iso: string) => string) => {
+	const days = new Set(Arr.map(columns, (iso) => dayLabel(iso, timeZone)))
+	return days.size > 1
+		? (iso) => `${dayLabel(iso, timeZone)} ${clockLabel(iso, timeZone)}`
+		: (iso) => clockLabel(iso, timeZone)
+}
+
 export const truncateYLabel = (label: string, maxChars: number): string =>
 	label.length <= maxChars ? label : `${Str.slice(0, Math.max(1, maxChars - 1))(label)}…`
