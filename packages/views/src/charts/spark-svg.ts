@@ -139,6 +139,8 @@ interface SparkState {
 	morph: number
 	springFrame: number
 	lastTime: number
+	/** Where the pointer last was, so a redraw under a still pointer re-picks its point. */
+	pointerX: number | null
 }
 
 export interface SparkSvg {
@@ -224,6 +226,7 @@ export const createSparkSvg = (
 		morph: 0,
 		springFrame: 0,
 		lastTime: 0,
+		pointerX: null,
 	}
 	const springs = {
 		x: { value: 0, velocity: 0, target: 0 },
@@ -355,10 +358,14 @@ export const createSparkSvg = (
 	}
 
 	const onPointerMove = (event: PointerEvent) => {
+		state.pointerX = event.clientX
 		const index = indexAt(event.clientX)
 		if (index !== state.hoverIndex) showHover(index)
 	}
-	const onPointerLeave = () => showHover(null)
+	const onPointerLeave = () => {
+		state.pointerX = null
+		showHover(null)
+	}
 	svg.addEventListener("pointermove", onPointerMove)
 	svg.addEventListener("pointerleave", onPointerLeave)
 
@@ -404,7 +411,8 @@ export const createSparkSvg = (
 			state.entered = true
 			if (state.data.animatesEntrance) enter()
 		}
-		if (state.hoverIndex !== null) showHover(Math.min(state.hoverIndex, next.points.length - 1))
+		// New data or a new size moves the points: re-pick the one under the pointer.
+		if (state.hoverIndex !== null && state.pointerX !== null) showHover(indexAt(state.pointerX))
 	}
 
 	const resizeObserver = new ResizeObserver((entries) => {

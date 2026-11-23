@@ -75,8 +75,9 @@ const hoveredTimeLine = (h: HtmlBuilder<Message>, time: Option.Option<string>): 
 	Option.match(time, {
 		onNone: () => [],
 		onSome: (label) => [
-			h.span(
-				[h.Class(cn("font-mono text-4xs whitespace-nowrap text-muted-foreground", TEXT_HALO))],
+			typography(
+				h,
+				{ size: "4xs", tone: "muted", mono: true, className: cn("whitespace-nowrap", TEXT_HALO) },
 				[label],
 			),
 		],
@@ -382,8 +383,9 @@ const serviceRow = (
 									className: "pointer-events-none absolute inset-0",
 								},
 								[
-									h.span(
-										[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
+									typography(
+										h,
+										{ size: "xs", weight: "semibold", mono: true, className: TEXT_HALO },
 										[
 											...(service.hasSampling ? ["~"] : []),
 											rollingNumber(h, {
@@ -398,15 +400,14 @@ const serviceRow = (
 										? hoveredTimeLine(h, throughputTime)
 										: service.hasSampling
 											? [
-													h.span(
-														[
-															h.Class(
-																cn(
-																	"font-mono text-4xs text-muted-foreground",
-																	TEXT_HALO,
-																),
-															),
-														],
+													typography(
+														h,
+														{
+															size: "4xs",
+															tone: "muted",
+															mono: true,
+															className: TEXT_HALO,
+														},
 														[
 															"~",
 															formatThroughput(service.tracedThroughput, "/s"),
