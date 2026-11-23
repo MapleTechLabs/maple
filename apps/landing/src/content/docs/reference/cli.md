@@ -26,6 +26,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
 | [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
 | [`maple promql`](#maple-promql-query) · [`promql metrics`](#maple-promql-metrics-filter)                                                                          | Run PromQL over metrics, list the names it can select        |
+| [`maple users`](#maple-users) · [`user`](#maple-user-user-id) · [`events`](#maple-events)                                                                         | Your apps' end users and product events (remote mode)        |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
 | [`maple auth …`](#maple-auth-login) · [`whoami`](#maple-whoami) · [`use`](#maple-use-localremoteauto)                                                             | Sign in to a workspace, see the resolved backend, pin one    |
 | [`maple onboarding …`](#maple-onboarding)                                                                                                                         | Report a coding agent's Maple setup to the onboarding run    |
@@ -382,6 +383,45 @@ The macros `$__orgFilter`, `$__timeFilter(col)`, `$__startTime`, `$__endTime` an
 ```bash
 maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER BY 2 DESC"   # local
 maple query 'SELECT ServiceName, count() AS spans FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp) GROUP BY ServiceName' --since 1h
+```
+
+## Users and product events
+
+These read a workspace, so they need `maple auth login` and run in remote mode only. All three default to `--since 7d` and accept `--start` / `--end`.
+
+### `maple users`
+
+The end users your apps identified with `identify()` or a `user.id` attribute, most recently seen first.
+
+- `--search, -q <text>`: part of a user's id, name or email
+- `--errors`: only users with errors or failed requests
+- `--group <id>`: only users in this group (account), repeatable
+- `--property, -p <key=value>`: only users whose user property matches, repeatable; `key` alone matches any value
+- `--limit, -n` (default `25`) / `--cursor <token>`: page size, and the `nextCursor` of the previous page
+
+```bash
+maple users --format table
+maple users -p plan=pro --errors
+```
+
+### `maple user <user-id>`
+
+One user: identity, user properties, sessions, recent product events, issues and failed requests.
+
+```bash
+maple user user_123 --format table
+```
+
+### `maple events`
+
+Product event names (`track()`, server-side events, page views) with how often each fired and how many sessions, people and accounts it reached.
+
+- `--kind <custom|navigation|screen>`: `track()` or server events, page views, or mobile screens
+- `--search, -q <text>`: part of the event name
+- `--limit, -n` (default `50`)
+
+```bash
+maple events --kind custom --format table
 ```
 
 ## Analytics

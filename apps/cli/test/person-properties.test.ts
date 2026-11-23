@@ -307,6 +307,7 @@ describeWithChdb("person properties", () => {
 // before signing in, and the $identify that set a's plan also linked the device.
 const Q_ORG = "org_props_reads"
 const WINDOW = { orgId: OrgId.make(Q_ORG), startTime: "2026-11-20 00:00:00", endTime: "2026-11-21 00:00:00" }
+const decodeUserIds = decodeJsonEachRow(Schema.Struct({ userId: Schema.String }))
 const decodeNamed = decodeJsonEachRow(Schema.Struct({ name: Schema.String, value: CH.CHNumber }))
 const decodeSteps = decodeJsonEachRow(CH.productEventsFunnelRowSchema)
 const decodeGroups = decodeJsonEachRow(CH.productEventsFunnelBreakdownRowSchema)
@@ -572,5 +573,48 @@ describeWithChdb("reads by person and group property", () => {
 			),
 		)
 		expect(Arr.map(rows, (row) => row.key)).toEqual(["c"])
+	})
+
+	const directory = (filter: CH.UsersListFilter, bound?: CH.UsersListBound) => {
+		const scope: CH.UsersScope = { namespaces: [], services: [], serviceNamespaces: [], mcpServices: [] }
+		const rows = decodeUserIds(
+			run(db, CH.compileUnsafe(CH.usersListQuery(scope, filter, 10, bound), WINDOW).sql),
+		)
+		return Arr.sort(
+			Arr.map(rows, (row) => row.userId),
+			Str.Order,
+		)
+	}
+
+	test("the users directory keeps the users whose property matches", () => {
+		expect(directory({ userProperties: [{ key: "plan", mode: "equals", value: "pro" }] })).toEqual([
+			"a",
+			"c",
+		])
+		// Pushed down to the candidate rows, the page reads the same users.
+		expect(
+			directory(
+				{ userProperties: [{ key: "plan", mode: "equals", value: "pro" }] },
+				{ matching: true },
+			),
+		).toEqual(["a", "c"])
+	})
+
+	test("a negated directory filter keeps the users without the value, those with none included", () => {
+		expect(
+			directory({ userProperties: [{ key: "plan", mode: "equals", value: "pro", negated: true }] }),
+		).toEqual(["b", "d"])
+	})
+
+	test("directory property filters all hold, and combine with the search", () => {
+		expect(
+			directory({
+				userProperties: [
+					{ key: "plan", mode: "exists" },
+					{ key: "plan", mode: "equals", value: "free", negated: true },
+				],
+				search: "c",
+			}),
+		).toEqual(["c"])
 	})
 })

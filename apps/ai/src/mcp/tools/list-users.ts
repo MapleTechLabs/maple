@@ -12,6 +12,7 @@ import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { decodeUsersRequest, groupLabel, listFilter, nameAndEmail, userLabel } from "../lib/users"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 
 /** Each channel's share of the user's classified requests, most first: `mcp 92%, web 8%`. */
 const channelSplit = (channels: ReadonlyArray<UserChannel>): string => {
@@ -41,6 +42,7 @@ const filterArgs = (filters: Filters) => ({
 	search: filters.search,
 	has_errors: filters.hasErrors,
 	groups: filters.groups,
+	user_property_filters: filters.userPropertyFilters,
 })
 
 export function registerListUsersTool(server: McpToolRegistrar) {
@@ -57,6 +59,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			search: P.optionalText("Part of a user's id, name or email (case-insensitive)"),
 			has_errors: P.optionalFlag("Only users with errors or failed requests in the window"),
 			groups: P.optionalList("Only users in these group ids (`identify()` group)"),
+			user_property_filters: PROPERTY_FILTER_FIELDS.user_property_filters,
 			limit: P.limit({ default: 25, max: 100, noun: "users" }),
 			cursor: P.optionalText("The `nextCursor` from a previous page, to read the next one"),
 		}),
@@ -68,6 +71,8 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 			const { limit } = params
 			const namespaces = listFilter(params.namespaces)
 			const groups = listFilter(params.groups)
+			const { userPropertyFilters } = yield* propertyFiltersOf(params)
+			const propertyArgs = propertyFilterArgs(params)
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.users.limit": limit })
 
@@ -92,6 +97,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 				...(params.search !== undefined && { search: params.search }),
 				...(params.has_errors === true && { hasErrors: true }),
 				...(groups !== undefined && { groups }),
+				...(userPropertyFilters !== undefined && { userPropertyFilters }),
 			})
 			const reads = yield* UsersReadService
 			const response = yield* reads
@@ -111,6 +117,9 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 					...(params.search !== undefined && { search: params.search }),
 					...(params.has_errors === true && { hasErrors: true }),
 					...(groups !== undefined && { groups }),
+					...(propertyArgs.user_property_filters !== undefined && {
+						userPropertyFilters: propertyArgs.user_property_filters,
+					}),
 				},
 			}
 		}),
@@ -123,6 +132,7 @@ export function registerListUsersTool(server: McpToolRegistrar) {
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 					["Namespaces", output.filters.namespaces?.join(", ")],
 					["Search", output.filters.search],
+					["User properties", output.filters.userPropertyFilters],
 				],
 				...(users.length === 0
 					? {

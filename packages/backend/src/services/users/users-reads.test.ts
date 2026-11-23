@@ -9,6 +9,7 @@ import {
 	mergeActivity,
 	mergeCalendarDays,
 	mergeServices,
+	mergeTraits,
 	resolveUsersScope,
 	severityOf,
 	signalsOf,
@@ -310,5 +311,30 @@ describe("mergeCalendarDays", () => {
 			{ day: "2026-11-02", requests: 0, failedRequests: 0, errorLogs: 0, sessions: 0, events: 4 },
 			{ day: "2026-11-03", requests: 40, failedRequests: 1, errorLogs: 2, sessions: 3, events: 7 },
 		])
+	})
+})
+
+describe("mergeTraits", () => {
+	it("reads a user's properties first, at their value, then the keys only the session carries", () => {
+		expect(
+			mergeTraits(
+				[
+					{ key: "plan", value: "free" },
+					{ key: "locale", value: "de" },
+				],
+				[
+					{ key: "plan", value: "pro" },
+					{ key: "seats", value: "12" },
+				],
+			),
+		).toEqual([
+			{ key: "plan", value: "pro" },
+			{ key: "seats", value: "12" },
+			{ key: "locale", value: "de" },
+		])
+	})
+
+	it("keeps the session's traits when the user has no properties", () => {
+		expect(mergeTraits([{ key: "plan", value: "free" }], [])).toEqual([{ key: "plan", value: "free" }])
 	})
 })

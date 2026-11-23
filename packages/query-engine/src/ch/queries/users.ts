@@ -24,6 +24,8 @@ import {
 import { utcHourFloor } from "./query-helpers"
 import { serviceOverviewWindows } from "./services"
 import { Array as Arr, type DateTime } from "effect"
+import type { AttributeFilter } from "@maple/domain/query-engine"
+import { propertyFilterCondition } from "./person-properties"
 
 /** Where the users' signals may come from. */
 export interface UsersScope {
@@ -52,6 +54,8 @@ export interface UsersListFilter {
 	readonly hasErrors?: boolean
 	readonly hasReplay?: boolean
 	readonly groups?: ReadonlyArray<string>
+	/** Only users whose user properties (`person_properties`) match every filter. */
+	readonly userProperties?: ReadonlyArray<AttributeFilter>
 	/**
 	 * Keyset: only users ordered after this `(lastSeen, userId)`. `lastSeen` is a row's exact
 	 * `lastSeenKey` (`toString` of the DateTime64(9)), so the tie branch matches it.
@@ -693,6 +697,10 @@ interface UserRowColumns {
 	readonly groupIds: CH.Expr<ReadonlyArray<string>>
 }
 
+/** The user property filters on a user id, all of them holding; empty when none is set. */
+const propertyConditions = (userId: CH.Expr<string>, filter: UsersListFilter) =>
+	Arr.map(filter.userProperties ?? [], (property) => propertyFilterCondition(userId, "user", property))
+
 /**
  * Whether a row can belong to a user the filter keeps. A user passes each filter only if one of
  * their rows does (a latest name was some row's name), but different filters may hold on different
@@ -702,6 +710,10 @@ const rowMatches = ($: UserRowColumns, filter: UsersListFilter) => {
 	const each = [
 		filter.hasErrors === true ? $.errors.gt(0) : undefined,
 		filter.hasReplay === true ? $.sessions.gt(0) : undefined,
+		// A property holds on every row of the user, so all of them push down as one condition.
+		filter.userProperties !== undefined && filter.userProperties.length > 0
+			? CH.and(...propertyConditions($.userId, filter))
+			: undefined,
 		filter.groups !== undefined && filter.groups.length > 0
 			? CH.compileTypedFnCall(
 					"hasAny",
@@ -732,6 +744,7 @@ export const usersListFiltered = (filter: UsersListFilter): boolean =>
 	filter.hasErrors === true ||
 	filter.hasReplay === true ||
 	(filter.groups !== undefined && filter.groups.length > 0) ||
+	(filter.userProperties !== undefined && filter.userProperties.length > 0) ||
 	filter.search !== undefined
 
 /**
@@ -812,6 +825,7 @@ const usersPerUser = (scope: UsersScope, filter: UsersListFilter, candidates?: C
 		.having(($) => [
 			CH.when(filter.hasErrors === true ? true : undefined, () => CH.sum($.errors).gt(0)),
 			CH.when(filter.hasReplay === true ? true : undefined, () => CH.sum($.sessions).gt(0)),
+			...propertyConditions($.userId, filter),
 			// Any of the user's groups, not only the one `groupId` keeps.
 			filter.groups !== undefined && filter.groups.length > 0
 				? CH.compileTypedFnCall(

@@ -38,6 +38,7 @@ import {
 	isMissingUserActivityDaily,
 	isMissingUserActivityHourly,
 	isMissingUserActivityIdentity,
+	isMissingPersonProperties,
 } from "@maple/backend/services/warehouse/missing-table"
 import { readUserMcpSessions } from "@maple/backend/services/mcp/mcp-reads"
 import { readUserIssueItems, readUserIssueTotalsRow, userIssueTotals } from "./user-issues"
@@ -167,6 +168,26 @@ export const newestIdentity = (
 		}),
 	)
 	return Option.match(newest, { onNone: () => null, onSome: (row) => row[field] })
+}
+
+/** A person-properties read, empty on a cluster without migration 0071. */
+const propertiesRead = <A, E, R>(
+	read: Effect.Effect<ReadonlyArray<A>, E, R>,
+): Effect.Effect<ReadonlyArray<A>, E, R> =>
+	read.pipe(Effect.catchIf(isMissingPersonProperties, () => Effect.succeed<ReadonlyArray<A>>([])))
+
+type Trait = Readonly<{ key: string; value: string }>
+
+/**
+ * A profile's traits: the user's properties (`person_properties`, every `identify()` and `set`
+ * write) at their current value, then the keys only the latest session's traits carry.
+ */
+export const mergeTraits = (
+	sessionTraits: ReadonlyArray<Trait>,
+	properties: ReadonlyArray<Trait>,
+): ReadonlyArray<Trait> => {
+	const held = new Set(Arr.map(properties, (property) => property.key))
+	return [...properties, ...Arr.filter(sessionTraits, (trait) => !held.has(trait.key))]
 }
 
 /** A rollup identity read's one row, `None` on a cluster without migration 0056 or 0065. */
@@ -350,6 +371,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.userPropertyFilters !== undefined && { userProperties: payload.userPropertyFilters }),
 		...(payload.after !== undefined && { after: payload.after }),
 	}
 	const params = { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
@@ -506,6 +528,7 @@ export const readUsersGroups = Effect.fn("UsersReads.groups")(function* (
 		...(payload.hasErrors !== undefined && { hasErrors: payload.hasErrors }),
 		...(payload.hasReplay !== undefined && { hasReplay: payload.hasReplay }),
 		...(payload.groups !== undefined && { groups: payload.groups }),
+		...(payload.userPropertyFilters !== undefined && { userProperties: payload.userPropertyFilters }),
 	}
 	const params = {
 		orgId: tenant.orgId,
@@ -926,6 +949,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		rollupServices,
 		issueTotalsRow,
 		identity,
+		properties,
 	] = yield* Effect.all(
 		[
 			readsServices
@@ -981,6 +1005,14 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 					profile: "list",
 					context: "userActivityIdentity",
 				}),
+			),
+			// Current values, not windowed.
+			propertiesRead(
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.personPropertiesQuery({ kind: "user", ids: [payload.userId] }), params),
+					{ profile: "list", context: "userPersonProperties" },
+				),
 			),
 		],
 		{ concurrency: USERS_READ_CONCURRENCY },
@@ -1053,7 +1085,10 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		email: newestIdentity([replay[0], mcp[0], Option.getOrUndefined(identity)], "email", "emailAt"),
 		groupId,
 		groupName: profileGroupName,
-		traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
+		traits: mergeTraits(
+			Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
+			Arr.map(properties, (row) => ({ key: row.key, value: row.value })),
+		),
 		visitorIds: Arr.map(visitors, (row) => row.visitorId),
 		firstSeenMs: Math.min(...firstSeens),
 		lastSeenMs: Math.max(...lastSeens),
