@@ -1,7 +1,7 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 import { TONE_FILL } from "@maple/ui/lib/tone"
 
-export const statusDotVariants = cva("relative inline-flex shrink-0 rounded-full", {
+export const statusDotVariants = variants("relative inline-flex shrink-0 rounded-full", {
 	defaultVariants: { tone: "neutral", size: "default" },
 	variants: {
 		tone: {

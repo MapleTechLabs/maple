@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { statusDotVariants } from "./status-dot.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 export type StatusDotOptions<Message = never> = VariantProps<typeof statusDotVariants> &

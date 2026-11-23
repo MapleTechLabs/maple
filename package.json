@@ -159,10 +159,6 @@
 		"tooling": {
 			"@types/node": "^24.19.2",
 			"typescript": "^7.0.2"
-		},
-		"ui": {
-			"class-variance-authority": "^0.7.1",
-			"clsx": "^2.1.1"
 		}
 	},
 	"patchedDependencies": {
