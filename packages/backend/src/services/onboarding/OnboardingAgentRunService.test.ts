@@ -5,7 +5,7 @@ import { ONBOARDING_AGENT_RUN_TTL_MS, ONBOARDING_HANDOFF_TTL_MS } from "@maple/d
 import { Array as Arr, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
-import { OnboardingAgentRunService } from "./OnboardingAgentRunService"
+import { HANDOFF_CLAIM_GRACE_MS, OnboardingAgentRunService } from "./OnboardingAgentRunService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -136,7 +136,10 @@ describe("OnboardingAgentRunService", () => {
 			expect(second.id).not.toBe(first.id)
 			expect((yield* runs.current(owner)).status).toBe("waiting_for_agent")
 
-			yield* TestClock.adjust(ONBOARDING_HANDOFF_TTL_MS)
+			// A claim checked just before the deadline may still be committing: not lapsed yet.
+			yield* TestClock.adjust(ONBOARDING_HANDOFF_TTL_MS + 30_000)
+			expect((yield* runs.current(owner)).status).toBe("waiting_for_agent")
+			yield* TestClock.adjust(HANDOFF_CLAIM_GRACE_MS)
 			expect((yield* runs.current(owner)).status).toBe("expired")
 		}).pipe(provideRuns(db))
 	})

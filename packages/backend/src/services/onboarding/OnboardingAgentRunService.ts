@@ -52,13 +52,19 @@ const OPEN: ReadonlySet<OnboardingAgentRunStatus> = new Set(OPEN_STATUSES)
  * An open run reads as `expired` past its lifetime, or once its handoff code lapsed with no
  * report; the row is never rewritten for it.
  */
+/**
+ * How long after the code's deadline an unbound run still reads as waiting: a claim checked just
+ * before the deadline may commit just after it, and the page must not stop reading that run.
+ */
+export const HANDOFF_CLAIM_GRACE_MS = 60_000
+
 export const effectiveRunStatus = (row: OnboardingAgentRunRow, now: number): OnboardingAgentRunStatus => {
 	if (!OPEN.has(row.status)) return row.status
 	// Unclaimed: no agent signed in with the code (no key bound) and none reported before it lapsed.
 	const unclaimed =
 		row.status === "waiting_for_agent" &&
 		row.apiKeyId === null &&
-		row.createdAt + ONBOARDING_HANDOFF_TTL_MS <= now
+		row.createdAt + ONBOARDING_HANDOFF_TTL_MS + HANDOFF_CLAIM_GRACE_MS <= now
 	return unclaimed || row.expiresAt <= now ? "expired" : row.status
 }
 
