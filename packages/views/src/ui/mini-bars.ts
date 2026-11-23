@@ -22,6 +22,19 @@ export interface MiniBarsOptions {
 	readonly label?: string
 }
 
+/**
+ * Bar width and gap in the 100-unit view box. The gap shrinks to at most half a slot, so any number
+ * of bars fits inside the box and the newest are never drawn past its edge.
+ */
+export const miniBarsLayout = (
+	count: number,
+	gap: number,
+): { readonly barWidth: number; readonly gap: number } => {
+	const slots = Math.max(count, 1)
+	const fitted = Math.min(gap, 50 / slots)
+	return { barWidth: (100 - fitted * (slots - 1)) / slots, gap: fitted }
+}
+
 const bar = <M>(
 	h: HtmlBuilder<M>,
 	x: number,
@@ -45,10 +58,9 @@ export const miniBars = <M>(h: HtmlBuilder<M>, options: MiniBarsOptions): Html =
 	const color = options.color ?? "currentColor"
 	const floor = options.floor ?? 0
 	const minHeight = options.minHeight ?? 5
-	const gap = options.gap ?? 2
 	const count = values.length
 	const max = count > 0 ? Math.max(...Arr.map(values, finite)) : 0
-	const barWidth = Math.max((100 - gap * (count - 1)) / Math.max(count, 1), 0.5)
+	const { barWidth, gap } = miniBarsLayout(count, options.gap ?? 2)
 	const tail = options.tail
 	const tailStart = tail === undefined ? 0 : count - Math.max(1, Math.round(count * tail))
 	const bars = Arr.flatMap(values, (raw, index) => {

@@ -129,7 +129,7 @@ describe("agent evaluator", () => {
 		)
 	})
 
-	test("a score links its session in the page's window and its trace at the graded span", () => {
+	test("a score links its session and its trace at the graded span, with no time bounds a late score would miss", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(answered(detail)),
@@ -137,9 +137,12 @@ describe("agent evaluator", () => {
 			expectView(text("Two claims are not in the context.")).toExist(),
 			expectView(role("link", { name: "sess_1" })).toHaveAttr(
 				"href",
-				"/agent-sessions/sess_1?t=2026-09-25+00%3A00%3A00&end=2026-10-01+12%3A00%3A00&span=00f067aa0ba902b7",
+				"/agent-sessions/sess_1?span=00f067aa0ba902b7",
 			),
-			expectView(role("link", { name: "4bf92f3577b3" })).toExist(),
+			expectView(role("link", { name: "4bf92f3577b3" })).toHaveAttr(
+				"href",
+				"/traces/4bf92f3577b34da6a3ce929d0e0e4736?spanId=00f067aa0ba902b7",
+			),
 		)
 	})
 

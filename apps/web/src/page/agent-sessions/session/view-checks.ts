@@ -408,31 +408,41 @@ const coverageLine = (h: H, coverage: SessionCoverage): Html =>
 		],
 	)
 
-const scoreRow = (h: H, openSpanId: string | undefined, score: AiEvaluationScore): Html =>
-	pressable(
-		h,
-		{
-			onClick: Message.ClickedSpan({ spanId: openSpanId === score.spanId ? undefined : score.spanId }),
-			className: cn(ROW_GRID, "w-full py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken"),
-			attributes: [h.Key(`${score.name}:${score.spanId}:${score.timestamp}`), h.AriaHasPopup("dialog")],
-		},
-		[
-			statusDot(h, { tone: verdictTone(score), className: "translate-y-[-1px] justify-self-center" }),
-			typography(h, { size: "ui", truncate: true }, [score.name]),
-			vstack(h, { gap: "0.5", shrink: true }, [
-				typography(h, { size: "xs", mono: true, tone: "foreground" }, [scoreText(score)]),
-				...(score.explanation === ""
-					? []
-					: [
-							typography(
-								h,
-								{ size: "xs", tone: "muted", className: "line-clamp-2 font-prose" },
-								[score.explanation],
-							),
-						]),
-			]),
-		],
-	)
+const scoreCells = (h: H, score: AiEvaluationScore): ReadonlyArray<Html> => [
+	statusDot(h, { tone: verdictTone(score), className: "translate-y-[-1px] justify-self-center" }),
+	typography(h, { size: "ui", truncate: true, attributes: [h.Title(score.name)] }, [score.name]),
+	vstack(h, { gap: "0.5", shrink: true }, [
+		typography(h, { size: "xs", mono: true, tone: "foreground" }, [scoreText(score)]),
+		...(score.explanation === ""
+			? []
+			: [
+					typography(h, { size: "xs", tone: "muted", className: "line-clamp-2 font-prose" }, [
+						score.explanation,
+					]),
+				]),
+	]),
+]
+
+/** A score row; one that grades a span opens it, a trace- or session-scope score has none to open. */
+const scoreRow = (h: H, openSpanId: string | undefined, score: AiEvaluationScore): Html => {
+	const key = h.Key(`${score.name}:${score.spanId}:${score.timestamp}`)
+	return score.spanId === ""
+		? h.div([key, h.Class(cn(ROW_GRID, "w-full py-2"))], scoreCells(h, score))
+		: pressable(
+				h,
+				{
+					onClick: Message.ClickedSpan({
+						spanId: openSpanId === score.spanId ? undefined : score.spanId,
+					}),
+					className: cn(
+						ROW_GRID,
+						"w-full py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					),
+					attributes: [key, h.AriaHasPopup("dialog")],
+				},
+				scoreCells(h, score),
+			)
+}
 
 /** The session's eval scores, failing first, each opening its span; nothing when there are none. */
 export const sessionScores = (

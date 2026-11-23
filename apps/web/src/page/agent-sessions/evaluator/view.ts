@@ -13,7 +13,6 @@ import { textLink } from "@maple/views/ui/text-link"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
-import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -171,12 +170,7 @@ const breakdownTable = (h: H, rows: ReadonlyArray<AiEvaluationBreakdownRow>): Ht
 const verdictLabel = (verdict: string): string =>
 	verdict === "pass" ? "Pass" : verdict === "fail" ? "Fail" : NO_VALUE
 
-const scoreCells = (
-	h: H,
-	score: AiEvaluationScore,
-	window: TimeWindow,
-	timeZone: string,
-): ReadonlyArray<Html> => [
+const scoreCells = (h: H, score: AiEvaluationScore, timeZone: string): ReadonlyArray<Html> => [
 	timestamp(h, {
 		value: score.timestamp,
 		timeZone,
@@ -222,9 +216,11 @@ const scoreCells = (
 							isMono: true,
 							className: "block truncate",
 							href: hrefOf(
+								// No time bounds: a judge can score long after the session, and the session
+								// page finds its own bounds.
 								AppRoute.AgentSession({
 									sessionId: score.sessionId,
-									search: { t: window.startTime, end: window.endTime, span: score.spanId },
+									search: { span: score.spanId },
 								}),
 							),
 						},
@@ -240,10 +236,8 @@ const scoreCells = (
 				isMono: true,
 				className: "block truncate",
 				href: hrefOf(
-					AppRoute.Trace({
-						traceId: score.traceId,
-						search: { spanId: score.spanId, t: score.timestamp },
-					}),
+					// No time hint: the score's time can be hours after the trace, outside the hint's reach.
+					AppRoute.Trace({ traceId: score.traceId, search: { spanId: score.spanId } }),
 				),
 			},
 			[Str.slice(0, 12)(score.traceId)],
@@ -251,13 +245,7 @@ const scoreCells = (
 	]),
 ]
 
-const scoresTable = (
-	h: H,
-	model: Model,
-	detail: EvaluatorDetail,
-	window: TimeWindow,
-	timeZone: string,
-): Html =>
+const scoresTable = (h: H, model: Model, detail: EvaluatorDetail, timeZone: string): Html =>
 	section(h, "Latest scores", detail.scores.length, [
 		toolTable(
 			h,
@@ -296,7 +284,7 @@ const scoresTable = (
 											h.Key(`${score.spanId}:${score.timestamp}:${score.source}`),
 										],
 									},
-									scoreCells(h, score, window, timeZone),
+									scoreCells(h, score, timeZone),
 								),
 							),
 					{ isWaiting: AsyncData.isRefreshing(model.detail.data) },
@@ -323,7 +311,7 @@ const loadedView = (h: H, model: Model, detail: EvaluatorDetail, timeZone: strin
 		summaryRow(h, detail.summary),
 		...(detail.series.length > 1 ? [passRateBars(h, detail)] : []),
 		breakdownTable(h, detail.breakdown),
-		scoresTable(h, model, detail, window, timeZone),
+		scoresTable(h, model, detail, timeZone),
 	])
 }
 
