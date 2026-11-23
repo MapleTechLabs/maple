@@ -93,6 +93,32 @@ describe("fleetActivityToEvent", () => {
 		assert.deepStrictEqual(event.target, { type: "label", id: "21", name: "Debian-based Linux hosts" })
 	})
 
+	// Shapes as Fleet 4.62, 4.95 and 5.0 servers send them: `team_*`, both, then `fleet_*` alone.
+	it.each([
+		["4.62", "created_team", { team_id: 4, team_name: "Servers" }],
+		["4.95", "created_team", { team_id: 4, fleet_id: 4, team_name: "Servers", fleet_name: "Servers" }],
+		["5.0", "created_fleet", { fleet_id: 4, fleet_name: "Servers" }],
+	] as const)(
+		"names the fleet a fleet activity is about, as Fleet %s sends it",
+		(_version, type, details) => {
+			const event = eventOf({ type, details })
+			assert.deepStrictEqual(
+				[event.category, event.target],
+				["configuration", { type: "fleet", id: "4", name: "Servers" }],
+			)
+		},
+	)
+
+	it("files a fleet role change under permissions, under Fleet 5's name for it too", () => {
+		assert.deepStrictEqual(
+			Arr.map(
+				["changed_user_team_role", "changed_user_fleet_role", "deleted_user_fleet_role"],
+				(type) => fleetActivityCategory(type),
+			),
+			["permission", "permission", "permission"],
+		)
+	})
+
 	it("drops an activity whose time does not parse", () => {
 		assert.isTrue(Option.isNone(fleetActivityToEvent(activity({ created_at: "yesterday" }), SOURCE)))
 	})

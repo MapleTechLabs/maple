@@ -5,6 +5,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
+import { osName } from "../../kit/platform-label"
 import type { ProviderId } from "../../kit/providers"
 import type { Devices, Model } from "./model"
 
@@ -22,6 +23,8 @@ export type DeviceSourceBrand = Readonly<{
 	noScoresNote: string
 	/** The all-clear for policies, saying which ones the source reads. */
 	noFailingPolicies: string
+	/** What the source calls a policy set for no one device group. */
+	everyGroup: string
 }>
 
 export const DEVICE_SOURCE_BRANDS = {
@@ -32,7 +35,8 @@ export const DEVICE_SOURCE_BRANDS = {
 		credential: "token",
 		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
 		noFailingPolicies:
-			"Every enrolled device passes every global policy on your Fleet server. Team policies are not read yet.",
+			"Every enrolled device passes every policy on your Fleet server: the global ones, each fleet's and those for devices in no fleet.",
+		everyGroup: "All fleets",
 	},
 } satisfies Readonly<Record<DeviceSourceKind, DeviceSourceBrand>>
 
@@ -125,28 +129,29 @@ export const moreVulnerabilitiesBySource = (
 export const knownExploitedCount = (sources: ReadonlyArray<DeviceSource>): number =>
 	Arr.reduce(sources, 0, (sum, source) => sum + source.knownExploitedVulnerabilities)
 
+/** The device group a policy is set for, or the source's word for none: it may still pick platforms. */
+export const appliesToLabel = (policy: DevicePolicyFinding): string =>
+	policy.groupName ?? brandOf(policy.source).everyGroup
+
 export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length
 
-const PLATFORM_LABEL = new Map([
-	["darwin", "macOS"],
-	["windows", "Windows"],
-	["linux", "Linux"],
-	["chrome", "ChromeOS"],
-	["ios", "iOS"],
-	["ipados", "iPadOS"],
-	["android", "Android"],
-])
-
-const platformName = (platform: string): string => PLATFORM_LABEL.get(platform) ?? Str.capitalize(platform)
-
-/** "macOS, Windows" from "darwin,windows"; a policy with no platform runs on all of them. */
-export const platformLabel = (platform: string | null): string => {
-	const names = Arr.filter(
+/** The platforms a policy runs on (`["darwin", "windows"]`); none for a policy that runs on all of them. */
+export const platformsOf = (platform: string | null): ReadonlyArray<string> =>
+	Arr.filter(
 		Arr.map(Str.split(",")(platform ?? ""), (part) => Str.trim(part)),
 		Str.isNonEmpty,
 	)
-	return names.length === 0 ? "All platforms" : Arr.join(Arr.map(names, platformName), ", ")
+
+/** A platform's name; one the kit has no mark for is shown as the source spells it. */
+export const platformName = (platform: string): string => osName(platform) ?? Str.capitalize(platform)
+
+export const ALL_PLATFORMS = "All platforms"
+
+/** "macOS, Windows" from "darwin,windows"; a policy with no platform runs on all of them. */
+export const platformLabel = (platform: string | null): string => {
+	const names = platformsOf(platform)
+	return names.length === 0 ? ALL_PLATFORMS : Arr.join(Arr.map(names, platformName), ", ")
 }
 
 const plural = (count: number, one: string, many: string) =>
@@ -167,8 +172,16 @@ export const softwareLabel = (software: VulnerableSoftware): string => `${softwa
 export const cvssTone = (score: number): "crit" | "warn" | "neutral" =>
 	score >= 9 ? "crit" : score >= 7 ? "warn" : "neutral"
 
-/** The all-clear for policies: the source's own words when every source is one kind. */
+/** Whether a source's findings are from before a sync that failed, so older than they look. */
+const isStale = (source: DeviceSource): boolean => source.error !== null || source.authFailed
+
+/**
+ * The all-clear for policies: the source's own words when every source is one kind. After a failed
+ * sync it only speaks for the last one that worked.
+ */
 export const noFailingPoliciesText = (sources: ReadonlyArray<DeviceSource>): string => {
+	if (Arr.some(sources, isStale))
+		return "No device was failing a policy at the last sync that worked. A sync has failed since, so this may be out of date."
 	const kinds = Arr.dedupe(Arr.map(sources, (source) => source.kind))
 	const only = kinds.length === 1 ? kinds[0] : undefined
 	return only === undefined

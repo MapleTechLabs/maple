@@ -81,6 +81,7 @@ const policies = (nowMs: number): Encoded["policies"] => [
 		...finding(ACME),
 		policyId: "12",
 		name: "Disk encryption enabled",
+		groupName: "Workstations",
 		description: "FileVault on macOS and BitLocker on Windows protect data on a lost or stolen laptop.",
 		resolution:
 			"On macOS, open System Settings, Privacy and Security, FileVault and turn it on. On Windows, turn on BitLocker in Settings, Privacy and security, Device encryption.",
@@ -97,6 +98,7 @@ const policies = (nowMs: number): Encoded["policies"] => [
 		...finding(ACME),
 		policyId: "4",
 		name: "Operating system is up to date",
+		groupName: null,
 		description: "Devices run the latest minor release of their operating system.",
 		resolution: "Install the pending system update and restart.",
 		critical: false,
@@ -112,10 +114,11 @@ const policies = (nowMs: number): Encoded["policies"] => [
 		...finding(ACME),
 		policyId: "9",
 		name: "Screen locks after 5 minutes",
+		groupName: "Workstations",
 		description: null,
 		resolution: "Set the screen to lock after at most 5 minutes of inactivity.",
 		critical: false,
-		platform: "darwin",
+		platform: "darwin,windows,linux,chrome",
 		failingDeviceCount: 4,
 		passingDeviceCount: 182,
 		failingDevices: hosts(4, 5),
@@ -127,6 +130,7 @@ const policies = (nowMs: number): Encoded["policies"] => [
 		...finding(ACME),
 		policyId: "17",
 		name: "Firewall enabled",
+		groupName: "💻 Windows laptops (Berlin and remote contractors)",
 		description: "The built-in firewall is on.",
 		resolution: null,
 		critical: false,
@@ -271,6 +275,20 @@ export const syncErrorDevices = (nowMs: number) =>
 export const allClearDevices = (nowMs: number) =>
 	decode({ sources: [source(nowMs)], policies: [], vulnerabilities: [], moreVulnerabilities: 0 })
 
+/** Nothing was failing two hours ago, and no sync has worked since. */
+export const staleAllClearDevices = (nowMs: number) =>
+	decode({
+		sources: [
+			source(nowMs, {
+				syncedAt: nowMs - 2 * 3_600_000,
+				error: "This Fleet server has 1204 fleets. Maple reads the policies of at most 1000.",
+			}),
+		],
+		policies: [],
+		vulnerabilities: [],
+		moreVulnerabilities: 0,
+	})
+
 /** The EU office's own Fleet server: smaller, and its token was revoked an hour after its last sync. */
 const euSource = (nowMs: number): Source =>
 	source(nowMs, {
@@ -290,6 +308,7 @@ const euPolicies = (nowMs: number): Encoded["policies"] => [
 		...finding(ACME_EU),
 		policyId: "12",
 		name: "Disk encryption enabled",
+		groupName: null,
 		description: "FileVault on macOS and BitLocker on Windows protect data on a lost or stolen laptop.",
 		resolution: null,
 		critical: true,

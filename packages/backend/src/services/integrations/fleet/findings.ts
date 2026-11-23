@@ -9,23 +9,29 @@ import {
 } from "@maple/backend/services/device-security/device-findings-store"
 import type { FleetCve, FleetHost, FleetPolicy, FleetSoftwareVersion, FleetVulnerability } from "./api"
 
-// Fleet's policies and vulnerable software as device findings: a failing policy per row, and one
-// row per CVE with the software versions that carry it. Links go to the server's own pages.
+// Fleet's policies and vulnerable software as device findings: a failing policy per row, whichever
+// fleet it belongs to, and one row per CVE with the software versions that carry it. Links go to the server's own pages.
+
+/** A policy with the fleet it belongs to; null for a policy every device gets. */
+export interface FleetScopedPolicy {
+	readonly policy: FleetPolicy
+	readonly groupName: string | null
+}
 
 /** A failing policy, with the numeric id its failing devices are read by. */
 export interface FleetFailingPolicy {
-	readonly fleetId: number
+	readonly numericId: number
 	readonly finding: Omit<PolicyFindingInput, "failingDevices">
 }
 
 /** The policies at least one device fails, critical first, then by how many fail. */
 export const failingPolicies = (
-	policies: ReadonlyArray<FleetPolicy>,
+	policies: ReadonlyArray<FleetScopedPolicy>,
 	baseUrl: string,
 ): ReadonlyArray<FleetFailingPolicy> =>
 	Arr.sort(
 		Arr.getSomes(
-			Arr.map(policies, (policy): Option.Option<FleetFailingPolicy> => {
+			Arr.map(policies, ({ policy, groupName }): Option.Option<FleetFailingPolicy> => {
 				const failing = policy.failing_host_count ?? 0
 				if (failing <= 0) return Option.none()
 				const counted =
@@ -33,10 +39,11 @@ export const failingPolicies = (
 						? null
 						: timestampMs(policy.host_count_updated_at)
 				return Option.some({
-					fleetId: policy.id,
+					numericId: policy.id,
 					finding: {
 						policyId: String(policy.id),
 						name: policy.name,
+						groupName,
 						description: emptyToNull(policy.description),
 						resolution: emptyToNull(policy.resolution),
 						critical: policy.critical === true,

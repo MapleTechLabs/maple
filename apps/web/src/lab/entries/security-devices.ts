@@ -10,6 +10,7 @@ import { AppRoute } from "../../route"
 import { context, isLocalCommand } from "../security-lab/scenarios"
 import {
 	allClearDevices,
+	staleAllClearDevices,
 	authFailedDevices,
 	firstSyncDevices,
 	freeDevices,
@@ -32,6 +33,7 @@ const STATES = [
 	"auth-failed",
 	"sync-error",
 	"all-clear",
+	"all-clear-stale",
 	"forbidden",
 	"error",
 	"loading",
@@ -58,6 +60,8 @@ const resultOf = (state: State, nowMs: number) => {
 			return Result.succeed(syncErrorDevices(nowMs))
 		case "all-clear":
 			return Result.succeed(allClearDevices(nowMs))
+		case "all-clear-stale":
+			return Result.succeed(staleAllClearDevices(nowMs))
 		case "forbidden":
 			return Result.fail(
 				toLoadFailure(new IntegrationsForbiddenError({ message: "Missing security:manage" })),
