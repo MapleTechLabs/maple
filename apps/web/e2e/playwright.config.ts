@@ -15,16 +15,14 @@ export default defineConfig({
 	use: {
 		baseURL: process.env.MAPLE_E2E_APP_URL ?? "http://localhost:3471",
 		browserName: "chromium",
-		trace: "retain-on-failure",
+		// Traces and videos stay off: a trace keeps request headers (the Clerk cookie and Bearer
+		// token) and `.e2e/` is uploaded as a readable artifact. Screenshots carry no headers.
+		trace: "off",
+		video: "off",
 		screenshot: "only-on-failure",
 	},
 	projects: [
-		// No trace or screenshot of the sign-in: it would carry the fresh session.
-		{
-			name: "setup",
-			testMatch: /auth\.setup\.e2e\.ts$/,
-			use: { trace: "off", screenshot: "off" },
-		},
+		{ name: "setup", testMatch: /auth\.setup\.e2e\.ts$/ },
 		{
 			name: "web",
 			testIgnore: /auth\.setup\.e2e\.ts$/,

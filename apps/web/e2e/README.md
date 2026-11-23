@@ -17,7 +17,7 @@ MAPLE_E2E_APP_URL=https://app-pr-<n>.maple.dev \
 - `playwright.config.ts` has two projects: `setup` runs `tests/auth.setup.e2e.ts` once, and `web`
   runs every other test from the session it saved (`.auth/reviewer.json`, gitignored).
 - `tests/auth.setup.e2e.ts` trades `PREVIEW_SIGNIN_KEY` for a single-use Clerk ticket in the
-  runner, so the key never reaches the page or a trace.
+  runner, so the key never reaches the page.
 - `tests/support.ts` `api()` calls the v2 API from the page with its Clerk session, for setup
   and for asserting what was saved.
 - Inputs: `MAPLE_E2E_APP_URL` (default `http://localhost:3471`), `MAPLE_E2E_API_URL` (default: the
@@ -28,5 +28,6 @@ MAPLE_E2E_APP_URL=https://app-pr-<n>.maple.dev \
 
 CI runs this as the `e2e` job of `deploy-pr-preview.yml`, after the preview's seed and smoke test.
 It is not a required check, and it reruns without redeploying. With `CI` set the config adds a
-junit report (`.e2e/junit.xml`); it, traces and screenshots of failures land in the `e2e-results`
-artifact.
+junit report (`.e2e/junit.xml`); it and screenshots of failures land in the `e2e-results`
+artifact. Traces and videos stay off: a trace keeps request headers, which carry the reviewer's
+session, and any repo reader can download the artifact. For a local trace, pass `--trace on`.
