@@ -94,6 +94,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/grouping-rules",
+		title: "Error grouping rules",
+		description:
+			"Settings > Automation's error grouping rules editor: merge and frame rules, none yet, loading, a failed read, a refused save with a problem under each rule it names, and a member who cannot edit (`?state=populated|empty|loading|error|invalid|member`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/domains",
 		title: "Verified domains",
 		description:

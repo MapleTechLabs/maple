@@ -25,6 +25,7 @@ import {
 	PolicyDraft,
 	type RuleDraft,
 } from "./model"
+import * as GroupingRules from "./grouping-rules"
 
 type Return = PageReturn<Model, Message>
 
@@ -60,7 +61,35 @@ const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
 		).pipe(settleTo((result) => Message.CompletedEvaluate({ revision, result }))),
 })
 
-export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
+const liftGroupingRules = (
+	model: Model,
+	step: PageReturn<GroupingRules.Model, GroupingRules.Message>,
+): Return => ({
+	model: { ...model, groupingRules: step.model },
+	commands: Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotGroupingRulesMessage({ message }),
+	),
+	outMessage: step.outMessage,
+})
+
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => {
+	const groupingRules = GroupingRules.init()
+	const policy = initPolicy(grants, groupingRules.model)
+	return {
+		model: policy.model,
+		commands: [
+			...(policy.commands ?? []),
+			...Command.mapMessages(groupingRules.commands ?? [], (message) =>
+				Message.GotGroupingRulesMessage({ message }),
+			),
+		],
+	}
+}
+
+const initPolicy = (
+	grants: ReadonlyArray<Policy.Permission>,
+	groupingRules: GroupingRules.Model,
+): Return => ({
 	model: {
 		grants,
 		policy: AsyncData.Loading(),
@@ -82,6 +111,7 @@ export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 		evaluated: null,
 		isEvaluating: false,
 		attempts: AsyncData.Loading(),
+		groupingRules,
 	},
 	commands: [FetchEscalationPolicy(), FetchRecentEscalations()],
 })
@@ -143,9 +173,10 @@ const edit = (model: Model, change: (draft: PolicyDraft) => PolicyDraft): Return
 export const revisit = (model: Model): Return => {
 	const policy = revisitData(model.policy, FetchEscalationPolicy)
 	const attempts = revisitData(model.attempts, FetchRecentEscalations)
+	const rules = liftGroupingRules(model, GroupingRules.revisit(model.groupingRules))
 	return {
-		model: { ...model, policy: policy.data, attempts: attempts.data },
-		commands: [...policy.commands, ...attempts.commands],
+		model: { ...rules.model, policy: policy.data, attempts: attempts.data },
+		commands: [...policy.commands, ...attempts.commands, ...(rules.commands ?? [])],
 	}
 }
 
@@ -281,6 +312,8 @@ export const update = (model: Model, message: Message): Return =>
 				commands: [EvaluateEscalationPolicy({ request, revision: model.revision })],
 			}
 		},
+		GotGroupingRulesMessage: ({ message: inner }) =>
+			liftGroupingRules(model, GroupingRules.update(model.groupingRules, inner, model.grants)),
 		CompletedEvaluate: ({ revision, result }) =>
 			Result.match(result, {
 				onSuccess: (decision) => ({
