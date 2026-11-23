@@ -253,12 +253,13 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 						),
 					{ concurrency: 4 },
 				)
-				// A policy id is one row: should a server answer a fleet's read with global policies, the global one stays.
 				const all: ReadonlyArray<FleetScopedPolicy> = Arr.appendAll(
 					Arr.map(global, (policy) => ({ policy, groupName: null })),
 					Arr.flatten(grouped),
 				)
-				return Arr.dedupeWith(all, (a, b) => a.policy.id === b.policy.id)
+				// A policy id is one stored row. Should a fleet's read repeat a global policy, the global one stays.
+				const byId = new Map(Arr.map(Arr.reverse(all), (scoped) => [scoped.policy.id, scoped]))
+				return Arr.fromIterable(byId.values())
 			})
 
 			/**
