@@ -3079,8 +3079,7 @@ export type ProductEventsRow = InferRow<typeof productEvents>
  * Identity links — one row per (visitor, user) pair ever observed together on a
  * session, materialized out of `session_replays`, and on a server, mobile or
  * trace product event (`identity_links_events_mv`). The `description` below still
- * names sessions only: editing it changes the Tinybird datafile, and a changed
- * datafile for a table with feeding views risks a rebuild from their 30-day sources. This is how a funnel collapses a person's anonymous
+ * names sessions only, so the datafile changes no more than it has to. This is how a funnel collapses a person's anonymous
  * marketing visit (VisitorId only) and their later server-side events (UserId
  * only) into one row: a `product_events` row resolves its person as
  * `if(UserId != '', UserId, coalesce(link.UserId, VisitorId))`.
@@ -3111,6 +3110,11 @@ export const identityLinks = defineDatasource("identity_links", {
 		UserId: t.string(),
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
+	// REQUIRED: adding a feeding view makes Tinybird rebuild this table from its views, and
+	// `session_replays` keeps 30 days against these links' 365: without it every older link is
+	// dropped (seen in the #2960 preview plan). The copy and the views' backfill overlap, which
+	// the `min(FirstSeen)` merge collapses.
+	forwardQuery: "SELECT *",
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",
 		sortingKey: ["OrgId", "VisitorId", "UserId"],
