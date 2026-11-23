@@ -444,9 +444,12 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		expect(exemplars({ serviceName: "worker" })).toEqual([])
 	})
 
-	test("covering buckets, the limit takes every bucket's top exemplar before any bucket's second", () => {
+	test("covering buckets, every bucket keeps its top exemplar and the limit caps only the rest", () => {
 		// 0:00 holds 1000, 500 and 50; 1:00 holds only 7, which a cap of two by value drops.
 		expect(Arr.map(exemplars({ limit: 2, coverBuckets: true }), (e) => e.value)).toEqual([1_000, 7])
+		expect(Arr.map(exemplars({ limit: 3, coverBuckets: true }), (e) => e.value)).toEqual([1_000, 500, 7])
+		// More buckets than the limit, as an explicit fine interval over a long window gives.
+		expect(Arr.map(exemplars({ limit: 1, coverBuckets: true }), (e) => e.value)).toEqual([1_000, 7])
 		expect(Arr.map(exemplars({ limit: 2 }), (e) => e.value)).toEqual([1_000, 500])
 	})
 

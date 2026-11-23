@@ -4409,7 +4409,7 @@ SELECT
         LIMIT 500) AS kept
         ORDER BY value DESC
 
--- builder:metrics:metricExemplarsQuery:chart  [35288b29]
+-- builder:metrics:metricExemplarsQuery:chart  [aeebe359]
 SELECT
           kept.bucket AS bucket,
           kept.timestamp AS timestamp,
@@ -4417,6 +4417,22 @@ SELECT
           kept.traceId AS traceId,
           kept.spanId AS spanId,
           kept.serviceName AS serviceName
+        FROM (SELECT
+          covered.bucket AS bucket,
+          covered.timestamp AS timestamp,
+          covered.value AS value,
+          covered.traceId AS traceId,
+          covered.spanId AS spanId,
+          covered.serviceName AS serviceName
+        FROM (SELECT
+          per_bucket.bucket AS bucket,
+          per_bucket.timestamp AS timestamp,
+          per_bucket.value AS value,
+          per_bucket.traceId AS traceId,
+          per_bucket.spanId AS spanId,
+          per_bucket.serviceName AS serviceName,
+          per_bucket.exemplarRank AS exemplarRank,
+          row_number() OVER (ORDER BY exemplarRank ASC, value DESC) AS coverRank
         FROM (SELECT
           ranked.bucket AS bucket,
           ranked.timestamp AS timestamp,
@@ -4458,9 +4474,8 @@ SELECT
           AND notEmpty(ExemplarsTraceId) AND traceId != '' AND isFinite(value)) AS unrolled
         GROUP BY traceId, spanId, timestamp, value) AS distinct_exemplars
         WHERE distinct_exemplars.firstExportedAt >= '2026-01-01 10:30:00') AS ranked
-        WHERE ranked.exemplarRank <= 3
-        ORDER BY exemplarRank ASC, value DESC
-        LIMIT 500) AS kept
+        WHERE ranked.exemplarRank <= 3) AS per_bucket) AS covered
+        WHERE exemplarRank = 1 OR coverRank <= 500) AS kept
         ORDER BY value DESC
 
 -- builder:pr-review:operationTrafficHourlyQuery:allServices  [e60e4684]

@@ -928,8 +928,8 @@ export interface MetricExemplarsOpts extends MetricsFilterOpts {
 	readonly perBucket?: number
 	readonly limit?: number
 	/**
-	 * The cap takes every bucket's top exemplar before any bucket's second, so a chart keeps a
-	 * dot per bucket. Off, it keeps the highest values overall, which a ranked list wants.
+	 * Every bucket keeps its top exemplar whatever the limit, which then caps only the rest, so a
+	 * chart keeps a dot per bucket. Off, the limit keeps the highest values overall.
 	 */
 	readonly coverBuckets?: boolean
 	/**
@@ -1025,8 +1025,7 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			$.firstExportedAt.gte(param.dateTime("startTime")),
 			...cellConditions($, opts.cell, opts.metricType),
 		])
-	// Either order picks what the cap keeps; the kept rows then read highest first.
-	const capped = fromQuery(ranked, "ranked")
+	const perBucket = fromQuery(ranked, "ranked")
 		.select(($) => ({
 			bucket: $.bucket,
 			timestamp: $.timestamp,
@@ -1037,11 +1036,31 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			exemplarRank: $.exemplarRank,
 		}))
 		.where(($) => [$.exemplarRank.lte(opts.perBucket ?? METRIC_EXEMPLARS_PER_BUCKET)])
-	const kept = (
+	const limit = opts.limit ?? METRIC_EXEMPLARS_LIMIT
+	// Bucket winners first, so the limit's share goes to them before any bucket's second.
+	const covered = fromQuery(perBucket, "per_bucket").select(($) => ({
+		bucket: $.bucket,
+		timestamp: $.timestamp,
+		value: $.value,
+		traceId: $.traceId,
+		spanId: $.spanId,
+		serviceName: $.serviceName,
+		exemplarRank: $.exemplarRank,
+		coverRank: CH.rawExpr("row_number() OVER (ORDER BY exemplarRank ASC, value DESC)", T.uint64),
+	}))
+	const kept =
 		opts.coverBuckets === true
-			? capped.orderBy(["exemplarRank", "asc"], ["value", "desc"])
-			: capped.orderBy(["value", "desc"])
-	).limit(opts.limit ?? METRIC_EXEMPLARS_LIMIT)
+			? fromQuery(covered, "covered")
+					.select(($) => ({
+						bucket: $.bucket,
+						timestamp: $.timestamp,
+						value: $.value,
+						traceId: $.traceId,
+						spanId: $.spanId,
+						serviceName: $.serviceName,
+					}))
+					.where(() => [CH.rawCond(`exemplarRank = 1 OR coverRank <= ${Math.floor(limit)}`)])
+			: perBucket.orderBy(["value", "desc"]).limit(limit)
 	return fromQuery(kept, "kept")
 		.select(($) => ({
 			bucket: $.bucket,
