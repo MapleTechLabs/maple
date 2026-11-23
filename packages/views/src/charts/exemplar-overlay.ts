@@ -88,7 +88,11 @@ export const exemplarOverlay = <M>(
 							{
 								onClick: options.onSelect(dot.key),
 								label: `Open the trace behind ${dot.title}`,
-								className: "group pointer-events-auto absolute grid place-items-center",
+								// Touch has no hover: a dot that is not shown takes no tap, so the line stays tappable.
+								className: cn(
+									"group pointer-events-auto absolute grid place-items-center",
+									!shown && "pointer-coarse:pointer-events-none",
+								),
 								attributes: [
 									h.Key(dot.key),
 									h.DataAttribute("chart-overlay", ""),
