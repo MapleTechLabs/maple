@@ -32,7 +32,7 @@ import {
 	SERVICE_KEY,
 } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, TimeseriesRows } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
@@ -45,6 +45,28 @@ type H = HtmlBuilder<Message>
 
 const toChart = (message: Chart.Message) => Message.GotChartMessage({ message })
 const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownComboboxMessage({ message })
+
+/** Renamed rows per source array and label: the chart caches its spec by the data's identity. */
+const namedRows = new WeakMap<TimeseriesRows, Map<string, TimeseriesRows>>()
+
+/** With no breakdown the one series is named for its query ("A"); the tooltip should say "p95". */
+const namedSeries = (rows: TimeseriesRows, draft: MetricsQueryDraft): TimeseriesRows => {
+	if (draft.groupBy.length > 0) return rows
+	const byLabel = namedRows.get(rows) ?? new Map<string, TimeseriesRows>()
+	namedRows.set(rows, byLabel)
+	const cached = byLabel.get(draft.aggregation)
+	if (cached !== undefined) return cached
+	const renamed = Arr.map(rows, (row) =>
+		Rec.fromEntries(
+			Arr.map(Rec.toEntries(row), ([key, value]) => [
+				key === "bucket" ? key : draft.aggregation,
+				value,
+			]),
+		),
+	)
+	byLabel.set(draft.aggregation, renamed)
+	return renamed
+}
 
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
@@ -72,7 +94,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 									toParentMessage: toChart,
 									viewInputs: {
 										chartId: "metric-explorer",
-										data: rows,
+										data: namedSeries(rows, draft),
 										theme: model.themeColors,
 										unit: chartUnitFromOtel(unit, draft.metricName),
 										timeZone,

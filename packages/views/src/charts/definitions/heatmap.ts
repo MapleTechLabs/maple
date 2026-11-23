@@ -13,6 +13,8 @@ type HeatmapSpec = Extract<ChartSpec, { readonly _tag: "Heatmap" }>
 type Slot = HeatmapSpec["cells"][number]
 
 const UNMATCHED_OPACITY = 0.28
+/** Empty cells fade almost into the card, so the filled ones carry the shape; stop 0 stays clear of them. */
+const HOLE_OPACITY = 0.25
 
 const slotTooltip = (points: ReadonlyArray<ChartPoint<Slot, string, string>>): Option.Option<ChartTooltip> =>
 	Option.map(Option.fromNullishOr(points[0]?.datum), (slot) =>
@@ -35,6 +37,7 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 		x: (slot: Slot) => slot.x,
 		y: (slot: Slot) => slot.y,
 		fill: spec.grout,
+		fillOpacity: HOLE_OPACITY,
 		radius: spec.radius,
 		states: focusStates,
 	})
@@ -60,9 +63,8 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 							padding: 6,
 							format: (value: string) => spec.xLabels?.[value] ?? value,
 						},
-						...(spec.xLabels === undefined
-							? undefined
-							: { tickLabels: { thin: { priority: "ends" } } }),
+						// Time columns come with their labels already spaced (`timeTickColumns`).
+						...(spec.xLabels === undefined ? undefined : { tickLabels: { thin: false } }),
 					},
 				},
 				y: {

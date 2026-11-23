@@ -16,6 +16,7 @@ import {
 	ISO_RE,
 	shortenYLabel,
 	timeColumnLabeler,
+	timeTickColumns,
 	timeTooltipLabel,
 	truncateYLabel,
 } from "./heatmap-model"
@@ -188,6 +189,14 @@ const tooltipBody = (
 				),
 			)
 
+/** Labels for the ticked columns; the rest stay blank so the axis reads at an even step. */
+const xLabelsOf = (
+	columns: ReadonlyArray<string>,
+	ticked: ReadonlySet<string>,
+	labelX: (x: string) => string,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(Arr.map(columns, (x) => [x, ticked.has(x) ? labelX(x) : ""]))
+
 const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 	hiddenX > 0 || hiddenY > 0
 		? `${Arr.join(
@@ -249,7 +258,16 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		),
 		...(allXIso
 			? {
-					xLabels: Rec.fromEntries(Arr.map(model.xDomain, (x) => [x, labelX(x)])),
+					xLabels: xLabelsOf(
+						model.xDomain,
+						timeTickColumns(
+							model.xDomain,
+							chart.containerWidth - layout.gutter - layout.rightInset,
+							labelX,
+							inputs.timeZone,
+						),
+						labelX,
+					),
 				}
 			: undefined),
 		margin: layout.margin,

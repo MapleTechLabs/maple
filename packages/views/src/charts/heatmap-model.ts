@@ -222,5 +222,72 @@ export const timeColumnLabeler = (
 		: (iso) => clockLabel(iso, timeZone)
 }
 
+/** Clock steps a time axis labels at, in minutes; each lands on round local times. */
+const TICK_STEPS_MIN = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440] as const
+const TICK_CHAR_PX = 6.5
+const TICK_GAP_PX = 16
+
+/** Minutes since local midnight of an epoch ms in `timeZone`. */
+const localMinuteOfDay = (ms: number, timeZone: string | undefined): number => {
+	const parts = new Intl.DateTimeFormat("en-GB", {
+		timeZone,
+		hour: "2-digit",
+		minute: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(ms)
+	const part = (type: "hour" | "minute") =>
+		Number(
+			Option.getOrElse(
+				Option.map(
+					Arr.findFirst(parts, (p) => p.type === type),
+					(p) => p.value,
+				),
+				() => "0",
+			),
+		)
+	return part("hour") * 60 + part("minute")
+}
+
+/**
+ * Which time columns get a label: the finest round clock step (5 min, 15 min, 1 h...) whose labels
+ * do not collide at `plotWidth`, so ticks are evenly spaced. A label whose text would run past the
+ * plot's right edge is dropped rather than clipped.
+ */
+export const timeTickColumns = (
+	columns: ReadonlyArray<string>,
+	plotWidth: number,
+	labelOf: (iso: string) => string,
+	timeZone: string | undefined,
+): ReadonlySet<string> => {
+	const times = Arr.map(columns, (iso) =>
+		Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis }),
+	)
+	const [first, second] = times
+	// Before the plot is measured there is no width to space labels by.
+	if (!(plotWidth > 0)) return new Set()
+	if (columns.length < 2 || first === undefined || second === undefined) return new Set(columns)
+	const columnMin = (second - first) / 60_000
+	const columnPx = plotWidth / columns.length
+	const longest = Arr.reduce(columns, 0, (max, iso) => Math.max(max, labelOf(iso).length))
+	const needPx = longest * TICK_CHAR_PX + TICK_GAP_PX
+	const step = Arr.findFirst(
+		TICK_STEPS_MIN,
+		(minutes) =>
+			minutes >= columnMin && minutes % columnMin === 0 && (minutes / columnMin) * columnPx >= needPx,
+	)
+	// Off the round steps (odd widths, multi-day windows): every k-th column from the first.
+	const every = Math.max(1, Math.ceil(needPx / columnPx))
+	const picked = Arr.filter(columns, (_, index) => {
+		const ms = times[index] ?? Number.NaN
+		const onStep = Option.match(step, {
+			onNone: () => index % every === 0,
+			onSome: (minutes) => localMinuteOfDay(ms, timeZone) % minutes === 0,
+		})
+		const roomRight = (columns.length - index - 0.5) * columnPx
+		return onStep && roomRight >= (labelOf(columns[index] ?? "").length * TICK_CHAR_PX) / 2
+	})
+	return new Set(picked)
+}
+
 export const truncateYLabel = (label: string, maxChars: number): string =>
 	label.length <= maxChars ? label : `${Str.slice(0, Math.max(1, maxChars - 1))(label)}…`
