@@ -211,7 +211,7 @@ describe("ingest rule impact", () => {
 		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toContain("FetchIngestRuleImpact")
 	})
 
-	test("the impact panel shows what the rule dropped, the bytes it saved and a row per signal", () => {
+	test("the impact panel shows what the rule dropped, the bytes dropped and a row per signal", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
@@ -226,7 +226,41 @@ describe("ingest rule impact", () => {
 			expectView(text("Records dropped")).toExist(),
 			expectView(text("1.2M")).toExist(),
 			expectView(text("1.2 GB")).toExist(),
-			expectView(text("3K dropped · 3.0 MB saved")).toExist(),
+			expectView(text("3K dropped · 3.0 MB dropped")).toExist(),
+		)
+	})
+
+	test("a rule that changed from drop to redact still shows the drops in the window", () => {
+		const redacting = {
+			...savedRule,
+			action: {
+				type: "redact" as const,
+				keys: ["user.email"],
+				detectors: [],
+				patterns: [],
+				scopes: ["attributes" as const],
+				method: "mask" as const,
+			},
+		}
+		const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+		const model = pageUpdate(
+			asAdmin(opened.model),
+			Message.CompletedFetchExisting({ result: Result.succeed(redacting) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchImpact({
+						window: "24h",
+						result: Result.succeed(impactOf(2000, 0)),
+					}),
+				).model,
+			),
+			expectView(text("Records dropped")).toExist(),
+			expectView(text("Values redacted")).toExist(),
+			expectView(text("2K")).toExist(),
 		)
 	})
 

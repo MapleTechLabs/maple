@@ -208,10 +208,13 @@ character but `\n`", before compiling.
   next one; after 10 failures in a row they are dropped and counted in
   `ingest_rule_stats_dropped_total`.
 - `GET /v2/ingest_rules/stats` serves them per rule, per rule and signal, and per rule and hour.
-  The ingestion settings list shows each rule's last 24 hours (records dropped and bytes saved,
-  what sampling kept, or values redacted) with an hourly sparkline; a saved rule's page shows
-  the same over 24 hours or 7 days, with a row per signal. A drop rule's `matched - dropped` is
-  what its `keepPercent` kept.
+  The ingestion settings list shows each rule's last 24 whole UTC hours (records and bytes dropped,
+  or values redacted) with an hourly sparkline; a saved rule's page shows the same over 24 hours or
+  7 days, with a row per signal, and both effects when the rule changed action in the window.
+  - `matched - dropped` is not what a rule kept: a record several drop rules match is credited to
+    the first that drops it.
+  - `dropped_bytes` is the dropped records' encoded size. Metering discounts the same for OTLP,
+    but a converted payload (the GCP push path) is metered by its original body.
 
 ## Limits
 

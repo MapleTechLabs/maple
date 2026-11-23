@@ -1,10 +1,11 @@
 import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
-import { Array, Effect, Option, Result, Schema } from "effect"
+import { Array, Clock, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { hourWindow } from "../ingest-rule/impact"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -60,12 +61,14 @@ export const FetchIngestRules = Command.define("FetchIngestRules", {
 	}).pipe(settleTo((result) => Message.CompletedFetch({ result }))),
 })
 
-/** The stats endpoint's default window: the last 24 hours. */
+/** The last 24 whole UTC hours, the current one included. */
 export const FetchIngestRuleStats = Command.define("FetchIngestRuleStats", {
 	messages: [Message.CompletedFetchStats],
-	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.stats({ query: {} })).pipe(
-		settleTo((result) => Message.CompletedFetchStats({ result })),
-	),
+	execute: Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		const now = yield* Clock.currentTimeMillis
+		return yield* client.ingestRules.stats({ query: hourWindow(now, 24) })
+	}).pipe(settleTo((result) => Message.CompletedFetchStats({ result }))),
 })
 
 const ToggleIngestRule = Command.define("ToggleIngestRule", {
