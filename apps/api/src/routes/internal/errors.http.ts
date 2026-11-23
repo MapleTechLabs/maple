@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant, ErrorForbiddenError, MapleInternalApi } from "@maple/domain/http"
 import { Effect } from "effect"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { ErrorGroupingService } from "@maple/backend/services/errors/ErrorGroupingService"
 import { ErrorIssueMergeService } from "@maple/backend/services/errors/ErrorIssueMergeService"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
@@ -19,6 +20,7 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 		const errors = yield* ErrorsService
 		const verification = yield* IssueFixVerificationService
 		const readModels = yield* ErrorIssueReadModelsService
+		const grouping = yield* ErrorGroupingService
 
 		return handlers
 			.handle("transitionIssue", ({ params, payload }) =>
@@ -221,6 +223,61 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleInternalApi, "errors", (
 					yield* Effect.annotateCurrentSpan({ "result.rowCount": response.users.length })
 					return response
 				}).pipe(Effect.withSpan("HttpErrors.listIssueAffectedUsers")),
+			)
+			.handle("getIssueGrouping", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
+					return yield* grouping.explainIssue(tenant.orgId, params.issueId)
+				}).pipe(Effect.withSpan("HttpErrors.getIssueGrouping")),
+			)
+			.handle("listSimilarIssues", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
+					return yield* grouping.similarIssues(tenant.orgId, params.issueId)
+				}).pipe(Effect.withSpan("HttpErrors.listSimilarIssues")),
+			)
+			.handle("detachIssueFingerprint", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* actors.ensureUserActor(tenant.orgId, tenant.userId)
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						"maple.issue.id": params.issueId,
+					})
+					return yield* merges.detachFingerprint(
+						tenant.orgId,
+						actor.id,
+						params.issueId,
+						params.fingerprintHash,
+					)
+				}).pipe(Effect.withSpan("HttpErrors.detachIssueFingerprint")),
+			)
+			.handle("getGroupingRules", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					return yield* grouping.getRules(tenant.orgId)
+				}).pipe(Effect.withSpan("HttpErrors.getGroupingRules")),
+			)
+			.handle("updateGroupingRules", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					yield* Policy.check(
+						tenant.roles,
+						"error_policy:manage",
+						(denial) => new ErrorForbiddenError({ message: denial.message }),
+					)
+					return yield* grouping.updateRules(tenant.orgId, tenant.userId, payload)
+				}).pipe(Effect.withSpan("HttpErrors.updateGroupingRules")),
 			)
 			.handle("getEscalationPolicy", () =>
 				Effect.gen(function* () {

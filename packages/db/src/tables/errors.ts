@@ -18,6 +18,7 @@ import {
 	VerificationVerdict,
 } from "@maple/domain/fix-verification"
 import { GroupingRule } from "@maple/domain/tinybird/grouping"
+import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
 import { VcsProviderId } from "@maple/domain/vcs"
 import {
 	ActorId,
@@ -248,6 +249,21 @@ export const ErrorGroupingKeys = PG.table("error_grouping_keys", {
 		name: "error_grouping_keys_org_id_fingerprint_hash_pk",
 	},
 	indexes: [PG.index("error_grouping_keys_key_idx", ["orgId", "groupingKey"])],
+	tenantColumn: "orgId",
+})
+
+/**
+ * An org's own grouping rules (`@maple/domain/tinybird/grouping-rules`), one row per org.
+ * The tick keys new hashes under them; a change makes every stored key stale.
+ */
+export const ErrorGroupingConfigs = PG.table("error_grouping_configs", {
+	columns: {
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		rulesJson: PG.column(PG.jsonb(Schema.Array(OrgGroupingRule)), { name: "rules_json", default: [] }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+		updatedBy: PG.column(PG.nullable(PG.brand(PG.text, UserId)), { name: "updated_by" }),
+	},
+	primaryKey: ["orgId"],
 	tenantColumn: "orgId",
 })
 

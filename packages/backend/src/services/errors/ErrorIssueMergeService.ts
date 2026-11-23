@@ -43,6 +43,17 @@ export interface ErrorIssueMergeServiceApi {
 		actorId: ActorId,
 		issueId: ErrorIssueId,
 	) => Effect.Effect<ErrorIssueDocument, MergeError>
+	/**
+	 * Take back a fingerprint the grouping key gave this issue, and pin it out of every
+	 * group: its next occurrence opens its own issue. Only `group` aliases detach; a merged
+	 * issue's hashes come back by unmerging it.
+	 */
+	readonly detachFingerprint: (
+		orgId: OrgId,
+		actorId: ActorId,
+		issueId: ErrorIssueId,
+		fingerprintHash: string,
+	) => Effect.Effect<ErrorIssueDocument, MergeError>
 }
 
 const invalid = (message: string, details: ReadonlyArray<string> = []) =>
@@ -237,7 +248,66 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 			return yield* workflow.hydrateIssue(orgId, restored)
 		})
 
-		return { mergeIssues, unmergeIssue }
+		const detachFingerprint: ErrorIssueMergeServiceApi["detachFingerprint"] = Effect.fn(
+			"ErrorIssueMergeService.detachFingerprint",
+		)(function* (orgId, actorId, issueId, fingerprintHash) {
+			yield* Effect.annotateCurrentSpan({ orgId, "maple.issue.id": issueId })
+			const timestamp = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db.transaction(
+					Effect.gen(function* () {
+						const [issue] = yield* lockIssues(db, orgId, [issueId])
+						if (issue === undefined) return yield* ErrorIssueNotFoundError.forIssue(issueId)
+						const [alias] = yield* db.run(
+							PG.from(ErrorIssueFingerprints)
+								.select("source")
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.eq(issueId),
+									$.fingerprintHash.eq(fingerprintHash),
+								]),
+						)
+						if (alias === undefined) {
+							return yield* invalid(
+								fingerprintHash === issue.fingerprintHash
+									? "This is the issue's own fingerprint and stays with it."
+									: "This issue does not hold that fingerprint.",
+							)
+						}
+						if (alias.source !== "group") {
+							return yield* invalid(
+								alias.source === "merge"
+									? "This fingerprint came with a merged issue: unmerge that issue instead."
+									: "This fingerprint carried the issue across a fingerprint version, so it stays.",
+							)
+						}
+						yield* db.run(
+							PG.deleteFrom(ErrorIssueFingerprints).where(($) => [
+								$.orgId.eq(orgId),
+								$.fingerprintHash.eq(fingerprintHash),
+							]),
+						)
+						yield* pinGroupingKeys(db, orgId, [fingerprintHash], timestamp)
+						yield* db.run(
+							PG.insertInto(ErrorIssueEvents).values([
+								workflow.buildEvent(orgId, issueId, actorId, "unmerge", timestamp, {
+									payload: {
+										role: "target",
+										label: `fingerprint ${fingerprintHash}`,
+										fingerprintHash,
+									},
+								}),
+							]),
+						)
+					}),
+				),
+			)
+			yield* workflow.recordEventAudit(orgId, issueId, actorId, "unmerge", {})
+			const detached = yield* workflow.requireIssue(orgId, issueId)
+			return yield* workflow.hydrateIssue(orgId, detached)
+		})
+
+		return { mergeIssues, unmergeIssue, detachFingerprint }
 	})
 
 export class ErrorIssueMergeService extends Context.Service<

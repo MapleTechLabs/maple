@@ -43,6 +43,7 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDestinations,
 	ErrorFingerprintCandidates,
+	ErrorGroupingConfigs,
 	ErrorIssueFingerprints,
 	ErrorIncidents,
 	ErrorNotificationDeliveries,
@@ -81,6 +82,7 @@ import { PullRequestLookup } from "./PullRequestLookup"
 import { describeCause, makePersistenceError } from "./error-persistence"
 import { EarlyPromotionsPerDay, isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
 import { pinGroupingKeys } from "./grouping-keys"
+import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
@@ -5563,6 +5565,45 @@ describe("ErrorsService.runTick grouping keys", () => {
 
 			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 1)
 			assert.deepStrictEqual(yield* aliasesOf, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an org merge rule joins errors the default key keeps apart", () => {
+		const rows = [row(H1, 2), row(H2, 3)]
+		return Effect.gen(function* () {
+			grouping.samples = [
+				sample(H1, "design-access-BaWgZTwa"),
+				{
+					...sample(H2, "portal-native-VejMLjva"),
+					exceptionType: "PortalUnavailable",
+					statusMessage: "Portal unavailable",
+				},
+			]
+			grouping.spans = [span(H1), span(H2)]
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorGroupingConfigs).values({
+						orgId: ORG,
+						rulesJson: [
+							new OrgGroupingRule({
+								id: "unavailable",
+								kind: "merge",
+								message: "*unavailable*",
+							}),
+						],
+						updatedAt: TICK_MS,
+						updatedBy: null,
+					}),
+				),
+			)
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			assert.lengthOf(yield* loadIssuesByFingerprint(H1), 1)
+			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 0)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 

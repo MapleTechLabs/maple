@@ -57,7 +57,11 @@ import {
 	Schema,
 } from "effect"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
-import { resolveGroupingSiblings } from "@maple/backend/services/errors/grouping-keys"
+import {
+	DEFAULT_ORG_GROUPING,
+	loadOrgGrouping,
+	resolveGroupingSiblings,
+} from "@maple/backend/services/errors/grouping-keys"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
 	EarlyPromotionsPerDay,
@@ -1397,6 +1401,10 @@ const make: Effect.Effect<
 			startTime: DateTime.makeUnsafe(windowStartMs),
 			endTime: DateTime.makeUnsafe(windowEndMs),
 		}
+		// The org's own rules; a failed read keys under none rather than failing the window.
+		const orgGrouping = yield* dbExecute((db) => loadOrgGrouping(db, orgId)).pipe(
+			Effect.orElseSucceed(() => DEFAULT_ORG_GROUPING),
+		)
 		const groupedByHash = yield* resolveGroupingSiblings(
 			dbExecute,
 			{
@@ -1427,7 +1435,7 @@ const make: Effect.Effect<
 					)
 				},
 			},
-			{ orgId, hashes: Arr.map(rows, (row) => row.fingerprintHash), nowMs, configDigest: "" },
+			{ orgId, hashes: Arr.map(rows, (row) => row.fingerprintHash), nowMs, grouping: orgGrouping },
 		)
 
 		const persistence = yield* dbExecute((db) =>

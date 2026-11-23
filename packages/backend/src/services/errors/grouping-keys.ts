@@ -1,8 +1,15 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb, MapleDbError } from "@maple/db/client"
-import { ErrorGroupingKeys } from "@maple/db/tables"
+import { ErrorGroupingConfigs, ErrorGroupingKeys } from "@maple/db/tables"
 import type { OrgId } from "@maple/domain/http"
 import { resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
+import {
+	compileGroupingRules,
+	type CompiledGroupingRules,
+	EMPTY_GROUPING_CONFIG,
+	GroupingConfig,
+	groupingConfigDigest,
+} from "@maple/domain/tinybird/grouping-rules"
 import {
 	GROUPING_KEY_VERSION,
 	groupingKey,
@@ -65,14 +72,14 @@ const eventFingerprint = (span: GroupingSpanRow): string | undefined => {
 }
 
 /**
- * The key for each sample whose span was found. A sample without its span is left
- * unkeyed: its `maple.fingerprint` is unknown, and grouping it could undo a split the
- * user chose. It is tried again when the hash next occurs.
+ * What the grouping key reads for each sample whose span was found. A sample without its
+ * span is left out: its `maple.fingerprint` is unknown, and grouping it could undo a split
+ * the user chose. It is tried again when the hash next occurs.
  */
-export const computeGroupingKeys = (
+export const computeSampleInputs = (
 	samples: ReadonlyArray<GroupingSampleRow>,
 	spans: ReadonlyArray<GroupingSpanRow>,
-): Array<ComputedKey> => {
+): Array<{ readonly fingerprintHash: string; readonly input: GroupingSample }> => {
 	const spanOf = new Map(Arr.map(spans, (span) => [`${span.traceId}:${span.spanId}`, span] as const))
 	return Arr.flatMap(samples, (sample) => {
 		const span = spanOf.get(`${sample.traceId}:${sample.spanId}`)
@@ -89,15 +96,54 @@ export const computeGroupingKeys = (
 			span: { kind: span.spanKind, name: span.spanName },
 		}
 		const input: GroupingSample = customFingerprint === undefined ? base : { ...base, customFingerprint }
-		return [
-			{
-				fingerprintHash: sample.fingerprintHash,
-				groupingKey: groupingKey(input),
-				rule: groupingParts(input).rule,
-			},
-		]
+		return [{ fingerprintHash: sample.fingerprintHash, input }]
 	})
 }
+
+export const computeGroupingKeys = (
+	samples: ReadonlyArray<GroupingSampleRow>,
+	spans: ReadonlyArray<GroupingSpanRow>,
+	rules?: CompiledGroupingRules,
+): Array<ComputedKey> =>
+	Arr.map(computeSampleInputs(samples, spans), ({ fingerprintHash, input }) => ({
+		fingerprintHash,
+		groupingKey: groupingKey(input, rules),
+		rule: groupingParts(input, rules).rule,
+	}))
+
+/** The org's grouping rules, compiled, and the digest stored keys are checked against. */
+export interface OrgGrouping {
+	readonly config: GroupingConfig
+	readonly rules: CompiledGroupingRules
+	readonly digest: string
+	readonly updatedAt: number | null
+}
+
+export const DEFAULT_ORG_GROUPING: OrgGrouping = {
+	config: EMPTY_GROUPING_CONFIG,
+	rules: compileGroupingRules(EMPTY_GROUPING_CONFIG),
+	digest: "",
+	updatedAt: null,
+}
+
+export const loadOrgGrouping = (db: MapleDb, orgId: OrgId): Effect.Effect<OrgGrouping, MapleDbError> =>
+	db
+		.run(
+			PG.from(ErrorGroupingConfigs)
+				.select("rulesJson", "updatedAt")
+				.where(($) => [$.orgId.eq(orgId)]),
+		)
+		.pipe(
+			Effect.map(([row]) => {
+				const config = new GroupingConfig({ rules: row?.rulesJson ?? [] })
+				return {
+					config,
+					rules: compileGroupingRules(config),
+					digest: groupingConfigDigest(config),
+					updatedAt: row?.updatedAt ?? null,
+				}
+			}),
+		)
 
 export interface GroupingKeyReads<E> {
 	readonly samples: (hashes: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<GroupingSampleRow>, E>
@@ -130,27 +176,22 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		readonly orgId: OrgId
 		readonly hashes: ReadonlyArray<string>
 		readonly nowMs: number
-		/** The org's grouping rules, as `groupingConfigDigest` names them; "" for none. */
-		readonly configDigest: string
+		readonly grouping: OrgGrouping
 	},
 ): Effect.Effect<ReadonlyMap<string, ReadonlyArray<string>>> =>
 	Effect.gen(function* () {
-		const { orgId, nowMs, configDigest } = input
+		const { orgId, nowMs } = input
+		const configDigest = input.grouping.digest
 		const isCurrent = (row: { readonly keyVersion: number; readonly configDigest: string }) =>
 			row.keyVersion === GROUPING_KEY_VERSION && row.configDigest === configDigest
 		const hashes = Arr.dedupe(input.hashes)
 		if (hashes.length === 0) return new Map()
 		const stored = yield* dbRun((tx) => storedKeys(tx, orgId, hashes))
-		const current = new Set(
-			Arr.map(
-				Arr.filter(stored, isCurrent),
-				(row) => row.fingerprintHash,
-			),
-		)
+		const current = new Set(Arr.map(Arr.filter(stored, isCurrent), (row) => row.fingerprintHash))
 		const unkeyed = Arr.filter(hashes, (hash) => !current.has(hash)).slice(0, GROUPING_KEYS_PER_TICK)
 		const samples = unkeyed.length === 0 ? [] : yield* reads.samples(unkeyed)
 		const spans = samples.length === 0 ? [] : yield* reads.spans(samples)
-		const computed = computeGroupingKeys(samples, spans)
+		const computed = computeGroupingKeys(samples, spans, input.grouping.rules)
 		if (computed.length > 0) {
 			yield* dbRun((tx) =>
 				Effect.forEach(
@@ -174,7 +215,13 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 								.onConflictDoUpdate({
 									target: ["orgId", "fingerprintHash"],
 									// A pinned hash keeps its pin across a key version.
-									set: PG.excluded(["groupingKey", "keyVersion", "configDigest", "rule", "updatedAt"]),
+									set: PG.excluded([
+										"groupingKey",
+										"keyVersion",
+										"configDigest",
+										"rule",
+										"updatedAt",
+									]),
 								}),
 						),
 					{ discard: true },

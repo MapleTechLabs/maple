@@ -120,6 +120,7 @@ const PURGE_ORDER: ReadonlyArray<TableName> = [
 	"ErrorIssueVerifications",
 	"ErrorIssues",
 	"ErrorNotificationPolicies",
+	"ErrorGroupingConfigs",
 	"Actors",
 	"VcsInstallations",
 	"VcsRepositories",
