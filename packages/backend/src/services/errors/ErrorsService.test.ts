@@ -5696,6 +5696,43 @@ describe("ErrorsService.runTick grouping keys", () => {
 		)
 	})
 
+	it.effect("an ignored issue carried across a bump is not folded into a live sibling", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H2, 1), row(H3, 1)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva"), sample(H3, "billing-C9EyLIyc")]
+			grouping.spans = [span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const ignored = asIssueId(randomUUID())
+			const live = asIssueId(randomUUID())
+			yield* seedIssue(ignored, {
+				fingerprintHash: OLD,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* seedIssue(live, { fingerprintHash: H3, exceptionType: "SiteUnavailable" })
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
+			assert.isNull((yield* loadIssueById(live)).mergedIntoIssueId)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
 	it.effect("a hash whose previous version was pinned stays out of groups after a bump", () => {
 		const OLD = "5000000000000000009"
 		const rows = [row(H1, 2), row(H2, 3)]

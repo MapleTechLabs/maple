@@ -536,15 +536,17 @@ const rekeyOwners = (
 					return issue === undefined ? [] : [issue]
 				}).sort(order)
 				// A grouping key never folds a settled issue (ignored, fixed, cancelled). The row's
-				// own issue and its bump lineage fold as before; a settled one reached only through
-				// the key is left alone, and a new hash with only settled siblings joins the first.
+				// own issue and its bump lineage fold as before; key-only siblings join only live
+				// issues, and a new hash with only settled siblings joins the first.
+				const own = ownId === undefined ? undefined : survivor(ownId)
 				const lineage = new Set(Arr.map(lineageIds, survivor))
-				const keyOnly = (issue: ErrorIssueRow) => issue.id !== ownId && !lineage.has(issue.id)
+				const keyOnly = (issue: ErrorIssueRow) => issue.id !== own && !lineage.has(issue.id)
 				const settled = (issue: ErrorIssueRow) => SETTLED_STATES.has(issue.workflowState)
-				const ownSettled =
-					lineage.size === 0 && Arr.some(reached, (issue) => issue.id === ownId && settled(issue))
-				if (ownSettled) return []
-				const issues = Arr.filter(reached, (issue) => !(keyOnly(issue) && settled(issue)))
+				const base = Arr.filter(reached, (issue) => !keyOnly(issue))
+				const issues =
+					base.length > 0 && Arr.every(base, settled)
+						? base
+						: Arr.filter(reached, (issue) => !(keyOnly(issue) && settled(issue)))
 				if (issues.length === 0) {
 					const [first] = reached
 					return ownId === undefined && first !== undefined
