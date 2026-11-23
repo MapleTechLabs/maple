@@ -155,6 +155,17 @@ const refusalNotice = (h: H, refusal: SaveRefusal | null): ReadonlyArray<Html> =
 			...(orgWide.length === 0
 				? []
 				: [alertDescription(h, [Arr.join(Arr.map(orgWide, sentence), " ")])]),
+			hstack(h, { className: "mt-2" }, [
+				button(
+					h,
+					{
+						size: "sm",
+						variant: "outline",
+						attributes: [h.OnClick(Message.ClickedLoadLatestRules())],
+					},
+					["Discard edits and load the latest rules"],
+				),
+			]),
 		]),
 	]
 }

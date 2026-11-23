@@ -57,6 +57,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	CompletedFetchRules: { result: Schema.Result(GroupingConfigDocument, LoadFailure) },
 	ClickedRetryRules: {},
+	ClickedLoadLatestRules: {},
 	ClickedAddRule: {},
 	ClickedRemoveRule: { id: Schema.String },
 	ChangedRuleKind: { id: Schema.String, value: Schema.String },
@@ -223,6 +224,11 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 				},
 			}
 		},
+		// After a refused save (another tab saved first), drop the edits and follow the stored rules.
+		ClickedLoadLatestRules: () => ({
+			model: { ...model, isDirty: false, refusal: null, rules: AsyncData.Loading() },
+			commands: [FetchGroupingRules()],
+		}),
 		ClickedRetryRules: () => ({
 			model: { ...model, rules: AsyncData.isFailure(model.rules) ? model.rules : AsyncData.Loading() },
 			commands: [FetchGroupingRules()],

@@ -96,6 +96,40 @@ describe("grouping rules editor", () => {
 		expect(saved.baseUpdatedAt).toBe(NEWER_AT)
 	})
 
+	test("after a stale save is refused, loading the latest rules drops the edits and follows them", () => {
+		const opened = new GroupingConfigDocument({ ...stored, updatedAt: OPENED_AT })
+		const newer = new GroupingConfigDocument({ rules: [], updatedAt: NEWER_AT })
+		const refused = run(
+			Rules.update(
+				Rules.init().model,
+				Rules.Message.CompletedFetchRules({ result: Result.succeed(opened) }),
+				ADMIN,
+			).model,
+			[
+				Rules.Message.ClickedAddRule(),
+				Rules.Message.ClickedSaveRules(),
+				Rules.Message.CompletedSaveRules({
+					result: Result.fail({
+						message: "The grouping rules changed since you opened them.",
+						problems: [],
+					}),
+				}),
+			],
+		)
+		scene(
+			{ update: (model, message) => Rules.update(model, message, ADMIN), view: viewAs(true) },
+			given(refused),
+			expectView(role("button", { name: "Discard edits and load the latest rules" })).toExist(),
+		)
+		const reloaded = run(refused, [
+			Rules.Message.ClickedLoadLatestRules(),
+			Rules.Message.CompletedFetchRules({ result: Result.succeed(newer) }),
+		])
+		expect(reloaded.draft).toEqual([])
+		expect(reloaded.baseUpdatedAt).toBe(NEWER_AT)
+		expect(reloaded.refusal).toBeNull()
+	})
+
 	test("a refused save puts each problem under the rule it names, the rest above the list", () => {
 		const refused = run(loaded(ADMIN), [
 			Rules.Message.ClickedSaveRules(),
