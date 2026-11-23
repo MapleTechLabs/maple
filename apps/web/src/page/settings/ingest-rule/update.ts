@@ -318,6 +318,13 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				? { model: { ...model, estimate: AsyncData.settle(model.estimate, result) } }
 				: { model },
 		ClickedRetryEstimate: () => fetchEstimate(model),
+		ClickedRetryImpact: () =>
+			model.editingId === null
+				? { model }
+				: {
+						model: { ...model, impact: AsyncData.Loading() },
+						commands: [FetchImpact({ window: model.impactWindow })],
+					},
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
