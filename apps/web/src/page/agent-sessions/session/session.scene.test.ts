@@ -217,6 +217,26 @@ describe("agent session detail", () => {
 			)
 		}
 		expect(names(firstPage(context).commands)).not.toContain("FetchAgentSessionScores")
+		// A session with more pages to load waits for them, so the read names every loaded trace.
+		const paging = (() => {
+			const ctx = { ...context, hasLlmEvals: true }
+			const { model } = init({ sessionId: SESSION, search: {} }, ctx)
+			return update(
+				model,
+				Message.CompletedFetchFirstPage({
+					key: model.firstPage.key ?? "",
+					result: Result.succeed({
+						data: wire,
+						nextCursor: Schema.decodeSync(AiSessionSpanCursor)({
+							timestamp: "2026-10-01 12:00:00",
+							spanId: "s1",
+						}),
+					}),
+				}),
+				ctx,
+			)
+		})()
+		expect(names(paging.commands)).not.toContain("FetchAgentSessionScores")
 		const flagged = firstPage({ ...context, hasLlmEvals: true })
 		const read = Arr.findFirst(flagged.commands ?? [], ({ name }) => name === "FetchAgentSessionScores")
 		const traceIds = Option.getOrUndefined(
