@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { IngestRuleId } from "@maple/domain"
 import { Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -14,6 +14,7 @@ import { PreviewSignal, Samples } from "./preview"
 export const RuleData = AsyncData.Schema(V2IngestRule, LoadFailure)
 export const SamplesData = AsyncData.Schema(Samples, LoadFailure)
 export const ImpactData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
+export const EstimateData = AsyncData.Schema(V2IngestRulePreview, LoadFailure)
 
 export const Model = Schema.Struct({
 	/** The rule being edited; `null` creates. */
@@ -37,6 +38,12 @@ export const Model = Schema.Struct({
 	/** What the saved rule did over `impactWindow`; idle while creating. */
 	impact: ImpactData.schema,
 	impactWindow: ImpactWindow,
+	/** The draft counted over the last 24 hours of stored data; idle while it cannot be counted. */
+	estimate: EstimateData.schema,
+	/** The draft the estimate is for (`estimateKeyOf`); a late answer for another is dropped. */
+	estimateKey: Schema.String,
+	/** Goes up with every change of `estimateKey`; only the newest debounce asks. */
+	estimateSeq: Schema.Number,
 	/** Goes up with every impact request; only the newest one's answer is shown. */
 	impactSeq: Schema.Number,
 	grants: Schema.Array(Policy.PermissionName),

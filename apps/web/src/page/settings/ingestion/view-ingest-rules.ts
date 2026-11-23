@@ -27,6 +27,7 @@ import { denialReason } from "../../kit/session-grants"
 import { detail, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
 import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
+import { ruleSuggestions } from "./view-rule-suggestions"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -50,16 +51,26 @@ const gate = (h: H, canManage: boolean, control: Html): Html =>
 const ruleLink = (
 	h: H,
 	canManage: boolean,
-	options: Readonly<{ href: string; variant?: "outline" }>,
+	options: Readonly<{ href: string; variant?: "outline"; ariaLabel?: string }>,
 	children: ReadonlyArray<Html | string>,
-): Html =>
-	canManage
-		? linkButton(h, { size: "sm", ...options }, children)
+): Html => {
+	const label = options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]
+	return canManage
+		? linkButton(
+				h,
+				{ size: "sm", href: options.href, variant: options.variant, attributes: label },
+				children,
+			)
 		: lockedControl(
 				h,
 				DENIAL,
-				button(h, { size: "sm", variant: options.variant, isDisabled: true }, children),
+				button(
+					h,
+					{ size: "sm", variant: options.variant, isDisabled: true, attributes: label },
+					children,
+				),
 			)
+}
 
 const addRuleButton = (h: H, canManage: boolean) =>
 	ruleLink(h, canManage, { href: newRuleHref() }, [
@@ -303,6 +314,9 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 								? rulesEmpty(h, canManage)
 								: rulesTable(h, model, canManage, rules),
 					}),
+					...ruleSuggestions(h, model, (inner, options, children) =>
+						ruleLink(inner, canManage, options, children),
+					),
 				],
 			),
 		],

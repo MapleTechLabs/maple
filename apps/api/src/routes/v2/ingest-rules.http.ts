@@ -5,8 +5,10 @@ import {
 	MapleApiV2,
 	fromV2IngestRuleAction,
 	isoTimestamp,
+	missingReadScopes,
 	paginateArray,
 	toV2IngestRuleAction,
+	V2InsufficientScope,
 	V2ParameterInvalid,
 	type V2IngestRule,
 } from "@maple/domain/http/v2"
@@ -15,6 +17,7 @@ import { timestampMs } from "@maple/backend/platform/time"
 import * as Policy from "@maple/domain/policy"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -46,6 +49,7 @@ const ruleAuditKeys: ReadonlyArray<"name" | "enabled" | "position" | "signals" |
 export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRules", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* IngestRuleService
+		const previews = yield* IngestRulePreviewService
 
 		// A rule drops or rewrites the whole org's telemetry, so writes need ingest_rules:manage.
 		const requireRuleWrite = (tenant: CurrentTenant.TenantSchema) =>
@@ -118,6 +122,79 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 							id: row.ruleId,
 							bucket: isoTimestamp(row.bucket),
 							...counts(row),
+						})),
+					}
+				}),
+			)
+			.handle("suggestions", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const now = yield* Clock.currentTimeMillis
+					const result = yield* previews.suggestions(tenant, now, {
+						logs: missingReadScopes(tenant.scopes, ["logs"]).length === 0,
+						traces: missingReadScopes(tenant.scopes, ["traces"]).length === 0,
+					})
+					return {
+						object: "ingest_rule_suggestions" as const,
+						start_time: isoTimestamp(result.startMs),
+						end_time: isoTimestamp(result.endMs),
+						data: Arr.map(result.suggestions, (entry) => ({
+							signal: entry.signal,
+							service_name: entry.serviceName,
+							level: entry.level,
+							span_name: entry.spanName,
+							reason: entry.reason,
+							keep_percent: entry.keepPercent,
+							records: Math.round(entry.records),
+							bytes: Math.round(entry.bytes),
+							saved_bytes: Math.round(entry.savedBytes),
+							share: entry.share,
+						})),
+					}
+				}),
+			)
+			.handle("preview", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					// The counts answer questions about stored telemetry, so a scoped key must read it.
+					const missing = missingReadScopes(
+						tenant.scopes,
+						Arr.filter(payload.signals, (signal) => signal === "logs" || signal === "traces"),
+					)
+					if (missing.length > 0) {
+						return yield* V2InsufficientScope.make(
+							`Previewing this rule requires ${Arr.join(
+								Arr.map(missing, (family) => `"${family}:read"`),
+								", ",
+							)}, because it counts the telemetry it reads.`,
+						)
+					}
+					const now = yield* Clock.currentTimeMillis
+					const result = yield* previews.preview(
+						tenant,
+						{
+							signals: payload.signals,
+							conditions: payload.conditions ?? [],
+							action: fromV2IngestRuleAction(payload.action),
+						},
+						now,
+					)
+					return {
+						object: "ingest_rule_preview" as const,
+						start_time: isoTimestamp(result.startMs),
+						end_time: isoTimestamp(result.endMs),
+						signals: Arr.map(result.signals, (entry) => ({
+							signal: entry.signal,
+							scanned_minutes: entry.scannedMinutes,
+							stored: entry.stored,
+							matched: entry.matched,
+							estimated_dropped: entry.estimatedDropped,
+							estimated_dropped_bytes: entry.estimatedDroppedBytes,
+							services: Arr.map(entry.services, (service) => ({
+								service_name: service.serviceName,
+								stored: service.stored,
+								matched: service.matched,
+							})),
 						})),
 					}
 				}),

@@ -11,7 +11,10 @@ export const page = definePage(
 	{ Model, Message },
 	{
 		routes: ["IngestRuleNew", "IngestRule"],
-		key: (route) => (route._tag === "IngestRule" ? route.ruleId : `new:${route.search.template ?? ""}`),
+		key: (route) =>
+			route._tag === "IngestRule"
+				? route.ruleId
+				: `new:${route.search.template ?? ""}:${route.search.service ?? ""}:${route.search.level ?? ""}:${route.search.span ?? ""}:${route.search.keep ?? ""}`,
 		init,
 		update,
 		view,
