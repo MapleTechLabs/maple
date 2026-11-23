@@ -1,8 +1,8 @@
 diff --git a/index.d.ts b/index.d.ts
-index d83b0f5..9be09a6 100755
+index 37e5054a77a6edd6073e056579fc00b776a0a0e7..25c2e46ec6b5b3c37254c15915e2a482c7a3f9f6 100755
 --- a/index.d.ts
 +++ b/index.d.ts
-@@ -429,9 +429,7 @@ declare const scheduler: Scheduler;
+@@ -423,9 +423,7 @@ declare const scheduler: Scheduler;
  declare const performance: Performance;
  declare const Cloudflare: Cloudflare;
  declare const origin: string;
