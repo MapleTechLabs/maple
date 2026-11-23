@@ -2639,6 +2639,10 @@ export const personPropertiesEventsMv = defineMaterializedView("person_propertie
 				value: "Attributes[OpKey]",
 				userId: "UserId",
 				groupId: "GroupId",
+				// Page views come in on a sessions-only key, and trace rows carry their span's
+				// operations, which `person_properties_traces_mv` applies. Qualified: `Kind` is
+				// also this view's own output alias.
+				where: "product_events.Kind != 'navigation' AND Source != 'trace'",
 			}),
 		}),
 	],
@@ -2673,10 +2677,11 @@ export const personPropertiesTracesMv = defineMaterializedView("person_propertie
 
 /**
  * Applies browser `identify()` traits and the group's name to `person_properties`
- * as `set`s stamped with the session's last activity. A session's start and end
- * rows both arrive here; the merge keeps one value. `UserEmail` and `UserName` stay
- * out: users' PII is kept 90 days (`user_activity_hourly`), and this table keeps a
- * year.
+ * as `set`s stamped with the session's start: every row of a session repeats the
+ * identity it started with, so a later stamp would let a closing session overwrite
+ * a backend `set` made during it. A trait set to `''` is stored as `''`.
+ * `UserEmail` and `UserName` stay out: users' PII is kept 90 days
+ * (`user_activity_hourly`), and this table keeps a year.
  */
 export const personPropertiesTraitsMv = defineMaterializedView("person_properties_traits_mv", {
 	description:
@@ -2691,10 +2696,10 @@ export const personPropertiesTraitsMv = defineMaterializedView("person_propertie
           Trait.1 AS Kind,
           if(Trait.1 = 'group', GroupId, UserId) AS Id,
           Trait.2 AS Key,
-          max(ifNull(EndTime, StartTime)) AS SetAt,
-          argMaxIfState(Trait.3, ifNull(EndTime, StartTime), toUInt8(1)) AS SetValue,
+          max(StartTime) AS SetAt,
+          argMaxIfState(Trait.3, StartTime, toUInt8(1)) AS SetValue,
           ${PERSON_PROPERTY_NEVER_SQL} AS OnceAt,
-          argMinIfState('', ifNull(EndTime, StartTime), toUInt8(0)) AS OnceValue,
+          argMinIfState('', StartTime, toUInt8(0)) AS OnceValue,
           toDateTime64(0, 9, 'UTC') AS UnsetAt,
           max(ifNull(EndTime, StartTime)) AS LastSeen
         FROM session_replays
@@ -2702,7 +2707,7 @@ export const personPropertiesTraitsMv = defineMaterializedView("person_propertie
           arrayMap((k, v) -> ('user', k, v), mapKeys(UserTraits), mapValues(UserTraits)),
           [('group', 'name', GroupName)]
         ) AS Trait
-        WHERE if(Trait.1 = 'group', GroupId, UserId) != '' AND Trait.2 != '' AND Trait.3 != ''
+        WHERE if(Trait.1 = 'group', GroupId, UserId) != '' AND Trait.2 != '' AND (Trait.1 = 'user' OR Trait.3 != '')
         GROUP BY OrgId, Trait.1, if(Trait.1 = 'group', GroupId, UserId), Trait.2
       `,
 		}),
