@@ -1,3 +1,4 @@
+import { githubAuditCategoryStates } from "@maple/domain/github-audit"
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus } from "@maple/domain/http"
 import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
@@ -219,6 +220,7 @@ describe("GitHub repository discovery", () => {
 			repositorySelection: "selected",
 			ciTracesEnabled: true,
 			auditLogEnabled: true,
+			auditCategories: githubAuditCategoryStates({}),
 			repositories: [],
 			repositoryDiscovery: { _tag: "Pending", requestId: "discovery-1" },
 		})

@@ -1005,6 +1005,10 @@ export function getCustomChartServiceSparklines({ data }: { data: GetCustomChart
 	return getCustomChartServiceSparklinesEffect({ data })
 }
 
+/** The services-list sparkline's bucket length: a per-bucket count over it is a per-second rate. */
+export const serviceSparklineBucketSeconds = (startTime?: string, endTime?: string): number =>
+	quantizeToMinute(computeBucketSeconds(startTime, endTime))
+
 const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomChartServiceSparklines")(
 	function* ({ data }: { data: GetCustomChartServiceSparklinesInput }) {
 		const input = yield* decodeInput(
@@ -1023,7 +1027,7 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 		// same value. If the server rounded and the client didn't, the returned
 		// buckets would miss the client's timeline and every sparkline would render
 		// empty.
-		const bucketSeconds = quantizeToMinute(computeBucketSeconds(input.startTime, input.endTime))
+		const bucketSeconds = serviceSparklineBucketSeconds(input.startTime, input.endTime)
 		const reqOpts = {
 			startTime: input.startTime,
 			endTime: input.endTime,

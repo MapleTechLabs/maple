@@ -10,6 +10,7 @@ import {
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { rollingNumber } from "./rolling-number"
 import { Array as Arr, String as Str } from "effect"
 
 // Small value components: latency, error rate and the service dot.
@@ -62,13 +63,18 @@ export const latencyValue = <M>(
 	)
 }
 
+/** An error rate in its severity tone; `isRolling` rolls the digits when the rate changes. */
 export const errorRateValue = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ rate: number; className?: string }>,
+	options: Readonly<{ rate: number; isRolling?: boolean; className?: string }>,
 ): Html =>
 	h.span(
 		[h.Class(cn("tabular-nums", ERROR_RATE_TEXT[errorRateLevel(options.rate)], options.className))],
-		[formatErrorRate(options.rate)],
+		[
+			options.isRolling === true
+				? rollingNumber(h, { text: formatErrorRate(options.rate) })
+				: formatErrorRate(options.rate),
+		],
 	)
 
 export type ServiceDotSize = "sm" | "default" | "md" | "lg"

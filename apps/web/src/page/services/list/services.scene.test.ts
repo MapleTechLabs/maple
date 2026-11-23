@@ -17,6 +17,9 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { formatErrorRate, formatThroughput } from "@maple/ui/lib/format"
+import * as Chart from "@maple/views/charts/chart"
+import { hoveredPointLabel, MountSparkline } from "@maple/views/charts/sparkline"
 import { ThemeMessage, ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
@@ -30,7 +33,7 @@ import {
 	MountTable,
 } from "./command"
 import { Message } from "./message"
-import type { Model, ServiceRow } from "./model"
+import type { Model, ServiceRow, Sparklines } from "./model"
 import { init, overviewInput, routeChanged, ScrollFocusedRow, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -71,12 +74,15 @@ const windowed = (): Model => {
 	return pageUpdate(entered, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" })).model
 }
 
-/** Everything the table blocks on has loaded, with `rows` and no sparkline series. */
-const loaded = (rows: ReadonlyArray<ServiceRow>): Model => {
+/** Everything the table blocks on has loaded, with `rows` and the given sparkline series (none by default). */
+const loaded = (rows: ReadonlyArray<ServiceRow>, sparklines: Sparklines = {}): Model => {
 	const base = windowed()
 	const steps: ReadonlyArray<Message> = [
 		Message.CompletedFetchOverview({ key: base.overview.key ?? "", result: Result.succeed(rows) }),
-		Message.CompletedFetchSparklines({ key: base.sparklines.key ?? "", result: Result.succeed({}) }),
+		Message.CompletedFetchSparklines({
+			key: base.sparklines.key ?? "",
+			result: Result.succeed(sparklines),
+		}),
 		Message.CompletedFetchAnomalies({ key: base.anomalies.key ?? "", result: Result.succeed([]) }),
 		Message.CompletedFetchFacets({
 			key: base.facets.key ?? "",
@@ -358,5 +364,86 @@ describe("services list keys", () => {
 		const focused = pageUpdate(loaded(rows), Message.PressedListKey({ key: "j" })).model
 		const filtered = routeChanged(focused, { search: { environments: ["staging"] } }, context).model
 		expect(filtered.focusedIndex).toBeNull()
+	})
+
+	describe("hovering a sparkline", () => {
+		const BUCKETS = ["2026-10-01 00:00:00", "2026-10-01 01:00:00", "2026-10-01 02:00:00"]
+		const series = { buckets: BUCKETS, throughput: [0.5, 2, 1], errorRate: [0, 0.25, 0] }
+		/** The pointer on point 1 of a row's sparkline, as its Mount reports it. */
+		const hover = (slotId: string) =>
+			Message.GotSparklineMessage({
+				slotId,
+				message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some("1") }),
+			})
+		/** Painted, with each row's two sparklines (error rate, throughput) mounted. */
+		const ready = (model: Model, rows = 1) => [
+			given(model),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			...Arr.makeBy(rows * 2, () => Mount.resolve(MountSparkline, Chart.Message.CompletedMountChart())),
+		]
+		const hoveredTime = Option.getOrThrow(hoveredPointLabel(BUCKETS, 1, "UTC"))
+
+		test("a service's only row shows the hovered point's throughput, error rate and time", () => {
+			const model = loaded([row("checkout")], { checkout: series })
+			const thr = pageUpdate(model, hover("thr-/production/checkout--production")).model
+			scene(
+				{ update: pageUpdate, view },
+				...ready(thr),
+				expectView(text(formatThroughput(2, "/s"))).toExist(),
+				expectView(text(hoveredTime)).toExist(),
+			)
+			const err = pageUpdate(model, hover("err-/production/checkout--production")).model
+			scene(
+				{ update: pageUpdate, view },
+				...ready(err),
+				expectView(text(formatErrorRate(0.25))).toExist(),
+			)
+		})
+
+		test("a service listed in two environments keeps each row's own throughput", () => {
+			const model = loaded([{ ...row("checkout"), throughput: 7 }, row("checkout", "staging")], {
+				checkout: series,
+			})
+			const hovered = pageUpdate(model, hover("thr-/production/checkout--production")).model
+			scene(
+				{ update: pageUpdate, view },
+				...ready(hovered, 2),
+				expectView(text(formatThroughput(7, "/s"))).toExist(),
+				expectView(text(formatThroughput(2, "/s"))).toBeAbsent(),
+				expectView(text(hoveredTime)).toBeAbsent(),
+			)
+		})
+
+		test("a sampled row keeps its weighted error rate", () => {
+			const model = loaded([{ ...row("checkout"), hasSampling: true, errorRate: 0.01 }], {
+				checkout: series,
+			})
+			const hovered = pageUpdate(model, hover("err-/production/checkout--production")).model
+			scene(
+				{ update: pageUpdate, view },
+				...ready(hovered),
+				expectView(text(formatErrorRate(0.01))).toExist(),
+				expectView(text(formatErrorRate(0.25))).toBeAbsent(),
+			)
+		})
+
+		test("leaving the sparkline puts the row's value back", () => {
+			const model = loaded([{ ...row("checkout"), throughput: 7 }], { checkout: series })
+			const slotId = "thr-/production/checkout--production"
+			const hovered = pageUpdate(model, hover(slotId)).model
+			const left = pageUpdate(
+				hovered,
+				Message.GotSparklineMessage({
+					slotId,
+					message: Chart.Message.ChangedChartFocus({ maybeKey: Option.none() }),
+				}),
+			).model
+			scene(
+				{ update: pageUpdate, view },
+				...ready(left),
+				expectView(text(formatThroughput(7, "/s"))).toExist(),
+			)
+		})
 	})
 })

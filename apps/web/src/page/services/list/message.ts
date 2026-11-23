@@ -67,7 +67,7 @@ export const Message = defineMessageUnion({
 	CompletedScrollFocusedRow: {},
 	ClickedServiceLink: { url: Schema.String },
 	GotFilterSectionsMessage: { message: FilterSections.Message },
-	GotSparklineMessage: { message: Chart.Message },
+	GotSparklineMessage: { slotId: Schema.String, message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRowTooltipMessage: { tooltip: RowTooltip, message: Tooltip.Message },
 	...CommitCardMessages,

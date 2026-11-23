@@ -145,6 +145,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/removable-chip.ts` `removableChip`: `RemovableChip`: an active filter as a small mono chip, its label then an x that removes it (the infra filter rails).
 - `packages/views/src/ui/resizable.ts` `panelId`, `handleId`, `resize`, `view` (stateful: Model, init, update): `react-resizable-panels` 4 (`@maple/ui/resizable`): one panel group, sizes in percent.
 - `packages/views/src/ui/reveal-icon.ts` `revealIcon`: `revealIcon`: a muted trailing icon (an external-link or "go" arrow) hidden until its `group` row is hovered or keyboard-focused.
+- `packages/views/src/ui/rolling-number.ts` `rollingNumber`: `RollingNumber`: a formatted number whose digits roll to their new value when it changes.
 - `packages/views/src/ui/row-actions-menu.ts` `rowActionsMenu`: A row's overflow menu of actions.
 - `packages/views/src/ui/row-focus.ts` `rowFocusAttributes`: The keyboard-focused row: the `data-focused` marker a row kit sets and the look it draws for it.
 - `packages/views/src/ui/rule.ts` `stripClass`, `strip`, `dividedList`, `fillRule`: Hairline rules: a `strip` (a band inside a panel or list, ruled off from its neighbours), a `dividedList` (a bordered box with a rule between its items) and a `fillRule`.

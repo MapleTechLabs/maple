@@ -123,6 +123,7 @@ const scanAndCompare = (fullName: string) =>
 			suspendedAt: null,
 			ciTracesEnabled: false,
 			auditLogEnabled: true,
+			auditCategories: {},
 			installedByUserId: "user_harness",
 			createdAt: 0,
 			updatedAt: 0,

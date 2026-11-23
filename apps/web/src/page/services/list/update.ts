@@ -6,6 +6,8 @@ import type { RequestMode } from "@maple/views/data/keyed"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import * as Chart from "@maple/views/charts/chart"
+import * as Sparkline from "@maple/views/charts/sparkline"
 import { emptyOnFailure } from "../../../data/enrichment"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -199,6 +201,16 @@ export const summaryOf = (model: Model) => {
 		: undefined
 }
 
+/** A sparkline's hover: its point while the pointer is on it, cleared when it leaves that sparkline. */
+const hoverSparkline = (model: Model, slotId: string, message: Chart.Message): Model =>
+	message._tag !== "ChangedChartFocus"
+		? model
+		: Option.match(Sparkline.hoveredIndex(Chart.update(Chart.init(), message).model), {
+				onSome: (index) => ({ ...model, hoveredSparkline: { slotId, index } }),
+				onNone: () =>
+					model.hoveredSparkline?.slotId === slotId ? { ...model, hoveredSparkline: null } : model,
+			})
+
 /** `rowRevision` after a slot settled: a new result is a new prop for every row. */
 const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keyed<A, E>): number =>
 	before === after ? model.rowRevision : model.rowRevision + 1
@@ -287,6 +299,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		refreshVersion: 0,
 		isReloading: false,
 		focusedIndex: null,
+		hoveredSparkline: null,
 		overview: Keyed.idle(),
 		sparklines: Keyed.idle(),
 		rowRevision: 0,
@@ -510,7 +523,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		GotSparklineMessage: () => ({ model }),
+		GotSparklineMessage: ({ slotId, message }) => ({ model: hoverSparkline(model, slotId, message) }),
 		GotRowTooltipMessage: ({ tooltip, message }) => rowTooltipMessage(model, tooltip, message),
 		GotCommitCardMessage: ({ message }) => commitCardMessage(model, message),
 		ElapsedCommitArm: ({ sha, generation }) => elapsedCommitArm(model, context.orgId, sha, generation),
