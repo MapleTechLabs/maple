@@ -3,7 +3,8 @@ title: "Google Cloud with OpenTelemetry"
 description: "Which telemetry to send from your workloads over OpenTelemetry and which to collect through the Google Cloud connection, for GKE, Cloud Run and Compute Engine."
 group: "Integrations"
 order: 8
-navLabel: "Google Cloud + OpenTelemetry"
+navLabel: "Google Cloud + OTel"
+icon: "googlecloud"
 ---
 
 Your workloads send traces, logs and metrics straight to Maple over OpenTelemetry. The [Google Cloud connection](/docs/integrations/gcp) forwards Cloud Logging entries and reads Cloud Monitoring metrics for everything your code never sees. Set up both, and keep container logs on the OpenTelemetry side.

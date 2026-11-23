@@ -3,6 +3,7 @@ title: "Railway"
 description: "Paste a Railway account or workspace token. Maple polls CPU, memory, network, and disk metrics for every service in every environment the token can see, every 5 minutes."
 group: "Integrations"
 order: 3.7
+icon: "railway"
 ---
 
 The Railway integration reads resource metrics for your Railway services with an API token. Maple polls Railway's metrics API every 5 minutes, one call per environment, and stores the results as OpenTelemetry gauges. You get CPU and memory per replica, network traffic in and out, and volume and ephemeral disk usage. The data appears under **Infrastructure → Railway** and in the [metrics explorer](/docs/explore/metrics). You do not need to install an agent or change your services.

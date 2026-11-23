@@ -3,6 +3,7 @@ title: "AWS"
 description: "Connect an AWS account with a read-only IAM role, deployed as a CloudFormation stack from AWS CloudShell, in the console, or with Terraform. Maple assumes the role with short-lived OIDC tokens it signs for your connection, and stores no AWS secret."
 group: "Integrations"
 order: 11
+icon: "aws"
 ---
 
 The AWS integration connects one AWS account to Maple through an IAM role in that account. The setup registers Maple as an **OIDC identity provider** in the account (`https://api.maple.dev/oidc/aws`, or `https://api.eu.maple.dev/oidc/aws` on the EU instance), the same mechanism GitHub Actions uses to reach AWS. To assume the role, Maple signs a token valid for five minutes and exchanges it with AWS STS for a 15-minute session. The role trusts only tokens whose subject is your connection (`aws-connection:<id>`), so no other Maple organization or connection can assume it. Maple stores no access key, secret or session for your account, and holds no long-lived AWS credential of its own.
