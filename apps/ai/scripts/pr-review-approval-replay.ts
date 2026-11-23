@@ -1,8 +1,8 @@
 /**
  * Replays the automatic approval gate over a repository's past reviews.
  *
- *   bun scripts/pr-review-approval-replay.ts fetch octo/shop --limit 200 --out /tmp/approval
- *   bun scripts/pr-review-approval-replay.ts score --dir /tmp/approval [--risk medium]
+ *   bun run --cwd apps/ai review:approval-replay fetch octo/shop --limit 200 --out /tmp/approval
+ *   bun run --cwd apps/ai review:approval-replay score --dir /tmp/approval [--risk medium]
  *
  * `fetch` caches, per pull request, the reviewer's last summary comment, its file listing and its
  * reviews (your `gh` login). `score` reads each comment's "Not auto-approved" reasons, which are
