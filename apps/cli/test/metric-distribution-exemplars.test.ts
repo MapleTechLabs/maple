@@ -444,9 +444,10 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		expect(exemplars({ serviceName: "worker" })).toEqual([])
 	})
 
-	test("the limit takes every bucket's top exemplar before any bucket's second", () => {
-		// 0:00 holds 1000, 500 and 50; 1:00 holds only 7, which a cap of two by value would drop.
-		expect(Arr.map(exemplars({ limit: 2 }), (e) => e.value)).toEqual([1_000, 7])
+	test("covering buckets, the limit takes every bucket's top exemplar before any bucket's second", () => {
+		// 0:00 holds 1000, 500 and 50; 1:00 holds only 7, which a cap of two by value drops.
+		expect(Arr.map(exemplars({ limit: 2, coverBuckets: true }), (e) => e.value)).toEqual([1_000, 7])
+		expect(Arr.map(exemplars({ limit: 2 }), (e) => e.value)).toEqual([1_000, 500])
 	})
 
 	test("an exemplar exported before the window is a repeat inside it, not a new one at its start", () => {

@@ -4352,7 +4352,7 @@ SELECT
         WHERE summed.dCount > 0
         ORDER BY bucket ASC
 
--- builder:metrics:metricExemplarsQuery:cell  [eb77c0e8]
+-- builder:metrics:metricExemplarsQuery:cell  [e82dc705]
 SELECT
           kept.bucket AS bucket,
           kept.timestamp AS timestamp,
@@ -4405,7 +4405,7 @@ SELECT
           AND distinct_exemplars.value > 0.1
           AND distinct_exemplars.value <= 1) AS ranked
         WHERE ranked.exemplarRank <= 20
-        ORDER BY exemplarRank ASC, value DESC
+        ORDER BY value DESC
         LIMIT 500) AS kept
         ORDER BY value DESC
 

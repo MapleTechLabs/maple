@@ -928,6 +928,11 @@ export interface MetricExemplarsOpts extends MetricsFilterOpts {
 	readonly perBucket?: number
 	readonly limit?: number
 	/**
+	 * The cap takes every bucket's top exemplar before any bucket's second, so a chart keeps a
+	 * dot per bucket. Off, it keeps the highest values overall, which a ranked list wants.
+	 */
+	readonly coverBuckets?: boolean
+	/**
 	 * One heatmap cell: its time bucket (the `cellBucket` param) and value range, (lower, upper];
 	 * a null edge is open, and 0 to 0 is the zero bucket.
 	 */
@@ -1020,9 +1025,8 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			$.firstExportedAt.gte(param.dateTime("startTime")),
 			...cellConditions($, opts.cell, opts.metricType),
 		])
-	// The cap takes every bucket's top exemplar before any bucket's second, so a wide window
-	// keeps a dot on each bucket; the rows then read highest first.
-	const kept = fromQuery(ranked, "ranked")
+	// Either order picks what the cap keeps; the kept rows then read highest first.
+	const capped = fromQuery(ranked, "ranked")
 		.select(($) => ({
 			bucket: $.bucket,
 			timestamp: $.timestamp,
@@ -1033,8 +1037,11 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			exemplarRank: $.exemplarRank,
 		}))
 		.where(($) => [$.exemplarRank.lte(opts.perBucket ?? METRIC_EXEMPLARS_PER_BUCKET)])
-		.orderBy(["exemplarRank", "asc"], ["value", "desc"])
-		.limit(opts.limit ?? METRIC_EXEMPLARS_LIMIT)
+	const kept = (
+		opts.coverBuckets === true
+			? capped.orderBy(["exemplarRank", "asc"], ["value", "desc"])
+			: capped.orderBy(["value", "desc"])
+	).limit(opts.limit ?? METRIC_EXEMPLARS_LIMIT)
 	return fromQuery(kept, "kept")
 		.select(($) => ({
 			bucket: $.bucket,

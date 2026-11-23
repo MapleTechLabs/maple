@@ -340,6 +340,8 @@ export const metricExemplars = defineQuery({
 				...metricFilterOpts(payload.filters),
 				perBucket: payload.perBucket,
 				limit: payload.limit,
+				// The chart's read places one dot per bucket; a cell's read lists its highest values.
+				coverBuckets: payload.cell === undefined,
 				...(payload.cell === undefined
 					? undefined
 					: { cell: { lowerBound: payload.cell.lowerBound, upperBound: payload.cell.upperBound } }),
