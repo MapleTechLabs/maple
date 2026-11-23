@@ -6,6 +6,7 @@ import {
 	ErrorIssueCommentRequest,
 	ErrorIssueId,
 	ErrorIssueLinkPullRequestRequest,
+	ErrorIssueMergeRequest,
 	ErrorIssuePullRequestId,
 	ErrorIssueReleaseRequest,
 	ErrorIssueSetSeverityRequest,
@@ -20,6 +21,7 @@ import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-
 import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { IssueWrite, Message } from "./message"
 import { fetchSessionGrants } from "../../kit/session-grants"
+import { refusalFailure } from "../../kit/refusal"
 
 export const ResolveWindow = resolveWindowCommand("ResolveIssueWindow", Message.CompletedResolveWindow)
 
@@ -268,4 +270,63 @@ export const EvaluateEscalation = Command.define("EvaluateErrorIssueEscalation",
 			})
 			return { outcome: preview.outcome, destinationIds: preview.destinationIds }
 		}).pipe(settleTo((result) => Message.CompletedEvaluateEscalation({ severity, pick, result }))),
+})
+
+/** The issue's fingerprints and the rule that put each one here. */
+export const FetchGrouping = Command.define("FetchErrorIssueGrouping", {
+	args: { key: Schema.String, issueId: ErrorIssueId },
+	messages: [Message.CompletedFetchGrouping],
+	execute: ({ key, issueId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.errors.getIssueGrouping({ params: { issueId } })
+		}).pipe(settleTo((result) => Message.CompletedFetchGrouping({ key, result }))),
+})
+
+/** Open issues in the same service and type with a similar message. */
+export const FetchSimilar = Command.define("FetchErrorIssueSimilar", {
+	args: { key: Schema.String, issueId: ErrorIssueId },
+	messages: [Message.CompletedFetchSimilar],
+	execute: ({ key, issueId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			return yield* client.errors.listSimilarIssues({ params: { issueId } })
+		}).pipe(settleTo((result) => Message.CompletedFetchSimilar({ key, result }))),
+})
+
+/** Splits a grouped fingerprint out into an issue of its own; it is never grouped again. */
+export const SplitOutFingerprint = Command.define("SplitOutErrorIssueFingerprint", {
+	args: { issueId: ErrorIssueId, fingerprintHash: Schema.String },
+	messages: [Message.CompletedSplitOut],
+	execute: ({ issueId, fingerprintHash }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.detachIssueFingerprint({ params: { issueId, fingerprintHash } })
+			return null
+		}).pipe(
+			Effect.catchTag("@maple/http/errors/ErrorValidationError", (error) =>
+				Effect.fail(refusalFailure("Couldn't split out the fingerprint", error.message)),
+			),
+			settleTo((result) => Message.CompletedSplitOut({ fingerprintHash, result })),
+		),
+})
+
+/** Folds a similar issue into this one. */
+export const MergeSimilarIssue = Command.define("MergeSimilarErrorIssue", {
+	args: { issueId: ErrorIssueId, sourceIssueId: ErrorIssueId },
+	messages: [Message.CompletedMergeSimilar],
+	execute: ({ issueId, sourceIssueId }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.errors.mergeIssues({
+				params: { issueId },
+				payload: new ErrorIssueMergeRequest({ sourceIssueIds: [sourceIssueId] }),
+			})
+			return null
+		}).pipe(
+			Effect.catchTag("@maple/http/errors/ErrorValidationError", (error) =>
+				Effect.fail(refusalFailure("Couldn't merge the issue", error.message)),
+			),
+			settleTo((result) => Message.CompletedMergeSimilar({ sourceIssueId, result })),
+		),
 })

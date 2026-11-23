@@ -226,7 +226,7 @@ export const settingsTabValues = [
 	"automation",
 ] as const
 
-export const ISSUE_TABS = ["overview", "occurrences", "activity"] as const
+export const ISSUE_TABS = ["overview", "occurrences", "activity", "grouping"] as const
 export const INVESTIGATION_TABS = ["overview", "evidence", "chat", "transcript"] as const
 
 const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))

@@ -309,6 +309,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/query-panel-bar.ts` `queryPanelBar`: A query panel's header bar on the sunken wash: its collapse toggle, query badge, source and actions.
 - `apps/web/src/page/kit/recommendations.ts` `listRecommendations`, `listAttributeMappings`: Instrumentation recommendations, as the recommendation page and Settings > Ingestion both show them: the reads and the kind and status words.
 - `apps/web/src/page/kit/refresh-controls.ts` `formatRefreshInterval`, `refreshControls`: Reload joined to the auto-refresh cadence menu.
+- `apps/web/src/page/kit/refusal.ts` `refusalFailure`: A request the API refused with its own words (a 400 validation or a 403), kept as a LoadFailure so its message shows; those errors are not public bodies, so `settleTo` would rea...
 - `apps/web/src/page/kit/refused-badge.ts` `refusedBadge`: The mark on an audit entry that did not go through: a crossed circle and what happened ("Denied", "Failed").
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: A timestamp as relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`

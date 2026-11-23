@@ -94,6 +94,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/grouping-rules",
+		title: "Error grouping rules",
+		description:
+			"Settings > Automation's error grouping rules editor: merge and frame rules, none yet, loading, a failed read, a refused save with a problem under each rule it names, and a member who cannot edit (`?state=populated|empty|loading|error|invalid|member`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/domains",
 		title: "Verified domains",
 		description:
@@ -623,7 +631,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity).",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. The Grouping tab shows every fingerprint rule and source, a pinned fingerprint, a long frame list and similar issues (?grouping=populated|long|empty|loading|error). As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity|grouping).",
 		kind: "lab",
 		session: "none",
 	},

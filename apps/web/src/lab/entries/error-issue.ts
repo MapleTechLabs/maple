@@ -20,11 +20,22 @@ import { Model } from "../../page/errors/issue/model"
 import { init as pageInit, update as pageUpdate } from "../../page/errors/issue/update"
 import { view as pageView } from "../../page/errors/issue/view"
 import { defineShellLab } from "../shell-lab"
+import { refusalFailure } from "../../page/kit/refusal"
+import {
+	emptyGrouping,
+	emptySimilar,
+	GROUPING_STATES,
+	type GroupingState,
+	longGrouping,
+	populatedGrouping,
+	populatedSimilar,
+} from "../error-grouping-fixture"
 
 // `/lab/error-issue`: the error issue page over one fixture issue, a surging high-severity error
 // with a regression, as a member or an analyst, who reads it and gets no triage control
-// (`?role=member|analyst&tab=overview|occurrences|activity`; `context=none` drops the samples' release
-// and user, for the table's setup prompt). API Commands are dropped; the page
+// (`?role=member|analyst&tab=overview|occurrences|activity|grouping`; `context=none` drops the samples'
+// release and user, for the table's setup prompt; `grouping=populated|long|empty|loading|error` picks
+// what the Grouping tab's reads answer). API Commands are dropped; the page
 // is sent the answers its reads would get.
 
 const context: PageContext = {
@@ -159,12 +170,13 @@ const send = (step: Step, message: Message): Step => {
 }
 
 const ROLES = ["member", "analyst"] as const
-const TABS = ["overview", "occurrences", "activity"] as const
+const TABS = ["overview", "occurrences", "activity", "grouping"] as const
 const CONTEXTS = ["full", "none"] as const
 const Flags = Schema.Struct({
 	role: Schema.Literals(ROLES),
 	tab: Schema.Literals(TABS),
 	context: Schema.Literals(CONTEXTS),
+	grouping: Schema.Literals(GROUPING_STATES),
 })
 type Flags = typeof Flags.Type
 type LabRole = Flags["role"]
@@ -173,6 +185,25 @@ type LabTab = Flags["tab"]
 const decodeRole = Schema.decodeUnknownOption(Schema.Literals(ROLES))
 const decodeTab = Schema.decodeUnknownOption(Schema.Literals(TABS))
 const decodeContext = Schema.decodeUnknownOption(Schema.Literals(CONTEXTS))
+const decodeGrouping = Schema.decodeUnknownOption(Schema.Literals(GROUPING_STATES))
+
+const LAB_FAILURE = toLoadFailure("Maple couldn't query your telemetry.")
+
+/** What the Grouping tab's two reads answer in each lab state; `null` leaves a read in flight. */
+const groupingAnswers = (state: GroupingState) => {
+	switch (state) {
+		case "populated":
+			return { grouping: Result.succeed(populatedGrouping), similar: Result.succeed(populatedSimilar) }
+		case "long":
+			return { grouping: Result.succeed(longGrouping), similar: Result.succeed(emptySimilar) }
+		case "empty":
+			return { grouping: Result.succeed(emptyGrouping), similar: Result.succeed(emptySimilar) }
+		case "loading":
+			return null
+		case "error":
+			return { grouping: Result.fail(LAB_FAILURE), similar: Result.fail(LAB_FAILURE) }
+	}
+}
 
 const init = (flags: Flags) => {
 	const entered = pageInit({ issueId, search: flags.tab === "overview" ? {} : { tab: flags.tab } }, context)
@@ -189,7 +220,7 @@ const init = (flags: Flags) => {
 	const keyOf = (
 		field: "detail" | "events" | "pullRequests" | "verifications" | "escalations" | "affectedUsers",
 	) => windowed.model[field].key ?? ""
-	return Arr.reduce(
+	const loaded = Arr.reduce(
 		[
 			Message.CompletedFetchDetail({
 				key: keyOf("detail"),
@@ -221,6 +252,20 @@ const init = (flags: Flags) => {
 		windowed,
 		send,
 	)
+	// The Grouping tab reads once the detail is in; answer those reads with the picked state.
+	const answers = groupingAnswers(flags.grouping)
+	if (answers === null || flags.tab !== "grouping") return loaded
+	return Arr.reduce(
+		[
+			Message.CompletedFetchGrouping({
+				key: loaded.model.grouping.key ?? "",
+				result: answers.grouping,
+			}),
+			Message.CompletedFetchSimilar({ key: loaded.model.similar.key ?? "", result: answers.similar }),
+		],
+		loaded,
+		send,
+	)
 }
 
 /** The lab has no API, so a started investigation is answered at once with the failure the page shows. */
@@ -228,8 +273,35 @@ const NO_API = Message.CompletedCreateInvestigation({
 	result: Result.fail(toLoadFailure("The lab has no API to start an investigation.")),
 })
 
+/** A split or merge the lab cannot send settles at once with the message the page shows. */
+const groupingAnswer = (message: Message): Message | null => {
+	if (message._tag === "ClickedSplitOut")
+		return Message.CompletedSplitOut({
+			fingerprintHash: message.fingerprintHash,
+			result: Result.fail(
+				refusalFailure(
+					"Couldn't split out the fingerprint",
+					"The lab has no API to split out a fingerprint.",
+				),
+			),
+		})
+	if (message._tag === "ClickedMergeSimilar")
+		return Message.CompletedMergeSimilar({
+			sourceIssueId: message.sourceIssueId,
+			result: Result.fail(
+				refusalFailure("Couldn't merge the issue", "The lab has no API to merge issues."),
+			),
+		})
+	return null
+}
+
 const update = (model: Model, message: Message) => {
 	const next = pageUpdate(model, message, context)
+	const answer = groupingAnswer(message)
+	if (answer !== null) {
+		const settled = pageUpdate(next.model, answer, context)
+		return { model: settled.model, commands: Arr.filter(settled.commands ?? [], isLocalCommand) }
+	}
 	const commands = next.commands ?? []
 	if (!Arr.some(commands, (command) => command.name === "CreateErrorIssueInvestigation"))
 		return { model: next.model, commands: Arr.filter(commands, isLocalCommand) }
@@ -259,6 +331,10 @@ export const lab = defineShellLab("Error issue", {
 			role: Option.getOrElse(decodeRole(params.get("role")), (): LabRole => "member"),
 			tab: Option.getOrElse(decodeTab(params.get("tab")), (): LabTab => "overview"),
 			context: Option.getOrElse(decodeContext(params.get("context")), (): Flags["context"] => "full"),
+			grouping: Option.getOrElse(
+				decodeGrouping(params.get("grouping")),
+				(): GroupingState => "populated",
+			),
 		}
 	}),
 	init,
