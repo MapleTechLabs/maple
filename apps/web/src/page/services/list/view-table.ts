@@ -41,6 +41,7 @@ import {
 	orderedServices,
 	resolveGroupBy,
 	type ServiceHealth,
+	sparklineHoverScope,
 } from "./derive"
 import { MountTable } from "./command"
 import { Message } from "./message"
@@ -99,6 +100,8 @@ export type TableContext = Readonly<{
 	summary: HealthSummary | undefined
 	theme: ThemeColors | null
 	isNamespacePinned: boolean
+	/** Services with one row: only their sparkline series is the row's own (`sparklineHoverScope`). */
+	singleRowServices: ReadonlySet<string>
 	timeZone: string
 	/** The row tooltips' and commit card's trigger attributes (`withOverlays`). */
 	overlays?: Overlays
@@ -256,8 +259,16 @@ const serviceRow = (
 		environment: service.environment,
 	})
 	const throughputText = formatThroughput(service.throughput, "/s")
-	const errorTime = hoveredTime(ctx, `err-${rowKey}`, buckets)
-	const throughputTime = hoveredTime(ctx, `thr-${rowKey}`, buckets)
+	// A hovered point replaces a cell's value (and shows its time) only where the series is the row's own.
+	const hoverScope = sparklineHoverScope(service, ctx.singleRowServices)
+	const hoveredErrorRate = hoverScope.errorRate
+		? hoveredValue(ctx, `err-${rowKey}`, errorRates)
+		: Option.none()
+	const hoveredThroughput = hoverScope.throughput
+		? hoveredValue(ctx, `thr-${rowKey}`, throughput)
+		: Option.none()
+	const errorTime = hoverScope.errorRate ? hoveredTime(ctx, `err-${rowKey}`, buckets) : Option.none()
+	const throughputTime = hoverScope.throughput ? hoveredTime(ctx, `thr-${rowKey}`, buckets) : Option.none()
 	return tableRow(
 		h,
 		[
@@ -335,10 +346,7 @@ const serviceRow = (
 							},
 							[
 								errorRateValue(h, {
-									rate: Option.getOrElse(
-										hoveredValue(ctx, `err-${rowKey}`, errorRates),
-										() => service.errorRate,
-									),
+									rate: Option.getOrElse(hoveredErrorRate, () => service.errorRate),
 									isRolling: true,
 									className: cn("text-xs font-semibold", TEXT_HALO),
 								}),
@@ -379,13 +387,10 @@ const serviceRow = (
 										[
 											...(service.hasSampling ? ["~"] : []),
 											rollingNumber(h, {
-												text: Option.match(
-													hoveredValue(ctx, `thr-${rowKey}`, throughput),
-													{
-														onNone: () => throughputText,
-														onSome: (value) => formatThroughput(value, "/s"),
-													},
-												),
+												text: Option.match(hoveredThroughput, {
+													onNone: () => throughputText,
+													onSome: (value) => formatThroughput(value, "/s"),
+												}),
 											}),
 										],
 									),

@@ -1,4 +1,5 @@
 import { resolveWindowCommand } from "../../kit/time-frame"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import {
 	getCustomChartServiceSparklines,
 	serviceSparklineBucketSeconds,
@@ -21,6 +22,7 @@ import { loadSignalPresences } from "../../kit/signal-presence"
 import { fetchAnomaliesCommand } from "../../kit/service-health"
 import { loadServicesFacets } from "../../../data/services-facets-probe"
 import { Message } from "./message"
+import { perSecondRates } from "./derive"
 import { ServiceRow, Sparklines } from "./model"
 
 /** The overview, sparklines and baseline input: the window plus the URL filters, pin applied. */
@@ -78,12 +80,11 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 						{
 							buckets: Arr.map(points, (point) => point.bucket),
 							// Per second, like the row's throughput, so a hovered point reads in the same unit.
-							throughput: Arr.map(
-								points,
-								(point) =>
-									point.throughput /
-									serviceSparklineBucketSeconds(input.startTime, input.endTime),
-							),
+							throughput: perSecondRates(points, {
+								startMs: toEpochMs(input.startTime),
+								endMs: toEpochMs(input.endTime),
+								bucketSeconds: serviceSparklineBucketSeconds(input.startTime, input.endTime),
+							}),
 							errorRate: Arr.map(points, (point) => point.errorRate),
 						},
 					]),

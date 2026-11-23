@@ -6,6 +6,7 @@ import {
 	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "../../kit/service-health-rollup"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Array as Arr, String as Str, Order } from "effect"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
@@ -248,4 +249,43 @@ export const baselineDelta = (
 					? "text-severity-warn"
 					: "text-muted-foreground",
 	}
+}
+
+/**
+ * Each point's count per second over the part of its bucket the window covers, so the bucket the
+ * window ends inside reads at its real rate rather than spread over a full bucket.
+ */
+export const perSecondRates = (
+	points: ReadonlyArray<Readonly<{ bucket: string; throughput: number }>>,
+	window: Readonly<{ startMs: number; endMs: number; bucketSeconds: number }>,
+): ReadonlyArray<number> =>
+	Arr.map(points, (point) => {
+		const bucketStart = toEpochMs(point.bucket)
+		const coveredSeconds =
+			(Math.min(bucketStart + window.bucketSeconds * 1000, window.endMs) -
+				Math.max(bucketStart, window.startMs)) /
+			1000
+		return coveredSeconds > 0 ? point.throughput / coveredSeconds : 0
+	})
+
+/** The services listed once: their sparkline series (one per service) is that row's own data. */
+export const singleRowServices = (rows: ReadonlyArray<ServiceRow>): ReadonlySet<string> => {
+	const counts = Arr.reduce(rows, new Map<string, number>(), (acc, row) =>
+		acc.set(row.serviceName, (acc.get(row.serviceName) ?? 0) + 1),
+	)
+	const single = Arr.filter(Arr.fromIterable(counts), ([, count]) => count === 1)
+	return new Set(Arr.map(single, ([name]) => name))
+}
+
+/**
+ * Which cell values a hovered sparkline point may replace. The series is per service and unweighted:
+ * it stands in for a row only when the service has no other row, and its error rate only when the
+ * row is unsampled (sampled rows show a weight-corrected rate the series cannot match).
+ */
+export const sparklineHoverScope = (
+	service: ServiceRow,
+	singleRows: ReadonlySet<string>,
+): Readonly<{ throughput: boolean; errorRate: boolean }> => {
+	const isOwnSeries = singleRows.has(service.serviceName)
+	return { throughput: isOwnSeries, errorRate: isOwnSeries && !service.hasSampling }
 }

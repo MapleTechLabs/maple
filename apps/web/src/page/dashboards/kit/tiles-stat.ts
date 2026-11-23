@@ -145,9 +145,11 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 		const value = data === null ? undefined : data._tag === "Value" ? data.value : data.rows
 		const color = thresholdColor(value, display.thresholds)
 		// Hovering the sparkline shows that point's value in the headline, and when it was below.
-		const hoveredIndex = hasSparkline
-			? Sparkline.hoveredIndex(ctx.sparklineChart ?? Chart.init())
-			: Option.none()
+		// Only while the trend is drawn (two points or more): a hover left behind by a removed one is stale.
+		const hoveredIndex =
+			hasSparkline && sparklineValues(ctx.sparkline).length >= 2
+				? Sparkline.hoveredIndex(ctx.sparklineChart ?? Chart.init())
+				: Option.none()
 		const hovered = Option.flatMap(hoveredIndex, (index) =>
 			Arr.get(sparklineValues(ctx.sparkline), index),
 		)
@@ -172,7 +174,15 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 						},
 						[
 							vstack(h, { align: "center", className: "min-w-0 max-w-full" }, [
-								valueText(h, formatted, color),
+								valueText(
+									h,
+									formatted,
+									// A hovered point takes its own threshold colour; the trend keeps the headline's.
+									Option.match(hovered, {
+										onNone: () => color,
+										onSome: (point) => thresholdColor(point, display.thresholds),
+									}),
+								),
 								...Option.match(hoveredTime, {
 									onNone: () => [],
 									onSome: (time) => [

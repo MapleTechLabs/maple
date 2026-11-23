@@ -426,6 +426,8 @@ export const createSparkSvg = (
 			render("data")
 		},
 		destroy: () => {
+			// A sparkline torn down under the pointer still reports the leave, so no page keeps its point.
+			if (state.hoverIndex !== null) onHover(null)
 			resizeObserver.disconnect()
 			cancelAnimationFrame(state.morph)
 			cancelAnimationFrame(state.springFrame)
