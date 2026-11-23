@@ -5236,6 +5236,26 @@ fn log_attributes(log: &LogRecord) -> Map<String, Value> {
 
 const LOG_EVENT_NAME_ATTR: &str = "event.name";
 
+/// Moves a record's `event_name` into its attributes as `event.name`, where ingest rules read
+/// attributes. An emitter's own `event.name` attribute wins.
+pub(crate) fn lift_log_event_name(record: &mut LogRecord) {
+    if record.event_name.is_empty()
+        || record
+            .attributes
+            .iter()
+            .any(|attribute| attribute.key == LOG_EVENT_NAME_ATTR)
+    {
+        return;
+    }
+    record.attributes.push(KeyValue {
+        key: LOG_EVENT_NAME_ATTR.to_owned(),
+        value: Some(AnyValue {
+            value: Some(any_value::Value::StringValue(record.event_name.clone())),
+        }),
+        ..Default::default()
+    });
+}
+
 fn log_row<'a>(log: &'a LogRecord, context: &RowContext<'a>, trace_id: String) -> LogRow<'a> {
     LogRow {
         body: log.body.as_ref().map(any_value_text).unwrap_or_default(),
@@ -6873,6 +6893,22 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(row["log_attributes"]["event.name"], "from.attribute");
+    }
+
+    #[test]
+    fn lifting_the_event_name_makes_it_an_attribute_rules_can_read() {
+        let mut record = LogRecord {
+            event_name: "gen_ai.evaluation.result".to_owned(),
+            ..Default::default()
+        };
+        lift_log_event_name(&mut record);
+        lift_log_event_name(&mut record);
+        let names: Vec<_> = record
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.key == "event.name")
+            .collect();
+        assert_eq!(names.len(), 1);
     }
 
     #[tokio::test]

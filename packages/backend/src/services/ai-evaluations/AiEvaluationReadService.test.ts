@@ -93,7 +93,12 @@ const answer = (sql: string): Rows => {
 				lastSeen: "2026-11-22 10:00:00.000000000",
 			},
 		]
-	return [scoreRow(TRACE_A, "fail"), scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 })]
+	return [
+		scoreRow(TRACE_A, "fail"),
+		scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 }),
+		// An offline job's session-scope score: its own trace is in no session, the row names one.
+		scoreRow("2cf7651916cd43dd8448eb211c80319e", "pass", { scope: "session", sessionId: "session-9" }),
+	]
 }
 
 describe("AiEvaluationReadService", () => {
@@ -127,6 +132,7 @@ describe("AiEvaluationReadService", () => {
 			expect(result.scores[0]?.value).toBeUndefined()
 			expect(result.scores[1]).toMatchObject({ traceId: TRACE_B, value: 0.75 })
 			expect(result.scores[1]?.sessionId).toBeUndefined()
+			expect(result.scores[2]).toMatchObject({ scope: "session", sessionId: "session-9" })
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -142,9 +148,17 @@ describe("AiEvaluationReadService", () => {
 					traceIds: [TRACE_A, TRACE_B],
 				}),
 			)
-			expect(Arr.map(result.scores, (score) => score.sessionId)).toEqual(["session-1", "session-1"])
-			expect(statements[0]).toContain(`IN ('${TRACE_A}', '${TRACE_B}')`)
-			expect(statements[0]).toContain("Scope = 'session'")
+			expect(Arr.map(result.scores, (score) => score.sessionId)).toEqual([
+				"session-1",
+				"session-1",
+				"session-1",
+			])
+			// By trace id, and session-scope scores by session id: never one OR of both.
+			expect(statements).toHaveLength(2)
+			expect(
+				Arr.filter(statements, (sql) => Str.includes(`IN ('${TRACE_A}', '${TRACE_B}')`)(sql)),
+			).toHaveLength(1)
+			expect(Arr.filter(statements, (sql) => Str.includes("Scope = 'session'")(sql))).toHaveLength(1)
 		}).pipe(Effect.provide(layer))
 	})
 

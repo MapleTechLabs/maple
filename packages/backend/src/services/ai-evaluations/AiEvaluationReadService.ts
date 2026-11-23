@@ -1,4 +1,5 @@
 import {
+	AI_EVALUATION_SERIES_MAX_BUCKETS,
 	type AiEvaluationScore,
 	type AiEvaluatorSummary,
 	GetAiEvaluatorResponse,
@@ -10,17 +11,20 @@ import {
 	LlmEvalsDisabledError,
 	type TenantContext,
 } from "@maple/domain/http"
-import { Array as Arr, Context, Effect, Layer, Option, Record as Rec } from "effect"
-import { CH } from "@maple/query-engine"
+import { Array as Arr, Context, Effect, Layer, Option, Order, Record as Rec } from "effect"
+import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import * as Integrations from "@maple/query-engine-integrations"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { isMissingAiEvaluations } from "@maple/backend/services/warehouse/missing-table"
 
-/** Scores the evaluator detail lists. */
+/** Scores the evaluator detail lists: its newest failures first, then its newest scores. */
+const EVALUATOR_FAILURES_LIMIT = 50
 const EVALUATOR_SCORES_LIMIT = 100
-/** Scores one session read returns. */
+/** Scores one session read returns, per half (by trace, by session id). */
 const SESSION_SCORES_LIMIT = 500
+/** How far before the window a graded trace may start: an offline score lands after its trace. */
+const SESSION_LOOKBACK_MS = 6 * 3_600_000
 
 type ScoreRow = Readonly<{
 	timestamp: string
@@ -41,6 +45,21 @@ type ScoreRow = Readonly<{
 	judgeModel: string
 	serviceName: string
 }>
+
+/** A session-scope score names its session; any other is filed under its graded trace's. */
+const sessionOf = (row: ScoreRow, byTrace: Readonly<Record<string, string>>): string | undefined =>
+	row.scope === "session" && row.sessionId !== "" ? row.sessionId : byTrace[row.traceId]
+
+const scoreKey = (row: ScoreRow): string => `${row.timestamp}|${row.traceId}|${row.spanId}|${row.name}`
+
+const newestFirst = Order.mapInput(Order.flip(Order.String), (row: ScoreRow) => row.timestamp)
+
+/** A series bucket no finer than the window allows, so the newest buckets are never cut off. */
+const boundedBucketSeconds = (payload: GetAiEvaluatorRequest): number => {
+	const spanSeconds =
+		(parseWarehouseDateTime(payload.endTime) - parseWarehouseDateTime(payload.startTime)) / 1000
+	return Math.max(payload.bucketSeconds, Math.ceil(spanSeconds / AI_EVALUATION_SERIES_MAX_BUCKETS))
+}
 
 const toScore = (row: ScoreRow, sessionId: string | undefined): AiEvaluationScore => ({
 	timestamp: row.timestamp,
@@ -78,10 +97,16 @@ const measures = (row: {
 	errorCount: Number(row.errorCount),
 })
 
+export interface AiEvaluatorReadOptions {
+	/** Read the time series too; the MCP tool renders none. Default true. */
+	readonly series?: boolean
+}
+
 /**
  * LLM evaluation reads (`ai_evaluations`) for the Evals tab, the session page and the MCP tools.
  * Every read refuses an org outside the `llmEvals` rollout, and reads as empty on a warehouse that
- * has not run migration 0071 yet.
+ * has not run migration 0071 yet. The rollout flags come from the app root, so a runtime that
+ * fixes them (tests, the MCP eval runtime) is answered by the same flags as its tool gates.
  */
 const make = Effect.gen(function* () {
 	const warehouse = yield* WarehouseQueryService
@@ -96,15 +121,23 @@ const make = Effect.gen(function* () {
 		}
 	})
 
-	const summaries = (tenant: TenantContext, window: ListAiEvaluatorsRequest, name?: string) =>
+	const window = (
+		tenant: TenantContext,
+		payload: { readonly startTime: string; readonly endTime: string },
+	) => ({
+		orgId: tenant.orgId,
+		startTime: payload.startTime,
+		endTime: payload.endTime,
+	})
+
+	const summaries = (tenant: TenantContext, payload: ListAiEvaluatorsRequest, name?: string) =>
 		warehouse
 			.compiledQuery(
 				tenant,
-				CH.compile(CH.aiEvaluationsSummaryQuery(name === undefined ? undefined : { name }), {
-					orgId: tenant.orgId,
-					startTime: window.startTime,
-					endTime: window.endTime,
-				}),
+				CH.compile(
+					CH.aiEvaluationsSummaryQuery(name === undefined ? undefined : { name }),
+					window(tenant, payload),
+				),
 				{ profile: "list", context: "aiEvaluationsSummary" },
 			)
 			.pipe(
@@ -118,16 +151,28 @@ const make = Effect.gen(function* () {
 						lastSeen: row.lastSeen,
 					})),
 				),
-				Effect.catchIf(isMissingAiEvaluations, () =>
-					Effect.succeed<ReadonlyArray<AiEvaluatorSummary>>([]),
-				),
 			)
+
+	const scores = (
+		tenant: TenantContext,
+		payload: { readonly startTime: string; readonly endTime: string },
+		opts: CH.AiEvaluationScoresOpts,
+		context: string,
+	) =>
+		warehouse.compiledQuery(
+			tenant,
+			CH.compile(CH.aiEvaluationScoresQuery(opts), window(tenant, payload)),
+			{
+				profile: "list",
+				context,
+			},
+		)
 
 	/** The Agent Session each graded trace is filed under, keyed by trace id. */
 	const sessionsOf = (
 		tenant: TenantContext,
 		rows: ReadonlyArray<ScoreRow>,
-		window: ListAiEvaluatorsRequest,
+		payload: ListAiEvaluatorsRequest,
 	) => {
 		const traceIds = Arr.dedupe(Arr.map(rows, (row) => row.traceId))
 		if (traceIds.length === 0) return Effect.succeed<Record<string, string>>({})
@@ -136,8 +181,10 @@ const make = Effect.gen(function* () {
 				tenant,
 				CH.compile(Integrations.aiSessionsOfTracesQuery(traceIds), {
 					orgId: tenant.orgId,
-					startTime: window.startTime,
-					endTime: window.endTime,
+					startTime: formatWarehouseDateTime(
+						parseWarehouseDateTime(payload.startTime) - SESSION_LOOKBACK_MS,
+					),
+					endTime: payload.endTime,
 				}),
 				{ profile: "list", context: "aiEvaluationsSessions" },
 			)
@@ -151,7 +198,11 @@ const make = Effect.gen(function* () {
 		payload: ListAiEvaluatorsRequest,
 	) {
 		yield* requireEnabled(tenant)
-		const evaluators = yield* summaries(tenant, payload)
+		const evaluators = yield* summaries(tenant, payload).pipe(
+			Effect.catchIf(isMissingAiEvaluations, () =>
+				Effect.succeed<ReadonlyArray<AiEvaluatorSummary>>([]),
+			),
+		)
 		yield* Effect.annotateCurrentSpan({ "maple.ai.evaluators": evaluators.length })
 		return new ListAiEvaluatorsResponse({ evaluators })
 	})
@@ -159,57 +210,84 @@ const make = Effect.gen(function* () {
 	const evaluator = Effect.fn("AiEvaluationReads.evaluator")(function* (
 		tenant: TenantContext,
 		payload: GetAiEvaluatorRequest,
+		options: AiEvaluatorReadOptions = {},
 	) {
 		yield* requireEnabled(tenant)
-		const params = {
-			orgId: tenant.orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
-			name: payload.name,
-		}
-		const [summary, series, breakdown, scoreRows] = yield* Effect.all(
-			[
-				summaries(tenant, payload, payload.name),
-				warehouse.compiledQuery(
-					tenant,
-					CH.compile(CH.aiEvaluationTimeseriesQuery(), {
-						...params,
-						bucketSeconds: payload.bucketSeconds,
-					}),
-					{ profile: "list", context: "aiEvaluationSeries" },
-				),
-				warehouse.compiledQuery(tenant, CH.compile(CH.aiEvaluationBreakdownQuery(), params), {
-					profile: "list",
-					context: "aiEvaluationBreakdown",
-				}),
-				warehouse.compiledQuery(
-					tenant,
-					CH.compile(
-						CH.aiEvaluationScoresQuery({
+		const params = { ...window(tenant, payload), name: payload.name }
+		// Two newest-first reads rather than one sorted on its verdict: a sort on a computed column
+		// would read every score's explanation in the window to keep 100 of them.
+		const failures =
+			payload.verdict === "pass"
+				? Effect.succeed([])
+				: scores(
+						tenant,
+						payload,
+						{ name: payload.name, verdict: "fail", limit: EVALUATOR_FAILURES_LIMIT },
+						"aiEvaluationFailures",
+					)
+		const recent =
+			payload.verdict === "fail"
+				? Effect.succeed([])
+				: scores(
+						tenant,
+						payload,
+						{
 							name: payload.name,
 							limit: EVALUATOR_SCORES_LIMIT,
 							...(payload.verdict === undefined ? undefined : { verdict: payload.verdict }),
-						}),
-						params,
-					),
-					{ profile: "list", context: "aiEvaluationScores" },
+						},
+						"aiEvaluationScores",
+					)
+		const read = Effect.all(
+			{
+				summary: summaries(tenant, payload, payload.name),
+				series:
+					options.series === false
+						? Effect.succeed([])
+						: warehouse.compiledQuery(
+								tenant,
+								CH.compile(CH.aiEvaluationTimeseriesQuery(), {
+									...params,
+									bucketSeconds: boundedBucketSeconds(payload),
+								}),
+								{ profile: "list", context: "aiEvaluationSeries" },
+							),
+				breakdown: warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.aiEvaluationBreakdownQuery(), params),
+					{
+						profile: "list",
+						context: "aiEvaluationBreakdown",
+					},
 				),
-			],
+				failures,
+				recent,
+			},
 			{ concurrency: "unbounded" },
-		).pipe(Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed([[], [], [], []] as const)))
+		)
+		const found = yield* read.pipe(
+			Effect.catchIf(isMissingAiEvaluations, () =>
+				Effect.succeed({ summary: [], series: [], breakdown: [], failures: [], recent: [] }),
+			),
+		)
+		const failureKeys = new Set(Arr.map(found.failures, scoreKey))
+		const scoreRows = [
+			...found.failures,
+			...Arr.filter(found.recent, (row) => !failureKeys.has(scoreKey(row))),
+		]
 		const sessions = yield* sessionsOf(tenant, scoreRows, payload)
 		return new GetAiEvaluatorResponse({
-			...Option.match(Arr.head(summary), {
-				onNone: () => ({}),
-				onSome: (found) => ({ summary: found }),
+			...Option.match(Arr.head(found.summary), {
+				onNone: () => undefined,
+				onSome: (summary) => ({ summary }),
 			}),
-			series: Arr.map(series, (row) => ({ ...measures(row), bucket: row.bucket })),
-			breakdown: Arr.map(breakdown, (row) => ({
+			series: Arr.map(found.series, (row) => ({ ...measures(row), bucket: row.bucket })),
+			breakdown: Arr.map(found.breakdown, (row) => ({
 				...measures(row),
 				serviceName: row.serviceName,
 				deploymentEnv: row.deploymentEnv,
 			})),
-			scores: Arr.map(scoreRows, (row) => toScore(row, sessions[row.traceId])),
+			scores: Arr.map(scoreRows, (row) => toScore(row, sessionOf(row, sessions))),
 		})
 	})
 
@@ -218,20 +296,28 @@ const make = Effect.gen(function* () {
 		payload: GetAiSessionEvaluationsRequest,
 	) {
 		yield* requireEnabled(tenant)
-		const rows = yield* warehouse
-			.compiledQuery(
-				tenant,
-				CH.compile(
-					CH.aiEvaluationScoresQuery({
-						traceIds: payload.traceIds,
-						sessionId: payload.sessionId,
-						limit: SESSION_SCORES_LIMIT,
-					}),
-					{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+		// Two reads: by trace id (the bloom index finds them) and session-scope scores by session id.
+		const halves = yield* Effect.all(
+			[
+				scores(
+					tenant,
+					payload,
+					{ traceIds: payload.traceIds, limit: SESSION_SCORES_LIMIT },
+					"aiSessionEvaluations",
 				),
-				{ profile: "list", context: "aiSessionEvaluations" },
-			)
-			.pipe(Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed([])))
+				scores(
+					tenant,
+					payload,
+					{ sessionId: payload.sessionId, limit: SESSION_SCORES_LIMIT },
+					"aiSessionScopeEvaluations",
+				),
+			],
+			{ concurrency: "unbounded" },
+		).pipe(Effect.catchIf(isMissingAiEvaluations, () => Effect.succeed([[], []] as const)))
+		const rows = Arr.sort(
+			Arr.dedupeWith([...halves[0], ...halves[1]], (a, b) => scoreKey(a) === scoreKey(b)),
+			newestFirst,
+		)
 		yield* Effect.annotateCurrentSpan({ "maple.ai.session_scores": rows.length })
 		return new GetAiSessionEvaluationsResponse({
 			scores: Arr.map(rows, (row) => toScore(row, payload.sessionId)),
@@ -245,8 +331,6 @@ export class AiEvaluationReadService extends Context.Service<AiEvaluationReadSer
 	"@maple/backend/services/ai-evaluations/AiEvaluationReadService",
 	{ make },
 ) {
-	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(WarehouseQueryService.layer),
-		Layer.provide(OrganizationFeatureFlagsService.layer),
-	)
+	/** Needs `OrganizationFeatureFlagsService` from the app root. */
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WarehouseQueryService.layer))
 }

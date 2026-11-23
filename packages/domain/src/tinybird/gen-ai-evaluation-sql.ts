@@ -41,7 +41,7 @@ export const evaluationColumnsSql = (opts: {
 	return `
           if(${targeted}, ${a(MAPLE.targetTraceId)}, ${opts.traceId}) AS TraceId,
           if(${targeted}, ${a(MAPLE.targetSpanId)}, ${opts.spanId}) AS SpanId,
-          coalesce(nullIf(${a(MAPLE.scope)}, ''), 'span') AS Scope,
+          coalesce(nullIf(${a(MAPLE.scope)}, ''), if(${targeted} AND ${a(MAPLE.targetSpanId)} = '', 'trace', 'span')) AS Scope,
           ${a(MAPLE.sessionId)} AS SessionId,
           ${a(OTEL.responseId)} AS ResponseId,
           ${a(OTEL.name)} AS Name,
