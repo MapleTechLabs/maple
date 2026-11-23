@@ -1302,6 +1302,121 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published, begun })))
 	})
 
+	// Only a whole-diff pass may approve, so an incremental pass on an approving repository would never
+	// approve a pull request with more than one push. A diff no verdict could clear stays incremental.
+	it.effect.each([
+		{ name: "a diff an approval could cover", path: "src/orders.ts", whole: true },
+		{ name: "a diff touching a lockfile", path: "pnpm-lock.yaml", whole: false },
+	])("on an approving repository, a later push re-reads $name whole: $whole", ({ path, whole }) => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({ report: new PrReviewReport({ ...report([]), wholeDiff: true }) }),
+			)
+			yield* TestClock.adjust("1 minute")
+			yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha: HEAD_2 }))
+			const kickoff = begun.at(-1)!.text
+			assert.strictEqual(Str.includes("only a pass over every file may approve")(kickoff), whole)
+			assert.strictEqual(Str.includes("Files changed since then")(kickoff), !whole)
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					begun,
+					prFiles: [
+						{
+							path,
+							previousPath: null,
+							status: "modified",
+							additions: 3,
+							deletions: 1,
+							patch: "@@ -1 +1 @@\n-a\n+b",
+						},
+					],
+				}),
+			),
+		)
+	})
+
+	// A dismissed warning refuses approval for good, so a whole-diff pass after it would be wasted.
+	it.effect("on an approving repository, a push after a dismissed warning stays incremental", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const path = "src/orders.ts"
+		const warning = {
+			path,
+			line: 1,
+			category: "correctness" as const,
+			severity: "warn" as const,
+			title: "Unchecked null",
+			body: "b",
+		}
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ autoApprove: true }),
+			)
+			const reviews = yield* PrReviewService
+			const push = (headSha: GitCommitSha) =>
+				TestClock.adjust("1 minute").pipe(
+					Effect.andThen(
+						reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha })),
+					),
+				)
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: new PrReviewReport({ ...report([warning]), wholeDiff: true }),
+				}),
+			)
+			const second = yield* push(HEAD_2)
+			yield* reviews.submitReview(
+				orgId,
+				second.reviewId!,
+				new SubmitPrReviewRequest({
+					dismissed: [{ handle: "F1", reason: "the author says it cannot be null" }],
+					report: new PrReviewReport({ ...report([]), wholeDiff: true }),
+				}),
+			)
+			yield* push(HEAD_4)
+			const kickoff = begun.at(-1)!.text
+			assert.notInclude(kickoff, "only a pass over every file may approve")
+			assert.include(kickoff, "Files changed since then")
+		}).pipe(
+			Effect.provide(
+				layerFor(testDb, {
+					begun,
+					prFiles: [
+						{
+							path,
+							previousPath: null,
+							status: "modified",
+							additions: 3,
+							deletions: 1,
+							patch: "@@ -1 +1 @@\n-a\n+b",
+						},
+					],
+				}),
+			),
+		)
+	})
+
 	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
