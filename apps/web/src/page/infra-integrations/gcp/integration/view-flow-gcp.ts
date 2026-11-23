@@ -39,6 +39,7 @@ import { methodSetup } from "./view-gcp-configure-method"
 import { scriptSection } from "./view-gcp-configure-run"
 import { scopeFields } from "./view-gcp-configure-scope"
 import { vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // Google Cloud in the connect flow: a scope by ID and how to apply the setup, what to collect,
 // then the setup itself and a checklist that ticks as Google Cloud reports back.
@@ -75,7 +76,7 @@ const METHODS = [
 >
 
 const methodChoice = (h: H, configure: ConfigureModel): Html =>
-	vstack(h, { gap: "3", className: "border-t border-border pt-5" }, [
+	vstack(h, { gap: "3", className: stripClass("section") }, [
 		heading(h, { level: 3, variant: "subsection" }, ["How do you want to apply the setup?"]),
 		choiceTiles(
 			h,
