@@ -72,11 +72,16 @@ export const estimateBlock = (h: H, model: Model): Html => {
 		eyebrow(h, { as: "div" }, ["Last 24 hours, stored"]),
 		AsyncData.matchData(model.estimate, {
 			onEmpty: () => vstack(h, { gap: "1" }, [skeleton(h, "h-4 w-52"), skeleton(h, "h-3 w-32")]),
-			onFailure: () =>
-				hstack(h, { gap: "2", align: "center" }, [
-					typography(h, { size: "xs", tone: "muted" }, ["Couldn't count the last 24 hours."]),
-					textLink(h, { onClick: Message.ClickedRetryEstimate() }, ["Try again"]),
-				]),
+			onFailure: (failure) =>
+				// A rule the preview cannot run (a pattern RE2 refuses) is an answer, not an outage.
+				failure.code === "ingest_rule_invalid"
+					? typography(h, { size: "xs", tone: "muted", as: "p" }, [failure.message])
+					: hstack(h, { gap: "2", align: "center" }, [
+							typography(h, { size: "xs", tone: "muted" }, [
+								"Couldn't count the last 24 hours.",
+							]),
+							textLink(h, { onClick: Message.ClickedRetryEstimate() }, ["Try again"]),
+						]),
 			onData: (estimate) =>
 				estimate.signals.length === 0
 					? typography(h, { size: "xs", tone: "muted", as: "p" }, [

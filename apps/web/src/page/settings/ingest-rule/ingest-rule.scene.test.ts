@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { IngestRuleValidationError } from "@maple/domain/http"
 import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import {
@@ -384,6 +385,29 @@ describe("ingest rule 24 hour estimate", () => {
 			Message.CompletedFetchEstimate({ key: oldKey, result: Result.succeed(estimate(1)) }),
 		)
 		expect(late.model.estimate._tag).not.toBe("Success")
+	})
+
+	test("a rule the preview cannot run says so, without offering a retry", () => {
+		const model = fresh("drop-debug-logs")
+		const refused = toLoadFailure(
+			new IngestRuleValidationError({
+				message: "A pattern in this rule cannot be previewed; the gateway still applies it.",
+				problems: ["a regex uses syntax the preview's engine cannot run"],
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchEstimate({ key: model.estimateKey, result: Result.fail(refused) }),
+				).model,
+			),
+			expectView(
+				text("A pattern in this rule cannot be previewed; the gateway still applies it."),
+			).toExist(),
+			expectView(text("Couldn't count the last 24 hours.")).not.toExist(),
+		)
 	})
 
 	test("a draft that cannot be saved asks for nothing", () => {
