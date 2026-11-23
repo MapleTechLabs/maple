@@ -103,7 +103,7 @@ export interface AiEvaluatorReadOptions {
 /**
  * LLM evaluation reads (`ai_evaluations`) for the Evals tab, the session page and the MCP tools.
  * Every read refuses an org outside the `llmEvals` rollout, and reads as empty on a warehouse that
- * has not run migration 0071 yet. The rollout flags come from the app root, so a runtime that
+ * has not run migration 0072 yet. The rollout flags come from the app root, so a runtime that
  * fixes them (tests, the MCP eval runtime) is answered by the same flags as its tool gates.
  */
 const make = Effect.gen(function* () {
