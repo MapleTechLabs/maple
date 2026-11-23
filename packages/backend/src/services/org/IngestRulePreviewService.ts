@@ -152,15 +152,19 @@ const make = Effect.gen(function* () {
 		})
 		if (signals.length === 0) return { startMs, endMs, signals: [] } satisfies IngestRulePreviewResult
 		// Sized first from the hourly rollup, so the scan below can stay inside its budget.
-		const usage = yield* warehouse.compiledQuery(
-			tenant,
-			CH.compile(CH.serviceUsageQuery({}), windowFrom(startMs)),
-			{ profile: "aggregation", context: "ingestRulePreviewUsage" },
-		)
-		const hourly = yield* warehouse.compiledQuery(
-			tenant,
-			CH.compile(CH.ingestRuleHourlyVolumeQuery(), windowFrom(startMs)),
-			{ profile: "aggregation", context: "ingestRulePreviewHourly" },
+		const [usage, hourly] = yield* Effect.all(
+			[
+				warehouse.compiledQuery(tenant, CH.compile(CH.serviceUsageQuery({}), windowFrom(startMs)), {
+					profile: "aggregation",
+					context: "ingestRulePreviewUsage",
+				}),
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(CH.ingestRuleHourlyVolumeQuery(), windowFrom(startMs)),
+					{ profile: "aggregation", context: "ingestRulePreviewHourly" },
+				),
+			],
+			{ concurrency: "unbounded" },
 		)
 		const newestFirst = (signal: PreviewSignal) =>
 			Arr.map(hourly, (row) => Number(signal === "logs" ? row.logs : row.spans))
