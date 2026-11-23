@@ -1,42 +1,65 @@
 ---
-/** The five theme presets on the same page, switched without script. */
+/**
+ * The five theme presets on the same page. One image is swapped rather than five toggled, because
+ * the lightbox makes every image in the article a slide and closes onto it, hidden or not.
+ */
 const THEMES = [
     { id: "maple", label: "Maple", mode: "dark" },
     { id: "default", label: "Default", mode: "light" },
     { id: "paper", label: "Vintage Paper", mode: "light" },
     { id: "midnight", label: "Cosmic Night", mode: "dark" },
     { id: "mono", label: "Mono", mode: "dark" },
-] as const;
+].map((theme) => ({
+    ...theme,
+    src: `/screenshots/docs/status-pages-theme-${theme.id}.webp`,
+    alt: `The same status page in the ${theme.label} preset, ${theme.mode} mode.`,
+    caption: `${theme.label}, shown in ${theme.mode} mode. Every preset has both modes.`,
+}));
+const first = THEMES[0]!;
 ---
 
-<div class="themes">
-    <div class="themes__tabs" role="radiogroup" aria-label="Theme preset">
+<div class="themes" data-status-page-themes>
+    <div class="themes__tabs" role="radiogroup" aria-label="Theme preset" hidden>
         {
-            THEMES.map((theme, index) => (
+            THEMES.map((theme) => (
                 <label>
-                    <input type="radio" name="status-page-theme" value={theme.id} checked={index === 0} />
+                    <input
+                        type="radio"
+                        name="status-page-theme"
+                        value={theme.id}
+                        checked={theme.id === first.id}
+                        data-src={theme.src}
+                        data-alt={theme.alt}
+                        data-caption={theme.caption}
+                    />
                     <span>{theme.label}</span>
                 </label>
             ))
         }
     </div>
-    {
-        THEMES.map((theme) => (
-            <figure class="shot" data-theme-pane={theme.id}>
-                <img
-                    src={`/screenshots/docs/status-pages-theme-${theme.id}.webp`}
-                    alt={`The same status page in the ${theme.label} preset, ${theme.mode} mode.`}
-                    width="1520"
-                    height="1120"
-                    loading="lazy"
-                    decoding="async"
-                    data-zoomable
-                />
-                <figcaption>{theme.label}, shown in {theme.mode} mode. Every preset has both modes.</figcaption>
-            </figure>
-        ))
-    }
+    <figure class="shot">
+        <img src={first.src} alt={first.alt} width="1520" height="1120" loading="lazy" decoding="async" data-zoomable />
+        <figcaption>{first.caption}</figcaption>
+    </figure>
 </div>
+
+<script>
+    for (const root of document.querySelectorAll<HTMLElement>("[data-status-page-themes]")) {
+        const tabs = root.querySelector<HTMLElement>(".themes__tabs");
+        const image = root.querySelector("img");
+        const caption = root.querySelector("figcaption");
+        if (tabs === null || image === null || caption === null) continue;
+        tabs.hidden = false;
+        tabs.addEventListener("change", (event) => {
+            if (!(event.target instanceof HTMLInputElement)) return;
+            const { src, alt, caption: text } = event.target.dataset;
+            if (src === undefined || alt === undefined || text === undefined) return;
+            image.src = src;
+            image.alt = alt;
+            caption.textContent = text;
+        });
+    }
+</script>
 
 <style>
     .themes {
@@ -47,6 +70,9 @@ const THEMES = [
         flex-wrap: wrap;
         gap: 6px;
         margin-bottom: 10px;
+    }
+    .themes__tabs[hidden] {
+        display: none;
     }
     .themes__tabs label {
         position: relative;
@@ -76,15 +102,7 @@ const THEMES = [
         outline: 2px solid var(--primary);
         outline-offset: 2px;
     }
-    .themes [data-theme-pane] {
-        display: none;
+    .themes .shot {
         margin-block: 0;
-    }
-    .themes:has(input[value="maple"]:checked) [data-theme-pane="maple"],
-    .themes:has(input[value="default"]:checked) [data-theme-pane="default"],
-    .themes:has(input[value="paper"]:checked) [data-theme-pane="paper"],
-    .themes:has(input[value="midnight"]:checked) [data-theme-pane="midnight"],
-    .themes:has(input[value="mono"]:checked) [data-theme-pane="mono"] {
-        display: block;
     }
 </style>
