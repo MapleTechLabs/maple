@@ -128,7 +128,7 @@ const chooseFrames = (
 ): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } => {
 	const { frames: candidates, maxFrames } = currentFrameCandidates(sample)
 	const isApp = (frame: string) => {
-		const kind = rules.frameKind(frame, sample.serviceName)
+		const kind = rules.frameKind(frame, sample)
 		return kind === undefined ? !isLibraryFrame(frame) : kind === "app"
 	}
 	const app = Arr.filter(candidates, isApp)
@@ -171,13 +171,9 @@ export const explainGrouping = (
 		rule: parts.rule,
 		parts: [...parts.parts, ...extension],
 	})
-	const merge = Arr.findFirst(rules.merges, (entry) => entry.matches(sample, frames))
-	if (merge._tag === "Some") {
-		return explained(
-			extend({ rule: "org-rule", parts: ["org-rule", merge.value.rule.id] }),
-			[],
-			merge.value.rule,
-		)
+	const merge = rules.mergeRule(sample, frames)
+	if (merge !== undefined) {
+		return explained(extend({ rule: "org-rule", parts: ["org-rule", merge.id] }), [], merge)
 	}
 	if (chunkLoadRe.test(sample.exceptionType) || chunkLoadRe.test(sample.statusMessage)) {
 		return explained(extend({ rule: "chunk-load", parts: ["chunk-load"] }), [])
@@ -206,8 +202,8 @@ export const groupingParts = (
 }
 
 /** The stored key for a service and its parts, as `groupingKey` computes it. */
-export const keyOfParts = (serviceName: string, { parts }: GroupingParts): string =>
-	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, ...parts], "\u0000"))
+export const keyOfParts = (serviceName: string, { rule, parts }: GroupingParts): string =>
+	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, rule, ...parts], "\u0000"))
 
 /** The key two hashes must share to join one issue. Scoped to the service, as the hash is. */
 export const groupingKey = (sample: GroupingSample, rules: CompiledGroupingRules = NO_RULES): string =>

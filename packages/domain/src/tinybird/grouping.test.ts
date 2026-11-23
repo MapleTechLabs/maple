@@ -1,4 +1,4 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { explainGrouping, groupingKey, groupingParts, type GroupingSample } from "./grouping"
@@ -124,6 +124,14 @@ describe("groupingKey", () => {
 	})
 })
 
+describe("grouping key encoding", () => {
+	it("keeps a message key apart from a function key with the same text", () => {
+		const byMessage = node("PaymentError", "chargeCard", ["x (/app/x.ts:1:1)"])
+		const byFunction = node("PaymentError", "", ["chargeCard (/app/pay.ts:1:1)"])
+		expect(groupingKey(byMessage)).not.toBe(groupingKey(byFunction))
+	})
+})
+
 describe("{{default}} keys", () => {
 	it("splits the default group by what the key adds, and only by that", () => {
 		const tenant = (frame: string, key: string) =>
@@ -165,6 +173,36 @@ describe("org grouping rules", () => {
 		expect(groupingKey(viaCheckout)).toBe(groupingKey(viaBilling))
 		expect(groupingKey(viaCheckout, shared)).not.toBe(groupingKey(viaBilling, shared))
 		expect(explainGrouping(viaCheckout, shared).skippedFrames).toHaveLength(1)
+	})
+
+	it("lets a later rule override an earlier broad one, and matches services by glob", () => {
+		const layered = rules(
+			{ id: "all-type-errors", kind: "merge", exceptionType: "TypeError" },
+			{ id: "checkout-plan", kind: "merge", service: "checkout-*", message: "*plan*" },
+		)
+		const plan = node("TypeError", "plan missing", ["a (/app/a.ts:1:1)"], { serviceName: "checkout-web" })
+		const other = node("TypeError", "cart empty", ["a (/app/a.ts:1:1)"], { serviceName: "checkout-web" })
+		expect(explainGrouping(plan, layered).orgRule?.id).toBe("checkout-plan")
+		expect(explainGrouping(other, layered).orgRule?.id).toBe("all-type-errors")
+	})
+
+	it("applies a frame rule only to the errors its other fields name", () => {
+		const scoped = rules({
+			id: "http",
+			kind: "library-frames",
+			exceptionType: "FetchFailed",
+			frame: "*packages/http/*",
+		})
+		const frames = ["request (/app/packages/http/client.ts:4:2)", "loadCart (/app/checkout/cart.ts:9:1)"]
+		expect(explainGrouping(node("FetchFailed", "", frames), scoped).skippedFrames).toHaveLength(1)
+		expect(explainGrouping(node("OtherFailed", "", frames), scoped).skippedFrames).toHaveLength(0)
+	})
+
+	it("matches a hostile glob against a long message in bounded time", () => {
+		const hostile = rules({ id: "h", kind: "merge", message: `${Str.repeat(40)("*a")}*b` })
+		const started = performance.now()
+		groupingKey(node("TypeError", Str.repeat(5000)("a"), []), hostile)
+		expect(performance.now() - started).toBeLessThan(200)
 	})
 
 	it("leaves the default grouping untouched with no rules, and names no rules with an empty digest", () => {

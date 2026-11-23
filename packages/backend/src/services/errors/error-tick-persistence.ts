@@ -30,6 +30,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
+import { loadOrgGrouping } from "./grouping-keys"
 import { foldIssues } from "./issue-fold"
 import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
 import { regressedColumns } from "./issue-reopen"
@@ -83,6 +84,8 @@ export interface PersistErrorTickWindowInput {
 	readonly claimToken: string
 	/** See `EarlyPromotionsPerDay`. */
 	readonly earlyPromotionsPerDay: number
+	/** The org's grouping rules the rows' grouping siblings were computed under. */
+	readonly groupingDigest: string
 	readonly makeIssueId: () => ErrorIssueId
 	readonly makeIncidentId: () => ErrorIncidentId
 	readonly makeEventId: () => ErrorIssueEventId
@@ -512,9 +515,12 @@ const rekeyOwners = (
 			[...new Set(Arr.flatMap(unsettled, (group) => group.issueIds))],
 			(chunk) =>
 				tx.run(
+					// Locked, in id order: a transition committed since the scan is what the fold sees.
 					PG.from(ErrorIssues)
 						.select()
-						.where(($) => [$.orgId.eq(orgId), $.id.in_(...chunk), $.mergedIntoIssueId.isNull()]),
+						.where(($) => [$.orgId.eq(orgId), $.id.in_(...chunk), $.mergedIntoIssueId.isNull()])
+						.orderBy(["id", "asc"])
+						.forUpdate(),
 				),
 		)
 		const issueById = new Map(Arr.map(candidates, (issue) => [issue.id, issue]))
@@ -625,15 +631,16 @@ const ownerOf = (issue: ErrorIssueRow): Owner => ({
 })
 
 /**
- * Siblings were read before this transaction took the cursor lock, so an unmerge or detach
- * may have pinned some since. Re-read the pins under the lock and drop them from the groups.
+ * Siblings were read before this transaction took the cursor lock: re-read the org's rules
+ * and the pins under the lock, and drop siblings an edit or an unmerge has voided since.
  */
-const withoutPinnedGroups = (
+const withCurrentGroups = (
 	tx: ErrorTickTransaction,
-	orgId: OrgId,
+	input: PersistErrorTickWindowInput,
 	rows: ReadonlyArray<ErrorTickScanRow>,
 ): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
 	Effect.gen(function* () {
+		const orgId = input.orgId
 		const grouped = Arr.dedupe(
 			Arr.flatMap(rows, (row) =>
 				(row.groupedFingerprintHashes ?? []).length === 0
@@ -642,6 +649,11 @@ const withoutPinnedGroups = (
 			),
 		)
 		if (grouped.length === 0) return rows
+		// Rules saved since the siblings were computed void them: keys under old rules never fold.
+		const grouping = yield* loadOrgGrouping(tx, orgId)
+		if (grouping.digest !== input.groupingDigest) {
+			return Arr.map(rows, (row) => ({ ...row, groupedFingerprintHashes: [] }))
+		}
 		const pinnedRows = yield* inChunks(grouped, (chunk) =>
 			tx.run(
 				PG.from(ErrorGroupingKeys)
@@ -657,6 +669,41 @@ const withoutPinnedGroups = (
 				? []
 				: Arr.filter(row.groupedFingerprintHashes ?? [], (hash) => !pinned.has(hash)),
 		}))
+	})
+
+/**
+ * A redirected hash's buffered candidate counts travel with its occurrences: they are added
+ * to the row it now rides on and the candidate rows are consumed, so a group is not undercounted.
+ */
+const withBufferedCandidates = (
+	tx: ErrorTickTransaction,
+	orgId: OrgId,
+	redirected: ReadonlyArray<{ readonly from: string; readonly row: ErrorTickScanRow }>,
+): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
+	Effect.gen(function* () {
+		const moved = Arr.dedupe(
+			Arr.flatMap(redirected, ({ from, row }) => (from === row.fingerprintHash ? [] : [from])),
+		)
+		if (moved.length === 0) return Arr.map(redirected, ({ row }) => row)
+		const buffered = yield* inChunks(moved, (chunk) =>
+			tx.run(
+				PG.deleteFrom(ErrorFingerprintCandidates)
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)])
+					.returning("fingerprintHash", "occurrenceCount", "firstSeenAt", "serviceVersionsJson"),
+			),
+		)
+		const bufferedOf = new Map(Arr.map(buffered, (row) => [row.fingerprintHash, row] as const))
+		return Arr.map(redirected, ({ from, row }) => {
+			const candidate = from === row.fingerprintHash ? undefined : bufferedOf.get(from)
+			return candidate === undefined
+				? row
+				: {
+						...row,
+						count: row.count + candidate.occurrenceCount,
+						firstSeenMs: Math.min(row.firstSeenMs, candidate.firstSeenAt),
+						serviceVersions: mergeVersions(candidate.serviceVersionsJson, row.serviceVersions),
+					}
+		})
 	})
 
 /**
@@ -707,32 +754,54 @@ const canonicalizeScanRows = (
 		if (rows.length === 0) return { rows, peers: new Map() }
 		// One read covers the rows' hashes and the previous hashes a bump resolves them through.
 		const aliased = yield* aliasOwners(tx, orgId, hashesWithPrevious(rows))
-		const unpinned = yield* withoutPinnedGroups(tx, orgId, rows)
-		const owners = yield* rekeyOwners(tx, input, unpinned, aliased)
+		const current = yield* withCurrentGroups(tx, input, rows)
+		const owners = yield* rekeyOwners(tx, input, current, aliased)
 		const ownerOfRow = (row: ErrorTickScanRow) => owners.get(row.fingerprintHash)
-		const unowned = Arr.filter(unpinned, (row) => ownerOfRow(row) === undefined)
-		const peers = groupPeers(unowned)
+		const unowned = Arr.filter(current, (row) => ownerOfRow(row) === undefined)
+		// Peers are hashes with no issue at all: one with its own issue is not new.
+		const primaryRows = yield* inChunks(
+			Arr.map(
+				Arr.filter(unowned, (row) => (row.groupedFingerprintHashes ?? []).length > 0),
+				(row) => row.fingerprintHash,
+			),
+			(chunk) =>
+				tx.run(
+					PG.from(ErrorIssues)
+						.select("fingerprintHash")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.kind.eq("error"),
+							$.fingerprintHash.in_(...chunk),
+						]),
+				),
+		)
+		const primaries = new Set(Arr.map(primaryRows, (row) => row.fingerprintHash))
+		const peers = groupPeers(Arr.filter(unowned, (row) => !primaries.has(row.fingerprintHash)))
 		if (!Arr.some(rows, (row) => ownerOfRow(row) !== undefined) && peers.size === 0) {
 			return { rows, peers }
 		}
+		const redirected = [
+			...Arr.flatMap(rows, (row) => {
+				const owner = ownerOfRow(row)
+				if (owner === undefined) return []
+				const { id: _id, ...fields } = owner
+				return [{ from: row.fingerprintHash, row: { ...row, ...fields } }]
+			}),
+			...Arr.map(
+				Arr.filter(unowned, (row) => peers.has(row.fingerprintHash)),
+				(row) => ({
+					from: row.fingerprintHash,
+					row: { ...row, fingerprintHash: peers.get(row.fingerprintHash) ?? row.fingerprintHash },
+				}),
+			),
+		]
+		const carried = yield* withBufferedCandidates(tx, orgId, redirected)
 		// The merge keeps the last row's display fields, so redirected rows go first and an
 		// issue's own observation in this window wins over its stored fields.
 		return {
 			peers,
 			rows: mergeScanRows([
-				...Arr.flatMap(rows, (row) => {
-					const owner = ownerOfRow(row)
-					if (owner === undefined) return []
-					const { id: _id, ...fields } = owner
-					return [{ ...row, ...fields }]
-				}),
-				...Arr.map(
-					Arr.filter(unowned, (row) => peers.has(row.fingerprintHash)),
-					(row) => ({
-						...row,
-						fingerprintHash: peers.get(row.fingerprintHash) ?? row.fingerprintHash,
-					}),
-				),
+				...carried,
 				...Arr.filter(unowned, (row) => !peers.has(row.fingerprintHash)),
 			]),
 		}

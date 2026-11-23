@@ -4,6 +4,7 @@ import {
 	ErrorGroupingKeys,
 	ErrorIssueFingerprints,
 	ErrorIssues,
+	ErrorTickStates,
 } from "@maple/db/tables"
 import {
 	type ErrorIssueId,
@@ -16,16 +17,18 @@ import {
 	type ErrorPersistenceError,
 	ErrorValidationError,
 	GroupingConfigDocument,
+	type GroupingRulesUpdateRequest,
 	type OrgId,
 	UserId as UserIdSchema,
 	type UserId,
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
-import { explainGrouping } from "@maple/domain/tinybird/grouping"
-import { type GroupingConfig, groupingRuleProblem } from "@maple/domain/tinybird/grouping-rules"
+import { explainGrouping, keyOfParts } from "@maple/domain/tinybird/grouping"
+import { GroupingConfig, groupingRuleProblem } from "@maple/domain/tinybird/grouping-rules"
 import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Order, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
+import { timestampMs } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ACTIONABLE_WORKFLOW_STATES } from "./ErrorIssueReadModelsService"
@@ -50,7 +53,7 @@ export interface ErrorGroupingServiceApi {
 	readonly updateRules: (
 		orgId: OrgId,
 		userId: UserId,
-		config: GroupingConfig,
+		request: GroupingRulesUpdateRequest,
 	) => Effect.Effect<GroupingConfigDocument, ErrorPersistenceError | ErrorValidationError>
 	/** Every fingerprint the issue owns, and which rule put it there. */
 	readonly explainIssue: (
@@ -110,7 +113,8 @@ const make: Effect.Effect<
 	)
 
 	const updateRules: ErrorGroupingServiceApi["updateRules"] = Effect.fn("ErrorGroupingService.updateRules")(
-		function* (orgId, userId, config) {
+		function* (orgId, userId, request) {
+			const config = new GroupingConfig({ rules: request.rules })
 			const ids = Arr.map(config.rules, (rule) => rule.id)
 			const duplicates = Arr.dedupe(Arr.filter(ids, (id, index) => ids.indexOf(id) !== index))
 			const problems = [
@@ -128,14 +132,46 @@ const make: Effect.Effect<
 			}
 			const timestamp = yield* Clock.currentTimeMillis
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.grouping.rules": config.rules.length })
+			const expected =
+				request.expectedUpdatedAt === null ? null : timestampMs(request.expectedUpdatedAt)
 			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(ErrorGroupingConfigs)
-						.values({ orgId, rulesJson: config.rules, updatedAt: timestamp, updatedBy: userId })
-						.onConflictDoUpdate({
-							target: ["orgId"],
-							set: { rulesJson: config.rules, updatedAt: timestamp, updatedBy: userId },
-						}),
+				db.transaction(
+					Effect.gen(function* () {
+						// The tick's cursor lock: a window keying under the old rules finishes first,
+						// and one that starts later reads these.
+						yield* db.run(
+							PG.from(ErrorTickStates)
+								.select("orgId")
+								.where(($) => [$.orgId.eq(orgId)])
+								.forUpdate(),
+						)
+						const [stored] = yield* db.run(
+							PG.from(ErrorGroupingConfigs)
+								.select("updatedAt")
+								.where(($) => [$.orgId.eq(orgId)])
+								.forUpdate(),
+						)
+						if ((stored?.updatedAt ?? null) !== expected) {
+							return yield* new ErrorValidationError({
+								message:
+									"The grouping rules changed since you opened them. Reload to see the latest.",
+								details: [],
+							})
+						}
+						yield* db.run(
+							PG.insertInto(ErrorGroupingConfigs)
+								.values({
+									orgId,
+									rulesJson: config.rules,
+									updatedAt: timestamp,
+									updatedBy: userId,
+								})
+								.onConflictDoUpdate({
+									target: ["orgId"],
+									set: { rulesJson: config.rules, updatedAt: timestamp, updatedBy: userId },
+								}),
+						)
+					}),
 				),
 			)
 			return document(config.rules, timestamp)
@@ -201,10 +237,15 @@ const make: Effect.Effect<
 				fingerprintHash,
 				source,
 				rule: keyed ? key.rule : (why?.rule ?? null),
+				// Named only when today's rules key the hash as it was keyed; else the rule changed.
 				orgRule:
 					(keyed ? key.rule : why?.rule) !== "org-rule"
 						? null
-						: (why?.orgRule?.title ?? why?.orgRule?.id ?? "a rule since removed"),
+						: why?.orgRule !== undefined &&
+							  entry !== undefined &&
+							  (!keyed || keyOfParts(entry.input.serviceName, why) === key.groupingKey)
+							? (why.orgRule.title ?? why.orgRule.id)
+							: "a rule since changed",
 				pinned: key?.pinned ?? false,
 				exceptionType: sample?.exceptionType ?? issue.exceptionType,
 				messageSignature: why?.messageSignature ?? "",

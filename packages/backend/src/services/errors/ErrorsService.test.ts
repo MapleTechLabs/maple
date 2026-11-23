@@ -2198,6 +2198,7 @@ describe("ErrorsService.runTick", () => {
 						autoResolveMinutes: 30,
 						claimToken: "a-token-this-worker-no-longer-holds",
 						earlyPromotionsPerDay: 10,
+						groupingDigest: "",
 						makeIssueId: () => asIssueId(randomUUID()),
 						makeIncidentId: () => asIncidentId(randomUUID()),
 						makeEventId: () => asEventId(randomUUID()),
@@ -3928,6 +3929,7 @@ const makeIdleTickHarness = (
 			edgeBackend,
 			dispatcher: opts.dispatcher,
 			earlyPromotionsPerDay: 0,
+			groupingDigest: "",
 		}),
 		db,
 		errors,
@@ -5731,6 +5733,76 @@ describe("ErrorsService.runTick grouping keys", () => {
 				),
 			),
 		)
+	})
+
+	it.effect("hashes that each own an issue are never folded as new peers", () => {
+		const rows = [row(H1, 1), row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const live = asIssueId(randomUUID())
+			const ignored = asIssueId(randomUUID())
+			yield* seedIssue(live, {
+				fingerprintHash: H2,
+				exceptionType: "SiteUnavailable",
+				occurrenceCount: 5,
+			})
+			yield* seedIssue(ignored, {
+				fingerprintHash: H1,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+				occurrenceCount: 5,
+			})
+			yield* errors.runTick
+
+			// The live issue keeps its occurrence; the ignored one stays suppressed, as before.
+			assert.strictEqual((yield* loadIssueById(live)).occurrenceCount, 6)
+			assert.strictEqual((yield* loadIssueById(ignored)).occurrenceCount, 5)
+			assert.deepStrictEqual(yield* aliasesOf, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a follower's buffered occurrences move to the issue its group opens", () => {
+		const rows = [row(H1, 1), row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorFingerprintCandidates).values({
+						orgId: ORG,
+						fingerprintHash: H2,
+						serviceName: "checkout-api",
+						exceptionType: "SiteUnavailable",
+						exceptionMessage: MESSAGE,
+						topFrame: "",
+						occurrenceCount: 2,
+						firstSeenAt: TICK_MS - 600_000,
+						lastSeenAt: TICK_MS - 300_000,
+						updatedAt: TICK_MS - 300_000,
+					}),
+				),
+			)
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			const [issue] = yield* loadIssuesByFingerprint(H1)
+			assert.strictEqual(issue?.occurrenceCount, 4)
+			const left = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select("fingerprintHash")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(left, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
 	it.effect("a hash whose previous version was pinned stays out of groups after a bump", () => {
