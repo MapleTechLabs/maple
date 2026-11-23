@@ -27,6 +27,8 @@ import type {
 	ListHostsRequest,
 	ListLogsRequest,
 	ListMetricsRequest,
+	MetricDistributionRequest,
+	MetricExemplarsRequest,
 	ListNodesRequest,
 	ListWorkloadsRequest,
 	MetricsSummaryRequest,
@@ -299,6 +301,56 @@ export const metricsSummary = defineQuery({
 	cache: 60,
 	compile: (payload: MetricsSummaryRequest, orgId: OrgId) =>
 		CH.compile(CH.metricsSummaryQuery({ serviceName: payload.service }), windowParams(payload, orgId)),
+})
+
+/** The chart's filters as a distribution or exemplar read takes them (no grouping). */
+const metricFilterOpts = (filters: MetricDistributionRequest["filters"]): CH.MetricsFilterOpts => ({
+	metricType: filters.metricType,
+	metricNames: filters.metricNames,
+	serviceName: filters.serviceName,
+	environments: filters.environments,
+	attributeFilters: filters.attributeFilters,
+	resourceAttributeFilters: filters.resourceAttributeFilters,
+})
+
+const metricWindowParams = (payload: MetricDistributionRequest | MetricExemplarsRequest, orgId: OrgId) => ({
+	...windowParams(payload, orgId),
+	metricName: payload.filters.metricName,
+	bucketSeconds: payload.bucketSeconds,
+})
+
+export const metricDistribution = defineQuery({
+	id: "metricDistribution",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: MetricDistributionRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.histogramDistributionQuery(metricFilterOpts(payload.filters)),
+			metricWindowParams(payload, orgId),
+		),
+})
+
+export const metricExemplars = defineQuery({
+	id: "metricExemplars",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: MetricExemplarsRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.metricExemplarsQuery({
+				...metricFilterOpts(payload.filters),
+				perBucket: payload.perBucket,
+				limit: payload.limit,
+				// The chart's read places one dot per bucket; a cell's read lists its highest values.
+				coverBuckets: payload.cell === undefined,
+				...(payload.cell === undefined
+					? undefined
+					: { cell: { lowerBound: payload.cell.lowerBound, upperBound: payload.cell.upperBound } }),
+			}),
+			{
+				...metricWindowParams(payload, orgId),
+				...(payload.cell === undefined ? undefined : { cellBucket: payload.cell.bucket }),
+			},
+		),
 })
 
 /**

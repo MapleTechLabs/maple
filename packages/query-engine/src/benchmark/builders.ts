@@ -22,6 +22,8 @@ import {
 	ListHostsRequest,
 	ListPodsRequest,
 	ListWorkloadsRequest,
+	MetricDistributionRequest,
+	MetricExemplarsRequest,
 	PodDetailSummaryRequest,
 	ServiceHealthBaselineRequest,
 	ServiceHealthSnapshotRequest,
@@ -33,7 +35,7 @@ import {
 	WorkloadDetailSummaryRequest,
 } from "@maple/domain/http"
 import { utcSecondsParam } from "../ch/tables"
-import { DateTime, Effect, Result, Schema } from "effect"
+import { Array as Arr, DateTime, Effect, Result, Schema } from "effect"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import {
 	type BuilderFixture,
@@ -1394,6 +1396,53 @@ const remainderFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "endBounded",
 		compile: () =>
 			CH.compileUnsafe(CH.recentTraceTimeProbeQuery({ traceId: TRACE_ID, endBounded: true }), window),
+	},
+	// apps/api route `metricDistribution`: the metric page's histogram heatmap.
+	...Arr.map(["histogram", "exponential_histogram"] as const, (metricType): BuilderFixture => ({
+		module: "metrics",
+		name: "histogramDistributionQuery",
+		label: metricType,
+		compile: () =>
+			viaRegistry(
+				Queries.metricDistribution,
+				sample(MetricDistributionRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType, serviceName: "api" },
+				}),
+			),
+	})),
+	{
+		// apps/api route `metricExemplars`: the traces behind the metric chart.
+		module: "metrics",
+		name: "metricExemplarsQuery",
+		label: "chart",
+		compile: () =>
+			viaRegistry(
+				Queries.metricExemplars,
+				sample(MetricExemplarsRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType: "histogram" },
+				}),
+			),
+	},
+	{
+		// The same route reading one picked heatmap cell.
+		module: "metrics",
+		name: "metricExemplarsQuery",
+		label: "cell",
+		compile: () =>
+			viaRegistry(
+				Queries.metricExemplars,
+				sample(MetricExemplarsRequest, {
+					...span,
+					bucketSeconds: 300,
+					filters: { metricName: "http.server.request.duration", metricType: "histogram" },
+					cell: { bucket: START_TIME, lowerBound: 0.1, upperBound: 1 },
+					perBucket: 20,
+				}),
+			),
 	},
 ]
 

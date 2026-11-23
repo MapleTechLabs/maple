@@ -1,6 +1,7 @@
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
+import { MetricExemplarRow } from "@maple/domain/http"
 import * as AddToDashboard from "./add-to-dashboard"
 import { CaretMessage } from "./where-editor"
 import { defineMessageUnion } from "foldkit/message"
@@ -13,7 +14,13 @@ import * as Select from "@maple/views/ui/select"
 import { MetricRow } from "../shared"
 import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { AttributeKeyRow, AutocompleteLookup, BreakdownRow, TimeseriesRows } from "./model"
+import {
+	AttributeKeyRow,
+	AutocompleteLookup,
+	BreakdownRow,
+	MetricDistribution,
+	TimeseriesRows,
+} from "./model"
 import { LookupNames } from "../../kit/autocomplete-lookups"
 
 const result = <A extends Schema.Top>(schema: A) => ({
@@ -28,6 +35,14 @@ export const Message = defineMessageUnion({
 	CompletedFetchAttributeKeys: result(Schema.Array(AttributeKeyRow)),
 	CompletedFetchTimeseries: result(TimeseriesRows),
 	CompletedFetchBreakdown: result(Schema.Array(BreakdownRow)),
+	CompletedFetchExemplars: result(Schema.Array(MetricExemplarRow)),
+	CompletedFetchDistribution: result(MetricDistribution),
+	CompletedFetchCellExemplars: result(Schema.Array(MetricExemplarRow)),
+	/** A histogram's chart: its aggregation's line, or the bucket heatmap. */
+	ChangedChartDisplay: { display: Schema.Literals(["line", "distribution"]) },
+	ClearedCellSelection: {},
+	ClickedExemplar: { traceId: Schema.String, spanId: Schema.String },
+	GotDistributionChartMessage: { message: Chart.Message },
 	ChangedWhereInput: { value: Schema.String },
 	PressedWhereEnter: {},
 	GotCaretMessage: { message: CaretMessage },

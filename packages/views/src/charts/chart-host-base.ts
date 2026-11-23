@@ -36,10 +36,37 @@ const timeAxisOf = (scale: ResolvedScale | undefined): Option.Option<TimeAxis> =
 		: Option.none()
 }
 
+/** A numeric y scale reduced to its affine map: the domain ends and their pixels. */
+export interface ValueAxis {
+	readonly valueStart: number
+	readonly valueEnd: number
+	readonly valueRangeStart: number
+	readonly valueRangeEnd: number
+}
+
+const valueAxisOf = (scale: ResolvedScale | undefined): Option.Option<ValueAxis> => {
+	const start = scale?.domain[0]
+	const end = scale?.domain[scale.domain.length - 1]
+	return scale !== undefined && typeof start === "number" && typeof end === "number" && start !== end
+		? Option.some({
+				valueStart: start,
+				valueEnd: end,
+				valueRangeStart: scale.map(start),
+				valueRangeEnd: scale.map(end),
+			})
+		: Option.none()
+}
+
 export interface ChartHostCallbacks {
 	readonly onFocusChange: (maybeKey: Option.Option<string>) => void
 	readonly onTooltipChange: (maybeTooltip: Option.Option<ChartTooltip>) => void
-	readonly onRender: (bounds: ChartBounds, timeAxis: Option.Option<TimeAxis>) => void
+	readonly onRender: (
+		bounds: ChartBounds,
+		timeAxis: Option.Option<TimeAxis>,
+		valueAxis: Option.Option<ValueAxis>,
+	) => void
+	/** A click or Enter on a datum picked it (its focus key), or cleared the pick. */
+	readonly onSelect?: (maybeKey: Option.Option<string>) => void
 	/** A library-drawn legend (`interactiveColorLegend`) toggled `key` of `keys`. */
 	readonly onLegendToggle?: (key: string, keys: ReadonlyArray<string>) => void
 }
@@ -73,6 +100,8 @@ export const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y ext
 	const current = { built: build(initialSpec) }
 	const onFocusChange = (point: Parameters<BuiltChart<TDatum, X, Y>["focusKeyOf"]>[0] | null) =>
 		callbacks.onFocusChange(Option.map(Option.fromNullishOr(point), current.built.focusKeyOf))
+	const onSelect = (point: Parameters<BuiltChart<TDatum, X, Y>["focusKeyOf"]>[0] | null) =>
+		callbacks.onSelect?.(Option.map(Option.fromNullishOr(point), current.built.focusKeyOf))
 	const onTooltipBodyChange = (
 		target: { readonly points: Parameters<BuiltChart<TDatum, X, Y>["tooltipOf"]>[0] } | null,
 	) => callbacks.onTooltipChange(target === null ? Option.none() : current.built.tooltipOf(target.points))
@@ -81,7 +110,12 @@ export const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y ext
 			readonly chart: ChartBounds
 			readonly scales: Readonly<Record<string, ResolvedScale>>
 		}
-	}) => callbacks.onRender(context.scene.chart, timeAxisOf(context.scene.scales.x))
+	}) =>
+		callbacks.onRender(
+			context.scene.chart,
+			timeAxisOf(context.scene.scales.x),
+			valueAxisOf(context.scene.scales.y),
+		)
 	const optionsFor = (height: number) => ({
 		renderer: chartRenderer,
 		definition: current.built.definition,
@@ -90,6 +124,7 @@ export const hostFor = <S extends ChartSpec, TDatum, X extends ChartValue, Y ext
 		height,
 		initialWidth: 640,
 		onFocusChange,
+		onSelect,
 		onTooltipBodyChange,
 		onRender,
 	})

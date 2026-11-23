@@ -15,6 +15,7 @@ import type {
 	MineLogPatternsOutput,
 	CompareLogPatternsOutput,
 	SearchLogsOutput,
+	MetricExemplarsResult,
 	SearchTracesOutput,
 	ServiceHealthOutput,
 	SpanResult,
@@ -426,3 +427,33 @@ export const queryPromql = (
 		step: p.step,
 		instant: p.instant ? true : undefined,
 	})
+
+/** The tool refuses a metric name it cannot find, so a remote answer is always `found`. */
+export const metricExemplars = (
+	mcp: MapleMcpClient,
+	p: {
+		name: string
+		range: Range
+		bucketSeconds: number
+		service?: string
+		environment?: string
+		perBucket?: number
+		limit?: number
+	},
+) =>
+	Effect.map(
+		mcp.call("get_metric_exemplars", {
+			metric_name: p.name,
+			...window(p.range),
+			service: p.service,
+			environment: p.environment,
+			bucket_seconds: p.bucketSeconds,
+			per_bucket: p.perBucket,
+			limit: p.limit,
+		}),
+		(out): MetricExemplarsResult => ({
+			_tag: "found",
+			metricType: out.metricType,
+			exemplars: out.exemplars,
+		}),
+	)

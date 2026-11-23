@@ -495,6 +495,8 @@ export const MetricSearch = Schema.Struct({
 	groupBy: StringParam,
 	step: StringParam,
 	bd: StringParam,
+	/** A histogram's chart: absent is the aggregation's line, `distribution` the bucket heatmap. */
+	display: Schema.optional(Schema.Literals(["distribution"])),
 	...TimeRangeSearchFields,
 })
 

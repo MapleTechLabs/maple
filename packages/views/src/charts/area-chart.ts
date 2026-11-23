@@ -51,6 +51,8 @@ export interface AreaChartInputs {
 	readonly seriesStats?: boolean
 	/** Thresholds, log scale and soft bounds. */
 	readonly axis?: TimeseriesAxisSpec | undefined
+	/** Report the plot's geometry (`Chart.Model.plot`) for an overlay the page draws beside the chart. */
+	readonly reportPlot?: boolean
 }
 
 const tooltipBody = (
@@ -127,6 +129,7 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 					...(inputs.showPoints === undefined ? undefined : { showPoints: inputs.showPoints }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
 				}),
+				reportPlot: inputs.reportPlot,
 				// A hoisted legend renders nothing here, but the plot frame still gets an element.
 				legend,
 				legendPlacement: inputs.legend === "right" ? "right" : "bottom",
