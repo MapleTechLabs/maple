@@ -51,7 +51,7 @@ import { downMonitor, httpMonitor, monitorId } from "../../page/kit/uptime/test-
 import type { Resources } from "../../platform/resources"
 import { keepLocal } from "../local-commands"
 import { defineShellLab } from "../shell-lab"
-import { LAB_NOW_MS, LAB_ORG, LAB_PAGES } from "../status-pages-fixture"
+import { LAB_NOW_MS, LAB_ORG, LAB_ORG_KEY, LAB_PAGES } from "../status-pages-fixture"
 import type { StatusPageSummary } from "../../page/status-pages/shared/derive"
 import { labGrants, LabRole, readLabRole } from "../viewer-role"
 
@@ -148,6 +148,7 @@ const listModel = (role: LabRole, pages: ReadonlyArray<StatusPageSummary>): List
 	const entered = Arr.reduce(
 		[
 			ListMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			ListMessage.ComputedOrgKey({ orgKey: LAB_ORG_KEY }),
 			ListMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
 		],
 		listInit({ _tag: "StatusPages" }, context).model,
@@ -205,6 +206,7 @@ const editorModel = (role: LabRole, page: EditorPage): EditorModel => {
 	return Arr.reduce(
 		[
 			EditorMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			EditorMessage.ComputedOrgKey({ orgKey: LAB_ORG_KEY }),
 			EditorMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
 			EditorMessage.CompletedFetchPage({
 				key: entered.page.key ?? "",
@@ -292,11 +294,14 @@ const builderModel = (
 	page: LabPage,
 ): Update.Return<BuilderModel, BuilderMessage, Resources> => {
 	const search =
-		page === "new-choose" ? {} : { setup: page === "new-agent" ? ("agent" as const) : ("manual" as const) }
+		page === "new-choose"
+			? {}
+			: { setup: page === "new-agent" ? ("agent" as const) : ("manual" as const) }
 	const entered = builderInit({ _tag: "StatusPageNew", search }, context).model
 	return Arr.reduce(
 		[
 			BuilderMessage.ReadClock({ nowMs: LAB_NOW_MS }),
+			BuilderMessage.ComputedOrgKey({ orgKey: LAB_ORG_KEY }),
 			BuilderMessage.CompletedFetchSession({ orgId: LAB_ORG, grants: labGrants(role) }),
 			BuilderMessage.CompletedFetchMonitors({
 				key: entered.monitors.key ?? "",

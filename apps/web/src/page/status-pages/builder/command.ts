@@ -5,7 +5,7 @@ import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
 import { trackProduct } from "../../../data/analytics"
 import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
-import { createPage, previewPage, setCustomDomain } from "../shared/commands"
+import { computeOrgKey, createPage, previewPage, setCustomDomain } from "../shared/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
 import { SubmitMode } from "./model"
@@ -15,6 +15,8 @@ import { fetchSessionGrants } from "../../kit/session-grants"
 export const PREVIEW_DEBOUNCE_MS = 400
 
 export const ReadBuilderClock = readClock("ReadStatusPageBuilderClock", Message.ReadClock)
+
+export const ComputeBuilderOrgKey = computeOrgKey("ComputeStatusPageBuilderOrgKey", Message.ComputedOrgKey)
 
 export const FetchBuilderSession = fetchSessionGrants(
 	"FetchStatusPageBuilderSession",

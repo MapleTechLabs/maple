@@ -1,4 +1,4 @@
-import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { assert, describe, expect, it } from "vitest"
 import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import {
@@ -25,6 +25,8 @@ import {
 	overlayIncidentId,
 	pageFreshness,
 	sha256Base64Url,
+	statusPageAddress,
+	statusPageOrgKey,
 	STATUS_PAGE_STALE_AFTER_MS,
 	StatusPageThemePreset,
 	type StatusPageOverlayEntry,
@@ -75,6 +77,23 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 	incidents: [],
 	incidentHistory: [],
 	...overrides,
+})
+
+describe("statusPageOrgKey", () => {
+	// `printf %s <id> | shasum -a 256`, first 12 hex digits: hosted addresses must never move.
+	it.each([
+		["org_2abcDEF123", "18cf636952b0"],
+		["org_é", "448e40b16da8"],
+		["", "e3b0c44298fc"],
+	])("keys %j as the SHA-256 hex prefix", async (orgId, key) => {
+		expect(await Effect.runPromise(statusPageOrgKey(orgId))).toBe(key)
+	})
+
+	it("prefixes the slug with the org key", async () => {
+		expect(await Effect.runPromise(statusPageAddress("org_2abcDEF123", "status"))).toBe(
+			"18cf636952b0/status",
+		)
+	})
 })
 
 describe("isStatusPageImageDataUrl", () => {

@@ -90,7 +90,7 @@ export const draftSnapshot = (
 		page: {
 			name: draftName(page, form),
 			slug: form.slug,
-			orgKey: model.orgKey,
+			orgKey: Option.getOrElse(model.orgKey, () => ""),
 			description: orNull(form.description),
 			websiteUrl: orNull(form.websiteUrl),
 			logoUrl: orNull(form.logoUrl),
@@ -143,7 +143,7 @@ export const settingsPagePreview = (h: H, model: Model, page: V2StatusPage, form
 							snapshot: draftSnapshot(model, page, form, "live"),
 							nowMs: nowOf(model, page),
 							isSelectable: true,
-							publicUrl: pageUrlOf(model, page),
+							publicUrl: Option.getOrNull(pageUrlOf(model, page)),
 						}),
 						isSelectable: true,
 						className: "min-h-0 flex-1",
@@ -162,7 +162,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string =>
 		),
 		nowMs: nowOf(model, page),
 		isSelectable: true,
-		publicUrl: pageUrlOf(model, page),
+		publicUrl: Option.getOrNull(pageUrlOf(model, page)),
 	})
 
 export const livePage = (h: H, model: Model, page: V2StatusPage): Html =>

@@ -565,7 +565,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 					return {
 						page: {
 							...page,
-							orgKey: statusPageOrgKey(orgId),
+							orgKey: yield* statusPageOrgKey(orgId),
 							customDomain: domain?.hostname ?? null,
 						},
 						components,
@@ -606,7 +606,7 @@ export class StatusPageSnapshotBuilder extends Context.Service<
 				page: {
 					...draft.page,
 					id: DRAFT_PAGE_ID,
-					orgKey: statusPageOrgKey(orgId),
+					orgKey: yield* statusPageOrgKey(orgId),
 					breakGlassTokenSha256: null,
 					passwordHash: null,
 					revision: 0,
