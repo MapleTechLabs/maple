@@ -17,7 +17,6 @@ export type StripKind =
 	| "skeletonRow"
 	| "dashed"
 	| "box"
-	| "section"
 
 const STRIP = {
 	/** A list's head band: its column labels, or a note above its rows. */
@@ -41,8 +40,6 @@ const STRIP = {
 	dashed: "border-t border-dashed pt-1",
 	/** A small bordered box inside a section (a finding's evidence, one restriction). */
 	box: "rounded-md border p-3",
-	/** A section of a page or flow ruled off from the one above it (a setup step, a breakdown). */
-	section: "border-t border-border pt-5",
 } as const satisfies Record<StripKind, string>
 
 /** The classes of a strip, for an element the kit doesn't render (an `hstack`, a table head). */
@@ -70,13 +67,7 @@ export const dividedList = <M>(
 ): Html => {
 	const attributes = [
 		...(options.attributes ?? []),
-		h.Class(
-			cn(
-				"divide-y divide-border-subtle",
-				(options.bordered ?? true) && "rounded-md border",
-				options.className,
-			),
-		),
+		h.Class(cn("divide-y divide-border-subtle", (options.bordered ?? true) && "rounded-md border", options.className)),
 	]
 	switch (options.as) {
 		case "ul":

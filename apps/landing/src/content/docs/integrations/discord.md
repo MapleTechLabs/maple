@@ -4,6 +4,7 @@ description: "Add the Maple bot to a Discord server. Mention it in a channel to 
 group: "Integrations"
 order: 5.5
 author: "jeremyfunk"
+icon: "discord"
 ---
 
 The Discord integration adds the Maple bot to a Discord server and links that server to your Maple organization. Mention the bot in a channel and it answers in a thread, using the same assistant as Maple's chat. Once the server is linked, its channels are also available as [alert destinations](/docs/alerting/notification-destinations).

@@ -3,6 +3,7 @@ title: "Supabase"
 description: "Authorize a Supabase organization with OAuth. Maple scrapes CPU, memory, disk, and Postgres metrics from every project each minute, and can collect project logs, advisors, and slowest queries."
 group: "Integrations"
 order: 3.5
+icon: "supabase"
 ---
 
 You connect a Supabase organization once, with an OAuth authorization. Maple lists the organization's projects and scrapes each project's metrics endpoint on the Supabase Management API every minute. You choose per project whether Maple also collects logs, either by polling or through a Supabase log drain. The data appears under **Infrastructure → Supabase** and in the [metrics explorer](/docs/explore/metrics). You do not run an agent.

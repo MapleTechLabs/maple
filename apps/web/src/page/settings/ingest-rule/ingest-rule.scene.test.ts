@@ -13,14 +13,16 @@ import {
 	text,
 	withViewInputs,
 } from "foldkit/scene"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { ORG } from "../../kit/alert-test-rows"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { DebounceEstimate } from "./command"
+import { specOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LogSample } from "./preview"
+import { type LogSample, recordsOf, runPreview } from "./preview"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -117,6 +119,115 @@ describe("ingest rule editor", () => {
 			expectView(text("Would redact 1 of 4 (25%)")).toExist(),
 			expectView(text("[REDACTED:email]")).toExist(),
 		)
+	})
+
+	test("a parse preview shows extracted fields, and failures first", () => {
+		const jsonLogs = (model: Model): Model =>
+			pageUpdate(
+				model,
+				Message.CompletedFetchSamples({
+					key: model.samplesKey,
+					result: Result.succeed({
+						_tag: "logs",
+						rows: [log("", '{"level":"warn","order":{"id":7}}'), log("", "{not json")],
+					}),
+				}),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(jsonLogs(fresh("parse-json-logs"))),
+			expectView(text("Would parse 2 of 2; 1 fail (50%)")).toExist(),
+			expectView(text("json: not valid JSON")).toExist(),
+			expectView(text("order.id")).toExist(),
+			expectView(text("WARN (13)")).toExist(),
+		)
+		// The broken line arrives second but is listed first.
+		const model = jsonLogs(fresh("parse-json-logs"))
+		const samples = AsyncData.isSuccess(model.samples)
+			? model.samples.data
+			: { _tag: "logs" as const, rows: [] }
+		const rows = runPreview(specOf(model.draft), recordsOf(samples)).rows
+		expect(Arr.map(rows, (row) => (row._tag === "parsed" ? row.failure : row._tag))).toEqual([
+			"json: not valid JSON",
+			null,
+		])
+	})
+
+	test("a parsed field named like an Object method still shows", () => {
+		const model = pageUpdate(
+			fresh("parse-json-logs"),
+			Message.CompletedFetchSamples({
+				key: fresh("parse-json-logs").samplesKey,
+				result: Result.succeed({
+					_tag: "logs",
+					rows: [log("", '{"constructor":"x","toString":"y"}')],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("constructor")).toExist(),
+			expectView(text("toString")).toExist(),
+		)
+	})
+
+	test("a parsed value that only changes type still shows", () => {
+		const model = pageUpdate(
+			fresh("parse-json-logs"),
+			Message.CompletedFetchSamples({
+				key: fresh("parse-json-logs").samplesKey,
+				result: Result.succeed({
+					_tag: "logs",
+					rows: [{ ...log("", '{"status":200}'), logAttributes: { status: "200" } }],
+				}),
+			}),
+		).model
+		scene({ update: pageUpdate, view }, given(model), expectView(text("status")).toExist())
+	})
+
+	test("switching to parse limits the rule to logs and adds a JSON step", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(fresh("redact-pii"), Message.PickedAction({ actionType: "parse" })).model),
+			expectView(role("combobox", { name: "Step 1 kind" })).toHaveValue("json"),
+			expectView(role("button", { name: "Move step 1 up" })).toBeDisabled(),
+			expectView(text("Ready to save")).toExist(),
+		)
+	})
+
+	test("a step reading an attribute asks for its key beside the prefix", () => {
+		const json = fresh("parse-json-logs")
+		const stepId = json.draft.steps[0]?.id ?? 0
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(json, Message.ChangedStepSource({ id: stepId, source: "attribute" })).model),
+			expectView(role("textbox", { name: "Step 1 attribute key" })).toExist(),
+			expectView(role("textbox", { name: "Step 1 key prefix" })).toExist(),
+		)
+	})
+
+	test("leaving parse gives back the signals it narrowed to logs", () => {
+		const viaParse = Arr.reduce(
+			[Message.PickedAction({ actionType: "parse" }), Message.PickedAction({ actionType: "redact" })],
+			fresh("redact-pii"),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		expect(viaParse.draft.signals).toEqual(["traces", "logs"])
+	})
+
+	test("changing a step's kind replaces an untouched example but keeps typed patterns", () => {
+		const parsing = pageUpdate(fresh(), Message.PickedAction({ actionType: "parse" })).model
+		const grok = pageUpdate(parsing, Message.AddedStep({ kind: "grok" })).model
+		const grokId = grok.draft.steps[1]?.id ?? 0
+		const regex = pageUpdate(grok, Message.ChangedStepKind({ id: grokId, kind: "regex" })).model
+		expect(regex.draft.steps[1]?.pattern).toBe("")
+		const typed = pageUpdate(
+			regex,
+			Message.ChangedStepText({ id: grokId, part: "pattern", value: "(?<a>x)" }),
+		).model
+		const back = pageUpdate(typed, Message.ChangedStepKind({ id: grokId, kind: "grok" })).model
+		expect(back.draft.steps[1]?.pattern).toBe("(?<a>x)")
 	})
 
 	test("hashing warns that it is pseudonymization", () => {

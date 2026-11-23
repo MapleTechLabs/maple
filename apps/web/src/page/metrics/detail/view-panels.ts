@@ -32,7 +32,7 @@ import {
 	SERVICE_KEY,
 } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, TimeseriesRows } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
@@ -45,6 +45,17 @@ type H = HtmlBuilder<Message>
 
 const toChart = (message: Chart.Message) => Message.GotChartMessage({ message })
 const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownComboboxMessage({ message })
+
+/** With no breakdown the one series is keyed by its query ("A"); its tooltip names the aggregation. */
+const seriesLabelsOf = (rows: TimeseriesRows, draft: MetricsQueryDraft): Record<string, string> | undefined =>
+	draft.groupBy.length > 0
+		? undefined
+		: Rec.fromEntries(
+				Arr.map(
+					Arr.filter(Rec.keys(rows[0] ?? {}), (key) => key !== "bucket"),
+					(key) => [key, draft.aggregation],
+				),
+			)
 
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
@@ -81,6 +92,7 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 										showTooltip: true,
 										legend: draft.groupBy.length > 0 ? "visible" : "hidden",
 										reportPlot: true,
+										seriesLabels: seriesLabelsOf(rows, draft),
 										axis: exemplarAxis(model, draft.aggregation, draft.metricType),
 									},
 								}),

@@ -25,11 +25,11 @@ flowchart TD
 
 ## Ingest rules
 
-Customer drop and redact rules ([ingest-rules.md](ingest-rules.md)) run in
+Customer drop, parse and redact rules ([ingest-rules.md](ingest-rules.md)) run in
 `process_decoded_payload`, before the payload splits into the native WAL path and the collector
-forward. A dropped record is never appended and a redacted value is rewritten first, so the raw
-value never reaches the WAL on disk, the segments shipped to S3, or the collector. Replaying a WAL
-or an S3 segment therefore never needs the rules again.
+forward. A dropped record is never appended, parsed attributes are added and a redacted value is
+rewritten first, so the raw value never reaches the WAL on disk, the segments shipped to S3, or the
+collector. Replaying a WAL or an S3 segment therefore never needs the rules again.
 
 ## The log
 
@@ -319,14 +319,14 @@ attribute such as a JVM command line sits on every row of small items. The only 
 single item whose own row cannot fit the whole budget beside its decoded request, which no
 telemetry comes near; it is a 413 counted as `payload_too_large`.
 
-| Variable                        | Default | Notes                                                    |
-| ------------------------------- | ------- | -------------------------------------------------------- |
-| `INGEST_MAX_REQUEST_BODY_BYTES` | 20 MiB  | Body as received                                         |
-| `INGEST_MAX_DECODED_BODY_BYTES` | 8x body | Body after gzip                                          |
-| `INGEST_MAX_DECODE_HEAP_BYTES`  | 768 MiB | One request's decoded form                               |
-| `INGEST_MAX_ROW_EXPANSION`      | 512     | Rows as a multiple of the metered bytes; 0 turns it off  |
-| `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | Shared by all requests; at least one request plus 16 MiB |
-| `INGEST_ORG_QUEUE_MAX_BYTES`    | 1 GiB   | Most rows one request may store; reserved up front       |
+| Variable                        | Default | Notes                                                            |
+| ------------------------------- | ------- | ---------------------------------------------------------------- |
+| `INGEST_MAX_REQUEST_BODY_BYTES` | 20 MiB  | Body as received                                                 |
+| `INGEST_MAX_DECODED_BODY_BYTES` | 8x body | Body after gzip                                                  |
+| `INGEST_MAX_DECODE_HEAP_BYTES`  | 768 MiB | One request's decoded form                                       |
+| `INGEST_MAX_ROW_EXPANSION`      | 512     | Rows as a multiple of the metered bytes; 0 turns it off          |
+| `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | Shared by all requests; at least one request plus 16 MiB         |
+| `INGEST_ORG_QUEUE_MAX_BYTES`    | 1 GiB   | Most rows one request may store; reserved up front               |
 | `INGEST_QUEUE_CHANNEL_CAPACITY` | 100,000 | Most frames one request may store (one per datasource and piece) |
 
 Frames waiting in a lane's channel are not in this budget: they are bounded per org by

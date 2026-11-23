@@ -22,7 +22,7 @@ import {
 	type TraceRequest,
 } from "./otlp/encode"
 
-// Local mode's ingest rules: the same drop/redact rules as the gateway (docs/ingest-rules.md),
+// Local mode's ingest rules: the same drop, parse and redact rules as the gateway (docs/ingest-rules.md),
 // read from a JSON file instead of Postgres. Applied to the decoded request before encoding.
 
 /** `~/.maple/ingest-rules.json`, or `MAPLE_LOCAL_INGEST_RULES`. */
@@ -206,7 +206,8 @@ export const applyLocalIngestRules = (
 			redactedValues += count
 		})
 		return {
-			record: outcome.redactions.size > 0 ? outcome.record : record,
+			// A rule that changed nothing hands back the record it was given.
+			record: outcome.record,
 			redactExtra: (attributes) => redactWithMatched(compiled, outcome.matched, attributes),
 		}
 	}
@@ -339,6 +340,10 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 				kept.push(record)
 				writeLog(log, record.attributes, named !== null, attributes["event.name"])
 				if (record.body !== undefined && record.body !== body) log.body = fromValue(record.body)
+				// Parse rules can set severity and time.
+				if (record.severityNumber !== log.severityNumber) log.severityNumber = record.severityNumber
+				if (record.severityText !== log.severityText) log.severityText = record.severityText
+				if (record.timeUnixNano !== undefined) log.timeUnixNano = String(record.timeUnixNano)
 				return true
 			})
 			return scopeLogs.logRecords.length > 0

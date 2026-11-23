@@ -51,6 +51,8 @@ export interface AreaChartInputs {
 	readonly seriesStats?: boolean
 	/** Thresholds, log scale and soft bounds. */
 	readonly axis?: TimeseriesAxisSpec | undefined
+	/** Tooltip names by series key; the colour and legend still follow the key. */
+	readonly seriesLabels?: Readonly<Record<string, string>> | undefined
 	/** Report the plot's geometry (`Chart.Model.plot`) for an overlay the page draws beside the chart. */
 	readonly reportPlot?: boolean
 }
@@ -128,6 +130,9 @@ export const view = Submodel.defineView<Model, Message, AreaChartInputs>((model,
 					...(inputs.curveType === undefined ? undefined : { curve: inputs.curveType }),
 					...(inputs.showPoints === undefined ? undefined : { showPoints: inputs.showPoints }),
 					...(inputs.axis === undefined ? undefined : { axis: inputs.axis }),
+					...(inputs.seriesLabels === undefined
+						? undefined
+						: { seriesLabels: inputs.seriesLabels }),
 				}),
 				reportPlot: inputs.reportPlot,
 				// A hoisted legend renders nothing here, but the plot frame still gets an element.

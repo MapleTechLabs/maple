@@ -3,6 +3,7 @@ import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import { card, cardAction, cardDescription, cardHeader, cardTitle } from "@maple/views/ui/card"
 import type { Html } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { meter } from "@maple/views/ui/meter"
 import { miniBars } from "@maple/views/ui/mini-bars"
@@ -15,6 +16,7 @@ import { Array as Arr, Option } from "effect"
 import {
 	bucketed,
 	type Effect,
+	EFFECT_UNITS,
 	effectCount,
 	effectKind,
 	headline,
@@ -28,7 +30,6 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import type { H } from "./view-form"
-import { strip } from "@maple/views/ui/rule"
 
 // The saved rule's impact: what the gateway counted it matching, dropping and redacting.
 
@@ -80,12 +81,19 @@ const heroTile = (effect: Effect, totals: RuleCounts, window: string): Tile =>
 						? "Every record it matched"
 						: `${percent(totals.dropped, totals.matched)} of the ${formatNumber(totals.matched)} records it matched`,
 			}
-		: {
-				label: `Redacted, ${window}`,
-				value: formatNumber(totals.redacted_values),
-				unit: "values",
-				caption: `In ${formatNumber(totals.matched)} records it matched`,
-			}
+		: effect === "parse"
+			? {
+					label: `Parsed, ${window}`,
+					value: formatNumber(totals.matched),
+					unit: "logs",
+					caption: "Failed steps set maple.parse.error",
+				}
+			: {
+					label: `Redacted, ${window}`,
+					value: formatNumber(totals.redacted_values),
+					unit: "values",
+					caption: `In ${formatNumber(totals.matched)} records it matched`,
+				}
 
 /** Bytes, the busiest bar, and a second effect if the rule changed action in the window. */
 const sideTiles = (effect: Effect, totals: RuleCounts, peak: number, perBar: string): ReadonlyArray<Tile> => [
@@ -125,7 +133,7 @@ const signalRows = (h: H, rule: V2IngestRule, effect: Effect, totals: Totals): H
 							value: effectCount(effect, entry),
 							max: Math.max(effectCount(effect, totals), 1),
 							tone: "live",
-							label: `${SIGNAL_LABELS[entry.signal]}: share of the rule's ${effect === "drop" ? "drops" : "redactions"}`,
+							label: `${SIGNAL_LABELS[entry.signal]}: share of the rule's ${EFFECT_UNITS[effect]}`,
 							className: "col-span-2 h-1.5 max-sm:order-last sm:col-span-1",
 						}),
 						hstack(h, { gap: "3", justify: "end" }, [
@@ -199,7 +207,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 						gap: 1.2,
 						minHeight: 4,
 						className: "text-primary h-20 w-full",
-						label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per ${perBar}`,
+						label: `${rule.name}: ${EFFECT_UNITS[effect]} per ${perBar}`,
 					}),
 				],
 			),
@@ -212,7 +220,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 			]),
 		]),
 		...(totals.signals.length > 1
-			? [strip(h, { kind: "section" }, [signalRows(h, rule, effect, totals)])]
+			? [separator(h, "horizontal", undefined), signalRows(h, rule, effect, totals)]
 			: []),
 	])
 }

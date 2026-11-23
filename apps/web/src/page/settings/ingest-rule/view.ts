@@ -128,7 +128,7 @@ const backLink = (h: H) =>
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const header = {
 		title: model.editingId === null && !model.isBadId ? "New ingest rule" : "Edit ingest rule",
-		description: "Drop or redact telemetry before Maple stores or bills it.",
+		description: "Drop, parse or redact telemetry before Maple stores or bills it.",
 	}
 	if (model.isSessionLoaded && !canManage(model))
 		return dashboardPage(h, header, [
@@ -157,7 +157,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(h, { ...header, gap: "lg" }, [
 		...impactPanel(h, model),
 		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
+			[h.Class("grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
 			[
 				vstack(h, { gap: "5", shrink: true }, [
 					nameRow(h, model),

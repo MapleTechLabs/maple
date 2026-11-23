@@ -6,7 +6,8 @@ import * as ContextMenuView from "@maple/views/ui/context-menu-view"
 import { MapleMark } from "@maple/views/ui/control-icons"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
-import { iconNode } from "@maple/views/ui/icon-node"
+import { iconNode, type IconNode } from "@maple/views/ui/icon-node"
+import type { IconName } from "@maple/views/ui/icons.generated"
 import * as NavigationMenu from "@maple/views/ui/navigation-menu"
 import { Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, type Update } from "foldkit"
@@ -18,7 +19,7 @@ import { APP_SIGN_IN_URL, APP_SIGN_UP_URL, APP_URL } from "../lib/app-urls"
 import { watchSignedInUser } from "../lib/clerk-session"
 import { featureBySlug, features } from "../lib/features"
 import { isPillar, PILLARS, type PillarIcon } from "../lib/feature-pillars"
-import { NAV_ICONS } from "../lib/nav-icons"
+import { NAV_ICONS, RESOURCE_ICONS, type ResourceIcon } from "../lib/nav-icons"
 import { formatStars, GITHUB_REPO_URL, OCTOCAT_PATH } from "../lib/github-stars"
 import { featurePath, featuresIndexPath, useCasePath } from "../lib/page-registry"
 import { identifyLanding, trackLanding } from "../lib/telemetry"
@@ -115,13 +116,40 @@ const compareLinks = (locale: string): ReadonlyArray<MenuLink> =>
 		mark,
 	}))
 
-const resourceLinks = (locale: string): ReadonlyArray<MenuLink> => [
-	{ href: "/guides", label: () => m.nav_guides() },
-	{ href: "/blog", label: () => m.nav_blog() },
-	{ href: "/changelog", label: () => m.nav_changelog() },
-	{ href: "/customers", label: () => m.nav_customers() },
-	{ href: localized(locale, "/roadmap"), label: () => m.footer_roadmap() },
-	{ href: localized(locale, "/opentelemetry"), label: () => m.footer_opentelemetry() },
+type ResourceLink = MenuLink & Readonly<{ icon: ResourceIcon }>
+
+const resourceLinks = (locale: string): ReadonlyArray<ResourceLink> => [
+	{
+		href: "/guides",
+		label: () => m.nav_guides(),
+		desc: () => m.nav_desc_guides(),
+		icon: "BookBookmarkIcon",
+	},
+	{ href: "/blog", label: () => m.nav_blog(), desc: () => m.nav_desc_blog(), icon: "PenWritingIcon" },
+	{
+		href: "/changelog",
+		label: () => m.nav_changelog(),
+		desc: () => m.nav_desc_changelog(),
+		icon: "CircleHalfDottedClockIcon",
+	},
+	{
+		href: "/customers",
+		label: () => m.nav_customers(),
+		desc: () => m.nav_desc_customers(),
+		icon: "UsersIcon",
+	},
+	{
+		href: localized(locale, "/roadmap"),
+		label: () => m.footer_roadmap(),
+		desc: () => m.nav_desc_roadmap(),
+		icon: "RoadmapIcon",
+	},
+	{
+		href: localized(locale, "/opentelemetry"),
+		label: () => m.footer_opentelemetry(),
+		desc: () => m.nav_desc_opentelemetry(),
+		icon: "PlugIcon",
+	},
 ]
 
 /** The plain links after the menus, in the header and the sheet. */
@@ -502,7 +530,8 @@ const megaColumn = (
 		],
 	)
 
-const pillarTile = (h: H, link: PillarLink): Html =>
+/** A link with its icon in a bordered square, the label and a two-line description beside it. */
+const iconTile = (h: H, link: MenuLink, icon: IconNode, iconName: IconName): Html =>
 	NavigationMenu.navigationMenuLink(
 		h,
 		link.href,
@@ -513,7 +542,7 @@ const pillarTile = (h: H, link: PillarLink): Html =>
 						"flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-fg-muted transition-colors group-hover/pillar:border-primary/40 group-hover/pillar:text-primary",
 					),
 				],
-				[iconNode(h, NAV_ICONS[link.icon], link.icon, { size: 16 })],
+				[iconNode(h, icon, iconName, { size: 16 })],
 			),
 			h.span(
 				[h.Class("flex min-w-0 flex-col gap-0.5")],
@@ -532,6 +561,11 @@ const pillarTile = (h: H, link: PillarLink): Html =>
 		],
 		"group/pillar flex flex-row items-start gap-3 rounded-lg p-2.5 hover:bg-muted/20",
 	)
+
+const pillarTile = (h: H, link: PillarLink): Html => iconTile(h, link, NAV_ICONS[link.icon], link.icon)
+
+const resourceTile = (h: H, link: ResourceLink): Html =>
+	iconTile(h, link, RESOURCE_ICONS[link.icon], link.icon)
 
 const alsoLink = (h: H, link: MenuLink): Html =>
 	NavigationMenu.navigationMenuLink(
@@ -613,13 +647,8 @@ const solutionsMenu = (h: H, locale: string): ReadonlyArray<Html> => [
 
 const resourcesMenu = (h: H, locale: string): ReadonlyArray<Html> => [
 	h.div(
-		[h.Class("w-56 p-2")],
-		[
-			h.div(
-				[h.Class("flex flex-col gap-0.5")],
-				Arr.map(resourceLinks(locale), (link) => megaLink(h, link)),
-			),
-		],
+		[h.Class("grid w-[560px] max-w-[calc(100vw-1.5rem)] grid-cols-2 gap-1 p-3")],
+		Arr.map(resourceLinks(locale), (link) => resourceTile(h, link)),
 	),
 ]
 

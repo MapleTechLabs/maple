@@ -31,7 +31,9 @@ import {
 import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
 import {
+	bucketMs,
 	distributionCells,
+	lineValuesByMs,
 	timeGrid,
 	chartExemplars,
 	exemplarDots,
@@ -78,7 +80,13 @@ export const exemplarChartOverlay = (
 		onSome: (plot) =>
 			exemplarOverlay(h, {
 				plot,
-				dots: exemplarDots(rows, valueFormat(unit), timeZone),
+				dots: exemplarDots(
+					rows,
+					valueFormat(unit),
+					timeZone,
+					lineValuesByMs(Option.getOrElse(AsyncData.getData(model.timeseries.data), () => [])),
+				),
+				activeMs: Option.getOrUndefined(Option.map(model.chart.activeKey, bucketMs)),
 				onSelect: (key) => {
 					const row = Arr.findFirst(rows, (candidate) => exemplarKey(candidate) === key)
 					return Option.match(row, {
@@ -167,6 +175,8 @@ export const distributionBody = (h: H, model: Model, unit: string | undefined, t
 								...heatmapData(distribution, model.window, unit),
 								theme: model.themeColors,
 								timeZone,
+								// A flame ramp: low counts and outliers stay distinct from the bulk.
+								colorScale: "magma",
 								scaleType: "log",
 								className: chartFrameClass("fill"),
 							},
