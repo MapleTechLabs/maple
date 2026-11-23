@@ -59,6 +59,12 @@ const normalizeUserCode = (value: string) => Str.replace(/[^A-Z0-9]/g, "")(Str.t
 const displayUserCode = (value: string) => `${Str.slice(0, 4)(value)}-${Str.slice(4, 8)(value)}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 
+/** A handoff's run closed or was replaced before the claim: the claim rolls back, the CLI hears expired. */
+class HandoffRunClosed extends Schema.TaggedError<HandoffRunClosed>()(
+	"@maple/backend/CliDeviceHandoffRunClosed",
+	{ message: Schema.String },
+) {}
+
 const makeUserCode = () => {
 	let value = ""
 	for (let index = 0; index < 8; index += 1) {
@@ -369,6 +375,7 @@ export class CliDeviceAuthService extends Context.Service<
 				(message) => new CliDevicePersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
+			const isHandoff = row.deviceName === HANDOFF_DEVICE_NAME
 			const won = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -380,20 +387,35 @@ export class CliDeviceAuthService extends Context.Service<
 									tokenIv: encrypted.iv,
 									tokenTag: encrypted.tag,
 								})
-								.where(($) => [$.deviceCodeHash.eq(row.deviceCodeHash), $.apiKeyId.isNull()])
+								.where(($) => [
+									$.deviceCodeHash.eq(row.deviceCodeHash),
+									$.apiKeyId.isNull(),
+									// A handoff lapses at its own deadline, checked again at the claim.
+									...(isHandoff ? [$.expiresAt.gt(now)] : []),
+								])
 								.returning("deviceCodeHash"),
 						)
 						if (claimed.length === 0) return false
-						// A handoff's key is the only credential that reports to the run it started.
-						if (row.deviceName === HANDOFF_DEVICE_NAME) {
-							yield* db.run(
+						// A handoff's key is the only credential that reports to the run it started,
+						// and only while that run is open: a replaced or closed run rolls the claim back.
+						if (isHandoff) {
+							const bound = yield* db.run(
 								PG.update(OnboardingAgentRuns)
 									.set({ apiKeyId })
 									.where(($) => [
 										$.orgId.eq(approvedOrgId),
 										$.handoffCodeHash.eq(row.deviceCodeHash),
-									]),
+										$.apiKeyId.isNull(),
+										$.status.neq("completed"),
+										$.status.neq("failed"),
+										$.status.neq("expired"),
+										$.expiresAt.gt(now),
+									])
+									.returning("id"),
 							)
+							if (bound.length !== 1) {
+								return yield* new HandoffRunClosed({ message: "The handoff's run is closed" })
+							}
 						}
 						yield* db.run(
 							PG.insertInto(ApiKeys).values({
@@ -419,9 +441,9 @@ export class CliDeviceAuthService extends Context.Service<
 						return true
 					}),
 				),
-			)
+			).pipe(Effect.catchTag("@maple/backend/CliDeviceHandoffRunClosed", () => Effect.succeed(false)))
 			// A handoff is single use: a concurrent claim that lost gets nothing, not the winner's key.
-			if (!won && row.deviceName === HANDOFF_DEVICE_NAME) {
+			if (!won && isHandoff) {
 				return new CliDeviceExpiredResponse({ status: "expired" })
 			}
 			if (!won) {

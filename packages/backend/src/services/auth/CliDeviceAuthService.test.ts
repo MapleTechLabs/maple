@@ -21,6 +21,7 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 
 const createdDbs: TestDb[] = []
@@ -43,8 +44,20 @@ const config = () =>
 const makeLayer = (testDb: TestDb) => {
 	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config())))
 	const apiKeys = ApiKeysService.layer.pipe(Layer.provide(base))
-	return CliDeviceAuthService.layer.pipe(Layer.provideMerge(apiKeys), Layer.provide(base))
+	const runs = OnboardingAgentRunService.layer.pipe(Layer.provide(base))
+	return CliDeviceAuthService.layer.pipe(
+		Layer.provideMerge(Layer.merge(apiKeys, runs)),
+		Layer.provide(base),
+	)
 }
+
+/** A handoff as the start route makes it: the code, then the run it hands to the agent. */
+const startHandoff = Effect.gen(function* () {
+	const auth = yield* CliDeviceAuthService
+	const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+	yield* (yield* OnboardingAgentRunService).start({ orgId, userId }, handoff.codeHash)
+	return handoff
+})
 
 const orgId = Schema.decodeSync(OrgId)("org_cli")
 const userId = Schema.decodeSync(UserId)("user_cli")
@@ -121,7 +134,7 @@ describe("CliDeviceAuthService", () => {
 		return Effect.gen(function* () {
 			const auth = yield* CliDeviceAuthService
 			const apiKeys = yield* ApiKeysService
-			const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			const handoff = yield* startHandoff
 			expect(Str.startsWith("maple_ho_")(handoff.code)).toBe(true)
 
 			const polled = yield* auth.poll(handoff.code)
@@ -141,11 +154,32 @@ describe("CliDeviceAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("a code whose run was replaced or never saved signs nothing in", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const auth = yield* CliDeviceAuthService
+			const replaced = yield* startHandoff
+			// Copying the prompt again replaces the run the first code was for.
+			yield* startHandoff
+			expect((yield* auth.poll(replaced.code)).status).toBe("expired")
+			const orphan = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			expect((yield* auth.poll(orphan.code)).status).toBe("expired")
+			// The refused claims rolled back: neither code holds a key.
+			const keys = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(
+					db,
+					"select count(*)::int as count from cli_device_authorizations where api_key_id is not null",
+				),
+			)
+			expect(keys?.count).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
 	it.effect("two concurrent claims of one handoff code sign in exactly one CLI", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
 			const auth = yield* CliDeviceAuthService
-			const handoff = yield* auth.createHandoff({ orgId, userId, roles: [memberRole], userEmail: null })
+			const handoff = yield* startHandoff
 			const claims = yield* Effect.all([auth.poll(handoff.code), auth.poll(handoff.code)], {
 				concurrency: 2,
 			})

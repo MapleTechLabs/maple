@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OnboardingAgentRuns, type OnboardingAgentRunRow } from "@maple/db/tables"
 import {
@@ -118,16 +119,29 @@ export class OnboardingAgentRunService extends Context.Service<
 			owner: Owner,
 			handoffCodeHash: string,
 		) {
-			const now = yield* Clock.currentTimeMillis
 			// One live run per person: the newest copy of the prompt is the one the page follows.
-			yield* dbExecute((db) =>
+			// Closing the old run and inserting the new one commit together, one start at a time.
+			const rows = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						yield* db.execute(
+							Orm.sql`select pg_advisory_xact_lock(hashtext(${`${owner.orgId}:${owner.userId}`}), hashtext('onboarding_agent_runs'))`,
+						)
+						const clock = yield* Clock.currentTimeMillis
+						const newest = yield* db.run(
+							PG.from(OnboardingAgentRuns)
+								.select("createdAt")
+								.where(($) => [$.orgId.eq(owner.orgId), $.userId.eq(owner.userId)])
+								.orderBy(($) => [[$.createdAt, "desc"]])
+								.limit(1),
+						)
+						// Strictly after the newest run, so "the newest run" is never a tie.
+						const now = Math.max(clock, (newest[0]?.createdAt ?? 0) + 1)
 						yield* db.run(
 							PG.deleteFrom(OnboardingAgentRuns).where(($) => [
 								$.orgId.eq(owner.orgId),
 								$.userId.eq(owner.userId),
-								$.expiresAt.lt(now),
+								$.expiresAt.lt(clock),
 							]),
 						)
 						yield* Effect.forEach(OPEN_STATUSES, (open) =>
@@ -141,28 +155,26 @@ export class OnboardingAgentRunService extends Context.Service<
 									]),
 							),
 						)
+						return yield* db.run(
+							PG.insertInto(OnboardingAgentRuns)
+								.values({
+									id: randomUUID(),
+									orgId: owner.orgId,
+									userId: owner.userId,
+									status: "waiting_for_agent",
+									stages: [...emptyOnboardingAgentStages()],
+									serviceNames: [],
+									traceId: null,
+									handoffCodeHash,
+									apiKeyId: null,
+									lastReportedAt: null,
+									createdAt: now,
+									expiresAt: now + ONBOARDING_AGENT_RUN_TTL_MS,
+									updatedAt: now,
+								})
+								.returning(),
+						)
 					}),
-				),
-			)
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(OnboardingAgentRuns)
-						.values({
-							id: randomUUID(),
-							orgId: owner.orgId,
-							userId: owner.userId,
-							status: "waiting_for_agent",
-							stages: [...emptyOnboardingAgentStages()],
-							serviceNames: [],
-							traceId: null,
-							handoffCodeHash,
-							apiKeyId: null,
-							lastReportedAt: null,
-							createdAt: now,
-							expiresAt: now + ONBOARDING_AGENT_RUN_TTL_MS,
-							updatedAt: now,
-						})
-						.returning(),
 				),
 			)
 			const row = rows[0]
@@ -204,17 +216,35 @@ export class OnboardingAgentRunService extends Context.Service<
 		const current = Effect.fn("OnboardingAgentRunService.current")(function* (
 			caller: OnboardingAgentRunCaller,
 		) {
-			const row = yield* latest(caller)
+			// The clock first: a claim that commits after it is in the row, so a bound run never reads as lapsed.
 			const now = yield* Clock.currentTimeMillis
+			const row = yield* latest(caller)
 			return { ...row, status: effectiveRunStatus(row, now) }
+		})
+
+		const runById = Effect.fn("OnboardingAgentRunService.runById")(function* (orgId: OrgId, id: string) {
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OnboardingAgentRuns)
+						.select()
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
+						.limit(1),
+				),
+			)
+			const row = Option.fromNullishOr(rows[0])
+			if (Option.isNone(row)) {
+				return yield* new OnboardingAgentRunNotFoundError({ message: "The onboarding run is gone" })
+			}
+			return row.value
 		})
 
 		const attemptReport = Effect.fn("OnboardingAgentRunService.attemptReport")(function* (
 			caller: OnboardingAgentRunCaller,
+			runId: string,
 			input: OnboardingAgentReport,
 		) {
-			const row = yield* latest(caller)
 			const now = yield* Clock.currentTimeMillis
+			const row = yield* runById(caller.orgId, runId)
 			const status = effectiveRunStatus(row, now)
 			if (!OPEN.has(status)) {
 				return yield* new OnboardingAgentRunClosedError({
@@ -223,7 +253,8 @@ export class OnboardingAgentRunService extends Context.Service<
 				})
 			}
 			const stages = Arr.map(row.stages, (record) =>
-				record.stage === input.stage
+				// `waiting` never undoes a completed stage (a slow verify timing out after another passed).
+				record.stage === input.stage && !(input.status === "waiting" && record.status === "completed")
 					? {
 							stage: record.stage,
 							status: input.status,
@@ -268,7 +299,9 @@ export class OnboardingAgentRunService extends Context.Service<
 			caller: OnboardingAgentRunCaller,
 			input: OnboardingAgentReport,
 		) {
-			return yield* attemptReport(caller, input).pipe(
+			// Retries stay on the run first read: a replacement run never gets this report.
+			const { id } = yield* latest(caller)
+			return yield* attemptReport(caller, id, input).pipe(
 				Effect.retry({
 					schedule: Schedule.recurs(4),
 					while: (error) => error._tag === "@maple/backend/OnboardingAgentRunReportConflict",

@@ -58,6 +58,50 @@ describe("OnboardingAgentRunService", () => {
 		}).pipe(provideRuns(db))
 	})
 
+	it.effect("two starts in the same millisecond leave one open run, the second", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			const first = yield* runs.start(owner, nextHash())
+			const second = yield* runs.start(owner, nextHash())
+			expect(second.createdAt).toBeGreaterThan(first.createdAt)
+			const current = yield* runs.current(owner)
+			expect(current.id).toBe(second.id)
+			expect(current.status).toBe("waiting_for_agent")
+		}).pipe(provideRuns(db))
+	})
+
+	it.effect("a waiting report never undoes a completed stage, and other updates still land", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const runs = yield* OnboardingAgentRunService
+			yield* runs.start(owner, nextHash())
+			yield* runs.report(owner, {
+				stage: "receive_verification",
+				status: "completed",
+				note: "Trace found",
+			})
+			const late = yield* runs.report(owner, {
+				stage: "receive_verification",
+				status: "waiting",
+				note: "Timed out",
+			})
+			const stage = Arr.findFirst(late.stages, (record) => record.stage === "receive_verification")
+			expect(Option.map(stage, (record) => [record.status, record.note])).toEqual(
+				Option.some(["completed", "Trace found"]),
+			)
+			// A failed stage still retries through active.
+			yield* runs.report(owner, { stage: "instrument_app", status: "failed" })
+			const retried = yield* runs.report(owner, { stage: "instrument_app", status: "active" })
+			expect(
+				Option.map(
+					Arr.findFirst(retried.stages, (record) => record.stage === "instrument_app"),
+					(record) => record.status,
+				),
+			).toEqual(Option.some("active"))
+		}).pipe(provideRuns(db))
+	})
+
 	it.effect("reports go to the newest run, and a closed run refuses them", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
