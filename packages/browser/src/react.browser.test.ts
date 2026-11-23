@@ -1,5 +1,5 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import type { ReadableSpan } from "@opentelemetry/sdk-trace"
+import type { ReadableSpan } from "./sdk/span"
 import { createElement, type ReactNode } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"

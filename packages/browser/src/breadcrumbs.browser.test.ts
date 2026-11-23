@@ -1,6 +1,6 @@
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-import type { ReadableLogRecord } from "@opentelemetry/sdk-logs"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace"
+import type { ReadableLogRecord } from "./sdk/logs"
+import type { ReadableSpan } from "./sdk/span"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const exportedSpans: ReadableSpan[] = []

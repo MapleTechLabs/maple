@@ -25,19 +25,24 @@ export class BatchQueue<T> {
 	private timer: ReturnType<typeof setTimeout> | undefined
 	private exporting = false
 	private shutdownPromise: Promise<void> | undefined
+	private readonly listening: boolean
 	private readonly onHidden = (): void => {
 		if (document.visibilityState === "hidden") {
 			this.forceFlush().catch((error: unknown) => diag.error("batch flush failed", error))
 		}
 	}
 
-	/** `strict`: a failed export fails the flush (spans); otherwise it is only logged (logs). */
+	/**
+	 * `strict` (spans): export within the flush call, and a failed export fails the flush.
+	 * Otherwise (logs): export a microtask later, and a failure is only logged.
+	 */
 	constructor(
 		private readonly exporter: BatchExporter<T>,
 		private readonly delayMs: number,
 		private readonly strict: boolean,
 	) {
-		if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onHidden)
+		this.listening = typeof document !== "undefined" && typeof document.addEventListener === "function"
+		if (this.listening) document.addEventListener("visibilitychange", this.onHidden)
 	}
 
 	add(item: T): void {
@@ -53,9 +58,7 @@ export class BatchQueue<T> {
 
 	shutdown(): Promise<void> {
 		this.shutdownPromise ??= Promise.resolve().then(async () => {
-			if (typeof document !== "undefined") {
-				document.removeEventListener("visibilitychange", this.onHidden)
-			}
+			if (this.listening) document.removeEventListener("visibilitychange", this.onHidden)
 			await this.flushAll()
 			await this.exporter.shutdown()
 		})
@@ -74,13 +77,19 @@ export class BatchQueue<T> {
 		const exported = new Promise<void>((resolve, reject) => {
 			const timer = setTimeout(() => reject(new Error("Timeout")), EXPORT_TIMEOUT_MS)
 			// The exporter's own request must not be traced.
-			context.with(suppressTracing(context.active()), () =>
-				this.exporter.export(batch, (result) => {
-					clearTimeout(timer)
-					if (result.code === ExportResultCode.SUCCESS) resolve()
-					else reject(result.error ?? new Error("export failed"))
-				}),
-			)
+			const run = (): void =>
+				context.with(suppressTracing(context.active()), () =>
+					this.exporter.export(batch, (result) => {
+						clearTimeout(timer)
+						if (result.code === ExportResultCode.SUCCESS) resolve()
+						else reject(result.error ?? new Error("export failed"))
+					}),
+				)
+			// Spans export within the flush call, which an unload needs; log records a
+			// microtask later, as the OTel logs processor did, so a page's exit flush
+			// sends its spans first and the logs take the keepalive room they leave.
+			if (this.strict) run()
+			else void Promise.resolve().then(run)
 		})
 		return this.strict
 			? exported

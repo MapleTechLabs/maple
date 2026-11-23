@@ -10,7 +10,7 @@ import {
 	responseStatus,
 } from "@maple/sdk-core"
 import { type Attributes, type SpanStatus, SpanKind, SpanStatusCode } from "@opentelemetry/api"
-import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace"
+import type { ReadableSpan, SpanExporter } from "./sdk/span"
 
 const HTTP_STATUS = /^\d{3}$/
 
