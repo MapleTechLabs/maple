@@ -222,7 +222,7 @@
 		}
 	},
 	{
-		"name": "a repeated singular message merges",
+		"name": "repeated resourceSpans entries append",
 		"signal": "traces",
 		"hex": "0a070a050a030a01610a070a050a030a0162",
 		"expected": {
@@ -247,6 +247,201 @@
 							{
 								"key": "b",
 								"value": null
+							}
+						],
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a resource sent twice merges into one resource",
+		"signal": "traces",
+		"hex": "0a100a070a030a016110040a050a030a0162",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "a",
+								"value": null
+							},
+							{
+								"key": "b",
+								"value": null
+							}
+						],
+						"droppedAttributesCount": 4
+					},
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a span status sent twice merges field by field",
+		"signal": "traces",
+		"hex": "0a1c121a12182a01737a0f120d6669727374206d6573736167657a021802",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "s",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": {
+										"message": "first message",
+										"code": 2
+									},
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a later status field replaces the earlier one inside the merge",
+		"signal": "traces",
+		"hex": "0a14121212107a0712036f6c6418017a0512036e6577",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": {
+										"message": "new",
+										"code": 1
+									},
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a nested message merges two levels down",
+		"signal": "metrics",
+		"hex": "0a1612141212520c0a0a4202080542041202010552021002",
+		"expected": {
+			"resourceMetrics": [
+				{
+					"scopeMetrics": [
+						{
+							"metrics": [
+								{
+									"metadata": [],
+									"name": "",
+									"description": "",
+									"unit": "",
+									"exponentialHistogram": {
+										"dataPoints": [
+											{
+												"attributes": [],
+												"exemplars": [],
+												"startTimeUnixNano": "0",
+												"timeUnixNano": "0",
+												"count": "0",
+												"scale": 0,
+												"zeroCount": "0",
+												"positive": {
+													"bucketCounts": ["1", "5"],
+													"offset": -3
+												},
+												"negative": null,
+												"flags": 0,
+												"zeroThreshold": 0
+											}
+										],
+										"aggregationTemporality": 2
+									},
+									"data": "exponentialHistogram"
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a oneof message member sent twice merges its lists",
+		"signal": "traces",
+		"hex": "0a170a150a130a016b120e32050a030a017832050a030a0179",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "k",
+								"value": {
+									"kvlistValue": {
+										"values": [
+											{
+												"key": "x",
+												"value": null
+											},
+											{
+												"key": "y",
+												"value": null
+											}
+										]
+									},
+									"value": "kvlistValue"
+								}
 							}
 						],
 						"droppedAttributesCount": 0
