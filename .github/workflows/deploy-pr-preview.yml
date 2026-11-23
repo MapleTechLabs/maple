@@ -339,7 +339,6 @@ jobs:
             # value, and short Infisical values occur in these hostnames.
             MAPLE_E2E_APP_URL: https://app-pr-${{ github.event.pull_request.number }}.maple.dev
             MAPLE_E2E_API_URL: https://api-pr-${{ github.event.pull_request.number }}.maple.dev
-            E2E_TELEMETRY_DISABLED: "1"
             # `preview:web` deploys no Electric sync; tests that read synced state skip.
             MAPLE_E2E_NO_SYNC: ${{ !contains(github.event.pull_request.labels.*.name, 'preview') && '1' || '' }}
         steps:
@@ -353,22 +352,22 @@ jobs:
                   install-filters: "@maple/web"
                   turbo-cache: "false"
 
-            # @e2e-dev/web pins the Playwright build, so its version keys the browser.
-            - name: Read the e2e engine version
-              id: engine
-              run: echo "version=$(bun -e 'console.log(require("@e2e-dev/web/package.json").version)')" >> "$GITHUB_OUTPUT"
+            # The installed Playwright pins the Chromium build, so its version keys the browser.
+            - name: Read the Playwright version
+              id: playwright
+              run: echo "version=$(bun -e 'console.log(require("playwright/package.json").version)')" >> "$GITHUB_OUTPUT"
 
             - name: Cache Chromium
               id: browser-cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ~/.cache/ms-playwright
-                  key: e2e-web-${{ runner.os }}-${{ steps.engine.outputs.version }}-chromium
+                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
 
             # ubuntu-latest already carries Chromium's shared libraries (see ci.yml).
             - name: Install Chromium
               if: steps.browser-cache.outputs.cache-hit != 'true'
-              run: bunx e2e-web install chromium
+              run: bunx playwright install chromium
 
             # By name, so no other preview secret reaches this job (setup above runs PR code).
             - name: Load the preview sign-in key from Infisical
@@ -381,8 +380,9 @@ jobs:
                   export-type: "env"
                   secret-name: PREVIEW_SIGNIN_KEY
 
+            # CI set: the config adds the junit reporter (.e2e/junit.xml) and forbids test.only.
             - name: Run the e2e suite
-              run: bunx e2e run --reporter list,junit
+              run: bunx playwright test
 
             - name: Upload e2e results
               if: ${{ !cancelled() }}

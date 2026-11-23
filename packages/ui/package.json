@@ -17,7 +17,6 @@
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/strings": "workspace:*",
-		"clsx": "catalog:ui",
 		"effect": "catalog:effect",
 		"tailwind-merge": "catalog:tailwind"
 	},

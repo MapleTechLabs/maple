@@ -92,7 +92,7 @@ export interface ResolvedResource {
  * attributes.
  *
  * Precedence for resource attributes (lowest → highest):
- *   1. Auto-detected OTel platform attributes (`std-env` + well-known env vars)
+ *   1. Auto-detected OTel platform attributes (runtime detection + well-known env vars)
  *   2. SDK-baked attributes (`maple.sdk.type`, `deployment.*`)
  *   3. `OTEL_RESOURCE_ATTRIBUTES` env var (e.g. maple-k8s-infra chart's
  *      downward-API pod metadata injection)

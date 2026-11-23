@@ -19,7 +19,7 @@ import { saveBar } from "../../kit/save-bar"
 import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import { SLUG_TAKEN_MESSAGE } from "../shared/slug"
 import {
-	publicAddress,
+	publicAddressOf,
 	publicUrl,
 	SETTINGS_SECTIONS,
 	type SettingsSection,
@@ -101,6 +101,12 @@ const whereVisitorsRead = (
 	return ["Visitors read the page at ", address, "."]
 }
 
+/** The page's address for its `/_manage` path; none while the org key is still being derived. */
+const manageAddress = (model: Model, page: V2StatusPage): Option.Option<string> =>
+	Option.flatMap(pageUrlOf(model, page), (url) =>
+		url === null ? publicAddressOf(model.orgKey, page.slug) : Option.some(url),
+	)
+
 const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
 	const isReadOnly = !canManage(model)
@@ -135,13 +141,18 @@ const pageSection = (h: H, model: Model, page: V2StatusPage, form: SettingsForm)
 							? SLUG_TAKEN_MESSAGE
 							: issues.slug,
 					hint: [
-						...whereVisitorsRead(
-							h,
-							page,
-							publicUrl(model.publicBaseUrl, model.orgKey, form.slug) ??
-								publicPath(model.orgKey, form.slug),
-							form.slug === page.slug,
-						),
+						// Says where visitors read the page once the org key is known.
+						...Option.match(model.orgKey, {
+							onNone: () => [],
+							onSome: (orgKey) =>
+								whereVisitorsRead(
+									h,
+									page,
+									publicUrl(model.publicBaseUrl, orgKey, form.slug) ??
+										publicPath(orgKey, form.slug),
+									form.slug === page.slug,
+								),
+						}),
 						" Each address belongs to one page in your organization; changing it moves the page and the old address stops working. A custom domain, below, serves the page at your own address instead.",
 					],
 					onInput: (value) => Message.ChangedSetting({ field: "slug", value }),
@@ -213,12 +224,20 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 			framed: false,
 			title: "Break-glass token",
 			description: [
-				"If Maple itself is down, post updates straight to the page with this token at ",
-				h.code(
-					[h.Class(typographyClass({ size: "xs", mono: true }))],
-					[`${pageUrlOf(model, page) ?? publicAddress(model.orgKey, page.slug)}/_manage`],
-				),
-				". The page keeps serving from edge storage either way.",
+				...Option.match(manageAddress(model, page), {
+					onNone: () => [
+						"If Maple itself is down, post updates straight to the page with this token.",
+					],
+					onSome: (address) => [
+						"If Maple itself is down, post updates straight to the page with this token at ",
+						h.code(
+							[h.Class(typographyClass({ size: "xs", mono: true }))],
+							[`${address}/_manage`],
+						),
+						".",
+					],
+				}),
+				" The page keeps serving from edge storage either way.",
 			],
 		},
 		[
@@ -530,7 +549,7 @@ export const deletePageDialog = (h: H, model: Model, page: V2StatusPage): Html =
 		model: model.deletePageDialog,
 		toParentMessage: (message) => Message.GotDeletePageDialogMessage({ message }),
 		title: `Delete ${page.name}?`,
-		description: `${publicAddress(model.orgKey, page.slug)} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		description: `${Option.getOrElse(publicAddressOf(model.orgKey, page.slug), () => page.name)} goes offline and its components and incidents are deleted. This cannot be undone.`,
 		confirmLabel: "Delete status page",
 		isPending: model.isDeletingPage,
 		onConfirm: Message.ClickedConfirmDeletePage(),

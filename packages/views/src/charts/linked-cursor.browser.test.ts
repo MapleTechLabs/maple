@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Effect, Fiber, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { type ChartRange, linkedCursorStream } from "./linked-cursor"
