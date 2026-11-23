@@ -1,3 +1,4 @@
+import { AiEvaluationScore } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -30,6 +31,10 @@ export const Message = defineMessageUnion({
 		isTooLarge: Schema.Boolean,
 	},
 	CompletedFetchTotals: { key: Schema.String, result: Schema.Result(SessionTotals, LoadFailure) },
+	CompletedFetchScores: {
+		key: Schema.String,
+		result: Schema.Result(Schema.Array(AiEvaluationScore), LoadFailure),
+	},
 	CompletedDetectModels: { key: Schema.String, models: Schema.Array(DetectedModel) },
 	ClickedRetryLoad: {},
 	GotTabsMessage: { message: Tabs.Message },

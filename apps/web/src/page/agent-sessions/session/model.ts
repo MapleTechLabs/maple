@@ -1,5 +1,10 @@
 import { MarkdownDocument } from "@foldkit/markdown"
-import { AiSessionSpan, AiSessionSpanCursor, GetAiSessionSummaryResponse } from "@maple/domain/http"
+import {
+	AiEvaluationScore,
+	AiSessionSpan,
+	AiSessionSpanCursor,
+	GetAiSessionSummaryResponse,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -68,6 +73,8 @@ export const Model = Schema.Struct({
 	firstPage: KeyedSchema(SpansPage, LoadFailure),
 	more: MorePages,
 	totals: KeyedSchema(SessionTotals, LoadFailure),
+	/** The eval scores on the session's traces, read once its spans are in (`llmEvals` orgs only). */
+	scores: KeyedSchema(Schema.Array(AiEvaluationScore), LoadFailure),
 	detections: Detections,
 	tabs: Tabs.Model,
 	displayPopover: Popover.Model,

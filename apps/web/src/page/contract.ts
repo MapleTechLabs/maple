@@ -30,6 +30,8 @@ export interface PageContext {
 	readonly hasProfiling?: boolean
 	/** The org is in the `cloudSecurity` rollout, so the Security rail lists Cloud; absent means it is not. */
 	readonly hasCloudSecurity?: boolean
+	/** The org is in the `llmEvals` rollout, so Agent sessions shows its Evals tab and session scores; absent means it is not. */
+	readonly hasLlmEvals?: boolean
 }
 
 /** The sidebar's last-hour presence probe (`null` until it answers) and the integration statuses. */

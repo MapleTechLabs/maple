@@ -276,7 +276,7 @@ describe("routes", () => {
 	})
 
 	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
-		const flags = { cloudSecurity: true }
+		const flags = { cloudSecurity: true, llmEvals: true }
 		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
@@ -285,6 +285,25 @@ describe("routes", () => {
 				Option.none(),
 			)
 		}
+	})
+
+	test("an org outside the llmEvals rollout is sent home from the Evals pages", () => {
+		const flags = { cloudSecurity: true, productAnalytics: true }
+		for (const path of ["/agent-sessions/evals", "/agent-sessions/evals/faithfulness?failing=true"]) {
+			expect(flaggedRouteRedirect(parse(path), { ...flags, llmEvals: false })).toEqual(
+				Option.some({ url: "/", isReplace: true }),
+			)
+			expect(flaggedRouteRedirect(parse(path), { ...flags, llmEvals: true })).toEqual(Option.none())
+		}
+	})
+
+	test("the Evals list and an evaluator have their own paths under /agent-sessions", () => {
+		expect(parse("/agent-sessions/evals")._tag).toBe("AgentSessionEvals")
+		expect(parse("/agent-sessions/evals/answer%20relevance?failing=true")).toMatchObject({
+			_tag: "AgentSessionEvaluator",
+			name: "answer relevance",
+			search: { failing: true },
+		})
 	})
 
 	test("the budgets list and the budget editor have their own paths under /cost", () => {
@@ -298,14 +317,14 @@ describe("routes", () => {
 	})
 
 	test("every org opens the cost pages, with no rollout flag on", () => {
-		const off = { productAnalytics: false, cloudSecurity: false }
+		const off = { productAnalytics: false, cloudSecurity: false, llmEvals: false }
 		for (const path of ["/cost", "/cost?groupBy=region", "/cost/budgets", "/cost/budgets/new"]) {
 			expect(flaggedRouteRedirect(parse(path), off)).toEqual(Option.none())
 		}
 	})
 
 	test("an org outside the cloudSecurity rollout is sent home from the Cloud findings and their detail", () => {
-		const flags = { productAnalytics: true }
+		const flags = { productAnalytics: true, llmEvals: true }
 		for (const path of ["/security/cloud?severity=critical", "/security/cloud/finding?id=f-1"]) {
 			expect(flaggedRouteRedirect(parse(path), { ...flags, cloudSecurity: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),

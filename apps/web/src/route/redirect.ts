@@ -227,16 +227,19 @@ const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
 
 const isCloudSecurityRoute = AppRoute.isAnyOf(["SecurityCloud", "SecurityCloudFinding"])
 
+const isLlmEvalsRoute = AppRoute.isAnyOf(["AgentSessionEvals", "AgentSessionEvaluator"])
+
 /**
  * A route an org outside its rollout cannot open goes home (`/product-analytics` without
- * `productAnalytics`, `/security/cloud` without `cloudSecurity`).
+ * `productAnalytics`, `/security/cloud` without `cloudSecurity`, `/agent-sessions/evals` without `llmEvals`).
  */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "productAnalytics" | "cloudSecurity">,
+	flags: Pick<OrganizationFeatureFlags, "productAnalytics" | "cloudSecurity" | "llmEvals">,
 ): Option.Option<Redirect> =>
 	(!flags.productAnalytics && isProductAnalyticsRoute(route)) ||
-	(!flags.cloudSecurity && isCloudSecurityRoute(route))
+	(!flags.cloudSecurity && isCloudSecurityRoute(route)) ||
+	(!flags.llmEvals && isLlmEvalsRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
 

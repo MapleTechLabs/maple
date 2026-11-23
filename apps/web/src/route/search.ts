@@ -943,6 +943,16 @@ export const AgentSessionToolsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
+export const AgentSessionEvalsSearch = Schema.Struct({
+	...TimeRangeSearchFields,
+})
+
+/** `failing` keeps the failing scores alone in the scores table. */
+export const AgentSessionEvaluatorSearch = Schema.Struct({
+	failing: BooleanParam,
+	...TimeRangeSearchFields,
+})
+
 export const InfraCloudflareSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 	view: Schema.optional(Schema.Literals(CLOUDFLARE_VIEWS)),

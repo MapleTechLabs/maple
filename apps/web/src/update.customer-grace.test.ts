@@ -59,6 +59,7 @@ const snapshot: ClerkSnapshot = {
 			aiAutoTriage: false,
 			cloudSecurity: false,
 			dataSources: false,
+			llmEvals: false,
 			productAnalytics: false,
 			profiling: false,
 			securityAudit: false,

@@ -81,6 +81,7 @@ const renderPage = (
 	hasProductAnalytics: PageContext["hasProductAnalytics"],
 	hasProfiling: PageContext["hasProfiling"],
 	hasCloudSecurity: PageContext["hasCloudSecurity"],
+	hasLlmEvals: PageContext["hasLlmEvals"],
 	isMobile: boolean,
 	isBelowSm: boolean,
 	isBelowLg: boolean,
@@ -100,6 +101,7 @@ const renderPage = (
 				...(hasProductAnalytics === undefined ? undefined : { hasProductAnalytics }),
 				...(hasProfiling === undefined ? undefined : { hasProfiling }),
 				...(hasCloudSecurity === undefined ? undefined : { hasCloudSecurity }),
+				...(hasLlmEvals === undefined ? undefined : { hasLlmEvals }),
 			},
 			isMobile,
 			isBelowSm,
@@ -126,6 +128,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 				hasProductAnalytics,
 				hasProfiling,
 				hasCloudSecurity,
+				hasLlmEvals,
 			}) =>
 				lazyPage(position, renderPage, [
 					h,
@@ -141,6 +144,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 					hasProductAnalytics,
 					hasProfiling,
 					hasCloudSecurity,
+					hasLlmEvals,
 					model.shell.isMobile,
 					model.shell.isBelowSm,
 					model.shell.isFilterCollapsed,
