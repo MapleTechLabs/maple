@@ -151,7 +151,7 @@ export const draftOf = (rule: OrgGroupingRule): RuleDraft => ({
 
 /** The fields a kind reads: a frame rule reads only a service and a frame. */
 export const fieldsOf = (kind: RuleDraft["kind"]): ReadonlyArray<RuleField> =>
-	kind === "merge" ? RULE_FIELDS : ["service", "frame"]
+	kind === "merge" ? RULE_FIELDS : ["service", "exceptionType", "message", "frame"]
 
 const set = (value: string) => {
 	const trimmed = Str.trim(value)

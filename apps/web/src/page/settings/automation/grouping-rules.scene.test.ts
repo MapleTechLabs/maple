@@ -41,7 +41,7 @@ const viewAs =
 		groupingRulesSection(h, model, { canManage, isKnownMember: true })
 
 describe("grouping rules editor", () => {
-	test("a new rule takes an id no earlier save can hold, and the save sends only filled fields the kind reads", () => {
+	test("a new rule takes an id no earlier save can hold, and the save sends only filled fields the kind reads, a frame rule's filters included", () => {
 		const edited = run(loaded(ADMIN), [
 			Rules.Message.ClickedAddRule(),
 			Rules.Message.ChangedRuleField({
@@ -52,7 +52,7 @@ describe("grouping rules editor", () => {
 			Rules.Message.ChangedRuleField({
 				id: "rule-3",
 				field: "message",
-				value: "ignored by a frame rule",
+				value: "  scoped to timeouts ",
 			}),
 		])
 		const saved = Rules.update(edited, Rules.Message.ClickedSaveRules(), ADMIN)
@@ -61,7 +61,8 @@ describe("grouping rules editor", () => {
 		expect(config.rules[2]).toEqual(
 			new OrgGroupingRule({ id: "rule-0-1", kind: "merge", exceptionType: "ECONNRESET" }),
 		)
-		expect(config.rules[1]?.message).toBeUndefined()
+		expect(config.rules[1]?.message).toBe("scoped to timeouts")
+		expect(config.rules[1]?.title).toBeUndefined()
 		expect(saved.model.isSaving).toBe(true)
 	})
 
