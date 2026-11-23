@@ -24,26 +24,22 @@ import {
 import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
 import { explainGrouping } from "@maple/domain/tinybird/grouping"
 import { type GroupingConfig, groupingRuleProblem } from "@maple/domain/tinybird/grouping-rules"
-import { CH } from "@maple/query-engine"
 import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Order, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { ACTIONABLE_WORKFLOW_STATES } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
-import { computeSampleInputs, loadOrgGrouping } from "./grouping-keys"
+import { computeSampleInputs, loadOrgGrouping, warehouseGroupingReads } from "./grouping-keys"
 
 /** Fingerprints one "why grouped" response explains; the rest are counted, not read. */
-export const MAX_EXPLAINED_FINGERPRINTS = 50
+const MAX_EXPLAINED_FINGERPRINTS = 50
 /** Open issues a similar-issues read compares against, newest first. */
 const SIMILAR_CANDIDATES = 500
 const SIMILAR_LIMIT = 5
-/**
- * Message overlap at which an issue is suggested. Measured on blind-labelled pairs the
- * grouping key still leaves apart: same type and >= 0.5 found 81% of the duplicates, with
- * 57% of suggestions right. A suggestion is a prompt to merge, never a merge.
- */
-export const SIMILAR_MIN_OVERLAP = 0.5
+/** Measured on labelled pairs the key leaves apart: 81% of duplicates found, 57% right. */
+const SIMILAR_MIN_OVERLAP = 0.5
 
 const SYSTEM_USER_ID = Schema.decodeSync(UserIdSchema)("system-errors")
 const decodeIso = Schema.decodeUnknownSync(ErrorIssueDocument.fields.firstSeenAt)
@@ -87,11 +83,10 @@ const messageWords = (message: string): ReadonlySet<string> =>
 		),
 	)
 
-/** Share of words two messages have in common (Jaccard); two empty messages overlap fully. */
-export const messageOverlap = (a: ReadonlySet<string>, b: ReadonlySet<string>): number => {
+/** Share of words two messages have in common (Jaccard); nothing shared is no overlap. */
+const messageOverlap = (a: ReadonlySet<string>, b: ReadonlySet<string>): number => {
 	const shared = Arr.filter([...a], (word) => b.has(word)).length
-	const union = a.size + b.size - shared
-	return union === 0 ? 1 : shared / union
+	return shared === 0 ? 0 : shared / (a.size + b.size - shared)
 }
 
 const make: Effect.Effect<
@@ -174,45 +169,23 @@ const make: Effect.Effect<
 		]
 		const explained = owned.slice(0, MAX_EXPLAINED_FINGERPRINTS)
 		const hashes = Arr.map(explained, (entry) => entry.fingerprintHash)
-		const pinnedRows = yield* dbExecute((db) =>
+		const stored = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorGroupingKeys)
-					.select("fingerprintHash")
-					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...hashes), $.pinned.eq(true)]),
+					.select("fingerprintHash", "groupingKey", "rule", "pinned")
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...hashes)]),
 			),
 		)
-		const pinned = new Set(Arr.map(pinnedRows, (row) => row.fingerprintHash))
-		const tenant = systemTenant(orgId, SYSTEM_USER_ID)
-		const window = {
+		const storedOf = new Map(Arr.map(stored, (row) => [row.fingerprintHash, row] as const))
+		const reads = warehouseGroupingReads(
+			warehouse,
+			systemTenant(orgId, SYSTEM_USER_ID),
 			orgId,
-			startTime: DateTime.makeUnsafe(issue.firstSeenAt),
-			endTime: DateTime.makeUnsafe(issue.lastSeenAt + 60_000),
-		}
-		const samples = yield* warehouse.compiledQuery(
-			tenant,
-			CH.compile(CH.errorGroupingSamplesQuery({ fingerprintHashes: hashes }), window),
-			{ profile: "list", context: "errorGroupingExplainSamples" },
+			{ startMs: issue.firstSeenAt, endMs: issue.lastSeenAt + 60_000 },
+			"errorGroupingExplain",
 		)
-		const times = Arr.map(samples, (sample) => DateTime.toEpochMillis(sample.timestamp))
-		const spans =
-			samples.length === 0
-				? []
-				: yield* warehouse.compiledQuery(
-						tenant,
-						CH.compile(
-							CH.errorGroupingSpansQuery({
-								serviceNames: Arr.dedupe(Arr.map(samples, (sample) => sample.serviceName)),
-								traceIds: Arr.dedupe(Arr.map(samples, (sample) => sample.traceId)),
-								spanIds: Arr.dedupe(Arr.map(samples, (sample) => sample.spanId)),
-							}),
-							{
-								orgId,
-								startTime: DateTime.makeUnsafe(Math.min(...times) - 60_000),
-								endTime: DateTime.makeUnsafe(Math.max(...times) + 60_000),
-							},
-						),
-						{ profile: "list", context: "errorGroupingExplainSpans" },
-					)
+		const samples = yield* reads.samples(hashes)
+		const spans = samples.length === 0 ? [] : yield* reads.spans(samples)
 		const inputs = new Map(
 			Arr.map(computeSampleInputs(samples, spans), (entry) => [entry.fingerprintHash, entry] as const),
 		)
@@ -220,13 +193,16 @@ const make: Effect.Effect<
 		const fingerprints = Arr.map(explained, ({ fingerprintHash, source }) => {
 			const entry = inputs.get(fingerprintHash)
 			const sample = sampleOf.get(fingerprintHash)
+			const key = storedOf.get(fingerprintHash)
 			const why = entry === undefined ? undefined : explainGrouping(entry.input, grouping.rules)
+			// The stored rule is the one that grouped the hash; a pin-only row keyed nothing.
+			const keyed = key !== undefined && !Str.startsWith("pinned:")(key.groupingKey)
 			return new ErrorIssueFingerprintGrouping({
 				fingerprintHash,
 				source,
-				rule: why?.rule ?? null,
+				rule: keyed ? key.rule : (why?.rule ?? null),
 				orgRule: why?.orgRule === undefined ? null : (why.orgRule.title ?? why.orgRule.id),
-				pinned: pinned.has(fingerprintHash),
+				pinned: key?.pinned ?? false,
 				exceptionType: sample?.exceptionType ?? issue.exceptionType,
 				messageSignature: why?.messageSignature ?? "",
 				frames: why?.frames ?? [],
@@ -269,6 +245,7 @@ const make: Effect.Effect<
 						$.id.neq(issueId),
 						$.archivedAt.isNull(),
 						$.mergedIntoIssueId.isNull(),
+						$.workflowState.in_(...ACTIONABLE_WORKFLOW_STATES),
 					])
 					.orderBy(["lastSeenAt", "desc"])
 					.limit(SIMILAR_CANDIDATES),

@@ -3,6 +3,7 @@ import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorFingerprintCandidates,
+	ErrorGroupingKeys,
 	ErrorIncidents,
 	ErrorIssueFingerprints,
 	ErrorIssues,
@@ -414,7 +415,7 @@ const lineageOf = (row: ErrorTickScanRow) =>
  * ones sharing its grouping key. Both are resolved alike: the row joins their issue, and
  * issues they disagree on are folded into one.
  */
-const previousHashesOf = (row: ErrorTickScanRow) =>
+const relatedHashesOf = (row: ErrorTickScanRow) =>
 	Arr.dedupe([
 		...lineageOf(row),
 		...Arr.filter(row.groupedFingerprintHashes ?? [], (hash) => hash !== row.fingerprintHash),
@@ -422,7 +423,7 @@ const previousHashesOf = (row: ErrorTickScanRow) =>
 
 /** Each row's hash and its previous ones, once. A set, as a wide window holds thousands. */
 const hashesWithPrevious = (rows: ReadonlyArray<ErrorTickScanRow>): Array<string> => [
-	...new Set(Arr.flatMap(rows, (row) => [row.fingerprintHash, ...previousHashesOf(row)])),
+	...new Set(Arr.flatMap(rows, (row) => [row.fingerprintHash, ...relatedHashesOf(row)])),
 ]
 
 /**
@@ -441,6 +442,8 @@ const REKEY_STATE_RANK = {
 	done: 7,
 	cancelled: 8,
 } as const satisfies Readonly<Record<WorkflowState, number>>
+const SETTLED_STATES: ReadonlySet<WorkflowState> = new Set(["wontfix", "done", "cancelled"])
+
 const rekeyOrder = (a: ErrorIssueRow, b: ErrorIssueRow) => {
 	const byState = REKEY_STATE_RANK[a.workflowState] - REKEY_STATE_RANK[b.workflowState]
 	if (byState !== 0) return byState
@@ -467,7 +470,7 @@ const rekeyOwners = (
 ): Effect.Effect<ReadonlyMap<string, Owner>, MapleDbError> =>
 	Effect.gen(function* () {
 		const orgId = input.orgId
-		const bumped = Arr.filter(rows, (row) => previousHashesOf(row).length > 0)
+		const bumped = Arr.filter(rows, (row) => relatedHashesOf(row).length > 0)
 		if (bumped.length === 0) return aliased
 		// An alias wins over a primary: a merged-away issue's old hash belongs to the issue it was merged into.
 		const unaliased = Arr.filter(hashesWithPrevious(bumped), (hash) => !aliased.has(hash))
@@ -480,15 +483,18 @@ const rekeyOwners = (
 		)
 		const primaryOwners = new Map(Arr.map(byPrimary, (issue) => [issue.fingerprintHash, issue.id]))
 		const ownerIdOf = (hash: string) => aliased.get(hash)?.id ?? primaryOwners.get(hash)
-		const groups = Arr.map(bumped, (row) => {
-			const ownId = ownerIdOf(row.fingerprintHash)
-			const previousIds = Arr.flatMap(previousHashesOf(row), (hash) => {
+		const ownersOf = (hashes: ReadonlyArray<string>) =>
+			Arr.flatMap(hashes, (hash) => {
 				const id = ownerIdOf(hash)
 				return id === undefined ? [] : [id]
 			})
+		const groups = Arr.map(bumped, (row) => {
+			const ownId = ownerIdOf(row.fingerprintHash)
+			const previousIds = ownersOf(relatedHashesOf(row))
 			return {
 				row,
 				ownId,
+				lineageIds: ownersOf(lineageOf(row)),
 				// An issue the new hash opened in a tick that had no lineage. Grouping has no
 				// stray: hashes sharing a key are peers, and the worked issue keeps them.
 				strayId: aliased.has(row.fingerprintHash) || lineageOf(row).length === 0 ? undefined : ownId,
@@ -518,7 +524,7 @@ const rekeyOwners = (
 			const next = foldedInto.get(id)
 			return next === undefined ? id : survivor(next)
 		}
-		const rekeyedTo = yield* Effect.forEach(unsettled, ({ row, ownId, strayId, issueIds }) =>
+		const rekeyedTo = yield* Effect.forEach(unsettled, ({ row, ownId, strayId, issueIds, lineageIds }) =>
 			Effect.gen(function* () {
 				// The stray goes last whatever its state: the old issue is the one somebody
 				// triaged, and an ignored one must stay ignored.
@@ -531,6 +537,15 @@ const rekeyOwners = (
 				}).sort(order)
 				const [keeper, ...rest] = issues
 				if (keeper === undefined) return []
+				// A grouping key never folds a settled issue (ignored, fixed, cancelled): a new
+				// hash joins the busiest live sibling, and the settled one keeps its state.
+				const groupingOnly = lineageIds.length === 0
+				const holdsSettled = Arr.some(issues, (issue) => SETTLED_STATES.has(issue.workflowState))
+				if (groupingOnly && holdsSettled) {
+					return ownId === undefined
+						? [[row.fingerprintHash, keeper.id, "group" as const] as const]
+						: []
+				}
 				if (rest.length > 0) {
 					Arr.forEach(rest, (issue) => foldedInto.set(issue.id, keeper.id))
 					// Folding writes totals from the row it is given, so keep the latest one.
@@ -545,7 +560,10 @@ const rekeyOwners = (
 				}
 				// A hash that had a live issue already resolves to the keeper: the fold moved
 				// that issue's aliases and made its primary hash one.
-				const source = lineageOf(row).length > 0 ? ("rekey" as const) : ("group" as const)
+				// `rekey` only when a bump's lineage reached the keeper; siblings alone are `group`.
+				const source = Arr.some(lineageIds, (id) => survivor(id) === keeper.id)
+					? ("rekey" as const)
+					: ("group" as const)
 				return ownId !== undefined && issueById.has(ownId)
 					? []
 					: [[row.fingerprintHash, keeper.id, source] as const]
@@ -598,10 +616,43 @@ const ownerOf = (issue: ErrorIssueRow): Owner => ({
 })
 
 /**
- * New hashes in one window that share a grouping key and have no issue yet: the
- * smallest hash leads, and the others ride on its row, so one issue opens and not one
- * per hash a tick before they fold. Each follower is aliased to the leader's issue once
- * the upsert has made it. Returns follower to leader.
+ * Siblings were read before this transaction took the cursor lock, so an unmerge or detach
+ * may have pinned some since. Re-read the pins under the lock and drop them from the groups.
+ */
+const withoutPinnedGroups = (
+	tx: ErrorTickTransaction,
+	orgId: OrgId,
+	rows: ReadonlyArray<ErrorTickScanRow>,
+): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
+	Effect.gen(function* () {
+		const grouped = Arr.dedupe(
+			Arr.flatMap(rows, (row) =>
+				(row.groupedFingerprintHashes ?? []).length === 0
+					? []
+					: [row.fingerprintHash, ...(row.groupedFingerprintHashes ?? [])],
+			),
+		)
+		if (grouped.length === 0) return rows
+		const pinnedRows = yield* inChunks(grouped, (chunk) =>
+			tx.run(
+				PG.from(ErrorGroupingKeys)
+					.select("fingerprintHash")
+					.where(($) => [$.orgId.eq(orgId), $.pinned.eq(true), $.fingerprintHash.in_(...chunk)]),
+			),
+		)
+		if (pinnedRows.length === 0) return rows
+		const pinned = new Set(Arr.map(pinnedRows, (row) => row.fingerprintHash))
+		return Arr.map(rows, (row) => ({
+			...row,
+			groupedFingerprintHashes: pinned.has(row.fingerprintHash)
+				? []
+				: Arr.filter(row.groupedFingerprintHashes ?? [], (hash) => !pinned.has(hash)),
+		}))
+	})
+
+/**
+ * Unowned hashes in one window sharing a key open one issue: the first by string order
+ * leads, the rest ride on its row and are aliased to its issue after the upsert.
  */
 const groupPeers = (rows: ReadonlyArray<ErrorTickScanRow>): ReadonlyMap<string, string> => {
 	const inWindow = new Set(Arr.map(rows, (row) => row.fingerprintHash))
@@ -647,9 +698,10 @@ const canonicalizeScanRows = (
 		if (rows.length === 0) return { rows, peers: new Map() }
 		// One read covers the rows' hashes and the previous hashes a bump resolves them through.
 		const aliased = yield* aliasOwners(tx, orgId, hashesWithPrevious(rows))
-		const owners = yield* rekeyOwners(tx, input, rows, aliased)
+		const unpinned = yield* withoutPinnedGroups(tx, orgId, rows)
+		const owners = yield* rekeyOwners(tx, input, unpinned, aliased)
 		const ownerOfRow = (row: ErrorTickScanRow) => owners.get(row.fingerprintHash)
-		const unowned = Arr.filter(rows, (row) => ownerOfRow(row) === undefined)
+		const unowned = Arr.filter(unpinned, (row) => ownerOfRow(row) === undefined)
 		const peers = groupPeers(unowned)
 		if (!Arr.some(rows, (row) => ownerOfRow(row) !== undefined) && peers.size === 0) {
 			return { rows, peers }

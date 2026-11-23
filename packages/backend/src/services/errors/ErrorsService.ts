@@ -53,14 +53,15 @@ import {
 	Layer,
 	Option,
 	Order,
+	Record as Rec,
 	Ref,
 	Schema,
 } from "effect"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import {
-	DEFAULT_ORG_GROUPING,
 	loadOrgGrouping,
 	resolveGroupingSiblings,
+	warehouseGroupingReads,
 } from "@maple/backend/services/errors/grouping-keys"
 import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
@@ -89,7 +90,7 @@ import { actorRowToDocument, ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService, leaseConflict } from "./ErrorIssueWorkflowService"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 import { ErrorPolicyService } from "./ErrorPolicyService"
-import { makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
+import { describeCause, makeErrorDatabaseExecute, makePersistenceError } from "./error-persistence"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
@@ -1395,48 +1396,43 @@ const make: Effect.Effect<
 		const previousByHash = Arr.groupBy(lineage, (row) => row.fingerprintHash)
 
 		// Hashes sharing a grouping key are one issue (`grouping-keys.ts`). Keying a new hash
-		// reads one sample from the window and its span; a failure groups nothing.
-		const scanParams = {
-			orgId,
-			startTime: DateTime.makeUnsafe(windowStartMs),
-			endTime: DateTime.makeUnsafe(windowEndMs),
-		}
-		// The org's own rules; a failed read keys under none rather than failing the window.
+		// reads one sample from the window and its span. A failed read of the org's rules
+		// groups nothing this window: keying under no rules could fold what the rules keep apart.
 		const orgGrouping = yield* dbExecute((db) => loadOrgGrouping(db, orgId)).pipe(
-			Effect.orElseSucceed(() => DEFAULT_ORG_GROUPING),
-		)
-		const groupedByHash = yield* resolveGroupingSiblings(
-			dbExecute,
-			{
-				samples: (hashes) =>
-					warehouse.compiledQuery(
-						tenant,
-						CH.compile(CH.errorGroupingSamplesQuery({ fingerprintHashes: hashes }), scanParams),
-						{ profile: "list", context: "errorGroupingSamples" },
+			Effect.asSome,
+			Effect.catch((error) =>
+				Effect.as(
+					Effect.logWarning("Error tick grouping rules read failed").pipe(
+						Effect.annotateLogs({ orgId, cause: describeCause(error) }),
 					),
-				spans: (samples) => {
-					const times = Arr.map(samples, (sample) => DateTime.toEpochMillis(sample.timestamp))
-					return warehouse.compiledQuery(
-						tenant,
-						CH.compile(
-							CH.errorGroupingSpansQuery({
-								serviceNames: Arr.dedupe(Arr.map(samples, (sample) => sample.serviceName)),
-								traceIds: Arr.dedupe(Arr.map(samples, (sample) => sample.traceId)),
-								spanIds: Arr.dedupe(Arr.map(samples, (sample) => sample.spanId)),
-							}),
-							{
-								orgId,
-								// error_events keeps whole seconds; a span starts within its second.
-								startTime: DateTime.makeUnsafe(Math.min(...times) - 60_000),
-								endTime: DateTime.makeUnsafe(Math.max(...times) + 60_000),
-							},
-						),
-						{ profile: "list", context: "errorGroupingSpans" },
-					)
-				},
-			},
-			{ orgId, hashes: Arr.map(rows, (row) => row.fingerprintHash), nowMs, grouping: orgGrouping },
+					Option.none(),
+				),
+			),
 		)
+		const groupedByHash = Option.isNone(orgGrouping)
+			? new Map<string, ReadonlyArray<string>>()
+			: yield* resolveGroupingSiblings(
+					dbExecute,
+					warehouseGroupingReads(
+						warehouse,
+						tenant,
+						orgId,
+						{ startMs: windowStartMs, endMs: windowEndMs },
+						"errorGrouping",
+					),
+					{
+						orgId,
+						hashes: Arr.map(rows, (row) => row.fingerprintHash),
+						nowMs,
+						grouping: orgGrouping.value,
+						lineage: new Map(
+							Arr.map(Rec.toEntries(previousByHash), ([hash, entries]) => [
+								hash,
+								Arr.map(entries, (entry) => entry.previousFingerprintHash),
+							]),
+						),
+					},
+				)
 
 		const persistence = yield* dbExecute((db) =>
 			persistErrorTickWindow(db, {
@@ -1915,21 +1911,19 @@ const make: Effect.Effect<
 				Effect.gen(function* () {
 					const cursorMs = row.processedThrough
 					const fromMs = Math.max(cursorMs, horizonMs)
-					const rows = yield* (
-						warehouse
-							.compiledQuery(
-								systemTenant(row.orgId, SYSTEM_USER_ID),
-								CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
-									orgId: row.orgId,
-									startTime: DateTime.makeUnsafe(fromMs),
-									endTime: DateTime.makeUnsafe(cutoffMs),
-								}),
-								{ profile: "discovery", context: "errorTickFirstErrorMinute" },
-							)
-							// The executor adds a client buffer and retries on top of the
-							// profile's 5s. A slow lookup is retried next tick, not waited on.
-							.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
-					)
+					const rows = yield* warehouse
+						.compiledQuery(
+							systemTenant(row.orgId, SYSTEM_USER_ID),
+							CH.compile(CH.errorTickFirstErrorMinuteQuery(), {
+								orgId: row.orgId,
+								startTime: DateTime.makeUnsafe(fromMs),
+								endTime: DateTime.makeUnsafe(cutoffMs),
+							}),
+							{ profile: "discovery", context: "errorTickFirstErrorMinute" },
+						)
+						// The executor adds a client buffer and retries on top of the
+						// profile's 5s. A slow lookup is retried next tick, not waited on.
+						.pipe(Effect.timeout(TICK_IDLE_RECOVERY_LOOKUP_TIMEOUT_MS))
 					if (cursorMs < horizonMs) {
 						yield* Effect.logInfo("Idle error tick cursor moved past the recovery horizon").pipe(
 							Effect.annotateLogs({

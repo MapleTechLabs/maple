@@ -11,7 +11,7 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | ------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                               |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                                    |
-| User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint: `cityHash64(org, service, key)`, unsalted. |
+| User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint (`{{default}} x` extends it with `x`).      |
 | Grouping key  | `error_grouping_keys`                                       | Computed by the tick per hash; hashes sharing one are one issue.     |
 | Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet promoted (only past the day budget). |
 | **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.                |
@@ -273,9 +273,22 @@ loop in verification without a human ever seeing it.
   and new hashes sharing a key in one window open one issue. A sample whose span cannot be read is
   left unkeyed, because its `maple.fingerprint` is unknown. Unmerging pins the issue's hashes
   (`pinned`), so the tick never groups them again. A key change bumps `GROUPING_KEY_VERSION`, and
-  stored keys are recomputed as their hashes recur. Measure one with `errors:replay --labels`
-  before shipping it: the rules in `grouping.ts` are the ones that raised F1 on two blind-labelled
-  weeks, and its header lists the ones that did not.
+  stored keys are recomputed as their hashes recur, never-keyed hashes first. A key never folds a
+  settled issue (`wontfix`, `done`, `cancelled`): a new hash joins the busiest live sibling instead,
+  and a pin carries over a version bump to the new hash. Measured with `errors:replay --labels` on
+  two weeks of production errors from 32 orgs, blind-labelled: issues fell 9.7% and 8.9%, and 91%
+  of the merges it adds are one bug. Keying on a cause chain's root type and keeping the first named
+  caller for every error were measured too and lowered F1, so they are not in it.
+- **Org grouping rules and detaching.** An org can add rules without a deploy
+  (`packages/domain/src/tinybird/grouping-rules.ts`, `PUT /grouping-rules`, needs
+  `error_policy:manage`): `merge` joins every error matching its globs into one issue per service,
+  `library-frames` and `app-frames` change which frames the key reads. Rules only merge. A change
+  makes every stored key stale (`config_digest`), so keys are recomputed as hashes recur; folds
+  already made stay. A fingerprint the key joined (`group` alias) can be detached from the issue
+  page or MCP (`detach_error_fingerprint`): the alias goes, the hash is pinned, and its next
+  occurrence opens its own issue. Merged-in hashes come back by unmerging instead.
+  `GET /issues/:id/similar` suggests open issues of the same service and type whose messages share
+  at least half their words; suggestions only, never merges.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
@@ -285,21 +298,22 @@ loop in verification without a human ever seeing it.
 
 ## The files
 
-| Concern                                 | File                                                                                                         |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                                                         |
-| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                               |
-| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                          |
-| Merging and unmerging issues            | `packages/backend/src/services/errors/ErrorIssueMergeService.ts`                                             |
-| Grouping keys (which hashes are one)    | `packages/domain/src/tinybird/grouping.ts`, `packages/backend/src/services/errors/grouping-keys.ts`          |
-| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                             |
-| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                  |
-| The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |
-| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`                                             |
-| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`                                                    |
-| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts`                                        |
-| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`                                         |
-| What agents are told                    | `apps/ai/src/mcp/resources/instructions.ts`                                                                  |
+| Concern                                 | File                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                                                             |
+| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                                   |
+| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                              |
+| Merging and unmerging issues            | `packages/backend/src/services/errors/ErrorIssueMergeService.ts`                                                 |
+| Grouping keys (which hashes are one)    | `packages/domain/src/tinybird/grouping.ts`, `packages/backend/src/services/errors/grouping-keys.ts`              |
+| Org rules, why-grouped, similar issues  | `packages/domain/src/tinybird/grouping-rules.ts`, `packages/backend/src/services/errors/ErrorGroupingService.ts` |
+| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                                 |
+| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                      |
+| The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/`     |
+| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`                                                 |
+| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`                                                        |
+| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts`                                            |
+| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`                                             |
+| What agents are told                    | `apps/ai/src/mcp/resources/instructions.ts`                                                                      |
 
 ## Testing it locally
 

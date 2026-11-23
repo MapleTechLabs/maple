@@ -198,8 +198,8 @@ describe("explain_error_grouping", () => {
 		expect(markdown).toContain("type-message: same error type and message")
 		expect(markdown).toContain("type-function: same type, first named function applyDiscount")
 		expect(markdown).toContain("node_modules/react/index.js")
-		expect(markdown).toContain(`detach_error_fingerprint issue_id="${ISSUE}" fingerprint_hash="200"`)
-		expect(markdown).not.toContain('fingerprint_hash="100"')
+		expect(markdown).toContain(`detach_error_fingerprint issue_id="${ISSUE}" fingerprint="200"`)
+		expect(markdown).not.toContain('fingerprint="100"')
 		expect(markdown).toContain(`list_similar_error_issues issue_id="${ISSUE}"`)
 	})
 
@@ -228,7 +228,7 @@ describe("detach_error_fingerprint", () => {
 		const seen: Seen = {}
 		const result = await ok(
 			"detach_error_fingerprint",
-			{ issue_id: ISSUE, fingerprint_hash: " 200 " },
+			{ issue_id: ISSUE, fingerprint: " 200 " },
 			mergeService(seen),
 		)
 		expect(seen).toEqual({ orgId: ORG, actorId: ACTOR, issueId: ISSUE, hash: "200" })
@@ -240,7 +240,7 @@ describe("detach_error_fingerprint", () => {
 	it("passes the service's refusal of a merged fingerprint back as invalid input", async () => {
 		const result = await run(
 			"detach_error_fingerprint",
-			{ issue_id: ISSUE, fingerprint_hash: "300" },
+			{ issue_id: ISSUE, fingerprint: "300" },
 			mergeService({}),
 		)
 		const failure = result._tag === "Failure" ? result.failure : undefined

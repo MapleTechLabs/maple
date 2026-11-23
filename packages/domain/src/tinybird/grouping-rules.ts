@@ -13,7 +13,7 @@
 import { Array as Arr, Schema, String as Str } from "effect"
 
 export const MAX_GROUPING_RULES = 100
-export const MAX_GROUPING_PATTERN_CHARS = 300
+const MAX_GROUPING_PATTERN_CHARS = 300
 
 export const GroupingRuleKind = Schema.Literals(["merge", "library-frames", "app-frames"]).annotate({
 	identifier: "@maple/GroupingRuleKind",
@@ -61,7 +61,7 @@ export const groupingRuleProblem = (rule: OrgGroupingRule): string | undefined =
 const escapeRegex = (text: string) => Str.replace(/[.+?^${}()|[\]\\]/g, "\\$&")(text)
 
 /** A glob as an anchored, case-insensitive regex: `*` is any run, everything else literal. */
-export const globRegex = (glob: string): RegExp =>
+const globRegex = (glob: string): RegExp =>
 	new RegExp(`^${Arr.join(Arr.map(Str.split("*")(glob), escapeRegex), "[\\s\\S]*")}$`, "i")
 
 export interface CompiledGroupingRules {
