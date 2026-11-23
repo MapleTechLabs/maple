@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { GroupingConfigDocument } from "@maple/domain/http"
+import { GroupingConfigDocument, GroupingRulesUpdateRequest } from "@maple/domain/http"
 import {
 	GroupingConfig,
 	GroupingRuleKind,
@@ -49,6 +49,8 @@ export const Model = Schema.Struct({
 	isDirty: Schema.Boolean,
 	isSaving: Schema.Boolean,
 	refusal: Schema.NullOr(SaveRefusal),
+	/** When the stored rules the draft started from were saved: a save is refused if they moved on. */
+	baseUpdatedAt: GroupingConfigDocument.fields.updatedAt,
 })
 export type Model = typeof Model.Type
 
@@ -91,11 +93,13 @@ const FetchGroupingRules = Command.define("FetchGroupingRules", {
 })
 
 const SaveGroupingRules = Command.define("SaveGroupingRules", {
-	args: { config: GroupingConfig },
+	args: { config: GroupingConfig, expectedUpdatedAt: GroupingConfigDocument.fields.updatedAt },
 	messages: [Message.CompletedSaveRules],
-	execute: ({ config }) =>
+	execute: ({ config, expectedUpdatedAt }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
-			client.errors.updateGroupingRules({ payload: config }),
+			client.errors.updateGroupingRules({
+				payload: new GroupingRulesUpdateRequest({ rules: config.rules, expectedUpdatedAt }),
+			}),
 		).pipe(
 			Effect.catchTags({
 				"@maple/http/errors/ErrorValidationError": (error) =>
@@ -118,7 +122,14 @@ const SaveGroupingRules = Command.define("SaveGroupingRules", {
 })
 
 export const init = (): Return => ({
-	model: { rules: AsyncData.Loading(), draft: null, isDirty: false, isSaving: false, refusal: null },
+	model: {
+		rules: AsyncData.Loading(),
+		draft: null,
+		isDirty: false,
+		isSaving: false,
+		refusal: null,
+		baseUpdatedAt: null,
+	},
 	commands: [FetchGroupingRules()],
 })
 
@@ -196,10 +207,15 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 			const rules = AsyncData.settle(model.rules, result)
 			// An untouched form follows the stored rules; edits are kept.
 			if (model.isDirty) return { model: { ...model, rules } }
-			const stored = Option.getOrNull(
-				Option.map(AsyncData.getData(rules), (document) => Arr.map(document.rules, draftOf)),
-			)
-			return { model: { ...model, rules, draft: stored ?? model.draft } }
+			const document = Option.getOrNull(AsyncData.getData(rules))
+			return {
+				model: {
+					...model,
+					rules,
+					draft: document === null ? model.draft : Arr.map(document.rules, draftOf),
+					baseUpdatedAt: document === null ? model.baseUpdatedAt : document.updatedAt,
+				},
+			}
 		},
 		ClickedRetryRules: () => ({
 			model: { ...model, rules: AsyncData.isFailure(model.rules) ? model.rules : AsyncData.Loading() },
@@ -245,7 +261,9 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 				? { model }
 				: {
 						model: { ...model, isSaving: true, refusal: null },
-						commands: [SaveGroupingRules({ config: configOf(model.draft) })],
+						commands: [
+							SaveGroupingRules({ config: configOf(model.draft), expectedUpdatedAt: model.baseUpdatedAt }),
+						],
 					},
 		CompletedSaveRules: ({ result }) =>
 			Result.match(result, {
@@ -256,6 +274,7 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 						isDirty: false,
 						rules: AsyncData.succeed(document),
 						draft: Arr.map(document.rules, draftOf),
+						baseUpdatedAt: document.updatedAt,
 					},
 					outMessage: toast("success", "Grouping rules saved"),
 				}),

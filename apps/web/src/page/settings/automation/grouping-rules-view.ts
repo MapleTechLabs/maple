@@ -207,7 +207,7 @@ export const groupingRulesSection = (h: H, model: Model, inputs: GroupingRulesIn
 			id: "automation-grouping-heading",
 			title: "Error grouping rules",
 			description: [
-				"Rules merge matching errors into one issue and never split one apart. Patterns are case-insensitive, and * matches anything.",
+				"Rules merge matching errors into one issue and never split one apart. Every field is case-insensitive and * matches anything. When several rules match, the one lower in the list wins.",
 			],
 			framed: false,
 		},
