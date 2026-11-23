@@ -357,6 +357,25 @@ describe("prompt cache prefix under the run-status line", () => {
 			}),
 	)
 
+	it.live("an attended call keeps the rolling breakpoint and marks the instructions too", () =>
+		Effect.gen(function* () {
+			// Attended chat has no run-status line, so the root breakpoint stays on the last block.
+			const captured = yield* captureRequest(
+				{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "openai/gpt-6.1-sol" },
+				tags,
+				resolveReviewModel,
+				false,
+				REVIEW_TASK,
+			)
+
+			expect(captured.body.cache_control).toEqual({ type: "ephemeral" })
+			expect(Arr.map(wireMessages(captured.body), (message) => message.breakpoint)).toEqual([
+				true,
+				false,
+			])
+		}),
+	)
+
 	it.live("leaves a model that caches any repeated prefix with the messages it was given", () =>
 		Effect.gen(function* () {
 			const [first, second] = yield* consecutiveCalls(DEFAULT_REVIEW_MODEL)
