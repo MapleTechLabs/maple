@@ -1,7 +1,7 @@
 /**
- * Fleet as a device source: each server's failing policies and vulnerable software, synced hourly
- * under the connection's findings lease into the shared device findings. A sync replaces the
- * server's findings: a policy every device passes again, or a CVE no longer installed, drops out.
+ * Fleet as a device source: each server's failing policies at every level and its vulnerable
+ * software, synced hourly under the connection's findings lease. A sync replaces the server's
+ * findings: a policy every device passes again, or a CVE no longer installed, drops out.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type FleetConnectionRow, FleetConnections } from "@maple/db/tables"
@@ -23,6 +23,7 @@ import { leaseStillOurs } from "./lease"
 import { type Lease, type LeaseSpec, leaseFree, withLease } from "./poller"
 import * as FleetApi from "./fleet/api"
 import {
+	type FleetScopedPolicy,
 	failingPolicies,
 	findingDevice,
 	vulnerabilitiesByCve,
@@ -44,6 +45,19 @@ const CVE_PAGE_SIZE = 100
 const MAX_CVE_PAGES = 10
 const POLICY_PAGE_SIZE = 500
 const MAX_POLICY_PAGES = 10
+const FLEET_PAGE_SIZE = 500
+/** Fleets whose policies one sync reads, a request each: what fits the lane's time two at a time. */
+const MAX_FLEETS = 1_000
+/** What Fleet calls the devices in no fleet. */
+const UNASSIGNED = "Unassigned"
+
+/** A listed fleet whose policies answer 404: deleted since, not a wrong address. */
+const fleetGone = (name: string, error: FleetApi.FleetApiError) =>
+	new FleetApi.FleetApiError({
+		message: `Fleet no longer has "${name}", which it listed a moment ago. The next sync reads the fleets it has then.`,
+		kind: error.kind,
+		status: 404,
+	})
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -157,24 +171,131 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				)
 
 			/**
-			 * Every global policy. Fleet's docs give no default page size and no `meta` here, so pages are
-			 * asked for explicitly until a short one, or one with nothing new (a server ignoring paging).
+			 * Every row of a paged list. Fleet's docs give these lists no default page size and no
+			 * `meta`, so pages are asked for explicitly until a short one, or one with nothing new (a
+			 * server ignoring paging).
 			 */
-			const readPolicies = (
-				fleet: FleetApi.FleetClient,
-				page: number,
-				acc: ReadonlyArray<FleetApi.FleetPolicy>,
-			): Effect.Effect<ReadonlyArray<FleetApi.FleetPolicy>, FleetApi.FleetApiError> =>
-				FleetApi.listGlobalPolicies(fleet, page, POLICY_PAGE_SIZE).pipe(
-					Effect.flatMap((answer) => {
-						const seen = new Set(Arr.map(acc, (policy) => policy.id))
-						const added = Arr.filter(answer.policies ?? [], (policy) => !seen.has(policy.id))
+			const readAll = <A extends { readonly id: number }>(
+				readPage: (page: number) => Effect.Effect<ReadonlyArray<A>, FleetApi.FleetApiError>,
+				pageSize: number,
+				maxPages: number,
+				page = 0,
+				acc: ReadonlyArray<A> = [],
+			): Effect.Effect<ReadonlyArray<A>, FleetApi.FleetApiError> =>
+				readPage(page).pipe(
+					Effect.flatMap((rows) => {
+						const seen = new Set(Arr.map(acc, (row) => row.id))
+						const added = Arr.filter(rows, (row) => !seen.has(row.id))
 						const all = Arr.appendAll(acc, added)
-						return added.length < POLICY_PAGE_SIZE || page + 1 >= MAX_POLICY_PAGES
+						return added.length < pageSize || page + 1 >= maxPages
 							? Effect.succeed(all)
-							: readPolicies(fleet, page + 1, all)
+							: readAll(readPage, pageSize, maxPages, page + 1, all)
 					}),
 				)
+
+			/** The server's fleets; none on Fleet Free, which has no fleets and answers 402. */
+			const readFleets = (
+				fleet: FleetApi.FleetClient,
+				dialect: FleetApi.FleetDialect,
+			): Effect.Effect<Option.Option<ReadonlyArray<FleetApi.FleetGroup>>, FleetApi.FleetApiError> =>
+				readAll(
+					(page) => FleetApi.listFleets(fleet, dialect, page, FLEET_PAGE_SIZE),
+					FLEET_PAGE_SIZE,
+					// One page past the cap, to tell a server at the cap from one over it.
+					MAX_FLEETS / FLEET_PAGE_SIZE + 1,
+				).pipe(
+					// Reading only some fleets would show the rest as passing: the sync fails instead.
+					Effect.filterOrFail(
+						(found) => found.length <= MAX_FLEETS,
+						(found) =>
+							new FleetApi.FleetApiError({
+								// A read that filled every page it may ask for counted only up to there.
+								message: `This Fleet server has ${found.length >= MAX_FLEETS + FLEET_PAGE_SIZE ? "at least " : ""}${found.length} fleets. Maple reads the policies of at most ${MAX_FLEETS}.`,
+								kind: "upstream",
+							}),
+					),
+					Effect.asSome,
+					Effect.catchIf(
+						(error) => error.status === 402,
+						() => Effect.succeedNone,
+					),
+				)
+
+			/**
+			 * Every policy on the server with the fleet it belongs to: the global ones, each fleet's, and
+			 * those of devices in no fleet. Most servers keep their policies on fleets, not globally.
+			 */
+			const readPolicies = Effect.fnUntraced(function* (
+				fleet: FleetApi.FleetClient,
+				dialect: FleetApi.FleetDialect,
+			) {
+				const policiesOf = (scope: FleetApi.PolicyScope) =>
+					readAll(
+						(page) => FleetApi.listPolicies(fleet, dialect, scope, page, POLICY_PAGE_SIZE),
+						POLICY_PAGE_SIZE,
+						MAX_POLICY_PAGES,
+					)
+				// Two requests at a time: two servers sync at once, and a Worker holds six connections.
+				const [global, fleets] = yield* Effect.all(
+					[policiesOf({ _tag: "Global" }), readFleets(fleet, dialect)],
+					{ concurrency: 2 },
+				)
+				yield* Effect.annotateCurrentSpan(
+					"maple.fleet.fleets",
+					Option.match(fleets, { onNone: () => 0, onSome: (found) => found.length }),
+				)
+				const groups: ReadonlyArray<{ readonly scope: FleetApi.PolicyScope; readonly name: string }> =
+					Option.match(fleets, {
+						onNone: () => [],
+						onSome: (found) => [
+							...(dialect.unassigned
+								? [{ scope: { _tag: "Unassigned" as const }, name: UNASSIGNED }]
+								: []),
+							...Arr.map(found, (group) => ({
+								scope: { _tag: "Fleet" as const, id: group.id },
+								name: group.name,
+							})),
+						],
+					})
+				// A fleet that cannot be read fails the sync: reading it as empty would resolve its findings.
+				const grouped = yield* Effect.forEach(
+					groups,
+					(group) =>
+						policiesOf(group.scope).pipe(
+							Effect.mapBoth({
+								onFailure: (error) =>
+									error.status === 404 ? fleetGone(group.name, error) : error,
+								onSuccess: (policies) =>
+									Arr.map(policies, (policy): FleetScopedPolicy => ({
+										policy,
+										groupName: group.name,
+									})),
+							}),
+						),
+					{ concurrency: 2 },
+				)
+				const all: ReadonlyArray<FleetScopedPolicy> = Arr.appendAll(
+					Arr.map(global, (policy) => ({ policy, groupName: null })),
+					Arr.flatten(grouped),
+				)
+				// A policy id is one stored row. Should a fleet's read repeat a global policy, the global one stays.
+				const byId = new Map(Arr.map(Arr.reverse(all), (scoped) => [scoped.policy.id, scoped]))
+				return Arr.fromIterable(byId.values())
+			})
+
+			/** The first dialect whose paths this server has: the next is tried on a 404 or a 410. */
+			const readPoliciesIn = (
+				fleet: FleetApi.FleetClient,
+				[dialect, ...others]: Arr.NonEmptyReadonlyArray<FleetApi.FleetDialect>,
+			): Effect.Effect<ReadonlyArray<FleetScopedPolicy>, FleetApi.FleetApiError> =>
+				Arr.isReadonlyArrayNonEmpty(others)
+					? readPolicies(fleet, dialect).pipe(
+							Effect.catchIf(
+								(error) => error.status === 404 || error.status === 410,
+								() => readPoliciesIn(fleet, others),
+							),
+						)
+					: readPolicies(fleet, dialect)
 
 			/**
 			 * Fleet's CVEs, on the most devices first, and its total. None from a server older than
@@ -212,19 +333,21 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
 			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient, baseUrl: string) {
-				const [hosts, policies] = yield* Effect.all(
-					[FleetApi.countHosts(fleet), readPolicies(fleet, 0, [])],
+				// The version first: it decides where this server keeps its policies and fleets.
+				const [{ version }, hosts] = yield* Effect.all(
+					[FleetApi.getVersion(fleet), FleetApi.countHosts(fleet)],
 					{ concurrency: 2 },
 				)
+				const policies = yield* readPoliciesIn(fleet, FleetApi.fleetDialectsOf(version))
 				const failing = failingPolicies(policies, baseUrl)
 				const samples = yield* Effect.forEach(
 					Arr.take(failing, SAMPLED_POLICIES),
 					(policy) =>
-						FleetApi.listFailingHosts(fleet, policy.fleetId, HOSTS_PER_POLICY).pipe(
+						FleetApi.listFailingHosts(fleet, policy.numericId, HOSTS_PER_POLICY).pipe(
 							Effect.map(
 								(page) =>
 									[
-										policy.fleetId,
+										policy.numericId,
 										Arr.map(page.hosts ?? [], (host) => findingDevice(host, baseUrl)),
 									] as const,
 							),
@@ -238,10 +361,11 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				)
 				const fromFleet = Option.isSome(counted)
 				return {
+					serverVersion: version,
 					deviceCount: hosts.count,
 					policies: Arr.map(failing, (policy) => ({
 						...policy.finding,
-						failingDevices: sampled.get(policy.fleetId) ?? [],
+						failingDevices: sampled.get(policy.numericId) ?? [],
 					})),
 					// Fleet's own CVE rows count each device once; software alone is the fallback.
 					vulnerabilities: Option.match(counted, {
@@ -271,6 +395,8 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 										findingsSyncedAt: now,
 										findingsError: null,
 										findingsErrorAt: null,
+										// An upgraded server shows its new version without a reconnect.
+										serverVersion: snapshot.serverVersion,
 										deviceCount: snapshot.deviceCount,
 										vulnerabilityCount: snapshot.vulnerabilityCount,
 									})

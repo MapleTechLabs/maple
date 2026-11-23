@@ -8,31 +8,38 @@ describe("failingPolicies", () => {
 	it("keeps only failing policies, critical first, and reads blanks as absent", () => {
 		const found = failingPolicies(
 			[
-				{ id: 1, name: "Firewall", failing_host_count: 5, resolution: "" },
 				{
-					id: 2,
-					name: "Encryption",
-					critical: true,
-					failing_host_count: 1,
-					host_count_updated_at: "2026-11-19T10:00:00Z",
+					policy: { id: 1, name: "Firewall", failing_host_count: 5, resolution: "" },
+					groupName: null,
 				},
-				{ id: 3, name: "Passing", failing_host_count: 0 },
-				{ id: 4, name: "Never counted", failing_host_count: null },
+				{
+					policy: {
+						id: 2,
+						name: "Encryption",
+						critical: true,
+						failing_host_count: 1,
+						host_count_updated_at: "2026-11-19T10:00:00Z",
+					},
+					groupName: "Workstations",
+				},
+				{ policy: { id: 3, name: "Passing", failing_host_count: 0 }, groupName: "Workstations" },
+				{ policy: { id: 4, name: "Never counted", failing_host_count: null }, groupName: null },
 			],
 			BASE,
 		)
 		assert.deepStrictEqual(
-			Arr.map(found, ({ fleetId, finding }) => [
-				fleetId,
+			Arr.map(found, ({ numericId, finding }) => [
+				numericId,
 				finding.policyId,
+				finding.groupName,
 				finding.critical,
 				finding.resolution,
 				finding.countedAt,
 				finding.url,
 			]),
 			[
-				[2, "2", true, null, Date.UTC(2026, 10, 19, 10), `${BASE}/policies/2`],
-				[1, "1", false, null, null, `${BASE}/policies/1`],
+				[2, "2", "Workstations", true, null, Date.UTC(2026, 10, 19, 10), `${BASE}/policies/2`],
+				[1, "1", null, false, null, null, `${BASE}/policies/1`],
 			],
 		)
 	})
@@ -42,8 +49,14 @@ describe("failingPolicies passing counts", () => {
 	it("keeps a passing count Fleet has not computed as unknown, not zero", () => {
 		const [counted, uncounted] = failingPolicies(
 			[
-				{ id: 1, name: "Firewall", failing_host_count: 5, passing_host_count: 20 },
-				{ id: 2, name: "Encryption", failing_host_count: 3, passing_host_count: null },
+				{
+					policy: { id: 1, name: "Firewall", failing_host_count: 5, passing_host_count: 20 },
+					groupName: null,
+				},
+				{
+					policy: { id: 2, name: "Encryption", failing_host_count: 3, passing_host_count: null },
+					groupName: null,
+				},
 			],
 			BASE,
 		)
