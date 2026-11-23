@@ -24,8 +24,11 @@ export const GEN_AI_EVALUATION_ATTRS = {
  * aliases.
  */
 export const MAPLE_EVALUATION_ATTRS = {
-	/** `span`, `trace` or `session`. Default `span`, or `trace` for a target trace with no target span. */
+	/** `span`, `trace` or `session` (any case). Default `span`, or `trace` for a target trace with no
+	 *  target span; any other value takes the default. */
 	scope: "maple_ai.evaluation.scope",
+	/** An explicit `pass` / `fail`, read before the label (a judge whose label is categorical). */
+	verdict: "maple_ai.evaluation.verdict",
 	/** The session a `session`-scope score grades. */
 	sessionId: "maple_ai.evaluation.session.id",
 	/** `code`, `llm`, `human` or `agent`. */
@@ -55,8 +58,9 @@ export const EVALUATION_SCOPES = ["span", "trace", "session"] as const
 export type EvaluationScope = (typeof EVALUATION_SCOPES)[number]
 
 /**
- * A score's verdict, read from its label: `pass` / `fail` for the usual spellings, `''` when the
- * label says neither (a numeric score, or a categorical one like `relevant`).
+ * A score's verdict: the explicit `maple_ai.evaluation.verdict` when set, else read from its label
+ * (`pass` / `fail` for the usual spellings, case and spaces ignored); `''` when neither says (a
+ * numeric score, or a categorical one like `relevant`).
  */
 export const EVALUATION_VERDICTS = ["pass", "fail"] as const
 export type EvaluationVerdict = (typeof EVALUATION_VERDICTS)[number] | ""
