@@ -42,7 +42,7 @@ export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 				name: $.Name,
 				...measures($),
 				traceCount: CH.uniqIf($.TraceId, $.TraceId.neq("")),
-				sources: CH.groupUniqArray($.Source),
+				sources: CH.groupUniqArrayIf(8)($.Source, $.Source.neq("")),
 				annotatorKinds: CH.groupUniqArrayIf(8)($.AnnotatorKind, $.AnnotatorKind.neq("")),
 				lastSeen: CH.toString_(CH.max_($.Timestamp)),
 			}))
