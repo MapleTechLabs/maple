@@ -824,35 +824,72 @@ const messageText = (content: unknown): string | undefined => {
 const isRunStatus = (message: unknown): boolean =>
 	Predicate.isObject(message) && Str.startsWith("<run-status>")(messageText(message.content) ?? "")
 
-/** A user or tool message with the cache breakpoint on its text; none when it has no plain text. */
+/** A message of one of `roles` with the cache breakpoint on its text; none when it has no plain text. */
 const markCacheBreakpoint = (
 	message: unknown,
 	cacheControl: unknown,
+	roles: ReadonlyArray<string> = ["user", "tool"],
 ): Option.Option<Record<PropertyKey, unknown>> => {
-	if (!Predicate.isObject(message) || (message.role !== "user" && message.role !== "tool")) {
+	if (!Predicate.isObject(message) || typeof message.role !== "string" || !roles.includes(message.role)) {
 		return Option.none()
 	}
-	const text = message.content
-	return typeof text === "string" && text !== ""
+	// The provider sends user and tool text as a string, and system text as one text block.
+	const text = messageText(message.content)
+	return text !== undefined &&
+		text !== "" &&
+		(typeof message.content === "string" || isOneBlock(message.content))
 		? Option.some({ ...message, content: [{ type: "text", text, cache_control: cacheControl }] })
 		: Option.none()
 }
 
+const isOneBlock = (content: unknown): boolean =>
+	Arr.isArray(content) &&
+	content.length === 1 &&
+	Predicate.isObject(content[0]) &&
+	content[0].type === "text"
+
 /**
- * Keeps the cache breakpoint off the engine's `<run-status>` line. The root `cache_control` marks
- * the request's last block, and that line differs on every call, so a model that caches at marked
- * blocks wrote its whole history again each call and read back only the system prompt and tools.
+ * A second breakpoint on the last leading system message, so the tools and instructions are cached
+ * on their own. With only the rolling breakpoint, a run's first call wrote its whole prompt and read
+ * none of it: no earlier run had stored the shared prefix at a boundary this run's lookup checks.
+ */
+const withInstructionsBreakpoint = (
+	messages: ReadonlyArray<unknown>,
+	cacheControl: unknown,
+): ReadonlyArray<unknown> => {
+	const leading = Arr.findFirstIndex(
+		messages,
+		(message) => !Predicate.isObject(message) || message.role !== "system",
+	).pipe(Option.getOrElse(() => messages.length))
+	// A system-only request has no conversation after its instructions to separate them from.
+	if (leading === 0 || leading === messages.length) return messages
+	return markCacheBreakpoint(messages[leading - 1], cacheControl, ["system"]).pipe(
+		Option.flatMap((marked) => Arr.replace(messages, leading - 1, marked)),
+		Option.getOrElse(() => messages),
+	)
+}
+
+/**
+ * Where a model that caches at marked blocks stores the request. The root `cache_control` marks the
+ * request's last block; it moves off the engine's `<run-status>` line, which differs on every call
+ * (a model wrote its whole history again each call), and the instructions get their own breakpoint.
  */
 const withStableCacheBreakpoint = (body: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
 	const { cache_control: cacheControl, ...rest } = body
 	const { messages, model } = body
 	if (cacheControl === undefined || !Arr.isArray(messages) || typeof model !== "string") return body
-	if (!CACHES_AT_BREAKPOINTS.test(model) || !isRunStatus(messages.at(-1))) return body
+	if (!CACHES_AT_BREAKPOINTS.test(model)) return body
+	const withInstructions = withInstructionsBreakpoint(messages, cacheControl)
 	const index = messages.length - 2
-	return markCacheBreakpoint(messages[index], cacheControl).pipe(
-		Option.flatMap((marked) => Arr.replace(messages, index, marked)),
-		Option.match({ onNone: () => body, onSome: (moved) => ({ ...rest, messages: moved }) }),
-	)
+	const moved = isRunStatus(messages.at(-1))
+		? markCacheBreakpoint(messages[index], cacheControl).pipe(
+				Option.flatMap((marked) => Arr.replace(withInstructions, index, marked)),
+			)
+		: Option.none()
+	return Option.match(moved, {
+		onNone: () => ({ ...body, messages: withInstructions }),
+		onSome: (both) => ({ ...rest, messages: both }),
+	})
 }
 
 /** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */

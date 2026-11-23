@@ -324,6 +324,39 @@ describe("prompt cache prefix under the run-status line", () => {
 			}),
 	)
 
+	it.live.each(["openai/gpt-6.1-sol", "anthropic/claude-sonnet-5.5"])(
+		"%s: a run's first call reads the instructions another run stored",
+		(model) =>
+			Effect.gen(function* () {
+				const send = (prompt: Prompt.RawInput) =>
+					captureRequest(
+						{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: model },
+						tags,
+						resolveReviewModel,
+						false,
+						prompt,
+					)
+				const other: Prompt.RawInput = [
+					...Arr.take(REVIEW_TASK, 1),
+					{ role: "user", content: "Review pull request #8." },
+					runStatus(1),
+				]
+				const [first, second] = yield* Effect.all([send(FIRST_CALL), send(other)])
+				const firstBreakpoint = (body: Record<string, unknown>) => {
+					const messages = wireMessages(body)
+					return Option.map(
+						Arr.findFirstIndex(messages, (message) => message.breakpoint),
+						(index) => readable(Arr.take(messages, index + 1)),
+					)
+				}
+
+				expect(Option.getOrThrow(firstBreakpoint(first.body))).toEqual([
+					{ role: "system", text: "You review one pull request." },
+				])
+				expect(firstBreakpoint(second.body)).toEqual(firstBreakpoint(first.body))
+			}),
+	)
+
 	it.live("leaves a model that caches any repeated prefix with the messages it was given", () =>
 		Effect.gen(function* () {
 			const [first, second] = yield* consecutiveCalls(DEFAULT_REVIEW_MODEL)
