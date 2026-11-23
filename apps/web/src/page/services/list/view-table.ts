@@ -31,6 +31,7 @@ import {
 	baselineDelta,
 	baselineKey,
 	baselineMapOf,
+	commitSummariesOf,
 	deployInfo,
 	displayedServices,
 	groupServices,
@@ -173,11 +174,8 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 					variant: "orDate",
 				})
 			: null
-	const messages: Readonly<Record<string, string>> = Option.getOrElse(
-		FoldkitAsyncData.getData(ctx.model.commitMessages.data),
-		() => ({}),
-	)
-	const message = isResolvableSha(info.sha) ? (messages[info.sha] ?? "") : ""
+	const summaries = commitSummariesOf(ctx.model)
+	const message = isResolvableSha(info.sha) ? (summaries[info.sha]?.subject ?? "") : ""
 	const shortSha = truncateCommitSha(info.sha)
 	const meta: ReadonlyArray<Html | string> =
 		age === null ? (message !== "" ? [shortSha] : []) : message !== "" ? [shortSha, " · ", age] : [age]

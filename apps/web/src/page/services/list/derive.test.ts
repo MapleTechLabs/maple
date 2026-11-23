@@ -1,5 +1,13 @@
+import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { healthSummary, perSecondRates, serviceHealthRowKey } from "./derive"
+import {
+	commitsKey,
+	healthSummary,
+	perSecondRates,
+	releaseLabel,
+	releaseOptions,
+	serviceHealthRowKey,
+} from "./derive"
 import type { ServiceRow } from "./model"
 import type { HealthIncident } from "../../kit/service-health"
 
@@ -81,5 +89,53 @@ describe("perSecondRates", () => {
 	it("a bucket outside the window reads zero rather than dividing by nothing", () => {
 		const [rate] = perSecondRates([{ bucket: "2026-10-01 00:05:00", throughput: 10 }], window)
 		expect(rate).toBe(0)
+	})
+})
+
+const sha = (c: string) => Str.repeat(40)(c)
+const deployed = (name: string, commitSha: string): ServiceRow => ({
+	...service(name),
+	commits: [{ commitSha, spanCount: 10, percentage: 100, errorCount: 0, firstSeen: "2026-10-01 00:00:00" }],
+})
+
+describe("commitsKey", () => {
+	it("asks for the deploy commits and the release facet's in one deduped, sorted batch", () => {
+		expect(commitsKey([deployed("api", sha("b"))], [sha("a"), sha("b"), "v1.2.3"])).toBe(
+			`${sha("a")},${sha("b")}`,
+		)
+	})
+
+	it("keeps the deploy commits when the facet would push the batch past 50", () => {
+		const facet = Arr.makeBy(60, (i) => Str.padStart(40, "0")(i.toString(16)))
+		const key = Str.split(",")(commitsKey([deployed("api", sha("f"))], facet))
+		expect(key).toHaveLength(50)
+		expect(key).toContain(sha("f"))
+	})
+})
+
+describe("release facet", () => {
+	const summaries = {
+		[sha("a")]: { subject: "fix: older", committedAt: 1000 },
+		[sha("b")]: { subject: "feat: newer", committedAt: 2000 },
+	}
+
+	it("lists resolved commits newest first, then the unresolved ones in span-count order", () => {
+		const options = [
+			{ name: sha("c"), count: 900 },
+			{ name: sha("a"), count: 500 },
+			{ name: sha("d"), count: 100 },
+			{ name: sha("b"), count: 50 },
+		]
+		expect(Arr.map(releaseOptions(options, summaries), (o) => o.name)).toEqual([
+			sha("b"),
+			sha("a"),
+			sha("c"),
+			sha("d"),
+		])
+	})
+
+	it("labels a row by its commit subject, or its short sha until the commit resolves", () => {
+		expect(releaseLabel(sha("b"), summaries)).toBe("feat: newer")
+		expect(releaseLabel(sha("c"), summaries)).toBe("ccccccc")
 	})
 })

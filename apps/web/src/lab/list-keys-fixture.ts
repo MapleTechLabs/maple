@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { V2Investigation } from "@maple/domain/http/v2"
-import { Array as Arr, Result, Schema } from "effect"
+import { Array as Arr, Order, Record as Rec, Result, Schema } from "effect"
 import type { PageContext } from "../page/contract"
 import * as Hub from "../page/alerts/hub/update"
 import { Message as HubMessage } from "../page/alerts/hub/message"
@@ -15,7 +15,7 @@ import { Message as MetricsMessage } from "../page/metrics/browse/message"
 import type { MetricRow } from "../page/metrics/shared"
 import * as Services from "../page/services/list/update"
 import { Message as ServicesMessage } from "../page/services/list/message"
-import type { ServiceRow } from "../page/services/list/model"
+import type { CommitSummary, ServiceRow } from "../page/services/list/model"
 import { VERDICT_LAB_CASES } from "./verdict-fixture"
 
 // `/lab/list-keys`: each list page's Model as its reads would leave it, over a handful of fixture rows.
@@ -43,14 +43,70 @@ const service = (
 	spanCount: 4200,
 })
 
-const SERVICES = [
-	service("checkout", "production", 182, 0.012),
-	service("payments", "production", 240, 0),
-	service("search", "production", 96, 0.002),
-	service("orders", "production", 310, 0),
-	service("checkout", "staging", 205, 0),
-	service("payments", "staging", 260, 0.03),
-]
+const HOUR = 3_600_000
+
+/** Deploy commits, newest first: the release facet lists them, all but the last resolve to a subject. */
+const RELEASES = [
+	{
+		sha: "3a76f4407f42b3da0a8671c2e9d0b5f6a7c8d9e0",
+		subject: "feat(checkout): express pay for returning buyers",
+		committedAt: NOW - 1.5 * HOUR,
+		spans: 663_600,
+	},
+	{
+		sha: "0397a93db557e81842031d4c6b7a8f9e0d1c2b3a",
+		subject: "fix(payments): retry card auth on gateway 502",
+		committedAt: NOW - 4 * HOUR,
+		spans: 131_600,
+	},
+	{
+		sha: "bd8bcbfd3a79fcd0cf19c9e8d7c6b5a4f3e2d1c0",
+		subject: "perf(search): cache facet counts per index",
+		committedAt: NOW - 14 * HOUR,
+		spans: 128_400,
+	},
+	{
+		sha: "875718e399e87bcd6756e24fa116afae58893b68",
+		subject: "chore(orders): bump the queue client",
+		committedAt: NOW - 18 * HOUR,
+		spans: 67_500,
+	},
+	{ sha: "2c41a052cb0ee74d01bc3c9a8b7c6d5e4f3a2b1c", subject: "", committedAt: 0, spans: 60_600 },
+] as const
+
+/** The commit lookup's answer for `RELEASES` (the last one is not in any connected repo). */
+export const RELEASE_SUMMARIES: Readonly<Record<string, CommitSummary>> = Rec.fromEntries(
+	Arr.flatMap(RELEASES, (release) =>
+		release.subject === ""
+			? []
+			: [[release.sha, { subject: release.subject, committedAt: release.committedAt }]],
+	),
+)
+
+const deployedAt = (row: ServiceRow, index: number): ServiceRow => ({
+	...row,
+	commits: [
+		{
+			commitSha: RELEASES[index % RELEASES.length]?.sha ?? "",
+			spanCount: row.spanCount,
+			percentage: 100,
+			errorCount: 0,
+			firstSeen: "2026-10-01 08:00:00",
+		},
+	],
+})
+
+const SERVICES = Arr.map(
+	[
+		service("checkout", "production", 182, 0.012),
+		service("payments", "production", 240, 0),
+		service("search", "production", 96, 0.002),
+		service("orders", "production", 310, 0),
+		service("checkout", "staging", 205, 0),
+		service("payments", "staging", 260, 0.03),
+	],
+	deployedAt,
+)
 
 /** Feeds `messages` through a page's update, keeping only the Model. */
 const fold = <Model, Message>(
@@ -87,7 +143,10 @@ export const servicesFixture = (context: PageContext) => {
 					{ name: "staging", count: 2 },
 				],
 				namespaces: [],
-				commitShas: [],
+				commitShas: Arr.sort(
+					Arr.map(RELEASES, (release) => ({ name: release.sha, count: release.spans })),
+					Order.flip(Order.mapInput(Order.Number, (option: { count: number }) => option.count)),
+				),
 			}),
 		}),
 		ServicesMessage.UpdatedIncidents({ orgId: context.orgId, incidents: [] }),

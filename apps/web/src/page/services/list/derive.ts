@@ -7,11 +7,13 @@ import {
 	type ServiceHealth,
 } from "../../kit/service-health-rollup"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr, String as Str, Order } from "effect"
+import { Array as Arr, String as Str, Option, Order } from "effect"
+import { AsyncData } from "foldkit"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
 import { isResolvableSha } from "../../kit/commit-card"
-import type { ServiceRow } from "./model"
+import { VCS_COMMIT_DETAILS_MAX_SHAS } from "@maple/domain/http"
+import type { CommitSummary, Model, ServiceRow } from "./model"
 
 // Pure derivations of the services table and its health summary.
 
@@ -203,25 +205,48 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 	return { sha: latest.commitSha, firstSeen: latest.firstSeen, rollout, errorsSince }
 }
 
-/** `commitsQueryKey`: the deduped, sorted resolvable shas of the rows on screen; "" means no request. */
-export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
-	Arr.join(
-		Arr.sort(
-			Arr.filter(
-				[
-					...new Set(
-						Arr.flatMap(services, (service) => {
-							const sha = deployInfo(service.commits)?.sha
-							return sha === undefined ? [] : [sha]
-						}),
-					),
-				],
-				isResolvableSha,
-			),
-			Order.String,
-		),
-		",",
-	)
+/**
+ * `commitsQueryKey`: one lookup for the deploy cells and the release facet. The deploy shas of the
+ * rows on screen come first, then the facet's; deduped, resolvable only, capped at the endpoint's
+ * batch size, sorted. "" means no request.
+ */
+export const commitsKey = (
+	services: ReadonlyArray<ServiceRow>,
+	facetShas: ReadonlyArray<string> = [],
+): string => {
+	const deployShas = Arr.flatMap(services, (service) => {
+		const sha = deployInfo(service.commits)?.sha
+		return sha === undefined ? [] : [sha]
+	})
+	const wanted = Arr.filter([...new Set([...deployShas, ...facetShas])], isResolvableSha)
+	return Arr.join(Arr.sort(wanted.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS), Order.String), ",")
+}
+
+/** The resolved commits by sha; empty until the lookup lands, and when it fails. */
+export const commitSummariesOf = (
+	model: Pick<Model, "commitSummaries">,
+): Readonly<Record<string, CommitSummary>> =>
+	Option.getOrElse(AsyncData.getData(model.commitSummaries.data), () => ({}))
+
+/** A release facet row's label: the commit subject once resolved, else the short sha. */
+export const releaseLabel = (sha: string, summaries: Readonly<Record<string, CommitSummary>>): string => {
+	const subject = summaries[sha]?.subject ?? ""
+	return subject !== "" ? subject : Str.slice(0, 7)(sha)
+}
+
+/** The release facet's order: resolved commits newest first, then the rest by span count as the query sent them. */
+export const releaseOptions = <O extends Readonly<{ name: string }>>(
+	options: ReadonlyArray<O>,
+	summaries: Readonly<Record<string, CommitSummary>>,
+): ReadonlyArray<O> => {
+	const committedAt = (option: O) => summaries[option.name]?.committedAt
+	const known = Arr.filter(options, (option) => committedAt(option) !== undefined)
+	const unknown = Arr.filter(options, (option) => committedAt(option) === undefined)
+	return [
+		...Arr.sort(known, Order.flip(Order.mapInput(Order.Number, (option: O) => committedAt(option) ?? 0))),
+		...unknown,
+	]
+}
 
 const MIN_BASELINE_SPANS = 100
 

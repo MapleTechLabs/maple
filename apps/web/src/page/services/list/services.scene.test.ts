@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, Option } from "effect"
+import { Result, Schema, Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
@@ -27,6 +27,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAnomalies,
 	FetchBaseline,
+	FetchCommitSummaries,
 	FetchFacets,
 	FetchOverview,
 	FetchSparklines,
@@ -445,5 +446,50 @@ describe("services list keys", () => {
 				expectView(text(formatThroughput(7, "/s"))).toExist(),
 			)
 		})
+	})
+
+	test("the release facet names deploy commits by subject, newest first, from the table's lookup", () => {
+		const older = Str.repeat(40)("a")
+		const newer = Str.repeat(40)("b")
+		const unresolved = Str.repeat(40)("c")
+		const base = loaded([row("checkout")])
+		const withFacets = pageUpdate(
+			base,
+			Message.CompletedFetchFacets({
+				key: base.facets.key ?? "",
+				result: Result.succeed({
+					environments: [{ name: "production", count: 10 }],
+					namespaces: [],
+					commitShas: [
+						{ name: unresolved, count: 900 },
+						{ name: older, count: 500 },
+						{ name: newer, count: 100 },
+					],
+				}),
+			}),
+		).model
+		const painted = pageUpdate(withFacets, Message.PaintedTable())
+		const lookup = Arr.findFirst(painted.commands ?? [], ({ name }) => name === FetchCommitSummaries.name)
+		expect(Option.getOrUndefined(lookup)?.args).toMatchObject({ shas: `${older},${newer},${unresolved}` })
+		const resolved = pageUpdate(
+			painted.model,
+			Message.CompletedFetchCommitSummaries({
+				key: painted.model.commitSummaries.key ?? "",
+				result: Result.succeed({
+					[older]: { subject: "fix: retry checkout", committedAt: 1000 },
+					[newer]: { subject: "feat: express pay", committedAt: 2000 },
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(resolved),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			expectView(text("Release")).toExist(),
+			expectView(role("checkbox", { name: "feat: express pay" })).toExist(),
+			expectView(role("checkbox", { name: "fix: retry checkout" })).toExist(),
+			expectView(role("checkbox", { name: "ccccccc" })).toExist(),
+		)
 	})
 })
