@@ -334,7 +334,7 @@ const answerEditor = (
 			case "FetchIngestRuleImpact":
 				return reply(
 					EditorMessage.Message.CompletedFetchImpact({
-						window: current.impactWindow,
+						seq: current.impactSeq,
 						result: Result.succeed(statsFor(current.impactWindow === "7d" ? 168 : 24)),
 					}),
 				)

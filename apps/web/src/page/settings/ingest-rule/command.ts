@@ -32,14 +32,14 @@ export const FetchRule = Command.define("FetchIngestRule", {
 
 /** The org's rule stats over the window, ending now; the page picks this rule out of them. */
 export const FetchImpact = Command.define("FetchIngestRuleImpact", {
-	args: { window: ImpactWindow },
+	args: { window: ImpactWindow, seq: Schema.Number },
 	messages: [Message.CompletedFetchImpact],
-	execute: ({ window }) =>
+	execute: ({ window, seq }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
 			const now = yield* Clock.currentTimeMillis
 			return yield* client.ingestRules.stats({ query: hourWindow(now, IMPACT_HOURS[window]) })
-		}).pipe(settleTo((result) => Message.CompletedFetchImpact({ window, result }))),
+		}).pipe(settleTo((result) => Message.CompletedFetchImpact({ seq, result }))),
 })
 
 export const DebounceEstimate = Command.define("DebounceIngestRuleEstimate", {

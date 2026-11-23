@@ -44,6 +44,8 @@ export const Model = Schema.Struct({
 	estimateKey: Schema.String,
 	/** Goes up with every change of `estimateKey`; only the newest debounce asks. */
 	estimateSeq: Schema.Number,
+	/** Goes up with every impact request; only the newest one's answer is shown. */
+	impactSeq: Schema.Number,
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	isSaving: Schema.Boolean,

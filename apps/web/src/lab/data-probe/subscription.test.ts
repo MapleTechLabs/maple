@@ -67,6 +67,18 @@ const subscribe = (stream: Stream.Stream<Message>) =>
 
 const next = (received: Queue.Queue<Message>) => Queue.take(received).pipe(Effect.timeout("1 second"))
 
+/**
+ * The first message `isWanted` accepts, within a second. A live query may re-emit the current rows
+ * before a change lands, so the message after a change is not always the changed one.
+ */
+const nextWhere = (
+	received: Queue.Queue<Message>,
+	isWanted: (message: Message) => boolean,
+): Effect.Effect<Message, unknown> =>
+	Effect.filterOrElse(next(received), isWanted, () => nextWhere(received, isWanted)).pipe(
+		Effect.timeout("1 second"),
+	)
+
 describe("alert rules liveQuery", () => {
 	test("emits the org's rows when ready and again after every change", () =>
 		Effect.runPromise(
@@ -75,7 +87,11 @@ describe("alert rules liveQuery", () => {
 				const { received } = yield* subscribe(ruleCounts(orgA, rules))
 				expect(yield* next(received)).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 2 }))
 				rules.insert(rule("org_a-new", "org_a"))
-				expect(yield* next(received)).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 3 }))
+				const updated = yield* nextWhere(
+					received,
+					(message) => message._tag === "UpdatedAlertRules" && message.count !== 2,
+				)
+				expect(updated).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 3 }))
 			}),
 		))
 

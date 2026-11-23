@@ -51,10 +51,17 @@ export const headline = (effect: Effect, counts: RuleCounts): string => {
  * The line under the headline. Bytes are the dropped records' encoded size, which is not always
  * what metering discounts (a converted payload is metered by its original body).
  */
-export const detail = (effect: Effect, counts: RuleCounts): string =>
-	effect === "drop"
-		? `${formatStorageBytes(counts.dropped_bytes)} dropped`
-		: `${formatNumber(counts.matched)} records matched`
+export const detail = (effect: Effect, counts: RuleCounts): string => {
+	// A rule that changed action inside the window names the other effect too.
+	if (effect === "drop") {
+		const bytes = `${formatStorageBytes(counts.dropped_bytes)} dropped`
+		return counts.redacted_values > 0
+			? `${bytes} · ${formatNumber(counts.redacted_values)} values redacted`
+			: bytes
+	}
+	const matched = `${formatNumber(counts.matched)} records matched`
+	return counts.dropped > 0 ? `${matched} · ${formatNumber(counts.dropped)} dropped` : matched
+}
 
 /** Sums of `size` consecutive values: 168 hours as 28 six-hour bars. */
 export const bucketed = (values: ReadonlyArray<number>, size: number): ReadonlyArray<number> =>
