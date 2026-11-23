@@ -324,7 +324,7 @@ export function ingestRuleLogVolumeQuery() {
 /**
  * Spans per service and span name as the gateway sees them (the raw `SpanName`, not the
  * `METHOD /route` display name the operations rollup stores), busiest first. Counts are
- * sampling-weighted, so a service that samples at its SDK shows more than it stores.
+ * sampling-weighted; `ingestRuleSpanWeightQuery` gives the per-service factor back to stored spans.
  */
 export function ingestRuleSpanVolumeQuery() {
 	return from(Datasources.tracesAggregatesHourly)
@@ -341,5 +341,21 @@ export function ingestRuleSpanVolumeQuery() {
 		.groupBy("serviceName", "spanName")
 		.orderBy(["records", "desc"])
 		.limit(200)
+		.format("JSON")
+}
+
+/** Sampling-weighted spans per service, to turn the weighted counts above back into stored ones. */
+export function ingestRuleSpanWeightQuery() {
+	return from(Datasources.tracesAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			weighted: CH.sum($.WeightedCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName")
 		.format("JSON")
 }

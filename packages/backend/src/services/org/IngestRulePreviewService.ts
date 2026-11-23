@@ -177,15 +177,19 @@ export const suggestRules = (
 		readonly records: number
 	}>,
 	spanSizes: RecordSizes,
+	/**
+	 * Stored spans per sampling-weighted span, per service: the span rollup counts what SDK
+	 * sampling stood for, the bill counts what was stored. A service missing here counts 1.
+	 */
+	spanStoredRatio: ReadonlyMap<string, number>,
 	/** Every stored log and span byte in the window; the rows above are only the busiest groups. */
 	totals: { readonly logBytes: number; readonly spanBytes: number },
 ): ReadonlyArray<RuleSuggestion> => {
 	const { logBytes, spanBytes } = totals
-	const spanRows = Arr.map(spans, (row) => ({
-		...row,
-		records: Number(row.records),
-		bytes: Number(row.records) * (spanSizes.get(row.serviceName) ?? 0),
-	}))
+	const spanRows = Arr.map(spans, (row) => {
+		const records = Math.round(Number(row.records) * (spanStoredRatio.get(row.serviceName) ?? 1))
+		return { ...row, records, bytes: records * (spanSizes.get(row.serviceName) ?? 0) }
+	})
 	const allBytes = logBytes + spanBytes
 	const sampled = (bytes: number) => bytes * (1 - SAMPLE_KEEP_PERCENT / 100)
 	// The info suggestion samples every level below warn, so its impact includes the debug logs.
@@ -370,7 +374,7 @@ const make = Effect.gen(function* () {
 			startTime: formatWarehouseDateTime(startMs),
 			endTime: formatWarehouseDateTime(endMs),
 		}
-		const [logs, spans, usage] = yield* Effect.all(
+		const [logs, spans, weights, usage] = yield* Effect.all(
 			[
 				readable.logs
 					? warehouse.compiledQuery(tenant, CH.compile(CH.ingestRuleLogVolumeQuery(), params), {
@@ -384,6 +388,12 @@ const make = Effect.gen(function* () {
 							context: "ingestRuleSuggestSpans",
 						})
 					: Effect.succeed([]),
+				readable.traces
+					? warehouse.compiledQuery(tenant, CH.compile(CH.ingestRuleSpanWeightQuery(), params), {
+							profile: "aggregation",
+							context: "ingestRuleSuggestSpanWeights",
+						})
+					: Effect.succeed([]),
 				warehouse.compiledQuery(tenant, CH.compile(CH.serviceUsageQuery({}), params), {
 					profile: "aggregation",
 					context: "ingestRuleSuggestUsage",
@@ -391,7 +401,17 @@ const make = Effect.gen(function* () {
 			],
 			{ concurrency: "unbounded" },
 		)
-		const suggested = suggestRules(logs, spans, sizesFrom(usage, "traces"), {
+		const storedSpans = new Map(Arr.map(usage, (row) => [row.serviceName, Number(row.totalTraceCount)]))
+		const spanStoredRatio = new Map(
+			Arr.flatMap(weights, (row) => {
+				const weighted = Number(row.weighted)
+				const stored = storedSpans.get(row.serviceName)
+				return weighted > 0 && stored !== undefined
+					? [[row.serviceName, Math.min(1, stored / weighted)] as const]
+					: []
+			}),
+		)
+		const suggested = suggestRules(logs, spans, sizesFrom(usage, "traces"), spanStoredRatio, {
 			logBytes: Arr.reduce(usage, 0, (total, row) => total + Number(row.totalLogSizeBytes)),
 			spanBytes: Arr.reduce(usage, 0, (total, row) => total + Number(row.totalTraceSizeBytes)),
 		})

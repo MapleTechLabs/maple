@@ -83,6 +83,7 @@ describe("suggested ingest rules", () => {
 				{ serviceName: "shop", spanName: "GET /streams/live", records: 2_000 },
 			],
 			spanSizes,
+			new Map(),
 			{ logBytes: 80_000 * KB, spanBytes: 26_000 * 500 },
 		)
 		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
@@ -104,6 +105,7 @@ describe("suggested ingest rules", () => {
 			// A busy operation is never sampled: the gateway would keep the rest of its traces.
 			[{ serviceName: "api", spanName: "GET /orders", records: 400_000 }],
 			spanSizes,
+			new Map(),
 			{ logBytes: 1_050_000 * KB, spanBytes: 400_000 * 500 },
 		)
 		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
@@ -116,8 +118,20 @@ describe("suggested ingest rules", () => {
 		expect(suggestions[0]?.savedBytes).toBeCloseTo(1_000_000 * KB * 0.9)
 	})
 
+	it("counts spans as stored, not as the traffic SDK sampling stood for", () => {
+		const [probe] = suggestRules(
+			[],
+			[{ serviceName: "api", spanName: "GET /healthz", records: 100_000 }],
+			spanSizes,
+			// One span in ten was stored.
+			new Map([["api", 0.1]]),
+			{ logBytes: 0, spanBytes: 10_000 * 500 },
+		)
+		expect(probe).toMatchObject({ records: 10_000, bytes: 10_000 * 500, savedBytes: 10_000 * 500 })
+	})
+
 	it("suggests nothing for an org with no data", () => {
-		expect(suggestRules([], [], new Map(), { logBytes: 0, spanBytes: 0 })).toEqual([])
+		expect(suggestRules([], [], new Map(), new Map(), { logBytes: 0, spanBytes: 0 })).toEqual([])
 	})
 
 	it("measures shares against everything stored, not only the busiest rows read", () => {
@@ -126,6 +140,7 @@ describe("suggested ingest rules", () => {
 			[{ serviceName: "api", level: "info", records: 150_000, bytes: 150_000 * KB }],
 			[],
 			spanSizes,
+			new Map(),
 			{ logBytes: 10_000_000 * KB, spanBytes: 0 },
 		)
 		expect(suggestions).toEqual([])
