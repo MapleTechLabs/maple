@@ -37,11 +37,11 @@ export const evaluationColumnsSql = (opts: {
 	// A finite number: `nan` and `inf` parse as floats and would poison every mean.
 	const finite = `isFinite(toFloat64OrZero(${a(OTEL.scoreValue)})) AND isNotNull(toFloat64OrNull(${a(OTEL.scoreValue)}))`
 	// An explicit target replaces the record's context as a PAIR: a target trace with the record's own
-	// span id would name a span from another trace.
+	// span id would name a span from another trace. Lowercased, as span rows store their hex ids.
 	const targeted = `${a(MAPLE.targetTraceId)} != ''`
 	return `
-          if(${targeted}, ${a(MAPLE.targetTraceId)}, ${opts.traceId}) AS TraceId,
-          if(${targeted}, ${a(MAPLE.targetSpanId)}, ${opts.spanId}) AS SpanId,
+          if(${targeted}, lower(${a(MAPLE.targetTraceId)}), ${opts.traceId}) AS TraceId,
+          if(${targeted}, lower(${a(MAPLE.targetSpanId)}), ${opts.spanId}) AS SpanId,
           coalesce(nullIf(${a(MAPLE.scope)}, ''), if(${targeted} AND ${a(MAPLE.targetSpanId)} = '', 'trace', 'span')) AS Scope,
           ${a(MAPLE.sessionId)} AS SessionId,
           ${a(OTEL.responseId)} AS ResponseId,
