@@ -77,81 +77,95 @@ const passRateBars = (h: H, detail: EvaluatorDetail): Html =>
 
 const breakdownTable = (h: H, rows: ReadonlyArray<AiEvaluationBreakdownRow>): Html =>
 	section(h, "Where it runs", rows.length, [
-		toolTable(h, [
-			toolTableHead(h, [
-				th(h, { label: "Service", width: columnClass({ min: "0" }) }),
-				th(h, { label: "Environment", width: "w-32 shrink-0" }),
-				th(h, { label: "Scores", width: "w-20 shrink-0", align: "right" }),
-				th(h, { label: "Pass rate", width: "w-20 shrink-0", align: "right" }),
-				th(h, { label: "Mean score", width: "w-24 shrink-0", align: "right" }),
-			]),
-			toolTableBody(
-				h,
-				Arr.map(rows, (row) =>
-					toolTableRow(h, { attributes: [h.Key(`${row.serviceName}:${row.deploymentEnv}`)] }, [
-						typography(
-							h,
-							{
-								size: "xs",
-								mono: true,
-								tone: "foreground",
-								truncate: true,
-								className: "min-w-0 flex-1",
-							},
-							[row.serviceName === "" ? NO_VALUE : row.serviceName],
-						),
-						typography(
-							h,
-							{
-								size: "xs",
-								mono: true,
-								tone: "muted",
-								truncate: true,
-								className: "w-32 shrink-0",
-							},
-							[row.deploymentEnv === "" ? NO_VALUE : row.deploymentEnv],
-						),
-						typography(
-							h,
-							{
-								size: "xs",
-								mono: true,
-								numeric: true,
-								align: "right",
-								tone: "foreground",
-								className: "w-20 shrink-0",
-							},
-							[formatNumber(row.scoreCount)],
-						),
-						typography(
-							h,
-							{
-								size: "xs",
-								mono: true,
-								numeric: true,
-								align: "right",
-								tone: passRateTone(row),
-								className: "w-20 shrink-0",
-							},
-							[passRateLabel(row)],
-						),
-						typography(
-							h,
-							{
-								size: "xs",
-								mono: true,
-								numeric: true,
-								align: "right",
-								tone: "muted",
-								className: "w-24 shrink-0",
-							},
-							[meanScoreLabel(row)],
-						),
-					]),
+		toolTable(
+			h,
+			[
+				toolTableHead(h, [
+					th(h, { label: "Service", width: columnClass({ min: "0" }) }),
+					th(h, {
+						label: "Environment",
+						width: "w-32 shrink-0",
+						hidden: "hidden @min-[720px]/panel:flex",
+					}),
+					th(h, { label: "Scores", width: "w-20 shrink-0", align: "right" }),
+					th(h, { label: "Pass rate", width: "w-20 shrink-0", align: "right" }),
+					th(h, {
+						label: "Mean score",
+						width: "w-24 shrink-0",
+						align: "right",
+						hidden: "hidden @min-[720px]/panel:flex",
+					}),
+				]),
+				toolTableBody(
+					h,
+					Arr.map(rows, (row) =>
+						toolTableRow(h, { attributes: [h.Key(`${row.serviceName}:${row.deploymentEnv}`)] }, [
+							typography(
+								h,
+								{
+									size: "xs",
+									mono: true,
+									tone: "foreground",
+									truncate: true,
+									className: "min-w-0 flex-1",
+								},
+								[row.serviceName === "" ? NO_VALUE : row.serviceName],
+							),
+							typography(
+								h,
+								{
+									size: "xs",
+									mono: true,
+									tone: "muted",
+									truncate: true,
+									className: "hidden w-32 shrink-0 @min-[720px]/panel:block",
+								},
+								[row.deploymentEnv === "" ? NO_VALUE : row.deploymentEnv],
+							),
+							typography(
+								h,
+								{
+									size: "xs",
+									mono: true,
+									numeric: true,
+									align: "right",
+									tone: "foreground",
+									className: "w-20 shrink-0",
+								},
+								[formatNumber(row.scoreCount)],
+							),
+							typography(
+								h,
+								{
+									size: "xs",
+									mono: true,
+									numeric: true,
+									align: "right",
+									tone: passRateTone(row),
+									className: "w-20 shrink-0",
+								},
+								[passRateLabel(row)],
+							),
+							typography(
+								h,
+								{
+									size: "xs",
+									mono: true,
+									numeric: true,
+									align: "right",
+									tone: "muted",
+									className: "hidden w-24 shrink-0 @min-[720px]/panel:block",
+								},
+								[meanScoreLabel(row)],
+							),
+						]),
+					),
+					{ isWaiting: false },
 				),
-				{ isWaiting: false },
-			),
-		]),
+			],
+			undefined,
+			{ hasShrinkingLanes: true },
+		),
 	])
 
 const verdictLabel = (verdict: string): string =>
@@ -245,39 +259,52 @@ const scoresTable = (
 	timeZone: string,
 ): Html =>
 	section(h, "Latest scores", detail.scores.length, [
-		toolTable(h, [
-			toolTableHead(h, [
-				th(h, { label: "Time", width: "w-32 shrink-0" }),
-				th(h, { label: "Verdict", width: "w-16 shrink-0" }),
-				th(h, { label: "Score", width: "w-36 shrink-0" }),
-				th(h, { label: "Explanation", width: columnClass({ min: "0" }) }),
-				th(h, { label: "Session", width: "w-28 shrink-0", hidden: "hidden @min-[720px]/panel:flex" }),
-				th(h, { label: "Trace", width: "w-24 shrink-0" }),
-			]),
-			toolTableBody(
-				h,
-				detail.scores.length === 0
-					? [
-							typography(
-								h,
-								{ size: "xs", tone: "muted", as: "p", className: "py-8 text-center" },
-								[
-									model.search.failing === true
-										? "No failing scores in this window"
-										: "No scores in this window",
-								],
+		toolTable(
+			h,
+			[
+				toolTableHead(h, [
+					th(h, { label: "Time", width: "w-32 shrink-0" }),
+					th(h, { label: "Verdict", width: "w-16 shrink-0" }),
+					th(h, { label: "Score", width: "w-36 shrink-0" }),
+					th(h, { label: "Explanation", width: columnClass({ min: "0" }) }),
+					th(h, {
+						label: "Session",
+						width: "w-28 shrink-0",
+						hidden: "hidden @min-[720px]/panel:flex",
+					}),
+					th(h, { label: "Trace", width: "w-24 shrink-0" }),
+				]),
+				toolTableBody(
+					h,
+					detail.scores.length === 0
+						? [
+								typography(
+									h,
+									{ size: "xs", tone: "muted", as: "p", className: "py-8 text-center" },
+									[
+										model.search.failing === true
+											? "No failing scores in this window"
+											: "No scores in this window",
+									],
+								),
+							]
+						: Arr.map(detail.scores, (score) =>
+								toolTableRow(
+									h,
+									{
+										attributes: [
+											h.Key(`${score.spanId}:${score.timestamp}:${score.source}`),
+										],
+									},
+									scoreCells(h, score, window, timeZone),
+								),
 							),
-						]
-					: Arr.map(detail.scores, (score) =>
-							toolTableRow(
-								h,
-								{ attributes: [h.Key(`${score.spanId}:${score.timestamp}:${score.source}`)] },
-								scoreCells(h, score, window, timeZone),
-							),
-						),
-				{ isWaiting: AsyncData.isRefreshing(model.detail.data) },
-			),
-		]),
+					{ isWaiting: AsyncData.isRefreshing(model.detail.data) },
+				),
+			],
+			undefined,
+			{ hasShrinkingLanes: true },
+		),
 	])
 
 const loadedView = (h: H, model: Model, detail: EvaluatorDetail, timeZone: string): Html => {

@@ -140,32 +140,37 @@ export const evaluatorsTable = (h: H, inputs: EvaluatorsTableInputs): Html =>
 					formatNumber(inputs.rows.length),
 				]),
 			]),
-			toolTable(h, [
-				head(h),
-				toolTableBody(
-					h,
-					Arr.map(Arr.sort(inputs.rows, byScoresDesc), (row) =>
-						toolTableRow(
-							h,
-							{
-								href: hrefOf(
-									AppRoute.AgentSessionEvaluator({
-										name: row.name,
-										search: {
-											startTime: inputs.search.startTime,
-											endTime: inputs.search.endTime,
-											timePreset: inputs.search.timePreset,
-										},
-									}),
-								),
-								attributes: [h.Key(row.name)],
-							},
-							cells(h, row, inputs),
+			toolTable(
+				h,
+				[
+					head(h),
+					toolTableBody(
+						h,
+						Arr.map(Arr.sort(inputs.rows, byScoresDesc), (row) =>
+							toolTableRow(
+								h,
+								{
+									href: hrefOf(
+										AppRoute.AgentSessionEvaluator({
+											name: row.name,
+											search: {
+												startTime: inputs.search.startTime,
+												endTime: inputs.search.endTime,
+												timePreset: inputs.search.timePreset,
+											},
+										}),
+									),
+									attributes: [h.Key(row.name)],
+								},
+								cells(h, row, inputs),
+							),
 						),
+						{ isWaiting: inputs.isWaiting },
 					),
-					{ isWaiting: inputs.isWaiting },
-				),
-			]),
+				],
+				undefined,
+				{ hasShrinkingLanes: true },
+			),
 		],
 	)
 
