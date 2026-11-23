@@ -1,6 +1,11 @@
 import { OrgId } from "@maple/domain"
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
+import {
+	V2IngestRule,
+	V2IngestRulePreview,
+	V2IngestRuleStats,
+	V2IngestRuleSuggestions,
+} from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option, Record as Rec, Result, Schema } from "effect"
 import { Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,6 +34,8 @@ export const LabState = Schema.Literals([
 	"rule-empty",
 	"new-drop",
 	"new-sampled",
+	"list-empty",
+	"rule-week",
 ])
 export type LabState = typeof LabState.Type
 
@@ -241,6 +248,51 @@ const LOG_SAMPLES = [
 	log("api", "DEBUG", 5, "pool size 12, idle 9"),
 ]
 
+/** What the last 24 hours suggest. */
+const SUGGESTIONS = Schema.decodeSync(V2IngestRuleSuggestions)({
+	object: "ingest_rule_suggestions",
+	start_time: new Date(END_MS - 24 * HOUR).toISOString(),
+	end_time: new Date(END_MS).toISOString(),
+	data: [
+		{
+			signal: "logs",
+			service_name: "payments",
+			level: "debug",
+			span_name: null,
+			reason: "debug_logs",
+			keep_percent: 0,
+			records: 2_840_000,
+			bytes: 812_000_000,
+			saved_bytes: 812_000_000,
+			share: 0.24,
+		},
+		{
+			signal: "logs",
+			service_name: "api",
+			level: "info",
+			span_name: null,
+			reason: "info_logs",
+			keep_percent: 10,
+			records: 1_920_000,
+			bytes: 576_000_000,
+			saved_bytes: 518_400_000,
+			share: 0.31,
+		},
+		{
+			signal: "traces",
+			service_name: "gateway",
+			level: null,
+			span_name: "GET /healthz",
+			reason: "health_checks",
+			keep_percent: 0,
+			records: 864_000,
+			bytes: 172_800_000,
+			saved_bytes: 172_800_000,
+			share: 0.09,
+		},
+	],
+})
+
 /** What the API would count for a draft over the last 24 hours. */
 const ESTIMATE = (keepPercent: number) => {
 	const stored = 8_412_000
@@ -319,15 +371,19 @@ const liftEditor = (commands: ReadonlyArray<Command.Command<EditorMessage.Messag
 export const init = (flags: Flags): Return => {
 	const listed = Rules.update(
 		Rules.init(),
-		Rules.Message.CompletedFetch({ result: Result.succeed(RULES) }),
+		Rules.Message.CompletedFetch({ result: Result.succeed(flags.state === "list-empty" ? [] : RULES) }),
 	).model
 	const rules =
 		flags.state === "list-loading"
 			? listed
-			: Rules.update(
+			: Arr.reduce(
+					[
+						Rules.Message.CompletedFetchStats({ result: Result.succeed(statsFor(24)) }),
+						Rules.Message.CompletedFetchSuggestions({ result: Result.succeed(SUGGESTIONS) }),
+					],
 					listed,
-					Rules.Message.CompletedFetchStats({ result: Result.succeed(statsFor(24)) }),
-				).model
+					(model, message) => Rules.update(model, message).model,
+				)
 	const target = ruleFor(flags.state)
 	const isNew = flags.state === "new-drop" || flags.state === "new-sampled"
 	const opened = isNew
@@ -336,6 +392,7 @@ export const init = (flags: Flags): Return => {
 	const steps: ReadonlyArray<EditorMessage.Message> = [
 		EditorMessage.Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:admin"]) }),
 		...(isNew ? [] : [EditorMessage.Message.CompletedFetchExisting({ result: Result.succeed(target) })]),
+		...(flags.state === "rule-week" ? [EditorMessage.Message.PickedImpactWindow({ window: "7d" })] : []),
 		...(flags.state === "new-sampled"
 			? [EditorMessage.Message.ChangedText({ part: "keepPercent", value: "10" })]
 			: []),
@@ -380,7 +437,7 @@ const listView = Submodel.defineView<
 >((rules, _inputs, h) => h.div([], [ingestRulesSection(h, rules, true), deleteRuleDialog(h, rules)]))
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	model.state === "list" || model.state === "list-loading"
+	model.state === "list" || model.state === "list-loading" || model.state === "list-empty"
 		? h.div(
 				[h.Class("mx-auto w-full max-w-5xl p-6")],
 				[

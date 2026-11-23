@@ -285,3 +285,77 @@ export function ingestRuleHourlyVolumeQuery() {
 		.orderBy(["hour", "desc"])
 		.format("JSON")
 }
+
+// Suggested rules: the busiest log levels and span names per service, from the hourly rollups so
+// a day costs a few thousand rows, not a scan.
+
+/** `debug` for trace and debug text, `info` for info, `other` for the rest (unknown included). */
+const levelOfText = (text: StringExpr) => {
+	const lower = CH.lower_(text)
+	return CH.multiIf<string>(
+		[
+			[CH.or(lower.startsWith("trace"), lower.startsWith("debug")) ?? CH.rawCond("0"), CH.lit("debug")],
+			[lower.startsWith("info"), CH.lit("info")],
+		],
+		CH.lit("other"),
+	)
+}
+
+/** Stored logs per service and level over the hours the window touches. */
+export function ingestRuleLogVolumeQuery() {
+	return from(Datasources.logsAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			level: levelOfText($.SeverityText),
+			records: CH.sum($.Count),
+			bytes: CH.sum($.SizeBytes),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName", "level")
+		.orderBy(["bytes", "desc"])
+		.limit(200)
+		.format("JSON")
+}
+
+/**
+ * Spans per service and span name as the gateway sees them (the raw `SpanName`, not the
+ * `METHOD /route` display name the operations rollup stores), busiest first. Counts are
+ * sampling-weighted; `ingestRuleSpanWeightQuery` gives the per-service factor back to stored spans.
+ */
+export function ingestRuleSpanVolumeQuery() {
+	return from(Datasources.tracesAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			spanName: $.SpanName,
+			records: CH.sum($.WeightedCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName", "spanName")
+		.orderBy(["records", "desc"])
+		.limit(200)
+		.format("JSON")
+}
+
+/** Sampling-weighted spans per service, to turn the weighted counts above back into stored ones. */
+export function ingestRuleSpanWeightQuery() {
+	return from(Datasources.tracesAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			weighted: CH.sum($.WeightedCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("serviceName")
+		.format("JSON")
+}

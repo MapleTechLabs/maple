@@ -2,7 +2,7 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { IngestRuleValidationError } from "@maple/domain/http"
 import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	Command,
 	change,
@@ -463,6 +463,52 @@ describe("ingest rule 24 hour estimate", () => {
 		const opened = init({ _tag: "IngestRuleNew", search: {} }, context)
 		expect(opened.model.estimateKey).toBe("")
 		expect(names(opened.commands)).not.toContain("DebounceIngestRuleEstimate")
+	})
+})
+
+describe("ingest rule from a suggestion", () => {
+	test("a suggestion link opens a draft for that service and level, ready to save", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				asAdmin(
+					init(
+						{ _tag: "IngestRuleNew", search: { service: "checkout", level: "info", keep: 10 } },
+						context,
+					).model,
+				),
+			),
+			expectView(role("textbox", { name: "Name" })).toHaveValue(
+				"Sample info and debug logs from checkout",
+			),
+			expectView(role("combobox", { name: "Condition 2 operator" })).toHaveValue("lt"),
+			expectView(text("Ready to save")).toExist(),
+		)
+	})
+
+	test("a span suggestion matches the exact span name in traces", () => {
+		const model = init(
+			{ _tag: "IngestRuleNew", search: { service: "api", span: "GET /healthz", keep: 0 } },
+			context,
+		).model
+		expect(model.draft.signals).toEqual(["traces"])
+		expect(
+			Arr.map(model.draft.conditions, (condition) => [condition.field, condition.op, condition.value]),
+		).toEqual([
+			["service_name", "eq", "api"],
+			["name", "eq", "GET /healthz"],
+		])
+		expect(model.draft.name).toBe("Drop GET /healthz in api")
+	})
+
+	test("a long span name still makes a name the rule accepts", () => {
+		const span = `GET /${Str.repeat(20)("segment/")}end`
+		const model = init(
+			{ _tag: "IngestRuleNew", search: { service: "api", span, keep: 0 } },
+			context,
+		).model
+		expect(model.draft.name.length).toBeLessThanOrEqual(120)
+		expect(model.estimateKey).not.toBe("")
 	})
 })
 

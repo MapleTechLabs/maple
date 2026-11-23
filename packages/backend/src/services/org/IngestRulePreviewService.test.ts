@@ -10,6 +10,7 @@ import {
 	IngestRulePreviewService,
 	PREVIEW_MAX_SCAN_ROWS,
 	scanMinutes,
+	suggestRules,
 	summarize,
 } from "./IngestRulePreviewService"
 
@@ -71,6 +72,90 @@ describe("ingest rule preview totals", () => {
 			{ serviceName: "api", stored: 500, matched: 100 },
 		])
 		expect(summarize("logs", rows, sizes, 0).estimatedDropped).toBe(0)
+	})
+})
+
+describe("suggested ingest rules", () => {
+	const KB = 1000
+	const spanSizes = new Map([
+		["api", 500],
+		["shop", 500],
+	])
+
+	it("drops debug logs and health-check spans, busiest savings first", () => {
+		const suggestions = suggestRules(
+			[
+				{ serviceName: "checkout", level: "debug", records: 50_000, bytes: 20_000 * KB },
+				{ serviceName: "checkout", level: "other", records: 100_000, bytes: 60_000 * KB },
+			],
+			[
+				{ serviceName: "api", spanName: "GET /healthz", records: 20_000 },
+				{ serviceName: "shop", spanName: "POST /shipping", records: 2_000 },
+				{ serviceName: "shop", spanName: "GET /orders/:id/ready", records: 2_000 },
+				{ serviceName: "shop", spanName: "GET /streams/live", records: 2_000 },
+			],
+			spanSizes,
+			new Map(),
+			{ logBytes: 80_000 * KB, spanBytes: 26_000 * 500 },
+		)
+		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
+			[
+				["debug_logs", "checkout", 0],
+				["health_checks", "api", 0],
+			],
+		)
+		expect(suggestions[1]).toMatchObject({ spanName: "GET /healthz", savedBytes: 20_000 * 500 })
+	})
+
+	it("samples a service's logs below warn when its info logs dominate, counting its debug logs too", () => {
+		const suggestions = suggestRules(
+			[
+				{ serviceName: "api", level: "info", records: 900_000, bytes: 900_000 * KB },
+				{ serviceName: "api", level: "debug", records: 100_000, bytes: 100_000 * KB },
+				{ serviceName: "web", level: "info", records: 50_000, bytes: 50_000 * KB },
+			],
+			// A busy operation is never sampled: the gateway would keep the rest of its traces.
+			[{ serviceName: "api", spanName: "GET /orders", records: 400_000 }],
+			spanSizes,
+			new Map(),
+			{ logBytes: 1_050_000 * KB, spanBytes: 400_000 * 500 },
+		)
+		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
+			[
+				["info_logs", "api", 10],
+				["debug_logs", "api", 0],
+			],
+		)
+		expect(suggestions[0]).toMatchObject({ records: 1_000_000, bytes: 1_000_000 * KB })
+		expect(suggestions[0]?.savedBytes).toBeCloseTo(1_000_000 * KB * 0.9)
+	})
+
+	it("counts spans as stored, not as the traffic SDK sampling stood for", () => {
+		const [probe] = suggestRules(
+			[],
+			[{ serviceName: "api", spanName: "GET /healthz", records: 100_000 }],
+			spanSizes,
+			// One span in ten was stored.
+			new Map([["api", 0.1]]),
+			{ logBytes: 0, spanBytes: 10_000 * 500 },
+		)
+		expect(probe).toMatchObject({ records: 10_000, bytes: 10_000 * 500, savedBytes: 10_000 * 500 })
+	})
+
+	it("suggests nothing for an org with no data", () => {
+		expect(suggestRules([], [], new Map(), new Map(), { logBytes: 0, spanBytes: 0 })).toEqual([])
+	})
+
+	it("measures shares against everything stored, not only the busiest rows read", () => {
+		// The rollup read keeps the busiest 200 groups; a level that is 15% of those can be 1.5% of all.
+		const suggestions = suggestRules(
+			[{ serviceName: "api", level: "info", records: 150_000, bytes: 150_000 * KB }],
+			[],
+			spanSizes,
+			new Map(),
+			{ logBytes: 10_000_000 * KB, spanBytes: 0 },
+		)
+		expect(suggestions).toEqual([])
 	})
 })
 

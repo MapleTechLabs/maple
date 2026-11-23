@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRuleStats, V2IngestRuleSuggestions } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -231,6 +231,116 @@ describe("ingest rules section", () => {
 				url: "/settings/ingestion/rules/irule_YofPTrK9782DWwcnXhpcCw",
 				isReplace: false,
 			}),
+		)
+	})
+})
+
+describe("suggested ingest rules", () => {
+	const suggestions = Schema.decodeSync(V2IngestRuleSuggestions)({
+		object: "ingest_rule_suggestions",
+		start_time: "2026-11-22T12:00:00.000Z",
+		end_time: "2026-11-23T12:00:00.000Z",
+		data: [
+			{
+				signal: "logs",
+				service_name: "checkout",
+				level: "debug",
+				span_name: null,
+				reason: "debug_logs",
+				keep_percent: 0,
+				records: 1_200_000,
+				bytes: 340_000_000,
+				saved_bytes: 340_000_000,
+				share: 0.21,
+			},
+			{
+				signal: "logs",
+				service_name: "api",
+				level: "info",
+				span_name: null,
+				reason: "info_logs",
+				keep_percent: 10,
+				records: 400_000,
+				bytes: 200_000_000,
+				saved_bytes: 180_000_000,
+				share: 0.4,
+			},
+		],
+	})
+	const withSuggestions = (list: ReadonlyArray<V2IngestRule>) =>
+		step(
+			withRules(list),
+			rules(RulesMessage.CompletedFetchSuggestions({ result: Result.succeed(suggestions) })),
+		).model
+
+	test("the tab asks for suggestions with the rules", () => {
+		expect(names(init(options).commands)).toContain("FetchIngestRuleSuggestions")
+	})
+
+	test("each suggestion says what it saves and links to a prefilled editor, even before the first rule", () => {
+		scene(
+			{ update: step, view },
+			given(withSuggestions([])),
+			expectView(text("Debug logs from checkout")).toExist(),
+			expectView(text("340 MB a day")).toExist(),
+			expectView(role("link", { name: "Drop: Debug logs from checkout" })).toHaveAttr(
+				"href",
+				"/settings/ingestion/rules/new?service=checkout&level=debug&keep=0",
+			),
+			expectView(text("Info and debug logs from api")).toExist(),
+			expectView(role("link", { name: "Sample 10%: Info and debug logs from api" })).toExist(),
+		)
+	})
+
+	test("a suggestion an enabled rule already covers is not shown again", () => {
+		const covering = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([covering])),
+			expectView(text("Debug logs from checkout")).not.toExist(),
+			expectView(text("Info and debug logs from api")).toExist(),
+		)
+	})
+
+	test("a rule with other conditions, or that keeps more, does not hide a suggestion", () => {
+		const errorsOnly = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "gte" as const, value: "error" },
+			],
+		}
+		const keepsHalf = {
+			...dropDebug,
+			id: redactTokens.id,
+			action: { type: "drop" as const, keep_percent: 50 },
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([errorsOnly, keepsHalf])),
+			expectView(text("Debug logs from checkout")).toExist(),
+		)
+	})
+
+	test("no suggestions, or a failed read, shows nothing extra", () => {
+		const failed = step(
+			withRules([dropDebug]),
+			rules(RulesMessage.CompletedFetchSuggestions({ result: Result.fail(toLoadFailure("boom")) })),
+		).model
+		scene(
+			{ update: step, view },
+			given(failed),
+			expectView(role("group", { name: "Suggested rules" })).not.toExist(),
 		)
 	})
 })

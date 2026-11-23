@@ -300,4 +300,54 @@ describeWithChdb("ingest rule dry run on chDB", () => {
 			),
 		).toEqual({ api: 2, worker: 0 })
 	})
+
+	test("the suggestion rollups rank stored logs by service and level, and spans by name", () => {
+		const logRows = decodeJsonEachRow(
+			Schema.Struct({
+				serviceName: Schema.String,
+				level: Schema.String,
+				records: CH.CHNumber,
+				bytes: CH.CHNumber,
+			}),
+		)(
+			db.query(
+				normalizeSqlForClickHouseClient(CH.compileUnsafe(CH.ingestRuleLogVolumeQuery(), params).sql),
+			),
+		)
+		const levels = Rec.fromEntries(
+			Arr.map(logRows, (row) => [`${row.serviceName}/${row.level}`, row.records] as const),
+		)
+		// The rollup keeps only the text: DEBUG and debug are debug; Warning and an empty level are other.
+		expect(levels).toEqual({
+			"checkout/debug": 2,
+			"checkout/info": 1,
+			"checkout/other": 2,
+			"api/info": 1,
+			"api/other": 1,
+		})
+		expect(Arr.every(logRows, (row) => row.bytes > 0)).toBe(true)
+
+		const spanRows = decodeJsonEachRow(
+			Schema.Struct({ serviceName: Schema.String, spanName: Schema.String, records: CH.CHNumber }),
+		)(
+			db.query(
+				normalizeSqlForClickHouseClient(CH.compileUnsafe(CH.ingestRuleSpanVolumeQuery(), params).sql),
+			),
+		)
+		expect(
+			Arr.map(spanRows, (row) => `${row.serviceName} ${row.spanName} ${row.records}`).sort(),
+		).toEqual(["api GET /healthz 1", "api GET /orders 1", "api SELECT orders 1", "worker tick 1"])
+
+		const weights = decodeJsonEachRow(
+			Schema.Struct({ serviceName: Schema.String, weighted: CH.CHNumber }),
+		)(
+			db.query(
+				normalizeSqlForClickHouseClient(CH.compileUnsafe(CH.ingestRuleSpanWeightQuery(), params).sql),
+			),
+		)
+		expect(Rec.fromEntries(Arr.map(weights, (row) => [row.serviceName, row.weighted] as const))).toEqual({
+			api: 3,
+			worker: 1,
+		})
+	})
 })

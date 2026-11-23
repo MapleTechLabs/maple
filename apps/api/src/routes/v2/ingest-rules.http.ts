@@ -126,6 +126,33 @@ export const HttpV2IngestRulesLive = HttpApiBuilder.group(MapleApiV2, "ingestRul
 					}
 				}),
 			)
+			.handle("suggestions", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const now = yield* Clock.currentTimeMillis
+					const result = yield* previews.suggestions(tenant, now, {
+						logs: missingReadScopes(tenant.scopes, ["logs"]).length === 0,
+						traces: missingReadScopes(tenant.scopes, ["traces"]).length === 0,
+					})
+					return {
+						object: "ingest_rule_suggestions" as const,
+						start_time: isoTimestamp(result.startMs),
+						end_time: isoTimestamp(result.endMs),
+						data: Arr.map(result.suggestions, (entry) => ({
+							signal: entry.signal,
+							service_name: entry.serviceName,
+							level: entry.level,
+							span_name: entry.spanName,
+							reason: entry.reason,
+							keep_percent: entry.keepPercent,
+							records: Math.round(entry.records),
+							bytes: Math.round(entry.bytes),
+							saved_bytes: Math.round(entry.savedBytes),
+							share: entry.share,
+						})),
+					}
+				}),
+			)
 			.handle("preview", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context

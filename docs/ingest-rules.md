@@ -245,6 +245,34 @@ It is an estimate, not the gateway's verdict: data the org's other rules dropped
 and attribute values are compared as ingest stored them. Metrics are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
 above on chDB.
 
+## Suggested rules
+
+`GET /v2/ingest_rules/suggestions` ranks the last 24 hours of stored data from the hourly rollups
+(`logs_aggregates_hourly` by service and level; `traces_aggregates_hourly` by service and raw span
+name, the name the gateway tests, its sampling-weighted counts scaled back to stored spans by each
+service's stored-to-weighted ratio; span bytes come from each service's average span in
+`service_usage`):
+
+- debug and trace logs of a service: drop;
+- spans whose name is a probe, as a whole word (`health`, `healthz`, `readyz`, `livez`,
+  `readiness`, `liveness`, `ping`, `heartbeat`): drop;
+- a service's logs below warn, when its info logs are at least a tenth of all log bytes: keep 10%.
+  The figures cover everything the rule would sample, debug logs included.
+
+No operation is suggested for sampling: the gateway decides per matching span, so sampling one
+operation drops those spans and keeps the rest of their traces. Log suggestions need `logs:read`
+and span suggestions `traces:read`; a scoped key without one gets none of that kind.
+
+Shares are of everything stored that day (`service_usage`), not only the groups read. A suggestion
+must hold 1,000 records and save at least 0.5% of all stored log and span bytes; the six with the
+most bytes saved are listed under the rule list, each opening the editor prefilled
+(`/settings/ingestion/rules/new?service=&level=|span=&keep=`). The list hides a suggestion only when
+an enabled drop rule has exactly the conditions it would create and keeps no more than it would;
+a rule with other conditions or a higher keep percent does not hide it.
+
+The log rollup keeps only `severity_text`, while the rule it opens tests `severity_number` first, so
+a log whose number and text disagree is ranked by its text.
+
 ## Limits
 
 - 50 rules per org and 20 conditions per rule.
