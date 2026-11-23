@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Result, Schema, Array as Arr } from "effect"
-import { Command, type Update } from "foldkit"
+import { AsyncData, Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import * as RuleMessage from "../page/settings/ingest-rule/message"
@@ -126,16 +126,16 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotPageMessage: ({ message: child }) => {
 			const next = ruleUpdate(model.page, child, CONTEXT)
-			// The real fetch is dropped below, so a new preview request is answered from the fixtures.
-			const page =
-				next.model.samplesKey === model.page.samplesKey
-					? next.model
-					: run(next.model, [
-							M.CompletedFetchSamples({
-								key: next.model.samplesKey,
-								result: Result.succeed(fixtureSamples(model.state, next.model.previewSignal)),
-							}),
-						])
+			// The real fetch is dropped below, so a pending preview request is answered from the
+			// fixtures, even one that reuses the last request's key.
+			const page = !AsyncData.isLoading(next.model.samples)
+				? next.model
+				: run(next.model, [
+						M.CompletedFetchSamples({
+							key: next.model.samplesKey,
+							result: Result.succeed(fixtureSamples(model.state, next.model.previewSignal)),
+						}),
+					])
 			return {
 				model: { ...model, page },
 				commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
