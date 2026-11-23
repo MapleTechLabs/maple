@@ -161,14 +161,17 @@ const followData =
 	(result: Return): Return => {
 		const { model } = result
 		const overview = AsyncData.getData(model.overview.data)
-		if (Option.isNone(overview) || !model.hasPaintedTable) return result
+		// Waits out a facets load so one lookup covers both; a failed facets read goes ahead without them.
+		if (Option.isNone(overview) || !model.hasPaintedTable || AsyncData.isPending(model.facets.data))
+			return result
 		const summary = summaryOf(model)
 		const services = displayedServices(overview.value, summary, model.search)
 		const facetShas = Option.match(AsyncData.getData(model.facets.data), {
 			onNone: () => [],
 			onSome: (facets) => Arr.map(facets.commitShas, (option) => option.name),
 		})
-		const shas = commitsKey(services, facetShas)
+		const chosenShas = [...(model.search.commitShas ?? []), ...(model.search.excludedCommitShas ?? [])]
+		const shas = commitsKey(services, [...facetShas, ...chosenShas])
 		const commits =
 			shas === ""
 				? Option.none()

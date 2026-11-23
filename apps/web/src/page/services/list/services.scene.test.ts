@@ -492,4 +492,52 @@ describe("services list keys", () => {
 			expectView(role("checkbox", { name: "ccccccc" })).toExist(),
 		)
 	})
+
+	test("a table that paints before the facets land waits for them, then sends one commit lookup", () => {
+		const deploySha = Str.repeat(40)("d")
+		const facetSha = Str.repeat(40)("e")
+		const base = windowed()
+		const deployedRow: ServiceRow = {
+			...row("checkout"),
+			commits: [
+				{
+					commitSha: deploySha,
+					spanCount: 100,
+					percentage: 100,
+					errorCount: 0,
+					firstSeen: "2026-10-01 08:00:00",
+				},
+			],
+		}
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchOverview({
+				key: base.overview.key ?? "",
+				result: Result.succeed([deployedRow]),
+			}),
+			Message.CompletedFetchSparklines({ key: base.sparklines.key ?? "", result: Result.succeed({}) }),
+			Message.CompletedFetchAnomalies({ key: base.anomalies.key ?? "", result: Result.succeed([]) }),
+			Message.UpdatedIncidents({ orgId, incidents: [] }),
+		]
+		const ready = Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
+		const painted = pageUpdate(ready, Message.PaintedTable())
+		expect(names(painted.commands)).not.toContain(FetchCommitSummaries.name)
+		const withFacets = pageUpdate(
+			painted.model,
+			Message.CompletedFetchFacets({
+				key: painted.model.facets.key ?? "",
+				result: Result.succeed({
+					environments: [],
+					namespaces: [],
+					commitShas: [{ name: facetSha, count: 5 }],
+				}),
+			}),
+		)
+		const lookups = Arr.filter(
+			withFacets.commands ?? [],
+			({ name }) => name === FetchCommitSummaries.name,
+		)
+		expect(Arr.map(lookups, (command) => command.args)).toMatchObject([
+			{ shas: `${deploySha},${facetSha}` },
+		])
+	})
 })

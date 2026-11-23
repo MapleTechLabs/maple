@@ -137,5 +137,6 @@ describe("release facet", () => {
 	it("labels a row by its commit subject, or its short sha until the commit resolves", () => {
 		expect(releaseLabel(sha("b"), summaries)).toBe("feat: newer")
 		expect(releaseLabel(sha("c"), summaries)).toBe("ccccccc")
+		expect(releaseLabel("release-42", summaries)).toBe("release-42")
 	})
 })

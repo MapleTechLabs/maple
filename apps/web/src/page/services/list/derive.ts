@@ -207,7 +207,7 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 
 /**
  * `commitsQueryKey`: one lookup for the deploy cells and the release facet. The deploy shas of the
- * rows on screen come first, then the facet's; deduped, resolvable only, capped at the endpoint's
+ * rows on screen come first, then the facet's and the filter's; deduped, resolvable only, capped at the endpoint's
  * batch size, sorted. "" means no request.
  */
 export const commitsKey = (
@@ -228,10 +228,10 @@ export const commitSummariesOf = (
 ): Readonly<Record<string, CommitSummary>> =>
 	Option.getOrElse(AsyncData.getData(model.commitSummaries.data), () => ({}))
 
-/** A release facet row's label: the commit subject once resolved, else the short sha. */
-export const releaseLabel = (sha: string, summaries: Readonly<Record<string, CommitSummary>>): string => {
-	const subject = summaries[sha]?.subject ?? ""
-	return subject !== "" ? subject : Str.slice(0, 7)(sha)
+/** A release facet row's label: the commit subject once resolved, else the short sha, else the raw value. */
+export const releaseLabel = (value: string, summaries: Readonly<Record<string, CommitSummary>>): string => {
+	const subject = summaries[value]?.subject ?? ""
+	return subject !== "" ? subject : isResolvableSha(value) ? Str.slice(0, 7)(value) : value
 }
 
 /** The release facet's order: resolved commits newest first, then the rest by span count as the query sent them. */
