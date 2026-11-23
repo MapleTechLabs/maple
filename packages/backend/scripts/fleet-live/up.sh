@@ -95,6 +95,9 @@ seed() { # seed <tag> <port> <tier>
 	local groups=/fleets key=fleet_id
 	if [ "$major" -lt 5 ]; then key=team_id; fi
 	if [ "$major" -lt 5 ] && [ "$minor" -lt 82 ]; then groups=/teams; fi
+	# Devices in no fleet have policies of their own from 4.57; before it fleet 0 does not exist.
+	local unassigned=true
+	if [ "$major" -lt 5 ] && [ "$minor" -lt 57 ]; then unassigned=false; fi
 
 	policy() { # policy <global|fleet id> <name> <query> <critical>
 		local body
@@ -128,7 +131,7 @@ seed() { # seed <tag> <port> <tier>
 		policy "$laptops" "Screen lock on" "$fails" false
 		policy "$laptops" "OS up to date" "$passes" false
 		policy "$servers" "SSH root login off" "$fails" false
-		policy 0 "Enrolled in a fleet" "$fails" false
+		[ "$unassigned" = true ] && policy 0 "Enrolled in a fleet" "$fails" false
 	fi
 
 	call "$port" "$admin" GET /api/v1/fleet/spec/enroll_secret
@@ -148,14 +151,15 @@ seed() { # seed <tag> <port> <tier>
 	fi
 
 	# Counts are written by a cron job: run it until every device has answered every policy.
-	local want="9 failing, 7 passing" path
+	local want="9 failing, 7 passing" path zero=0
+	[ "$unassigned" = true ] || { want="8 failing, 7 passing"; zero=""; }
 	[ "$tier" = premium ] || want="4 failing, 4 passing"
 	echo "  waiting for policy counts ($want)" >&2
 	while :; do
 		call "$port" "$admin" POST "/api/latest/fleet/trigger?name=cleanups_then_aggregation"
 		sleep 5
 		local failing=0 passing=0 scope
-		for scope in global 0 $laptops $servers; do
+		for scope in global $zero $laptops $servers; do
 			if [ "$scope" = global ]; then
 				if [ "$major" -ge 5 ]; then path=/api/v1/fleet/policies; else path=/api/v1/fleet/global/policies; fi
 			elif [ "$tier" != premium ]; then
@@ -172,7 +176,8 @@ seed() { # seed <tag> <port> <tier>
 		[ "$failing failing, $passing passing" = "$want" ] && break
 	done
 	jq -cn --arg url "https://localhost:$port" --arg token "$observer" --arg version "$version" --arg tier "$tier" \
-		'{url:$url,token:$token,version:$version,tier:$tier}' >"$STATE/target-$port.json"
+		--argjson unassigned "$unassigned" \
+		'{url:$url,token:$token,version:$version,tier:$tier,unassigned:$unassigned}' >"$STATE/target-$port.json"
 	echo "  ready: Fleet $version" >&2
 }
 

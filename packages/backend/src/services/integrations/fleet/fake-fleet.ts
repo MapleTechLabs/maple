@@ -1,6 +1,6 @@
 // A fake Fleet server for tests, answering the `/api/v1/fleet/*` reads Maple makes from a mutable
 // world, with every request recorded. Its policy and fleet paths follow `version`, as real servers
-// do: `/teams` before 4.82, `/fleets` from it, and only `/policies` from Fleet 5 (410 on the rest).
+// do: `/teams` before 4.82 (no fleet 0 before 4.57), `/fleets` from it, only `/policies` from Fleet 5.
 import { Array as Arr, Layer, Order, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
@@ -81,13 +81,17 @@ export interface FakeFleet {
 /** Matched as a suffix: a server can sit under a path prefix. */
 const PREFIX = "/api/v1/fleet"
 
-type Era = "teams" | "fleets" | "fleet5"
+/** `legacy` is `teams` before 4.57, when devices in no fleet had no policies of their own. */
+type Era = "legacy" | "teams" | "fleets" | "fleet5"
 
 const eraOf = (world: FakeFleet): Era => {
 	if (world.era !== null) return world.era
 	const [, major, minor] = /(\d+)\.(\d+)/.exec(world.version) ?? []
-	return Number(major) >= 5 ? "fleet5" : Number(minor) >= 82 ? "fleets" : "teams"
+	if (Number(major) >= 5) return "fleet5"
+	return Number(minor) >= 82 ? "fleets" : Number(minor) >= 57 ? "teams" : "legacy"
 }
+
+const usesTeams = (era: Era): boolean => era === "teams" || era === "legacy"
 
 /** Fleet 5's answer on a path it removed. */
 const gone = (endpoint: string) =>
@@ -125,7 +129,7 @@ const policiesPage = (world: FakeFleet, policies: ReadonlyArray<FakeFleetPolicy>
 /** A fleet's own policies, or undefined when the server has no such fleet. */
 const policiesOfFleet = (world: FakeFleet, id: number): ReadonlyArray<FakeFleetPolicy> | undefined =>
 	Arr.contains(world.vanishedFleets, id) ||
-	(id !== 0 && !Arr.some(world.fleets ?? [], (fleet) => fleet.id === id))
+	(id === 0 ? eraOf(world) === "legacy" : !Arr.some(world.fleets ?? [], (fleet) => fleet.id === id))
 		? undefined
 		: (world.fleetPolicies[id] ?? [])
 
@@ -258,12 +262,12 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 						const era = eraOf(world)
 						const named = Str.endsWith("/fleets")(request.path) ? "fleets" : "teams"
 						if (era === "fleet5" && named === "teams") return gone("/teams")
-						if (era === "teams" && named === "fleets") return noRoute()
+						if (usesTeams(era) && named === "fleets") return noRoute()
 						if (world.fleets === null) return needsPremium()
 						const fleets = paged(world.fleets, request.search, 100)
 						return VendorFake.json({
 							...(era === "fleet5" ? undefined : { teams: fleets }),
-							...(era === "teams" ? undefined : { fleets }),
+							...(usesTeams(era) ? undefined : { fleets }),
 						})
 					},
 				},
@@ -275,7 +279,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 						const [, named = "", id = ""] =
 							/\/(fleets|teams)\/(\d+)\/policies$/.exec(request.path) ?? []
 						if (era === "fleet5") return gone(`/${named}/{fleet_id}/policies`)
-						if (era === "teams" && named === "fleets") return noRoute()
+						if (usesTeams(era) && named === "fleets") return noRoute()
 						const own = policiesOfFleet(world, Number(id))
 						if (own === undefined) return fleetNotFound(Number(id))
 						const policies = policiesPage(world, own, request.search)

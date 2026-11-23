@@ -308,12 +308,15 @@ const scopeId = (scope: Exclude<PolicyScope, { readonly _tag: "Global" }>): numb
  */
 export interface FleetDialect {
 	readonly fleetsPath: string
+	/** Whether devices in no fleet have policies of their own: from 4.57, before it fleet 0 is a 404. */
+	readonly unassigned: boolean
 	/** The path a scope's policies are read from, and the fleet it is asked for when the path names none. */
 	readonly policies: (scope: PolicyScope) => { readonly path: string; readonly fleetId?: number }
 }
 
-const perScope = (groups: string): FleetDialect => ({
+const perScope = (groups: string, unassigned = true): FleetDialect => ({
 	fleetsPath: groups,
+	unassigned,
 	policies: (scope) => ({
 		path: scope._tag === "Global" ? "/global/policies" : `${groups}/${scopeId(scope)}/policies`,
 	}),
@@ -321,11 +324,13 @@ const perScope = (groups: string): FleetDialect => ({
 
 const FLEET_5: FleetDialect = {
 	fleetsPath: "/fleets",
+	unassigned: true,
 	policies: (scope) =>
 		scope._tag === "Global" ? { path: "/policies" } : { path: "/policies", fleetId: scopeId(scope) },
 }
 const FLEET_4 = perScope("/fleets")
 const FLEET_4_TEAMS = perScope("/teams")
+const FLEET_4_TEAMS_ONLY = perScope("/teams", false)
 
 /**
  * The dialects to try for a server version (`4.95.0`, `5.0.0-rc.1`, a build's `fleet-v4.95.0-3-gabc`),
@@ -334,9 +339,10 @@ const FLEET_4_TEAMS = perScope("/teams")
 export const fleetDialectsOf = (version: string): Arr.NonEmptyReadonlyArray<FleetDialect> => {
 	const [, major, minor] = /(\d+)\.(\d+)/.exec(version) ?? []
 	if (major === undefined || minor === undefined || Number(major) < 4)
-		return [FLEET_5, FLEET_4, FLEET_4_TEAMS]
+		return [FLEET_5, FLEET_4, FLEET_4_TEAMS, FLEET_4_TEAMS_ONLY]
 	if (Number(major) >= 5) return [FLEET_5]
-	return [Number(minor) >= 82 ? FLEET_4 : FLEET_4_TEAMS]
+	if (Number(minor) >= 82) return [FLEET_4]
+	return [Number(minor) >= 57 ? FLEET_4_TEAMS : FLEET_4_TEAMS_ONLY]
 }
 
 /** One page of a scope's policies with their passing and failing device counts. */

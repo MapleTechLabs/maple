@@ -22,6 +22,8 @@ const Target = Schema.Struct({
 	token: Schema.String,
 	version: Schema.String,
 	tier: Schema.Literals(["premium", "free"]),
+	/** False before Fleet 4.57, where devices in no fleet have no policies of their own. */
+	unassigned: Schema.Boolean,
 })
 type Target = typeof Target.Type
 
@@ -120,7 +122,9 @@ describe.skipIf(targets.length === 0)("Fleet integration against real Fleet serv
 						policy.failingDeviceCount,
 						policy.passingDeviceCount,
 					]),
-					target.tier === "premium" ? EVERY_SCOPE : GLOBAL,
+					target.tier === "free"
+						? GLOBAL
+						: Arr.filter(EVERY_SCOPE, ([, fleet]) => target.unassigned || fleet !== "Unassigned"),
 				)
 				const failingOf = (name: string) =>
 					Arr.map(
@@ -138,7 +142,10 @@ describe.skipIf(targets.length === 0)("Fleet integration against real Fleet serv
 				])
 				if (target.tier === "premium") {
 					assert.deepStrictEqual(failingOf("Disk encrypted"), ["ws-bob"])
-					assert.deepStrictEqual(failingOf("Enrolled in a fleet"), ["stray-dee"])
+					assert.deepStrictEqual(
+						failingOf("Enrolled in a fleet"),
+						target.unassigned ? ["stray-dee"] : [],
+					)
 				}
 
 				// The audit log: what the seeding did shows up, each entry naming what it was about.

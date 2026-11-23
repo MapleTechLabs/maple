@@ -408,6 +408,28 @@ describe("FleetFindingsService", () => {
 		)
 	})
 
+	it.effect.each([["4.56.0"], ["unknown"]] as const)(
+		"skips the devices in no fleet on a server from before they had policies (%s)",
+		([version]) => {
+			const testDb = createTestDb(trackedDbs)
+			// Before 4.57 fleet 0 is not a fleet: asking for its policies answers 404.
+			const world = fleetWithFleets(version)
+			world.era = "legacy"
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					yield* connect
+					assert.strictEqual((yield* syncDue).failedConnections, 0)
+					assert.sameDeepMembers(
+						yield* listedPolicies,
+						Arr.filter(EVERY_SCOPE, ([, fleet]) => fleet !== "Unassigned"),
+					)
+				}),
+			)
+		},
+	)
+
 	it.effect.each([["4.62.0"], ["4.95.0"], ["5.0.0"]] as const)(
 		"reads only global policies on Fleet Free, which has no fleets (%s)",
 		([version]) => {
@@ -469,6 +491,9 @@ describe("FleetFindingsService", () => {
 				yield* TestClock.adjust(HOUR_MS)
 				assert.strictEqual((yield* syncDue).failedConnections, 1)
 				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+				// The card names the fleet that went, not the server's address.
+				const card = yield* FleetConnectionService.use((service) => service.getStatus(ORG))
+				assert.include(card.lastError ?? "", 'no longer has "Servers"')
 			}),
 		)
 	})

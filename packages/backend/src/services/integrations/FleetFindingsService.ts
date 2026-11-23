@@ -50,6 +50,14 @@ const FLEET_PAGE_SIZE = 500
 /** What Fleet calls the devices in no fleet. */
 const UNASSIGNED = "Unassigned"
 
+/** A listed fleet whose policies answer 404: deleted since, not a wrong address. */
+const fleetGone = (name: string, error: FleetApi.FleetApiError) =>
+	new FleetApi.FleetApiError({
+		message: `Fleet no longer has "${name}", which it listed a moment ago. The next sync reads the fleets it has then.`,
+		kind: error.kind,
+		status: 404,
+	})
+
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
 	"Fleet findings persistence failure",
@@ -230,7 +238,9 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					Option.match(fleets, {
 						onNone: () => [],
 						onSome: (found) => [
-							{ scope: { _tag: "Unassigned" }, name: UNASSIGNED },
+							...(dialect.unassigned
+								? [{ scope: { _tag: "Unassigned" as const }, name: UNASSIGNED }]
+								: []),
 							...Arr.map(found, (group) => ({
 								scope: { _tag: "Fleet" as const, id: group.id },
 								name: group.name,
@@ -242,12 +252,15 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					groups,
 					(group) =>
 						policiesOf(group.scope).pipe(
-							Effect.map((policies) =>
-								Arr.map(policies, (policy): FleetScopedPolicy => ({
-									policy,
-									groupName: group.name,
-								})),
-							),
+							Effect.mapBoth({
+								onFailure: (error) =>
+									error.status === 404 ? fleetGone(group.name, error) : error,
+								onSuccess: (policies) =>
+									Arr.map(policies, (policy): FleetScopedPolicy => ({
+										policy,
+										groupName: group.name,
+									})),
+							}),
 						),
 					{ concurrency: 2 },
 				)
