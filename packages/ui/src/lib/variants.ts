@@ -1,17 +1,23 @@
 // Class joining and variant lookup, the subset of clsx and class-variance-authority the kit uses.
 // Emits classes in the same order: base, variants (declaration order), compound variants, className.
+import * as Arr from "effect/Array"
+import * as Rec from "effect/Record"
 
 export type ClassValue = string | number | false | null | undefined | ReadonlyArray<ClassValue>
 
-const classOf = (value: ClassValue): string =>
-	typeof value === "string" ? value : typeof value === "number" ? String(value) : value ? cx(...value) : ""
+// Like clsx: empty strings, 0 and NaN contribute nothing.
+const classOf = (value: ClassValue): string => {
+	if (typeof value === "string") return value
+	if (typeof value === "number") return value === 0 || Number.isNaN(value) ? "" : String(value)
+	return value === false || value === null || value === undefined ? "" : cx(...value)
+}
 
 /** Joins class values with single spaces, skipping falsy values and flattening arrays. */
 export const cx = (...inputs: ReadonlyArray<ClassValue>): string =>
-	inputs.reduce<string>((joined, input) => {
-		const next = input ? classOf(input) : ""
+	Arr.reduce(inputs, "", (joined, input) => {
+		const next = classOf(input)
 		return next === "" ? joined : joined === "" ? next : `${joined} ${next}`
-	}, "")
+	})
 
 type VariantSchema = Record<string, Record<string, string>>
 
@@ -40,25 +46,25 @@ export type VariantProps<F> = F extends (options?: infer O) => string
 	? Omit<NonNullable<O>, "className">
 	: never
 
-// Booleans and 0 select their string key; any other falsy selection falls back to the default.
-const keyOf = (value: unknown): unknown =>
-	typeof value === "boolean" ? `${value}` : value === 0 ? "0" : value
-
 type Selection = Readonly<Record<string, unknown>>
 
-const compoundMatches = (condition: Selection, selection: Selection): boolean =>
-	Object.entries(condition).every(([name, expected]) =>
-		Array.isArray(expected) ? expected.includes(selection[name]) : selection[name] === expected,
-	)
-
-const withoutUndefined = (options: Selection): Selection =>
-	Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined))
-
-const classFor = (table: Readonly<Record<string, string>>, key: unknown): string | undefined => {
-	if (key === undefined || key === null) return undefined
-	const name = String(key)
-	return Object.hasOwn(table, name) ? table[name] : undefined
+// Booleans and numbers select their string key; an empty or missing selection takes the default.
+const keyOf = (value: unknown): string => {
+	if (typeof value === "string") return value
+	if (typeof value === "boolean" || typeof value === "number") return `${value}`
+	return ""
 }
+
+const classFor = (table: Readonly<Record<string, string>>, own: unknown, fallback: unknown) => {
+	const key = keyOf(own) === "" ? keyOf(fallback) : keyOf(own)
+	return Rec.has(table, key) ? table[key] : undefined
+}
+
+// Compound conditions compare against the defaults overlaid with every defined selection.
+const compoundMatches = (condition: Selection, selection: Selection): boolean =>
+	Arr.every(Rec.toEntries(condition), ([name, expected]) =>
+		Arr.isArray(expected) ? Arr.contains(expected, selection[name]) : selection[name] === expected,
+	)
 
 /** Builds a class-name function from a base class, variant tables, defaults and compound variants. */
 export const variants =
@@ -66,14 +72,13 @@ export const variants =
 	(options: VariantOptions<S> = {}): string => {
 		const selection: Selection = options
 		const defaults: Selection = config?.defaultVariants ?? {}
-		const variantClasses = Object.entries(config?.variants ?? {}).map(([name, table]) =>
-			selection[name] === null
-				? null
-				: classFor(table, keyOf(selection[name]) || keyOf(defaults[name])),
+		const variantClasses = Arr.map(Rec.toEntries(config?.variants ?? {}), ([name, table]) =>
+			selection[name] === null ? null : classFor(table, selection[name], defaults[name]),
 		)
-		const resolved: Selection = { ...defaults, ...withoutUndefined(selection) }
-		const compoundClasses = (config?.compoundVariants ?? []).map(({ class: className, ...condition }) =>
-			compoundMatches(condition, resolved) ? className : null,
+		const resolved = { ...defaults, ...Rec.filter(selection, (value) => value !== undefined) }
+		const compoundClasses = Arr.map(
+			config?.compoundVariants ?? [],
+			({ class: className, ...condition }) => (compoundMatches(condition, resolved) ? className : null),
 		)
 		return cx(base, variantClasses, compoundClasses, options.className)
 	}

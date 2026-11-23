@@ -1072,7 +1072,6 @@
         "@maple/domain": "workspace:*",
         "@maple/query-engine": "workspace:*",
         "@maple/strings": "workspace:*",
-        "clsx": "catalog:ui",
         "effect": "catalog:effect",
         "tailwind-merge": "catalog:tailwind",
       },
@@ -1103,7 +1102,6 @@
         "@tanstack/charts-scales": "catalog:charts",
         "@tanstack/virtual-core": "3.19.13",
         "@xyflow/system": "0.0.84",
-        "class-variance-authority": "catalog:ui",
         "d3-scale": "^4.0.3",
         "d3-shape": "^3.2.1",
         "effect": "catalog:effect",
@@ -1223,10 +1221,6 @@
     "tooling": {
       "@types/node": "^24.19.2",
       "typescript": "^7.0.2",
-    },
-    "ui": {
-      "class-variance-authority": "^0.7.1",
-      "clsx": "^2.1.1",
     },
   },
   "packages": {
@@ -2393,8 +2387,6 @@
     "ci-info": ["ci-info@4.5.0", "", {}, "sha512-d1uM8k5UZEyPza1n/MG3ko8nKupKN0KJpFsipgPcgaCCvV+IqIfJ+NzTjetlLM+UcXZx3+cLrNr76+eAO7G1Mw=="],
 
     "cjs-module-lexer": ["cjs-module-lexer@2.2.1", "", {}, "sha512-Ca8swihM+/4yKecYHY52kgJd300hi2lADU/a1RxNTRe+RJ9jvqQlESpbz9DnG9mowez8qwXHB8qYdIUw9e+F5Q=="],
-
-    "class-variance-authority": ["class-variance-authority@0.7.1", "", { "dependencies": { "clsx": "^2.1.1" } }, "sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg=="],
 
     "cliui": ["cliui@9.0.1", "", { "dependencies": { "string-width": "^7.2.0", "strip-ansi": "^7.1.0", "wrap-ansi": "^9.0.0" } }, "sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w=="],
 

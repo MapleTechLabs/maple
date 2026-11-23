@@ -3,7 +3,7 @@ import { avatarFallbackStyles, avatarImageStyles, avatarStyles } from "./avatar.
 import { badgeVariants } from "./badge.styles"
 import { kbdGroupStyles, kbdStyles } from "./kbd.styles"
 import { separatorStyles } from "./separator.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Attribute, ChildAttribute, ClickOptions, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
