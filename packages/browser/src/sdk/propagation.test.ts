@@ -55,6 +55,30 @@ describe("W3C propagation", () => {
 		}
 	})
 
+	it("writes the flags as exactly two hex digits", () => {
+		const header = (traceFlags: number | undefined): string | undefined => {
+			const context = trace.setSpanContext(ROOT_CONTEXT, { ...SPAN, traceFlags: traceFlags ?? 0 })
+			// A plain-JS caller may leave the flags off entirely.
+			if (traceFlags === undefined)
+				Reflect.deleteProperty(trace.getSpanContext(context) ?? {}, "traceFlags")
+			return inject(context)["traceparent"]?.split("-")[3]
+		}
+		expect([0x00, 0x01, 0x10, 0xff, Number.NaN, undefined].map(header)).toEqual([
+			"00",
+			"01",
+			"10",
+			"ff",
+			"00",
+			"00",
+		])
+	})
+
+	it("keeps flags of 0x10 and above through extract and inject", () => {
+		const traceparent = `00-${SPAN.traceId}-${SPAN.spanId}-11`
+		const extracted = propagator.extract(ROOT_CONTEXT, { traceparent }, defaultTextMapGetter)
+		expect(inject(extracted)["traceparent"]).toBe(traceparent)
+	})
+
 	it("writes nothing without a valid span context or baggage", () => {
 		expect(inject()).toEqual({})
 	})

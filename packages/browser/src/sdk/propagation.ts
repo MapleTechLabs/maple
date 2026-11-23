@@ -29,9 +29,10 @@ export class W3CTraceContextPropagator implements TextMapPropagator {
 	inject(context: Context, carrier: unknown, setter: TextMapSetter): void {
 		const spanContext = trace.getSpanContext(context)
 		if (!spanContext || isTracingSuppressed(context) || !isSpanContextValid(spanContext)) return
+		// One byte as two hex digits. The OTel SDK wrote `0${hex}`, a 3-digit field from 0x10 up.
 		const raw = Number(spanContext.traceFlags ?? TraceFlags.NONE)
-		const flags = (Number.isNaN(raw) ? TraceFlags.NONE : raw).toString(16)
-		setter.set(carrier, "traceparent", `00-${spanContext.traceId}-${spanContext.spanId}-0${flags}`)
+		const flags = ((Number.isNaN(raw) ? TraceFlags.NONE : raw) & 0xff).toString(16).padStart(2, "0")
+		setter.set(carrier, "traceparent", `00-${spanContext.traceId}-${spanContext.spanId}-${flags}`)
 		if (spanContext.traceState) setter.set(carrier, "tracestate", spanContext.traceState.serialize())
 	}
 
