@@ -78,4 +78,33 @@ describe("liveQueryStream", () => {
 		await Effect.runPromise(Fiber.interrupt(fiber))
 		expect(emitted).toEqual([["a"], ["a", "b"]])
 	})
+
+	test("emits once when the collection becomes ready after the subscription", async () => {
+		const collection = createCollection<{ id: string }, string>({
+			getKey: (row) => row.id,
+			sync: {
+				sync: ({ begin, write, commit, markReady }) => {
+					setTimeout(() => {
+						begin()
+						write({ type: "insert", value: { id: "a" } })
+						void commit()
+						markReady()
+					}, 5)
+				},
+			},
+		})
+		const emitted: Array<ReadonlyArray<string>> = []
+		const fiber = Effect.runFork(
+			Stream.runForEach(
+				liveQueryStream(
+					(q) => q.from({ d: collection }),
+					(rows) => Arr.map(rows, (row) => row.id),
+				),
+				(ids) => Effect.sync(() => emitted.push(ids)),
+			),
+		)
+		await settle()
+		await Effect.runPromise(Fiber.interrupt(fiber))
+		expect(emitted).toEqual([["a"]])
+	})
 })
