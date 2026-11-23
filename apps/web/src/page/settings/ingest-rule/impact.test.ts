@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { V2IngestRuleStats } from "@maple/domain/http/v2"
 import { Array as Arr, Schema } from "effect"
-import { bucketed, hourlySeries, hourWindow } from "./impact"
+import { bucketed, detail, effectCount, effectKind, headline, hourlySeries, hourWindow } from "./impact"
 
 describe("impact windows", () => {
 	test("end on the next hour, so every bucket in the window is whole", () => {
@@ -61,5 +61,18 @@ describe("hourly series", () => {
 				6,
 			),
 		).toEqual([15, 51])
+	})
+})
+
+describe("a parse rule's impact", () => {
+	test("counts the logs it parsed, not values redacted", () => {
+		const counts = { matched: 1200, dropped: 0, dropped_bytes: 0, redacted_values: 0 }
+		const effect = effectKind({ type: "parse", steps: [{ type: "json", source: "body" }] }, counts)
+		expect([
+			effect,
+			effectCount(effect, counts),
+			headline(effect, counts),
+			detail(effect, counts),
+		]).toEqual(["parse", 1200, "1.2K logs parsed", "Failed steps set maple.parse.error"])
 	})
 })

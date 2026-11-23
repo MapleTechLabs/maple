@@ -24,7 +24,7 @@ import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
 import { denialReason } from "../../kit/session-grants"
-import { detail, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
+import { detail, EFFECT_UNITS, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
 import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { ruleSuggestions } from "./view-rule-suggestions"
@@ -145,7 +145,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 					floorColor: "var(--input)",
 					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
-					label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per hour`,
+					label: `${rule.name}: ${EFFECT_UNITS[effect]} per hour`,
 				}),
 			]
 		},
