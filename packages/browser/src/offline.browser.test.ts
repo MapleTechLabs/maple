@@ -1,11 +1,8 @@
-import {
-	TracerProvider,
-	InMemorySpanExporter,
-	type ReadableSpan,
-	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace"
 import { afterEach, describe, expect, it } from "vitest"
 import { attachSpanStash, OfflineSpanExporter, resetOfflineForTests } from "./offline"
+import type { ReadableSpan } from "./sdk/span"
+import { InMemorySpanExporter, SimpleSpanProcessor } from "./sdk/testing"
+import { TracerProvider } from "./sdk/tracer"
 
 const finishedSpans = (...names: string[]): ReadableSpan[] => {
 	const memory = new InMemorySpanExporter()

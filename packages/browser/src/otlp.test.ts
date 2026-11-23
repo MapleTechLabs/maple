@@ -1,16 +1,13 @@
 // SAFETY-FILE: JSON parsed in this test is the OTLP body the exporter under test serialized.
 import { OTLP_UNLOAD_TAIL_BYTES, postToIngest } from "@maple/browser-session"
-import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
-import {
-	TracerProvider,
-	InMemorySpanExporter,
-	type ReadableSpan,
-	SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetKeepaliveBudgetForTests } from "../../browser-session/src/platform/transport"
 import { attachSpanStash, OfflineSpanExporter, resetOfflineForTests } from "./offline"
 import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
+import { JsonTraceSerializer } from "./sdk/otlp-json"
+import type { ReadableSpan } from "./sdk/span"
+import { InMemorySpanExporter, SimpleSpanProcessor } from "./sdk/testing"
+import { TracerProvider } from "./sdk/tracer"
 
 const TRACES = "https://ingest.test/v1/traces"
 const KIB = 1024

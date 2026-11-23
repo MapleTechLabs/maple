@@ -1,6 +1,6 @@
 // The eager half of the logs pipeline. Records queue here, stamped and linked
-// to the active span at emit time, until the deferred chunk attaches the OTel
-// LoggerProvider that exports them.
+// to the active span at emit time, until the deferred chunk attaches the
+// logger provider that exports them.
 import { hasConsent, readSessionSink } from "@maple/browser-session"
 import type { LogAttributeValue, SignalLogRecord, SpanLink } from "@maple/sdk-core"
 import { context, trace } from "@opentelemetry/api"

@@ -3,7 +3,7 @@
 // caps a document's in-flight keepalive bodies at 64 KiB combined; an exporter
 // keeping an account of its own could push a session row past that.
 import { OTLP_UNLOAD_TAIL_BYTES, otlpKeepaliveRoom, postToIngest } from "@maple/browser-session"
-import type { ISerializer } from "@opentelemetry/otlp-transformer"
+import type { Serializer } from "./sdk/otlp-json"
 
 // Timeout and retryable statuses of OpenTelemetry's OTLP/HTTP exporter, which this replaces.
 const EXPORT_TIMEOUT_MS = 10_000
@@ -13,8 +13,6 @@ interface ExportResult {
 	readonly code: number
 	readonly error?: Error
 }
-
-type Serializer<T> = ISerializer<T[], unknown>
 
 interface Exporter<T> {
 	export(items: T[], callback: (result: ExportResult) => void): void

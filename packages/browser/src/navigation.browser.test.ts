@@ -9,7 +9,7 @@ import {
 	type Tracer,
 	type TracerProvider,
 } from "@opentelemetry/api"
-import type { ReadableSpan } from "@opentelemetry/sdk-trace"
+import type { ReadableSpan } from "./sdk/span"
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from "vitest"
 import { resetUrlSanitizersForTests } from "../../browser-session/src/platform/url-privacy"
 

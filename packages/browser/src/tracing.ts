@@ -20,33 +20,29 @@ import {
 	type TracerProvider,
 	trace,
 } from "@opentelemetry/api"
-import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "@opentelemetry/core"
-import { registerInstrumentations } from "@opentelemetry/instrumentation"
-import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
-import { XMLHttpRequestInstrumentation } from "@opentelemetry/instrumentation-xml-http-request"
-import { JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
-import { resourceFromAttributes } from "@opentelemetry/resources"
-import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "@opentelemetry/sdk-trace"
-import {
-	BatchSpanProcessor,
-	StackContextManager,
-	TracerProvider as SdkTracerProvider,
-} from "@opentelemetry/sdk-trace"
-import {
-	ATTR_SERVICE_NAME,
-	ATTR_SERVICE_VERSION,
-	ATTR_TELEMETRY_SDK_LANGUAGE,
-	ATTR_TELEMETRY_SDK_NAME,
-	ATTR_TELEMETRY_SDK_VERSION,
-	TELEMETRY_SDK_LANGUAGE_VALUE_WEBJS,
-} from "@opentelemetry/semantic-conventions"
 import { escapeRegExp, type ResolvedConfig } from "./config"
 import { responseHeaders, setHeaderAttributes } from "./http-headers"
 import { HttpStatusExporter } from "./http-status"
 import { OfflineSpanExporter } from "./offline"
 import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
 import { SessionSampler } from "./sampling"
+import { BatchSpanProcessor } from "./sdk/batch"
+import { StackContextManager } from "./sdk/context"
+import { type FetchInstrumentation, instrumentFetch } from "./sdk/fetch"
+import { JsonTraceSerializer } from "./sdk/otlp-json"
+import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "./sdk/propagation"
+import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "./sdk/span"
+import { TracerProvider as SdkTracerProvider } from "./sdk/tracer"
+import { instrumentXhr } from "./sdk/xhr"
 import { SDK_NAME, SDK_VERSION } from "./version"
+
+/**
+ * Scope names and version the request spans carried under the OpenTelemetry JS
+ * instrumentations, kept so their spans group the same on the wire.
+ */
+const FETCH_SCOPE = "@opentelemetry/instrumentation-fetch"
+const XHR_SCOPE = "@opentelemetry/instrumentation-xml-http-request"
+const INSTRUMENTATION_VERSION = "0.301.2"
 
 /** Span attributes that carry a page or request URL. */
 const URL_ATTRIBUTES = ["url.full", "http.url"] as const
@@ -188,21 +184,22 @@ export function setMapleProviderForTests(provider: TracerProvider | undefined): 
 }
 
 /** Resource attributes shared by every signal this SDK exports. */
-export function resourceAttributes(config: ResolvedConfig): Record<string, string> {
-	// The provider does not merge OTel's default resource in, so the required
-	// `telemetry.sdk.*` attributes are stated here.
+export function resourceAttributes(
+	config: Pick<ResolvedConfig, "serviceName" | "serviceNamespace" | "serviceVersion" | "environment">,
+): Record<string, string> {
+	// No default resource is merged in, so the required `telemetry.sdk.*` attributes are stated here.
 	const attributes: Record<string, string> = {
-		[ATTR_SERVICE_NAME]: config.serviceName,
-		[ATTR_TELEMETRY_SDK_NAME]: "@maple-dev/browser",
-		[ATTR_TELEMETRY_SDK_LANGUAGE]: TELEMETRY_SDK_LANGUAGE_VALUE_WEBJS,
-		[ATTR_TELEMETRY_SDK_VERSION]: SDK_VERSION,
+		"service.name": config.serviceName,
+		"telemetry.sdk.name": "@maple-dev/browser",
+		"telemetry.sdk.language": "webjs",
+		"telemetry.sdk.version": SDK_VERSION,
 		"maple.sdk.type": "browser",
 	} satisfies Record<string, string>
 	if (config.serviceNamespace) {
 		attributes["service.namespace"] = config.serviceNamespace
 	}
 	if (config.serviceVersion) {
-		attributes[ATTR_SERVICE_VERSION] = config.serviceVersion
+		attributes["service.version"] = config.serviceVersion
 		// A semver release string belongs in `service.version` but not in
 		// `vcs.*`: only a SHA-shaped value is stamped as the head revision.
 		if (isCommitSha(config.serviceVersion)) {
@@ -311,7 +308,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	}
 
 	const provider = new SdkTracerProvider({
-		resource: resourceFromAttributes(resourceAttributes(config)),
+		resource: { attributes: resourceAttributes(config) },
 		sampler: new SessionSampler(config.tracingSampleRate),
 		// The id only — the rest of the identity (email, group) belongs on the
 		// session row, not stamped onto every span on the hot path.
@@ -325,9 +322,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// context + baggage propagation, and a stack context manager.
 	trace.setGlobalTracerProvider(provider)
 	propagation.setGlobalPropagator(
-		new CompositePropagator({
-			propagators: [new TraceContextPropagator(), new W3CBaggagePropagator()],
-		}),
+		new CompositePropagator([new TraceContextPropagator(), new W3CBaggagePropagator()]),
 	)
 	context.setGlobalContextManager(new StackContextManager().enable())
 	mapleProvider = provider
@@ -373,9 +368,13 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// entering the bfcache fires it too; ending there is still right, since it
 	// may never be restored.
 	const settledRequests = new Map<ApiSpan, number>()
+	// Set once the request instrumentation is installed, below.
+	let fetchInstrumentation: FetchInstrumentation | undefined
 	const onPageHide = (): void => {
 		noteLost("page_unload")
 		flushUnloading(() => {
+			// A response body still streaming would never end its span on a page that is gone.
+			fetchInstrumentation?.endUnfinishedBodies()
 			unloading = true
 			try {
 				for (const [span, endTime] of settledRequests) {
@@ -404,19 +403,18 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		window.addEventListener("offline", onOffline)
 	}
 
-	// The instrumentations' tracer, noting each request span as it starts.
-	const requestTracerProvider: TracerProvider = {
-		getTracer: (name, version, options) => {
-			const tracer = provider.getTracer(name, version, options)
-			return {
-				startSpan: (spanName, spanOptions, ctx) => {
-					const span = tracer.startSpan(spanName, spanOptions, ctx)
-					noteRequest(span, spanOptions?.attributes?.["url.full"])
-					return span
-				},
-				startActiveSpan: tracer.startActiveSpan.bind(tracer),
-			}
-		},
+	// The instrumentations' tracer on Maple's provider (never the global one, which a
+	// host app may own), noting each request span as it starts.
+	const requestTracer = (scope: string): Tracer => {
+		const tracer = provider.getTracer(scope, INSTRUMENTATION_VERSION)
+		return {
+			startSpan: (spanName, spanOptions, ctx) => {
+				const span = tracer.startSpan(spanName, spanOptions, ctx)
+				noteRequest(span, spanOptions?.attributes?.["url.full"])
+				return span
+			},
+			startActiveSpan: tracer.startActiveSpan.bind(tracer),
+		}
 	}
 	const requestOptions = {
 		// Maple's own ingest calls are not traced at all.
@@ -426,53 +424,51 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
 	}
 	const headers = config.captureHeaders
-	const instrumentations = [
-		...(config.tracingInstrumentFetch
-			? [
-					// oxlint-disable-next-line typescript/no-deprecated -- moving to the new browser instrumentation package is its own change.
-					new FetchInstrumentation({
-						...requestOptions,
-						applyCustomAttributesOnSpan: (span, request, result) => {
-							noteSettled(span)
-							const sent =
-								request instanceof Request ? request.headers : new Headers(request.headers)
-							setHeaderAttributes(span, "request", headers.request, (name) => sent.get(name))
-							if (result instanceof Response) {
-								setHeaderAttributes(span, "response", headers.response, (name) =>
-									result.headers.get(name),
-								)
-							} else if (
-								result instanceof Error &&
-								(isTimeout(result, request.signal) ||
-									(result.name !== "AbortError" && !request.signal?.aborted))
-							) {
-								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
-								// An abort rejects with its reason, whatever that is, so the signal decides; a
-								// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
-								// One the page went away or offline under stays Unset, with the reason, as
-								// does one to a URL the app ignores failures for.
-								const lost = connectionLost(span)
-								if (lost !== undefined) {
-									span.setAttribute("maple.connection_lost", lost)
-									excusedFailures.add(result)
-								} else if (ignoredRequests.has(span)) {
-									span.setAttribute("maple.network_failure_ignored", true)
-									excusedFailures.add(result)
-								} else {
-									span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
-									span.setAttribute("error.type", result.name)
-									if (!isTimeout(result, request.signal)) failedLive.add(span)
-								}
-							}
-						},
-					}),
-				]
-			: []),
+	fetchInstrumentation = config.tracingInstrumentFetch
+		? instrumentFetch({
+				...requestOptions,
+				tracer: requestTracer(FETCH_SCOPE),
+				applyCustomAttributesOnSpan: (span, request, result) => {
+					noteSettled(span)
+					const sent = request instanceof Request ? request.headers : new Headers(request.headers)
+					setHeaderAttributes(span, "request", headers.request, (name) => sent.get(name))
+					if (result instanceof Response) {
+						setHeaderAttributes(span, "response", headers.response, (name) =>
+							result.headers.get(name),
+						)
+					} else if (
+						result instanceof Error &&
+						(isTimeout(result, request.signal) ||
+							(result.name !== "AbortError" && !request.signal?.aborted))
+					) {
+						// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
+						// An abort rejects with its reason, whatever that is, so the signal decides; a
+						// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
+						// One the page went away or offline under stays Unset, with the reason, as
+						// does one to a URL the app ignores failures for.
+						const lost = connectionLost(span)
+						if (lost !== undefined) {
+							span.setAttribute("maple.connection_lost", lost)
+							excusedFailures.add(result)
+						} else if (ignoredRequests.has(span)) {
+							span.setAttribute("maple.network_failure_ignored", true)
+							excusedFailures.add(result)
+						} else {
+							span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
+							span.setAttribute("error.type", result.name)
+							if (!isTimeout(result, request.signal)) failedLive.add(span)
+						}
+					}
+				},
+			})
+		: undefined
+	const unpatches = [
+		...(fetchInstrumentation ? [fetchInstrumentation.stop] : []),
 		...(config.tracingInstrumentXhr
 			? [
-					// oxlint-disable-next-line typescript/no-deprecated -- moving to the new browser instrumentation package is its own change.
-					new XMLHttpRequestInstrumentation({
+					instrumentXhr({
 						...requestOptions,
+						tracer: requestTracer(XHR_SCOPE),
 						applyCustomAttributesOnSpan: (span, xhr) => {
 							noteSettled(span)
 							// Status 0 is no response: an error, timeout or abort. One the page went away
@@ -499,15 +495,6 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 				]
 			: []),
 	]
-	const unregisterInstrumentations =
-		instrumentations.length > 0
-			? registerInstrumentations({
-					// Explicit, not the global: a host app that registered its own provider
-					// first owns the global, and these spans would otherwise go to it.
-					tracerProvider: requestTracerProvider,
-					instrumentations,
-				})
-			: undefined
 
 	return async () => {
 		if (canListen) {
@@ -515,7 +502,8 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			window.removeEventListener("pagehide", onPageHide)
 			window.removeEventListener("offline", onOffline)
 		}
-		unregisterInstrumentations?.()
+		fetchInstrumentation?.endUnfinishedBodies()
+		for (const unpatch of unpatches) unpatch()
 		if (mapleProvider === provider) mapleProvider = undefined
 		// Release the globals so a later init() can register a live provider.
 		// The global proxy keeps delegating to this now-shut-down provider

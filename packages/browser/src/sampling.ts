@@ -2,8 +2,8 @@
 import { readSessionSink } from "@maple/browser-session"
 import { sampleSession } from "@maple/sdk-core"
 import { type Context, createContextKey, isSpanContextValid, trace, TraceFlags } from "@opentelemetry/api"
-import { TraceState } from "@opentelemetry/core"
-import { type Sampler, SamplingDecision, type SamplingResult } from "@opentelemetry/sdk-trace"
+import { TraceState } from "./sdk/trace-state"
+import { type Sampler, SamplingDecision, type SamplingResult } from "./sdk/tracer"
 
 const KEEP = createContextKey("maple.sampling.keep")
 
