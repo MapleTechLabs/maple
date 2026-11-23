@@ -42,8 +42,9 @@ import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import {
 	newStatusPageHref,
 	publicAddress,
+	publicAddressOf,
 	publicPageLink,
-	publicUrl,
+	publicUrlOf,
 	STATUS_PAGE_BASE_URL,
 	statusPageHref,
 } from "../shared/commands"
@@ -68,7 +69,7 @@ import { stripClass } from "@maple/views/ui/rule"
 // uptime, open incidents and the next maintenance; the builder's on-ramp when there is none.
 
 type H = HtmlBuilder<Message>
-type ViewInputs = Readonly<{ nowMs: number; timeZone: string; orgKey: string }>
+type ViewInputs = Readonly<{ nowMs: number; timeZone: string; orgKey: Option.Option<string> }>
 
 /** The builder link; a disabled button for a viewer who may not edit status pages. */
 const newPageButton = (h: H, model: Model, label: string): Html =>
@@ -158,11 +159,11 @@ const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Ht
 /** Open public page and Open dev preview for everyone; Edit and Delete for those who may change the page. */
 const pageMenuEntries = (
 	summary: StatusPageSummary,
-	orgKey: string,
+	orgKey: Option.Option<string>,
 	isEditable: boolean,
 ): ReadonlyArray<MenuEntry> => {
 	const page = summary.page
-	const open = openMenuEntries(publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, orgKey, page.slug)))
+	const open = openMenuEntries(publicPageLink(page, publicUrlOf(STATUS_PAGE_BASE_URL, orgKey, page.slug)))
 	if (!isEditable) return open
 	return [
 		...open,
@@ -177,7 +178,7 @@ const pageMenu = (
 	h: H,
 	model: Model,
 	summary: StatusPageSummary,
-	orgKey: string,
+	orgKey: Option.Option<string>,
 	isEditable: boolean,
 ): Html => {
 	const menuId = rowMenuId(summary.page.id)
@@ -197,14 +198,16 @@ const pageIcon = (h: H, favicon: string | null): ReadonlyArray<Html> =>
 		: []
 
 /** The address visitors open, a link while the page is served; an internal page has none. */
-const pageAddress = (h: H, summary: StatusPageSummary, orgKey: string): Html => {
+const pageAddress = (h: H, summary: StatusPageSummary, orgKey: Option.Option<string>): Html => {
 	const page = summary.page
 	if (page.visibility === "internal")
 		return typography(h, { size: "xs", tone: "muted", truncate: true }, ["Members only, in Maple"])
-	const link = publicPageLink(page, publicUrl(STATUS_PAGE_BASE_URL, orgKey, page.slug))
-	const address = typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-		publicAddress(orgKey, page.slug),
-	])
+	if (Option.isNone(orgKey))
+		// A blank line of the same height until the org key lands, so the row does not shift.
+		return typography(h, { size: "xs", mono: true, truncate: true }, ["\u00a0"])
+	const text = publicAddress(orgKey.value, page.slug)
+	const link = publicPageLink(page, publicUrlOf(STATUS_PAGE_BASE_URL, orgKey, page.slug))
+	const address = typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [text])
 	return link._tag === "Open"
 		? textLink(
 				h,
@@ -219,7 +222,7 @@ const pageAddress = (h: H, summary: StatusPageSummary, orgKey: string): Html => 
 		: typography(
 				h,
 				{ size: "xs", tone: "muted", mono: true, truncate: true, attributes: [h.Title(link.reason)] },
-				[publicAddress(orgKey, page.slug)],
+				[text],
 			)
 }
 
@@ -503,7 +506,7 @@ const body = (h: H, model: Model, inputs: ViewInputs): Html => {
 	})
 }
 
-const deleteDialog = (h: H, model: Model, orgKey: string): Html => {
+const deleteDialog = (h: H, model: Model, orgKey: Option.Option<string>): Html => {
 	const page = Option.map(
 		Option.flatMap(Option.fromNullishOr(model.deletingPageId), (id) =>
 			Arr.findFirst(
@@ -518,7 +521,7 @@ const deleteDialog = (h: H, model: Model, orgKey: string): Html => {
 		model: model.deleteDialog,
 		toParentMessage: (message) => Message.GotDeleteDialogMessage({ message }),
 		title: `Delete ${Option.match(page, { onNone: () => "this status page", onSome: (p) => p.name })}?`,
-		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => publicAddress(orgKey, p.slug) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
+		description: `${Option.match(page, { onNone: () => "The page", onSome: (p) => Option.getOrElse(publicAddressOf(orgKey, p.slug), () => p.name) })} goes offline and its components and incidents are deleted. This cannot be undone.`,
 		confirmLabel: "Delete status page",
 		isPending: model.isDeleting,
 		onConfirm: Message.ClickedConfirmDelete(),

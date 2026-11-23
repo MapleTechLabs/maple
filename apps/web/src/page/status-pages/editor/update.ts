@@ -263,7 +263,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
 		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
-		orgKey: "",
+		orgKey: Option.none(),
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		brandingDrag: null,
@@ -551,7 +551,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey: Option.some(orgKey) } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
 		// The preview's history needs the page too: when the components came first, read it now.
 		CompletedFetchPage: ({ key, result }) => {

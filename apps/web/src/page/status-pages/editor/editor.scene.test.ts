@@ -2629,6 +2629,25 @@ describe("live screen", () => {
 		)
 	})
 
+	test("no address, copy field or open link until the org key is derived, then the page's own", () => {
+		const url = `https://status-pr-7.maple.dev/s/${KEY}/acme-status`
+		const pending: Model = { ...live("https://status-pr-7.maple.dev"), orgKey: Option.none() }
+		scene(
+			{ update: pageUpdate, view },
+			given(pending),
+			expectView(selector("#status-page-public-url")).not.toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
+			expectView(role("link", { name: /\/s\//u })).not.toExist(),
+			expectView(text("Public address appears once a status domain is configured")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(pending, Message.ComputedOrgKey({ orgKey: KEY })).model),
+			expectView(selector("#status-page-public-url")).toHaveValue(url),
+			expectView(role("link", { name: "Open public page" })).toHaveAttr("href", url),
+		)
+	})
+
 	test("without a status domain: a note in place of the address, no link, and publishing still works", () => {
 		const model = live("")
 		scene(

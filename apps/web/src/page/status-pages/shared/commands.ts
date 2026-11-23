@@ -323,33 +323,50 @@ export const publicPath = (orgKey: string, slug: string): string => `/s/${orgKey
 export const publicUrl = (baseUrl: string, orgKey: string, slug: string): string | null =>
 	baseUrl === "" ? null : `${baseUrl}${publicPath(orgKey, slug)}`
 
-/** The page's canonical address: its active custom domain, else {@link publicUrl}. */
+/** {@link publicUrl} once the org key is known; none while it is still being derived. */
+export const publicUrlOf = (
+	baseUrl: string,
+	orgKey: Option.Option<string>,
+	slug: string,
+): Option.Option<string | null> => Option.map(orgKey, (key) => publicUrl(baseUrl, key, slug))
+
+/** The page's canonical address: its active custom domain, else {@link publicUrlOf}. */
 export const canonicalUrl = (
 	baseUrl: string,
-	orgKey: string,
+	orgKey: Option.Option<string>,
 	slug: string,
 	customDomain: string | null,
-): string | null => (customDomain === null ? publicUrl(baseUrl, orgKey, slug) : `https://${customDomain}`)
+): Option.Option<string | null> =>
+	customDomain === null ? publicUrlOf(baseUrl, orgKey, slug) : Option.some(`https://${customDomain}`)
 
 /** The page's address as text: the full URL when known, its path otherwise. */
 export const publicAddress = (orgKey: string, slug: string): string =>
 	publicUrl(STATUS_PAGE_BASE_URL, orgKey, slug) ?? publicPath(orgKey, slug)
+
+/** {@link publicAddress} once the org key is known; none while it is still being derived. */
+export const publicAddressOf = (orgKey: Option.Option<string>, slug: string): Option.Option<string> =>
+	Option.map(orgKey, (key) => publicAddress(key, slug))
 
 /** The public page to open, or why there is none: it is internal, a draft, or the stage has no status domain. */
 export type PublicPageLink =
 	| Readonly<{ _tag: "Open"; url: string }>
 	| Readonly<{ _tag: "Unavailable"; reason: string }>
 
-/** `url` is where visitors read the page ({@link publicUrl} or {@link canonicalUrl}), null without a status domain. */
+/**
+ * `url` is where visitors read the page ({@link publicUrlOf} or {@link canonicalUrl}): none while the
+ * org key is derived, null without a status domain.
+ */
 export const publicPageLink = (
 	page: Readonly<{ visibility: StatusPageVisibility; draft: boolean }>,
-	url: string | null,
+	pageUrl: Option.Option<string | null>,
 ): PublicPageLink => {
 	if (page.visibility === "internal")
 		return {
 			_tag: "Unavailable",
 			reason: "Internal pages are not served publicly. Members read them in the dev preview.",
 		}
+	if (Option.isNone(pageUrl)) return { _tag: "Unavailable", reason: "Loading the page address" }
+	const url = pageUrl.value
 	if (url === null) return { _tag: "Unavailable", reason: "No status domain is configured" }
 	if (page.draft) return { _tag: "Unavailable", reason: "Publish the page to open it" }
 	return { _tag: "Open", url }

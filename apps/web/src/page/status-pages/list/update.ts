@@ -10,7 +10,7 @@ import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	publicPageLink,
-	publicUrl,
+	publicUrlOf,
 	STATUS_PAGE_BASE_URL,
 	statusPageHref,
 	statusPageViewHref,
@@ -48,7 +48,7 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 		{
 			pages: Keyed.idle(),
 			nowMs: null,
-			orgKey: "",
+			orgKey: Option.none(),
 			grants: [],
 			rowMenus: {},
 			deletingPageId: null,
@@ -103,7 +103,7 @@ const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Ret
 					const page = summary.page
 					const link = publicPageLink(
 						page,
-						publicUrl(STATUS_PAGE_BASE_URL, model.orgKey, page.slug),
+						publicUrlOf(STATUS_PAGE_BASE_URL, model.orgKey, page.slug),
 					)
 					return link._tag === "Open"
 						? { model, commands: [OpenPageInNewTab({ url: link.url })] }
@@ -177,7 +177,7 @@ const deleted = (model: Model, context: PageContext, result: Result.Result<void,
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey: Option.some(orgKey) } }),
 		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchPages: ({ key, result }) => ({
 			model: { ...model, pages: Keyed.accept(model.pages, key, result) },

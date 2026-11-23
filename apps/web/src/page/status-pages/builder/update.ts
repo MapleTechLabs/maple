@@ -179,7 +179,7 @@ export const init = (route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
-		orgKey: "",
+		orgKey: Option.none(),
 		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,
@@ -393,7 +393,7 @@ const submit = (model: Model, mode: SubmitMode): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey: Option.some(orgKey) } }),
 		CompletedFetchSession: (answer) => ({
 			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
 		}),

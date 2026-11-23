@@ -1,7 +1,7 @@
 import { statusPageOrgKey } from "@maple/domain/status-page"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { Effect, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -259,6 +259,25 @@ describe("status page card menu", () => {
 				PageOutMessage.RequestedNavigation({ url: statusPageViewHref(pageId(1)), isReplace: false }),
 			)
 		}
+	})
+
+	test("no address renders or opens until the org key is derived, then the page's own does", () => {
+		const pending: Model = { ...withPages([summaryOf(statusPage())]), orgKey: Option.none() }
+		expect(names(pick(pending, pageId(1), "open-public").commands)).not.toContain(
+			"OpenStatusPageInNewTab",
+		)
+		scene(
+			{ update: listUpdate, view },
+			given(pending),
+			expectView(role("link", { name: "Acme Status" })).toExist(),
+			expectView(text(/\/s\//u)).not.toExist(),
+		)
+		scene(
+			{ update: listUpdate, view },
+			given(listUpdate(pending, Message.ComputedOrgKey({ orgKey: KEY })).model),
+			expectView(text(new RegExp(`/s/${KEY}/acme-status`, "u"))).toExist(),
+			expectView(text(/\/s\/\//u)).not.toExist(),
+		)
 	})
 
 	test("the card has no open buttons; a member still gets the menu to open the page", () => {
