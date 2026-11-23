@@ -215,6 +215,27 @@ describe("encoder output matches the chDB inputSchema", () => {
 		expect(keysOf(batch)).toEqual(schemaFields("traces"))
 	})
 
+	it("keeps a log record's eventName as event.name, unless the record set that attribute", () => {
+		const request = sampleLogsReq()
+		const record = request.resourceLogs[0]?.scopeLogs[0]?.logRecords[0]
+		ok(record !== undefined)
+		const rowOf = (logRecord: Record<string, unknown>) => {
+			const [batch] = encodeLogs({
+				resourceLogs: [{ ...request.resourceLogs[0], scopeLogs: [{ logRecords: [logRecord] }] }],
+			})
+			ok(batch !== undefined)
+			return JSON.parse(Str.split("\n")(batch.ndjson)[0] ?? "{}")
+		}
+		expect(rowOf({ ...record, eventName: "gen_ai.evaluation.result" }).log_attributes).toEqual({
+			k: "v",
+			"event.name": "gen_ai.evaluation.result",
+		})
+		expect(
+			rowOf({ ...record, eventName: "from.field", attributes: [attr("event.name", "from.attribute")] })
+				.log_attributes,
+		).toEqual({ "event.name": "from.attribute" })
+	})
+
 	it("logs row keys == logs inputSchema", () => {
 		const [batch] = encodeLogs(sampleLogsReq())
 		ok(batch !== undefined)

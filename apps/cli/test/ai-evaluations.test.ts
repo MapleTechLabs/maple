@@ -97,6 +97,13 @@ describeWithChdb("ai_evaluations views", () => {
 			"maple_ai.evaluation.source": "maple_check",
 			"maple_ai.evaluation.target.trace_id": "11111111111111111111111111111111",
 		})
+		// A target trace with no target span grades the trace.
+		insertLog(db, {
+			"event.name": "gen_ai.evaluation.result",
+			"gen_ai.evaluation.name": "Answer quality",
+			"gen_ai.evaluation.score.label": "pass",
+			"maple_ai.evaluation.target.trace_id": "44444444444444444444444444444444",
+		})
 		// A non-finite value is no score: it would poison every mean.
 		insertLog(db, {
 			"event.name": "gen_ai.evaluation.result",
@@ -115,6 +122,21 @@ describeWithChdb("ai_evaluations views", () => {
 		])
 
 		expect(rows(db)).toEqual([
+			{
+				TraceId: "44444444444444444444444444444444",
+				SpanId: "",
+				Name: "Answer quality",
+				ScoreValue: 0,
+				HasScore: 0,
+				ScoreLabel: "pass",
+				Verdict: "pass",
+				Explanation: "",
+				Scope: "trace",
+				Source: "otel",
+				AnnotatorKind: "",
+				ServiceName: "evaluator",
+				DeploymentEnv: "production",
+			},
 			{
 				TraceId: TRACE,
 				SpanId: "c1c1c1c1c1c1c1c1",

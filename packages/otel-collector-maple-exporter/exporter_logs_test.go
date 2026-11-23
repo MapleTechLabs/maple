@@ -164,6 +164,33 @@ func TestLogsExporter_SeverityTextDerivedWhenMissing(t *testing.T) {
 	}
 }
 
+func TestLogsExporter_EventNameBecomesAttribute(t *testing.T) {
+	srv, rows, mu := newLogsCaptureServer(t)
+	lx := newLogsExporterUnderTest(t, srv.URL, &Config{OrgID: "o"})
+
+	ld := plog.NewLogs()
+	records := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	named := records.AppendEmpty()
+	named.SetTimestamp(pcommon.Timestamp(fixedTimeNanos))
+	named.SetEventName("gen_ai.evaluation.result")
+	own := records.AppendEmpty()
+	own.SetTimestamp(pcommon.Timestamp(fixedTimeNanos))
+	own.SetEventName("from.field")
+	own.Attributes().PutStr("event.name", "from.attribute")
+
+	if err := lx.pushLogs(context.Background(), ld); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !contains(string((*rows)[0]), `"event.name":"gen_ai.evaluation.result"`) {
+		t.Errorf("expected event.name from the record's event name, got:\n%s", (*rows)[0])
+	}
+	if !contains(string((*rows)[1]), `"event.name":"from.attribute"`) {
+		t.Errorf("expected the record's own event.name to win, got:\n%s", (*rows)[1])
+	}
+}
+
 func TestLogsExporter_EmptyLogs(t *testing.T) {
 	srv, rows, mu := newLogsCaptureServer(t)
 	lx := newLogsExporterUnderTest(t, srv.URL, &Config{OrgID: "o"})

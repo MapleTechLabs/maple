@@ -24,7 +24,7 @@ export const GEN_AI_EVALUATION_ATTRS = {
  * aliases.
  */
 export const MAPLE_EVALUATION_ATTRS = {
-	/** `span` (default), `trace` or `session`. */
+	/** `span`, `trace` or `session`. Default `span`, or `trace` for a target trace with no target span. */
 	scope: "maple_ai.evaluation.scope",
 	/** The session a `session`-scope score grades. */
 	sessionId: "maple_ai.evaluation.session.id",
@@ -45,7 +45,7 @@ export const MAPLE_EVALUATION_ATTRS = {
 	targetSpanId: "maple_ai.evaluation.target.span_id",
 } as const
 
-/** Longest explanation kept per score; judges can write essays. */
+/** Longest explanation kept per score, in characters; judges can write essays. */
 export const EVALUATION_EXPLANATION_MAX = 4096
 
 export const EVALUATION_SCOPES = ["span", "trace", "session"] as const

@@ -1501,7 +1501,8 @@ export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
 /**
  * Populates `ai_evaluations` from span events named `gen_ai.evaluation.result`: the encoding SDKs
  * used before events moved to the Logs API (OTEP 4430), and what OpenLIT still emits. The span
- * carrying the event is the evaluated span.
+ * carrying the event is the evaluated span, and the row takes the span's time, not the event's, so
+ * a delete by span time removes its scores with it.
  */
 export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_span_events_mv", {
 	description:
@@ -1513,13 +1514,12 @@ export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_
 			sql: `
         SELECT
           OrgId,
-          EventTimestamp AS Timestamp,${evaluationColumnsSql({ attrs: "EventAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
+          Timestamp,${evaluationColumnsSql({ attrs: "EventAttributes", traceId: "TraceId", spanId: "SpanId", source: "otel" })},
           ServiceName,
           ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv
         FROM traces
         ARRAY JOIN
           EventsName AS EventName,
-          EventsTimestamp AS EventTimestamp,
           EventsAttributes AS EventAttributes
         WHERE has(EventsName, '${GEN_AI_EVALUATION_EVENT}')
           AND EventName = '${GEN_AI_EVALUATION_EVENT}'

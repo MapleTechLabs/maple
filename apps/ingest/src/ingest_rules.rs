@@ -1350,6 +1350,9 @@ impl Pass<'_> {
 
     /// Returns false when the log record is dropped.
     fn log(&mut self, resource: &[KeyValue], record: &mut LogRecord) -> bool {
+        // The row stores the event name as `event.name` (`telemetry::log_attributes`); moving it
+        // into the attributes first lets a rule on `event.name` match and redact it.
+        crate::telemetry::lift_log_event_name(record);
         if self.budget.spent() {
             return true;
         }
