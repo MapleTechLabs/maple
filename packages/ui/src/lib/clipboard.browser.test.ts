@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { writeClipboardFallback, writeClipboardText } from "./clipboard"
+import { Option } from "effect"
+
+import { openPendingClipboardWrite, writeClipboardFallback, writeClipboardText } from "./clipboard"
 
 let execCommand: ReturnType<typeof vi.fn>
 
@@ -89,5 +91,42 @@ describe("writeClipboardText", () => {
 		expect(await writeClipboardText("")).toBe(false)
 		expect(writeText).not.toHaveBeenCalled()
 		expect(execCommand).not.toHaveBeenCalled()
+	})
+})
+
+describe("openPendingClipboardWrite", () => {
+	it("starts the write at once, before the text exists, and the write carries the filled text", async () => {
+		const items: Array<ClipboardItem> = []
+		const write = vi.fn((written: Array<ClipboardItem>) => {
+			items.push(...written)
+			return Promise.resolve()
+		})
+		Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write } })
+
+		const pending = openPendingClipboardWrite()
+		// Safari keeps the gesture only for a write that starts synchronously in the click.
+		expect(write).toHaveBeenCalledTimes(1)
+
+		pending.fill("maple prompt")
+		const blob = await items[0]!.getType("text/plain")
+		expect(await blob.text()).toBe("maple prompt")
+		expect(await Option.getOrThrow(pending.written)).toBe(true)
+	})
+
+	it("reports a write the browser refused", async () => {
+		const write = vi.fn(() => Promise.reject(new DOMException("denied", "NotAllowedError")))
+		Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write } })
+
+		const pending = openPendingClipboardWrite()
+		pending.fill("maple prompt")
+		expect(await Option.getOrThrow(pending.written)).toBe(false)
+	})
+
+	it("opens nothing where the clipboard cannot write items, so the caller writes later", () => {
+		Object.defineProperty(navigator, "clipboard", { configurable: true, value: {} })
+
+		const pending = openPendingClipboardWrite()
+		pending.fill("maple prompt")
+		expect(Option.isNone(pending.written)).toBe(true)
 	})
 })
