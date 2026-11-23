@@ -101,7 +101,7 @@ const trimFramePath = (frame: string): string => {
 }
 
 /** The function a frame names, unless it is plumbing or minified away. */
-const frameFunction = (frame: string): string | undefined => {
+export const frameFunction = (frame: string): string | undefined => {
 	const name = namedFrameRe.exec(frame)?.[1]
 	return name === undefined || plumbingRe.test(name) ? undefined : name
 }
