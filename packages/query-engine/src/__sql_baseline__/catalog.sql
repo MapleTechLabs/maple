@@ -1617,16 +1617,16 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:errors:errorGroupingSamplesQuery:default  [6587b2b0]
+-- builder:errors:errorGroupingSamplesQuery:default  [d566291c]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,
-          argMax(error_events.ServiceName, error_events.Timestamp) AS serviceName,
+          argMax(error_events.ServiceName, concat(toString(error_events.Timestamp), error_events.SpanId)) AS serviceName,
           max(error_events.Timestamp) AS timestamp,
-          argMax(error_events.TraceId, error_events.Timestamp) AS traceId,
-          argMax(error_events.SpanId, error_events.Timestamp) AS spanId,
-          argMax(error_events.ExceptionType, error_events.Timestamp) AS exceptionType,
-          argMax(if(error_events.StatusMessage = '', error_events.ExceptionMessage, error_events.StatusMessage), error_events.Timestamp) AS statusMessage,
-          argMax(error_events.ExceptionStacktrace, error_events.Timestamp) AS exceptionStacktrace
+          argMax(error_events.TraceId, concat(toString(error_events.Timestamp), error_events.SpanId)) AS traceId,
+          argMax(error_events.SpanId, concat(toString(error_events.Timestamp), error_events.SpanId)) AS spanId,
+          argMax(error_events.ExceptionType, concat(toString(error_events.Timestamp), error_events.SpanId)) AS exceptionType,
+          argMax(if(error_events.StatusMessage = '', error_events.ExceptionMessage, error_events.StatusMessage), concat(toString(error_events.Timestamp), error_events.SpanId)) AS statusMessage,
+          argMax(error_events.ExceptionStacktrace, concat(toString(error_events.Timestamp), error_events.SpanId)) AS exceptionStacktrace
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.Timestamp >= '2026-01-01 10:30:00'

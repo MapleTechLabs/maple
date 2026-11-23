@@ -58,12 +58,10 @@ export const groupingRuleProblem = (rule: OrgGroupingRule): string | undefined =
 	return undefined
 }
 
-/** How much of a value a glob reads: bounds the match work per rule. */
-const GLOB_SCAN_CHARS = 2_000
-
 /**
  * A glob as a matcher: `*` is any run, everything else literal, case-insensitive, whole value.
- * Greedy segment search, so a hostile pattern cannot backtrack: work is linear per segment.
+ * Greedy segment search over the whole value, so a hostile pattern cannot backtrack: one
+ * linear scan per segment, and patterns are capped at MAX_GROUPING_PATTERN_CHARS.
  */
 const globMatcher = (glob: string): ((value: string) => boolean) => {
 	const segments = Str.split("*")(Str.toLowerCase(glob))
@@ -71,7 +69,7 @@ const globMatcher = (glob: string): ((value: string) => boolean) => {
 	const last = segments[segments.length - 1] ?? ""
 	const middle = segments.slice(1, -1)
 	return (raw) => {
-		const value = Str.toLowerCase(Str.slice(0, GLOB_SCAN_CHARS)(raw))
+		const value = Str.toLowerCase(raw)
 		if (segments.length === 1) return value === first
 		if (!Str.startsWith(first)(value) || value.length < first.length + last.length) return false
 		const end = value.length - last.length

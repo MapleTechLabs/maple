@@ -44,6 +44,7 @@ import {
 	AlertDestinations,
 	ErrorFingerprintCandidates,
 	ErrorGroupingConfigs,
+	ErrorGroupingKeys,
 	ErrorIssueFingerprints,
 	ErrorIncidents,
 	ErrorNotificationDeliveries,
@@ -83,6 +84,7 @@ import { describeCause, makePersistenceError } from "./error-persistence"
 import { EarlyPromotionsPerDay, isErrorTickClaimLost, persistErrorTickWindow } from "./error-tick-persistence"
 import { pinGroupingKeys } from "./grouping-keys"
 import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
+import { GROUPING_KEY_VERSION, groupingKey } from "@maple/domain/tinybird/grouping"
 import { NotificationDispatcher } from "@maple/backend/services/alerts/NotificationDispatcher"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
@@ -3929,7 +3931,6 @@ const makeIdleTickHarness = (
 			edgeBackend,
 			dispatcher: opts.dispatcher,
 			earlyPromotionsPerDay: 0,
-			groupingDigest: "",
 		}),
 		db,
 		errors,
@@ -5802,6 +5803,104 @@ describe("ErrorsService.runTick grouping keys", () => {
 				),
 			)
 			assert.deepStrictEqual(left, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("an ignored issue on a bump's lineage keeps its fold, whatever key peers are worked", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H2, 1), row(H3, 1)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva"), sample(H3, "billing-C9EyLIyc")]
+			grouping.spans = [span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const ignored = asIssueId(randomUUID())
+			const fresh = asIssueId(randomUUID())
+			const worked = asIssueId(randomUUID())
+			yield* seedIssue(ignored, {
+				fingerprintHash: OLD,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* seedIssue(fresh, { fingerprintHash: H2, exceptionType: "SiteUnavailable" })
+			yield* seedIssue(worked, {
+				fingerprintHash: H3,
+				exceptionType: "SiteUnavailable",
+				workflowState: "in_progress",
+			})
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.isNull((yield* loadIssueById(worked)).mergedIntoIssueId)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("a sibling still buffered from an earlier window leads the group its next peer joins", () => {
+		const rows = [row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H2)]
+			const database = yield* Database
+			const earlier = sample(H1, "design-access-BaWgZTwa")
+			yield* database.execute((db) =>
+				Effect.all([
+					db.run(
+						PG.insertInto(ErrorFingerprintCandidates).values({
+							orgId: ORG,
+							fingerprintHash: H1,
+							serviceName: "checkout-api",
+							exceptionType: "SiteUnavailable",
+							exceptionMessage: MESSAGE,
+							topFrame: "",
+							occurrenceCount: 1,
+							firstSeenAt: TICK_MS - 600_000,
+							lastSeenAt: TICK_MS - 600_000,
+							updatedAt: TICK_MS - 600_000,
+						}),
+					),
+					db.run(
+						PG.insertInto(ErrorGroupingKeys).values({
+							orgId: ORG,
+							fingerprintHash: H1,
+							groupingKey: groupingKey({
+								serviceName: earlier.serviceName,
+								exceptionType: earlier.exceptionType,
+								statusMessage: earlier.statusMessage,
+								exceptionStacktrace: earlier.exceptionStacktrace,
+								span: { kind: "Internal", name: "SiteHosting.resolve" },
+							}),
+							keyVersion: GROUPING_KEY_VERSION,
+							rule: "type-message",
+							createdAt: TICK_MS - 600_000,
+							updatedAt: TICK_MS - 600_000,
+						}),
+					),
+				]),
+			)
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			const [issue] = yield* loadIssuesByFingerprint(H1)
+			assert.strictEqual(issue?.occurrenceCount, 2)
+			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 0)
+			assert.deepStrictEqual(yield* aliasesOf, [
+				{ fingerprintHash: H2, issueId: issue?.id, source: "group" },
+			])
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 

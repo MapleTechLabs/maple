@@ -350,8 +350,8 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		])
 		const keys = Arr.dedupe([...keyOf.values()])
 		if (keys.length === 0) return new Map()
-		// The oldest members of each key, capped in Postgres: a settled group keeps growing
-		// (a chunk-load key gains a hash per deploy) but only the first few find its issue.
+		// Each key's members capped in Postgres, those owning an issue first: a group keeps growing
+		// (a chunk-load key gains a hash per deploy), and ownerless keys must not hide its issue.
 		const members = yield* dbRun((tx) =>
 			Effect.forEach(Arr.chunksOf(keys, CHUNK), (chunk) =>
 				tx.run(
@@ -360,7 +360,7 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 							groupingKey: $.groupingKey,
 							hashes: PG.sql(
 								PG.array(PG.text),
-							)`(array_agg(${$.fingerprintHash} order by ${$.createdAt}, ${$.fingerprintHash}))[1:${MAX_SIBLINGS + 1}]`,
+							)`(array_agg(${$.fingerprintHash} order by (exists (select 1 from error_issues i where i.org_id = ${$.orgId} and i.fingerprint_hash = ${$.fingerprintHash}) or exists (select 1 from error_issue_fingerprints f where f.org_id = ${$.orgId} and f.fingerprint_hash = ${$.fingerprintHash})) desc, ${$.createdAt}, ${$.fingerprintHash}))[1:${MAX_SIBLINGS + 1}]`,
 						}))
 						.where(($) => [
 							$.orgId.eq(orgId),

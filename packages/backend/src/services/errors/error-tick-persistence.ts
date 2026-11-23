@@ -30,7 +30,7 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { FINGERPRINT_VERSION } from "@maple/domain/tinybird/fingerprint"
-import { loadOrgGrouping } from "./grouping-keys"
+import { loadOrgGrouping, pinGroupingKeys } from "./grouping-keys"
 import { foldIssues } from "./issue-fold"
 import { MAX_TRACKED_VERSIONS, mergeVersions } from "./issue-versions"
 import { regressedColumns } from "./issue-reopen"
@@ -549,10 +549,10 @@ const rekeyOwners = (
 				const keyOnly = (issue: ErrorIssueRow) => issue.id !== own && !lineage.has(issue.id)
 				const settled = (issue: ErrorIssueRow) => SETTLED_STATES.has(issue.workflowState)
 				const base = Arr.filter(reached, (issue) => !keyOnly(issue))
-				const issues =
-					base.length > 0 && Arr.every(base, settled)
-						? base
-						: Arr.filter(reached, (issue) => !(keyOnly(issue) && settled(issue)))
+				// A settled issue on the row's own side keeps the lineage fold as it was: no key peer joins.
+				const issues = Arr.some(base, settled)
+					? base
+					: Arr.filter(reached, (issue) => !(keyOnly(issue) && settled(issue)))
 				if (issues.length === 0) {
 					const [first] = reached
 					return ownId === undefined && first !== undefined
@@ -641,6 +641,42 @@ const withCurrentGroups = (
 ): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
 	Effect.gen(function* () {
 		const orgId = input.orgId
+		// A pin carries over a bump: read the previous hashes' pins under the lock, and pin the
+		// new hash before it can group. Runs whether or not this window's keys were read.
+		const previous = Arr.dedupe(Arr.flatMap(rows, lineageOf))
+		const pinnedPreviousRows = yield* inChunks(previous, (chunk) =>
+			tx.run(
+				PG.from(ErrorGroupingKeys)
+					.select("fingerprintHash")
+					.where(($) => [$.orgId.eq(orgId), $.pinned.eq(true), $.fingerprintHash.in_(...chunk)]),
+			),
+		)
+		const pinnedPrevious = new Set(Arr.map(pinnedPreviousRows, (row) => row.fingerprintHash))
+		const inheriting = Arr.filter(rows, (row) =>
+			Arr.some(lineageOf(row), (hash) => pinnedPrevious.has(hash)),
+		)
+		if (inheriting.length > 0) {
+			yield* pinGroupingKeys(
+				tx,
+				orgId,
+				Arr.map(inheriting, (row) => row.fingerprintHash),
+				input.windowEndMs,
+			)
+		}
+		const inherits = new Set(Arr.map(inheriting, (row) => row.fingerprintHash))
+		const lineagePinned = Arr.map(rows, (row) =>
+			inherits.has(row.fingerprintHash) ? { ...row, groupedFingerprintHashes: [] } : row,
+		)
+		return yield* withoutStaleSiblings(tx, input, lineagePinned)
+	})
+
+const withoutStaleSiblings = (
+	tx: ErrorTickTransaction,
+	input: PersistErrorTickWindowInput,
+	rows: ReadonlyArray<ErrorTickScanRow>,
+): Effect.Effect<ReadonlyArray<ErrorTickScanRow>, MapleDbError> =>
+	Effect.gen(function* () {
+		const orgId = input.orgId
 		const grouped = Arr.dedupe(
 			Arr.flatMap(rows, (row) =>
 				(row.groupedFingerprintHashes ?? []).length === 0
@@ -710,8 +746,13 @@ const withBufferedCandidates = (
  * Unowned hashes in one window sharing a key open one issue: the first by string order
  * leads, the rest ride on its row and are aliased to its issue after the upsert.
  */
-const groupPeers = (rows: ReadonlyArray<ErrorTickScanRow>): ReadonlyMap<string, string> => {
-	const inWindow = new Set(Arr.map(rows, (row) => row.fingerprintHash))
+const groupPeers = (
+	rows: ReadonlyArray<ErrorTickScanRow>,
+	buffered: ReadonlySet<string>,
+): ReadonlyMap<string, string> => {
+	// Members: this window's hashes, and siblings still buffered as candidates from earlier ones,
+	// so a group's occurrences keep adding up under one leader until it is promoted.
+	const inWindow = new Set([...Arr.map(rows, (row) => row.fingerprintHash), ...buffered])
 	const parent = new Map<string, string>()
 	const root = (hash: string): string => {
 		const up = parent.get(hash)
@@ -776,7 +817,16 @@ const canonicalizeScanRows = (
 				),
 		)
 		const primaries = new Set(Arr.map(primaryRows, (row) => row.fingerprintHash))
-		const peers = groupPeers(Arr.filter(unowned, (row) => !primaries.has(row.fingerprintHash)))
+		const newcomers = Arr.filter(unowned, (row) => !primaries.has(row.fingerprintHash))
+		const siblingHashes = Arr.dedupe(Arr.flatMap(newcomers, (row) => row.groupedFingerprintHashes ?? []))
+		const bufferedRows = yield* inChunks(siblingHashes, (chunk) =>
+			tx.run(
+				PG.from(ErrorFingerprintCandidates)
+					.select("fingerprintHash")
+					.where(($) => [$.orgId.eq(orgId), $.fingerprintHash.in_(...chunk)]),
+			),
+		)
+		const peers = groupPeers(newcomers, new Set(Arr.map(bufferedRows, (row) => row.fingerprintHash)))
 		if (!Arr.some(rows, (row) => ownerOfRow(row) !== undefined) && peers.size === 0) {
 			return { rows, peers }
 		}
@@ -1107,22 +1157,25 @@ export const persistErrorTickWindow = (
 					const issueId = idByFingerprint.get(leader)
 					return issueId === undefined ? [] : [{ fingerprintHash, issueId }]
 				})
-				if (peerAliases.length > 0) {
-					yield* tx.run(
-						PG.insertInto(ErrorIssueFingerprints)
-							.values(
-								Arr.map(peerAliases, ({ fingerprintHash, issueId }) => ({
-									orgId: input.orgId,
-									fingerprintHash,
-									issueId,
-									source: "group" as const,
-									originIssueId: null,
-									createdAt: windowEnd,
-								})),
-							)
-							.onConflictDoNothing(),
-					)
-				}
+				yield* Effect.forEach(
+					chunks(peerAliases),
+					(chunk) =>
+						tx.run(
+							PG.insertInto(ErrorIssueFingerprints)
+								.values(
+									Arr.map(chunk, ({ fingerprintHash, issueId }) => ({
+										orgId: input.orgId,
+										fingerprintHash,
+										issueId,
+										source: "group" as const,
+										originIssueId: null,
+										createdAt: windowEnd,
+									})),
+								)
+								.onConflictDoNothing(),
+						),
+					{ discard: true },
+				)
 
 				const resolvedRows = yield* Effect.forEach(applicable, (entry) => {
 					const issueId = idByFingerprint.get(entry.row.fingerprintHash)
