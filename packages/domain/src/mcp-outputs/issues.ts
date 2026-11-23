@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { ErrorIssueFingerprintGrouping, ErrorIssueSimilarIssue } from "../http/errors"
 
 export const IssueActorSummary = Schema.Struct({
 	id: Schema.String,
@@ -123,6 +124,31 @@ export const MergeErrorIssuesOutput = Schema.Struct({
 	id: Schema.String,
 	mergedIssueIds: Schema.Array(Schema.String),
 	/** Every fingerprint the kept issue now owns, its own first. */
+	fingerprintHashes: Schema.Array(Schema.String),
+	occurrenceCount: Schema.Number,
+	workflowState: Schema.String,
+	serviceName: Schema.String,
+})
+
+/** Why each fingerprint of an issue is on it: how it arrived and the rule that keyed it. */
+export const ExplainErrorGroupingOutput = Schema.Struct({
+	issueId: Schema.String,
+	fingerprints: Schema.Array(ErrorIssueFingerprintGrouping),
+	/** More fingerprints than were explained; the rest are left out. */
+	truncated: Schema.Boolean,
+})
+
+export const ListSimilarErrorIssuesOutput = Schema.Struct({
+	issueId: Schema.String,
+	/** Suggested duplicates, most similar first. A suggestion, never a confirmed duplicate. */
+	issues: Schema.Array(ErrorIssueSimilarIssue),
+})
+
+export const DetachErrorFingerprintOutput = Schema.Struct({
+	id: Schema.String,
+	/** Pinned off the issue: its next occurrence opens an issue of its own. */
+	detachedFingerprintHash: Schema.String,
+	/** The fingerprints the issue still owns, its own first. */
 	fingerprintHashes: Schema.Array(Schema.String),
 	occurrenceCount: Schema.Number,
 	workflowState: Schema.String,

@@ -87,6 +87,7 @@ import { registerListMapleFeedbackTool } from "./list-maple-feedback"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
 import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerMergeErrorIssuesTool } from "./merge-error-issues"
+import { registerErrorGroupingTools } from "./error-grouping"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerTransitionErrorIssuesTool } from "./transition-error-issues"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
@@ -253,6 +254,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerTransitionErrorIssuesTool,
 	registerSetIssueSeverityTool,
 	registerMergeErrorIssuesTool,
+	registerErrorGroupingTools,
 	registerClaimErrorIssueTool,
 	registerReleaseErrorIssueTool,
 	registerCommentOnErrorIssueTool,

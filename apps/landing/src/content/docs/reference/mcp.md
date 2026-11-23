@@ -100,6 +100,9 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `transition_error_issue`           | write  | Move an issue to another workflow state                                                             |
 | `transition_error_issues`          | write  | Move up to 200 issues to one workflow state, with a note on each                                    |
 | `merge_error_issues`               | write  | Fold up to 50 duplicate issues into one; each merged issue is archived pointing at the kept one     |
+| `explain_error_grouping`           | read   | Why an issue's fingerprints are one issue: the rule, message and frames behind each                 |
+| `list_similar_error_issues`        | read   | Open issues of the same service and type with a similar message: merge candidates                   |
+| `detach_error_fingerprint`         | write  | Split a fingerprint the grouping key joined back out; it opens its own issue next time              |
 | `set_issue_severity`               | write  | Set or clear an issue's triage severity                                                             |
 | `comment_on_error_issue`           | write  | Add a comment or agent note to an issue's timeline                                                  |
 | `propose_fix`                      | write  | Record a proposed fix and move the issue to `in_review`                                             |
