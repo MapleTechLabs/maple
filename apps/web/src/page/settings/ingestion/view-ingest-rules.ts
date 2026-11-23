@@ -24,7 +24,7 @@ import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
 import { denialReason } from "../../kit/session-grants"
-import { detail, effectOf, headline, hourlySeries } from "../ingest-rule/impact"
+import { detail, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
 import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { ruleSuggestions } from "./view-rule-suggestions"
@@ -123,19 +123,20 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 			const found = Arr.findFirst(stats.rules, (entry) => entry.id === rule.id)
 			if (Option.isNone(found) || found.value.matched === 0) return [muted(h, "No hits")]
 			const totals = found.value
+			const effect = effectKind(rule.action, totals)
 			return [
-				typography(h, { size: "xs", numeric: true }, [headline(rule.action, totals)]),
+				typography(h, { size: "xs", numeric: true }, [headline(effect, totals)]),
 				typography(h, { size: "2xs", tone: "muted", numeric: true, truncate: true }, [
-					detail(rule.action, totals),
+					detail(effect, totals),
 				]),
 				miniBars(h, {
-					values: hourlySeries(stats, rule.id, 24, (entry) => effectOf(rule.action, entry)),
+					values: hourlySeries(stats, rule.id, 24, (entry) => effectCount(effect, entry)),
 					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
 					floor: 12.5,
 					floorColor: "var(--input)",
 					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
-					label: `${rule.name}: ${rule.action.type === "drop" ? "records dropped" : "values redacted"} per hour`,
+					label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per hour`,
 				}),
 			]
 		},

@@ -97,7 +97,7 @@ describe("ingest rules section", () => {
 		)
 	})
 
-	test("the last 24 hours show what each rule dropped and the bytes it kept off the bill, and No hits for the rest", () => {
+	test("the last 24 hours show what each rule dropped and the bytes dropped, and No hits for the rest", () => {
 		const counts = { matched: 1520, dropped: 1520, dropped_bytes: 340_000_000, redacted_values: 0 }
 		const stats = Schema.decodeSync(V2IngestRuleStats)({
 			object: "ingest_rule_stats",
@@ -116,13 +116,13 @@ describe("ingest rules section", () => {
 				).model,
 			),
 			expectView(text("1.5K dropped")).toExist(),
-			expectView(text("340 MB saved")).toExist(),
+			expectView(text("340 MB dropped")).toExist(),
 			expectView(text("No hits")).toExist(),
 			expectView(role("img", { name: "Drop debug logs: records dropped per hour" })).toExist(),
 		)
 	})
 
-	test("a sampling rule says how many matching records it kept", () => {
+	test("a sampling rule shows its matches beside its drops, never as records kept", () => {
 		const sampled = { ...dropDebug, action: { type: "drop" as const, keep_percent: 10 } }
 		const counts = { matched: 1000, dropped: 900, dropped_bytes: 2_000_000, redacted_values: 0 }
 		const stats = Schema.decodeSync(V2IngestRuleStats)({
@@ -142,7 +142,8 @@ describe("ingest rules section", () => {
 				).model,
 			),
 			expectView(text("900 dropped")).toExist(),
-			expectView(text("2.0 MB saved · 100 kept")).toExist(),
+			expectView(text("2.0 MB dropped · 1K matched")).toExist(),
+			expectView(text("100 kept")).not.toExist(),
 		)
 	})
 
