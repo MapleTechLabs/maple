@@ -155,7 +155,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		return dashboardPage(h, header, [skeleton(h, "h-10 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, gap: "lg" }, [
 		h.div(
-			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
+			[h.Class("grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
 			[
 				vstack(h, { gap: "5", shrink: true }, [
 					nameRow(h, model),

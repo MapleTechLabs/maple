@@ -84,6 +84,7 @@ export const select = (
 		value: string
 		entries: ReadonlyArray<{ readonly value: string; readonly label: string }>
 		onChange: (value: string) => Message
+		size?: "sm"
 		className?: string
 	}>,
 ): Html =>
@@ -104,6 +105,7 @@ export const select = (
 				h,
 				{
 					defaultValue: options.value,
+					size: options.size ?? "default",
 					attributes: [h.Id(options.id), h.Value(options.value), h.OnChange(options.onChange)],
 				},
 				Arr.map(options.entries, (entry) => nativeOption(entry.value, entry.label)),
@@ -244,8 +246,9 @@ export const conditionsClause = (h: H, model: Model): Html =>
 			: Arr.map(model.draft.conditions, (condition, index) =>
 					conditionRow(h, model, condition, index),
 				)),
+		// Indented past the "and" column so the button lines up with the condition fields.
 		h.div(
-			[],
+			[h.Class(model.draft.conditions.length === 0 ? "" : "pl-10")],
 			[
 				button(
 					h,

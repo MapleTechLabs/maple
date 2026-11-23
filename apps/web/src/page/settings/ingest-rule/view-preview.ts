@@ -69,13 +69,15 @@ const recordLabel = (row: PreviewRow): string => {
 	)
 }
 
-const fieldLine = (h: H, field: ParsedField): Html =>
-	hstack(h, { gap: "2", align: "start" }, [
-		typography(h, { size: "2xs", mono: true, tone: "muted", className: "min-w-0 break-all" }, [
-			field.key,
+// Keys and values in two columns, so a row's values line up.
+const fieldList = (h: H, fields: ReadonlyArray<ParsedField>): Html =>
+	h.dl(
+		[h.Class("grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-2xs")],
+		Arr.flatMap(fields, (field) => [
+			h.dt([h.Key(`k:${field.key}`), h.Class("text-muted-foreground max-w-48 break-all")], [field.key]),
+			h.dd([h.Key(`v:${field.key}`), h.Class("break-words")], [field.value]),
 		]),
-		typography(h, { size: "2xs", mono: true, className: "break-all" }, [field.value]),
-	])
+	)
 
 const ROW_BADGES = {
 	dropped: { variant: "warn", label: "Drop" },
@@ -94,7 +96,7 @@ const rowDetails = (h: H, row: PreviewRow): ReadonlyArray<Html> => {
 		...(row.failure === null
 			? []
 			: [typography(h, { size: "2xs", tone: "warning", mono: true, as: "p" }, [row.failure])]),
-		...Arr.map(row.fields, (field) => fieldLine(h, field)),
+		...(row.fields.length === 0 ? [] : [fieldList(h, row.fields)]),
 	]
 }
 
