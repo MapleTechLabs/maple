@@ -11,6 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 STATE=.state
 PASSWORD='Local-Only-Passw0rd!x'
+WAIT_SECONDS=600
 
 project() { echo "fleetlive$1"; }
 
@@ -59,10 +60,22 @@ login() { # login <port> <email> <password>
 		-d "$(jq -cn --arg e "$2" --arg p "$3" '{email:$e,password:$p}')" | jq -r '.token // empty'
 }
 
+gave_up() { # gave_up <port> <what>: a wait ran past WAIT_SECONDS
+	echo "  gave up waiting for $2 after ${WAIT_SECONDS}s. Last answer: ${STATUS:-none} ${BODY:-}" >&2
+	compose "$1" ps >&2
+	exit 1
+}
+
 seed() { # seed <tag> <port> <tier>
 	local tag=$1 port=$2 tier=$3 flags=""
 	if [ -e "$STATE/target-$port.json" ]; then
-		echo "== $tag on https://localhost:$port is already seeded" >&2
+		local seeded
+		seeded="$(sed -n 's/^FLEET_IMAGE=fleetdm\/fleet://p' "$STATE/env-$port"):$(jq -r .tier "$STATE/target-$port.json")"
+		if [ "$seeded" != "$tag:$tier" ]; then
+			echo "Port $port already runs $seeded, not $tag:$tier. Run ./up.sh down first, or pick another port." >&2
+			exit 1
+		fi
+		echo "== $tag ($tier) on https://localhost:$port is already seeded" >&2
 		return
 	fi
 	[ "$tier" = premium ] && flags="--dev_license"
@@ -70,7 +83,11 @@ seed() { # seed <tag> <port> <tier>
 		"$tag" "$port" "$flags" "$((port % 250))" >"$STATE/env-$port"
 	echo "== $tag ($tier) on https://localhost:$port" >&2
 	compose "$port" up -d fleet >&2
-	until curl -sk --max-time 3 "https://localhost:$port/setup" -o /dev/null; do sleep 3; done
+	SECONDS=0
+	until curl -sk --max-time 3 "https://localhost:$port/setup" -o /dev/null; do
+		[ "$SECONDS" -lt "$WAIT_SECONDS" ] || gave_up "$port" "Fleet to start"
+		sleep 3
+	done
 
 	curl -sk --max-time 60 -X POST "https://localhost:$port/api/v1/setup" -H 'content-type: application/json' -o /dev/null -d "$(jq -cn --arg p "$PASSWORD" \
 		'{admin:{admin:true,email:"admin@example.com",name:"Admin",password:$p,password_confirmation:$p},org_info:{org_name:"Acme Corp"},server_url:"https://fleet:8080"}')"
@@ -139,7 +156,11 @@ seed() { # seed <tag> <port> <tier>
 	ENROLL_SECRET=$(echo "$BODY" | jq -r '.spec.secrets[0].secret') compose "$port" --profile devices up -d ws-ada ws-bob srv-cid stray-dee >&2
 
 	echo "  waiting for four devices to enroll" >&2
-	until call "$port" "$admin" GET /api/v1/fleet/hosts/count && [ "$(echo "$BODY" | jq -r '.count // 0')" = 4 ]; do sleep 3; done
+	SECONDS=0
+	until call "$port" "$admin" GET /api/v1/fleet/hosts/count && [ "$(echo "$BODY" | jq -r '.count // 0')" = 4 ]; do
+		[ "$SECONDS" -lt "$WAIT_SECONDS" ] || gave_up "$port" "four devices to enroll"
+		sleep 3
+	done
 	if [ "$tier" = premium ]; then
 		call "$port" "$admin" GET "/api/v1/fleet/hosts?per_page=50"
 		local hosts=$BODY
@@ -155,7 +176,9 @@ seed() { # seed <tag> <port> <tier>
 	[ "$unassigned" = true ] || { want="8 failing, 7 passing"; zero=""; }
 	[ "$tier" = premium ] || want="4 failing, 4 passing"
 	echo "  waiting for policy counts ($want)" >&2
+	SECONDS=0
 	while :; do
+		[ "$SECONDS" -lt "$WAIT_SECONDS" ] || gave_up "$port" "policy counts of $want"
 		call "$port" "$admin" POST "/api/latest/fleet/trigger?name=cleanups_then_aggregation"
 		sleep 5
 		local failing=0 passing=0 scope

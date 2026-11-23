@@ -209,7 +209,8 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 						(found) => found.length <= MAX_FLEETS,
 						(found) =>
 							new FleetApi.FleetApiError({
-								message: `This Fleet server has ${found.length > MAX_FLEETS + FLEET_PAGE_SIZE - 1 ? "more than " : ""}${found.length} fleets. Maple reads the policies of at most ${MAX_FLEETS}.`,
+								// A read that filled every page it may ask for counted only up to there.
+								message: `This Fleet server has ${found.length >= MAX_FLEETS + FLEET_PAGE_SIZE ? "at least " : ""}${found.length} fleets. Maple reads the policies of at most ${MAX_FLEETS}.`,
 								kind: "upstream",
 							}),
 					),

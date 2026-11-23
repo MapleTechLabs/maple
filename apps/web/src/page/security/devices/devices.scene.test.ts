@@ -117,8 +117,8 @@ describe("security devices", () => {
 			expectView(text("Known exploited")).toExist(),
 			// One source: no source tag between the critical badge and the fleet the policy belongs to.
 			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabledCriticalWorkstations"),
-			// A global policy applies to every device, whatever its fleet.
-			expectView(nth(all.role("row"), 2)).toContainText("All devices"),
+			// A global policy is set for no one fleet.
+			expectView(nth(all.role("row"), 2)).toContainText("All fleets"),
 		)
 	})
 
@@ -209,7 +209,7 @@ describe("security devices", () => {
 			expectView(nth(all.role("row"), 1)).toContainText("CriticalAcmeWorkstations · 7 of"),
 			// The EU source counts no passing devices, so its row gives the failing count alone.
 			expectView(nth(all.role("row"), 2)).toContainText(
-				"CriticalAcme EUAll devices · 3 devices failing",
+				"CriticalAcme EUAll fleets · 3 devices failing",
 			),
 			expectView(text("Fleet rejected the saved token for Acme EU")).toExist(),
 			expectView(text("Fleet rejected the saved token for Acme")).toBeAbsent(),
@@ -230,7 +230,7 @@ describe("security devices", () => {
 			// Each row names its source, so the EU one is reachable by name alone.
 			click(
 				role("button", {
-					name: /^Show failing devices: Disk encryption enabled, critical, Acme EU, All devices, 3 devices failing/,
+					name: /^Show failing devices: Disk encryption enabled, critical, Acme EU, All fleets, 3 devices failing/,
 				}),
 			),
 			expectView(role("link", { name: "Open the policy in Fleet" })).toHaveAttr(

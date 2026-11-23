@@ -27,10 +27,10 @@ const Target = Schema.Struct({
 })
 type Target = typeof Target.Type
 
-const targets = Option.getOrElse(
-	Schema.decodeOption(Schema.fromJsonString(Schema.Array(Target)))(process.env.FLEET_LIVE_TARGETS ?? "[]"),
-	(): ReadonlyArray<Target> => [],
-)
+// Unset skips the suite; set but malformed fails it, rather than pass having checked no server.
+const requested = process.env.FLEET_LIVE_TARGETS
+const targets: ReadonlyArray<Target> =
+	requested === undefined ? [] : Schema.decodeSync(Schema.fromJsonString(Schema.Array(Target)))(requested)
 
 const trackedDbs: Array<TestDb> = []
 afterEach(() => cleanupTestDbs(trackedDbs))

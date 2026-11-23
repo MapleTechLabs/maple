@@ -23,6 +23,8 @@ export type DeviceSourceBrand = Readonly<{
 	noScoresNote: string
 	/** The all-clear for policies, saying which ones the source reads. */
 	noFailingPolicies: string
+	/** What the source calls a policy set for no one device group. */
+	everyGroup: string
 }>
 
 export const DEVICE_SOURCE_BRANDS = {
@@ -34,6 +36,7 @@ export const DEVICE_SOURCE_BRANDS = {
 		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
 		noFailingPolicies:
 			"Every enrolled device passes every policy on your Fleet server: the global ones, each fleet's and those for devices in no fleet.",
+		everyGroup: "All fleets",
 	},
 } satisfies Readonly<Record<DeviceSourceKind, DeviceSourceBrand>>
 
@@ -126,8 +129,9 @@ export const moreVulnerabilitiesBySource = (
 export const knownExploitedCount = (sources: ReadonlyArray<DeviceSource>): number =>
 	Arr.reduce(sources, 0, (sum, source) => sum + source.knownExploitedVulnerabilities)
 
-/** Who a policy applies to: its device group as the source names it, or every device. */
-export const appliesToLabel = (policy: DevicePolicyFinding): string => policy.groupName ?? "All devices"
+/** The device group a policy is set for, or the source's word for none: it may still pick platforms. */
+export const appliesToLabel = (policy: DevicePolicyFinding): string =>
+	policy.groupName ?? brandOf(policy.source).everyGroup
 
 export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length
