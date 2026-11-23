@@ -97,13 +97,13 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: github/codeql-action/init@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
+            - uses: github/codeql-action/init@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4
               with:
                   languages: ${{ matrix.language }}
                   build-mode: ${{ matrix.build-mode }}
                   config-file: ./.github/codeql/codeql-config.yml
 
-            - uses: github/codeql-action/analyze@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
+            - uses: github/codeql-action/analyze@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4
               with:
                   category: /language:${{ matrix.language }}
 
@@ -120,12 +120,12 @@ jobs:
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: github/codeql-action/init@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
+            - uses: github/codeql-action/init@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4
               with:
                   languages: swift
                   build-mode: autobuild
                   config-file: ./.github/codeql/codeql-config.yml
 
-            - uses: github/codeql-action/analyze@3ea37a44b6e4e6847c46edae209410d258d548d1 # v4
+            - uses: github/codeql-action/analyze@38112626f97ac1fd7acf3df7ebca51f4677c1b38 # v4
               with:
                   category: /language:swift
