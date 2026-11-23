@@ -298,6 +298,54 @@ describeWithChdb("ai_evaluations reads", () => {
 		])
 	})
 
+	test("buckets one evaluator's measures by the requested width", () => {
+		const series = (bucketSeconds: number) =>
+			run(
+				Compile.compileUnsafe(CH.aiEvaluationTimeseriesQuery(), {
+					...params,
+					name: "Task completion",
+					bucketSeconds,
+				}),
+				Schema.Struct({
+					bucket: Schema.String,
+					scoreCount: CH.CHNumber,
+					passCount: CH.CHNumber,
+					failCount: CH.CHNumber,
+				}),
+			)
+		// Every seed shares one instant: one bucket, starting on the width's boundary.
+		const hourly = series(3600)
+		expect(
+			Arr.map(hourly, ({ scoreCount, passCount, failCount }) => ({ scoreCount, passCount, failCount })),
+		).toEqual([{ scoreCount: 3, passCount: 1, failCount: 2 }])
+		expect(
+			Str.startsWith(formatWarehouseDateTime(Math.floor(AT_MS / 3_600_000) * 3_600_000))(
+				hourly[0]?.bucket ?? "",
+			),
+		).toBe(true)
+		const daily = series(86_400)
+		expect(
+			Str.startsWith(formatWarehouseDateTime(Math.floor(AT_MS / 86_400_000) * 86_400_000))(
+				daily[0]?.bucket ?? "",
+			),
+		).toBe(true)
+	})
+
+	test("splits one evaluator's measures by the service and environment that sent them", () => {
+		const rows = run(
+			Compile.compileUnsafe(CH.aiEvaluationBreakdownQuery(), { ...params, name: "Task completion" }),
+			Schema.Struct({
+				serviceName: Schema.String,
+				deploymentEnv: Schema.String,
+				scoreCount: CH.CHNumber,
+				failCount: CH.CHNumber,
+			}),
+		)
+		expect(rows).toEqual([
+			{ serviceName: "evaluator", deploymentEnv: "production", scoreCount: 3, failCount: 2 },
+		])
+	})
+
 	test("lists the scores grading a session's traces, newest first", () => {
 		const rows = run(
 			Compile.compileUnsafe(
