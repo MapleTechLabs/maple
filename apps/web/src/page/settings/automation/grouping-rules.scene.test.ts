@@ -1,6 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { GroupingConfigDocument } from "@maple/domain/http"
-import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
+import { GroupingConfig, OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
 import { Array as Arr, Result, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, expect as expectView, given, role, scene, text } from "foldkit/scene"
@@ -55,15 +55,21 @@ describe("grouping rules editor", () => {
 				field: "message",
 				value: "  scoped to timeouts ",
 			}),
+			// A title on a frame rule is not a field it reads, so the save leaves it out.
+			Rules.Message.ChangedRuleField({ id: "rule-3", field: "title", value: "Pool timeouts" }),
 		])
 		const saved = Rules.update(edited, Rules.Message.ClickedSaveRules(), ADMIN)
-		const config = Rules.configOf(edited.draft ?? [])
-		expect(Arr.map(config.rules, (rule) => rule.id)).toEqual(["rule-1", "rule-3", "rule-0-1"])
-		expect(config.rules[2]).toEqual(
+		// What the save command carries, not a recomputation of it.
+		const args = saved.commands?.[0]?.args
+		expect(args).toMatchObject({ expectedUpdatedAt: null })
+		const sent = args !== undefined && "config" in args ? args.config : undefined
+		const rules = Schema.is(GroupingConfig)(sent) ? sent.rules : []
+		expect(Arr.map(rules, (rule) => rule.id)).toEqual(["rule-1", "rule-3", "rule-0-1"])
+		expect(rules[2]).toEqual(
 			new OrgGroupingRule({ id: "rule-0-1", kind: "merge", exceptionType: "ECONNRESET" }),
 		)
-		expect(config.rules[1]?.message).toBe("scoped to timeouts")
-		expect(config.rules[1]?.title).toBeUndefined()
+		expect(rules[1]?.message).toBe("scoped to timeouts")
+		expect(rules[1]?.title).toBeUndefined()
 		expect(saved.model.isSaving).toBe(true)
 	})
 
