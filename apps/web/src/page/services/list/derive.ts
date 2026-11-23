@@ -207,7 +207,7 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 
 /**
  * `commitsQueryKey`: one lookup for the deploy cells and the release facet. The deploy shas of the
- * rows on screen come first, then the facet's and the filter's; deduped, resolvable only, capped at the endpoint's
+ * rows on screen come first, then the filter's, then the facet's; deduped, resolvable only, capped at the endpoint's
  * batch size, sorted. "" means no request.
  */
 export const commitsKey = (
