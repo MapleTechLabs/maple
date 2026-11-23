@@ -5617,7 +5617,11 @@ describe("ErrorsService.runTick grouping keys", () => {
 			yield* seedIngestKey(ORG)
 			const ignored = asIssueId(randomUUID())
 			const live = asIssueId(randomUUID())
-			yield* seedIssue(ignored, { fingerprintHash: H1, exceptionType: "SiteUnavailable", workflowState: "wontfix" })
+			yield* seedIssue(ignored, {
+				fingerprintHash: H1,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
 			yield* seedIssue(live, { fingerprintHash: H2, exceptionType: "SiteUnavailable" })
 			yield* errors.runTick
 
@@ -5625,6 +5629,71 @@ describe("ErrorsService.runTick grouping keys", () => {
 			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
 			assert.isNull((yield* loadIssueById(live)).mergedIntoIssueId)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("live issues sharing a key still fold when a settled one shares it too", () => {
+		const rows = [row(H1, 1), row(H2, 1), row(H3, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [
+				sample(H1, "design-access-BaWgZTwa"),
+				sample(H2, "portal-native-VejMLjva"),
+				sample(H3, "billing-C9EyLIyc"),
+			]
+			grouping.spans = [span(H1), span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const a = asIssueId(randomUUID())
+			const b = asIssueId(randomUUID())
+			const fixed = asIssueId(randomUUID())
+			yield* seedIssue(a, { fingerprintHash: H1, exceptionType: "SiteUnavailable", occurrenceCount: 5 })
+			yield* seedIssue(b, { fingerprintHash: H2, exceptionType: "SiteUnavailable", occurrenceCount: 1 })
+			yield* seedIssue(fixed, {
+				fingerprintHash: H3,
+				exceptionType: "SiteUnavailable",
+				workflowState: "done",
+			})
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(b)).mergedIntoIssueId, a)
+			assert.isNull((yield* loadIssueById(fixed)).mergedIntoIssueId)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a bumped hash never folds a settled issue it reached only through the key", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H2, 1), row(H3, 1)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva"), sample(H3, "billing-C9EyLIyc")]
+			grouping.spans = [span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const carried = asIssueId(randomUUID())
+			const ignored = asIssueId(randomUUID())
+			yield* seedIssue(carried, { fingerprintHash: OLD, exceptionType: "SiteUnavailable" })
+			yield* seedIssue(ignored, {
+				fingerprintHash: H3,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
 	})
 
 	it.effect("a hash whose previous version was pinned stays out of groups after a bump", () => {

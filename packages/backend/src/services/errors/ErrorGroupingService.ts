@@ -201,7 +201,10 @@ const make: Effect.Effect<
 				fingerprintHash,
 				source,
 				rule: keyed ? key.rule : (why?.rule ?? null),
-				orgRule: why?.orgRule === undefined ? null : (why.orgRule.title ?? why.orgRule.id),
+				orgRule:
+					(keyed ? key.rule : why?.rule) !== "org-rule"
+						? null
+						: (why?.orgRule?.title ?? why?.orgRule?.id ?? "a rule since removed"),
 				pinned: key?.pinned ?? false,
 				exceptionType: sample?.exceptionType ?? issue.exceptionType,
 				messageSignature: why?.messageSignature ?? "",

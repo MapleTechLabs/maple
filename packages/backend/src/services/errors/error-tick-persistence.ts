@@ -531,21 +531,28 @@ const rekeyOwners = (
 				const strayLast = (issue: ErrorIssueRow) => (issue.id === strayId ? 1 : 0)
 				const order = (a: ErrorIssueRow, b: ErrorIssueRow) =>
 					strayLast(a) === strayLast(b) ? rekeyOrder(a, b) : strayLast(a) - strayLast(b)
-				const issues = Arr.flatMap(Arr.dedupe(Arr.map(issueIds, survivor)), (id) => {
+				const reached = Arr.flatMap(Arr.dedupe(Arr.map(issueIds, survivor)), (id) => {
 					const issue = issueById.get(id)
 					return issue === undefined ? [] : [issue]
 				}).sort(order)
-				const [keeper, ...rest] = issues
-				if (keeper === undefined) return []
-				// A grouping key never folds a settled issue (ignored, fixed, cancelled): a new
-				// hash joins the busiest live sibling, and the settled one keeps its state.
-				const groupingOnly = lineageIds.length === 0
-				const holdsSettled = Arr.some(issues, (issue) => SETTLED_STATES.has(issue.workflowState))
-				if (groupingOnly && holdsSettled) {
-					return ownId === undefined
-						? [[row.fingerprintHash, keeper.id, "group" as const] as const]
+				// A grouping key never folds a settled issue (ignored, fixed, cancelled). The row's
+				// own issue and its bump lineage fold as before; a settled one reached only through
+				// the key is left alone, and a new hash with only settled siblings joins the first.
+				const lineage = new Set(Arr.map(lineageIds, survivor))
+				const keyOnly = (issue: ErrorIssueRow) => issue.id !== ownId && !lineage.has(issue.id)
+				const settled = (issue: ErrorIssueRow) => SETTLED_STATES.has(issue.workflowState)
+				const ownSettled =
+					lineage.size === 0 && Arr.some(reached, (issue) => issue.id === ownId && settled(issue))
+				if (ownSettled) return []
+				const issues = Arr.filter(reached, (issue) => !(keyOnly(issue) && settled(issue)))
+				if (issues.length === 0) {
+					const [first] = reached
+					return ownId === undefined && first !== undefined
+						? [[row.fingerprintHash, first.id, "group" as const] as const]
 						: []
 				}
+				const [keeper, ...rest] = issues
+				if (keeper === undefined) return []
 				if (rest.length > 0) {
 					Arr.forEach(rest, (issue) => foldedInto.set(issue.id, keeper.id))
 					// Folding writes totals from the row it is given, so keep the latest one.

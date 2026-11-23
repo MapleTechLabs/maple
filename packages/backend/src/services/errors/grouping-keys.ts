@@ -148,7 +148,7 @@ export const loadOrgGrouping = (db: MapleDb, orgId: OrgId): Effect.Effect<OrgGro
 
 type Warehouse = (typeof WarehouseQueryService)["Service"]
 const SPAN_WINDOW_MS = 60_000
-/** Samples further apart than this get their own traces read, so a stale alias stays cheap. */
+/** Samples further apart get their own traces read; past the cap the newest clusters win. */
 const SPAN_CLUSTER_GAP_MS = 10 * 60_000
 const MAX_SPAN_READS = 10
 
@@ -188,7 +188,7 @@ export const warehouseGroupingReads = (
 					SPAN_CLUSTER_GAP_MS
 				? [...acc.slice(0, -1), [...(last ?? []), sample]]
 				: [...acc, [sample]]
-		}).slice(0, MAX_SPAN_READS)
+		}).slice(-MAX_SPAN_READS)
 		return Effect.forEach(
 			clusters,
 			(cluster) => {
