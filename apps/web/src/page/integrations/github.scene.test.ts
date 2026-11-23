@@ -1,3 +1,4 @@
+import { githubAuditCategoryStates } from "@maple/domain/github-audit"
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { GithubIntegrationStatus, GithubInstallationSelection } from "@maple/domain/http"
@@ -9,7 +10,7 @@ import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
-import { auditLogShown, ciTracesShown } from "./update-github"
+import { auditCategoryShown, auditLogShown, ciTracesShown } from "./update-github"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -28,6 +29,7 @@ const status = Schema.decodeSync(GithubIntegrationStatus)({
 	repositorySelection: "selected",
 	ciTracesEnabled: true,
 	auditLogEnabled: true,
+	auditCategories: githubAuditCategoryStates({}),
 	repositoryDiscovery: null,
 	repositories: [
 		{
@@ -223,6 +225,80 @@ describe("github card", () => {
 		)
 		expect(current.model.githubCard.auditLog).toBe(null)
 		expect(auditLogShown(current.model)).toBe(false)
+	})
+
+	test("the audit log lists its categories with their defaults, and saves one category at a time", () => {
+		const model = loaded()
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("switch", { name: "Force pushes" })).toHaveAttr("aria-checked", "true"),
+			expectView(role("switch", { name: "Security alerts" })).toHaveAttr("aria-checked", "false"),
+			expectView(text("7 of 13 categories")).toExist(),
+		)
+		const toggled = pageUpdate(model, Message.ToggledAuditCategory({ id: "securityAlerts" }))
+		expect(Arr.map(toggled.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+			["SetGithubAuditCategory", { id: "securityAlerts", enabled: true }],
+		])
+		// A second click while the write is in flight does nothing; another category still saves.
+		expect(
+			names(pageUpdate(toggled.model, Message.ToggledAuditCategory({ id: "securityAlerts" })).commands),
+		).toEqual([])
+		expect(
+			names(pageUpdate(toggled.model, Message.ToggledAuditCategory({ id: "forks" })).commands),
+		).toEqual(["SetGithubAuditCategory"])
+		scene(
+			{ update: pageUpdate, view },
+			given(toggled.model),
+			expectView(role("switch", { name: "Security alerts" })).toHaveAttr("aria-checked", "true"),
+			expectView(role("switch", { name: "Security alerts" })).toBeDisabled(),
+		)
+		// A failed write puts the switch back.
+		const failed = pageUpdate(
+			toggled.model,
+			Message.CompletedAuditCategory({
+				id: "securityAlerts",
+				enabled: true,
+				failure: toLoadFailure("x"),
+			}),
+		)
+		expect(auditCategoryShown(failed.model, "securityAlerts")).toBe(false)
+		// A saved one holds until the server's read replaces it.
+		const saved = pageUpdate(
+			toggled.model,
+			Message.CompletedAuditCategory({ id: "securityAlerts", enabled: true, failure: null }),
+		)
+		expect(auditCategoryShown(saved.model, "securityAlerts")).toBe(true)
+		const current = pageUpdate(
+			saved.model,
+			Message.CompletedLoadGithub({
+				key: saved.model.statuses.github.key ?? "",
+				result: Result.succeed(
+					new GithubIntegrationStatus({
+						...status,
+						auditCategories: githubAuditCategoryStates({ securityAlerts: true }),
+					}),
+				),
+			}),
+		)
+		expect(current.model.githubCard.auditCategories).toEqual([])
+		expect(auditCategoryShown(current.model, "securityAlerts")).toBe(true)
+	})
+
+	test("the categories hide while the audit log is off", () => {
+		const off = pageUpdate(
+			loaded(),
+			Message.CompletedLoadGithub({
+				key: loaded().statuses.github.key ?? "",
+				result: Result.succeed(new GithubIntegrationStatus({ ...status, auditLogEnabled: false })),
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(off.model),
+			expectView(role("switch", { name: "Audit log" })).toHaveAttr("aria-checked", "false"),
+			expectView(role("switch", { name: "Force pushes" })).not.toExist(),
+		)
 	})
 
 	test("a member who cannot manage integrations sees both switches but cannot flip them", () => {

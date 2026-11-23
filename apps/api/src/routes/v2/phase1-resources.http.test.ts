@@ -2109,6 +2109,7 @@ describe("v2 users wire mapping over HTTP", () => {
 				country: "GB",
 				traitKeys: ["plan"],
 				traitValues: ["pro"],
+				traitsAt: "2026-11-01 02:00:00",
 				firstSeen: "2026-11-01 02:00:00",
 				lastSeen: "2026-11-01 10:00:00",
 			},

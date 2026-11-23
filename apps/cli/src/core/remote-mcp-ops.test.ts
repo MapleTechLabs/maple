@@ -315,3 +315,53 @@ describe("remote MCP operations map onto local output shapes", () => {
 		expect(out).toEqual({ rows: [{ n: 1 }], truncatedFrom: 250 })
 	})
 })
+
+describe("users and product events", () => {
+	const argsOf = () => {
+		const [request] = requests
+		ok(request !== undefined)
+		return request.body.params
+	}
+
+	it("list_users sends each --property as a user property filter, a bare key as exists", async () => {
+		reply = {
+			status: 200,
+			body: toolResult({ timeRange: TIME_RANGE, users: [], limit: 25, filters: {} }),
+		}
+		await run((mcp) =>
+			RemoteMcp.listUsers(mcp, {
+				range: RANGE,
+				errorsOnly: true,
+				groups: [],
+				properties: ["plan=pro", "beta", "note=a=b"],
+				limit: 25,
+			}),
+		)
+		expect(argsOf()).toEqual({
+			name: "list_users",
+			arguments: {
+				start_time: RANGE.startTime,
+				end_time: RANGE.endTime,
+				has_errors: true,
+				user_property_filters: JSON.stringify([
+					{ key: "plan", value: "pro" },
+					{ key: "beta", mode: "exists" },
+					{ key: "note", value: "a=b" },
+				]),
+				limit: 25,
+			},
+		})
+	})
+
+	it("list_product_events names the tool's parameters", async () => {
+		reply = {
+			status: 200,
+			body: toolResult({ timeRange: TIME_RANGE, events: [], limit: 50, narrowed: true }),
+		}
+		await run((mcp) => RemoteMcp.listProductEvents(mcp, { range: RANGE, kind: "custom", limit: 50 }))
+		expect(argsOf()).toEqual({
+			name: "list_product_events",
+			arguments: { start_time: RANGE.startTime, end_time: RANGE.endTime, kind: "custom", limit: 50 },
+		})
+	})
+})

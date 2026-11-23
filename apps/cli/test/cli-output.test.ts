@@ -15,6 +15,7 @@ import {
 	formatDuration,
 	formatPercent,
 	isEmptyResult,
+	renderFields,
 	utcIso,
 	utcTimestampReplacer,
 } from "../src/lib/output"
@@ -272,5 +273,18 @@ describe("formatDecimal", () => {
 		assert.equal(formatDecimal(0.1234), "0.1234")
 		assert.equal(formatDecimal(1.5), "1.5")
 		assert.equal(formatDecimal(1234.56), "1,234.6")
+	})
+})
+
+describe("telemetry values in tables", () => {
+	it("prints a value's control characters as nothing, so it cannot drive the terminal", () => {
+		const hostile = "pro\u001b[2J\u001b]8;;https://evil.test\u0007x\rhidden"
+		const fields = renderFields([["plan", hostile]])
+		const table = autoTable([{ plan: hostile }], { raw: true })
+		for (const out of [fields, table]) {
+			assert.ok(Str.includes("pro[2J]8;;https://evil.testxhidden")(out))
+			for (const control of ["\u001b[2J", "\u001b]8", "\u0007", "\r"])
+				assert.ok(!Str.includes(control)(out))
+		}
 	})
 })

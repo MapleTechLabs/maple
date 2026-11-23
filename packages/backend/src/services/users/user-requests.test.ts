@@ -848,6 +848,7 @@ describe("users named by their spans and logs", () => {
 				groupName: "",
 				traitKeys: [],
 				traitValues: [],
+				traitsAt: "2026-11-01 08:00:00",
 				country: "",
 				sessions: "1",
 				recordedMs: "0",

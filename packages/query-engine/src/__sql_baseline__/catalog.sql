@@ -4574,6 +4574,30 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
+-- builder:person-properties:personPropertyStatesQuery:user profile  [fb7fd720]
+SELECT
+          person_properties.Id AS id,
+          person_properties.Key AS key,
+          ifNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ), '') AS value,
+          toUInt8(isNull(multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ))) AS cleared,
+          toFloat64(toUnixTimestamp64Milli(greatest(max(SetAt), max(UnsetAt), if(min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC'), min(OnceAt), toDateTime64(0, 9, 'UTC'))))) AS writtenAtMs
+        FROM person_properties
+        WHERE person_properties.OrgId = 'org_sql_catalog'
+          AND person_properties.Kind = 'user'
+          AND person_properties.Id IN ('user_a')
+        GROUP BY id, key
+        ORDER BY id ASC, key ASC
+        LIMIT 5000
+        FORMAT JSON
+
 -- builder:person-properties:personPropertyValuesQuery:group  [5d036a63]
 SELECT
           p.value AS value,
@@ -4761,7 +4785,7 @@ SELECT
         LIMIT 10
         FORMAT JSON
 
--- builder:product-events-explore:productEventsBreakdownQuery:users-by-user-property  [93574133]
+-- builder:product-events-explore:productEventsBreakdownQuery:users-by-user-property  [7aa93650]
 SELECT
           coalesce(up.value, '') AS name,
           uniqIf(product_events.UserId, product_events.UserId != '') AS value
@@ -4789,7 +4813,12 @@ SELECT
           AND person_properties.Kind = 'group'
           AND person_properties.Key = 'tier'
         GROUP BY Id
-        HAVING ifNull(multiIf(
+        HAVING multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ) IS NOT NULL
+          AND ifNull(multiIf(
     max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
     min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
     NULL
@@ -5538,7 +5567,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:user-property-filtered  [c88e85c6]
+-- builder:product-events:productEventsFunnelBreakdownQuery:user-property-filtered  [96cacf84]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3]) AS step,
@@ -5612,7 +5641,12 @@ SELECT
           AND person_properties.Kind = 'user'
           AND person_properties.Key = 'role'
         GROUP BY Id
-        HAVING ifNull(multiIf(
+        HAVING multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ) IS NOT NULL
+          AND ifNull(multiIf(
     max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
     min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
     NULL
@@ -5641,7 +5675,12 @@ SELECT
           AND person_properties.Kind = 'group'
           AND person_properties.Key = 'tier'
         GROUP BY Id
-        HAVING ifNull(multiIf(
+        HAVING multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  ) IS NOT NULL
+          AND ifNull(multiIf(
     max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
     min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
     NULL
@@ -12370,7 +12409,7 @@ SELECT
           AND (if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42' AND (traces.SpanAttributes['user.id'] = 'user_42' OR traces.SpanAttributes['enduser.id'] = 'user_42'))
         FORMAT JSON
 
--- builder:users:userReplayProfileQuery:namespaceFiltered  [ce53b2a8]
+-- builder:users:userReplayProfileQuery:namespaceFiltered  [f617eb59]
 SELECT
           argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
           argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
@@ -12380,6 +12419,7 @@ SELECT
           argMax(sessions.groupName, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupName,
           argMax(sessions.traitKeys, sessions.lastActivity) AS traitKeys,
           argMax(sessions.traitValues, sessions.lastActivity) AS traitValues,
+          argMax(sessions.startTime, sessions.lastActivity) AS traitsAt,
           anyIf(sessions.country, sessions.country != '') AS country,
           count() AS sessions,
           toUInt64(sum(sessions.durationMs)) AS recordedMs,

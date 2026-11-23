@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "e56d4fd10ff4a99a7a970048c0b08cc8699e4119e861e6e936c89905bfbcaca8",
+	"id": "0bdada97a16b772474296462810351ecfde840b8048bc0dc9f220c7d5fa5687c",
 	"prevIds": [
 		"c8ee060ec15bb2aa59eabc8589b508e06c6c8790c5ce3bccd45654bb574ccd88"
 	],
@@ -497,17 +497,6 @@
 			"name": "error_fingerprint_candidates",
 			"primaryKey": {
 				"name": "error_fingerprint_candidates_org_id_fingerprint_hash_pk",
-				"columns": [
-					"org_id",
-					"fingerprint_hash"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "error_grouping_keys",
-			"primaryKey": {
-				"name": "error_grouping_keys_org_id_fingerprint_hash_pk",
 				"columns": [
 					"org_id",
 					"fingerprint_hash"
@@ -8439,96 +8428,6 @@
 			"table": "error_fingerprint_candidates",
 			"name": "updated_at",
 			"position": 11,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "org_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "fingerprint_hash",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "grouping_key",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "key_version",
-			"position": 3,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "config_digest",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": "''",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "rule",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "pinned",
-			"position": 6,
-			"type": "boolean",
-			"notNull": true,
-			"default": "false",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "created_at",
-			"position": 7,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "error_grouping_keys",
-			"name": "updated_at",
-			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20837,8 +20736,18 @@
 		{
 			"kind": "column",
 			"table": "vcs_installations",
-			"name": "repository_discovery",
+			"name": "audit_categories",
 			"position": 14,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'{}'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vcs_installations",
+			"name": "repository_discovery",
+			"position": 15,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -20848,7 +20757,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "installed_by_user_id",
-			"position": 15,
+			"position": 16,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -20858,7 +20767,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "created_at",
-			"position": 16,
+			"position": 17,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20868,7 +20777,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "updated_at",
-			"position": 17,
+			"position": 18,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -22986,18 +22895,6 @@
 			"columns": [
 				"\"org_id\"",
 				"\"last_seen_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "error_grouping_keys",
-			"name": "error_grouping_keys_key_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"grouping_key\""
 			],
 			"where": null
 		},
