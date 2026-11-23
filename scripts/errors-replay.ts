@@ -23,24 +23,42 @@
  *   GROUP BY serviceName, exceptionType, statusMessage, exceptionStacktrace, fingerprintHash
  *   ORDER BY count DESC LIMIT 3 BY fingerprintHash
  *
- * The proposal lives in `./errors-replay/candidate.ts`. Samples hold customer
- * data: keep them out of the repo.
+ * Add `OrgId AS orgId` to sample several orgs.
+ *
+ * Scoring against labelled pairs (`./errors-replay/labels.ts`):
+ *
+ *   bun run errors:replay -- --file s.jsonl --draw pairs.jsonl       # pairs to label, for today
+ *   bun run errors:replay -- --file s.jsonl --changed pairs.jsonl    # pairs the proposal decides differently
+ *   bun run errors:replay -- --file s.jsonl --labels labels.jsonl    # precision, recall, F1: today vs proposal
+ *
+ * A labels file is JSONL of `{ a, b, same }` over the variant ids a pairs file carries.
+ * Label pairs blind: a rater sees two events, never which grouping put them where.
+ *
+ * The proposal lives in `./errors-replay/candidate.ts`. Samples, pairs and labels hold
+ * customer data: keep them out of the repo.
  */
-import { readFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { Schema, Array as Arr, String as Str } from "effect"
 
 import { candidateKey, currentKey, type ReplayEvent } from "./errors-replay/candidate"
+import { drawChangedPairs, drawPairs, Label, renderPair, score, variantId } from "./errors-replay/labels"
 
 const { values } = parseArgs({
 	options: {
 		file: { type: "string", default: new URL("./errors-replay/corpus.jsonl", import.meta.url).pathname },
 		top: { type: "string", default: "12" },
+		draw: { type: "string" },
+		changed: { type: "string" },
+		labels: { type: "string" },
+		pairs: { type: "string", default: "300" },
 	},
 })
 const top = Number(values.top)
+const pairCount = Number(values.pairs)
 
 const Row = Schema.Struct({
+	orgId: Schema.optional(Schema.String),
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
 	statusMessage: Schema.String,
@@ -87,14 +105,25 @@ console.log(`\n${rows.length} sampled variants, ${events.toLocaleString()} event
 console.log(`  issues today      ${currentGroups}`)
 console.log(`  issues proposed   ${candidateGroups}   (${pct(currentGroups, candidateGroups)} fewer)`)
 
-// Parity: the TS mirror should group exactly as the MV hashed. A mismatch means
-// the replay is not measuring production, and its numbers are not to be trusted.
+// Parity: the TS mirror should group exactly as the MV hashed, hash for hash. A
+// mismatch means the replay is not measuring production, and its numbers are not
+// to be trusted. A sample spanning a FINGERPRINT_VERSION deploy mismatches on its
+// older hashes; sample from after the deploy to check parity.
 const hashed = Arr.filter(keyed, (k) => k.row.fingerprintHash !== undefined)
 if (hashed.length > 0) {
-	const hashes = distinct(Arr.map(hashed, (k) => k.row.fingerprintHash ?? ""))
-	const mirrored = distinct(Arr.map(hashed, (k) => k.current))
+	const keysPerHash = Arr.groupBy(hashed, (k) => k.row.fingerprintHash ?? "")
+	const hashesPerKey = Arr.groupBy(hashed, (k) => k.current)
+	const split = Arr.filter(
+		Object.values(keysPerHash),
+		(ks) => distinct(Arr.map(ks, (k) => k.current)) > 1,
+	).length
+	const merged = Arr.filter(
+		Object.values(hashesPerKey),
+		(ks) => distinct(Arr.map(ks, (k) => k.row.fingerprintHash ?? "")) > 1,
+	).length
+	const hashes = Object.keys(keysPerHash).length
 	console.log(
-		`  production hashes ${hashes}   (TS mirror: ${mirrored}${hashes === mirrored ? ", in parity" : ", NOT in parity"})`,
+		`  production hashes ${hashes}   (TS mirror: ${split} split, ${merged} merged${split + merged === 0 ? ", in parity" : ", NOT in parity"})`,
 	)
 }
 
@@ -157,3 +186,58 @@ for (const items of splits.slice(0, top)) {
 	)
 }
 console.log("")
+
+const writePairs = (
+	path: string,
+	pairs: ReadonlyArray<{ readonly why: string } & Parameters<typeof renderPair>[0]>,
+) => {
+	writeFileSync(
+		path,
+		Arr.join(
+			Arr.map(pairs, (p) => JSON.stringify({ why: p.why, ...renderPair(p) })),
+			"\n",
+		) + "\n",
+	)
+	console.log(`Wrote ${pairs.length} pairs to ${path}`)
+}
+if (values.draw !== undefined) {
+	writePairs(
+		values.draw,
+		drawPairs(rows, currentKey, { within: Math.floor(pairCount / 2), across: Math.ceil(pairCount / 2) }),
+	)
+}
+if (values.changed !== undefined)
+	writePairs(values.changed, drawChangedPairs(rows, currentKey, candidateKey, pairCount))
+
+if (values.labels !== undefined) {
+	const labels = Schema.decodeUnknownSync(Schema.Array(Label))(
+		Arr.map(
+			Arr.filter(Str.split("\n")(readFileSync(values.labels, "utf8")), (line) => Str.trim(line) !== ""),
+			(line) => decodeJson(line),
+		),
+	)
+	const byId = new Map(Arr.map(rows, (row): readonly [string, ReplayEvent] => [variantId(row), row]))
+	const fmt = (n: number) => n.toFixed(3)
+	console.log(`Against ${labels.length} labelled pairs\n`)
+	console.log(`                 precision  recall   F1      false merges  false splits`)
+	for (const [name, key] of [
+		["today", currentKey],
+		["proposed", candidateKey],
+	] as const) {
+		const s = score(labels, byId, key)
+		console.log(
+			`  ${Str.padEnd(14)(name)} ${Str.padEnd(10)(fmt(s.precision))} ${Str.padEnd(8)(fmt(s.recall))} ${Str.padEnd(7)(fmt(s.f1))} ${Str.padEnd(13)(String(s.falseMerges))} ${s.falseSplits}   (${s.labelled} pairs in this sample)`,
+		)
+	}
+	const changedUnlabelled = drawChangedPairs(rows, currentKey, candidateKey, 1_000_000).filter((p) => {
+		const a = variantId(p.a)
+		const b = variantId(p.b)
+		return !labels.some((l) => (l.a === a && l.b === b) || (l.a === b && l.b === a))
+	}).length
+	if (changedUnlabelled > 0) {
+		console.log(
+			`\n  ${changedUnlabelled} pairs the proposal decides differently are unlabelled: label them (--changed) before trusting the delta`,
+		)
+	}
+	console.log("")
+}

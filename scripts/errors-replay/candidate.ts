@@ -10,6 +10,8 @@
 import { computeFingerprintInputs } from "../../packages/domain/src/tinybird/fingerprint"
 
 export interface ReplayEvent {
+	/** Keys the grouping like production does; a single-org sample may leave it out. */
+	readonly orgId?: string | undefined
 	readonly serviceName: string
 	readonly exceptionType: string
 	readonly statusMessage: string
@@ -30,7 +32,7 @@ interface KeyInputs {
 }
 
 const key = (event: ReplayEvent, inputs: KeyInputs): string =>
-	[event.serviceName, ...inputs.hashInputs].join("\u0000")
+	[event.orgId ?? "", event.serviceName, ...inputs.hashInputs].join("\u0000")
 
 /** The proposal. No proposal is open, so this is production. */
 const candidateInputs = (event: ReplayEvent): KeyInputs => computeFingerprintInputs(event)
