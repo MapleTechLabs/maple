@@ -2,13 +2,15 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { V2IngestRule } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
 import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { ORG } from "../../kit/alert-test-rows"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { specOf } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LogSample } from "./preview"
+import { type LogSample, recordsOf, runPreview } from "./preview"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -125,6 +127,16 @@ describe("ingest rule editor", () => {
 			expectView(text("order.id")).toExist(),
 			expectView(text("WARN (13)")).toExist(),
 		)
+		// The broken line arrives second but is listed first.
+		const model = jsonLogs(fresh("parse-json-logs"))
+		const samples = AsyncData.isSuccess(model.samples)
+			? model.samples.data
+			: { _tag: "logs" as const, rows: [] }
+		const rows = runPreview(specOf(model.draft), recordsOf(samples)).rows
+		expect(Arr.map(rows, (row) => (row._tag === "parsed" ? row.failure : row._tag))).toEqual([
+			"json: not valid JSON",
+			null,
+		])
 	})
 
 	test("a parsed field named like an Object method still shows", () => {
