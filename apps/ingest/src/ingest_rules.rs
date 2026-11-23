@@ -1208,6 +1208,14 @@ impl<'a> Pass<'a> {
         if !rules.parses {
             return;
         }
+        // Parsing has its own budgets; its time does not count against the redaction deadline.
+        let started = Instant::now();
+        self.parse_rules(resource, record);
+        self.budget.deadline += started.elapsed();
+    }
+
+    fn parse_rules(&mut self, resource: &[KeyValue], record: &mut LogRecord) {
+        let rules = self.rules;
         for (index, rule) in rules.rules.iter().enumerate() {
             let CompiledAction::Parse(steps) = &rule.action else {
                 continue;
@@ -2660,9 +2668,9 @@ mod tests {
         apply_logs(&rules, &mut request, &mut stats).expect("within budget");
         let records = &request.resource_logs[0].scope_logs[0].log_records;
         assert_eq!(records.len(), 2);
-        assert_eq!(conformance::from_kvs(&records[0].attributes), json!({"a": 1}).as_object().cloned().unwrap_or_default());
+        assert_eq!(from_kvs(&records[0].attributes), json!({"a": 1}).as_object().cloned().unwrap_or_default());
         assert_eq!(
-            conformance::from_kvs(&records[1].attributes),
+            from_kvs(&records[1].attributes),
             json!({PARSE_ERROR_KEY: "json: not valid JSON"}).as_object().cloned().unwrap_or_default()
         );
         assert_eq!(

@@ -29,11 +29,12 @@ pub(super) const PAYLOAD_SCAN_TIME: Duration = Duration::from_secs(1);
 const JSON_BYTES: usize = 64 * 1024;
 const JSON_DEPTH: usize = 16;
 const JSON_FIELDS: usize = 128;
+/// Keys and values one step may write; more fails and writes none.
+const OUTPUT_BYTES: usize = 64 * 1024;
+const OUTPUT_FAILURE: &str = "writes more than 64 KiB";
 /// Whole numbers within this become ints, as in the TS engine (`Number.isSafeInteger`).
 const MAX_SAFE_INTEGER: i64 = (1 << 53) - 1;
 const GROK_MAX_DEPTH: usize = 8;
-/// What a kvlist value costs the budget per entry visited.
-const KVLIST_ENTRY_COST: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -622,7 +623,7 @@ fn from_json(value: &Value) -> Option<AnyValue> {
 }
 
 /// Flattens kvlist entries into dotted keys, visiting keys in code point order; arrays stay whole.
-fn flatten(entries: &[KeyValue], path: &str, out: &mut Vec<(String, AnyValue)>) {
+fn flatten<'a>(entries: &'a [KeyValue], path: &str, out: &mut Vec<(String, &'a AnyValue)>) {
     let mut sorted: Vec<&KeyValue> = entries.iter().collect();
     sorted.sort_by(|left, right| left.key.cmp(&right.key));
     for kv in sorted {
@@ -636,12 +637,66 @@ fn flatten(entries: &[KeyValue], path: &str, out: &mut Vec<(String, AnyValue)>) 
         };
         match value.value.as_ref() {
             Some(any_value::Value::KvlistValue(list)) => flatten(&list.values, &full, out),
-            _ => out.push((full, value.clone())),
+            _ => out.push((full, value)),
         }
     }
 }
 
-fn run_json(value: &AnyValue, budget: &mut ScanBudget) -> Outcome {
+/// Bytes a written value counts, as `parseOutputSize` in the TS engine: UTF-8 text and keys,
+/// byte arrays as is, 8 per number or bool.
+fn value_size(value: &AnyValue) -> usize {
+    match value.value.as_ref() {
+        None => 0,
+        Some(any_value::Value::StringValue(text)) => text.len(),
+        Some(any_value::Value::BytesValue(bytes)) => bytes.len(),
+        Some(any_value::Value::ArrayValue(array)) => array
+            .values
+            .iter()
+            .map(value_size)
+            .fold(0, usize::saturating_add),
+        Some(any_value::Value::KvlistValue(list)) => list
+            .values
+            .iter()
+            .map(|kv| {
+                kv.key
+                    .len()
+                    .saturating_add(kv.value.as_ref().map_or(0, value_size))
+            })
+            .fold(0, usize::saturating_add),
+        Some(_) => 8,
+    }
+}
+
+/// What a step's fields add up to, keys with their prefix included.
+fn output_size<'a>(prefix: &str, fields: impl Iterator<Item = (&'a str, &'a AnyValue)>) -> usize {
+    fields
+        .map(|(key, value)| {
+            prefix
+                .len()
+                .saturating_add(key.len())
+                .saturating_add(value_size(value))
+        })
+        .fold(0, usize::saturating_add)
+}
+
+/// Charges what would be written and refuses it past `OUTPUT_BYTES`, before anything is copied.
+fn checked_output(
+    prefix: &str,
+    fields: &[(String, &AnyValue)],
+    budget: &mut ScanBudget,
+) -> Option<&'static str> {
+    if fields.len() > JSON_FIELDS {
+        return Some("more than 128 fields");
+    }
+    let size = output_size(
+        prefix,
+        fields.iter().map(|(key, value)| (key.as_str(), *value)),
+    );
+    budget.charge(size);
+    (size > OUTPUT_BYTES).then_some(OUTPUT_FAILURE)
+}
+
+fn run_json(value: &AnyValue, prefix: &str, budget: &mut ScanBudget) -> Outcome {
     let mut fields = Vec::new();
     match value.value.as_ref() {
         Some(any_value::Value::StringValue(text)) => {
@@ -658,26 +713,37 @@ fn run_json(value: &AnyValue, budget: &mut ScanBudget) -> Outcome {
             if !parsed.is_object() {
                 return Outcome::Failed("not an object");
             }
-            if let Some(AnyValue {
+            let Some(AnyValue {
                 value: Some(any_value::Value::KvlistValue(list)),
             }) = from_json(&parsed)
-            {
-                flatten(&list.values, "", &mut fields);
+            else {
+                return Outcome::Failed("not an object");
+            };
+            flatten(&list.values, "", &mut fields);
+            if let Some(reason) = checked_output(prefix, &fields, budget) {
+                return Outcome::Failed(reason);
             }
+            Outcome::Fields(owned(fields))
         }
         Some(any_value::Value::KvlistValue(list)) => {
-            budget.charge(list.values.len().saturating_mul(KVLIST_ENTRY_COST));
             if value_depth(value) > JSON_DEPTH {
                 return Outcome::Failed("nested deeper than 16 levels");
             }
             flatten(&list.values, "", &mut fields);
+            if let Some(reason) = checked_output(prefix, &fields, budget) {
+                return Outcome::Failed(reason);
+            }
+            Outcome::Fields(owned(fields))
         }
-        _ => return Outcome::Failed("source is not text or a map"),
+        _ => Outcome::Failed("source is not text or a map"),
     }
-    if fields.len() > JSON_FIELDS {
-        return Outcome::Failed("more than 128 fields");
-    }
-    Outcome::Fields(fields)
+}
+
+fn owned(fields: Vec<(String, &AnyValue)>) -> Vec<(String, AnyValue)> {
+    fields
+        .into_iter()
+        .map(|(key, value)| (key, value.clone()))
+        .collect()
 }
 
 fn is_int_text(text: &str) -> bool {
@@ -1075,13 +1141,15 @@ pub(super) fn run_steps(
     let mut failure = None;
     for step in steps {
         if budget.spent() {
-            failure.get_or_insert_with(|| "budget: this rule ran out of time on this batch".to_owned());
+            failure.get_or_insert_with(|| {
+                "budget: this rule ran out of time on this batch".to_owned()
+            });
             break;
         }
         let outcome = match source_value(record, step) {
             None => Outcome::Failed("source is missing"),
             Some(value) => match &step.kind {
-                StepKind::Json { .. } => run_json(value, budget),
+                StepKind::Json { prefix } => run_json(value, prefix, budget),
                 StepKind::Pattern { regex, fields, .. } => {
                     run_pattern(regex, fields, value, budget)
                 }
@@ -1106,6 +1174,19 @@ pub(super) fn run_steps(
                     StepKind::Json { prefix } | StepKind::Pattern { prefix, .. } => prefix.as_str(),
                     StepKind::Severity | StepKind::Timestamp(_) => "",
                 };
+                // JSON checked this before copying; regex and grok captures are checked here.
+                if !matches!(step.kind, StepKind::Json { .. }) {
+                    let size = output_size(
+                        prefix,
+                        fields.iter().map(|(key, value)| (key.as_str(), value)),
+                    );
+                    budget.charge(size);
+                    if size > OUTPUT_BYTES {
+                        failure
+                            .get_or_insert_with(|| format!("{}: {OUTPUT_FAILURE}", step.label()));
+                        continue;
+                    }
+                }
                 for (key, value) in fields {
                     let key = format!("{prefix}{key}");
                     if set_attribute(&mut record.attributes, key.clone(), value)

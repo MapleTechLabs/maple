@@ -34,6 +34,7 @@ describe("parse rule validation", () => {
 			[regex("(?<x>[\\W])")],
 			"step 1: inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested [",
 		],
+		[[regex("(?<a>[]\\D])")], "step 1: write a ] at the start of a class as \\]"],
 		[[grok("%{NOPE:x}")], "step 1: unknown grok pattern NOPE"],
 		[[grok("%{WORD}")], "step 1: name at least one field, like %{WORD:method}"],
 		[[grok("%{WORD:x:bool}")], "step 1: field type bool must be int or float"],

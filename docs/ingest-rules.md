@@ -206,6 +206,9 @@ source fails the step.
 | `severity`  | text or number                                              | `severity_number` and `severity_text`                                            |
 | `timestamp` | text or number                                              | `time_unix_nano`                                                                 |
 
+- **Output limit.** A `json`, `regex` or `grok` step writes at most 64 KiB, counting the UTF-8
+  bytes of each key (prefix included) and string, byte arrays as they are, and 8 per number or
+  bool; past it the step fails (`writes more than 64 KiB`) and writes nothing.
 - **Writing attributes.** A written key replaces the first attribute with that key, or is
   appended. Protected keys (`service.name`, `org_id`, `maple_*` stamps) are never written.
 - **JSON.** At most 64 KiB (UTF-8) of text, 16 levels of nesting (objects and arrays) and 128
@@ -238,13 +241,16 @@ source fails the step.
 - **Failures.** A failed step sets the log attribute `maple.parse.error` to
   `<step>: <reason>` (`regex: no match`, `json: not valid JSON`, `timestamp: out of range`, ...).
   Later steps still run and a rule keeps its first failure. The log is always kept.
+- **Conditions.** Drop and redact rules decide whether they apply before parsing, so a redact
+  condition on a parsed attribute never matches; scope the redact rule instead.
 - **Redaction.** A redact rule with the `body` scope (and without `attributes`) also redacts
   the attributes a parse rule wrote from the body, as if they were kvlist entries of the body, so
   a field taken out of the body is masked wherever the body's would be.
 - **Budget.** In the gateway each parse rule may read 256 MiB and spend 250 ms per payload, and
   all parse rules together 1 GiB and 1 s. Past that, the rule stops parsing for the rest of that
   payload and each log it matches gets `maple.parse.error: budget: ...`; the payload is still
-  stored. The TS engine has no budget.
+  stored, and parse time does not count against the payload's 2 second redaction deadline. The
+  TS engine has no budget.
 - **Stats.** A parse rule counts `matched` (logs it ran on) and `parse_failed` (logs where a step
   failed) in `org_ingest_rule_stats`.
 

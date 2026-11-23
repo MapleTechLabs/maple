@@ -36,6 +36,8 @@ export const INGEST_RULE_LIMITS = {
 	jsonDepth: 16,
 	/** A JSON step writes at most this many attributes; more fails and writes none. */
 	jsonFields: 128,
+	/** A step writes at most this many bytes of keys and values (`parseOutputSize`); more fails and writes none. */
+	parseOutputBytes: 64 * 1024,
 } as const
 
 /** Log attribute a failed parse step sets, e.g. `regex: no match`. A rule keeps its first failure. */
@@ -692,6 +694,7 @@ const GROUP_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const parseRegexProblem = (source: string): string | null => {
 	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(source)) return message
 	if (/\\[QEC]/u.test(source)) return "\\Q, \\E and \\C are not supported"
+	if (/(?<!\\)\[\^?\]/u.test(source)) return "write a ] at the start of a class as \\]"
 	if (portableRegexSource(splitRegexFlags(source).source) === null)
 		return "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["
 	if (Option.isNone(compileRe2(source))) return "pattern is not a valid regular expression"

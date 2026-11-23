@@ -106,7 +106,7 @@ const jsonDepth = (text: string): number => {
 			else if (char === '"') inString = false
 		} else if (char === '"') inString = true
 		else if (char === "{" || char === "[") deepest = Math.max(deepest, ++depth)
-		else if (char === "}" || char === "]") depth -= 1
+		else if (char === "}" || char === "]") depth = Math.max(0, depth - 1)
 	}
 	return deepest
 }
@@ -152,6 +152,34 @@ const flatten = (map: AttrMap, path: string, out: Array<readonly [string, AttrVa
 	}
 }
 
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u
+
+const isStrictJson = (json: unknown): boolean => {
+	if (typeof json === "number") return Number.isFinite(json)
+	if (typeof json === "string") return !LONE_SURROGATE.test(json)
+	if (Arr.isArray(json)) return Arr.every(json, isStrictJson)
+	if (typeof json === "object" && json !== null)
+		return Arr.every(
+			Rec.toEntries(json),
+			([key, item]) => !LONE_SURROGATE.test(key) && isStrictJson(item),
+		)
+	return true
+}
+
+/** Bytes a written value counts: UTF-8 text and keys, byte arrays as is, 8 per number or bool. */
+export const parseOutputSize = (value: AttrValue): number => {
+	if (typeof value === "string") return utf8(value).length
+	if (value instanceof Uint8Array) return value.length
+	if (isList(value)) return Arr.reduce(value, 0, (total, item) => total + parseOutputSize(item))
+	if (isMap(value))
+		return Arr.reduce(
+			Rec.toEntries(value),
+			0,
+			(total, [key, item]) => total + utf8(key).length + parseOutputSize(item),
+		)
+	return 8
+}
+
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 type StepResult =
@@ -168,7 +196,8 @@ const runJson = (value: AttrValue): StepResult => {
 		if (utf8(value).length > INGEST_RULE_LIMITS.jsonBytes) return failed("larger than 64 KiB")
 		if (jsonDepth(value) > INGEST_RULE_LIMITS.jsonDepth) return failed("nested deeper than 16 levels")
 		const parsed = decodeJson(value)
-		if (Option.isNone(parsed)) return failed("not valid JSON")
+		// The gateway's parser refuses numbers past f64 and lone surrogates; so does this one.
+		if (Option.isNone(parsed) || !isStrictJson(parsed.value)) return failed("not valid JSON")
 		const json = parsed.value
 		if (typeof json !== "object" || json === null || Arr.isArray(json)) return failed("not an object")
 		const converted = fromJson(json)
@@ -329,7 +358,8 @@ const civilNanos = (civil: Civil): bigint | "range" => {
 		civil.minute * 60 +
 		civil.second -
 		civil.offsetMinutes * 60
-	return seconds < 0 ? "range" : BigInt(seconds) * 1_000_000_000n + civil.nanos
+	const nanos = BigInt(seconds) * 1_000_000_000n + civil.nanos
+	return seconds < 0 || nanos > U64_MAX ? "range" : nanos
 }
 
 /** `-HH:MM`, `+HHMM`, `Z` or nothing at `at`, as minutes east; null when malformed. */
@@ -460,10 +490,17 @@ export const runParse = (
 			case "fields": {
 				const prefix =
 					step._tag === "json" || step._tag === "regex" || step._tag === "grok" ? step.prefix : ""
-				const written = Arr.filter(
-					Arr.map(result.fields, ([key, field]) => [`${prefix}${key}`, field] as const),
-					([key]) => !isProtectedKey(key),
+				const prefixed = Arr.map(result.fields, ([key, field]) => [`${prefix}${key}`, field] as const)
+				const size = Arr.reduce(
+					prefixed,
+					0,
+					(total, [key, field]) => total + utf8(key).length + parseOutputSize(field),
 				)
+				if (size > INGEST_RULE_LIMITS.parseOutputBytes) {
+					failure ??= `${step._tag}: writes more than 64 KiB`
+					break
+				}
+				const written = Arr.filter(prefixed, ([key]) => !isProtectedKey(key))
 				if (written.length === 0) break
 				current = { ...current, attributes: { ...current.attributes, ...Rec.fromEntries(written) } }
 				if (step.source === "body") bodyKeys.push(...Arr.map(written, ([key]) => key))
