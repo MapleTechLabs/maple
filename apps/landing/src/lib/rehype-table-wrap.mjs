@@ -215,3 +215,14 @@ export default function rehypeTableWrap() {
 		wrapTables(tree)
 	}
 }
+
+// The transform reads whole tables and the page's set of tables, so it runs once
+// over a copy of the finished tree and swaps the result in.
+export const tableWrapPlugin = ({ fileURL }) => ({
+	name: "table-wrap",
+	after(root, ctx) {
+		const tree = structuredClone(root)
+		rehypeTableWrap()(tree, { path: fileURL?.pathname })
+		ctx.replaceNode(root, tree)
+	},
+})

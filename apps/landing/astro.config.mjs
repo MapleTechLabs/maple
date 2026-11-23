@@ -4,9 +4,9 @@ import path from "node:path"
 import { defineConfig } from "astro/config"
 import { Schema } from "effect"
 import { transformerNotationDiff, transformerNotationHighlight } from "@shikijs/transformers"
-import { unified } from "@astrojs/markdown-remark"
-import rehypeTableWrap from "./src/lib/rehype-table-wrap.mjs"
-import remarkInstallTabs from "./src/lib/remark-install-tabs.mjs"
+import { satteri } from "@astrojs/markdown-satteri"
+import { tableWrapPlugin } from "./src/lib/rehype-table-wrap.mjs"
+import { installTabsPlugin } from "./src/lib/remark-install-tabs.mjs"
 import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
@@ -109,10 +109,8 @@ export default defineConfig({
 	// silently joining adjacent inline elements across the marketing pages.
 	compressHTML: true,
 	markdown: {
-		// Stay on the remark pipeline: Sätteri doesn't run the Shiki transformers
-		// configured below. Revisit when the transformer story lands there.
-		// MDX inherits these plugins.
-		processor: unified({ remarkPlugins: [remarkInstallTabs], rehypePlugins: [rehypeTableWrap] }),
+		// MDX inherits the processor and its plugins.
+		processor: satteri({ mdastPlugins: [installTabsPlugin], hastPlugins: [tableWrapPlugin] }),
 		shikiConfig: {
 			theme: codeTheme,
 			wrap: true,

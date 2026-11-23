@@ -77,7 +77,12 @@ export function installVariants(source) {
 	}
 }
 
-const el = (tagName, properties, children = []) => ({ type: "element", tagName, properties, children })
+// mdast nodes of an unknown type render as the element named by `data.hName`.
+const el = (tagName, properties, children = []) => ({
+	type: `installTabs-${tagName}`,
+	data: { hName: tagName, hProperties: properties },
+	children,
+})
 
 const terminalIcon = () =>
 	el(
@@ -99,8 +104,6 @@ const terminalIcon = () =>
 		],
 	)
 
-// mdast nodes of an unknown type become the element named by `data.hName`;
-// `hChildren` supplies ready-made hast for the tab rail.
 const tabsNode = (code, { storageKey, variants }) => ({
 	type: "installTabs",
 	data: { hName: "div", hProperties: { className: ["lt", "lt--code"], dataLangTabs: storageKey } },
@@ -110,21 +113,21 @@ const tabsNode = (code, { storageKey, variants }) => ({
 			data: {
 				hName: "div",
 				hProperties: { className: ["lt__rail"], role: "tablist", ariaLabel: "Package manager" },
-				hChildren: variants.map(({ id }, index) =>
-					el(
-						"button",
-						{
-							type: "button",
-							role: "tab",
-							className: ["lt__tab"],
-							dataLangTrigger: id,
-							ariaSelected: index === 0 ? "true" : "false",
-							tabIndex: index === 0 ? 0 : -1,
-						},
-						[terminalIcon(), el("span", {}, [{ type: "text", value: id }])],
-					),
-				),
 			},
+			children: variants.map(({ id }, index) =>
+				el(
+					"button",
+					{
+						type: "button",
+						role: "tab",
+						className: ["lt__tab"],
+						dataLangTrigger: id,
+						ariaSelected: index === 0 ? "true" : "false",
+						tabIndex: index === 0 ? 0 : -1,
+					},
+					[terminalIcon(), el("span", {}, [{ type: "text", value: id }])],
+				),
+			),
 		},
 		{
 			type: "installTabsPanels",
@@ -138,21 +141,13 @@ const tabsNode = (code, { storageKey, variants }) => ({
 	],
 })
 
-export default function remarkInstallTabs() {
-	return (tree, file) => {
-		// Only docs load the tabs script; elsewhere the block stays a block.
-		if (!file.path?.includes("/src/content/docs/")) return
-		const walk = (node) => {
-			if (!Array.isArray(node.children)) return
-			node.children = node.children.map((child) => {
-				if (child.type === "code" && SHELL_LANGS.has(child.lang)) {
-					const install = installVariants(child.value)
-					return install ? tabsNode(child, install) : child
-				}
-				walk(child)
-				return child
-			})
-		}
-		walk(tree)
+// Only docs load the tabs script; elsewhere the block stays a block.
+export const installTabsPlugin = ({ fileURL }) =>
+	fileURL?.pathname.includes("/src/content/docs/") && {
+		name: "install-tabs",
+		code(node, ctx) {
+			if (!SHELL_LANGS.has(node.lang ?? "")) return
+			const install = installVariants(node.value)
+			if (install) ctx.replaceNode(node, tabsNode(node, install))
+		},
 	}
-}
