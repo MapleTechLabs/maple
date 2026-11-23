@@ -11,6 +11,7 @@ import {
 	argvFormat,
 	autoTable,
 	formatByKey,
+	formatDecimal,
 	formatDuration,
 	formatPercent,
 	isEmptyResult,
@@ -260,5 +261,16 @@ describe("failure rendering", () => {
 			),
 			"error: Unrecognized flag: --env in command maple traces\nhint: did you mean --end?",
 		)
+	})
+})
+
+describe("formatDecimal", () => {
+	it("keeps a tiny nonzero value visibly nonzero, and ordinary values and zero as they were", () => {
+		assert.equal(formatDecimal(0.0000123), "1.23e-5")
+		assert.equal(formatDecimal(-0.0000123), "-1.23e-5")
+		assert.equal(formatDecimal(0), "0")
+		assert.equal(formatDecimal(0.1234), "0.1234")
+		assert.equal(formatDecimal(1.5), "1.5")
+		assert.equal(formatDecimal(1234.56), "1,234.6")
 	})
 })

@@ -26,6 +26,7 @@ import {
 } from "@maple/primitives"
 import {
 	AttributeFilter,
+	MetricsFilters,
 	QueryEngineExecuteBatchRequest,
 	QueryEngineExecuteBatchResponse,
 	QueryEngineExecuteRequest,
@@ -2342,6 +2343,73 @@ export class MetricsSummaryResponse extends Schema.Class<MetricsSummaryResponse>
 		}),
 	),
 }) {}
+
+/**
+ * A histogram metric's merged bucket counts per time bucket: the distribution heatmap.
+ * `filters` are the chart's own (its where clause and scope), so a cell counts what the
+ * percentile drawn over it counts.
+ */
+export class MetricDistributionRequest extends Schema.Class<MetricDistributionRequest>(
+	"MetricDistributionRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	filters: MetricsFilters,
+}) {}
+
+export const MetricDistributionRow = Schema.Struct({
+	bucket: Schema.String,
+	/** Null for the lowest explicit bucket, which starts at the lowest observation. */
+	lowerBound: Schema.NullOr(Schema.Number),
+	/** Null for the unbounded last bucket. */
+	upperBound: Schema.NullOr(Schema.Number),
+	count: Schema.Number,
+})
+export type MetricDistributionRow = typeof MetricDistributionRow.Type
+
+export class MetricDistributionResponse extends Schema.Class<MetricDistributionResponse>(
+	"MetricDistributionResponse",
+)({
+	data: Schema.Array(MetricDistributionRow),
+}) {}
+
+/** The exemplars on a metric's datapoints: the traces behind its values, highest per time bucket. */
+export class MetricExemplarsRequest extends Schema.Class<MetricExemplarsRequest>("MetricExemplarsRequest")({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: BucketSeconds,
+	filters: MetricsFilters,
+	/** One heatmap cell: its time bucket and value range, (lower, upper]; a null edge is open. */
+	cell: Schema.optional(
+		Schema.Struct({
+			bucket: TinybirdDateTime,
+			lowerBound: Schema.NullOr(Schema.Finite),
+			upperBound: Schema.NullOr(Schema.Finite),
+		}),
+	),
+	/** Exemplars kept per time bucket, highest value first. */
+	perBucket: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 20 })),
+	),
+	limit: Schema.optional(RowLimit),
+}) {}
+
+export const MetricExemplarRow = Schema.Struct({
+	bucket: Schema.String,
+	timestamp: Schema.String,
+	value: Schema.Number,
+	traceId: Schema.String,
+	spanId: Schema.String,
+	serviceName: Schema.String,
+})
+export type MetricExemplarRow = typeof MetricExemplarRow.Type
+
+export class MetricExemplarsResponse extends Schema.Class<MetricExemplarsResponse>("MetricExemplarsResponse")(
+	{
+		data: Schema.Array(MetricExemplarRow),
+	},
+) {}
 
 export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsRequest")({
 	startTime: TinybirdDateTime,
@@ -4805,6 +4873,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("metricsSummary", "/metrics-summary", {
 			payload: MetricsSummaryRequest,
 			success: MetricsSummaryResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("metricDistribution", "/metric-distribution", {
+			payload: MetricDistributionRequest,
+			success: MetricDistributionResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("metricExemplars", "/metric-exemplars", {
+			payload: MetricExemplarsRequest,
+			success: MetricExemplarsResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

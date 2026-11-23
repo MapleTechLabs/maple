@@ -228,6 +228,7 @@ const ANONYMOUS_TOOLS: ReadonlySet<string> = new Set([
 	"get_error_notification_policy",
 	"get_incident_timeline",
 	"get_instrumentation_recommendations",
+	"get_metric_exemplars",
 	"get_service_top_operations",
 	"get_status_page",
 	"ingest_freshness",

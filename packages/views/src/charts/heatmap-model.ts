@@ -1,4 +1,4 @@
-import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Option, Order, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cellText } from "./series/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
@@ -73,9 +73,20 @@ const EMPTY_MODEL: HeatmapModel = {
 }
 
 /** All-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
-export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapModel => {
+/** ISO columns by the instant they name; `.500Z` sorts after the whole second, not before. */
+const byInstant: Order.Order<string> = Order.mapInput(Order.Number, (iso: string) =>
+	Option.match(DateTime.make(iso), { onNone: () => 0, onSome: DateTime.toEpochMillis }),
+)
+
+export const buildHeatmapModel = (
+	points: ReadonlyArray<HeatmapPoint>,
+	/** Every column in order, empty ones included (a time grid); none of them is pruned. */
+	fullXDomain?: ReadonlyArray<string>,
+): HeatmapModel => {
 	if (points.length === 0) return EMPTY_MODEL
-	const xs = [...new Set(Arr.map(points, (p) => p.x))]
+	// Time columns read left to right whatever order the rows came in.
+	const seenX = [...new Set(Arr.map(points, (p) => p.x))]
+	const xs = Arr.every(seenX, (x) => ISO_RE.test(x)) ? Arr.sort(seenX, byInstant) : seenX
 	const ys = [...new Set(Arr.map(points, (p) => p.y))]
 	const live = Arr.filter(points, (p) => p.value !== 0)
 	const liveX = new Set(Arr.map(live, (p) => p.x))
@@ -83,7 +94,7 @@ export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapM
 	const keptX = Arr.filter(xs, (x) => liveX.has(x))
 	const keptY = Arr.filter(ys, (y) => liveY.has(y))
 	const pruned = keptX.length > 0 && keptY.length > 0
-	const xDomain = pruned ? keptX : xs
+	const xDomain = fullXDomain ?? (pruned ? keptX : xs)
 	const yDomain = [...(pruned ? keptY : ys)].reverse()
 	const slotKey = (x: string, y: string) => `${x}\u0000${y}`
 	const lookup = new Map(Arr.map(points, (point) => [slotKey(point.x, point.y), point.value]))
@@ -102,7 +113,7 @@ export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapM
 		holes: Arr.filter(slots, (slot) => slot.value === null),
 		domain: span > 0 ? [min, max] : [min, min + 1],
 		span,
-		hiddenX: pruned ? xs.length - keptX.length : 0,
+		hiddenX: fullXDomain === undefined && pruned ? xs.length - keptX.length : 0,
 		hiddenY: pruned ? ys.length - keptY.length : 0,
 	}
 }
@@ -169,6 +180,47 @@ const clockLabel = (iso: string, timeZone: string | undefined): string =>
 
 export const shortenYLabel = (raw: string, allIso: boolean, timeZone: string | undefined): string =>
 	allIso ? clockLabel(raw, timeZone) : raw
+
+/** A time cell's tooltip: the day and clock time, to the second when the time has seconds. */
+export const timeTooltipLabel = (iso: string, timeZone: string | undefined): string =>
+	Option.match(DateTime.make(iso), {
+		onNone: () => iso,
+		onSome: (date) => {
+			const ms = DateTime.toEpochMillis(date)
+			const withSeconds = Math.floor(ms / 1000) % 60 !== 0
+			return `${dayLabel(iso, timeZone)} ${new Intl.DateTimeFormat("en-GB", {
+				timeZone,
+				hour: "2-digit",
+				minute: "2-digit",
+				...(withSeconds ? { second: "2-digit" } : undefined),
+				hourCycle: "h23",
+			}).format(ms)}`
+		},
+	})
+
+/** The calendar day of an ISO timestamp in `timeZone`, e.g. `22 Nov`. */
+const dayLabel = (iso: string, timeZone: string | undefined): string =>
+	Option.match(DateTime.make(iso), {
+		onNone: () => "",
+		onSome: (date) =>
+			new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "short" }).format(
+				DateTime.toEpochMillis(date),
+			),
+	})
+
+/**
+ * Time-column labels: `HH:MM` while every column is on one day in `timeZone`, else the day too
+ * (`22 Nov 00:00`), so a 7-day window does not repeat one clock time per day.
+ */
+export const timeColumnLabeler = (
+	columns: ReadonlyArray<string>,
+	timeZone: string | undefined,
+): ((iso: string) => string) => {
+	const days = new Set(Arr.map(columns, (iso) => dayLabel(iso, timeZone)))
+	return days.size > 1
+		? (iso) => `${dayLabel(iso, timeZone)} ${clockLabel(iso, timeZone)}`
+		: (iso) => clockLabel(iso, timeZone)
+}
 
 export const truncateYLabel = (label: string, maxChars: number): string =>
 	label.length <= maxChars ? label : `${Str.slice(0, Math.max(1, maxChars - 1))(label)}…`

@@ -7,6 +7,7 @@ import type {
 	FindSlowTracesOutput,
 	InspectTraceOutput,
 	LogEntry,
+	MetricExemplar,
 	MineLogPatternsOutput,
 	CompareLogPatternsOutput,
 	SearchLogsOutput,
@@ -522,6 +523,39 @@ export interface MetricSeriesOutput {
 		readonly value: number
 	}>
 }
+
+export interface MetricExemplarsOutput {
+	readonly metricName: string
+	readonly metricType: string
+	readonly bucketSeconds: number
+	readonly exemplars: ReadonlyArray<MetricExemplar>
+}
+
+export const metricExemplarsView = (empty: string): View<MetricExemplarsOutput> => ({
+	empty,
+	isEmpty: (d) => d.exemplars.length === 0,
+	table: (d) => [
+		{
+			body: renderFields([
+				["metric", d.metricName],
+				["type", d.metricType],
+				["bucket", `${d.bucketSeconds}s`],
+			]),
+		},
+		{
+			title: "EXEMPLARS",
+			body: renderTable(
+				[
+					{ header: "TIME", cell: (e) => formatTimestamp(e.timestamp) },
+					{ header: "VALUE", cell: (e) => formatDecimal(e.value), align: right },
+					{ header: "SERVICE", cell: (e) => e.serviceName },
+					{ header: "TRACE ID", cell: (e) => e.traceId },
+				],
+				d.exemplars,
+			),
+		},
+	],
+})
 
 export const metricSeriesView = (empty: string): View<MetricSeriesOutput> => ({
 	empty,
