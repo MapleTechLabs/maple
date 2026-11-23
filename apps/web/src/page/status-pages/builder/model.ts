@@ -38,7 +38,7 @@ export const Model = Schema.Struct({
 	isSeeded: Schema.Boolean,
 	name: Schema.String,
 	slug: Schema.String,
-	/** `statusPageOrgKey` of the org: the address is `/s/<org key>/<slug>`. */
+	/** `statusPageOrgKey` of the org, empty until computed: the address is `/s/<org key>/<slug>`. */
 	orgKey: Schema.String,
 	/** An optional custom domain (`status.acme.com`), set right after the page is created. */
 	customDomain: Schema.String,

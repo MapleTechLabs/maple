@@ -16,6 +16,9 @@ import {
 	type V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { Command } from "foldkit"
+import type { CallableTaggedStruct } from "foldkit/schema"
+import { statusPageOrgKey } from "@maple/domain/status-page"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { readAllPages as readAll } from "../../../platform/read-all-pages"
@@ -301,6 +304,17 @@ export const STATUS_PAGE_BASE_URL: string = Str.replace(
 	/\/+$/u,
 	"",
 )(Str.trim(import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? ""))
+
+/** Derives the org's address key (`statusPageOrgKey`, a SHA-256 digest) as a Command, off the update path. */
+export const computeOrgKey = <const Name extends string, const Tag extends string>(
+	name: Name,
+	completed: CallableTaggedStruct<Tag, { readonly orgKey: Schema.String }>,
+) =>
+	Command.define(name, {
+		args: { orgId: Schema.String },
+		messages: [completed],
+		execute: ({ orgId }) => Effect.map(statusPageOrgKey(orgId), (orgKey) => completed({ orgKey })),
+	})
 
 /** The page's path on the status domain: `/s/<org key>/<slug>`, slugs being unique per org. */
 export const publicPath = (orgKey: string, slug: string): string => `/s/${orgKey}/${slug}`

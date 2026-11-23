@@ -1,5 +1,5 @@
 import type { StatusPagePreviewParams } from "@maple/domain/http/v2"
-import { STATUS_PAGE_PRESET_DEFAULTS, statusPageOrgKey } from "@maple/domain/status-page"
+import { STATUS_PAGE_PRESET_DEFAULTS } from "@maple/domain/status-page"
 import { PREVIEW_FIELDS } from "@maple/status-page"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -30,6 +30,7 @@ import {
 	OpenPublicPage,
 	PREVIEW_FIELD_TARGETS,
 	ReadEditorClock,
+	ComputeEditorOrgKey,
 	RevealEditorField,
 	WaitEditorPreview,
 } from "./command"
@@ -262,7 +263,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
 		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
-		orgKey: statusPageOrgKey(context.orgId),
+		orgKey: "",
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
 		brandingDrag: null,
@@ -311,6 +312,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		model: reads.model,
 		commands: [
 			ReadEditorClock(),
+			ComputeEditorOrgKey({ orgId: context.orgId }),
 			FetchEditorSession({ orgId: context.orgId }),
 			...(reads.commands ?? []),
 		],
@@ -549,6 +551,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
 		// The preview's history needs the page too: when the components came first, read it now.
 		CompletedFetchPage: ({ key, result }) => {

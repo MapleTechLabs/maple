@@ -13,6 +13,8 @@ export const Model = Schema.Struct({
 	/** `statusPages.list` with each page's components and open incidents. */
 	pages: KeyedSchema(Schema.Array(StatusPageSummary), LoadFailure),
 	nowMs: Schema.NullOr(Schema.Number),
+	/** `statusPageOrgKey` of the org, empty until computed: the address is `/s/<org key>/<slug>`. */
+	orgKey: Schema.String,
 	grants: Schema.Array(Policy.PermissionName),
 	/** Each row's "..." menu, by page id, created on first use. */
 	rowMenus: Schema.Record(Schema.String, Menu.Model),

@@ -9,7 +9,6 @@ import {
 	normalizeCustomDomain,
 	slugFromName,
 	STATUS_PAGE_PRESET_DEFAULTS,
-	statusPageOrgKey,
 } from "@maple/domain/status-page"
 import { Option, Result, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
@@ -49,6 +48,7 @@ import {
 	FocusBuilderField,
 	SetBuilderCustomDomain,
 	ReadBuilderClock,
+	ComputeBuilderOrgKey,
 	TrackMonitorCreated,
 	TrackPageCreated,
 	WaitBuilderPreview,
@@ -179,7 +179,7 @@ export const init = (route: BuilderRoute, context: PageContext): Return => {
 		isSeeded: false,
 		name: "",
 		slug: "",
-		orgKey: statusPageOrgKey(context.orgId),
+		orgKey: "",
 		customDomain: "",
 		isSlugEdited: false,
 		isNameTouched: false,
@@ -206,6 +206,7 @@ export const init = (route: BuilderRoute, context: PageContext): Return => {
 		model: read.model,
 		commands: [
 			ReadBuilderClock(),
+			ComputeBuilderOrgKey({ orgId: context.orgId }),
 			FetchBuilderSession({ orgId: context.orgId }),
 			...(read.commands ?? []),
 		],
@@ -392,6 +393,7 @@ const submit = (model: Model, mode: SubmitMode): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
 		CompletedFetchSession: (answer) => ({
 			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
 		}),

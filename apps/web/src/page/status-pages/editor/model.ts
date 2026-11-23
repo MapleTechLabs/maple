@@ -187,7 +187,7 @@ export const Model = Schema.Struct({
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
 	publicBaseUrl: Schema.String,
-	/** `statusPageOrgKey` of the org: the address is `/s/<org key>/<slug>`. */
+	/** `statusPageOrgKey` of the org, empty until computed: the address is `/s/<org key>/<slug>`. */
 	orgKey: Schema.String,
 	urlCopy: CopyButton.Model,
 	// Settings

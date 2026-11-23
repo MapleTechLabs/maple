@@ -1,4 +1,3 @@
-import { statusPageOrgKey } from "@maple/domain/status-page"
 import type { StatusPageId } from "@maple/domain"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import { Option, Result, Array as Arr } from "effect"
@@ -24,6 +23,7 @@ import {
 	FetchStatusPages,
 	OpenPageInNewTab,
 	ReadListClock,
+	ComputeListOrgKey,
 } from "./command"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
@@ -48,6 +48,7 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 		{
 			pages: Keyed.idle(),
 			nowMs: null,
+			orgKey: "",
 			grants: [],
 			rowMenus: {},
 			deletingPageId: null,
@@ -59,7 +60,12 @@ export const init = (_route: ListRoute, context: PageContext): Return => {
 	)
 	return {
 		model: read.model,
-		commands: [ReadListClock(), FetchListSession({ orgId: context.orgId }), ...(read.commands ?? [])],
+		commands: [
+			ReadListClock(),
+			ComputeListOrgKey({ orgId: context.orgId }),
+			FetchListSession({ orgId: context.orgId }),
+			...(read.commands ?? []),
+		],
 	}
 }
 
@@ -88,7 +94,7 @@ const liftDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	),
 })
 
-const pickedRowAction = (model: Model, context: PageContext, pageId: StatusPageId, value: string): Return =>
+const pickedRowAction = (model: Model, pageId: StatusPageId, value: string): Return =>
 	Option.match(summaryOf(model, pageId), {
 		onNone: () => ({ model }),
 		onSome: (summary): Return => {
@@ -97,7 +103,7 @@ const pickedRowAction = (model: Model, context: PageContext, pageId: StatusPageI
 					const page = summary.page
 					const link = publicPageLink(
 						page,
-						publicUrl(STATUS_PAGE_BASE_URL, statusPageOrgKey(context.orgId), page.slug),
+						publicUrl(STATUS_PAGE_BASE_URL, model.orgKey, page.slug),
 					)
 					return link._tag === "Open"
 						? { model, commands: [OpenPageInNewTab({ url: link.url })] }
@@ -120,12 +126,7 @@ const pickedRowAction = (model: Model, context: PageContext, pageId: StatusPageI
 		},
 	})
 
-const updateRowMenu = (
-	model: Model,
-	context: PageContext,
-	pageId: StatusPageId,
-	message: Menu.Message,
-): Return => {
+const updateRowMenu = (model: Model, pageId: StatusPageId, message: Menu.Message): Return => {
 	const menuId = rowMenuId(pageId)
 	const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), message)
 	const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }
@@ -133,7 +134,7 @@ const updateRowMenu = (
 		Message.GotRowMenuMessage({ pageId, message: inner }),
 	)
 	if (step.outMessage?._tag !== "SelectedItem") return { model: next, commands }
-	const after = pickedRowAction(next, context, pageId, step.outMessage.value)
+	const after = pickedRowAction(next, pageId, step.outMessage.value)
 	return { ...after, commands: [...commands, ...(after.commands ?? [])] }
 }
 
@@ -176,13 +177,14 @@ const deleted = (model: Model, context: PageContext, result: Result.Result<void,
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		ComputedOrgKey: ({ orgKey }) => ({ model: { ...model, orgKey } }),
 		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchPages: ({ key, result }) => ({
 			model: { ...model, pages: Keyed.accept(model.pages, key, result) },
 			commands: [ReadListClock()],
 		}),
 		ClickedRetry: () => request(model, context, "Supersede"),
-		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, context, pageId, child),
+		GotRowMenuMessage: ({ pageId, message: child }) => updateRowMenu(model, pageId, child),
 		CompletedOpenPage: () => ({ model }),
 		ClickedConfirmDelete: () => confirmDelete(model),
 		CompletedDelete: ({ result }) => deleted(model, context, result),

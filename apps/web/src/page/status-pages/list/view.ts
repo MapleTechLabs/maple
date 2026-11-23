@@ -1,6 +1,6 @@
 import type { StatusPageComponentStatus, StatusPageVisibility } from "@maple/domain"
 import type { V2StatusPageIncident } from "@maple/domain/http/v2"
-import { isStatusPageImageSource, statusPageOrgKey } from "@maple/domain/status-page"
+import { isStatusPageImageSource } from "@maple/domain/status-page"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -542,9 +542,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			body(h, model, {
 				nowMs: model.nowMs ?? 0,
 				timeZone: inputs.context.timeZone,
-				orgKey: statusPageOrgKey(inputs.context.orgId),
+				orgKey: model.orgKey,
 			}),
-			deleteDialog(h, model, statusPageOrgKey(inputs.context.orgId)),
+			deleteDialog(h, model, model.orgKey),
 		],
 	),
 )
