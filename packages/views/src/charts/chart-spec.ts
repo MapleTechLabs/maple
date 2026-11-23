@@ -139,6 +139,8 @@ export const ChartSpec = defineTaggedUnion({
 		colors: Schema.Record(Schema.String, Schema.String),
 		/** Series keys the legend hid: not painted, and not on the y axis. */
 		hidden: Schema.Array(Schema.String),
+		/** Tooltip names by series key, when the key is an identity ("A") rather than text to show. */
+		seriesLabels: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 		fallbackColor: Schema.String,
 		chrome: Schema.Struct({ border: Schema.String, background: Schema.String }),
 		unit: Nullable(Schema.String),

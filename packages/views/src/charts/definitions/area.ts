@@ -86,7 +86,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		Arr.filter(definitions, (definition) => !spec.hidden.includes(definition.chartKey)),
 		(definition) => ({
 			key: definition.chartKey,
-			label: definition.rawKey,
+			label: spec.seriesLabels?.[definition.rawKey] ?? definition.rawKey,
 			color: spec.colors[definition.chartKey] ?? spec.fallbackColor,
 		}),
 	)
