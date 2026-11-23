@@ -155,6 +155,7 @@ export const impactPanel = (h: H, model: Model): ReadonlyArray<Html> => {
 					errorState(h, {
 						failure: error,
 						title: "Couldn't load this rule's counts",
+						onRetry: Message.ClickedRetryImpact(),
 						className: "border-0",
 					}),
 				onData: (stats) => body(h, model, rule, stats),

@@ -268,6 +268,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						model: { ...model, impactWindow: window, impact: AsyncData.Loading() },
 						commands: [FetchImpact({ window })],
 					},
+		ClickedRetryImpact: () =>
+			model.editingId === null
+				? { model }
+				: {
+						model: { ...model, impact: AsyncData.Loading() },
+						commands: [FetchImpact({ window: model.impactWindow })],
+					},
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {
