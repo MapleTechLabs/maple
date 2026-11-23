@@ -40,6 +40,9 @@ const CATEGORY_OF = {
 	deleted_user_global_role: "permission",
 	changed_user_team_role: "permission",
 	deleted_user_team_role: "permission",
+	// Fleet 5's names for the two above.
+	changed_user_fleet_role: "permission",
+	deleted_user_fleet_role: "permission",
 	edited_enroll_secrets: "credential",
 	read_host_disk_encryption_key: "data_access",
 	live_query: "data_access",
@@ -87,7 +90,10 @@ const idAt = (details: Details | undefined, key: string): string | undefined => 
 	return typeof found === "number" && Number.isFinite(found) ? String(found) : textAt(details, key)
 }
 
-/** The thing an activity names, first match wins: a device, a user, a policy, a team, a script, a query. */
+/**
+ * The thing an activity names, first match wins: a device, a user, a policy, a fleet, a script, a
+ * query. Fleet 4 names a fleet by `team_*` (4.82 to 4.96 send both), Fleet 5 by `fleet_*` alone.
+ */
 const TARGETS: ReadonlyArray<{
 	readonly type: string
 	readonly id: ReadonlyArray<string>
@@ -96,7 +102,7 @@ const TARGETS: ReadonlyArray<{
 	{ type: "host", id: ["host_id"], name: ["host_display_name", "host_name", "hostname"] },
 	{ type: "user", id: ["user_id"], name: ["user_name", "user_email"] },
 	{ type: "policy", id: ["policy_id"], name: ["policy_name"] },
-	{ type: "team", id: ["team_id", "fleet_id"], name: ["team_name", "fleet_name"] },
+	{ type: "fleet", id: ["fleet_id", "team_id"], name: ["fleet_name", "team_name"] },
 	{ type: "script", id: ["script_execution_id"], name: ["script_name"] },
 	{ type: "query", id: ["query_id"], name: ["query_name", "name"] },
 	{ type: "label", id: ["label_id"], name: ["label_name"] },

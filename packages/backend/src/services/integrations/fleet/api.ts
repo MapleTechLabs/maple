@@ -67,7 +67,11 @@ const toFleetError = (error: VendorHttp.VendorHttpError): FleetApiError => {
 			return new FleetApiError({ message: "Fleet did not answer in time.", kind: "unreachable" })
 		case "not_found":
 			return new FleetApiError({
-				message: "This address does not serve the Fleet API. Use the URL you open Fleet at.",
+				// A 410 is Fleet saying it removed the endpoint; a 404 is an address that is not Fleet's.
+				message:
+					error.status === 410
+						? `This Fleet version no longer serves a read Maple makes${error.detail === undefined ? "." : `: ${Str.slice(0, 200)(error.detail)}`}`
+						: "This address does not serve the Fleet API. Use the URL you open Fleet at.",
 				kind: "upstream",
 				...status,
 			})
@@ -143,7 +147,7 @@ export type FleetClient = ReturnType<typeof client>
 
 const NullableString = Schema.optionalKey(Schema.NullOr(Schema.String))
 
-/** `GET /me`: the token's user. Team-only users have a null `global_role`. */
+/** `GET /me`: the token's user. A user with roles on single fleets only has a null `global_role`. */
 export const FleetMe = Schema.Struct({
 	user: Schema.Struct({
 		id: Schema.Number,
@@ -217,6 +221,10 @@ export const FleetPolicy = Schema.Struct({
 })
 export type FleetPolicy = typeof FleetPolicy.Type
 
+/** A fleet: a group of devices with its own policies. Fleet called these teams before 4.82. */
+export const FleetGroup = Schema.Struct({ id: Schema.Number, name: Schema.String })
+export type FleetGroup = typeof FleetGroup.Type
+
 export const FleetHost = Schema.Struct({
 	id: Schema.Number,
 	hostname: NullableString,
@@ -258,6 +266,11 @@ export type FleetCve = typeof FleetCve.Type
 
 // Fleet leaves an empty list out of its JSON, so every list here may be missing.
 const PoliciesPage = Schema.Struct({ policies: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetPolicy))) })
+/** Servers before 4.82 answer `teams`; 4.82 to 4.96 answer both keys; Fleet 5 answers `fleets`. */
+const FleetGroupsPage = Schema.Struct({
+	fleets: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetGroup))),
+	teams: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetGroup))),
+})
 const HostsPage = Schema.Struct({ hosts: Schema.optionalKey(Schema.NullOr(Schema.Array(FleetHost))) })
 const HostsCount = Schema.Struct({ count: Schema.Number })
 const SoftwareVersionsPage = Schema.Struct({
@@ -276,13 +289,78 @@ const VulnerabilitiesPage = Schema.Struct({
 	),
 })
 
-/** Every global policy with its passing and failing device counts. */
-export const listGlobalPolicies = (fleet: FleetClient, page: number, perPage: number) =>
-	fleet.json(PoliciesPage, {
-		path: "/global/policies",
-		query: { order_key: "id", page, per_page: perPage },
-		operation: "reading policies",
-	})
+/** Whose policies a read asks for: every device's, one fleet's, or those of devices in no fleet. */
+export type PolicyScope =
+	| { readonly _tag: "Global" }
+	| { readonly _tag: "Unassigned" }
+	| { readonly _tag: "Fleet"; readonly id: number }
+
+/** Fleet's id for the devices in no fleet. */
+const UNASSIGNED_ID = 0
+
+const scopeId = (scope: Exclude<PolicyScope, { readonly _tag: "Global" }>): number =>
+	scope._tag === "Unassigned" ? UNASSIGNED_ID : scope.id
+
+/**
+ * Where a server version keeps its fleets and policies. Fleet 5 reads every scope from `/policies`
+ * and answers 410 on the per-scope paths; Fleet 4 only has those, under `/fleets` from 4.82 and
+ * `/teams` before it.
+ */
+export interface FleetDialect {
+	readonly fleetsPath: string
+	/** The path a scope's policies are read from, and the fleet it is asked for when the path names none. */
+	readonly policies: (scope: PolicyScope) => { readonly path: string; readonly fleetId?: number }
+}
+
+const perScope = (groups: string): FleetDialect => ({
+	fleetsPath: groups,
+	policies: (scope) => ({
+		path: scope._tag === "Global" ? "/global/policies" : `${groups}/${scopeId(scope)}/policies`,
+	}),
+})
+
+const FLEET_5: FleetDialect = {
+	fleetsPath: "/fleets",
+	policies: (scope) =>
+		scope._tag === "Global" ? { path: "/policies" } : { path: "/policies", fleetId: scopeId(scope) },
+}
+const FLEET_4 = perScope("/fleets")
+const FLEET_4_TEAMS = perScope("/teams")
+
+/** The dialect of a server version (`4.95.0`, `5.0.0-rc.1`); one that does not parse is read as the newest. */
+export const fleetDialectOf = (version: string): FleetDialect => {
+	const [, major, minor] = /^v?(\d+)\.(\d+)/.exec(Str.trim(version)) ?? []
+	if (major === undefined || minor === undefined || Number(major) >= 5) return FLEET_5
+	return Number(major) === 4 && Number(minor) >= 82 ? FLEET_4 : FLEET_4_TEAMS
+}
+
+/** One page of a scope's policies with their passing and failing device counts. */
+export const listPolicies = (
+	fleet: FleetClient,
+	dialect: FleetDialect,
+	scope: PolicyScope,
+	page: number,
+	perPage: number,
+) => {
+	const { path, fleetId } = dialect.policies(scope)
+	return fleet
+		.json(PoliciesPage, {
+			path,
+			query: { fleet_id: fleetId, order_key: "id", page, per_page: perPage },
+			operation: "reading policies",
+		})
+		.pipe(Effect.map((answer) => answer.policies ?? []))
+}
+
+/** One page of the server's fleets. Fleet Free has none and answers 402. */
+export const listFleets = (fleet: FleetClient, dialect: FleetDialect, page: number, perPage: number) =>
+	fleet
+		.json(FleetGroupsPage, {
+			path: dialect.fleetsPath,
+			query: { order_key: "id", page, per_page: perPage },
+			operation: "reading fleets",
+		})
+		.pipe(Effect.map((answer) => answer.fleets ?? answer.teams ?? []))
 
 /** A sample of the devices failing one policy. */
 export const listFailingHosts = (fleet: FleetClient, policyId: number, perPage: number) =>

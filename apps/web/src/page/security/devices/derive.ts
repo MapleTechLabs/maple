@@ -32,7 +32,7 @@ export const DEVICE_SOURCE_BRANDS = {
 		credential: "token",
 		noScoresNote: "CVSS scores and known exploited flags need Fleet Premium",
 		noFailingPolicies:
-			"Every enrolled device passes every global policy on your Fleet server. Team policies are not read yet.",
+			"Every enrolled device passes every policy on your Fleet server: the global ones, each fleet's and those for devices in no fleet.",
 	},
 } satisfies Readonly<Record<DeviceSourceKind, DeviceSourceBrand>>
 
@@ -124,6 +124,9 @@ export const moreVulnerabilitiesBySource = (
 /** Known exploited CVEs across every source, counted by the API over all of them, not the listed. */
 export const knownExploitedCount = (sources: ReadonlyArray<DeviceSource>): number =>
 	Arr.reduce(sources, 0, (sum, source) => sum + source.knownExploitedVulnerabilities)
+
+/** Who a policy applies to: its device group as the source names it, or every device. */
+export const appliesToLabel = (policy: DevicePolicyFinding): string => policy.groupName ?? "All devices"
 
 export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length

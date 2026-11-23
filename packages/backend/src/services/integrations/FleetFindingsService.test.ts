@@ -324,6 +324,172 @@ describe("FleetFindingsService", () => {
 		)
 	})
 
+	/** A Premium server as most are set up: a few global policies, most on fleets. */
+	const fleetWithFleets = (version: string) =>
+		makeFakeFleet({
+			version,
+			tier: "premium",
+			hostCount: 4,
+			policies: [
+				{
+					id: 1,
+					name: "No compromised packages",
+					critical: true,
+					failing_host_count: 4,
+					passing_host_count: 0,
+				},
+				{ id: 2, name: "Agent reporting", failing_host_count: 0, passing_host_count: 4 },
+			],
+			fleets: [
+				{ id: 2, name: "Workstations" },
+				{ id: 3, name: "Servers" },
+			],
+			fleetPolicies: {
+				0: [{ id: 8, name: "Enrolled in a fleet", failing_host_count: 1, passing_host_count: 0 }],
+				2: [
+					{
+						id: 4,
+						name: "Disk encrypted",
+						critical: true,
+						failing_host_count: 1,
+						passing_host_count: 1,
+					},
+					{ id: 5, name: "Screen lock on", failing_host_count: 2, passing_host_count: 0 },
+					{ id: 6, name: "OS up to date", failing_host_count: 0, passing_host_count: 2 },
+				],
+				3: [{ id: 7, name: "SSH root login off", failing_host_count: 1, passing_host_count: 0 }],
+			},
+			failingHosts: { 4: [{ id: 12, hostname: "ws-bob" }] },
+		})
+
+	const listedPolicies = Effect.map(devices(), (page) =>
+		Arr.map(page.policies, (policy) => [policy.name, policy.groupName, policy.failingDeviceCount]),
+	)
+
+	const EVERY_SCOPE = [
+		["No compromised packages", null, 4],
+		["Disk encrypted", "Workstations", 1],
+		["Screen lock on", "Workstations", 2],
+		["Enrolled in a fleet", "Unassigned", 1],
+		["SSH root login off", "Servers", 1],
+	]
+
+	// Each version keeps fleets and their policies somewhere else; the fake answers as each does.
+	it.effect.each([
+		["4.62.0", "before fleets were renamed from teams"],
+		["4.95.0", "Fleet 4 with fleets"],
+		["5.0.0", "Fleet 5, which removed the per-scope paths"],
+		["5.0.0-rc.2611231818", "a Fleet 5 release candidate"],
+	] as const)("lists global, fleet and unassigned policies with their fleet on %s (%s)", ([version]) => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets(version)
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.deepStrictEqual(yield* syncDue, {
+					connections: 1,
+					failedConnections: 0,
+					policies: 5,
+					vulnerabilities: 0,
+				})
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+				// A fleet's policy samples its failing devices like a global one.
+				const page = yield* devices()
+				assert.deepStrictEqual(
+					Arr.map(
+						Arr.filter(page.policies, (policy) => policy.name === "Disk encrypted"),
+						(policy) => Arr.map(policy.failingDevices, (device) => device.name),
+					),
+					[["ws-bob"]],
+				)
+			}),
+		)
+	})
+
+	it.effect.each([["4.62.0"], ["4.95.0"], ["5.0.0"]] as const)(
+		"reads only global policies on Fleet Free, which has no fleets (%s)",
+		([version]) => {
+			const testDb = createTestDb(trackedDbs)
+			const world = makeFakeFleet({
+				version,
+				policies: [{ id: 1, name: "Firewall on", failing_host_count: 3, passing_host_count: 1 }],
+			})
+			return run(
+				testDb,
+				world,
+				Effect.gen(function* () {
+					yield* connect
+					assert.strictEqual((yield* syncDue).failedConnections, 0)
+					assert.deepStrictEqual(yield* listedPolicies, [["Firewall on", null, 3]])
+				}),
+			)
+		},
+	)
+
+	it.effect("keeps syncing when the server is upgraded to Fleet 5, and shows its new version", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("4.95.0")
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+
+				// Fleet 5 answers 410 on every path the 4.95 read used.
+				world.version = "5.0.0"
+				world.fleetPolicies = { ...world.fleetPolicies, 3: [] }
+				yield* TestClock.adjust(HOUR_MS)
+				assert.strictEqual((yield* syncDue).failedConnections, 0)
+				assert.sameDeepMembers(
+					yield* listedPolicies,
+					Arr.filter(EVERY_SCOPE, ([name]) => name !== "SSH root login off"),
+				)
+				const card = yield* FleetConnectionService.use((service) => service.getStatus(ORG))
+				assert.strictEqual(card.serverVersion, "5.0.0")
+				assert.isNull(card.lastError)
+			}),
+		)
+	})
+
+	it.effect("skips a fleet deleted while its policies were being read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("5.0.0")
+		world.vanishedFleets = [3]
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).failedConnections, 0)
+				assert.sameDeepMembers(
+					yield* listedPolicies,
+					Arr.filter(EVERY_SCOPE, ([name]) => name !== "SSH root login off"),
+				)
+			}),
+		)
+	})
+
+	it.effect("says Fleet removed the endpoint, not that the address is wrong, on a 410", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("5.0.0")
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				world.status = 410
+				yield* syncDue
+				const card = yield* FleetConnectionService.use((service) => service.getStatus(ORG))
+				assert.include(card.lastError ?? "", "no longer serves")
+				assert.notInclude(card.lastError ?? "", "Use the URL you open Fleet at")
+			}),
+		)
+	})
+
 	it.effect("reads every global policy across pages", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeFleet({

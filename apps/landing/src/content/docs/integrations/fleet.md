@@ -17,7 +17,7 @@ Maple only reads. It never runs queries, scripts or device actions, and it never
 
 - You are an admin or engineer in the Maple organization. Connecting, updating the token and disconnecting need one of those roles. Any member can see whether Fleet is connected.
 - A Fleet server Maple can reach over HTTPS from the internet: Fleet's managed cloud, or a self-hosted server with a public address. Maple refuses `http://` addresses and private network addresses, because the token goes with every request.
-- Fleet Free or Fleet Premium. Vulnerability scores (CVSS, EPSS and CISA's known exploited list) come from Fleet Premium; on Fleet Free the Devices page lists the CVEs without them.
+- Fleet 4 or Fleet 5, Free or Premium. Vulnerability scores (CVSS, EPSS and CISA's known exploited list) and fleets come with Fleet Premium; on Fleet Free the Devices page lists the CVEs without scores, and every policy is a global one.
 
 ## 1. Create an API-only user
 
@@ -33,7 +33,7 @@ The command prints the user's API token once. Copy it.
 
 In the Fleet UI instead: **Settings → Users → Add user**, choose **API-only user**, and give it the **Observer** role.
 
-The user needs a global role. A user with roles on single teams only cannot read the activity feed, and Maple refuses its token.
+The user needs a global role. A user with roles on single fleets only cannot read the activity feed, and Maple refuses its token.
 
 ## 2. Connect
 
@@ -49,17 +49,17 @@ The card then shows the organization name, the URL, the server version, the lice
 
 Maple reads Fleet's activity feed every 5 minutes, oldest first, from where the last read stopped. The first read goes back 7 days. A long backlog drains over the following reads, up to about 5,000 activities per read.
 
-Each activity becomes one entry under the Fleet platform, with the Fleet user who acted, what happened, and the device, user, policy, team, script or query it was about.
+Each activity becomes one entry under the Fleet platform, with the Fleet user who acted, what happened, and the device, user, policy, fleet, script or query it was about.
 
-| Category       | Examples                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------- |
-| Authentication | Sign-ins, failed sign-ins (with the address tried and the client IP), MFA prompts                 |
-| Membership     | Users created or deleted, users added through SSO                                                 |
-| Permissions    | Global and team roles changed or removed                                                          |
-| Credentials    | Enroll secrets edited                                                                             |
-| Data access    | A device's disk encryption key read, live queries                                                 |
-| Configuration  | Policies, queries, teams, agent options and automations created, edited or deleted; specs applied |
-| Resources      | Devices locked, unlocked, wiped or deleted; scripts run; software installed                       |
+| Category       | Examples                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| Authentication | Sign-ins, failed sign-ins (with the address tried and the client IP), MFA prompts                  |
+| Membership     | Users created or deleted, users added through SSO                                                  |
+| Permissions    | Global and fleet roles changed or removed                                                          |
+| Credentials    | Enroll secrets edited                                                                              |
+| Data access    | A device's disk encryption key read, live queries                                                  |
+| Configuration  | Policies, queries, fleets, agent options and automations created, edited or deleted; specs applied |
+| Resources      | Devices locked, unlocked, wiped or deleted; scripts run; software installed                        |
 
 Activities Fleet runs on its own (automations) show Fleet as the actor. The audit log is for organization admins, as for every platform. To alert on Fleet activity, for example on any wiped device or a run of failed sign-ins, create a detection from the audit log.
 
@@ -67,7 +67,7 @@ Activities Fleet runs on its own (automations) show Fleet as the actor. The audi
 
 Once an hour Maple reads the server's devices, policies and vulnerable software, and replaces what the Devices page shows. A policy every device passes again, or a CVE no longer installed anywhere, drops off the page at the next read.
 
-- **Failing policies.** Every global policy at least one device fails, critical policies first, with how many devices fail it, its resolution, and up to 20 of the failing devices. Team policies are not read yet.
+- **Failing policies.** Every policy at least one device fails, wherever it is set: on a fleet, on the devices in no fleet (Fleet calls these Unassigned), or globally for every device. Each row names the fleet the policy applies to. Critical policies come first, with how many devices fail each, its resolution, and up to 20 of the failing devices. Fleet recounts a policy's devices about once an hour, so a new policy shows here after its first count.
 - **Vulnerabilities.** One row per CVE across the software versions that carry it, highest score first, with the number of devices and the affected software. Maple reads the 1,000 most installed vulnerable software versions; the page lists up to 500 CVEs.
 
 The Devices page is for engineers and admins, as is the rest of the Security Center.

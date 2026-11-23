@@ -37,6 +37,8 @@ export class DevicePolicyFinding extends Schema.Class<DevicePolicyFinding>("Devi
 	/** The source's own id for the policy. */
 	policyId: Schema.String,
 	name: Schema.String,
+	/** The device group the policy belongs to, as the source names it (a Fleet fleet); null for every device. */
+	groupName: Schema.NullOr(Schema.String),
 	description: Schema.NullOr(Schema.String),
 	resolution: Schema.NullOr(Schema.String),
 	critical: Schema.Boolean,
