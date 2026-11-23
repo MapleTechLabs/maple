@@ -1,4 +1,5 @@
 import { createSatteriMarkdownProcessor } from "@astrojs/markdown-satteri"
+import { transformerNotationDiff } from "@shikijs/transformers"
 import { describe, expect, it } from "vitest"
 import { tableWrapPlugin } from "./rehype-table-wrap.mjs"
 import { installTabsPlugin } from "./remark-install-tabs.mjs"
@@ -45,5 +46,17 @@ describe("Sätteri markdown plugins", () => {
 		expect(blog).toMatch(/<div class="table-wrap"><table>/)
 		expect(docs).toContain('<code class="nw">-y</code>')
 		expect(blog).not.toContain('class="nw"')
+	})
+
+	it("runs the Shiki transformers and folds prompt fences after highlighting", async () => {
+		const processor = await createSatteriMarkdownProcessor({
+			syntaxHighlight: "shiki",
+			shikiConfig: { transformers: [transformerNotationDiff({ matchAlgorithm: "v3" })] },
+			hastPlugins: [tableWrapPlugin],
+		})
+		const markdown = "```ts\nconst a = 1 // [!code ++]\n```\n\n```text\nrun the setup now\n```\n"
+		const { code } = await processor.render(markdown, { fileURL: DOCS })
+		expect(code).toMatch(/class="line diff add"/)
+		expect(code).toMatch(/<pre [^>]*class="[^"]*is-folded/)
 	})
 })
