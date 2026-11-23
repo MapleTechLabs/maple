@@ -861,9 +861,6 @@
     "packages/effect-sdk": {
       "name": "@maple-dev/effect-sdk",
       "version": "0.15.0",
-      "dependencies": {
-        "std-env": "^4.0.0",
-      },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",
         "@maple/browser-session": "workspace:*",

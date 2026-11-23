@@ -63,9 +63,6 @@
 		"typecheck": "tsrs --noEmit",
 		"test": "vitest run"
 	},
-	"dependencies": {
-		"std-env": "^4.0.0"
-	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",
 		"@maple/browser-session": "workspace:*",
