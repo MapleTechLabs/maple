@@ -134,6 +134,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ingest-rule",
+		title: "Ingest rule editor",
+		description:
+			"The ingest rule editor building a parse rule over fixture logs: JSON with severity, grok on access logs, and several steps (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/escalation-editor",
 		title: "Escalation chain editor",
 		description:
@@ -528,6 +536,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Service profiles",
 		description:
 			"The service page's Profiles tab over one hour of checkout-api: the flame chart and the top functions from 31 hand-written stacks; ?state=empty is a service that sent no profiles, ?state=failed a failed read.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/metric-exemplars",
+		title: "Metric exemplars",
+		description:
+			"The metric page for a latency histogram over one hour with a slow dependency at 0:38: exemplar dots on the p95 line, the Exemplars table, ?display=distribution for the bucket heatmap (click a cell to narrow the table); ?state=empty has no exemplars, ?state=failed fails both reads.",
 		kind: "lab",
 		session: "none",
 	},

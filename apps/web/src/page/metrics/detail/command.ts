@@ -9,6 +9,7 @@ import {
 } from "@maple/web-data/warehouse/metrics"
 import { getQueryBuilderBreakdown } from "@maple/web-data/warehouse/query-builder-breakdown"
 import { getQueryBuilderTimeseries } from "@maple/web-data/warehouse/query-builder-timeseries"
+import { getMetricDistribution, getMetricExemplars } from "@maple/web-data/warehouse/metric-detail"
 import { Duration, Effect, Schema, Stream, Array as Arr, String as Str } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Command, Mount } from "foldkit"
@@ -93,6 +94,42 @@ export const FetchTimeseries = Command.define("FetchMetricTimeseries", {
 				(response) => response.data,
 			),
 		).pipe(Effect.map((result) => Message.CompletedFetchTimeseries({ key, result }))),
+})
+
+export const FetchExemplars = Command.define("FetchMetricExemplars", {
+	args: { key: Schema.String, input: DraftInput },
+	messages: [Message.CompletedFetchExemplars],
+	execute: ({ key, input }) =>
+		settled(getMetricExemplars({ data: input })).pipe(
+			Effect.map((result) => Message.CompletedFetchExemplars({ key, result })),
+		),
+})
+
+export const CellInput = Schema.Struct({
+	...DraftInput.fields,
+	cell: Schema.Struct({
+		bucket: Schema.String,
+		lowerBound: Schema.NullOr(Schema.Number),
+		upperBound: Schema.NullOr(Schema.Number),
+	}),
+})
+
+export const FetchCellExemplars = Command.define("FetchMetricCellExemplars", {
+	args: { key: Schema.String, input: CellInput },
+	messages: [Message.CompletedFetchCellExemplars],
+	execute: ({ key, input }) =>
+		settled(getMetricExemplars({ data: input })).pipe(
+			Effect.map((result) => Message.CompletedFetchCellExemplars({ key, result })),
+		),
+})
+
+export const FetchDistribution = Command.define("FetchMetricDistribution", {
+	args: { key: Schema.String, input: DraftInput },
+	messages: [Message.CompletedFetchDistribution],
+	execute: ({ key, input }) =>
+		settled(getMetricDistribution({ data: input })).pipe(
+			Effect.map((result) => Message.CompletedFetchDistribution({ key, result })),
+		),
 })
 
 export const FetchBreakdown = Command.define("FetchMetricBreakdown", {

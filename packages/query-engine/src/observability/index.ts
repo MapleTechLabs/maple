@@ -51,6 +51,12 @@ export { compareOperations, diffOperations } from "./compare-operations"
 export { exploreAttributeKeys, exploreAttributeValues } from "./explore-attributes"
 export { serviceMap } from "./service-map"
 export { findSlowTraces } from "./find-slow-traces"
+export {
+	metricExemplars,
+	type MetricExemplar,
+	type MetricExemplarsInput,
+	type MetricExemplarsResult,
+} from "./metric-exemplars"
 export { topOperations, type TopOperation } from "./top-operations"
 export {
 	searchSessions,

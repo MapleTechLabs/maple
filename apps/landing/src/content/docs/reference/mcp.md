@@ -64,6 +64,7 @@ Tools that take an alert rule, alert destination, dashboard or error issue ID ac
 | `compare_periods`            | read   | Error rate, throughput and P95 across two periods, overall and per service, with regressions flagged  |
 | `explore_attributes`         | read   | Attribute keys and their values for filtering; `source=services` lists environments and commit SHAs   |
 | `list_metrics`               | read   | Custom metrics with type, unit, monotonicity and data volume                                          |
+| `get_metric_exemplars`       | read   | The traces behind a metric's highest values (exemplars), to jump from a spike to `inspect_trace`      |
 | `describe_warehouse_tables`  | read   | Tables and columns available to raw SQL, with sorting keys and notes on units and casing              |
 | `service_deployments`        | read   | Versions (commit SHAs) each service ran, with traffic, error rate and P95 per version                 |
 | `route_usage`                | read   | HTTP endpoints per service with request count, error rate, P95 and first and last seen, up to 90 days |

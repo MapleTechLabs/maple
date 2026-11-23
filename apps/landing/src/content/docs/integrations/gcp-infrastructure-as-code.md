@@ -4,6 +4,7 @@ description: "Connect Google Cloud to Maple from your own infrastructure code: a
 group: "Integrations"
 order: 10
 navLabel: "Google Cloud with Terraform"
+icon: "googlecloud"
 ---
 
 Maple generates the Google Cloud connection as a file for your own repository: `maple.tf` for Terraform's `google` provider, or `maple.ts` for [Alchemy](https://alchemy.run)'s `alchemy/GCP` resources. It creates the same resources as the [setup script](/docs/integrations/gcp) under the same names, so you can review every one before it exists.

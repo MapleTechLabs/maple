@@ -87,6 +87,8 @@ import {
 	ListLogsResponse,
 	GetLogResponse,
 	ListMetricsResponse,
+	MetricDistributionResponse,
+	MetricExemplarsResponse,
 	MetricsSummaryResponse,
 	InfraPresenceResponse,
 	InfraSurfaceLiteral,
@@ -1835,6 +1837,11 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("getLog", serve.rows(Queries.getLog, GetLogResponse))
 				.handle("listMetrics", serve.rows(Queries.listMetrics, ListMetricsResponse))
 				.handle("metricsSummary", serve.rows(Queries.metricsSummary, MetricsSummaryResponse))
+				.handle(
+					"metricDistribution",
+					serve.rows(Queries.metricDistribution, MetricDistributionResponse),
+				)
+				.handle("metricExemplars", serve.rows(Queries.metricExemplars, MetricExemplarsResponse))
 				.handle("infraPresence", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

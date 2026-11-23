@@ -32,17 +32,30 @@ import {
 	SERVICE_KEY,
 } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, TimeseriesRows } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { isHistogramType } from "./exemplars"
+import { displayToggle, distributionBody, exemplarAxis, exemplarChartOverlay } from "./view-exemplars"
 
 type H = HtmlBuilder<Message>
 
 const toChart = (message: Chart.Message) => Message.GotChartMessage({ message })
 const toBreakdownKey = (message: Combobox.Message) => Message.GotBreakdownComboboxMessage({ message })
+
+/** With no breakdown the one series is keyed by its query ("A"); its tooltip names the aggregation. */
+const seriesLabelsOf = (rows: TimeseriesRows, draft: MetricsQueryDraft): Record<string, string> | undefined =>
+	draft.groupBy.length > 0
+		? undefined
+		: Rec.fromEntries(
+				Arr.map(
+					Arr.filter(Rec.keys(rows[0] ?? {}), (key) => key !== "bucket"),
+					(key) => [key, draft.aggregation],
+				),
+			)
 
 const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, timeZone: string): Html =>
 	AsyncData.matchData(model.timeseries.data, {
@@ -60,23 +73,41 @@ const chartBody = (h: H, model: Model, draft: MetricsQueryDraft, unit: string, t
 					])
 				: model.themeColors === null || !isChartRuntimeReady(model.chartRuntime)
 					? chartSkeleton(h, "area")
-					: h.submodel({
-							slotId: "metric-chart",
-							model: model.chart,
-							view: AreaChart.view,
-							toParentMessage: toChart,
-							viewInputs: {
-								chartId: "metric-explorer",
-								data: rows,
-								theme: model.themeColors,
-								unit: chartUnitFromOtel(unit, draft.metricName),
-								timeZone,
-								nowMs: model.nowMs,
-								className: chartFrameClass("fill"),
-								showTooltip: true,
-								legend: draft.groupBy.length > 0 ? "visible" : "hidden",
-							},
-						}),
+					: h.div(
+							[h.Class("relative h-full min-h-0 w-full")],
+							[
+								h.submodel({
+									slotId: "metric-chart",
+									model: model.chart,
+									view: AreaChart.view,
+									toParentMessage: toChart,
+									viewInputs: {
+										chartId: "metric-explorer",
+										data: rows,
+										theme: model.themeColors,
+										unit: chartUnitFromOtel(unit, draft.metricName),
+										timeZone,
+										nowMs: model.nowMs,
+										className: chartFrameClass("fill"),
+										showTooltip: true,
+										legend: draft.groupBy.length > 0 ? "visible" : "hidden",
+										reportPlot: true,
+										seriesLabels: seriesLabelsOf(rows, draft),
+										axis: exemplarAxis(model, draft.aggregation, draft.metricType),
+									},
+								}),
+								// Beside the chart, not in its inputs: the dots' clicks bind to this page,
+								// and the chart fills this box, so the plot geometry lines up as is.
+								exemplarChartOverlay(
+									h,
+									model,
+									draft.aggregation,
+									draft.metricType,
+									chartUnitFromOtel(unit, draft.metricName),
+									timeZone,
+								) ?? h.empty,
+							],
+						),
 	})
 
 /** The cap runs in SQL, so it is flagged only when a grouped result reached it. */
@@ -98,30 +129,42 @@ export const metricChart = (
 ): Html => {
 	// A count of a seconds metric is a number of observations, not a duration.
 	const unit = keepsMetricUnit(draft.aggregation) ? declaredUnit : ""
-	const label = queryLabel(draft)
-	const capped = isCapped(model, draft)
+	const isHistogram = isHistogramType(draft.metricType)
+	const showsDistribution = isHistogram && model.search.display === "distribution"
+	const label = showsDistribution ? `distribution(${draft.metricName})` : queryLabel(draft)
+	const capped = !showsDistribution && isCapped(model, draft)
+	const notes =
+		capped || unit !== ""
+			? hstack(
+					h,
+					{
+						gap: "3",
+						as: "span",
+						className: typographyClass({ size: "xs", tone: "muted" }),
+					},
+					[
+						...(capped ? [h.span([], [`Top ${GROUP_BY_SERIES_LIMIT} series`])] : []),
+						...(unit === "" ? [] : [h.span([], ["unit: ", unit])]),
+					],
+				)
+			: undefined
 	return panel(h, {}, [
 		panelHeader(h, {
 			title: typography(h, { mono: true, attributes: [h.Title(label)] }, [label]),
-			action:
-				capped || unit !== ""
-					? hstack(
-							h,
-							{
-								gap: "3",
-								as: "span",
-								className: typographyClass({ size: "xs", tone: "muted" }),
-							},
-							[
-								...(capped ? [h.span([], [`Top ${GROUP_BY_SERIES_LIMIT} series`])] : []),
-								...(unit === "" ? [] : [h.span([], ["unit: ", unit])]),
-							],
-						)
-					: undefined,
+			action: isHistogram
+				? hstack(h, { gap: "3", align: "center" }, [notes ?? h.empty, displayToggle(h, model)])
+				: notes,
 			divided: false,
 			className: "px-3 pt-2.5",
 		}),
-		h.div([h.Class("h-80 p-3")], [chartBody(h, model, draft, unit, timeZone)]),
+		h.div(
+			[h.Class("h-80 p-3")],
+			[
+				showsDistribution
+					? distributionBody(h, model, chartUnitFromOtel(declaredUnit, draft.metricName), timeZone)
+					: chartBody(h, model, draft, unit, timeZone),
+			],
+		),
 	])
 }
 

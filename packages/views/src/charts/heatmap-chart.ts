@@ -15,6 +15,9 @@ import {
 	formatScalar,
 	ISO_RE,
 	shortenYLabel,
+	timeColumnLabeler,
+	timeTickColumns,
+	timeTooltipLabel,
 	truncateYLabel,
 } from "./heatmap-model"
 import { plotFrame } from "./plot-frame"
@@ -28,6 +31,10 @@ import { hstack, vstack } from "../ui/stack"
 // The query-builder heatmap. The definition is ./definitions/heatmap.ts.
 
 export interface HeatmapChartInputs {
+	/** Row labels by row key, when keys are identities rather than text to show. */
+	readonly yLabels?: Readonly<Record<string, string>> | undefined
+	/** Every column in order, so empty ones (quiet minutes) keep their place. */
+	readonly xDomain?: ReadonlyArray<string> | undefined
 	readonly chartId: string
 	readonly data: ReadonlyArray<Record<string, unknown>>
 	readonly theme: ThemeColors
@@ -148,6 +155,7 @@ const tooltipBody = (
 	h: H,
 	tooltip: ChartTooltip,
 	colorAt: (value: number) => string,
+	labelX: (x: string) => string,
 	label: (y: string) => string,
 	unit: string | undefined,
 	portal: Attribute<Message>,
@@ -159,7 +167,7 @@ const tooltipBody = (
 					[h.Class("contents"), portal],
 					[
 						typography(h, { tone: "muted", as: "div" }, [
-							h.span([], [tooltip.x]),
+							h.span([], [labelX(tooltip.x)]),
 							h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 							h.span([], [label(tooltip.y)]),
 						]),
@@ -181,6 +189,14 @@ const tooltipBody = (
 				),
 			)
 
+/** Labels for the ticked columns; the rest stay blank so the axis reads at an even step. */
+const xLabelsOf = (
+	columns: ReadonlyArray<string>,
+	ticked: ReadonlySet<string>,
+	labelX: (x: string) => string,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(Arr.map(columns, (x) => [x, ticked.has(x) ? labelX(x) : ""]))
+
 const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 	hiddenX > 0 || hiddenY > 0
 		? `${Arr.join(
@@ -196,7 +212,7 @@ const footnoteOf = (hiddenX: number, hiddenY: number): string | null =>
 		: null
 
 export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((chart, inputs, h) => {
-	const model = buildHeatmapModel(deriveHeatmapPoints(inputs.data))
+	const model = buildHeatmapModel(deriveHeatmapPoints(inputs.data), inputs.xDomain)
 	if (model.xDomain.length === 0 || model.yDomain.length === 0) return emptyState(h, inputs)
 	const requested = inputs.colorScale ?? DEFAULT_HEATMAP_COLOR_SCALE
 	const palette = isKnownScale(requested) ? requested : "amber"
@@ -204,7 +220,12 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const stops = rampStops(inputs.theme, palette)
 	const colorAt = sequentialColorScale({ stops, domain: model.domain, scaleType })
 	const allYIso = Arr.every(model.yDomain, (value) => ISO_RE.test(value))
-	const label = (y: string) => shortenYLabel(y, allYIso, inputs.timeZone)
+	const label = (y: string) => inputs.yLabels?.[y] ?? shortenYLabel(y, allYIso, inputs.timeZone)
+	const allXIso = Arr.every(model.xDomain, (value) => ISO_RE.test(value))
+	const timeLabel = timeColumnLabeler(model.xDomain, inputs.timeZone)
+	const labelX = (x: string) => (allXIso ? timeLabel(x) : x)
+	// The axis stays compact; the tooltip always says which day (and second) a cell is.
+	const tooltipX = (x: string) => (allXIso ? timeTooltipLabel(x, inputs.timeZone) : x)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)
 	const layout = solveHeatmapLayout({
 		containerW: chart.containerWidth,
@@ -235,6 +256,24 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		yLabels: Rec.fromEntries(
 			Arr.map(model.yDomain, (y) => [y, truncateYLabel(label(y), layout.yLabelChars)]),
 		),
+		// Even ticks need every column in place; a grid with gaps dropped keeps the axis's thinning.
+		...(allXIso && inputs.xDomain !== undefined
+			? {
+					xLabels: xLabelsOf(
+						model.xDomain,
+						timeTickColumns(
+							model.xDomain,
+							chart.containerWidth - layout.gutter - layout.rightInset,
+							labelX,
+							inputs.timeZone,
+						),
+						labelX,
+					),
+					xLabelsSpaced: true,
+				}
+			: allXIso
+				? { xLabels: Rec.fromEntries(Arr.map(model.xDomain, (x) => [x, labelX(x)])) }
+				: undefined),
 		margin: layout.margin,
 		paddingInnerX: layout.paddingInnerX,
 		paddingInnerY: layout.paddingInnerY,
@@ -287,7 +326,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 						}),
 				tooltipBody: (portal) =>
 					Option.flatMap(chart.tooltip, (tooltip) =>
-						tooltipBody(h, tooltip, colorAt, label, inputs.unit, portal),
+						tooltipBody(h, tooltip, colorAt, tooltipX, label, inputs.unit, portal),
 					),
 			}),
 		],

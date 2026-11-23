@@ -3,7 +3,7 @@ import { IngestRuleSpec } from "@maple/domain/ingest-rules"
 import { IngestRuleId, OrgId } from "@maple/primitives"
 
 /**
- * Customer drop/redact rules. The ingest gateway reads the enabled rows per org
+ * Customer drop, redact and parse rules. The ingest gateway reads the enabled rows per org
  * (`apps/ingest`, `fetch_ingest_rules`), so `spec_json` is the contract in
  * `@maple/domain/ingest-rules` and must stay readable by its serde types.
  */
@@ -13,7 +13,7 @@ export const OrgIngestRules = PG.table("org_ingest_rules", {
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		name: PG.text,
 		enabled: PG.column(PG.bool, { default: true }),
-		/** Redact rules run in ascending position; drop rules always run first. */
+		/** Drop rules run first; redact, then parse rules, run in ascending position. */
 		position: PG.column(PG.int4, { default: 0 }),
 		specJson: PG.column(PG.jsonb(IngestRuleSpec), { name: "spec_json" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at", defaultExpr: "now()" }),
@@ -53,6 +53,8 @@ export const OrgIngestRuleStats = PG.table("org_ingest_rule_stats", {
 		dropped: PG.column(PG.int8, { default: 0 }),
 		droppedBytes: PG.column(PG.int8, { name: "dropped_bytes", default: 0 }),
 		redactedValues: PG.column(PG.int8, { name: "redacted_values", default: 0 }),
+		/** Logs a parse rule ran on where a step failed. */
+		parseFailed: PG.column(PG.int8, { name: "parse_failed", default: 0 }),
 	},
 	primaryKey: ["orgId", "ruleId", "bucket", "signal"],
 	indexes: [PG.index("org_ingest_rule_stats_org_bucket_idx", ["orgId", "bucket"])],

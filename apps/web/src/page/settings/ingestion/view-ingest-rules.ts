@@ -24,7 +24,7 @@ import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
 import { denialReason } from "../../kit/session-grants"
-import { detail, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
+import { detail, EFFECT_UNITS, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
 import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
 import { ruleSuggestions } from "./view-rule-suggestions"
@@ -39,6 +39,7 @@ type H = HtmlBuilder<Message>
 const ACTION_BADGE = {
 	drop: { label: "Drop", variant: "warn" },
 	redact: { label: "Redact", variant: "info" },
+	parse: { label: "Parse", variant: "done" },
 } as const
 
 const DENIAL = denialReason("ingest_rules:manage")
@@ -144,7 +145,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 					floorColor: "var(--input)",
 					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
-					label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per hour`,
+					label: `${rule.name}: ${EFFECT_UNITS[effect]} per hour`,
 				}),
 			]
 		},
@@ -291,7 +292,7 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 			id: "ingestion-rules-heading",
 			title: "Ingest rules",
 			description: [
-				"Drop or redact telemetry before it is stored or billed. Applies to new data only.",
+				"Drop, parse or redact telemetry before it is stored or billed. Applies to new data only.",
 			],
 			padded: false,
 			actions: addRuleButton(h, canManage),
