@@ -88,7 +88,9 @@ export const users = Command.make("users", {
 					},
 				],
 				notes: (data) =>
-					data.nextCursor === undefined ? [] : [`More users: --cursor ${data.nextCursor}`],
+					data.nextCursor === undefined
+						? []
+						: [`More users: rerun with the same flags plus --cursor ${data.nextCursor}`],
 			})
 		}),
 	),
@@ -176,6 +178,23 @@ export const user = Command.make("user", {
 												},
 											],
 											data.issues,
+										),
+									},
+								]),
+						...(data.failedRequests.length === 0
+							? []
+							: [
+									{
+										title: "Failed requests",
+										body: renderTable(
+											[
+												{ header: "AT", cell: (r) => isoOf(r.atMs) },
+												{ header: "SERVICE", cell: (r) => r.service, maxWidth: 24 },
+												{ header: "REQUEST", cell: (r) => r.title, maxWidth: 48 },
+												{ header: "DETAIL", cell: (r) => r.detail, maxWidth: 40 },
+												{ header: "TRACE", cell: (r) => r.traceId ?? "" },
+											],
+											data.failedRequests,
 										),
 									},
 								]),
