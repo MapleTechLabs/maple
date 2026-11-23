@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "c30e8884ece58b715c366eb56e71f468f57d50158ffc256f9a2a8ee69dd9a4fc",
+	"id": "c8ee060ec15bb2aa59eabc8589b508e06c6c8790c5ce3bccd45654bb574ccd88",
 	"prevIds": [
-		"18bf9decd577736078f4f732b294754025bf0e42606a7436faeb9935e1ca4bc7"
+		"b4c514691d9a86798af6d2341b4638780defa46a8b9cb2a660e116e9675e0f31"
 	],
 	"entities": [
 		{
@@ -805,6 +805,16 @@
 			"name": "oauth_connections",
 			"primaryKey": {
 				"name": "oauth_connections_pkey",
+				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "onboarding_agent_runs",
+			"primaryKey": {
+				"name": "onboarding_agent_runs_pkey",
 				"columns": [
 					"id"
 				]
@@ -12685,6 +12695,136 @@
 		},
 		{
 			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "user_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "status",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "stages",
+			"position": 4,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "service_names",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "trace_id",
+			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "handoff_code_hash",
+			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "api_key_id",
+			"position": 8,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "last_reported_at",
+			"position": 9,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "created_at",
+			"position": 10,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "expires_at",
+			"position": 11,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "onboarding_agent_runs",
+			"name": "updated_at",
+			"position": 12,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "oncall_overrides",
 			"name": "id",
 			"position": 0,
@@ -23446,6 +23586,42 @@
 			"method": "btree",
 			"columns": [
 				"\"source_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "onboarding_agent_runs",
+			"name": "onboarding_agent_runs_handoff_code_hash_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"handoff_code_hash\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "onboarding_agent_runs",
+			"name": "onboarding_agent_runs_org_api_key_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"api_key_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "onboarding_agent_runs",
+			"name": "onboarding_agent_runs_org_user_created_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"user_id\"",
+				"\"created_at\""
 			],
 			"where": null
 		},
