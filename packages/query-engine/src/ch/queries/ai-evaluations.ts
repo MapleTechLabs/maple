@@ -41,7 +41,7 @@ export function aiEvaluationsSummaryQuery(opts: AiEvaluationsSummaryOpts = {}) {
 			.select(($) => ({
 				name: $.Name,
 				...measures($),
-				traceCount: CH.uniq($.TraceId),
+				traceCount: CH.uniqIf($.TraceId, $.TraceId.neq("")),
 				sources: CH.groupUniqArray($.Source),
 				annotatorKinds: CH.groupUniqArrayIf(8)($.AnnotatorKind, $.AnnotatorKind.neq("")),
 				lastSeen: CH.toString_(CH.max_($.Timestamp)),
@@ -96,6 +96,10 @@ export interface AiEvaluationScoresOpts {
 	/** Only session-scope scores naming this session. */
 	readonly sessionId?: string
 	readonly verdict?: "pass" | "fail"
+	/** Leaves this verdict out, so a read can be disjoint from one asking for it. */
+	readonly excludeVerdict?: "fail"
+	/** Leaves out session-scope scores that name a session: the session-id read owns those. */
+	readonly excludeNamedSessions?: boolean
 	readonly limit?: number
 }
 
@@ -130,6 +134,8 @@ export function aiEvaluationScoresQuery(opts: AiEvaluationScoresOpts = {}) {
 			...windowConds($),
 			opts.name === undefined ? undefined : $.Name.eq(opts.name),
 			opts.verdict === undefined ? undefined : $.Verdict.eq(opts.verdict),
+			opts.excludeVerdict === undefined ? undefined : $.Verdict.neq(opts.excludeVerdict),
+			opts.excludeNamedSessions === true ? $.Scope.neq("session").or($.SessionId.eq("")) : undefined,
 			traceIds === undefined ? undefined : CH.inList($.TraceId, traceIds),
 			sessionId === undefined ? undefined : $.Scope.eq("session").and($.SessionId.eq(sessionId)),
 		])

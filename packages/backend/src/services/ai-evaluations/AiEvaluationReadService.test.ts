@@ -93,12 +93,16 @@ const answer = (sql: string): Rows => {
 				lastSeen: "2026-11-22 10:00:00.000000000",
 			},
 		]
-	return [
+	const scores = [
 		scoreRow(TRACE_A, "fail"),
 		scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 }),
 		// An offline job's session-scope score: its own trace is in no session, the row names one.
 		scoreRow("2cf7651916cd43dd8448eb211c80319e", "pass", { scope: "session", sessionId: "session-9" }),
 	]
+	// The failures read and the read of everything else, as the warehouse would answer them.
+	if (Str.includes("Verdict = 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict === "fail")
+	if (Str.includes("Verdict != 'fail'")(sql)) return Arr.filter(scores, (row) => row.verdict !== "fail")
+	return scores
 }
 
 describe("AiEvaluationReadService", () => {
@@ -133,11 +137,27 @@ describe("AiEvaluationReadService", () => {
 			expect(result.scores[1]).toMatchObject({ traceId: TRACE_B, value: 0.75 })
 			expect(result.scores[1]?.sessionId).toBeUndefined()
 			expect(result.scores[2]).toMatchObject({ scope: "session", sessionId: "session-9" })
+			expect(result.scores).toHaveLength(3)
 		}).pipe(Effect.provide(layer))
 	})
 
 	it.effect("reads a session's scores by its traces and its session id", () => {
-		const { layer, statements } = layerWith({ llmEvals: true }, (sql) => Effect.succeed(answer(sql)))
+		const { layer, statements } = layerWith({ llmEvals: true }, (sql) =>
+			Effect.succeed(
+				Str.includes("SessionId = 'session-1'")(sql)
+					? [
+							scoreRow(TRACE_A, "pass", {
+								name: "Handoff",
+								scope: "session",
+								sessionId: "session-1",
+							}),
+						]
+					: [
+							scoreRow(TRACE_A, "fail"),
+							scoreRow(TRACE_B, "pass", { scoreValue: 0.75, hasScore: 1 }),
+						],
+			),
+		)
 		return Effect.gen(function* () {
 			const reads = yield* AiEvaluationReadService
 			const result = yield* reads.session(
