@@ -28,6 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import type { H } from "./view-form"
+import { strip } from "@maple/views/ui/rule"
 
 // The saved rule's impact: what the gateway counted it matching, dropping and redacting.
 
@@ -211,7 +212,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 			]),
 		]),
 		...(totals.signals.length > 1
-			? [h.div([h.Class("border-t border-border pt-5")], [signalRows(h, rule, effect, totals)])]
+			? [strip(h, { kind: "section" }, [signalRows(h, rule, effect, totals)])]
 			: []),
 	])
 }
