@@ -478,4 +478,19 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		expect(cell(0.1, 1)).toEqual(["t-low", "t-lower"])
 		expect(cell(1, null)).toEqual(["t-late"])
 	})
+
+	test("a request's candidate names supersede its scalar name, as MetricsFilters documents", () => {
+		const compiled = CH.compileUnsafe(
+			CH.histogramDistributionQuery({ metricType: "histogram", metricNames: [METRIC] }),
+			{
+				orgId: "org_delta",
+				metricName: "some.other.name",
+				bucketSeconds: 60,
+				...window(0, 5 * MINUTE_MS),
+			},
+		)
+		expect(
+			decodeDistribution(db.query(normalizeSqlForClickHouseClient(compiled.sql))).length,
+		).toBeGreaterThan(0)
+	})
 })

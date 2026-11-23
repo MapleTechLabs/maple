@@ -178,6 +178,9 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 				(key) => FetchDistribution({ key, input: scopeInput }),
 			)
 		: { slot: model.distribution, commands: [] }
+	// Another scope is other cells: the pick and its traces belong to the old one. A refresh of
+	// the same scope keeps the key, and the pick.
+	const scopeChanged = distribution.slot.key !== model.distribution.key
 	return {
 		model: {
 			...syncControls(model),
@@ -186,6 +189,7 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 			breakdown: breakdown.slot,
 			exemplars: exemplars.slot,
 			distribution: distribution.slot,
+			...(scopeChanged ? { selectedCell: null, cellExemplars: Keyed.idle() } : undefined),
 		},
 		commands: [
 			...attributeKeys.commands,

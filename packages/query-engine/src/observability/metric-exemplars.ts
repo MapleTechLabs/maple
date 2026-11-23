@@ -66,13 +66,14 @@ export const metricExemplars = Effect.fn("Observability.metricExemplars")(functi
 		"maple.query.service": input.service ?? "all",
 	})
 
+	// One name has a row per (type, service); the exact read takes them all, suggestions only a few.
 	const catalogRows = (match: { readonly exactName: string } | { readonly search: string }) =>
 		executor.compiledQuery(
 			CH.compile(
 				CH.listMetricsQuery({
 					...match,
 					...(input.service === undefined ? undefined : { serviceName: input.service }),
-					limit: 50,
+					limit: "exactName" in match ? 1000 : 50,
 				}),
 				window,
 			),

@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { buildHeatmapModel, timeColumnLabeler } from "./heatmap-model"
+import { buildHeatmapModel, timeColumnLabeler, timeTooltipLabel } from "./heatmap-model"
 
 describe("heatmap time columns", () => {
 	it("read as clock times within one day, and with the day once they span several", () => {
@@ -30,5 +30,18 @@ describe("heatmap time columns", () => {
 		expect(model.xDomain).toEqual(grid)
 		expect(model.holes).toEqual([{ x: grid[1], y: "a", value: null }])
 		expect(model.hiddenX).toBe(0)
+	})
+
+	it("sort time columns by the instant they name, fractions after the whole second", () => {
+		const model = buildHeatmapModel([
+			{ x: "2026-11-22T14:40:00.500Z", y: "a", value: 1 },
+			{ x: "2026-11-22T14:40:00Z", y: "a", value: 1 },
+		])
+		expect(model.xDomain).toEqual(["2026-11-22T14:40:00Z", "2026-11-22T14:40:00.500Z"])
+	})
+
+	it("name the day in the tooltip, and the second when the time has one", () => {
+		expect(timeTooltipLabel("2026-11-22T14:40:00.000Z", "UTC")).toBe("22 Nov 14:40")
+		expect(timeTooltipLabel("2026-11-22T14:40:30.000Z", "UTC")).toBe("22 Nov 14:40:30")
 	})
 })

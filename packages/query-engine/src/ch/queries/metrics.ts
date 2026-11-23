@@ -58,6 +58,8 @@ export type MetricsValueAggregation = Exclude<MetricsMetric, "rate" | "increase"
 
 interface MetricsQueryOpts {
 	metricType: MetricType
+	/** Candidate spellings matched with `MetricName IN (...)`; supersedes the `metricName` param. */
+	metricNames?: readonly string[]
 	serviceName?: string
 	/** Deployment environments to scope to. Empty/undefined means all. */
 	environments?: readonly string[]
@@ -204,7 +206,9 @@ function metricsWhere(
 	start: CH.Expr<DateTime.Utc> = param.dateTime("startTime"),
 ) {
 	return [
-		$.MetricName.eq(param.string("metricName")),
+		opts.metricNames !== undefined && opts.metricNames.length > 0
+			? CH.inList($.MetricName, opts.metricNames)
+			: $.MetricName.eq(param.string("metricName")),
 		$.OrgId.eq(orgIdParam),
 		$.TimeUnix.gte(start),
 		$.TimeUnix.lte(param.dateTime("endTime")),
@@ -810,6 +814,7 @@ function histogramValueExpr(
 export type MetricsFilterOpts = Pick<
 	MetricsTimeseriesOpts,
 	| "metricType"
+	| "metricNames"
 	| "serviceName"
 	| "environments"
 	| "attributeFilters"

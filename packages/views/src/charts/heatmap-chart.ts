@@ -16,6 +16,7 @@ import {
 	ISO_RE,
 	shortenYLabel,
 	timeColumnLabeler,
+	timeTooltipLabel,
 	truncateYLabel,
 } from "./heatmap-model"
 import { plotFrame } from "./plot-frame"
@@ -214,6 +215,8 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const allXIso = Arr.every(model.xDomain, (value) => ISO_RE.test(value))
 	const timeLabel = timeColumnLabeler(model.xDomain, inputs.timeZone)
 	const labelX = (x: string) => (allXIso ? timeLabel(x) : x)
+	// The axis stays compact; the tooltip always says which day (and second) a cell is.
+	const tooltipX = (x: string) => (allXIso ? timeTooltipLabel(x, inputs.timeZone) : x)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)
 	const layout = solveHeatmapLayout({
 		containerW: chart.containerWidth,
@@ -301,7 +304,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 						}),
 				tooltipBody: (portal) =>
 					Option.flatMap(chart.tooltip, (tooltip) =>
-						tooltipBody(h, tooltip, colorAt, labelX, label, inputs.unit, portal),
+						tooltipBody(h, tooltip, colorAt, tooltipX, label, inputs.unit, portal),
 					),
 			}),
 		],

@@ -144,7 +144,7 @@ const answers = (model: PageModel, state: LabState): ReadonlyArray<PageMessage> 
 		? [
 				PageMessage.CompletedFetchCellExemplars({
 					key: model.cellExemplars.key ?? "",
-					result: failedOr(state, cellRows(model.selectedCell)),
+					result: failedOr(state, state === "empty" ? [] : cellRows(model.selectedCell)),
 				}),
 			]
 		: []),

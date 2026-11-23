@@ -13,7 +13,7 @@ import { MountWhereCaret } from "./command"
 import { distributionCells, timeGrid, valueFormat } from "./exemplars"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, update, type Search } from "./update"
+import { init, routeChanged, update, type Search } from "./update"
 import { CaretMessage } from "./where-editor"
 import { view as pageView } from "./view"
 
@@ -199,6 +199,31 @@ describe("metric exemplars and distribution", () => {
 			}),
 		)
 		expect(moved.selectedCell).toBeNull()
+	})
+
+	test("a new where clause drops the pick and its traces; a reload of the same scope keeps them", () => {
+		const shown = loaded("histogram", { display: "distribution" })
+		const picked = step(shown, pick(`${MINUTE_A}\u00001|inf`))
+		const answered = step(
+			picked,
+			Message.CompletedFetchCellExemplars({
+				key: picked.cellExemplars.key ?? "",
+				result: Result.succeed([exemplar(MINUTE_A, 2.5, "trace-slow")]),
+			}),
+		)
+		const narrowed = routeChanged(
+			answered,
+			{ metricName: NAME, search: { display: "distribution", where: 'http.route = "/a"' } },
+			context,
+		).model
+		expect(narrowed.selectedCell).toBeNull()
+		expect(narrowed.cellExemplars.key).toBeNull()
+		const reloaded = routeChanged(
+			answered,
+			{ metricName: NAME, search: { display: "distribution" } },
+			context,
+		).model
+		expect(reloaded.selectedCell).toBe(answered.selectedCell)
 	})
 
 	test("an exemplar dot opens its trace at its span", () => {

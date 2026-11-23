@@ -306,6 +306,7 @@ export const metricsSummary = defineQuery({
 /** The chart's filters as a distribution or exemplar read takes them (no grouping). */
 const metricFilterOpts = (filters: MetricDistributionRequest["filters"]): CH.MetricsFilterOpts => ({
 	metricType: filters.metricType,
+	metricNames: filters.metricNames,
 	serviceName: filters.serviceName,
 	environments: filters.environments,
 	attributeFilters: filters.attributeFilters,

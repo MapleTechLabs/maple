@@ -73,6 +73,11 @@ const EMPTY_MODEL: HeatmapModel = {
 }
 
 /** All-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
+/** ISO columns by the instant they name; `.500Z` sorts after the whole second, not before. */
+const byInstant: Order.Order<string> = Order.mapInput(Order.Number, (iso: string) =>
+	Option.match(DateTime.make(iso), { onNone: () => 0, onSome: DateTime.toEpochMillis }),
+)
+
 export const buildHeatmapModel = (
 	points: ReadonlyArray<HeatmapPoint>,
 	/** Every column in order, empty ones included (a time grid); none of them is pruned. */
@@ -81,7 +86,7 @@ export const buildHeatmapModel = (
 	if (points.length === 0) return EMPTY_MODEL
 	// Time columns read left to right whatever order the rows came in.
 	const seenX = [...new Set(Arr.map(points, (p) => p.x))]
-	const xs = Arr.every(seenX, (x) => ISO_RE.test(x)) ? Arr.sort(seenX, Order.String) : seenX
+	const xs = Arr.every(seenX, (x) => ISO_RE.test(x)) ? Arr.sort(seenX, byInstant) : seenX
 	const ys = [...new Set(Arr.map(points, (p) => p.y))]
 	const live = Arr.filter(points, (p) => p.value !== 0)
 	const liveX = new Set(Arr.map(live, (p) => p.x))
@@ -175,6 +180,23 @@ const clockLabel = (iso: string, timeZone: string | undefined): string =>
 
 export const shortenYLabel = (raw: string, allIso: boolean, timeZone: string | undefined): string =>
 	allIso ? clockLabel(raw, timeZone) : raw
+
+/** A time cell's tooltip: the day and clock time, to the second when the time has seconds. */
+export const timeTooltipLabel = (iso: string, timeZone: string | undefined): string =>
+	Option.match(DateTime.make(iso), {
+		onNone: () => iso,
+		onSome: (date) => {
+			const ms = DateTime.toEpochMillis(date)
+			const withSeconds = Math.floor(ms / 1000) % 60 !== 0
+			return `${dayLabel(iso, timeZone)} ${new Intl.DateTimeFormat("en-GB", {
+				timeZone,
+				hour: "2-digit",
+				minute: "2-digit",
+				...(withSeconds ? { second: "2-digit" } : undefined),
+				hourCycle: "h23",
+			}).format(ms)}`
+		},
+	})
 
 /** The calendar day of an ISO timestamp in `timeZone`, e.g. `22 Nov`. */
 const dayLabel = (iso: string, timeZone: string | undefined): string =>
