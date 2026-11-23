@@ -164,10 +164,11 @@ const PEAKS: ReadonlyArray<{ id: string; seed: number; signals: Record<string, C
 ]
 
 const statsFor = (hours: number): V2IngestRuleStats => {
-	const endHour = Math.floor(END_MS / HOUR)
+	// The window end is exclusive, so the last bucket is the hour before it.
+	const lastHour = Math.floor(END_MS / HOUR) - 1
 	const hourly = Arr.flatMap(PEAKS, (peak) =>
 		Arr.makeBy(hours, (index) => {
-			const hour = endHour - hours + 1 + index
+			const hour = lastHour - hours + 1 + index
 			const by = dayLoad(hour, peak.seed)
 			const cells = Arr.map(Rec.values(peak.signals), (cell) => scale(cell, by))
 			return { id: peak.id, hour, cell: sum(cells) }
@@ -179,7 +180,7 @@ const statsFor = (hours: number): V2IngestRuleStats => {
 			...scale(
 				cell,
 				Arr.reduce(
-					Arr.makeBy(hours, (index) => dayLoad(endHour - index, peak.seed)),
+					Arr.makeBy(hours, (index) => dayLoad(lastHour - index, peak.seed)),
 					0,
 					(a, b) => a + b,
 				),
