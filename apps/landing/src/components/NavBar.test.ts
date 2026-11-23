@@ -144,4 +144,21 @@ describe("NavBar island", () => {
 		const honeycomb = [...document.querySelectorAll("a")].find((a) => a.textContent === "Honeycomb")
 		expect(honeycomb?.getAttribute("href")).toBe("/compare/honeycomb")
 	})
+
+	it("Resources gives each of its six links an icon and a description", async () => {
+		await mount()
+		await openMenu("Resources")
+		const tiles = [...document.querySelectorAll('[data-slot="navigation-menu-link"]')]
+		expect(tiles.map((a) => a.getAttribute("href"))).toEqual([
+			"/guides",
+			"/blog",
+			"/changelog",
+			"/customers",
+			"/roadmap",
+			"/opentelemetry",
+		])
+		expect(tiles.every((a) => a.querySelector("svg") !== null)).toBe(true)
+		const roadmap = tiles.find((a) => a.getAttribute("href") === "/roadmap")
+		expect(roadmap?.textContent).toBe("RoadmapWhat we are building next")
+	})
 })
