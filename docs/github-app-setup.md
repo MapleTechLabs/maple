@@ -104,15 +104,16 @@ On repositories where a Maple admin has switched on the pull request review, Map
 1. Find **Permissions → Repository permissions**.
 2. Set the following, leaving every other permission at **No access**:
 
-| Repository permission | Access level                                                                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Contents**          | **Read-only**, or **Read and write** to allow `@maple fix` commits                                                                                                                          |
-| **Pull requests**     | **Read and write** (reads the diff and posts the review as a comment; approves a pull request only where an admin turned on **Approve low-risk pull requests**, and never requests changes) |
-| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment)                                                     |
-| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                                                                                 |
-| **Actions**           | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                                                                          |
-| **Administration**    | **Read-only** (delivers branch protection, ruleset and code security changes to the Security audit log; without it the audit log still gets members, teams and repositories)                |
-| **Deployments**       | **Read-only** (delivers deploy key changes to the Security audit log; optional)                                                                                                             |
+| Repository permission                                                                                           | Access level                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Contents**                                                                                                    | **Read-only**, or **Read and write** to allow `@maple fix` commits                                                                                                                          |
+| **Pull requests**                                                                                               | **Read and write** (reads the diff and posts the review as a comment; approves a pull request only where an admin turned on **Approve low-risk pull requests**, and never requests changes) |
+| **Checks**                                                                                                      | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment)                                                     |
+| **Metadata**                                                                                                    | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                                                                                 |
+| **Actions**                                                                                                     | **Read-only** (downloads each finished job's log for CI logs; without it CI traces still arrive but carry no logs)                                                                          |
+| **Administration**                                                                                              | **Read-only** (delivers branch protection, ruleset and code security changes to the Security audit log; without it the audit log still gets members, teams and repositories)                |
+| **Deployments**                                                                                                 | **Read-only** (delivers deploy key and deployment changes to the Security audit log; optional)                                                                                              |
+| **Secret scanning alerts**, **Code scanning alerts**, **Dependabot alerts**, **Repository security advisories** | **Read-only** (the Security alerts audit category; optional)                                                                                                                                |
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
@@ -145,6 +146,18 @@ On repositories where a Maple admin has switched on the pull request review, Map
 | **Repository ruleset**              | Audit log: rulesets created, edited or deleted (needs **Administration**).                            |
 | **Deploy key**                      | Audit log: deploy keys added or removed (needs **Deployments**).                                      |
 | **Security and analysis**           | Audit log: code security settings changed (needs **Administration**).                                 |
+| **Pull request review**             | Audit log: pull request approvals and dismissed reviews.                                              |
+| **Release**                         | Audit log: releases published, edited or deleted.                                                     |
+| **Fork**                            | Audit log: repositories forked.                                                                       |
+| **Deployment**                      | Audit log: deployments created (needs **Deployments**).                                               |
+| **Deployment status**               | Audit log: a deployment's outcome (needs **Deployments**).                                            |
+| **Deployment review**               | Audit log: protected environment approvals and rejections (needs **Actions**).                        |
+| **Secret scanning alert**           | Audit log: secret scanning alerts (needs **Secret scanning alerts**).                                 |
+| **Code scanning alert**             | Audit log: code scanning alerts (needs **Code scanning alerts**).                                     |
+| **Dependabot alert**                | Audit log: Dependabot alerts (needs **Dependabot alerts**).                                           |
+| **Repository advisory**             | Audit log: repository security advisories (needs **Repository security advisories**).                 |
+
+> `Push`, `Create`, `Delete` and `Pull request` above also feed the audit log: force pushes, branch and tag deletions and creations, and merges. Each audit category has its own switch on the GitHub source; only its default-on categories are collected until an admin turns more on.
 
 > You do **not** need to (and cannot) subscribe to `installation` or `installation_repositories` here. GitHub always delivers those lifecycle events once the app is installed, and Maple handles them. Maple records each one in the audit log when it knows the installation and the **Audit log** switch is on. The `ping` event GitHub sends on setup, and any other event, is accepted as a no-op.
 
@@ -264,20 +277,21 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 
 ### Permissions
 
-| Permission                  | Access                                                                |
-| --------------------------- | --------------------------------------------------------------------- |
-| Repository → Contents       | Read-only (Read and write to allow `@maple fix`)                      |
-| Repository → Pull requests  | Read and write                                                        |
-| Repository → Checks         | Read and write                                                        |
-| Repository → Metadata       | Read-only (mandatory)                                                 |
-| Repository → Actions        | Read-only (CI job logs)                                               |
-| Repository → Administration | Read-only, optional (audit log: protections, rulesets, code security) |
-| Repository → Deployments    | Read-only, optional (audit log: deploy keys)                          |
-| Organization → Members      | Read-only (connect-time admin check, audit log: members and teams)    |
+| Permission                                                                                                   | Access                                                                |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Repository → Contents                                                                                        | Read-only (Read and write to allow `@maple fix`)                      |
+| Repository → Pull requests                                                                                   | Read and write                                                        |
+| Repository → Checks                                                                                          | Read and write                                                        |
+| Repository → Metadata                                                                                        | Read-only (mandatory)                                                 |
+| Repository → Actions                                                                                         | Read-only (CI job logs)                                               |
+| Repository → Administration                                                                                  | Read-only, optional (audit log: protections, rulesets, code security) |
+| Repository → Deployments                                                                                     | Read-only, optional (audit log: deploy keys, deployments)             |
+| Repository → Secret scanning alerts, Code scanning alerts, Dependabot alerts, Repository security advisories | Read-only, optional (audit log: security alerts)                      |
+| Organization → Members                                                                                       | Read-only (connect-time admin check, audit log: members and teams)    |
 
 ### Subscribed webhook events
 
-`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`, and for the audit log `Organization`, `Member`, `Membership`, `Team`, `Repository`, plus with the optional permissions `Branch protection rule`, `Branch protection configuration`, `Repository ruleset`, `Security and analysis` (Administration) and `Deploy key` (Deployments). (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
+`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`, and for the audit log `Organization`, `Member`, `Membership`, `Team`, `Repository`, `Pull request review`, `Release`, `Fork`, `Deployment review`, plus with the optional permissions `Branch protection rule`, `Branch protection configuration`, `Repository ruleset`, `Security and analysis` (Administration), `Deploy key`, `Deployment`, `Deployment status` (Deployments), and `Secret scanning alert`, `Code scanning alert`, `Dependabot alert`, `Repository advisory` (their alert permissions). (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
 
 ---
 

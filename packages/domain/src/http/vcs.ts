@@ -2,6 +2,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import { PullRequestLinkState } from "./fix-verification"
 import { AuditTrailEventSchema } from "../audit-trail"
+import { GithubAuditCategoryOverrides } from "../github-audit"
 
 import {
 	GitCommitSha,
@@ -73,6 +74,8 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	ciTracesEnabled: Schema.Boolean,
 	/** Whether the installation's audit events go to the Security audit log. On unless the org turned it off. */
 	auditLogEnabled: Schema.Boolean.pipe(Schema.withConstructorDefault(Effect.succeed(true))),
+	/** The audit categories the org changed from their default (`@maple/domain/github-audit`). */
+	auditCategories: GithubAuditCategoryOverrides.pipe(Schema.withConstructorDefault(Effect.succeed({}))),
 	repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery).pipe(
 		Schema.withConstructorDefault(Effect.succeed(null)),
 	),

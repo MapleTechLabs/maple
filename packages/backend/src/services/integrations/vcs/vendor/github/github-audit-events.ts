@@ -1,9 +1,11 @@
 // BOUNDARY-FILE: this module reads unparsed GitHub webhook payloads and narrows them field by field.
 import type { AuditTrailActorType, AuditTrailCategory, AuditTrailEvent } from "@maple/domain/audit-trail"
-import { Array as Arr, Option, Predicate, Record as Rec, Schema } from "effect"
+import type { GithubAuditWebhookEvent } from "@maple/domain/github-audit"
+import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
 
 // A GitHub webhook as an audit trail event: who changed the organization's people, access,
-// repositories and their protections. Events about code and CI are not audit events and stay out.
+// repositories, protections and code, grouped into the categories in `@maple/domain/github-audit`.
+// Of the busy code events only the auditable moments are kept: a force push, a merge, an approval.
 
 type Json = Readonly<Record<string, unknown>>
 
@@ -54,15 +56,79 @@ const installationRepositoriesTarget = (payload: Json, action: string): Target =
 
 /** How one kept webhook reads: what it is about, and what it changed. */
 interface AuditedWebhook {
+	/**
+	 * The action to record, from the payload's own `action` (absent on some events); undefined
+	 * leaves this delivery out. Without it, the payload's action is kept, or `changed`.
+	 */
+	readonly action?: (payload: Json, action: string | undefined) => string | undefined
 	readonly category: (action: string) => AuditTrailCategory
 	readonly target: (payload: Json, action: string) => Target | undefined
 }
 
+/** `refs/heads/main` as a branch named `main`, `refs/tags/v1` as a tag named `v1`. */
+const refTarget = (payload: Json): Target | undefined => {
+	const ref = textAt(payload, "ref")
+	if (ref === undefined) return repositoryTarget(payload)
+	const type = Str.startsWith("refs/tags/")(ref) ? "tag" : "branch"
+	const name = Str.replace(/^refs\/(heads|tags)\//u, "")(ref)
+	return { type, name: withRepository(payload, name) }
+}
+
+/** `create` and `delete` name the ref short (`main`) beside its `ref_type`. */
+const shortRefTarget = (payload: Json): Target | undefined => {
+	const type = textAt(payload, "ref_type") ?? "branch"
+	return { type, name: withRepository(payload, textAt(payload, "ref")) }
+}
+
+const pullRequestTarget = (payload: Json): Target | undefined => {
+	const pr = objectAt(payload, "pull_request")
+	if (pr === undefined) return repositoryTarget(payload)
+	const number = idAt(pr, "number")
+	const repository = textAt(objectAt(payload, "repository"), "full_name")
+	return {
+		type: "pull_request",
+		id: number,
+		name:
+			repository === undefined || number === undefined
+				? textAt(pr, "title")
+				: `${repository}#${number}`,
+	}
+}
+
+/** A scanning or Dependabot alert, named by its repository, what it found, and its number. */
+const alertTarget =
+	(type: string, describe: (alert: Json) => string | undefined) =>
+	(payload: Json): Target | undefined => {
+		const alert = objectAt(payload, "alert")
+		if (alert === undefined) return repositoryTarget(payload)
+		const number = idAt(alert, "number")
+		const what = describe(alert)
+		return {
+			type,
+			id: number,
+			name: withRepository(
+				payload,
+				what === undefined ? `#${number ?? "?"}` : `${what} #${number ?? "?"}`,
+			),
+		}
+	}
+
+const deploymentTarget = (payload: Json): Target | undefined => {
+	const deployment = objectAt(payload, "deployment")
+	const environment =
+		textAt(deployment, "environment") ??
+		textAt(payload, "environment") ??
+		textAt(objectAt(payload, "workflow_run"), "name")
+	return { type: "environment", id: idAt(deployment, "id"), name: withRepository(payload, environment) }
+}
+
+/** The releases worth an audit row: what people see change, not drafts being edited. */
+const RELEASE_ACTIONS: ReadonlySet<string> = new Set(["published", "unpublished", "edited", "deleted"])
+
 /**
- * The webhooks the trail keeps. `installation*` arrive with no subscription; `organization`,
- * `member`, `membership` and `team` ride the Members permission the connect flow already needs;
- * `repository` rides Metadata; the protections, rulesets and code security settings need
- * Administration: read, and deploy keys need Deployments: read.
+ * The webhooks the trail keeps, one per event in the category catalog (a missing or extra one fails
+ * to compile). `installation*` arrive with no subscription; the permissions each category needs are
+ * on the catalog and in `docs/github-app-setup.md`.
  */
 const AUDITED_WEBHOOKS = {
 	installation: {
@@ -190,7 +256,126 @@ const AUDITED_WEBHOOKS = {
 					}
 		},
 	},
-} satisfies Record<string, AuditedWebhook>
+	push: {
+		// Only a push that rewrote the ref's history; an ordinary push is code, not an audit event.
+		action: (payload) => (payload["forced"] === true ? "forced" : undefined),
+		category: () => "resource",
+		target: refTarget,
+	},
+	delete: {
+		action: (payload) => textAt(payload, "ref_type") ?? "branch",
+		category: () => "resource",
+		target: shortRefTarget,
+	},
+	create: {
+		action: (payload) => textAt(payload, "ref_type") ?? "branch",
+		category: () => "resource",
+		target: shortRefTarget,
+	},
+	pull_request: {
+		// A merge is the moment code reaches a branch; opening, syncing and labels are not audit events.
+		action: (payload, action) =>
+			action === "closed" && objectAt(payload, "pull_request")?.["merged"] === true
+				? "merged"
+				: undefined,
+		category: () => "resource",
+		target: pullRequestTarget,
+	},
+	pull_request_review: {
+		action: (payload, action) => {
+			if (action === "dismissed") return "dismissed"
+			return action === "submitted" && textAt(objectAt(payload, "review"), "state") === "approved"
+				? "approved"
+				: undefined
+		},
+		category: () => "permission",
+		target: pullRequestTarget,
+	},
+	release: {
+		action: (_payload, action) =>
+			action !== undefined && RELEASE_ACTIONS.has(action) ? action : undefined,
+		category: () => "resource",
+		target: (payload) => {
+			const release = objectAt(payload, "release")
+			return release === undefined
+				? repositoryTarget(payload)
+				: {
+						type: "release",
+						id: idAt(release, "id"),
+						name: withRepository(payload, textAt(release, "tag_name") ?? textAt(release, "name")),
+					}
+		},
+	},
+	fork: {
+		// A fork copies the code somewhere else: who could read it may have changed.
+		action: () => "created",
+		category: () => "data_access",
+		target: (payload) => {
+			const source = textAt(objectAt(payload, "repository"), "full_name")
+			const forkee = objectAt(payload, "forkee")
+			return {
+				type: "repository",
+				id: idAt(forkee, "id"),
+				name:
+					source === undefined
+						? textAt(forkee, "full_name")
+						: `${source} to ${textAt(forkee, "full_name") ?? "?"}`,
+			}
+		},
+	},
+	deployment: {
+		category: () => "resource",
+		target: deploymentTarget,
+	},
+	deployment_status: {
+		// The outcome is the action: `deployment_status.success`, `.failure`, `.error`.
+		action: (payload) => textAt(objectAt(payload, "deployment_status"), "state"),
+		category: () => "resource",
+		target: deploymentTarget,
+	},
+	deployment_review: {
+		category: () => "permission",
+		target: deploymentTarget,
+	},
+	secret_scanning_alert: {
+		category: () => "credential",
+		target: alertTarget(
+			"secret_scanning_alert",
+			(alert) => textAt(alert, "secret_type_display_name") ?? textAt(alert, "secret_type"),
+		),
+	},
+	code_scanning_alert: {
+		category: () => "other",
+		target: alertTarget("code_scanning_alert", (alert) => {
+			const rule = objectAt(alert, "rule")
+			return textAt(rule, "description") ?? textAt(rule, "id")
+		}),
+	},
+	dependabot_alert: {
+		category: () => "other",
+		target: alertTarget("dependabot_alert", (alert) => {
+			const name = textAt(objectAt(objectAt(alert, "dependency"), "package"), "name")
+			const advisory = textAt(objectAt(alert, "security_advisory"), "ghsa_id")
+			return name === undefined ? advisory : advisory === undefined ? name : `${name} ${advisory}`
+		}),
+	},
+	repository_advisory: {
+		category: () => "other",
+		target: (payload) => {
+			const advisory = objectAt(payload, "repository_advisory")
+			return advisory === undefined
+				? repositoryTarget(payload)
+				: {
+						type: "repository_advisory",
+						id: textAt(advisory, "ghsa_id"),
+						name: withRepository(
+							payload,
+							textAt(advisory, "summary") ?? textAt(advisory, "ghsa_id"),
+						),
+					}
+		},
+	},
+} satisfies { readonly [E in GithubAuditWebhookEvent]: AuditedWebhook }
 
 /** The kept webhook by GitHub's event name; none for one the trail leaves out. */
 const auditedWebhook = (event: string): Option.Option<AuditedWebhook> =>
@@ -238,6 +423,11 @@ const BULKY = [
 	"enterprise",
 	"repositories_added",
 	"repositories_removed",
+	"commits",
+	"head_commit",
+	"pull_request",
+	"forkee",
+	"workflow_run",
 ]
 
 const rawOf = (payload: Json): Json | undefined => {
@@ -264,8 +454,10 @@ export const githubAuditEvent = (input: {
 	if (webhook === undefined || input.deliveryId === undefined) return Option.none()
 	if (!Predicate.isObject(input.payload) || Arr.isArray(input.payload)) return Option.none()
 	const payload: Json = input.payload
+	const sent = textAt(payload, "action")
 	// `security_and_analysis` names no action: the change itself is the event.
-	const action = textAt(payload, "action") ?? "changed"
+	const action = webhook.action === undefined ? (sent ?? "changed") : webhook.action(payload, sent)
+	if (action === undefined) return Option.none()
 	return Option.some({
 		provider: "github",
 		providerEventId: input.deliveryId,

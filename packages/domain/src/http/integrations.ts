@@ -32,6 +32,7 @@ import {
 } from "./vcs"
 
 import { GcpCloudSqlSettings } from "../gcp"
+import { GithubAuditCategoryChanges, GithubAuditCategoryStates } from "../github-audit"
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
@@ -917,6 +918,8 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		ciTracesEnabled: Schema.Boolean,
 		/** Whether organization and repository changes go to the Security audit log. True before the org has connected. */
 		auditLogEnabled: Schema.Boolean,
+		/** Whether each audit category is collected, its default before the org has connected. */
+		auditCategories: GithubAuditCategoryStates,
 		repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery),
 		repositories: Schema.Array(GithubRepoSummary),
 	},
@@ -1000,6 +1003,19 @@ export class GithubSetAuditLogResponse extends Schema.Class<GithubSetAuditLogRes
 	"GithubSetAuditLogResponse",
 )({
 	enabled: Schema.Boolean,
+}) {}
+
+/** Turns the sent audit categories on or off; categories not sent keep their state. */
+export class GithubSetAuditCategoriesRequest extends Schema.Class<GithubSetAuditCategoriesRequest>(
+	"GithubSetAuditCategoriesRequest",
+)({
+	categories: GithubAuditCategoryChanges,
+}) {}
+
+export class GithubSetAuditCategoriesResponse extends Schema.Class<GithubSetAuditCategoriesResponse>(
+	"GithubSetAuditCategoriesResponse",
+)({
+	categories: GithubAuditCategoryStates,
 }) {}
 
 export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
@@ -2204,6 +2220,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.put("githubSetAuditLog", "/github/audit-log", {
 			payload: GithubSetAuditLogRequest,
 			success: GithubSetAuditLogResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Which GitHub audit categories the org collects. Admin only.
+		HttpApiEndpoint.put("githubSetAuditCategories", "/github/audit-categories", {
+			payload: GithubSetAuditCategoriesRequest,
+			success: GithubSetAuditCategoriesResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

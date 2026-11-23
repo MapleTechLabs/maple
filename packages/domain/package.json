@@ -15,6 +15,7 @@
 		"./cloudflare-analytics": "./src/cloudflare-analytics.ts",
 		"./clerk-js-url": "./src/clerk-js-url.ts",
 		"./device-security": "./src/device-security.ts",
+		"./github-audit": "./src/github-audit.ts",
 		"./integration-features": "./src/integration-features.ts",
 		"./cloud-platform": "./src/cloud-platform.ts",
 		"./format": "./src/format.ts",

@@ -6,6 +6,7 @@ import {
 	settingRowFramedStyles,
 	settingRowHeaderStyles,
 	settingRowIconStyles,
+	settingRowLabelSmStyles,
 	settingRowLabelStyles,
 	settingRowLeadStyles,
 	settingRowStyles,
@@ -48,6 +49,8 @@ export interface SettingRowOptions {
 	readonly disabled?: boolean
 	/** Base UI's `data-filled`: the control holds a value (a checked switch). */
 	readonly filled?: boolean
+	/** `sm` for a row nested under another row: its label one step smaller. */
+	readonly size?: "default" | "sm"
 	readonly className?: string
 }
 
@@ -62,7 +65,12 @@ export const settingRow = <M>(
 		...((options.filled ?? false) ? [h.DataAttribute("filled", "")] : []),
 	]
 	const label = h.label(
-		[h.Class(settingRowLabelStyles), ...fieldState, h.For(options.ids.control), h.Id(options.ids.label)],
+		[
+			h.Class(cn(settingRowLabelStyles, options.size === "sm" && settingRowLabelSmStyles)),
+			...fieldState,
+			h.For(options.ids.control),
+			h.Id(options.ids.label),
+		],
 		[options.label],
 	)
 	return h.div(

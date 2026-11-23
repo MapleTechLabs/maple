@@ -94,7 +94,7 @@ export const INTEGRATION_FEATURES = {
 			id: "auditLog",
 			title: "Audit log",
 			summary:
-				"Members, teams, repositories, branch protections, rulesets and deploy keys, as admin-only entries in the Security audit log.",
+				"Members, repositories, protections, force pushes and more, as admin-only entries in the Security audit log. Pick the categories under the switch.",
 			signal: "events",
 			defaultEnabled: true,
 			countsTowardIngest: false,
