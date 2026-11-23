@@ -49,6 +49,12 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Where each trace's spans live in `traces`: one row per (TraceId, ServiceName, 5-minute `Bucket`), with `MinTimestamp`/`MaxTimestamp` of the spans in that bucket. No span data; use it to locate traces, then read `traces`.",
 		"A trace's time range: `SELECT min(MinTimestamp), max(MaxTimestamp) FROM trace_index WHERE OrgId = … AND TraceId = … GROUP BY TraceId`.",
 	],
+	ai_evaluations: [
+		"LLM evaluation scores, one row per score: the OTel `gen_ai.evaluation.result` event from log records and span events. `TraceId`/`SpanId` are the span the score GRADES; join to `ai_trace_index` on them for the model, agent and session.",
+		"`Name` is the evaluator (`gen_ai.evaluation.name`). `ScoreValue` is only meaningful where `HasScore = 1`; `Verdict` is 'pass'/'fail' read from `ScoreLabel`, '' when the label says neither. Pass rate = `countIf(Verdict = 'pass') / countIf(Verdict != '')`.",
+		"`Scope` is 'span', 'trace' or 'session' (session scores carry `SessionId`); `Source` is who wrote it ('otel' unless the emitter set `maple_ai.evaluation.source`); `ErrorType` non-empty means the evaluation itself failed, not the graded call.",
+		"Sorting key: `(OrgId, Name, Timestamp)` with a bloom index on `TraceId`; 90-day TTL, longer than `traces`, so an old score's trace may be gone.",
+	],
 	ai_crawler_requests: [
 		"Server spans whose user agent names an AI crawler (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot, ...), with `Crawler` (display name), `Host`, `Path` (no query string) and `HttpStatus` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['user_agent.original']`, which times out past about two days.",
 		"One row per SPAN: a proxied request has several Server spans in one trace, so count requests as `uniq(TraceId)`, never `count()`.",

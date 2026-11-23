@@ -39,6 +39,9 @@ const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	Datasources.serviceRuntimesHourly._name,
 	// Backfilled by hand in day-sized chunks instead: a replay of 30 days of traces and logs is a CPU burst.
 	Datasources.userActivityHourly._name,
+	// No history to replay: the gateway kept no log `event.name` before it, and a replay of 30 days of
+	// span events would be a CPU burst for the few older scores (migration 0071 backfills nothing either).
+	Datasources.aiEvaluations._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>

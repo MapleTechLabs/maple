@@ -28,6 +28,11 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 */
 	dataSources: DisabledByDefaultFeatureFlag,
 	/**
+	 * Gates LLM evals: the Evals tab under Agent sessions, scores on a session, the score filter
+	 * and the evaluation MCP tools. Internal-only while it is built out.
+	 */
+	llmEvals: DisabledByDefaultFeatureFlag,
+	/**
 	 * Gates the Product analytics page: the nav row, the `/product-analytics` route and the link to
 	 * it from Web analytics. Dashboard funnel and paths widgets are not gated.
 	 */
@@ -44,6 +49,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 		aiAutoTriage: "aiautotriage",
 		cloudSecurity: "cloudsecurity",
 		dataSources: "datasources",
+		llmEvals: "llmevals",
 		productAnalytics: "productanalytics",
 		profiling: "profiling",
 		securityAudit: "securityaudit",
@@ -59,6 +65,7 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	cloudSecurity: false,
 	dataSources: false,
+	llmEvals: false,
 	productAnalytics: false,
 	profiling: false,
 	securityAudit: false,
@@ -73,6 +80,7 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	cloudSecurity: true,
 	dataSources: true,
+	llmEvals: true,
 	productAnalytics: true,
 	profiling: true,
 	securityAudit: true,

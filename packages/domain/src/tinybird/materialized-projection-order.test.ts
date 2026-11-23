@@ -115,6 +115,8 @@ describe("materialized projection order", () => {
 	it("keeps materialized projections aligned with target datasource column order", () => {
 		const targets = [
 			["ai_trace_index", "ai_trace_index_mv"],
+			["ai_evaluations", "ai_evaluations_mv"],
+			["ai_evaluations", "ai_evaluations_span_events_mv"],
 			["service_usage", "service_usage_logs_mv"],
 			["service_usage", "service_usage_traces_mv"],
 			["service_usage", "service_usage_metrics_sum_mv"],
