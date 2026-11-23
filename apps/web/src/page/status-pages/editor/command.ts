@@ -49,6 +49,7 @@ import {
 	setPagePassword,
 	updateIncident,
 	updatePage,
+	computeOrgKey,
 } from "../shared/commands"
 import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { monitorPayloadFor } from "../shared/picker"
@@ -56,6 +57,8 @@ import { Message } from "./message"
 import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadEditorClock = readClock("ReadStatusPageClock", Message.ReadClock)
+
+export const ComputeEditorOrgKey = computeOrgKey("ComputeStatusPageOrgKey", Message.ComputedOrgKey)
 
 export const FetchEditorSession = fetchSessionGrants("FetchStatusPageSession", Message.CompletedFetchSession)
 

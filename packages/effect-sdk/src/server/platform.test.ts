@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { runtime } from "std-env"
 import {
 	derivePlatformAttributes,
 	getAutoPlatformAttributes,
+	platformAttributesFrom,
 	readRuntimeVersion,
 	type PlatformInputs,
 } from "./platform.js"
+import { detectRuntime, envFromRecord, readProcessEnv, type RuntimeGlobals } from "./runtime-detect.js"
 
 const baseInputs = (overrides: Partial<PlatformInputs> = {}): PlatformInputs => ({
 	runtime: "",
@@ -61,7 +62,7 @@ describe("derivePlatformAttributes", () => {
 		expect(attrs["cloud.region"]).toBe("eu-west-1")
 	})
 
-	it("AWS Lambda detection wins over std-env provider", () => {
+	it("AWS Lambda detection wins over the detected provider", () => {
 		// e.g. someone running Lambda inside a CI provider — Lambda is the
 		// runtime that matters for the dashboard.
 		const attrs = derivePlatformAttributes(
@@ -164,6 +165,290 @@ describe("derivePlatformAttributes", () => {
 	})
 })
 
+const nodeProc = { versions: { node: "22.11.0" }, platform: "linux", arch: "x64" }
+const nodeBase = {
+	"maple.runtime": "node",
+	"process.runtime.name": "nodejs",
+	"process.runtime.version": "22.11.0",
+	"os.type": "linux",
+	"host.arch": "amd64",
+}
+const workerd = { navigator: { userAgent: "Cloudflare-Workers" }, process: { versions: { node: "22.0.0" } } }
+
+type DetectCase = readonly [string, RuntimeGlobals, Record<string, string>, Record<string, string>]
+
+// [name, globals, env, every resource attribute expected]
+const cases: ReadonlyArray<DetectCase> = [
+	["plain node", { process: nodeProc }, {}, nodeBase],
+	["no globals at all (browser-like)", {}, {}, {}],
+	[
+		"bun on macOS reports its own version",
+		{
+			Bun: {},
+			process: { versions: { node: "24.3.0", bun: "1.3.2" }, platform: "darwin", arch: "arm64" },
+		},
+		{},
+		{
+			"maple.runtime": "bun",
+			"process.runtime.name": "bun",
+			"process.runtime.version": "1.3.2",
+			"os.type": "darwin",
+			"host.arch": "arm64",
+		},
+	],
+	[
+		"deno deploy",
+		{ Deno: { version: { deno: "2.1.4" } } },
+		{ DENO_DEPLOYMENT_ID: "dpl1", DENO_REGION: "us-east1" },
+		{
+			"maple.runtime": "deno",
+			"maple.provider": "deno-deploy",
+			"process.runtime.name": "deno",
+			"process.runtime.version": "2.1.4",
+			"cloud.provider": "deno",
+			"cloud.platform": "deno_deploy",
+			"cloud.region": "us-east1",
+			"faas.instance": "dpl1",
+		},
+	],
+	[
+		"workerd without a provider variable, node compat version ignored",
+		workerd,
+		{},
+		{
+			"maple.runtime": "workerd",
+			"process.runtime.name": "workerd",
+			"cloud.provider": "cloudflare",
+			"cloud.platform": "cloudflare.workers",
+		},
+	],
+	[
+		"workerd with WORKERS_CI",
+		workerd,
+		{ WORKERS_CI: "1" },
+		{
+			"maple.runtime": "workerd",
+			"maple.provider": "cloudflare_workers",
+			"process.runtime.name": "workerd",
+			"cloud.provider": "cloudflare",
+			"cloud.platform": "cloudflare.workers",
+		},
+	],
+	[
+		"cloudflare pages build",
+		{ process: nodeProc },
+		{ CF_PAGES: "1" },
+		{
+			...nodeBase,
+			"maple.provider": "cloudflare_pages",
+			"cloud.provider": "cloudflare",
+			"cloud.platform": "cloudflare.pages",
+		},
+	],
+	[
+		"vercel edge runtime",
+		{ EdgeRuntime: "edge-runtime", process: { env: {} } },
+		{ VERCEL: "1", VERCEL_REGION: "iad1", VERCEL_DEPLOYMENT_ID: "dpl_abc" },
+		{
+			"maple.runtime": "edge-light",
+			"maple.provider": "vercel",
+			"process.runtime.name": "edge-light",
+			"cloud.provider": "vercel",
+			"cloud.platform": "vercel",
+			"cloud.region": "iad1",
+			"faas.instance": "dpl_abc",
+		},
+	],
+	[
+		"vercel node function detected from VERCEL_ENV",
+		{ process: nodeProc },
+		{ VERCEL_ENV: "production" },
+		{ ...nodeBase, "maple.provider": "vercel", "cloud.provider": "vercel", "cloud.platform": "vercel" },
+	],
+	[
+		"netlify runtime and provider",
+		{ Netlify: {} },
+		{ NETLIFY: "true" },
+		{
+			"maple.runtime": "netlify",
+			"maple.provider": "netlify",
+			"cloud.provider": "netlify",
+			"cloud.platform": "netlify",
+		},
+	],
+	["fastly compute", { fastly: {} }, {}, { "maple.runtime": "fastly", "process.runtime.name": "fastly" }],
+	[
+		"cloud run service",
+		{ process: nodeProc },
+		{ K_SERVICE: "billing", K_REVISION: "billing-00042", CLOUD_RUN_REGION: "europe-west1" },
+		{
+			...nodeBase,
+			"maple.provider": "google_cloudrun",
+			"cloud.provider": "gcp",
+			"cloud.platform": "gcp_cloud_run",
+			"faas.name": "billing",
+			"faas.version": "billing-00042",
+			"cloud.region": "europe-west1",
+		},
+	],
+	[
+		"cloud run job",
+		{ process: nodeProc },
+		{ CLOUD_RUN_JOB: "nightly" },
+		{
+			...nodeBase,
+			"maple.provider": "google_cloudrun_job",
+			"cloud.provider": "gcp",
+			"cloud.platform": "gcp_cloud_run",
+		},
+	],
+	[
+		"firebase app hosting",
+		{ process: nodeProc },
+		{ FIREBASE_APP_HOSTING: "1" },
+		{
+			...nodeBase,
+			"maple.provider": "firebase_app_hosting",
+			"cloud.provider": "gcp",
+			"cloud.platform": "gcp_firebase_app_hosting",
+		},
+	],
+	[
+		"aws amplify",
+		{ process: nodeProc },
+		{ AWS_APP_ID: "d123" },
+		{
+			...nodeBase,
+			"maple.provider": "aws_amplify",
+			"cloud.provider": "aws",
+			"cloud.platform": "aws_amplify",
+		},
+	],
+	[
+		"aws lambda wins over a detected provider",
+		{ process: nodeProc },
+		{ AWS_APP_ID: "d123", AWS_LAMBDA_FUNCTION_NAME: "checkout", AWS_DEFAULT_REGION: "eu-west-1" },
+		{
+			...nodeBase,
+			"maple.provider": "aws_amplify",
+			"cloud.provider": "aws",
+			"cloud.platform": "aws_lambda",
+			"faas.name": "checkout",
+			"cloud.region": "eu-west-1",
+		},
+	],
+	[
+		"render",
+		{ process: nodeProc },
+		{ RENDER: "true", RENDER_INSTANCE_ID: "srv-1" },
+		{
+			...nodeBase,
+			"maple.provider": "render",
+			"cloud.provider": "render",
+			"cloud.platform": "render",
+			"faas.instance": "srv-1",
+		},
+	],
+	[
+		"railway",
+		{ process: nodeProc },
+		{ RAILWAY_SERVICE_ID: "svc", RAILWAY_REPLICA_ID: "rep-1" },
+		{
+			...nodeBase,
+			"maple.provider": "railway",
+			"cloud.provider": "railway",
+			"cloud.platform": "railway",
+			"faas.instance": "rep-1",
+		},
+	],
+	[
+		"edgeone pages",
+		{ process: nodeProc },
+		{ EO_PAGES_CI: "1" },
+		{
+			...nodeBase,
+			"maple.provider": "edgeone_pages",
+			"cloud.provider": "tencent_cloud",
+			"cloud.platform": "tencent_edgeone_pages",
+		},
+	],
+	[
+		"a CI provider listed earlier shadows a host",
+		{ process: nodeProc },
+		{ GITHUB_ACTIONS: "true", VERCEL: "1" },
+		{ ...nodeBase, "maple.provider": "github_actions" },
+	],
+	["an empty variable does not count as set", { process: nodeProc }, { VERCEL: "" }, nodeBase],
+	[
+		"stackblitz webcontainer",
+		{ process: { ...nodeProc, versions: { node: "22.11.0", webcontainer: "1" } } },
+		{ SHELL: "/bin/jsh" },
+		{ ...nodeBase, "maple.provider": "stackblitz" },
+	],
+]
+
+describe("platformAttributesFrom", () => {
+	it.each(cases)("%s", (_name, globals, env, expected) => {
+		expect(platformAttributesFrom({ globals, env: envFromRecord(env) })).toEqual(expected)
+	})
+})
+
+// A `process.env` that throws on access to denied keys, like Deno's `--deny-env`.
+const denyingEnv = (values: Record<string, string>, denied: ReadonlyArray<string>) =>
+	new Proxy(values, {
+		get: (target, key) => {
+			if (typeof key === "string" && denied.includes(key)) throw new TypeError(`denied: ${key}`)
+			return typeof key === "string" ? target[key] : undefined
+		},
+		has: (target, key) => {
+			if (typeof key === "string" && denied.includes(key)) throw new TypeError(`denied: ${key}`)
+			return key in target
+		},
+	})
+
+describe("readProcessEnv", () => {
+	it("reads keys from process.env on the globals", () => {
+		const env = readProcessEnv({ process: { env: { RENDER: "true", RENDER_INSTANCE_ID: "srv-1" } } })
+		expect(env("RENDER")).toBe("true")
+		expect(env("RENDER_INSTANCE_ID")).toBe("srv-1")
+		expect(env("VERCEL")).toBeUndefined()
+	})
+
+	it("treats every key as absent without process", () => {
+		expect(readProcessEnv({})("RENDER")).toBeUndefined()
+		expect(readProcessEnv({ process: {} })("RENDER")).toBeUndefined()
+	})
+
+	it("keeps the other keys when one holds undefined", () => {
+		const env = readProcessEnv({ process: { env: { VERCEL: "1", AWS_REGION: undefined } } })
+		expect(env("VERCEL")).toBe("1")
+		expect(env("AWS_REGION")).toBeUndefined()
+	})
+
+	it("treats a key whose read throws as absent", () => {
+		const env = readProcessEnv({ process: { env: denyingEnv({ RENDER: "true" }, ["VERCEL"]) } })
+		expect(env("VERCEL")).toBeUndefined()
+		expect(env("RENDER")).toBe("true")
+	})
+
+	it("derives attributes end to end with a denying env, reading only up to the first provider match", () => {
+		const read: Array<string> = []
+		const values = { DENO_DEPLOYMENT_ID: "dpl1" }
+		const env = new Proxy(denyingEnv(values, ["EO_PAGES_CI", "AWS_REGION"]), {
+			has: (target, key) => {
+				if (typeof key === "string") read.push(key)
+				return Reflect.has(target, key)
+			},
+		})
+		const globals = { Deno: { version: { deno: "2.1.4" } }, process: { env } }
+		const attrs = platformAttributesFrom({ globals, env: readProcessEnv(globals) })
+		expect(attrs["maple.provider"]).toBe("deno-deploy")
+		expect(attrs["cloud.platform"]).toBe("deno_deploy")
+		expect(attrs["faas.instance"]).toBe("dpl1")
+		expect(read).not.toContain("EO_PAGES_CI")
+	})
+})
+
 const TestProcess = Schema.Struct({
 	process: Schema.Struct({
 		versions: Schema.Struct({ node: Schema.String, bun: Schema.optionalKey(Schema.String) }),
@@ -175,7 +460,7 @@ describe("process.runtime.version", () => {
 		const attrs = getAutoPlatformAttributes()
 		// The package has no node types, so parse `process.versions` to read it.
 		const { versions } = Schema.decodeUnknownSync(TestProcess)(globalThis).process
-		const expected = runtime === "bun" ? versions.bun : versions.node
+		const expected = detectRuntime(globalThis) === "bun" ? versions.bun : versions.node
 		expect(attrs["process.runtime.version"]).toBe(expected)
 		expect(attrs["process.runtime.version"]).not.toMatch(/^v/)
 	})

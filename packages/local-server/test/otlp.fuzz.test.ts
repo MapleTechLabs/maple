@@ -522,7 +522,7 @@ describe("OTLP protobuf ingest", () => {
 	it("encodes every span of a well-formed request into rows that fit the traces columns", () => {
 		fc.assert(
 			fc.property(valid.traces, (request) => {
-				const decoded = decodeTraceRequest(encodeTraceRequest(request))
+				const decoded = Result.getOrThrow(decodeTraceRequest(encodeTraceRequest(request)))
 				assertRowsFit(() => encodeTraces(decoded))
 			}),
 			{ numRuns: 300 },
@@ -537,13 +537,9 @@ describe("OTLP protobuf ingest", () => {
 					[decodeLogsRequest, encodeLogs],
 					[decodeMetricsRequest, encodeMetrics],
 				] as const) {
-					let decoded: unknown
-					try {
-						decoded = decode(bytes)
-					} catch {
-						continue // OtlpDecodeFailed: a 400
-					}
-					assertRowsFit(() => encode(decoded))
+					const decoded = decode(bytes)
+					if (Result.isFailure(decoded)) continue // OtlpDecodeFailed: a 400
+					assertRowsFit(() => encode(decoded.success))
 				}
 			}),
 			{ numRuns: 500 },

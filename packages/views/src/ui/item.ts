@@ -8,7 +8,7 @@ import {
 	itemTitleStyles,
 	itemVariants,
 } from "./item.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // The Item row (media, title, description, actions) and its group.

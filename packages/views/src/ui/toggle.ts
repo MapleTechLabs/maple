@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 
 /** Base UI `Toggle`'s uncontrolled state (`defaultPressed`): pressed or not. */
 

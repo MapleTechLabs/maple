@@ -30,10 +30,10 @@ import { Command, Mount, type Update } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
-import Fuse, { type IFuseOptions } from "fuse.js"
 import { makeIsland } from "../../foldkit-island/island"
 import { groupRank } from "../../lib/docs-nav"
 import {
+	fuzzyRecords,
 	queryTerms,
 	SearchIndexPayload,
 	searchRecords,
@@ -48,23 +48,11 @@ import { trackLanding } from "../../lib/telemetry"
 /**
  * The docs ⌘K palette: the dashboard kit's command dialog over the prebuilt docs index, fetched
  * once the island starts. An empty query browses every page by group; a query ranks page and
- * section rows, with fuse.js as the typo fallback.
+ * section rows, with a fuzzy match as the typo fallback.
  */
 
 const PALETTE_ID = "docs-search"
 const MAX_RESULTS = 10
-
-// Typo fallback only: runs when no row contains every term, and only over
-// titles and headings, so a fuzzy hit in body text can't outrank a real one.
-const FUZZY_OPTIONS: IFuseOptions<SearchRecord> = {
-	keys: [
-		{ name: "heading", weight: 0.6 },
-		{ name: "doc.title", weight: 0.4 },
-	],
-	ignoreLocation: true,
-	threshold: 0.3,
-	minMatchCharLength: 3,
-}
 
 // MODEL
 
@@ -182,7 +170,10 @@ const ListenForShortcuts = Mount.defineStream("ListenForDocsSearchShortcuts", {
 
 // SEARCH
 
-type Searchable = Readonly<{ records: ReadonlyArray<SearchRecord>; fuzzy: Fuse<SearchRecord> }>
+type Searchable = Readonly<{
+	records: ReadonlyArray<SearchRecord>
+	fuzzy: (query: string, limit?: number) => ReadonlyArray<{ readonly item: SearchRecord }>
+}>
 
 // Built once per fetched index, the way the React palette kept it beside its promise.
 const searchables = new WeakMap<object, Searchable>()
@@ -191,7 +182,7 @@ const searchableOf = (index: SearchIndexPayload): Searchable => {
 	const cached = searchables.get(index.docs)
 	if (cached !== undefined) return cached
 	const records = toRecords(index.docs)
-	const built = { records, fuzzy: new Fuse(records, FUZZY_OPTIONS) }
+	const built = { records, fuzzy: fuzzyRecords(records) }
 	searchables.set(index.docs, built)
 	return built
 }
@@ -207,7 +198,7 @@ const hitsOf = (model: Model): Option.Option<ReadonlyArray<SearchHit>> => {
 				const { records, fuzzy } = searchableOf(index)
 				const exact = searchRecords(records, query, MAX_RESULTS)
 				if (exact.length > 0) return exact
-				return Arr.map(fuzzy.search(query, { limit: MAX_RESULTS }), (result) => ({
+				return Arr.map(fuzzy(query, MAX_RESULTS), (result) => ({
 					record: result.item,
 					snippet: "",
 				}))

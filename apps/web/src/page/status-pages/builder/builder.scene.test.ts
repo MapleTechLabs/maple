@@ -2,7 +2,8 @@ import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { StatusPagePreviewParams, type V2UptimeMonitor } from "@maple/domain/http/v2"
-import { Option, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr } from "effect"
+import { statusPageOrgKey } from "@maple/domain/status-page"
 import {
 	attr,
 	expect as expectView,
@@ -38,6 +39,7 @@ const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
+const KEY = await Effect.runPromise(statusPageOrgKey(ORG))
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const builderUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(builderView, { context })()
@@ -148,6 +150,23 @@ describe("status page builder", () => {
 			given(typed),
 			expectView(role("textbox", { name: "Name" })).toHaveValue("Acme"),
 			expectView(role("textbox", { name: "Address" })).toHaveValue("status"),
+		)
+	})
+
+	test("the address hint waits for the org key, then shows the page's own address", () => {
+		const step = (model: Model, message: Message) => builderUpdate(model, message).model
+		const pending = step(withMonitors([httpMonitor()]), Message.ChangedSlug({ value: "acme-status" }))
+		expect(Option.isNone(pending.orgKey)).toBe(true)
+		scene(
+			{ update: builderUpdate, view },
+			given(pending),
+			expectView(role("textbox", { name: "Address" })).toHaveValue("acme-status"),
+			expectView(text(/\/s\//u)).not.toExist(),
+		)
+		scene(
+			{ update: builderUpdate, view },
+			given(step(pending, Message.ComputedOrgKey({ orgKey: KEY }))),
+			expectView(text(new RegExp(`/s/${KEY}/acme-status`, "u"))).toExist(),
 		)
 	})
 

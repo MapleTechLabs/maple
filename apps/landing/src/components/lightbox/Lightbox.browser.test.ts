@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Array as Arr } from "effect"
 import { afterEach, assert, describe, expect, it, vi } from "vitest"
 import start from "../../foldkit-island/client"
