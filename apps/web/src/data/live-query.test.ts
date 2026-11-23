@@ -107,4 +107,40 @@ describe("liveQueryStream", () => {
 		await Effect.runPromise(Fiber.interrupt(fiber))
 		expect(emitted).toEqual([["a"]])
 	})
+
+	test("emits a reorder that changes no projected value", async () => {
+		const collection = createCollection(
+			localOnlyCollectionOptions<{ id: string; rank: number }>({
+				getKey: (row) => row.id,
+				initialData: [
+					{ id: "a", rank: 1 },
+					{ id: "b", rank: 2 },
+				],
+			}),
+		)
+		const emitted: Array<ReadonlyArray<string>> = []
+		const fiber = Effect.runFork(
+			Stream.runForEach(
+				liveQueryStream(
+					(q) =>
+						q
+							.from({ d: collection })
+							.orderBy(({ d }) => d.rank)
+							.select(({ d }) => ({ id: d.id })),
+					(rows) => Arr.map(rows, (row) => row.id),
+				),
+				(ids) => Effect.sync(() => emitted.push(ids)),
+			),
+		)
+		await settle()
+		collection.update("a", (draft) => {
+			draft.rank = 3
+		})
+		await settle()
+		await Effect.runPromise(Fiber.interrupt(fiber))
+		expect(emitted).toEqual([
+			["a", "b"],
+			["b", "a"],
+		])
+	})
 })
