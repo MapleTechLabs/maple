@@ -1,8 +1,7 @@
 /**
- * Fleet as a device source: each server's failing policies (global, every fleet's and those of
- * devices in no fleet) and vulnerable software, synced hourly under the connection's findings
- * lease into the shared device findings. A sync replaces the server's findings: a policy every
- * device passes again, or a CVE no longer installed, drops out.
+ * Fleet as a device source: each server's failing policies at every level and its vulnerable
+ * software, synced hourly under the connection's findings lease. A sync replaces the server's
+ * findings: a policy every device passes again, or a CVE no longer installed, drops out.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { type FleetConnectionRow, FleetConnections } from "@maple/db/tables"
@@ -216,10 +215,17 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 						POLICY_PAGE_SIZE,
 						MAX_POLICY_PAGES,
 					)
+				// Two requests at a time: two servers sync at once, and a Worker holds six connections.
 				const [global, fleets] = yield* Effect.all(
 					[policiesOf({ _tag: "Global" }), readFleets(fleet, dialect)],
 					{ concurrency: 2 },
 				)
+				const listed = Option.match(fleets, { onNone: () => 0, onSome: (found) => found.length })
+				yield* Effect.annotateCurrentSpan("maple.fleet.fleets", listed)
+				if (listed >= FLEET_PAGE_SIZE)
+					yield* Effect.logWarning("Fleet has more fleets than one sync reads").pipe(
+						Effect.annotateLogs({ read: listed }),
+					)
 				const groups: ReadonlyArray<{ readonly scope: FleetApi.PolicyScope; readonly name: string }> =
 					Option.match(fleets, {
 						onNone: () => [],
@@ -231,19 +237,11 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 							})),
 						],
 					})
-				yield* Effect.annotateCurrentSpan(
-					"maple.fleet.fleets",
-					Option.match(fleets, { onNone: () => 0, onSome: (found) => found.length }),
-				)
+				// A fleet that cannot be read fails the sync: reading it as empty would resolve its findings.
 				const grouped = yield* Effect.forEach(
 					groups,
 					(group) =>
 						policiesOf(group.scope).pipe(
-							// A fleet deleted since it was listed has no policies left to fail.
-							Effect.catchIf(
-								(error) => error.status === 404,
-								() => Effect.succeed<ReadonlyArray<FleetApi.FleetPolicy>>([]),
-							),
 							Effect.map((policies) =>
 								Arr.map(policies, (policy): FleetScopedPolicy => ({
 									policy,
@@ -251,7 +249,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 								})),
 							),
 						),
-					{ concurrency: 4 },
+					{ concurrency: 2 },
 				)
 				const all: ReadonlyArray<FleetScopedPolicy> = Arr.appendAll(
 					Arr.map(global, (policy) => ({ policy, groupName: null })),
@@ -261,6 +259,20 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				const byId = new Map(Arr.map(Arr.reverse(all), (scoped) => [scoped.policy.id, scoped]))
 				return Arr.fromIterable(byId.values())
 			})
+
+			/** The first dialect whose paths this server has: the next is tried on a 404 or a 410. */
+			const readPoliciesIn = (
+				fleet: FleetApi.FleetClient,
+				[dialect, ...others]: Arr.NonEmptyReadonlyArray<FleetApi.FleetDialect>,
+			): Effect.Effect<ReadonlyArray<FleetScopedPolicy>, FleetApi.FleetApiError> =>
+				Arr.isReadonlyArrayNonEmpty(others)
+					? readPolicies(fleet, dialect).pipe(
+							Effect.catchIf(
+								(error) => error.status === 404 || error.status === 410,
+								() => readPoliciesIn(fleet, others),
+							),
+						)
+					: readPolicies(fleet, dialect)
 
 			/**
 			 * Fleet's CVEs, on the most devices first, and its total. None from a server older than
@@ -299,20 +311,20 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 			/** What the server reports now: counts, failing policies with sample devices, CVEs. */
 			const read = Effect.fnUntraced(function* (fleet: FleetApi.FleetClient, baseUrl: string) {
 				// The version first: it decides where this server keeps its policies and fleets.
-				const { version } = yield* FleetApi.getVersion(fleet)
-				const [hosts, policies] = yield* Effect.all(
-					[FleetApi.countHosts(fleet), readPolicies(fleet, FleetApi.fleetDialectOf(version))],
+				const [{ version }, hosts] = yield* Effect.all(
+					[FleetApi.getVersion(fleet), FleetApi.countHosts(fleet)],
 					{ concurrency: 2 },
 				)
+				const policies = yield* readPoliciesIn(fleet, FleetApi.fleetDialectsOf(version))
 				const failing = failingPolicies(policies, baseUrl)
 				const samples = yield* Effect.forEach(
 					Arr.take(failing, SAMPLED_POLICIES),
 					(policy) =>
-						FleetApi.listFailingHosts(fleet, policy.fleetId, HOSTS_PER_POLICY).pipe(
+						FleetApi.listFailingHosts(fleet, policy.numericId, HOSTS_PER_POLICY).pipe(
 							Effect.map(
 								(page) =>
 									[
-										policy.fleetId,
+										policy.numericId,
 										Arr.map(page.hosts ?? [], (host) => findingDevice(host, baseUrl)),
 									] as const,
 							),
@@ -330,7 +342,7 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					deviceCount: hosts.count,
 					policies: Arr.map(failing, (policy) => ({
 						...policy.finding,
-						failingDevices: sampled.get(policy.fleetId) ?? [],
+						failingDevices: sampled.get(policy.numericId) ?? [],
 					})),
 					// Fleet's own CVE rows count each device once; software alone is the fallback.
 					vulnerabilities: Option.match(counted, {

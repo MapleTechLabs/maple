@@ -5,7 +5,7 @@
  * drives the poller and the connect form.
  */
 import { validateExternalUrl } from "@maple/safe-fetch"
-import { Duration, Effect, Redacted, Schema, String as Str } from "effect"
+import { type Array as Arr, Duration, Effect, Redacted, Schema, String as Str } from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
 import { FleetActivitiesPage } from "./activities"
@@ -327,11 +327,16 @@ const FLEET_5: FleetDialect = {
 const FLEET_4 = perScope("/fleets")
 const FLEET_4_TEAMS = perScope("/teams")
 
-/** The dialect of a server version (`4.95.0`, `5.0.0-rc.1`); one that does not parse is read as the newest. */
-export const fleetDialectOf = (version: string): FleetDialect => {
-	const [, major, minor] = /^v?(\d+)\.(\d+)/.exec(Str.trim(version)) ?? []
-	if (major === undefined || minor === undefined || Number(major) >= 5) return FLEET_5
-	return Number(major) === 4 && Number(minor) >= 82 ? FLEET_4 : FLEET_4_TEAMS
+/**
+ * The dialects to try for a server version (`4.95.0`, `5.0.0-rc.1`, a build's `fleet-v4.95.0-3-gabc`),
+ * in order. A version that names no release (`unknown`, a commit) gets every one, newest first.
+ */
+export const fleetDialectsOf = (version: string): Arr.NonEmptyReadonlyArray<FleetDialect> => {
+	const [, major, minor] = /(\d+)\.(\d+)/.exec(version) ?? []
+	if (major === undefined || minor === undefined || Number(major) < 4)
+		return [FLEET_5, FLEET_4, FLEET_4_TEAMS]
+	if (Number(major) >= 5) return [FLEET_5]
+	return [Number(minor) >= 82 ? FLEET_4 : FLEET_4_TEAMS]
 }
 
 /** One page of a scope's policies with their passing and failing device counts. */

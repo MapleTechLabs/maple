@@ -28,8 +28,8 @@ describe("failingPolicies", () => {
 			BASE,
 		)
 		assert.deepStrictEqual(
-			Arr.map(found, ({ fleetId, finding }) => [
-				fleetId,
+			Arr.map(found, ({ numericId, finding }) => [
+				numericId,
 				finding.policyId,
 				finding.groupName,
 				finding.critical,

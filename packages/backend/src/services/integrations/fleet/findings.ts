@@ -20,7 +20,7 @@ export interface FleetScopedPolicy {
 
 /** A failing policy, with the numeric id its failing devices are read by. */
 export interface FleetFailingPolicy {
-	readonly fleetId: number
+	readonly numericId: number
 	readonly finding: Omit<PolicyFindingInput, "failingDevices">
 }
 
@@ -39,7 +39,7 @@ export const failingPolicies = (
 						? null
 						: timestampMs(policy.host_count_updated_at)
 				return Option.some({
-					fleetId: policy.id,
+					numericId: policy.id,
 					finding: {
 						policyId: String(policy.id),
 						name: policy.name,

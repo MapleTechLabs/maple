@@ -1,8 +1,6 @@
-// Opt-in live check: connects to real Fleet servers, runs the device findings sync and the audit
-// poll against them, and compares the Devices page with what `scripts/fleet-live/up.sh` seeded
-// (four devices, two fleets, policies at every level). Needs Docker:
-//   scripts/fleet-live/up.sh v4.62.0:8462:premium v4.95.0:8495:premium v4.95.0:8496:free
-// then run the command it prints. `scripts/fleet-live/up.sh down` removes the servers.
+// Opt-in live check: connects to real Fleet servers and compares the Devices page and the audit
+// log with what `scripts/fleet-live/up.sh` seeded. Start the servers with that script (it needs
+// Docker), then run the command it prints.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import type { DeviceRef } from "@maple/domain/device-security"

@@ -67,7 +67,7 @@ Activities Fleet runs on its own (automations) show Fleet as the actor. The audi
 
 Once an hour Maple reads the server's devices, policies and vulnerable software, and replaces what the Devices page shows. A policy every device passes again, or a CVE no longer installed anywhere, drops off the page at the next read.
 
-- **Failing policies.** Every policy at least one device fails, wherever it is set: on a fleet, on the devices in no fleet (Fleet calls these Unassigned), or globally for every device. Each row names the fleet the policy applies to. Critical policies come first, with how many devices fail each, its resolution, and up to 20 of the failing devices. Fleet recounts a policy's devices about once an hour, so a new policy shows here after its first count.
+- **Failing policies.** Every policy at least one device fails, wherever it is set: on a fleet, on the devices in no fleet (Fleet calls these Unassigned), or globally for every device. Fleet called fleets "teams" before version 4.82; Maple reads both. Each row names the fleet the policy applies to. Critical policies come first, with how many devices fail each, its resolution, and up to 20 of the failing devices. Fleet recounts a policy's devices about once an hour, so a new policy shows here after its first count.
 - **Vulnerabilities.** One row per CVE across the software versions that carry it, highest score first, with the number of devices and the affected software. Maple reads the 1,000 most installed vulnerable software versions; the page lists up to 500 CVEs.
 
 The Devices page is for engineers and admins, as is the rest of the Security Center.

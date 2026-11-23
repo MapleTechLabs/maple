@@ -455,20 +455,85 @@ describe("FleetFindingsService", () => {
 		)
 	})
 
-	it.effect("skips a fleet deleted while its policies were being read", () => {
+	it.effect("fails the sync, keeping the last findings, when a listed fleet cannot be read", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = fleetWithFleets("5.0.0")
-		world.vanishedFleets = [3]
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				// Reading the fleet as empty would resolve a finding that is still open.
+				world.vanishedFleets = [3]
+				yield* TestClock.adjust(HOUR_MS)
+				assert.strictEqual((yield* syncDue).failedConnections, 1)
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+			}),
+		)
+	})
+
+	// A build from a commit reports no release, so the paths are found by trying each era's.
+	it.effect.each([
+		["unknown", "teams"],
+		["a1b2c3d", "fleets"],
+		["unknown", "fleet5"],
+	] as const)("finds the paths of a server whose version %s names no release (%s)", ([version, era]) => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets(version)
+		world.era = era
 		return run(
 			testDb,
 			world,
 			Effect.gen(function* () {
 				yield* connect
 				assert.strictEqual((yield* syncDue).failedConnections, 0)
-				assert.sameDeepMembers(
-					yield* listedPolicies,
-					Arr.filter(EVERY_SCOPE, ([name]) => name !== "SSH root login off"),
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+			}),
+		)
+	})
+
+	it.effect("reads the release out of a build's longer version", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("fleet-v4.95.0-12-gabcdef0")
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).failedConnections, 0)
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+				// 4.95's own paths, with no request spent on another era's.
+				assert.isFalse(
+					Arr.some(world.fake.calls, (call) => Str.endsWith("/fleet/policies")(call.path)),
 				)
+			}),
+		)
+	})
+
+	it.effect("stores a policy once when a fleet's read repeats a global one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("5.0.0")
+		world.fleetPolicies = {
+			...world.fleetPolicies,
+			3: [
+				{
+					id: 1,
+					name: "No compromised packages",
+					critical: true,
+					failing_host_count: 4,
+					passing_host_count: 0,
+				},
+				{ id: 7, name: "SSH root login off", failing_host_count: 1, passing_host_count: 0 },
+			],
+		}
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).failedConnections, 0)
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
 			}),
 		)
 	})

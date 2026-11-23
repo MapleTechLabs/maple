@@ -58,6 +58,8 @@ export interface FakeFleet {
 	fleetPolicies: Record<number, ReadonlyArray<FakeFleetPolicy>>
 	/** Fleets still listed whose policies answer 404: deleted between the two reads. */
 	vanishedFleets: ReadonlyArray<number>
+	/** Which paths the server has, when `version` names no release (a build from a commit). */
+	era: Era | null
 	/** The devices failing each policy, by policy id. */
 	failingHosts: Record<number, ReadonlyArray<{ readonly id: number; readonly hostname: string }>>
 	software: Array<FakeFleetSoftware>
@@ -81,8 +83,9 @@ const PREFIX = "/api/v1/fleet"
 
 type Era = "teams" | "fleets" | "fleet5"
 
-const eraOf = (version: string): Era => {
-	const [, major, minor] = /^(\d+)\.(\d+)/.exec(version) ?? []
+const eraOf = (world: FakeFleet): Era => {
+	if (world.era !== null) return world.era
+	const [, major, minor] = /(\d+)\.(\d+)/.exec(world.version) ?? []
 	return Number(major) >= 5 ? "fleet5" : Number(minor) >= 82 ? "fleets" : "teams"
 }
 
@@ -177,6 +180,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		fleets: null,
 		fleetPolicies: {},
 		vanishedFleets: [],
+		era: null,
 		failingHosts: {},
 		software: [],
 		policyPaging: "default-100",
@@ -225,7 +229,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 				{
 					path: new RegExp(`${PREFIX}/global/policies$`),
 					respond: (request) => {
-						if (eraOf(world.version) === "fleet5") return gone("/global/policies")
+						if (eraOf(world) === "fleet5") return gone("/global/policies")
 						const policies = policiesPage(world, world.policies, request.search)
 						// Fleet 4 leaves an empty list out, as Go's omitempty does.
 						return VendorFake.json(policies.length === 0 ? {} : { policies })
@@ -235,7 +239,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 					// Fleet 5: every scope from one path, `fleet_id` picking a fleet (0 for no fleet).
 					path: new RegExp(`${PREFIX}/policies$`),
 					respond: (request) => {
-						if (eraOf(world.version) !== "fleet5") return noRoute()
+						if (eraOf(world) !== "fleet5") return noRoute()
 						const fleetId = request.search.get("fleet_id")
 						if (fleetId === null)
 							return VendorFake.json({
@@ -251,7 +255,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 				{
 					path: new RegExp(`${PREFIX}/(fleets|teams)$`),
 					respond: (request) => {
-						const era = eraOf(world.version)
+						const era = eraOf(world)
 						const named = Str.endsWith("/fleets")(request.path) ? "fleets" : "teams"
 						if (era === "fleet5" && named === "teams") return gone("/teams")
 						if (era === "teams" && named === "fleets") return noRoute()
@@ -267,7 +271,7 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 					// Fleet 4: a fleet's own policies, with the global ones beside them.
 					path: new RegExp(`${PREFIX}/(fleets|teams)/\\d+/policies$`),
 					respond: (request) => {
-						const era = eraOf(world.version)
+						const era = eraOf(world)
 						const [, named = "", id = ""] =
 							/\/(fleets|teams)\/(\d+)\/policies$/.exec(request.path) ?? []
 						if (era === "fleet5") return gone(`/${named}/{fleet_id}/policies`)
