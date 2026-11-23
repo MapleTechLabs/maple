@@ -11,7 +11,7 @@ import {
 	type V2StatusPageCustomDomain,
 } from "@maple/domain/http/v2"
 import { DEFAULT_STATUS_PAGE_THEME } from "@maple/domain/status-page"
-import { flow, Option, Order, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, flow, Option, Order, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
 	type AnyCommand,
 	type SceneSimulation,
@@ -88,7 +88,7 @@ import { maintenanceDurationMs } from "./view-incidents"
 import { type Focused, popupOwnsEscape } from "./subscription"
 import { removeComponentCopy, view as pageView } from "./view"
 
-const KEY = statusPageOrgKey(ORG)
+const KEY = await Effect.runPromise(statusPageOrgKey(ORG))
 
 const ADMIN = Policy.grantsOf(["org:admin"])
 const MEMBER = Policy.grantsOf(["org:member"])
@@ -177,6 +177,7 @@ const loaded = (fixture: Fixture = {}): Model => {
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
+			Message.ComputedOrgKey({ orgKey: KEY }),
 			Message.CompletedFetchSession({ orgId: ORG, grants: fixture.grants ?? ADMIN }),
 			Message.CompletedFetchPage({
 				key: entered.page.key ?? "",
@@ -2625,6 +2626,25 @@ describe("live screen", () => {
 				"href",
 				`/status-pages/${PUBLIC_ID}?view=settings&section=advanced`,
 			),
+		)
+	})
+
+	test("no address, copy field or open link until the org key is derived, then the page's own", () => {
+		const url = `https://status-pr-7.maple.dev/s/${KEY}/acme-status`
+		const pending: Model = { ...live("https://status-pr-7.maple.dev"), orgKey: Option.none() }
+		scene(
+			{ update: pageUpdate, view },
+			given(pending),
+			expectView(selector("#status-page-public-url")).not.toExist(),
+			expectView(role("link", { name: "Open public page" })).not.toExist(),
+			expectView(role("link", { name: /\/s\//u })).not.toExist(),
+			expectView(text("Public address appears once a status domain is configured")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(pending, Message.ComputedOrgKey({ orgKey: KEY })).model),
+			expectView(selector("#status-page-public-url")).toHaveValue(url),
+			expectView(role("link", { name: "Open public page" })).toHaveAttr("href", url),
 		)
 	})
 

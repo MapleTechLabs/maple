@@ -1,2 +1,4 @@
 # Run output.
 .e2e/
+# The signed-in reviewer session; outside `.e2e/` so the results artifact never carries it.
+.auth/

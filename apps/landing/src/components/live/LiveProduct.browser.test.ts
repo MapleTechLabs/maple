@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import start from "../../foldkit-island/client"
@@ -18,7 +17,10 @@ describe("LiveProductFunnel island", () => {
 		expect(element.querySelector("[data-slot=funnel-dropoff]")).not.toBeNull()
 		expect(element.textContent).toContain("before plan_started")
 
+		const serverRoot = element.firstElementChild
 		await start(element)(LiveProductFunnel, {})
+		// The live tree replaces the server markup on a later frame; clicks before that go nowhere.
+		await vi.waitFor(() => expect(element.firstElementChild).not.toBe(serverRoot))
 		const press = (label: string) =>
 			element.querySelector<HTMLButtonElement>(`[role=group] button[aria-label='${label}']`)?.click()
 		press("Bars")

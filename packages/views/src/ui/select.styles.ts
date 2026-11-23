@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const selectTriggerVariants = cva(
+export const selectTriggerVariants = variants(
 	"relative inline-flex min-h-9 min-w-36 select-none items-center justify-between gap-2 rounded-lg border border-input bg-background not-dark:bg-clip-padding px-[calc(--spacing(3)-1px)] text-left text-base text-foreground shadow-raised outline-none ring-ring/24 transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-lg-inset not-data-disabled:not-focus-visible:not-aria-invalid:not-data-pressed:before:shadow-control pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 focus-visible:border-ring focus-visible:ring-[3px] aria-invalid:border-destructive-a4 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:ring-destructive-a2 data-disabled:pointer-events-none data-disabled:opacity-64 sm:min-h-8 sm:text-ui dark:bg-input/32 dark:aria-invalid:ring-destructive-a3 [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [[data-disabled],:focus-visible,[aria-invalid],[data-pressed]]:shadow-none",
 	{
 		defaultVariants: {

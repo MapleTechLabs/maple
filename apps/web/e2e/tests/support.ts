@@ -1,4 +1,6 @@
-import type { Browser } from "@e2e-dev/web"
+import { fileURLToPath } from "node:url"
+
+import type { Page } from "playwright/test"
 import { String as Str } from "effect"
 
 declare global {
@@ -6,6 +8,9 @@ declare global {
 		Clerk?: { session?: { getToken: () => Promise<string> } | null }
 	}
 }
+
+/** Where the setup project saves the reviewer session the other tests start from. */
+export const reviewerState = fileURLToPath(new URL("../.auth/reviewer.json", import.meta.url))
 
 /** The preview's API origin: `app-pr-<n>` serves its API at `api-pr-<n>`. */
 export const apiUrl = (appUrl: string): string =>
@@ -16,12 +21,12 @@ export const apiUrl = (appUrl: string): string =>
  * crosses back as JSON text: `evaluate` only returns JSON values.
  */
 export const api = async <T>(
-	browser: Browser,
+	page: Page,
 	appUrl: string,
 	path: string,
 	init: { method?: string; body?: object } = {},
 ): Promise<{ status: number; body: T }> => {
-	const result = await browser.evaluate(
+	const result = await page.evaluate(
 		async ({ url, method, body }) => {
 			// Clerk attaches its session a moment after the app shell renders.
 			const session = async (deadline: number): Promise<{ getToken: () => Promise<string> }> => {

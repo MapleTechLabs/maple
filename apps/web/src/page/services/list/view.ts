@@ -13,7 +13,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_PRESET, summaryOf } from "./update"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
-import { displayedServices } from "./derive"
+import { displayedServices, singleRowServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
 import { Array as Arr } from "effect"
@@ -77,6 +77,7 @@ const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs
 							theme: model.themeColors,
 							isNamespacePinned: inputs.context.pinnedNamespace !== null,
 							timeZone: inputs.context.timeZone,
+							singleRowServices: singleRowServices(overview),
 						},
 						overview,
 						FoldkitAsyncData.isRefreshing(blocking),

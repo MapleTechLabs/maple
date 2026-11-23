@@ -146,6 +146,7 @@ const requestSpark = (
 							color: resolveColor(ctx.theme, "--chart-2"),
 							className: "h-full w-full",
 							revision: 0,
+							animatesEntrance: false,
 							curve: "monotone",
 							fillOpacity: [0.35, 0],
 						},
