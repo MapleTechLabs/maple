@@ -283,12 +283,12 @@ describe("suggested ingest rules", () => {
 			given(withSuggestions([])),
 			expectView(text("Debug logs from checkout")).toExist(),
 			expectView(text("340 MB a day")).toExist(),
-			expectView(role("link", { name: "Drop" })).toHaveAttr(
+			expectView(role("link", { name: "Drop: Debug logs from checkout" })).toHaveAttr(
 				"href",
 				"/settings/ingestion/rules/new?service=checkout&level=debug&keep=0",
 			),
 			expectView(text("Info and debug logs from api")).toExist(),
-			expectView(role("link", { name: "Sample 10%" })).toExist(),
+			expectView(role("link", { name: "Sample 10%: Info and debug logs from api" })).toExist(),
 		)
 	})
 

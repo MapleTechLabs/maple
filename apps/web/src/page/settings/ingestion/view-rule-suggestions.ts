@@ -20,7 +20,7 @@ type H = HtmlBuilder<Message>
 /** The editor link for one suggestion, locked for a viewer who cannot manage rules. */
 export type SuggestionLink = (
 	h: H,
-	options: Readonly<{ href: string; variant?: "outline" }>,
+	options: Readonly<{ href: string; variant?: "outline"; ariaLabel?: string }>,
 	children: ReadonlyArray<Html | string>,
 ) => Html
 
@@ -30,6 +30,10 @@ const titleOf = (suggestion: V2IngestRuleSuggestion): string =>
 	suggestion.signal === "traces"
 		? `${suggestion.span_name ?? "Spans"} in ${suggestion.service_name}`
 		: `${suggestion.level === "info" ? "Info and debug" : "Debug"} logs from ${suggestion.service_name}`
+
+/** The button's text: what the suggested rule does. */
+const action = (suggestion: V2IngestRuleSuggestion): string =>
+	suggestion.keep_percent === 0 ? "Drop" : `Sample ${suggestion.keep_percent}%`
 
 const reasonOf = (suggestion: V2IngestRuleSuggestion): string => {
 	const ofSignal = `${percent(suggestion.share)} of stored ${suggestion.signal === "logs" ? "logs" : "spans"}`
@@ -58,9 +62,15 @@ const suggestionRow = (h: H, link: SuggestionLink, suggestion: V2IngestRuleSugge
 			]),
 		]),
 		hstack(h, { justify: "end", className: "w-24 shrink-0" }, [
-			link(h, { variant: "outline", href: suggestedRuleHref(suggestion) }, [
-				suggestion.keep_percent === 0 ? "Drop" : `Sample ${suggestion.keep_percent}%`,
-			]),
+			link(
+				h,
+				{
+					variant: "outline",
+					href: suggestedRuleHref(suggestion),
+					ariaLabel: `${action(suggestion)}: ${titleOf(suggestion)}`,
+				},
+				[action(suggestion)],
+			),
 		]),
 	])
 

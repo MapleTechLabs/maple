@@ -340,7 +340,7 @@ export const V2IngestRuleSuggestions = Schema.Struct({
 	identifier: "IngestRuleSuggestions",
 	title: "Suggested ingest rules",
 	description:
-		"Rules the last 24 hours of stored logs and spans suggest: debug logs and health checks to drop, and a dominant log level or operation to sample.",
+		"Rules the last 24 hours of stored logs and spans suggest: debug logs and health-check spans to drop, and a service's logs below warn to sample when its info logs dominate.",
 })
 export type V2IngestRuleSuggestions = Schema.Schema.Type<typeof V2IngestRuleSuggestions>
 

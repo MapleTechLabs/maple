@@ -337,5 +337,17 @@ describeWithChdb("ingest rule dry run on chDB", () => {
 		expect(
 			Arr.map(spanRows, (row) => `${row.serviceName} ${row.spanName} ${row.records}`).sort(),
 		).toEqual(["api GET /healthz 1", "api GET /orders 1", "api SELECT orders 1", "worker tick 1"])
+
+		const weights = decodeJsonEachRow(
+			Schema.Struct({ serviceName: Schema.String, weighted: CH.CHNumber }),
+		)(
+			db.query(
+				normalizeSqlForClickHouseClient(CH.compileUnsafe(CH.ingestRuleSpanWeightQuery(), params).sql),
+			),
+		)
+		expect(Rec.fromEntries(Arr.map(weights, (row) => [row.serviceName, row.weighted] as const))).toEqual({
+			api: 3,
+			worker: 1,
+		})
 	})
 })

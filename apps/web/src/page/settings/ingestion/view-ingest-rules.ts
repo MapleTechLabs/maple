@@ -51,16 +51,26 @@ const gate = (h: H, canManage: boolean, control: Html): Html =>
 const ruleLink = (
 	h: H,
 	canManage: boolean,
-	options: Readonly<{ href: string; variant?: "outline" }>,
+	options: Readonly<{ href: string; variant?: "outline"; ariaLabel?: string }>,
 	children: ReadonlyArray<Html | string>,
-): Html =>
-	canManage
-		? linkButton(h, { size: "sm", ...options }, children)
+): Html => {
+	const label = options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]
+	return canManage
+		? linkButton(
+				h,
+				{ size: "sm", href: options.href, variant: options.variant, attributes: label },
+				children,
+			)
 		: lockedControl(
 				h,
 				DENIAL,
-				button(h, { size: "sm", variant: options.variant, isDisabled: true }, children),
+				button(
+					h,
+					{ size: "sm", variant: options.variant, isDisabled: true, attributes: label },
+					children,
+				),
 			)
+}
 
 const addRuleButton = (h: H, canManage: boolean) =>
 	ruleLink(h, canManage, { href: newRuleHref() }, [
