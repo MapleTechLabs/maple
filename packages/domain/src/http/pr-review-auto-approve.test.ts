@@ -17,6 +17,7 @@ import {
 	PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES,
 	PR_REVIEW_AUTO_APPROVE_MAX_FILES,
 	isSensitivePath,
+	prReviewDiffMayApprove,
 	prReviewDiffSignals,
 } from "./pr-review-diff"
 import {
@@ -27,7 +28,7 @@ import {
 } from "./pr-review-rules"
 import * as Policy from "../policy"
 import type { PullRequestFile } from "./vcs"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 import { PrReviewContractBreak, PrReviewTelemetry } from "./pr-review-telemetry"
 
 const finding = (
@@ -532,6 +533,30 @@ describe("prReviewDiffSignals", () => {
 		])
 		assert.equal(diff.changedLines, 15)
 		assert.equal(diff.unreviewedKindFiles, 0)
+	})
+})
+
+describe("prReviewDiffMayApprove", () => {
+	it("leaves a small, fully readable diff to the review's verdict", () => {
+		assert.isTrue(prReviewDiffMayApprove(signals([file("src/a.ts"), file("docs/guide.md")])))
+	})
+
+	it("rules out what no verdict can clear", () => {
+		const refused = {
+			sensitive: [file("src/a.ts"), file("pnpm-lock.yaml")],
+			nestedRules: [file("src/a.ts"), file("packages/api/AGENTS.md")],
+			unreviewedKind: [file("src/a.ts"), file("scripts/release.ts")],
+			truncatedPatch: [file("src/a.ts", { patch: LONG_PATCH })],
+			tooManyLines: [file("src/a.ts", { additions: 401, deletions: 0 })],
+			tooManyFiles: Arr.makeBy(26, (i) => file(`src/f${i}.ts`)),
+		}
+		assert.deepEqual(
+			Arr.flatMap(Rec.toEntries(refused), ([name, files]) =>
+				prReviewDiffMayApprove(signals(files)) ? [name] : [],
+			),
+			[],
+		)
+		assert.isFalse(prReviewDiffMayApprove(signals([file("src/a.ts")], true)))
 	})
 })
 

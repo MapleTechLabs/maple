@@ -47,6 +47,7 @@ import {
 	confidencePrReview,
 	type PrReviewAutoApproval,
 	prReviewAutoApproval,
+	prReviewDiffMayApprove,
 	prReviewDiffSignals,
 	isPrReviewDefectHistory,
 	prReviewConfidenceTone,
@@ -1987,6 +1988,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				headSha: GitCommitSha,
 				baseSha: GitCommitSha | undefined,
 				nowMs: number,
+				config: PrReviewRepositoryConfig,
 			) {
 				const history = yield* loadReviewHistory(orgId, repo.id, number)
 				const previousSha = Option.getOrUndefined(
@@ -2022,17 +2024,59 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const replies = latestReplies([...open, ...dismissed], synced.threads)
 				// A defect fixed since the last whole-diff pass, or one still open that this push may
 				// fix: this pass re-reads every file, so the fix is checked in the pass that sees it.
-				const recheck =
+				const defectRecheck =
 					uncheckedFixes(history, tracked) > 0 || Arr.some(open, isPrReviewDefectHistory)
+				// Only a pass over every file may approve, so a repository that approves reads the whole
+				// diff again whenever the pull request's history and Maple's own read of the diff still
+				// allow an approval. A warning ever dismissed or held back refuses for good.
+				const isIssue = (finding: { readonly severity: PrReviewSeverity }) =>
+					finding.severity !== "info"
+				const approvalRecheck =
+					!defectRecheck &&
+					config.autoApprove === true &&
+					Option.isSome(upstream) &&
+					!Arr.some(dismissed, isIssue) &&
+					(yield* loadHeldBack(orgId, repo.id, number)).length === 0 &&
+					(yield* upstream.value.provider
+						.fetchPullRequestFiles(upstream.value.installation, upstream.value.ref, number)
+						.pipe(
+							Effect.map(
+								({ files, truncated }) =>
+									// A file without a patch, or under an ignored path, refuses whatever the pass says.
+									!Arr.some(
+										files,
+										(file) =>
+											file.patch === null || pathIgnored(file.path, config.ignorePaths),
+									) &&
+									prReviewDiffMayApprove(
+										prReviewDiffSignals({
+											files,
+											truncated,
+											isIgnored: () => false,
+										}),
+									),
+							),
+							// Unknown reads as no: the push is reviewed as it would be without approval.
+							Effect.timeout("15 seconds"),
+							Effect.catchCause(() => Effect.succeed(false)),
+						))
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
 					"maple.pr_review.history_rewritten": changes?.rewritten ?? false,
-					"maple.pr_review.recheck": recheck,
+					"maple.pr_review.recheck": defectRecheck || approvalRecheck,
+					"maple.pr_review.recheck_for_approval": approvalRecheck,
 					"maple.pr_review.carried_dismissed": dismissed.length,
 					"maple.pr_review.carried_replies": replies.size,
 				})
-				return renderFollowUp({ previousSha, changes, open, recheck, replies, dismissed })
+				return renderFollowUp({
+					previousSha,
+					changes,
+					open,
+					recheck: defectRecheck ? "defect" : approvalRecheck ? "approval" : undefined,
+					replies,
+					dismissed,
+				})
 			})
 
 			/** A review of the same pull request still running, whose head this delivery replaces. */
@@ -2199,6 +2243,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					headSha,
 					job.baseSha,
 					nowMs,
+					config,
 				).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning(

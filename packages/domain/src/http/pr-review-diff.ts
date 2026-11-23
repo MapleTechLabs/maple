@@ -217,6 +217,18 @@ export interface PrReviewDiffSignals {
 }
 
 /**
+ * Whether Maple's own read of a diff leaves an approval possible: nothing unread, nothing
+ * sensitive, within the size caps. The review's verdict decides the rest.
+ */
+export const prReviewDiffMayApprove = (signals: PrReviewDiffSignals): boolean =>
+	signals.unreviewedKindFiles === 0 &&
+	signals.truncatedPatchFiles === 0 &&
+	!signals.truncatedListing &&
+	signals.sensitivePaths.length === 0 &&
+	signals.changedLines <= PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES &&
+	signals.changedFiles <= PR_REVIEW_AUTO_APPROVE_MAX_FILES
+
+/**
  * The approval signals of one diff. `isIgnored` marks the repository's ignored paths: they are
  * refused on their own, so they do not count as unread kinds or cut patches here.
  */
