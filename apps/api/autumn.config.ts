@@ -189,12 +189,12 @@ export const startup = plan({
 			},
 		},
 		{
-			// $5 per 1M events past 1M. Billed per 1,000 because Autumn rounds
-			// overage up to whole blocks; a 1M block would charge $5 for one event.
+			// $2 per 1M events past 1M. Billed per 1,000 because Autumn rounds
+			// overage up to whole blocks; a 1M block would charge $2 for one event.
 			featureId: "product_events",
 			included: 1_000_000,
 			price: {
-				amount: 0.005,
+				amount: 0.002,
 				billingUnits: 1000,
 				billingMethod: "usage_based",
 				interval: "month",

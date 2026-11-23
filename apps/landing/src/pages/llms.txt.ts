@@ -62,7 +62,7 @@ export const GET: APIRoute = ({ site }) => {
 
 			"## Pricing",
 			"",
-			"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $5 per million (page views not counted).",
+			"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; 1M product events included, then $2 per million (page views not counted).",
 			"",
 			enterpriseOfferMarkdown(site),
 			"",

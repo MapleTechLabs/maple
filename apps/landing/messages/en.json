@@ -116,7 +116,7 @@
 	"nav_product_events": "Product Events",
 	"nav_desc_product_events": "Funnels, drop-off and paths on your events",
 	"feat_pe_seo_title": "Product Analytics and Funnels | Maple",
-	"feat_pe_seo_desc": "Track product events from the browser, your backend or any OpenTelemetry span. Build funnels, drop-off and paths next to your traces and metrics. 1M events a month included, then $5 per million.",
+	"feat_pe_seo_desc": "Track product events from the browser, your backend or any OpenTelemetry span. Build funnels, drop-off and paths next to your traces and metrics. 1M events a month included, then $2 per million.",
 	"feat_pe_hero_title": "Product analytics, next to the trace",
 	"feat_pe_hero_lede": "Page views arrive on their own. Track the rest from the browser, your backend or a span you already emit, and see where people stop on the same dashboards as your latency.",
 	"feat_pe_artifact_title": "Find the step where people stop",

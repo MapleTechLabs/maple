@@ -47,8 +47,8 @@ rows in the batch (a browser `track()` call is the same unit as a server-side ev
 entitlement REJECTION on `browser_sessions`. **Neither path rejects on `product_events`**: an
 exhausted (or un-provisioned) product-events allowance bills usage-based overage instead of 402-ing
 a whole session transcript or a backend's buffered batch. Automatic session events (clicks,
-navigations, ...) stay unmetered. **Pricing (2026-10-15): 1M events/month included, then $5 per
-million**, configured as `$0.005` per 1,000 in `apps/api/autumn.config.ts` because Autumn rounds
+navigations, ...) stay unmetered. **Pricing (2026-11-22): 1M events/month included, then $2 per
+million** (was $5 until then), configured as `$0.002` per 1,000 in `apps/api/autumn.config.ts` because Autumn rounds
 overage up to whole billing blocks. The landing page and billing UI quote it per 1M. It was
 `unlimited: true` during the beta (2026-08-17 to 2026-10-15). `DailySpendService` emits `DailyVolume.productEvents` from `product_events`
 (`Kind != 'navigation'`, matching what the gateway meters).
