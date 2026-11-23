@@ -5,7 +5,7 @@
  * The number that matters is not the size of our `dist/` — that ships
  * unminified and with every dependency left external, so reading it tells you
  * almost nothing. What a visitor downloads is the *bundled, minified, gzipped*
- * graph their bundler produces, OpenTelemetry and rrweb included. This builds
+ * graph their bundler produces, the OpenTelemetry API and rrweb included. This builds
  * exactly that and splits it three ways:
  *
  *   eager    — the entry plus everything statically reachable from it. Paid by
@@ -24,6 +24,10 @@ import { gzipSync } from "node:zlib"
 /** Ceilings in gzipped KB. Raise deliberately, with the reason in the commit. */
 const BUDGET = {
 	/**
+	 * 38.5 since 2026-11: the OpenTelemetry JS SDK, instrumentations and OTLP
+	 * transformer were replaced by in-house code (only `@opentelemetry/api` is left),
+	 * and eager fell 46.12 → 37.25 kB.
+	 *
 	 * 47 since 2026-10: main already measured 45.26 kB; the SDK hardening pass
 	 * (surrogate-safe text, UUID fallback, consent purge, wider URL redaction,
 	 * status-aware retries, the consent settle window) added ~1.25 kB before any sampling.
@@ -37,24 +41,28 @@ const BUDGET = {
 	 * code, the rest chunk-split overhead now that a second chunk shares the OTel
 	 * core). Was 38 for navigation spans.
 	 */
-	eager: 47,
+	eager: 38.5,
 	/**
-	 * Every page load, after `init()`, off the critical path: the OTel logs SDK,
+	 * Every page load, after `init()`, off the critical path: the logs pipeline,
 	 * document timing, `web-vitals` (~3.3 kB), breadcrumbs,
 	 * reports, the offline queue and long-frame/interaction spans. 14.5 since
 	 * 2026-10: main measured 14.04 kB; the logs pagehide flush adds ~0.1 kB.
+	 * 10.5 since 2026-11: the in-house logs pipeline replaced the OTel logs SDK
+	 * (13.74 → 9.64 kB).
 	 */
-	deferred: 14.5,
+	deferred: 10.5,
 	lazy: 68,
 	/**
-	 * Our own eager code, with OpenTelemetry and rrweb left external.
+	 * Our own eager code, with `@opentelemetry/api` and rrweb left external.
 	 *
-	 * Tracked separately because the headline `eager` number is dominated by
-	 * OTel, which many host apps already ship — for them the marginal cost of
-	 * this SDK is this line, not that one. It is also the only figure a change
-	 * to our source can move — the other two are ~90% third-party and would
-	 * absorb a doubling of our code without crossing a ceiling — so this is the
-	 * one that makes a regression legible. Kept deliberately tight.
+	 * Tracked separately because it is the figure a change to our source moves
+	 * most legibly: the API is what a host app that already uses OpenTelemetry
+	 * shares with us, so for it the marginal cost of this SDK is this line.
+	 * Kept deliberately tight.
+	 *
+	 * 35 since 2026-11: the span, log, propagation, request instrumentation and
+	 * OTLP/JSON code that came from OpenTelemetry JS packages is first-party now,
+	 * so it moved into this line (26.07 → 34.36 kB) while `eager` fell by 8.9 kB.
 	 *
 	 * 11, not the 5 this once read: that 5 was calibrated against a measurement
 	 * that counted only the entry chunk and silently dropped the shared chunk
@@ -84,7 +92,7 @@ const BUDGET = {
 	 * 26.5 since 2026-11: `persistence: "cookieless"` (the row visitor rule, memory-wins
 	 * guard against older copies) measured 26.07 kB.
 	 */
-	firstParty: 26.5,
+	firstParty: 35,
 }
 
 /** How close to a ceiling counts as worth warning about. */
@@ -165,14 +173,14 @@ const lazy = notEager.filter(isReplay)
 const deferred = notEager.filter((chunk) => !isReplay(chunk))
 const total = (group: Chunk[]): number => group.reduce((sum, chunk) => sum + chunk.gzip, 0)
 
-// Same entry, dependencies left external: what a host app that already ships
-// OpenTelemetry pays to add this SDK. The lazy chunk is rrweb-dominated and
+// Same entry, the API and rrweb left external: what a host app that already ships
+// `@opentelemetry/api` pays to add this SDK. The lazy chunk is rrweb-dominated and
 // disappears entirely here, so only the eager side is meaningful.
 // Walked, not filtered to `index.*`: code splitting can park first-party code
 // in a shared chunk the entry statically imports, which is exactly as eager as
 // the entry itself. Filtering by name silently excluded it — that is how ~30 kB
 // of bundled `effect/Schema` sat inside budget while this line reported 3.5 kB.
-const firstParty = eagerChunks(await measure((await build(["@opentelemetry/*", "rrweb"])).outputs))
+const firstParty = eagerChunks(await measure((await build(["@opentelemetry/api", "rrweb"])).outputs))
 
 const report = (label: string, group: Chunk[], budget: number): boolean => {
 	const gzip = total(group)

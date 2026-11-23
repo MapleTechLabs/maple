@@ -100,16 +100,18 @@ this off; `logs: { captureConsole: ["warn", "error"] }` sends those console leve
 
 Bundled, minified and gzipped, as your bundler would ship it:
 
-|                  | gzipped | what it is                                                |
-| ---------------- | ------- | --------------------------------------------------------- |
-| **eager**        | ~44 kB  | every page load, before any sampling decision             |
-| ↳ our code alone | ~25 kB  | the marginal cost if your app already ships OpenTelemetry |
-| **deferred**     | ~14 kB  | logs SDK, Web Vitals, document timing, after `init()`     |
-| **lazy**         | ~64 kB  | rrweb — downloaded only by sessions sampled into replay   |
+|                  | gzipped | what it is                                                       |
+| ---------------- | ------- | ---------------------------------------------------------------- |
+| **eager**        | ~37 kB  | every page load, before any sampling decision                    |
+| ↳ our code alone | ~34 kB  | the marginal cost if your app already ships `@opentelemetry/api` |
+| **deferred**     | ~10 kB  | logs, Web Vitals, document timing, after `init()`                |
+| **lazy**         | ~68 kB  | rrweb — downloaded only by sessions sampled into replay          |
 
-The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web
-SDK, your bundler should dedupe it and you pay closer to the second row; if it
-doesn't dedupe, you will ship two copies, so pin matching versions.
+The only OpenTelemetry package the SDK depends on is `@opentelemetry/api`: the
+tracing, logs, propagation, request instrumentation and OTLP export are its
+own. It registers itself through that API, so your own `@opentelemetry/api`
+calls (`context.active()`, `context.with()`, baggage) see its spans. Keep one
+copy of the API in your bundle (pin a matching version) so both sides share it.
 
 Run `bun run size` in this package for the current numbers. It fails past a
 budget, so a regression has to be argued for in review rather than discovered
