@@ -290,15 +290,26 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 	})
 }
 
-/** A record's attributes with its `eventName` moved in as `event.name` (an own attribute wins), so a
- *  rule can match, redact or remove it and the encoder cannot restore a removed name. */
-const liftEventName = (log: { attributes?: KeyValue[]; eventName?: string }): AttrMap => {
-	const attributes = toMap(log.attributes)
-	const eventName = log.eventName
-	log.eventName = undefined
-	return eventName === undefined || eventName === "" || attributes["event.name"] !== undefined
-		? attributes
+/** The rules read a log record's `eventName` as its `event.name` attribute (an own attribute wins). */
+const withEventName = (attributes: AttrMap, eventName: string | undefined): AttrMap | null =>
+	eventName === undefined || eventName === "" || attributes["event.name"] !== undefined
+		? null
 		: { ...attributes, "event.name": eventName }
+
+/**
+ * Writes the rules' result back. The event name returns to `eventName` as the rules left it, so the
+ * encoder and the eventing projection read the same value; a rule that removed `event.name` (lifted
+ * or the record's own) clears `eventName` too, so the encoder cannot restore it.
+ */
+const writeLog = (
+	log: { attributes?: KeyValue[]; eventName?: string },
+	attributes: AttrMap,
+	lifted: boolean,
+) => {
+	const { "event.name": ruledName, ...rest } = attributes
+	if (ruledName === undefined) log.eventName = undefined
+	else if (lifted) log.eventName = typeof ruledName === "string" ? ruledName : log.eventName
+	log.attributes = fromMap(lifted ? rest : attributes, log.attributes)
 }
 
 const applyToLogs = (request: LogsRequest, run: Run) => {
@@ -308,10 +319,12 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 		resourceLogs.scopeLogs = Arr.filter(resourceLogs.scopeLogs ?? [], (scopeLogs) => {
 			scopeLogs.logRecords = Arr.filter(scopeLogs.logRecords ?? [], (log) => {
 				const body = log.body === undefined ? undefined : toValue(log.body)
+				const attributes = toMap(log.attributes)
+				const named = withEventName(attributes, log.eventName)
 				const output = run({
 					signal: "logs",
 					resource,
-					attributes: liftEventName(log),
+					attributes: named ?? attributes,
 					body,
 					severityNumber: log.severityNumber,
 					severityText: log.severityText,
@@ -320,7 +333,7 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 				if (output === null) return false
 				const { record } = output
 				kept.push(record)
-				log.attributes = fromMap(record.attributes, log.attributes)
+				writeLog(log, record.attributes, named !== null)
 				if (record.body !== undefined && record.body !== body) log.body = fromValue(record.body)
 				return true
 			})
