@@ -172,7 +172,9 @@ export const createSparkSvg = (
 	defs.append(gradient, clip)
 
 	const series = svgElement("g", {})
-	series.style.transition = HOVER_FADE
+	// Reduced motion snaps the dim and the band instead of fading them.
+	const hoverFade = prefersReducedMotion() ? "none" : HOVER_FADE
+	series.style.transition = hoverFade
 	const areaPath = svgElement("path", { fill: `url(#${id}-fill)` })
 	const linePath = svgElement("path", {
 		fill: "none",
@@ -191,7 +193,7 @@ export const createSparkSvg = (
 		"pointer-events": "none",
 	})
 	highlight.style.opacity = "0"
-	highlight.style.transition = HOVER_FADE
+	highlight.style.transition = hoverFade
 
 	const crosshair = svgElement("line", {
 		x1: 0,
