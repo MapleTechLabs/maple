@@ -1501,8 +1501,9 @@ export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
 /**
  * Populates `ai_evaluations` from span events named `gen_ai.evaluation.result`: the encoding SDKs
  * used before events moved to the Logs API (OTEP 4430), and what OpenLIT still emits. The span
- * carrying the event is the evaluated span, and the row takes the span's time, not the event's, so
- * a delete by span time removes its scores with it.
+ * carrying the event is the evaluated span unless the event names a target. The row takes the carrying
+ * span's time and service, not the event's, so a scoped delete removes the scores with the span that
+ * sent them; a score is the evaluator's telemetry, like a log that names a trace.
  */
 export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_span_events_mv", {
 	description:
