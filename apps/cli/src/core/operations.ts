@@ -82,6 +82,7 @@ import {
 	type RemoteError,
 	makeV2Client,
 	toWarehouseError,
+	unsupportedInLocal,
 	unsupportedInRemote,
 } from "./v2-client"
 import { parseTimestampMs, type Range } from "./time"
@@ -1074,4 +1075,18 @@ export const promqlMetricNames = (p: { range: Range }) =>
 		}),
 		({ v2 }) => Remote.promqlMetricNames(v2, p),
 		"promql_metric_names",
+	)
+
+/** End users and product events live in a workspace's users directory: remote only. */
+export const listUsers = (p: Parameters<typeof RemoteMcp.listUsers>[1]) =>
+	dispatch(unsupportedInLocal("list_users"), ({ mcp }) => RemoteMcp.listUsers(mcp, p), "list_users")
+
+export const inspectUser = (p: Parameters<typeof RemoteMcp.inspectUser>[1]) =>
+	dispatch(unsupportedInLocal("inspect_user"), ({ mcp }) => RemoteMcp.inspectUser(mcp, p), "inspect_user")
+
+export const listProductEvents = (p: Parameters<typeof RemoteMcp.listProductEvents>[1]) =>
+	dispatch(
+		unsupportedInLocal("list_product_events"),
+		({ mcp }) => RemoteMcp.listProductEvents(mcp, p),
+		"list_product_events",
 	)
