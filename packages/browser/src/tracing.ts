@@ -188,7 +188,9 @@ export function setMapleProviderForTests(provider: TracerProvider | undefined): 
 }
 
 /** Resource attributes shared by every signal this SDK exports. */
-export function resourceAttributes(config: ResolvedConfig): Record<string, string> {
+export function resourceAttributes(
+	config: Pick<ResolvedConfig, "serviceName" | "serviceNamespace" | "serviceVersion" | "environment">,
+): Record<string, string> {
 	// The provider does not merge OTel's default resource in, so the required
 	// `telemetry.sdk.*` attributes are stated here.
 	const attributes: Record<string, string> = {

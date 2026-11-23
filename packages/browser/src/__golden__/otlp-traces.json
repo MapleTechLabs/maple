@@ -1,0 +1,165 @@
+{
+	"resourceSpans": [
+		{
+			"resource": {
+				"attributes": [
+					{ "key": "service.name", "value": { "stringValue": "acme-web" } },
+					{ "key": "telemetry.sdk.name", "value": { "stringValue": "@maple-dev/browser" } },
+					{ "key": "telemetry.sdk.language", "value": { "stringValue": "webjs" } },
+					{ "key": "telemetry.sdk.version", "value": { "stringValue": "0.15.0" } },
+					{ "key": "maple.sdk.type", "value": { "stringValue": "browser" } },
+					{ "key": "service.namespace", "value": { "stringValue": "shop" } },
+					{
+						"key": "service.version",
+						"value": { "stringValue": "0123456789abcdef0123456789abcdef01234567" }
+					},
+					{
+						"key": "vcs.ref.head.revision",
+						"value": { "stringValue": "0123456789abcdef0123456789abcdef01234567" }
+					},
+					{ "key": "deployment.environment", "value": { "stringValue": "production" } },
+					{ "key": "deployment.environment.name", "value": { "stringValue": "production" } }
+				],
+				"droppedAttributesCount": 0
+			},
+			"scopeSpans": [
+				{
+					"scope": { "name": "@opentelemetry/instrumentation-fetch", "version": "0.301.2" },
+					"spans": [
+						{
+							"traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+							"spanId": "0000000000000002",
+							"parentSpanId": "0000000000000001",
+							"traceState": "vendor=abc,ot=th:8;rv:d5a8b2c1e3f405",
+							"name": "GET",
+							"kind": 3,
+							"startTimeUnixNano": "1763900000010000007",
+							"endTimeUnixNano": "1763900000120000007",
+							"attributes": [
+								{ "key": "http.request.method", "value": { "stringValue": "GET" } },
+								{
+									"key": "url.full",
+									"value": { "stringValue": "https://api.test/projects/42" }
+								},
+								{ "key": "http.response.status_code", "value": { "intValue": 503 } },
+								{
+									"key": "http.response.header.content-type",
+									"value": {
+										"arrayValue": { "values": [{ "stringValue": "application/json" }] }
+									}
+								},
+								{ "key": "error.type", "value": { "stringValue": "503" } }
+							],
+							"droppedAttributesCount": 0,
+							"events": [
+								{
+									"attributes": [],
+									"name": "fetchStart",
+									"timeUnixNano": "1763900000011000007",
+									"droppedAttributesCount": 0
+								}
+							],
+							"droppedEventsCount": 0,
+							"status": { "code": 2 },
+							"links": [],
+							"droppedLinksCount": 0,
+							"flags": 257
+						}
+					]
+				},
+				{
+					"scope": { "name": "maple-browser", "version": "0.15.0" },
+					"spans": [
+						{
+							"traceId": "00000000000000000000000000000004",
+							"spanId": "0000000000000003",
+							"name": "browser.uncaught_error",
+							"kind": 1,
+							"startTimeUnixNano": "1763900000130000007",
+							"endTimeUnixNano": "1763900000131000007",
+							"attributes": [],
+							"droppedAttributesCount": 0,
+							"events": [
+								{
+									"attributes": [
+										{ "key": "exception.type", "value": { "stringValue": "TypeError" } },
+										{
+											"key": "exception.message",
+											"value": { "stringValue": "x is undefined" }
+										},
+										{
+											"key": "exception.stacktrace",
+											"value": { "stringValue": "TypeError: x\n  at a.js:1:2" }
+										}
+									],
+									"name": "exception",
+									"timeUnixNano": "1763900000130000007",
+									"droppedAttributesCount": 0
+								}
+							],
+							"droppedEventsCount": 0,
+							"status": { "code": 2, "message": "x is undefined" },
+							"links": [
+								{
+									"attributes": [{ "key": "reason", "value": { "stringValue": "cause" } }],
+									"spanId": "00f067aa0ba902b7",
+									"traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+									"traceState": "vendor=abc,ot=th:8;rv:d5a8b2c1e3f405",
+									"droppedAttributesCount": 0,
+									"flags": 257
+								}
+							],
+							"droppedLinksCount": 0,
+							"flags": 257
+						},
+						{
+							"traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+							"spanId": "0000000000000001",
+							"parentSpanId": "00f067aa0ba902b7",
+							"traceState": "vendor=abc,ot=th:8;rv:d5a8b2c1e3f405",
+							"name": "pageload /projects/:id",
+							"kind": 1,
+							"startTimeUnixNano": "1763900000000000007",
+							"endTimeUnixNano": "1763900000500000007",
+							"attributes": [
+								{ "key": "url.path", "value": { "stringValue": "/projects/42" } },
+								{ "key": "count", "value": { "intValue": 3 } },
+								{ "key": "ratio", "value": { "doubleValue": 0.25 } },
+								{ "key": "flag", "value": { "boolValue": true } },
+								{
+									"key": "tags",
+									"value": {
+										"arrayValue": {
+											"values": [{ "stringValue": "a" }, { "stringValue": "b" }]
+										}
+									}
+								},
+								{
+									"key": "nested",
+									"value": {
+										"kvlistValue": {
+											"values": [
+												{
+													"key": "route",
+													"value": { "stringValue": "/projects/:id" }
+												},
+												{ "key": "depth", "value": { "intValue": 2 } }
+											]
+										}
+									}
+								}
+							],
+							"droppedAttributesCount": 0,
+							"events": [],
+							"droppedEventsCount": 0,
+							"status": { "code": 0 },
+							"links": [],
+							"droppedLinksCount": 0,
+							"flags": 769
+						}
+					]
+				}
+			]
+		}
+	]
+}
