@@ -29,8 +29,8 @@ const PreviewExample = Schema.Struct({
 	service: Schema.String,
 	/** Span name or log body. */
 	label: Schema.String,
-	outcome: Schema.Literals(["dropped", "redacted"]),
-	/** Changed values, `key: before -> after`; empty for drops. */
+	outcome: Schema.Literals(["dropped", "redacted", "parsed", "parse_failed"]),
+	/** Changed and added values, `key -> after`; empty for drops. */
 	changes: Schema.Array(Schema.String),
 })
 
@@ -40,6 +40,9 @@ export const PreviewIngestRuleOutput = Schema.Struct({
 	dropped: Schema.Number,
 	redactedRecords: Schema.Number,
 	redactedValues: Schema.Number,
+	/** Logs a parse rule ran on, and those where a step failed. */
+	parsed: Schema.optionalKey(Schema.Number),
+	parseFailed: Schema.optionalKey(Schema.Number),
 	examples: Schema.Array(PreviewExample),
 	/** Rule problems; a rule with problems is not previewed. */
 	problems: Schema.Array(Schema.String),

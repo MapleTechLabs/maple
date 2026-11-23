@@ -63,17 +63,20 @@ export const signalsClause = (h: H, model: Model): Html =>
 			ariaLabel: "Signals",
 			value: model.draft.signals,
 			onToggle: (signal) => Message.ToggledSignal({ signal }),
+			// Parse rules read log bodies, so a parse rule stays on logs.
 			options: Arr.map(IngestRuleSignal.literals, (signal) => ({
 				value: signal,
 				label: SIGNAL_LABELS[signal],
 				ariaLabel: SIGNAL_LABELS[signal],
+				isDisabled: model.draft.actionType === "parse",
 			})),
 			className: "self-start",
 		}),
 		typography(h, { size: "xs", tone: "muted", as: "p" }, ["arrive at Maple"]),
 	])
 
-const select = (
+/** A labelled native select whose shown choice always follows the model. */
+export const select = (
 	h: H,
 	options: Readonly<{
 		id: string
@@ -81,6 +84,7 @@ const select = (
 		value: string
 		entries: ReadonlyArray<{ readonly value: string; readonly label: string }>
 		onChange: (value: string) => Message
+		size?: "sm"
 		className?: string
 	}>,
 ): Html =>
@@ -101,6 +105,7 @@ const select = (
 				h,
 				{
 					defaultValue: options.value,
+					size: options.size ?? "default",
 					attributes: [h.Id(options.id), h.Value(options.value), h.OnChange(options.onChange)],
 				},
 				Arr.map(options.entries, (entry) => nativeOption(entry.value, entry.label)),
@@ -241,8 +246,9 @@ export const conditionsClause = (h: H, model: Model): Html =>
 			: Arr.map(model.draft.conditions, (condition, index) =>
 					conditionRow(h, model, condition, index),
 				)),
+		// Indented past the "and" column so the button lines up with the condition fields.
 		h.div(
-			[],
+			[h.Class(model.draft.conditions.length === 0 ? "" : "pl-10")],
 			[
 				button(
 					h,

@@ -1,6 +1,7 @@
 # Ingest rules
 
-Org admins can drop telemetry or redact values in it before Maple stores or bills it. The ingest
+Org admins can drop telemetry, parse log bodies into attributes, or redact values before Maple
+stores or bills it. The ingest
 gateway (`apps/ingest/src/ingest_rules.rs`) applies the rules to the decoded OTLP payload after
 enrichment and before the WAL append, the S3 segment shipping and the collector forward. Bytes a
 rule drops are never metered. The TS engine (`packages/ingest-rules`) runs the same rules for the
@@ -26,12 +27,17 @@ A rule looks at one **record** at a time:
 ## Evaluation
 
 1. A rule applies to a record when the record's signal is in `signals` and **every** condition
-   matches. Conditions are evaluated against the record as received, before any rule changes it.
+   matches. Drop and redact conditions are evaluated against the record as received, before any
+   rule changes it.
 2. **Drop rules run first.** A record matching a drop rule is removed unless the rule keeps it by
    sampling. When several drop rules match, the record survives only if every one of them keeps it.
-3. **Redact rules then run in `position` order** on the records that survived, each on the output
-   of the previous one.
-4. A resource or scope left with no records is removed. A metric left with no data points is
+3. **Redact rules then run in `position` order** on the records that survived, each on the
+   output of the previous one.
+4. **Parse rules then run in `position` order** on the redacted logs (see "Parse rules"), so a
+   parse step only ever reads redacted text. Each parse rule's conditions see the log as the
+   earlier parse rules left it. The matched `attributes`- and `body`-scoped redact rules then run
+   once more over the attributes parsing wrote, so key and detector rules reach them too.
+5. A resource or scope left with no records is removed. A metric left with no data points is
    removed.
 
 ### Conditions
@@ -185,6 +191,93 @@ quadratic worst case over the 16 KiB window. Patterns mean what the gateway mean
 rewrites `\d`, `\w`, `\s`, `\b` (and their negations) to Rust's Unicode classes, and `.` to "any
 character but `\n`", before compiling.
 
+## Parse rules
+
+A parse rule (`action._tag: "parse"`) applies to logs only (`signals` is exactly `["logs"]`). Its
+conditions are the pipeline filter; its `steps` (1 to 10) run in order. The research and reasons
+are in [log-parsing.md](log-parsing.md).
+
+Every step reads one **source**: `source: "body"`, or `source: "attribute"` with `key`. A missing
+source fails the step.
+
+| Step        | Reads                                                       | Writes                                                                           |
+| ----------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `json`      | text holding a JSON object, or a kvlist (a structured body) | one attribute per leaf, keys joined with `.` (`http.status`), each with `prefix` |
+| `regex`     | text                                                        | one attribute per named group that took part in the match, `prefix` + group name |
+| `grok`      | text                                                        | one attribute per `%{PATTERN:field}`, `prefix` + field                           |
+| `severity`  | text or number                                              | `severity_number` and `severity_text`                                            |
+| `timestamp` | text or number                                              | `time_unix_nano`                                                                 |
+
+- **Output limit.** A `json`, `regex` or `grok` step writes at most 64 KiB, counting the UTF-8
+  bytes of each key (prefix included) and string, byte arrays as they are, 8 per number or
+  bool, and 8 more per array item or map entry; past it the step fails (`writes more than 64 KiB`) and writes nothing.
+- **Writing attributes.** A written key replaces the first attribute with that key, or is
+  appended. Protected keys (`service.name`, `org_id`, `maple_*` stamps) are never written.
+- **JSON.** At most 64 KiB (UTF-8) of text, 16 levels of nesting (objects and arrays) and 128
+  leaves; past any of these the step fails and writes nothing. Keys are visited in code point
+  order, so when two paths flatten to one key (`{"a.b":1,"a":{"b":2}}`) the later one wins. An
+  empty key below the top level is still a path component: `{"":{"x":1}}` writes `.x`. Arrays are kept whole as array values. `null` is skipped. A number that is a whole number
+  within ±(2^53 - 1) becomes an int, any other the nearest double. Text with a lone surrogate
+  (`"\ud800"`) or a number past f64 is not valid JSON, even in a member a later duplicate key
+  replaces; of two valid duplicates the last wins.
+- **Regex and grok** match unanchored within the first 16 KiB, like redaction. Both engines are
+  linear-time (the `regex` crate here, RE2JS in the TS engine), so patterns may repeat freely.
+  `\d`, `\w`, `\s` and `\b` (and negations) mean their ASCII forms. The validator accepts only
+  syntax both engines share: no lookaround, backreferences, `\Q..\E`, `\C`, class set operations
+  or inline flags other than a leading `(?i)`; regex group names are `[A-Za-z_][A-Za-z0-9_]*`.
+- **Grok** expands `%{NAME}`, `%{NAME:field}` and `%{NAME:field:int|float}` from the curated
+  library (`packages/domain/src/ingest-grok.ts`; the gateway carries the same table, both checked
+  against `packages/ingest-rules/fixtures/grok-patterns.json`). It includes the usual building
+  blocks (`INT`, `NUMBER`, `WORD`, `NOTSPACE`, `DATA`, `GREEDYDATA`, `QS`, `IP`, `HOSTNAME`,
+  `URIPATHPARAM`, `TIMESTAMP_ISO8601`, `HTTPDATE`, `LOGLEVEL`, ...) and `COMMONAPACHELOG` /
+  `COMBINEDAPACHELOG`, which write OTel semantic-convention keys (`client.address`,
+  `http.request.method`, `http.response.status_code`, ...). Field names may use letters, digits,
+  `_`, `.`, `@` and `-`. A `:int` or `:float` capture that does not convert stays text.
+- **Severity.** A number 1 to 24 (or its text) is used as is. Otherwise the text is matched by
+  ASCII-lowercase prefix: `trace` 1, `debug` 5, `info` 9, `notice` 10, `warn` 13, `err` 17,
+  `fatal`, `crit`, `alert`, `emerg` 21. `severity_text` becomes the OTel short name of the number
+  (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`).
+- **Timestamp** `format`: `rfc3339` (`2024-03-01T12:34:56.789+02:00`; `T`, `t` or a space; a
+  fraction after `.` or `,`, read to 9 digits; `Z`, `+HH:MM`, `+HHMM` or no zone, meaning UTC),
+  `unix_s`, `unix_ms`, `unix_us`, `unix_ns` (digits with an optional fraction), or `common_log`
+  (`10/Oct/2000:13:55:36 -0700`). Numbers are read as their condition text. Invalid dates, times
+  before 1970, `0` and values past `i64::MAX` nanoseconds (what the warehouse stores) fail.
+- **Failures.** A failed step sets the log attribute `maple.parse.error` to
+  `<step>: <reason>` (`regex: no match`, `json: not valid JSON`, `timestamp: out of range`, ...).
+  Later steps still run and a rule keeps its first failure. The log is always kept. The marker
+  counts as a parsed key, so an attribute redact rule can remove or mask it.
+- **Conditions.** Drop and redact rules decide whether they apply on the log before parsing, so
+  their conditions never see a value parsing produces: `not_exists(level)` still matches a log
+  that parsing then gives a `level`, and a condition can only match an attribute's value from
+  before parsing, never the one parsing writes over it. To redact parsed values, scope the redact
+  rule instead. A parse rule's conditions see the attributes and body as redaction and
+  earlier parse rules left them, and the resource as received (the gateway redacts a resource once
+  all its records were evaluated).
+- **Redaction.** Redaction runs before parsing, so a value a redact rule masks in the body or an
+  attribute is masked in everything parsed from it, through any number of steps, and a
+  contextual pattern (`password=[^ ]+`) masks the secret before a step could extract it. A parse
+  step may therefore see `[REDACTED]` where it expects a value. Afterwards, the matched
+  `attributes`- and `body`-scoped redact rules run on the keys parsing wrote; their counts add to
+  the rule's `redacted_values`.
+- **Metering.** Parsing never moves the bill: the net size change of parsing, including the
+  redaction of the keys it wrote and overwrites that shorten a value, is taken back out, so a
+  payload is metered on the size it was sent, less what drop rules removed. Measured per record
+  with its length prefix; the prefixes of the enclosing scope and resource can still move by a
+  byte or two each.
+- **Budget.** In the gateway each parse rule may read 256 MiB and spend 250 ms per payload, and
+  all parse rules together 1 GiB and 1 s; a rule's conditions and steps both count, a rule
+  never gets more than the payload has left, and the
+  clock is read before every rule and step. Past that, the rule stops parsing for the rest of that
+  payload and each log it still matches gets `maple.parse.error: budget: ...` (a spent budget
+  cannot run a regex condition, so a rule filtered by one stops matching). The payload is still
+  stored: parse rules never spend the payload's redaction budget, and parse time does not count
+  against its 2 second redaction deadline. Redacting the keys parsing wrote spends the parse
+  budget too; if it runs out first, that log is stored as it was before parsing. The attributes
+  parsing adds count toward the decode memory the payload holds until its rows are written, so a
+  busy gateway answers 503 rather than holding unreserved memory. The TS engine has no budget.
+- **Stats.** A parse rule counts `matched` (logs it ran on) and `parse_failed` (logs where a step
+  failed) in `org_ingest_rule_stats`.
+
 ## Gateway configuration
 
 | Variable                      | Default | Meaning                                                                                                           |
@@ -278,6 +371,7 @@ a log whose number and text disagree is ranked by its text.
 - 50 rules per org and 20 conditions per rule.
 - 100 values per condition, each at most 1,024 characters.
 - 32 keys and 10 patterns per rule, each pattern at most 512 characters.
+- 10 steps per parse rule; a parse pattern at most 1,024 characters, a prefix at most 64.
 - The gateway also caps a compiled regex at 1 MiB.
 - All of an org's regexes together (conditions and patterns, enabled rules or not) are capped at
   an estimated 8 MiB compiled (`regexBudgetCost`); the API refuses a rule past it. The gateway
@@ -314,6 +408,8 @@ Each `packages/ingest-rules/fixtures/*.json` is an array of cases:
 ```
 
 - Rules are applied in array order, which stands in for `position`.
+- `input.timeUnixNano` is a decimal string. `expected` lists `severityNumber`, `severityText` and
+  `timeUnixNano` only when a parse rule changed them.
 - **Value mapping.** A JSON string, bool or array maps to the same OTLP type. A JSON object maps to
   a kvlist. An integer maps to `int_value`, and a number with a fraction maps to `double_value`.
   `{ "$bytes": "<hex>" }` maps to bytes.

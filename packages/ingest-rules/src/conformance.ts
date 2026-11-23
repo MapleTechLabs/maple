@@ -19,6 +19,8 @@ const FixtureRecord = Schema.Struct({
 	spanKind: Schema.optionalKey(Schema.String),
 	spanStatus: Schema.optionalKey(Schema.String),
 	statusMessage: Schema.optionalKey(Schema.String),
+	/** Decimal nanoseconds since the epoch. */
+	timeUnixNano: Schema.optionalKey(Schema.String),
 	events: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({ name: Schema.String, attributes: Schema.Record(Schema.String, Schema.Unknown) }),
@@ -91,6 +93,7 @@ export const toRecord = (input: unknown): RuleRecord => {
 		spanKind: fixture.spanKind,
 		spanStatus: fixture.spanStatus,
 		statusMessage: fixture.statusMessage,
+		timeUnixNano: fixture.timeUnixNano === undefined ? undefined : BigInt(fixture.timeUnixNano),
 		events:
 			fixture.events === undefined
 				? undefined
@@ -112,8 +115,11 @@ export const isJsonObject = (value: Json | undefined): value is Schema.JsonObjec
 export const member = (value: Json | undefined, key: string): Json | undefined =>
 	isJsonObject(value) ? value[key] : undefined
 
-/** The kept record in the fixture's `expected` form; absent body and events are left out. */
-export const outcomeJson = (record: RuleRecord): Schema.JsonObject =>
+/**
+ * The kept record in the fixture's `expected` form; absent body and events are left out. Severity
+ * and time are listed only when a parse rule changed them from `input`.
+ */
+export const outcomeJson = (record: RuleRecord, input?: RuleRecord): Schema.JsonObject =>
 	present([
 		["dropped", false],
 		["resource", mapJson(record.resource)],
@@ -121,6 +127,24 @@ export const outcomeJson = (record: RuleRecord): Schema.JsonObject =>
 		["body", record.body === undefined ? undefined : toJson(record.body)],
 		["events", eventsJson(record)],
 		["statusMessage", record.statusMessage],
+		[
+			"severityNumber",
+			input !== undefined && record.severityNumber !== input.severityNumber
+				? record.severityNumber
+				: undefined,
+		],
+		[
+			"severityText",
+			input !== undefined && record.severityText !== input.severityText
+				? record.severityText
+				: undefined,
+		],
+		[
+			"timeUnixNano",
+			input !== undefined && record.timeUnixNano !== input.timeUnixNano
+				? String(record.timeUnixNano)
+				: undefined,
+		],
 	])
 
 /**
@@ -133,6 +157,7 @@ export const runCase = (fixture: FixtureCase): Json => {
 		return {
 			invalid: Arr.map(compiled.invalid, (rule) => ({ index: rule.index, problems: rule.problems })),
 		}
-	const outcome = applyRules(compiled, toRecord(fixture.input), () => 0.5)
-	return outcome._tag === "dropped" ? { dropped: true } : outcomeJson(outcome.record)
+	const input = toRecord(fixture.input)
+	const outcome = applyRules(compiled, input, () => 0.5)
+	return outcome._tag === "dropped" ? { dropped: true } : outcomeJson(outcome.record, input)
 }

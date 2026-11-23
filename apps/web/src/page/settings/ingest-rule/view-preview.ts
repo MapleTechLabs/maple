@@ -9,11 +9,12 @@ import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { draftProblems, specOf } from "./form"
+import { type ActionType, draftProblems, specOf } from "./form"
 import { estimateBlock } from "./view-estimate"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
+	type ParsedField,
 	type PreviewRow,
 	type PreviewSignal,
 	recordsOf,
@@ -69,6 +70,38 @@ const recordLabel = (row: PreviewRow): string => {
 	)
 }
 
+// Keys and values in two columns, so a row's values line up. Keyed by position: a parsed
+// attribute can share its name with the severity or timestamp line.
+const fieldList = (h: H, fields: ReadonlyArray<ParsedField>): Html =>
+	h.dl(
+		[h.Class("grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-2xs")],
+		Arr.flatMap(fields, (field, index) => [
+			h.dt([h.Key(`k:${index}`), h.Class("text-muted-foreground max-w-48 break-all")], [field.key]),
+			h.dd([h.Key(`v:${index}`), h.Class("break-words")], [field.value]),
+		]),
+	)
+
+const ROW_BADGES = {
+	dropped: { variant: "warn", label: "Drop" },
+	redacted: { variant: "info", label: "Redact" },
+	parsed: { variant: "ok", label: "Parsed" },
+	failed: { variant: "warn", label: "Failed" },
+} as const
+
+const badgeOf = (row: PreviewRow) =>
+	ROW_BADGES[row._tag === "parsed" && row.failure !== null ? "failed" : row._tag]
+
+const rowDetails = (h: H, row: PreviewRow): ReadonlyArray<Html> => {
+	if (row._tag === "redacted") return Arr.map(row.changes, (change) => changeLine(h, change))
+	if (row._tag === "dropped") return []
+	return [
+		...(row.failure === null
+			? []
+			: [typography(h, { size: "2xs", tone: "warning", mono: true, as: "p" }, [row.failure])]),
+		...(row.fields.length === 0 ? [] : [fieldList(h, row.fields)]),
+	]
+}
+
 const previewRow = (h: H, row: PreviewRow, index: number): Html =>
 	vstack(
 		h,
@@ -80,20 +113,20 @@ const previewRow = (h: H, row: PreviewRow, index: number): Html =>
 		},
 		[
 			hstack(h, { gap: "2", shrink: true }, [
-				badge(h, { variant: row._tag === "dropped" ? "warn" : "info", size: "sm" }, [
-					row._tag === "dropped" ? "Drop" : "Redact",
-				]),
+				badge(h, { variant: badgeOf(row).variant, size: "sm" }, [badgeOf(row).label]),
 				typography(h, { size: "xs", truncate: true }, [recordLabel(row)]),
 			]),
-			...(row._tag === "redacted" ? Arr.map(row.changes, (change) => changeLine(h, change)) : []),
+			...rowDetails(h, row),
 		],
 	)
 
-const headline = (h: H, result: ReturnType<typeof runPreview>, isDrop: boolean): Html =>
+const headline = (h: H, result: ReturnType<typeof runPreview>, actionType: ActionType): Html =>
 	typography(h, { size: "sm", weight: "medium", as: "p" }, [
-		isDrop
+		actionType === "drop"
 			? `Would drop ${result.dropped} of ${result.total} (${percent(result.dropped, result.total)})`
-			: `Would redact ${result.redacted} of ${result.total} (${percent(result.redacted, result.total)})`,
+			: actionType === "parse"
+				? `Would parse ${result.parsed} of ${result.total}; ${result.failed} fail (${percent(result.failed, result.parsed)})`
+				: `Would redact ${result.redacted} of ${result.total} (${percent(result.redacted, result.total)})`,
 	])
 
 const body = (h: H, model: Model): Html => {
@@ -133,7 +166,7 @@ const body = (h: H, model: Model): Html => {
 				[],
 				[
 					vstack(h, { gap: "1", className: "px-4 py-3" }, [
-						headline(h, result, model.draft.actionType === "drop"),
+						headline(h, result, model.draft.actionType),
 						typography(h, { size: "xs", tone: "muted", as: "p" }, [
 							`Most recent ${result.total} records, last hour.${isHash ? " Preview hash, differs from stored." : ""}`,
 						]),
@@ -201,6 +234,14 @@ export const callouts = (h: H, model: Model): ReadonlyArray<Html> => [
 					h,
 					"Hashing is pseudonymization: values with few possibilities, like phone numbers, can be guessed.",
 					"warn",
+				),
+			]
+		: []),
+	...(model.draft.actionType === "parse"
+		? [
+				callout(
+					h,
+					"Stored samples keep attributes as text and bodies flattened, so types and structured bodies can differ at ingest.",
 				),
 			]
 		: []),

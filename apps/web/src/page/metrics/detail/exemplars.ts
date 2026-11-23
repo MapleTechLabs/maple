@@ -151,16 +151,34 @@ export const chartExemplars = (
 	exemplars: ReadonlyArray<MetricExemplarRow>,
 ): ReadonlyArray<MetricExemplarRow> => Arr.dedupeWith(exemplars, (a, b) => a.bucket === b.bucket)
 
-/** The chart's dots: one per exemplar, at its time and value. */
+/** A chart bucket's time in epoch ms, from the API's ISO or the warehouse's `YYYY-MM-DD HH:MM:SS`. */
+export const bucketMs = (bucket: string): number => parseWarehouseDateTime(bucket)
+
+/** The line's top value per bucket time, which a dot is measured against. */
+export const lineValuesByMs = (
+	rows: ReadonlyArray<Readonly<Record<string, string | number | boolean>>>,
+): ReadonlyMap<number, number> =>
+	new Map(
+		Arr.flatMap(rows, (row) => {
+			const values = Arr.filter(Rec.values(row), (value): value is number => typeof value === "number")
+			return typeof row["bucket"] === "string" && values.length > 0
+				? [[bucketMs(row["bucket"]), Math.max(...values)] as const]
+				: []
+		}),
+	)
+
+/** The chart's dots: one per exemplar, at its time and value, with the line's value under it. */
 export const exemplarDots = (
 	exemplars: ReadonlyArray<MetricExemplarRow>,
 	format: Format,
 	timeZone: string,
+	lineValues: ReadonlyMap<number, number> = new Map(),
 ): ReadonlyArray<ExemplarDot> =>
 	Arr.map(exemplars, (exemplar) => ({
 		key: exemplarKey(exemplar),
 		// At its bucket, the line point whose value it explains (the line is drawn at bucket starts).
 		atMs: isoMs(exemplar.bucket),
+		baseline: lineValues.get(isoMs(exemplar.bucket)),
 		value: exemplar.value,
 		title: format(exemplar.value),
 		rows: [

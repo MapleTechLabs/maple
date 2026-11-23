@@ -288,6 +288,72 @@ describe("ingest rule MCP tools", () => {
 		assert.deepEqual(structuredBody.examples[0]?.changes, ['body: {"user":{"email":"[REDACTED:email]"}}'])
 	})
 
+	it("counts what a parse draft would extract and where it fails, failures first", () => {
+		const log = (body: string) => ({
+			signal: "logs" as const,
+			resource: { "service.name": "api" },
+			attributes: {},
+			body,
+		})
+		const preview = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "parse",
+					steps: [{ _tag: "grok", source: "body", pattern: "%{WORD:method} %{INT:status:int}" }],
+				},
+			},
+			[log("GET 200"), log("no numbers here")],
+		)
+		assert.deepInclude(preview, { sampled: 2, parsed: 2, parseFailed: 1, dropped: 0 })
+		assert.deepEqual(
+			Arr.map(preview.examples, (example) => [example.outcome, example.changes]),
+			[
+				["parse_failed", ["maple.parse.error = grok: no match"]],
+				["parsed", ["method = GET", "status = 200"]],
+			],
+		)
+	})
+
+	it("lists parsed fields named like Object methods", () => {
+		const preview = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: { _tag: "parse", steps: [{ _tag: "json", source: "body", prefix: "" }] },
+			},
+			[
+				{
+					signal: "logs" as const,
+					resource: {},
+					attributes: {},
+					body: '{"constructor":"x","toString":"y"}',
+				},
+			],
+		)
+		assert.deepEqual(preview.examples[0]?.changes, ["constructor = x", "toString = y"])
+	})
+
+	it("reports a removed attribute named like an Object method", () => {
+		const preview = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: ["toString"],
+					detectors: [],
+					patterns: [],
+					scopes: ["attributes"],
+					method: "remove",
+				},
+			},
+			[{ signal: "logs" as const, resource: {}, attributes: { toString: "secret" }, body: "hi" }],
+		)
+		assert.deepEqual(preview.examples[0]?.changes, ["toString: removed"])
+	})
+
 	it("names the argument a validation problem is about", () => {
 		assert.deepEqual(
 			Arr.map(

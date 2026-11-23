@@ -3,6 +3,7 @@ title: "Google Cloud"
 description: "Connect a Google Cloud organization, folder or project to Maple with a Cloud Shell script, console steps, Terraform or Alchemy."
 group: "Integrations"
 order: 7
+icon: "googlecloud"
 ---
 
 The Google Cloud integration connects an organization, a folder or a single project to Maple. You choose what each connection collects:
