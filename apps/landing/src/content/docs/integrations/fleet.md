@@ -3,6 +3,7 @@ title: "Fleet"
 description: "Connect a Fleet server with a read-only API token. Maple puts Fleet's admin activity in the audit log, and failing device policies and vulnerable software in Security → Devices."
 group: "Integrations"
 order: 4.5
+icon: "fleet"
 ---
 
 [Fleet](https://fleetdm.com) is open-source device management built on osquery. The Maple integration reads your Fleet server with an API token and brings two things into Maple:
