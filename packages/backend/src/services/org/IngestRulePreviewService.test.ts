@@ -1,6 +1,18 @@
-import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { PREVIEW_MAX_SCAN_ROWS, scanMinutes, suggestRules, summarize } from "./IngestRulePreviewService"
+import { Array as Arr, Effect, Layer, Schema, String as Str } from "effect"
+import { WarehouseQueryError, type TenantContext } from "@maple/domain/http"
+import type { IngestRuleSpec } from "@maple/domain/ingest-rules"
+import { OrgId, UserId } from "@maple/primitives"
+import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
+import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import {
+	IngestRulePreviewService,
+	PREVIEW_MAX_SCAN_ROWS,
+	scanMinutes,
+	suggestRules,
+	summarize,
+} from "./IngestRulePreviewService"
 
 describe("ingest rule preview totals", () => {
 	const rows = [
@@ -144,5 +156,62 @@ describe("suggested ingest rules", () => {
 			{ logBytes: 10_000_000 * KB, spanBytes: 0 },
 		)
 		expect(suggestions).toEqual([])
+	})
+})
+
+describe("ingest rule preview errors", () => {
+	const tenant: TenantContext = {
+		orgId: Schema.decodeSync(OrgId)("org_preview_errors"),
+		userId: Schema.decodeSync(UserId)("user_preview_errors"),
+		roles: [],
+		authMode: "self_hosted",
+	}
+	const spec: IngestRuleSpec = {
+		signals: ["logs"],
+		conditions: [{ field: "body", op: "regex", value: "^retry [0-9]+$" }],
+		action: { _tag: "drop", keepPercent: 0 },
+	}
+	/** Sizing reads answer empty; the match count fails with `failure`. */
+	const previewWith = (failure: WarehouseQueryError) => {
+		const warehouse = makeWarehouseServiceStub({
+			// SAFETY: the preview hands the stub plain compiled queries, never a capability compile.
+			compiledQuery: ((_tenant: unknown, compiled: CompiledQueryInput<unknown>) => {
+				const query = compiledQueryOf(compiled)
+				return Str.includes("countIf")(query.sql)
+					? Effect.fail(failure)
+					: query.decodeRows([]).pipe(Effect.orDie)
+			}) as never,
+		})
+		return Effect.gen(function* () {
+			const service = yield* IngestRulePreviewService
+			return yield* service.preview(tenant, spec, Date.UTC(2026, 10, 23, 12))
+		}).pipe(
+			Effect.flip,
+			Effect.provide(
+				Layer.effect(IngestRulePreviewService, IngestRulePreviewService.make).pipe(
+					Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+				),
+			),
+		)
+	}
+
+	it("answers a regex the warehouse cannot compile as an invalid rule, not a warehouse failure", async () => {
+		const error = await Effect.runPromise(
+			previewWith(
+				new WarehouseQueryError({
+					message: "Cannot compile re2",
+					pipeName: "ingestRulePreviewLogs",
+					clickhouseType: "CANNOT_COMPILE_REGEXP",
+				}),
+			),
+		)
+		expect(error._tag).toBe("@maple/http/errors/IngestRuleValidationError")
+	})
+
+	it("keeps any other warehouse failure as it is", async () => {
+		const error = await Effect.runPromise(
+			previewWith(new WarehouseQueryError({ message: "timeout", pipeName: "ingestRulePreviewLogs" })),
+		)
+		expect(error._tag).toBe("@maple/http/errors/WarehouseQueryError")
 	})
 })

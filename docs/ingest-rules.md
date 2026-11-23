@@ -234,8 +234,8 @@ shows it above the sample preview, a moment after the last edit.
 - Regexes run on ClickHouse's RE2, translated to mean what the gateway means: `\d`, `\w`, `\s` and
   their negations become Unicode classes, `.` stops at a newline (`(?-s)`), and the spellings RE2
   lacks are rewritten (`\u0041`, `\u{41}`, `(?<name>`, `\p{Script=Greek}`, `\p{Letter}`). RE2's
-  `\b` stays ASCII. A pattern RE2 still cannot compile (a binary property such as
-  `\p{Alphabetic}`) is a 400 that says the rule cannot be previewed; the gateway still applies it.
+  `\b` stays ASCII. A pattern that passes the validator but that RE2 still cannot compile is a 400
+  that says the rule cannot be previewed; the gateway still applies it.
 - A map or array log body is opaque to the gateway, but the warehouse stores it as JSON text, so
   a body condition can count it in the preview while the gateway keeps it.
 
