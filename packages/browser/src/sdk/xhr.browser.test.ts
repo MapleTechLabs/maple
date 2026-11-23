@@ -74,6 +74,62 @@ function expectTwoRequests(
 	expect(nanos(second.startTime) >= nanos(first.endTime)).toBe(true)
 }
 
+/**
+ * Reopen and send from `readystatechange` at DONE, which runs before `load`/`error`; reopening
+ * there means the browser never fires `load` for the first request.
+ */
+async function reuseFromReadyStateChange(first: string, second: string): Promise<void> {
+	const xhr = new XMLHttpRequest()
+	let reopened = false
+	const done = new Promise<void>((resolve) => {
+		xhr.onreadystatechange = () => {
+			if (xhr.readyState !== XMLHttpRequest.DONE) return
+			if (reopened) return resolve()
+			reopened = true
+			xhr.open("GET", second)
+			xhr.send()
+		}
+	})
+	xhr.open("GET", first)
+	xhr.send()
+	await done
+	await ended(2)
+}
+
+const absolute = (path: string): string => new URL(path, location.href).href
+
+describe("instrumentXhr with one XMLHttpRequest reused from readystatechange", () => {
+	it("ends the first request's span when it succeeded", async () => {
+		const [a, b] = [blobUrl("a"), blobUrl("b")]
+		await reuseFromReadyStateChange(a, b)
+
+		const spans = exporter.getFinishedSpans()
+		expectTwoRequests(spans, [a, b], [200, 200])
+		expect(spans.map((span) => span.events.at(-1)?.name)).toEqual(["loaded", "loaded"])
+	})
+
+	it("ends the first request's span, as an error, when it answered with an error status", async () => {
+		const [a, b] = [absolute("/__maple_missing__.json"), blobUrl("b")]
+		await reuseFromReadyStateChange(a, b)
+
+		const spans = exporter.getFinishedSpans()
+		expectTwoRequests(spans, [a, b], [404, 200])
+		expect(spans.map((span) => span.events.at(-1)?.name)).toEqual(["error", "loaded"])
+		expect(spans.map((span) => span.status.code)).toEqual([2, 0])
+	})
+
+	it("ends the first request's span when it failed without a response", async () => {
+		const a = blobUrl("gone")
+		URL.revokeObjectURL(a)
+		const b = blobUrl("b")
+		await reuseFromReadyStateChange(a, b)
+
+		const spans = exporter.getFinishedSpans()
+		expectTwoRequests(spans, [a, b], [undefined, 200])
+		expect(spans.map((span) => span.attributes["error.type"])).toEqual(["error", undefined])
+	})
+})
+
 describe("instrumentXhr with one XMLHttpRequest reused", () => {
 	it("spans a second request sent from the first one's loadend", async () => {
 		const [a, b] = [blobUrl("a"), blobUrl("b")]

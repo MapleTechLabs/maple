@@ -31,6 +31,9 @@ interface Pending {
 	status?: number
 	resources?: ReturnType<typeof observeResources>
 	detach?: () => void
+	settled?: boolean
+	/** When it reached DONE, if that was before the event that settles it. */
+	doneAt?: { readonly performance: HrTime; readonly epochMs: number }
 }
 
 /** Patch `XMLHttpRequest.prototype.open` and `send`; returns the unpatch. */
@@ -45,6 +48,8 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 	let enabled = true
 	let pending = new WeakMap<XMLHttpRequest, Pending>()
 	const used = new WeakSet<PerformanceResourceTiming>()
+	/** A request reopened at DONE with no response, whose `error`/`timeout`/`abort` event is still to come. */
+	const staleFailure = new WeakMap<XMLHttpRequest, Pending>()
 
 	const finish = (eventName: string, entry: Pending, performanceEndTime: HrTime, endTime: number): void => {
 		entry.resources?.disconnect()
@@ -65,12 +70,19 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		span.end(endTime)
 	}
 
-	const settle = (xhr: XMLHttpRequest, entry: Pending, eventName: string, errorType?: string): void => {
-		if (pending.get(xhr) !== entry) return
+	const settle = (
+		xhr: XMLHttpRequest,
+		entry: Pending,
+		eventName: string,
+		errorType?: string,
+		status: number = xhr.status,
+	): void => {
+		if (entry.settled === true) return
+		entry.settled = true
 		// Detached now, not at the deferred end: the app may reuse the xhr for its next request at once.
 		entry.detach?.()
-		entry.status = xhr.status
-		pending.delete(xhr)
+		entry.status = status
+		if (pending.get(xhr) === entry) pending.delete(xhr)
 		const { span } = entry
 		safely("applyCustomAttributesOnSpan", () => config.applyCustomAttributesOnSpan(span, xhr))
 		if (errorType) {
@@ -80,8 +92,8 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 			span.setStatus({ code: SpanStatusCode.ERROR })
 			span.setAttribute("error.type", String(entry.status))
 		}
-		const performanceEndTime = hrTime()
-		const endTime = Date.now()
+		const performanceEndTime = entry.doneAt?.performance ?? hrTime()
+		const endTime = entry.doneAt?.epochMs ?? Date.now()
 		setTimeout(() => finish(eventName, entry, performanceEndTime, endTime), OBSERVER_WAIT_TIME_MS)
 	}
 
@@ -91,7 +103,38 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		originalOpen.apply(this, [method, url, ...rest])
 	}
 
+	/**
+	 * `open()` on an xhr whose last request has not settled. Reopened at DONE (from a
+	 * `readystatechange` handler) the browser fires no `load`, so a response ends the span
+	 * here; with no response its `error`, `timeout` or `abort` event still follows, and a
+	 * fallback ends it if none does. Reopened mid-flight, the browser drops the request silently.
+	 */
+	const closePrevious = (xhr: XMLHttpRequest, previous: Pending): void => {
+		pending.delete(xhr)
+		if (previous.sendStartTime === undefined) {
+			// Opened, never sent: nothing went out, so there is nothing to report.
+			previous.detach?.()
+			previous.resources?.disconnect()
+		} else if (xhr.readyState !== XMLHttpRequest.DONE) {
+			settle(xhr, previous, "abort")
+		} else if (xhr.status !== 0) {
+			settle(xhr, previous, xhr.status < 299 ? "loaded" : "error")
+		} else {
+			// Its failure event fires right after this handler, to whichever listeners are on the xhr then.
+			previous.detach?.()
+			previous.doneAt = { performance: hrTime(), epochMs: Date.now() }
+			staleFailure.set(xhr, previous)
+			setTimeout(() => {
+				if (staleFailure.get(xhr) !== previous) return
+				staleFailure.delete(xhr)
+				settle(xhr, previous, "error", "error", 0)
+			}, 0)
+		}
+	}
+
 	const start = (xhr: XMLHttpRequest, url: string, method: string): void => {
+		const previous = pending.get(xhr)
+		if (previous) closePrevious(xhr, previous)
 		const parsed = parseUrl(url)
 		if (isUrlIgnored(parsed.href, config.ignoreUrls)) return
 		const methods = methodAttributes(method)
@@ -106,10 +149,6 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 			},
 		})
 		span.addEvent("open")
-		// Reopened before the last request settled: that one is dropped, as the browser drops it.
-		const previous = pending.get(xhr)
-		previous?.detach?.()
-		previous?.resources?.disconnect()
 		pending.set(xhr, { span, url })
 	}
 
@@ -117,11 +156,19 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		entry.sendStartTime = hrTime()
 		entry.span.addEvent("send")
 		// This request's own listeners, so settling it never detaches another request's.
+		// A failure event still owed to the request this one replaced is that request's, not this one's.
+		const failed = (eventName: string, errorType?: string) => (): void => {
+			const stale = staleFailure.get(xhr)
+			if (stale) {
+				staleFailure.delete(xhr)
+				settle(xhr, stale, eventName, errorType, 0)
+			} else settle(xhr, entry, eventName, errorType)
+		}
 		const listeners = {
 			load: () => settle(xhr, entry, xhr.status < 299 ? "loaded" : "error"),
-			error: () => settle(xhr, entry, "error", "error"),
-			abort: () => settle(xhr, entry, "abort"),
-			timeout: () => settle(xhr, entry, "timeout", "timeout"),
+			error: failed("error", "error"),
+			abort: failed("abort"),
+			timeout: failed("timeout", "timeout"),
 		}
 		entry.detach?.()
 		for (const [type, listener] of Object.entries(listeners)) xhr.addEventListener(type, listener)
