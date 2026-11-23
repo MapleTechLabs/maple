@@ -140,6 +140,7 @@ import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenc
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
 import { McpReadService } from "@maple/backend/services/mcp/McpReadService"
+import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
 import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
 
@@ -317,6 +318,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	UsersReadService.layer,
 	McpReadService.layer,
 	AiSessionReadService.layer,
+	AiEvaluationReadService.layer.pipe(Layer.provide(OrganizationFeatureFlagsService.layer)),
 	DigestService.layer,
 	WebAnalyticsDigestService.layer,
 	DemoService.layer,

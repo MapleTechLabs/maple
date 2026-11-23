@@ -8,6 +8,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/backend/vcs/VcsSourceFileNotFoundError",
 	"@maple/backend/vcs/VcsSourceRefNotFoundError",
 	"@maple/backend/vcs/VcsSourceRepositoryNotFoundError",
+	"@maple/http/ai-evaluations/LlmEvalsDisabledError",
 	"@maple/http/ai-sessions/AiSessionTooLargeError",
 	"@maple/http/ai-triage/AiTriageForbiddenError",
 	"@maple/http/ai-triage/AiTriageValidationError",
