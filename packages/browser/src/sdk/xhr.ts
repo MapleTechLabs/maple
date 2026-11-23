@@ -30,7 +30,7 @@ interface Pending {
 	sendStartTime?: HrTime
 	status?: number
 	resources?: ReturnType<typeof observeResources>
-	removeListeners?: () => void
+	detach?: () => void
 }
 
 /** Patch `XMLHttpRequest.prototype.open` and `send`; returns the unpatch. */
@@ -47,7 +47,7 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 	const used = new WeakSet<PerformanceResourceTiming>()
 
 	const finish = (eventName: string, entry: Pending, performanceEndTime: HrTime, endTime: number): void => {
-		entry.removeListeners?.()
+		entry.resources?.disconnect()
 		const { span } = entry
 		// Ended early (the page went away) or never recorded: nothing left to add.
 		if (!span.isRecording()) return
@@ -65,9 +65,10 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		span.end(endTime)
 	}
 
-	const settle = (xhr: XMLHttpRequest, eventName: string, errorType?: string): void => {
-		const entry = pending.get(xhr)
-		if (!entry) return
+	const settle = (xhr: XMLHttpRequest, entry: Pending, eventName: string, errorType?: string): void => {
+		if (pending.get(xhr) !== entry) return
+		// Detached now, not at the deferred end: the app may reuse the xhr for its next request at once.
+		entry.detach?.()
 		entry.status = xhr.status
 		pending.delete(xhr)
 		const { span } = entry
@@ -83,20 +84,6 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		const endTime = Date.now()
 		setTimeout(() => finish(eventName, entry, performanceEndTime, endTime), OBSERVER_WAIT_TIME_MS)
 	}
-
-	function onLoad(this: XMLHttpRequest): void {
-		settle(this, this.status < 299 ? "loaded" : "error")
-	}
-	function onError(this: XMLHttpRequest): void {
-		settle(this, "error", "error")
-	}
-	function onAbort(this: XMLHttpRequest): void {
-		settle(this, "abort")
-	}
-	function onTimeout(this: XMLHttpRequest): void {
-		settle(this, "timeout", "timeout")
-	}
-	const listeners = { load: onLoad, error: onError, abort: onAbort, timeout: onTimeout }
 
 	// The app's own arguments pass through as given, however many it passed.
 	function open(this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]): void {
@@ -119,18 +106,28 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 			},
 		})
 		span.addEvent("open")
-		pending.get(xhr)?.removeListeners?.()
+		// Reopened before the last request settled: that one is dropped, as the browser drops it.
+		const previous = pending.get(xhr)
+		previous?.detach?.()
+		previous?.resources?.disconnect()
 		pending.set(xhr, { span, url })
 	}
 
 	const beginSend = (xhr: XMLHttpRequest, entry: Pending): void => {
 		entry.sendStartTime = hrTime()
 		entry.span.addEvent("send")
+		// This request's own listeners, so settling it never detaches another request's.
+		const listeners = {
+			load: () => settle(xhr, entry, xhr.status < 299 ? "loaded" : "error"),
+			error: () => settle(xhr, entry, "error", "error"),
+			abort: () => settle(xhr, entry, "abort"),
+			timeout: () => settle(xhr, entry, "timeout", "timeout"),
+		}
+		entry.detach?.()
 		for (const [type, listener] of Object.entries(listeners)) xhr.addEventListener(type, listener)
-		entry.removeListeners = () => {
+		entry.detach = () => {
 			for (const [type, listener] of Object.entries(listeners)) xhr.removeEventListener(type, listener)
-			entry.resources?.disconnect()
-			entry.removeListeners = undefined
+			entry.detach = undefined
 		}
 		const headers = traceHeaders(parseUrl(entry.url).href, config.propagateTraceHeaderCorsUrls)
 		for (const [name, value] of Object.entries(headers ?? {})) xhr.setRequestHeader(name, value)
