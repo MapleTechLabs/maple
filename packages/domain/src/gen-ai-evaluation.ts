@@ -45,6 +45,9 @@ export const MAPLE_EVALUATION_ATTRS = {
 	targetSpanId: "maple_ai.evaluation.target.span_id",
 } as const
 
+/** Longest evaluator name kept, in characters; the read APIs accept names up to this length. */
+export const EVALUATION_NAME_MAX = 200
+
 /** Longest explanation kept per score, in characters; judges can write essays. */
 export const EVALUATION_EXPLANATION_MAX = 4096
 

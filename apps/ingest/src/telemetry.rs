@@ -5237,9 +5237,11 @@ fn log_attributes(log: &LogRecord) -> Map<String, Value> {
 const LOG_EVENT_NAME_ATTR: &str = "event.name";
 
 /// Moves a record's `event_name` into its attributes as `event.name`, where ingest rules read
-/// attributes. An emitter's own `event.name` attribute wins.
+/// attributes. An emitter's own `event.name` attribute wins. The field is emptied either way, so
+/// `log_attributes` cannot restore a name a `remove` rule deleted.
 pub(crate) fn lift_log_event_name(record: &mut LogRecord) {
-    if record.event_name.is_empty()
+    let event_name = std::mem::take(&mut record.event_name);
+    if event_name.is_empty()
         || record
             .attributes
             .iter()
@@ -5250,7 +5252,7 @@ pub(crate) fn lift_log_event_name(record: &mut LogRecord) {
     record.attributes.push(KeyValue {
         key: LOG_EVENT_NAME_ATTR.to_owned(),
         value: Some(AnyValue {
-            value: Some(any_value::Value::StringValue(record.event_name.clone())),
+            value: Some(any_value::Value::StringValue(event_name)),
         }),
         ..Default::default()
     });
@@ -6909,6 +6911,9 @@ mod tests {
             .filter(|attribute| attribute.key == "event.name")
             .collect();
         assert_eq!(names.len(), 1);
+        // A `remove` rule deleting the attribute leaves no name for the row to restore.
+        record.attributes.clear();
+        assert!(!log_attributes(&record).contains_key("event.name"));
     }
 
     #[tokio::test]

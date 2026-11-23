@@ -4,6 +4,7 @@
 
 import {
 	EVALUATION_EXPLANATION_MAX,
+	EVALUATION_NAME_MAX,
 	EVALUATION_FAIL_LABELS,
 	EVALUATION_PASS_LABELS,
 	GEN_AI_EVALUATION_ATTRS as OTEL,
@@ -44,7 +45,7 @@ export const evaluationColumnsSql = (opts: {
           coalesce(nullIf(${a(MAPLE.scope)}, ''), if(${targeted} AND ${a(MAPLE.targetSpanId)} = '', 'trace', 'span')) AS Scope,
           ${a(MAPLE.sessionId)} AS SessionId,
           ${a(OTEL.responseId)} AS ResponseId,
-          ${a(OTEL.name)} AS Name,
+          leftUTF8(${a(OTEL.name)}, ${EVALUATION_NAME_MAX}) AS Name,
           if(${finite}, toFloat64OrZero(${a(OTEL.scoreValue)}), 0) AS ScoreValue,
           toUInt8(${finite}) AS HasScore,
           ${a(OTEL.scoreLabel)} AS ScoreLabel,
