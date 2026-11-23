@@ -1,7 +1,7 @@
 import * as Policy from "@maple/domain/policy"
 import { GroupingConfigDocument } from "@maple/domain/http"
 import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
-import { Array as Arr, Result } from "effect"
+import { Array as Arr, Result, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
@@ -12,6 +12,9 @@ import { groupingRulesSection } from "./grouping-rules-view"
 // that only a manager edits.
 
 const ADMIN = Policy.grantsOf(["org:admin"])
+const decodeIso = Schema.decodeSync(GroupingConfigDocument.fields.updatedAt)
+const OPENED_AT = decodeIso("2026-11-20T10:00:00.000Z")
+const NEWER_AT = decodeIso("2026-11-21T10:00:00.000Z")
 const MEMBER = Policy.grantsOf(["org:member"])
 
 const stored = new GroupingConfigDocument({
@@ -56,6 +59,28 @@ describe("grouping rules editor", () => {
 		)
 		expect(config.rules[1]?.message).toBeUndefined()
 		expect(saved.model.isSaving).toBe(true)
+	})
+
+	test("a save is built on the stored rules the draft started from, not ones loaded behind an edit", () => {
+		const opened = new GroupingConfigDocument({ ...stored, updatedAt: OPENED_AT })
+		const newer = new GroupingConfigDocument({ ...stored, updatedAt: NEWER_AT })
+		const editing = run(
+			Rules.update(
+				Rules.init().model,
+				Rules.Message.CompletedFetchRules({ result: Result.succeed(opened) }),
+				ADMIN,
+			).model,
+			[
+				Rules.Message.ClickedAddRule(),
+				Rules.Message.CompletedFetchRules({ result: Result.succeed(newer) }),
+			],
+		)
+		expect(editing.baseUpdatedAt).toBe(OPENED_AT)
+		const saved = run(editing, [
+			Rules.Message.ClickedSaveRules(),
+			Rules.Message.CompletedSaveRules({ result: Result.succeed(newer) }),
+		])
+		expect(saved.baseUpdatedAt).toBe(NEWER_AT)
 	})
 
 	test("a refused save puts each problem under the rule it names, the rest above the list", () => {

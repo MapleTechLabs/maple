@@ -6,8 +6,9 @@ import type {
 } from "@maple/domain/http"
 import { frameFunction } from "@maple/domain/tinybird/grouping"
 import { formatNumber } from "@maple/ui/lib/format"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
+import { detailOf } from "./derive"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { collapsible } from "@maple/views/ui/collapsible"
@@ -106,6 +107,13 @@ const writeError = (h: H, model: Model, target: string): ReadonlyArray<Html> =>
 				]),
 			]
 
+/** A merged-away or archived issue takes no writes: its fingerprints answer to another issue. */
+const isRetired = (model: Model): boolean =>
+	Option.match(detailOf(model), {
+		onNone: () => false,
+		onSome: ({ issue }) => issue.mergedIntoIssueId !== null || issue.archivedAt !== null,
+	})
+
 const splitOutButton = (h: H, model: Model, fingerprint: Fingerprint): Html =>
 	gatedBy(h, canTriageIssues(model), "error_issues:triage", (isLocked) =>
 		button(
@@ -116,6 +124,7 @@ const splitOutButton = (h: H, model: Model, fingerprint: Fingerprint): Html =>
 				className: "shrink-0",
 				isDisabled:
 					isLocked ||
+					isRetired(model) ||
 					(model.splittingHash !== null && model.splittingHash !== fingerprint.fingerprintHash) ||
 					model.mergingIssueId !== null,
 				isLoading: model.splittingHash === fingerprint.fingerprintHash,
@@ -256,6 +265,7 @@ const mergeButton = (h: H, model: Model, similar: ErrorIssueSimilarIssue): Html 
 				className: "shrink-0",
 				isDisabled:
 					isLocked ||
+					isRetired(model) ||
 					model.splittingHash !== null ||
 					(model.mergingIssueId !== null && model.mergingIssueId !== similar.id),
 				isLoading: model.mergingIssueId === similar.id,

@@ -262,7 +262,10 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 				: {
 						model: { ...model, isSaving: true, refusal: null },
 						commands: [
-							SaveGroupingRules({ config: configOf(model.draft), expectedUpdatedAt: model.baseUpdatedAt }),
+							SaveGroupingRules({
+								config: configOf(model.draft),
+								expectedUpdatedAt: model.baseUpdatedAt,
+							}),
 						],
 					},
 		CompletedSaveRules: ({ result }) =>
