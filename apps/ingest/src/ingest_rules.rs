@@ -181,7 +181,9 @@ pub struct InvalidRule {
     pub reason: String,
 }
 
-/// The org's rule regexes compile past `ORG_REGEX_BYTES` together, so none of its rules apply.
+/// The org's rule regexes compile past `ORG_REGEX_BYTES` together. No partial rule set is
+/// installed: the gateway refuses the org's payloads until its rules fit, which the API's save-time
+/// check (`orgRegexBudgetProblem`, counting parse patterns too) keeps from happening.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RegexBudgetExceeded {
     /// Compiled bytes when compiling stopped.
@@ -1241,9 +1243,8 @@ impl<'a> Pass<'a> {
             budget.deadline = budget.deadline.min(total.deadline);
             total.check_clock();
             budget.check_clock();
-            if total.spent() {
-                budget.remaining = 0;
-            }
+            // A rule may spend no more than the payload has left.
+            budget.remaining = if total.spent() { 0 } else { budget.remaining.min(total.remaining) };
             let before = budget.remaining;
             // Conditions and steps both spend the parse budgets, never the one that refuses the
             // payload; their time is kept off the redaction deadline at once, so a later rule's
@@ -1360,10 +1361,16 @@ impl<'a> Pass<'a> {
     }
 
     /// Applies the matched `attributes`- and `body`-scoped redact rules to the attributes parse
-    /// rules wrote.
-    fn redact_written(&mut self, attributes: &mut Vec<KeyValue>) {
+    /// rules wrote. It spends the payload's parse budget, never the one that refuses the payload,
+    /// and returns false when that budget ran out before every written key was scanned.
+    fn redact_written(&mut self, attributes: &mut Vec<KeyValue>) -> bool {
         let rules = self.rules;
         let written = std::mem::take(&mut self.written_keys);
+        let total = self
+            .parse_total
+            .get_or_insert_with(|| ScanBudget::new(parse::PAYLOAD_SCAN_BYTES, parse::PAYLOAD_SCAN_TIME));
+        let started = Instant::now();
+        let mut counts = Vec::new();
         for (index, rule) in rules.rules.iter().enumerate() {
             let CompiledAction::Redact(redaction) = &rule.action else {
                 continue;
@@ -1374,13 +1381,21 @@ impl<'a> Pass<'a> {
             let mut redactor = Redactor {
                 redaction,
                 salt: rules.hash_salt.as_bytes(),
-                budget: &mut self.budget,
+                budget: total,
                 count: 0,
             };
             attributes.retain_mut(|kv| !written.contains(&kv.key) || redactor.redact_entry(kv, true));
-            self.stats.per_rule[index].redacted_values += redactor.count;
+            counts.push((index, redactor.count));
         }
+        self.budget.deadline += started.elapsed();
         self.written_keys = written;
+        let complete = !total.spent();
+        if complete {
+            for (index, count) in counts {
+                self.stats.per_rule[index].redacted_values += count;
+            }
+        }
+        complete
     }
 
     /// Redacts the resource once all its records were evaluated, so conditions saw it as received.
@@ -1505,10 +1520,14 @@ impl Pass<'_> {
                 let len = record.encoded_len();
                 i64::try_from(len + prost::length_delimiter_len(len)).unwrap_or(i64::MAX)
             };
+            // Kept so a record whose parsed keys could not all be redacted is stored unparsed.
+            let unparsed = redact.then(|| record.clone());
             let before = framed(record);
             self.parse_record(resource, record);
-            if redact && !self.written_keys.is_empty() {
-                self.redact_written(&mut record.attributes);
+            if let Some(unparsed) = unparsed.filter(|_| !self.written_keys.is_empty()) {
+                if !self.redact_written(&mut record.attributes) {
+                    *record = unparsed;
+                }
             }
             // Signed and measured after the parsed keys' redaction: an overwrite that shortens a
             // value or a parsed key redaction removes moves the billed size neither way.
@@ -2814,6 +2833,29 @@ mod tests {
         };
         // 12 KiB of conditions would spend a 10,000-byte refusal budget; they spend the parse budget.
         apply_logs(&rules, &mut request, &mut RuleStats::default()).expect("parse conditions never refuse");
+    }
+
+    #[test]
+    fn redacting_parsed_keys_never_refuses_a_payload() {
+        let parse = spec(json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": { "_tag": "parse", "steps": [{ "_tag": "json", "source": "body" }] }
+        }));
+        let rules = compile(vec![("mask".to_owned(), mask_pattern("zzz")), ("parse".to_owned(), parse)])
+            .0
+            .with_scan_budget(6_000, REQUEST_SCAN_TIME);
+        let body = format!(r#"{{"msg":"{}"}}"#, "a".repeat(4096));
+        let mut request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs { log_records: vec![log_with_body(&body)], ..Default::default() }],
+                ..Default::default()
+            }],
+        };
+        // The body's redaction fits 6,000 bytes; scanning the 4 KiB parsed `msg` as well would not.
+        apply_logs(&rules, &mut request, &mut RuleStats::default()).expect("parsed keys spend the parse budget");
+        let record = &request.resource_logs[0].scope_logs[0].log_records[0];
+        assert!(record.attributes.iter().any(|kv| kv.key == "msg"), "{:?}", record.attributes);
     }
 
     #[test]
