@@ -136,9 +136,7 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 			const effect = effectKind(rule.action, totals)
 			return [
 				typography(h, { size: "xs", numeric: true }, [headline(effect, totals)]),
-				typography(h, { size: "2xs", tone: "muted", numeric: true, truncate: true }, [
-					detail(effect, totals),
-				]),
+				typography(h, { size: "2xs", tone: "muted", numeric: true }, [detail(effect, totals)]),
 				miniBars(h, {
 					values: hourlySeries(stats, rule.id, 24, (entry) => effectCount(effect, entry)),
 					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
