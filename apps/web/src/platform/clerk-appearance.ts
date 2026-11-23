@@ -1,22 +1,14 @@
-// Provider-wide theme: every Clerk surface (user button popover, re-verification
-// modal, organization switcher) keeps its own card chrome on top of these tokens.
-// The tokens and elements Clerk's prebuilt `dark` theme added are inlined below.
-export const clerkAppearance = {
+// Clerk's prebuilt `dark` theme, inlined. It stays a base theme: Clerk resolves each layer on its
+// own, so our legacy keys below (colorText, colorInputBackground) still beat its canonical ones.
+const clerkDarkBaseTheme = {
 	variables: {
+		colorBackground: "#212126",
 		colorNeutral: "white",
+		colorPrimary: "#ffffff",
 		colorPrimaryForeground: "black",
 		colorForeground: "white",
 		colorInputForeground: "white",
 		colorInput: "#26262B",
-		colorBackground: "oklch(0.207 0.008 67)",
-		colorInputBackground: "oklch(0.33 0.015 72)",
-		colorText: "oklch(0.91 0.016 74)",
-		colorTextSecondary: "oklch(0.603 0.023 72)",
-		colorPrimary: "oklch(0.714 0.154 59)",
-		colorDanger: "oklch(0.654 0.176 30)",
-		colorInputText: "oklch(0.91 0.016 74)",
-		borderRadius: "0px",
-		fontFamily: "'Geist Mono Variable', monospace",
 	},
 	// Dark-on-light provider marks would vanish on the dark card.
 	elements: {
@@ -30,6 +22,23 @@ export const clerkAppearance = {
 			"--cl-chassis-screen": "#e6e6e6",
 			"--cl-screen": "#111111",
 		},
+	},
+}
+
+// Provider-wide theme: every Clerk surface (user button popover, re-verification
+// modal, organization switcher) keeps its own card chrome on top of these tokens.
+export const clerkAppearance = {
+	baseTheme: clerkDarkBaseTheme,
+	variables: {
+		colorBackground: "oklch(0.207 0.008 67)",
+		colorInputBackground: "oklch(0.33 0.015 72)",
+		colorText: "oklch(0.91 0.016 74)",
+		colorTextSecondary: "oklch(0.603 0.023 72)",
+		colorPrimary: "oklch(0.714 0.154 59)",
+		colorDanger: "oklch(0.654 0.176 30)",
+		colorInputText: "oklch(0.91 0.016 74)",
+		borderRadius: "0px",
+		fontFamily: "'Geist Mono Variable', monospace",
 	},
 }
 
@@ -69,7 +78,6 @@ export const clerkAuthCardAppearance = {
 		unsafe_disableDevelopmentModeWarnings: true,
 	},
 	elements: {
-		...clerkAppearance.elements,
 		rootBox: { width: "100%" },
 		// Clerk's cardBox clips its overflow and relies on the card padding to absorb the
 		// "Last used" badge, which hangs past the social button's top-right corner.
