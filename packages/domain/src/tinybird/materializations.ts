@@ -80,6 +80,7 @@ import {
 	serviceEndpointDetailsHourly,
 	productEvents,
 	identityLinks,
+	personProperties,
 } from "./datasources"
 import {
 	DB_NAMESPACE_ATTR_SQL,
@@ -89,7 +90,16 @@ import {
 	DB_SYSTEM_ATTR_SQL,
 } from "./db-query-shape-sql"
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
-import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
+import {
+	PERSON_PROPERTY_NEVER_SQL,
+	personPropertyAttributeKeySql,
+	personPropertySpanKeySql,
+	PRODUCT_EVENT_ATTRIBUTE_NAMESPACE,
+	PRODUCT_EVENT_GROUP_ID_KEY,
+	PRODUCT_EVENT_USER_ID_KEY,
+	PRODUCT_EVENTS_TRACE_FILTER,
+	PRODUCT_EVENTS_TRACE_PROJECTION_SQL,
+} from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
 import {
 	HTTP_SERVER_SPAN_SQL,
@@ -2547,6 +2557,163 @@ export const productEventsTracesMv = defineMaterializedView("product_events_trac
  * target is a ReplacingMergeTree keyed on the pair, so seeing the v1 and v2 rows
  * of one session just re-inserts the same link.
  */
+/**
+ * Populates `identity_links` from server, mobile and trace product events that
+ * carry both ids, so a backend or app that sends an anonymous id before sign-in
+ * and a user id after stitches the same way a browser session does. Browser rows
+ * are left to `identity_links_mv`, which sees them once per session rather than
+ * once per event.
+ */
+export const identityLinksEventsMv = defineMaterializedView("identity_links_events_mv", {
+	description:
+		"Populates identity_links with every (VisitorId, UserId) pair on a server, mobile or trace product event.",
+	datasource: identityLinks,
+	nodes: [
+		node({
+			name: "identity_links_events_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          VisitorId,
+          UserId,
+          min(Timestamp) AS FirstSeen
+        FROM product_events
+        WHERE Source != 'browser' AND VisitorId != '' AND UserId != ''
+        GROUP BY OrgId, VisitorId, UserId
+      `,
+		}),
+	],
+})
+
+/**
+ * The `person_properties` projection of property operations, one output row per
+ * (Kind, Id, Key) in the insert block. `arrayJoin` names each operation's
+ * `$<op>.<property>` key `OpKey`; `value` reads its value.
+ * Expressions are repeated rather than aliased: `Kind` and `Key` would shadow
+ * source columns in the GROUP BY.
+ */
+const personPropertyOpsSql = (args: {
+	readonly source: string
+	readonly arrayJoin: string
+	readonly value: string
+	readonly userId: string
+	readonly groupId: string
+	readonly where?: string
+}): string => {
+	const isGroup = `startsWith(OpKey, '$group_')`
+	const kind = `if(${isGroup}, 'group', 'user')`
+	const id = `if(${isGroup}, ${args.groupId}, ${args.userId})`
+	const key = `substring(OpKey, position(OpKey, '.') + 1)`
+	const op = (name: string) =>
+		`replaceOne(substring(OpKey, 2, position(OpKey, '.') - 2), 'group_', '') = '${name}'`
+	return `
+        SELECT
+          OrgId,
+          ${kind} AS Kind,
+          ${id} AS Id,
+          ${key} AS Key,
+          maxIf(Timestamp, ${op("set")}) AS SetAt,
+          argMaxIfState(${args.value}, Timestamp, ${op("set")}) AS SetValue,
+          if(countIf(${op("set_once")}) = 0, ${PERSON_PROPERTY_NEVER_SQL}, minIf(Timestamp, ${op("set_once")})) AS OnceAt,
+          argMinIfState(${args.value}, Timestamp, ${op("set_once")}) AS OnceValue,
+          maxIf(Timestamp, ${op("unset")}) AS UnsetAt,
+          max(Timestamp) AS LastSeen
+        FROM ${args.source}
+        ARRAY JOIN ${args.arrayJoin}
+        WHERE ${args.where === undefined ? "" : `${args.where} AND `}${id} != '' AND ${key} != ''
+        GROUP BY OrgId, ${kind}, ${id}, ${key}
+      `
+}
+
+/** Applies the `$<op>.<property>` keys on product events to `person_properties`. */
+export const personPropertiesEventsMv = defineMaterializedView("person_properties_events_mv", {
+	description:
+		"Populates person_properties from the $set, $set_once and $unset (and $group_*) keys in product event attributes.",
+	datasource: personProperties,
+	nodes: [
+		node({
+			name: "person_properties_events_mv_node",
+			sql: personPropertyOpsSql({
+				source: "product_events",
+				arrayJoin: `arrayFilter(k -> ${personPropertyAttributeKeySql("k")}, mapKeys(Attributes)) AS OpKey`,
+				value: "Attributes[OpKey]",
+				userId: "UserId",
+				groupId: "GroupId",
+				// Page views come in on a sessions-only key, and trace rows carry their span's
+				// operations, which `person_properties_traces_mv` applies. Qualified: `Kind` is
+				// also this view's own output alias.
+				where: "product_events.Kind != 'navigation' AND Source != 'trace'",
+			}),
+		}),
+	],
+})
+
+/**
+ * Applies a product-event span's `maple.product_event.<op>.<property>` attributes
+ * to `person_properties`, under the same predicate `product_events_traces_mv`
+ * uses, so a span that is not an event sets nothing.
+ */
+export const personPropertiesTracesMv = defineMaterializedView("person_properties_traces_mv", {
+	description:
+		"Populates person_properties from the maple.product_event.set.*, set_once.*, unset.* (and group_*) attributes of product-event spans.",
+	datasource: personProperties,
+	nodes: [
+		node({
+			name: "person_properties_traces_mv_node",
+			sql: personPropertyOpsSql({
+				source: "traces",
+				arrayJoin: `arrayMap(
+          k -> concat('$', substring(k, ${PRODUCT_EVENT_ATTRIBUTE_NAMESPACE.length + 1})),
+          arrayFilter(k -> ${personPropertySpanKeySql("k")}, mapKeys(SpanAttributes))
+        ) AS OpKey`,
+				value: `SpanAttributes[concat('${PRODUCT_EVENT_ATTRIBUTE_NAMESPACE}', substring(OpKey, 2))]`,
+				userId: `SpanAttributes['${PRODUCT_EVENT_USER_ID_KEY}']`,
+				groupId: `SpanAttributes['${PRODUCT_EVENT_GROUP_ID_KEY}']`,
+				where: PRODUCT_EVENTS_TRACE_FILTER,
+			}),
+		}),
+	],
+})
+
+/**
+ * Applies browser `identify()` traits and the group's name to `person_properties`
+ * as `set`s stamped with the session's start: every row of a session repeats the
+ * identity it started with, so a later stamp would let a closing session overwrite
+ * a backend `set` made during it. A trait set to `''` is stored as `''`.
+ * `UserEmail` and `UserName` stay out: users' PII is kept 90 days
+ * (`user_activity_hourly`), and this table keeps a year.
+ */
+export const personPropertiesTraitsMv = defineMaterializedView("person_properties_traits_mv", {
+	description:
+		"Populates person_properties from session_replays identity: UserTraits on the user, GroupName on the group.",
+	datasource: personProperties,
+	nodes: [
+		node({
+			name: "person_properties_traits_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Trait.1 AS Kind,
+          if(Trait.1 = 'group', GroupId, UserId) AS Id,
+          Trait.2 AS Key,
+          max(StartTime) AS SetAt,
+          argMaxIfState(Trait.3, StartTime, toUInt8(1)) AS SetValue,
+          ${PERSON_PROPERTY_NEVER_SQL} AS OnceAt,
+          argMinIfState('', StartTime, toUInt8(0)) AS OnceValue,
+          toDateTime64(0, 9, 'UTC') AS UnsetAt,
+          max(ifNull(EndTime, StartTime)) AS LastSeen
+        FROM session_replays
+        ARRAY JOIN arrayConcat(
+          arrayMap((k, v) -> ('user', k, v), mapKeys(UserTraits), mapValues(UserTraits)),
+          [('group', 'name', GroupName)]
+        ) AS Trait
+        WHERE if(Trait.1 = 'group', GroupId, UserId) != '' AND Trait.2 != '' AND (Trait.1 = 'user' OR Trait.3 != '')
+        GROUP BY OrgId, Trait.1, if(Trait.1 = 'group', GroupId, UserId), Trait.2
+      `,
+		}),
+	],
+})
+
 export const identityLinksMv = defineMaterializedView("identity_links_mv", {
 	description:
 		"Populates identity_links with every (VisitorId, UserId) pair observed on a session_replays row.",

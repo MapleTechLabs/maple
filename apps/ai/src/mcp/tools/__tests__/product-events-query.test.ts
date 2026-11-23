@@ -19,7 +19,7 @@ const fixtures: FixtureRule[] = [
 		rows: [],
 	},
 	{
-		match: (sql) => /arrayJoin\(mapKeys\(product_events\.Attributes\)\)/.test(sql),
+		match: (sql) => Str.includes("AS attributeKey")(sql),
 		rows: [
 			{ attributeKey: "format", usageCount: 213 },
 			{ attributeKey: "rows", usageCount: 180 },
@@ -38,6 +38,20 @@ const fixtures: FixtureRule[] = [
 		rows: [
 			{ name: "pro", value: 30 },
 			{ name: "", value: 12 },
+		],
+	},
+	{
+		match: (sql) => Str.includes("AS step")(sql) && Str.includes("person_properties")(sql),
+		rows: [
+			{ step: 1, count: 10 },
+			{ step: 2, count: 4 },
+		],
+	},
+	{
+		match: (sql) => Str.includes("FROM person_properties")(sql) && Str.includes("AS ids")(sql),
+		rows: [
+			{ key: "plan", ids: 41 },
+			{ key: "role", ids: 12 },
 		],
 	},
 	// The whole-window read is the one bucket that starts at the window, not on an interval.
@@ -292,5 +306,64 @@ describe("explore_attributes on product events", () => {
 		const output = Schema.decodeUnknownSync(ExploreAttributesOutput)(result.structuredContent)
 		const span = Date.parse(`${output.timeRange.end}Z`) - Date.parse(`${output.timeRange.start}Z`)
 		expect(span).toBe(7 * 86_400_000)
+	})
+})
+
+describe("user and account properties", () => {
+	it("filters and splits product events by a user's property and an account's", async () => {
+		const before = issued.length
+		const result = await call("query_data", {
+			...breakdown,
+			metric: "users",
+			group_by: "user_property",
+			property_key: "plan",
+			group_property_filters: [{ key: "tier", value: "gold" }],
+		})
+		expect(result.isError).toBeUndefined()
+		const sql = Arr.join(issued.slice(before), "\n")
+		expect(sql).toContain("person_properties.Key = 'plan'")
+		expect(sql).toContain("person_properties.Key = 'tier'")
+		expect(sql).toContain("person_properties.Kind = 'group'")
+	})
+
+	it("asks for the property a property group-by splits by", async () => {
+		const result = await call("query_data", { ...breakdown, group_by: "group_property" })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("property_key")
+	})
+
+	it("refuses property filters on a source with no users", async () => {
+		const result = await call("query_data", {
+			source: "traces",
+			kind: "breakdown",
+			user_property_filters: [{ key: "plan", value: "pro" }],
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("user_property_filters")
+	})
+
+	it("lists the properties users carry and points at a split by one", async () => {
+		const result = await call("explore_attributes", { source: "user_properties" })
+		expect(result.isError).toBeUndefined()
+		const output = Schema.decodeUnknownSync(ExploreAttributesOutput)(result.structuredContent)
+		expect(output.keys).toEqual([
+			{ key: "plan", count: 41 },
+			{ key: "role", count: 12 },
+		])
+	})
+
+	it("keeps the property filters in the funnel calls it suggests", async () => {
+		const result = await call("query_funnel", {
+			steps_json: [
+				{ kind: "event", eventName: "signup" },
+				{ kind: "event", eventName: "plan_started" },
+			],
+			user_property_filters: [{ key: "plan", value: "pro" }],
+			start_time: "2026-11-01 00:00:00",
+			end_time: "2026-11-08 00:00:00",
+		})
+		expect(result.isError).toBeUndefined()
+		const nexts = JSON.stringify(result.structuredContent)
+		expect(nexts).toContain("user_property_filters")
 	})
 })

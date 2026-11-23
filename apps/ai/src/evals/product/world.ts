@@ -6,8 +6,10 @@
  * that make product questions go wrong on real data:
  *
  * - accounts (`GroupId`) with one to three users each, so "accounts" and "users" differ;
- * - `signup_completed` sent by the backend with a user id and nothing else;
- * - `plan_started` sent by the billing webhook with an account id and no user;
+ * - `signup_completed` sent by the backend with a user id, setting the user's `role` property
+ *   (the account's first member is its `owner`);
+ * - `plan_started` sent by the billing webhook with an account id and no user, setting the
+ *   account's `plan` property;
  * - anonymous marketing visits that become a user after sign-up (an identity link);
  * - sessions only for the last three weeks, as `session_replays` keeps 30 days.
  *
@@ -69,6 +71,8 @@ export interface WorldUser {
 	readonly visitorId: string
 	readonly signupMs: number
 	readonly signupWeek: number
+	/** The `role` user property its sign-up set. */
+	readonly role: "owner" | "member"
 }
 
 export interface WorldAccount {
@@ -238,7 +242,8 @@ export const makeWorld = (nowMs: number): World => {
 					// The first member creates the account; the others join over the next two days.
 					const signupMs = createdMs + (member === 0 ? 0 : (1 + rng.int(40)) * HOUR_MS)
 					const signupWeek = Math.floor((signupMs - startMs) / WEEK_MS)
-					users.push({ userId, groupId, visitorId, signupMs, signupWeek })
+					const role = member === 0 ? "owner" : "member"
+					users.push({ userId, groupId, visitorId, signupMs, signupWeek, role })
 					const acquisition = rng.pick(SOURCES)
 
 					// The anonymous marketing visit before sign-up: same visitor, no user yet.
@@ -256,7 +261,7 @@ export const makeWorld = (nowMs: number): World => {
 						signupMs,
 						"signup_completed",
 						{ userId },
-						{ method: rng.chance(0.6) ? "google" : "email" },
+						{ method: rng.chance(0.6) ? "google" : "email", "$set.role": role },
 					)
 
 					// Onboarding, in the first app session.
@@ -346,7 +351,7 @@ export const makeWorld = (nowMs: number): World => {
 								checkoutMs + 5 * MINUTE_MS,
 								"plan_started",
 								{ groupId },
-								{ plan, amount: PLAN_AMOUNT[plan] },
+								{ plan, amount: PLAN_AMOUNT[plan], "$group_set.plan": plan },
 							)
 						}
 					}

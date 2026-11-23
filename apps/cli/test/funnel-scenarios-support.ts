@@ -299,14 +299,20 @@ export const sqlLeavers = (
 
 type Filters = NonNullable<CH.ProductEventsFunnelOpts["filters"]>
 
-/** The visitor's first linked user, as `identity_links` resolves it. */
+/**
+ * The visitor's first linked user, as `identity_links` resolves it: pairs seen on a session, or on
+ * a server or mobile event that carries both ids, the earliest sighting first.
+ */
 export const linksOf = (dataset: Dataset): ReadonlyMap<string, string> => {
-	const first = new Map<string, { userId: string; startMs: number }>()
-	Arr.forEach(dataset.sessions, (row) => {
-		if (row.visitorId === "" || row.userId === "") return
-		const current = first.get(row.visitorId)
-		if (current === undefined || row.startMs < current.startMs)
-			first.set(row.visitorId, { userId: row.userId, startMs: row.startMs })
+	const first = new Map<string, { userId: string; atUs: number }>()
+	const sight = (visitorId: string, userId: string, atUs: number) => {
+		if (visitorId === "" || userId === "") return
+		const current = first.get(visitorId)
+		if (current === undefined || atUs < current.atUs) first.set(visitorId, { userId, atUs })
+	}
+	Arr.forEach(dataset.sessions, (row) => sight(row.visitorId, row.userId, row.startMs * 1000))
+	Arr.forEach(dataset.events, (row) => {
+		if (row.source !== "browser") sight(row.visitorId, row.userId, row.atMs * 1000 + row.micro)
 	})
 	return new Map(Arr.map([...first], ([visitorId, link]) => [visitorId, link.userId]))
 }

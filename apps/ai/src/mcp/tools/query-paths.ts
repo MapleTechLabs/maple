@@ -22,6 +22,7 @@ import { MCP_PRODUCT_EVENTS_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
+import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { sessionRetentionNote } from "../lib/product-identity"
 
@@ -141,6 +142,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 			device_type: P.optionalText(
 				"Only persons with a session on this device type (desktop, mobile, tablet).",
 			),
+			...PROPERTY_FILTER_FIELDS,
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
@@ -202,6 +204,7 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 					include: params.include ?? "all",
 					...(exclude.length > 0 ? { exclude } : undefined),
 					filters,
+					...(yield* propertyFiltersOf(params)),
 					startTime: st,
 					endTime: et,
 				}),
@@ -232,7 +235,9 @@ export function registerQueryPathsTool(server: McpToolRegistrar) {
 				keyBy,
 				windowSeconds,
 				...(sessionNote === undefined ? undefined : { sessionNote }),
-				...(Rec.isEmptyRecord(givenFilters) ? undefined : { filters: givenFilters }),
+				...(Rec.isEmptyRecord({ ...givenFilters, ...propertyFilterArgs(params) })
+					? undefined
+					: { filters: { ...givenFilters, ...propertyFilterArgs(params) } }),
 				...pathHops(rows),
 			}
 		}),

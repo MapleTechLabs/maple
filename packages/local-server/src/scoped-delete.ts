@@ -49,7 +49,16 @@ export type TableDeletePlan =
 			 *  rebuild cannot recompute them, and a scoped delete does not address them. */
 			readonly keep?: string
 	  }
-	| { readonly strategy: "excluded"; readonly reason: string }
+	| {
+			readonly strategy: "excluded"
+			readonly reason: string
+			/**
+			 * Set on user identity tables some views write from deletable events and spans: a
+			 * replay into them merges to the rows already stored, and they hold who a user is,
+			 * not a service's telemetry, so a scoped delete leaves them to their TTL.
+			 */
+			readonly identityFromTelemetry?: true
+	  }
 
 const RESOURCE: DimensionSource = { resourceAttributes: "ResourceAttributes" }
 const DEPLOYMENT_ENV: DimensionSource = { column: "DeploymentEnv" }
@@ -99,6 +108,9 @@ const edges = (target: string): TableDeletePlan => ({
 })
 const NOT_TELEMETRY = "control-plane history, not telemetry; local mode never writes it"
 const SESSION_DATA = "browser session data, not service telemetry; its TTL removes it"
+/** Kept by a scoped delete: values written by a deleted service's events stay until the TTL. */
+const USER_IDENTITY =
+	"user identity and properties: a scoped delete keeps what deleted events and spans wrote here until its TTL removes it"
 
 /** Delete strategy per table name; keys are checked against the schema at runtime. */
 export type TableDeletePlans = Readonly<Record<string, TableDeletePlan>>
@@ -119,7 +131,7 @@ export const TABLE_DELETE_PLAN = {
 	error_events_by_time: derived("Timestamp"),
 	error_fingerprints_minutely: unkeyed("Minute"),
 	error_fingerprint_lineage: unkeyed("Minute"),
-	identity_links: { strategy: "excluded", reason: SESSION_DATA },
+	identity_links: { strategy: "excluded", reason: USER_IDENTITY, identityFromTelemetry: true },
 	logs: raw("Timestamp"),
 	logs_aggregates_hourly: derived("Hour", { namespace: SERVICE_NAMESPACE }),
 	metric_catalog: derived("Hour", { env: null }),
@@ -127,6 +139,7 @@ export const TABLE_DELETE_PLAN = {
 	metrics_gauge: raw("TimeUnix"),
 	metrics_histogram: raw("TimeUnix"),
 	metrics_sum: raw("TimeUnix"),
+	person_properties: { strategy: "excluded", reason: USER_IDENTITY, identityFromTelemetry: true },
 	product_events: derived("Timestamp", { env: null, keep: "Source = 'browser'" }),
 	profiles: raw("Timestamp"),
 	scanner_requests: derived("Timestamp", { env: null }),
@@ -184,6 +197,9 @@ export const tablePlan = lookup(TABLE_DELETE_PLAN)
 const ROLLUP_SOURCE = "traces"
 
 type ScopedPlan = Extract<TableDeletePlan, { strategy: "scoped" }>
+
+const keepsIdentity = (plan: TableDeletePlan | undefined): boolean =>
+	plan?.strategy === "excluded" && plan.identityFromTelemetry === true
 
 const declares = (entry: ScopedPlan, dimension: Dimension): boolean => entry[dimension] !== null
 
@@ -450,6 +466,7 @@ export const validateDeletePlan = (
 			}
 			// Re-inserting fires the views this table feeds; their own recompute must wipe that.
 			for (const view of Arr.filter(views, (candidate) => candidate.sources.includes(rebuild.table))) {
+				if (keepsIdentity(plans[view.target])) continue
 				const downstream = rebuilt.get(view.target)
 				if (downstream === undefined)
 					problems.push(
@@ -477,7 +494,7 @@ export const validateDeletePlan = (
 
 	// Rows derived from deletable telemetry must never land in an excluded table.
 	for (const view of views) {
-		if (plans[view.target]?.strategy !== "excluded") continue
+		if (plans[view.target]?.strategy !== "excluded" || keepsIdentity(plans[view.target])) continue
 		for (const source of view.sources)
 			if (plans[source] !== undefined && plans[source].strategy !== "excluded")
 				problems.push(`${view.name}: writes excluded ${view.target} from ${source}`)

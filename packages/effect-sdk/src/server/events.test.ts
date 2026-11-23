@@ -119,6 +119,56 @@ describe("MapleEvents (server)", () => {
 		}),
 	)
 
+	it.effect("writes user and account properties on events, identify and groupIdentify", () =>
+		Effect.gen(function* () {
+			const { posts, layer } = stubClient()
+			yield* withEvents(config, layer, (events) =>
+				Effect.gen(function* () {
+					yield* events.track("plan_started", {
+						userId: "user_1",
+						groupId: "org_1",
+						set: { plan: "pro", seats: 12, gone: null },
+						unset: ["trial_ends", " "],
+						groupSet: { tier: "gold" },
+					})
+					yield* events.identify("user_1", {
+						visitorId: "install-1",
+						setOnce: { first_plan: "free" },
+					})
+					yield* events.groupIdentify("org_1", { industry: "fintech" }, { unset: ["legacy"] })
+					yield* events.flush
+				}),
+			)
+
+			const lines = posts[0]?.lines ?? []
+			expect(lines).toEqual([
+				expect.objectContaining({
+					name: "plan_started",
+					attributes: {},
+					set: { plan: "pro", seats: "12" },
+					unset: ["trial_ends"],
+					group_set: { tier: "gold" },
+				}),
+				expect.objectContaining({
+					name: "$identify",
+					user_id: "user_1",
+					visitor_id: "install-1",
+					set_once: { first_plan: "free" },
+				}),
+				expect.objectContaining({
+					name: "$groupidentify",
+					user_id: "",
+					group_id: "org_1",
+					group_set: { industry: "fintech" },
+					group_unset: ["legacy"],
+				}),
+			])
+			// An event without property writes sends none of the fields.
+			expect(lines[1]).not.toHaveProperty("set")
+			expect(lines[0]).not.toHaveProperty("set_once")
+		}),
+	)
+
 	it.effect("batches: nothing is posted until flush, and flush with an empty buffer posts nothing", () =>
 		Effect.gen(function* () {
 			const { posts, layer } = stubClient()

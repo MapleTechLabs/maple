@@ -801,6 +801,28 @@ describe("product_events drafts", () => {
 		expect(Arr.join(warnings, " ")).toContain("supports only = and !=")
 	})
 
+	it("reads person.* and account.* as the user's and the account's properties", () => {
+		const { filters } = filtersOf('person.plan = "pro" AND account.seats > 10 AND plan = "startup"')
+		expect(filters?.userPropertyFilters).toEqual([{ key: "plan", mode: "equals", value: "pro" }])
+		expect(filters?.groupPropertyFilters).toEqual([{ key: "seats", mode: "gt", value: "10" }])
+		expect(filters?.attributeFilters).toEqual([{ key: "plan", mode: "equals", value: "startup" }])
+	})
+
+	it("groups by a user property and an account property", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["person.plan", "account.tier", "person.role"],
+			}),
+		)
+		expect(result.error).toBeNull()
+		expect(result.query).toMatchObject({
+			groupBy: ["user_property", "group_property"],
+			filters: { groupByUserPropertyKey: "plan", groupByGroupPropertyKey: "tier" },
+		})
+		expect(Arr.join(result.warnings, " ")).toContain("single person.* group by")
+	})
+
 	it("carries a single attr.* group-by key on the filters", () => {
 		const result = buildTimeseriesQuerySpec(
 			draft({

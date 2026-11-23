@@ -28,11 +28,6 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 */
 	dataSources: DisabledByDefaultFeatureFlag,
 	/**
-	 * Gates the Product analytics page: the nav row, the `/product-analytics` route and the link to
-	 * it from Web analytics. Dashboard funnel and paths widgets are not gated.
-	 */
-	productAnalytics: DisabledByDefaultFeatureFlag,
-	/**
 	 * Gates continuous profiling in the dashboard: the service page's Profiles tab and the span
 	 * panel's Profile tab. Off until profile ingest is live for customers.
 	 */
@@ -44,7 +39,6 @@ export const OrganizationFeatureFlags = Schema.Struct({
 		aiAutoTriage: "aiautotriage",
 		cloudSecurity: "cloudsecurity",
 		dataSources: "datasources",
-		productAnalytics: "productanalytics",
 		profiling: "profiling",
 		securityAudit: "securityaudit",
 	}),
@@ -59,7 +53,6 @@ export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	cloudSecurity: false,
 	dataSources: false,
-	productAnalytics: false,
 	profiling: false,
 	securityAudit: false,
 }
@@ -73,7 +66,6 @@ export const ENABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: true,
 	cloudSecurity: true,
 	dataSources: true,
-	productAnalytics: true,
 	profiling: true,
 	securityAudit: true,
 }

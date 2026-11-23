@@ -46,6 +46,8 @@ export interface WhereClauseAutocompleteValues {
 	variables?: string[]
 	/** Per-field values for the session dimensions (the web-analytics facets). */
 	productEventFacets?: Partial<Record<FunnelPopulationFilterField, string[]>>
+	/** `product_events` source: user (`person.<key>`) and account (`account.<key>`) property keys. */
+	propertyKeys?: string[]
 	/** `product_events` source: the event names, hosts and page paths seen in the window. */
 	eventNames?: string[]
 	hosts?: string[]
@@ -978,6 +980,24 @@ function buildSuggestions(
 		) {
 			const attrSuggestions = buildAttributeKeySuggestions(values.attributeKeys)
 			return filterAndRankSuggestions(attrSuggestions, query, maxSuggestions)
+		}
+
+		// When typing person. or account., show the user and account property keys
+		if (
+			dataSource === "product_events" &&
+			!PRODUCT_EVENT_SCOPES.includes(scope) &&
+			(Str.startsWith("person.")(query) || Str.startsWith("account.")(query)) &&
+			values?.propertyKeys &&
+			values.propertyKeys.length > 0
+		) {
+			const propertySuggestions = Arr.map(values.propertyKeys, (key) => ({
+				id: `key:${key}`,
+				kind: "key" as const,
+				label: key,
+				insertText: key,
+				description: Str.startsWith("person.")(key) ? "User property" : "Account property",
+			}))
+			return filterAndRankSuggestions(propertySuggestions, query, maxSuggestions)
 		}
 
 		// When typing resource., show dynamic resource attribute keys

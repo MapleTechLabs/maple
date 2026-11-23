@@ -100,7 +100,7 @@ describe("alert rule editor", () => {
 		expect(names(clocked.commands)).toContain("FetchAlertEditorPreview")
 		expect(
 			Arr.filter(names(clocked.commands), (name) => name === "FetchAlertEditorAutocomplete"),
-		).toHaveLength(6)
+		).toHaveLength(8)
 		expect(names(clocked.commands)).toContain("FetchAlertEditorTraceFacets")
 	})
 

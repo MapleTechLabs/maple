@@ -86,10 +86,15 @@ export const pagePathMatches = (pagePath: string, path: string): boolean => {
 	return new RegExp(`^${Arr.join(parts, "[\\s\\S]*")}$`).test(path)
 }
 
-/** An acquisition dimension of the person's sessions, the event `Host`, or `attribute:<key>`. */
+/**
+ * An acquisition dimension of the person's sessions, the event `Host`, `attribute:<key>`, or the
+ * current value of a user (`user:<key>`) or account (`group:<key>`) property.
+ */
 export const FunnelBreakdownBy = Schema.Union([
 	FunnelSessionDimension,
 	Schema.TemplateLiteral(["attribute:", Schema.String]),
+	Schema.TemplateLiteral(["user:", Schema.String]),
+	Schema.TemplateLiteral(["group:", Schema.String]),
 ])
 export type FunnelBreakdownBy = typeof FunnelBreakdownBy.Type
 
