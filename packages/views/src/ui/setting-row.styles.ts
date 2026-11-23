@@ -17,6 +17,9 @@ export const settingRowTitleStyles = "flex flex-wrap items-center gap-x-2 gap-y-
 
 export const settingRowLabelStyles = "text-sm font-medium text-foreground data-disabled:opacity-64"
 
+/** `size: "sm"`: a row nested under another row reads one step smaller. */
+export const settingRowLabelSmStyles = "text-ui"
+
 export const settingRowDescriptionStyles = "text-xs text-muted-foreground"
 
 export const settingRowControlStyles = "ml-auto flex shrink-0 items-center gap-2"

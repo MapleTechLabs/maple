@@ -56,6 +56,7 @@ import { VcsSyncQueue } from "./VcsSyncQueue"
 import { WorkflowEventSink } from "./WorkflowEventSink"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { AuditEventSink } from "./AuditEventSink"
+import { githubAuditCategoryEnabled, githubAuditCategoryOfAction } from "@maple/domain/github-audit"
 
 // Vendor-agnostic sync orchestrator. Decodes a queue message, resolves the
 // owning installation (→ orgId + provider auth), then dispatches by job kind:
@@ -1117,13 +1118,21 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				installation: VcsInstallation,
 				job: AuditEventJob,
 			) {
-				// An org that turned the audit log off for GitHub drops the event here.
-				const forwards = auditSink !== undefined && installation.auditLogEnabled
+				// An org that turned the audit log, or this event's category, off for GitHub drops it here.
+				const category =
+					job.provider === "github" ? githubAuditCategoryOfAction(job.event.action) : Option.none()
+				const collected =
+					installation.auditLogEnabled &&
+					Option.match(category, {
+						onNone: () => true,
+						onSome: (id) => githubAuditCategoryEnabled(installation.auditCategories, id),
+					})
 				yield* Effect.annotateCurrentSpan({
 					"maple.audit.action": job.event.action,
-					"maple.audit.forwarded": forwards,
+					"maple.audit.category": Option.getOrElse(category, () => "none"),
+					"maple.audit.forwarded": auditSink !== undefined && collected,
 				})
-				if (auditSink !== undefined && installation.auditLogEnabled)
+				if (auditSink !== undefined && collected)
 					yield* auditSink.onAuditEvent(installation.orgId, job.event)
 			})
 
