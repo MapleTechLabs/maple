@@ -5,7 +5,7 @@ import { Message, type Model, OutMessage } from "./model"
 import { type Context, open, shownEntries, update } from "./update"
 import { Array as Arr } from "effect"
 
-// The palette's update: lookups on open, fuse ranking per query, Enter and clicks as picks.
+// The palette's update: lookups on open, fuzzy ranking per query, Enter and clicks as picks.
 
 const context: Context = {
 	dashboards: [{ id: "dsh_1", name: "Checkout health", updated_at: "2026-10-01" }],
@@ -207,5 +207,55 @@ describe("command palette", () => {
 
 		expect(ids(ALL_FLAGGED)).toContain("service:page-store")
 		expect(ids(["/status-pages"])).not.toContain("service:page-store")
+	})
+})
+
+// The top three per query as the earlier search library ranked them, except where noted.
+describe("command palette ranking", () => {
+	const top3 = (query: string) =>
+		Arr.map(
+			shownEntries(
+				typed(loadedWith(["storefront", "payments", "page-store"]), query).model,
+				context,
+				ALL_FLAGGED,
+			).entries,
+			(entry) => entry.title,
+		).slice(0, 3)
+
+	test.each([
+		// Exact, prefix and word-start hits.
+		["logs", ["Logs"]],
+		["Services", ["Services", "Kubernetes Services"]],
+		["serv", ["Services", "Service map", "Kubernetes Services"]],
+		["dash", ["Dashboards"]],
+		["map", ["Service map"]],
+		["store", ["storefront", "page-store"]],
+		["service map", ["Service map"]],
+		["connect slack", ["Connect Slack"]],
+		["checkout", ["Checkout health"]],
+		// Mid-word only: the fuzzy hits stay.
+		["ices", ["Services", "Kubernetes Services", "Metrics"]],
+		["board", ["Dashboards", "Keyboard shortcuts", "Checkout health"]],
+		// One typo.
+		["dashbaord", ["Dashboards", "Checkout health"]],
+		["trcaes", ["Traces", "Sources", "Integrations"]],
+		["setings", ["Settings"]],
+		["alrts", ["Alerts"]],
+		// "Service map" is two edits away and now listed third.
+		["srevices", ["Services", "Kubernetes Services", "Service map"]],
+		// A swapped pair is one edit: "Logs" is found (only "SLOs" was).
+		["lgos", ["Logs", "SLOs"]],
+		// Keywords only.
+		["explore", ["Traces"]],
+		["theme", ["Switch to light mode"]],
+		// "Sources" lists ingest as a keyword; "Settings" was first on a fuzzy hit.
+		["ingest", ["Sources", "Settings", "Keyboard shortcuts"]],
+		// Title prefixes before word starts inside a name ("page-store" was second).
+		["s", ["storefront", "Supabase", "SLOs"]],
+		// No match.
+		["zzqxvj", []],
+		["api key", []],
+	])("%s", (query, expected) => {
+		expect(top3(query)).toEqual(expected)
 	})
 })

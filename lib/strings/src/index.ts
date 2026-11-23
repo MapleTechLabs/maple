@@ -81,3 +81,5 @@ export const escapeHtml = (value: string): string =>
 /** `text` cut to at most `max` characters, the last one an ellipsis when anything was cut. */
 export const truncate = (text: string, max: number): string =>
 	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`
+
+export { fuzzySearch, makeFuzzySearch, type FuzzyKey, type FuzzyMatch, type FuzzyOptions } from "./fuzzy"

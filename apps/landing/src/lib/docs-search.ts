@@ -6,6 +6,7 @@
  * (`pages/docs/search-index.json.ts`) and the client island (`DocsSearch.ts`).
  */
 
+import { makeFuzzySearch, type FuzzyMatch, type FuzzyOptions } from "@maple/strings"
 import { Schema, Array as Arr, String as Str } from "effect"
 
 export const SearchSection = Schema.Struct({
@@ -282,3 +283,20 @@ export function searchRecords(
 	}
 	return hits
 }
+
+// Typo fallback only: runs when no row contains every term, and only over
+// titles and headings, so a fuzzy hit in body text can't outrank a real one.
+const FUZZY_OPTIONS: FuzzyOptions<SearchRecord> = {
+	keys: [
+		{ get: (record) => record.heading, weight: 0.6 },
+		{ get: (record) => record.doc.title, weight: 0.4 },
+	],
+	threshold: 0.3,
+	minQueryLength: 3,
+}
+
+/** The typo fallback over `records`, built once per index: best match first, up to `limit`. */
+export const fuzzyRecords = (
+	records: ReadonlyArray<SearchRecord>,
+): ((query: string, limit?: number) => ReadonlyArray<FuzzyMatch<SearchRecord>>) =>
+	makeFuzzySearch(records, FUZZY_OPTIONS)

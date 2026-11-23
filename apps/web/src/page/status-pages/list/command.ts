@@ -2,11 +2,13 @@ import { readClock } from "@maple/views/data/timing"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { StatusPageId } from "@maple/domain"
-import { deletePage, listPageSummaries } from "../shared/commands"
+import { computeOrgKey, deletePage, listPageSummaries } from "../shared/commands"
 import { Message } from "./message"
 import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const ReadListClock = readClock("ReadStatusPagesClock", Message.ReadClock)
+
+export const ComputeListOrgKey = computeOrgKey("ComputeStatusPagesOrgKey", Message.ComputedOrgKey)
 
 export const FetchListSession = fetchSessionGrants("FetchStatusPagesSession", Message.CompletedFetchSession)
 

@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const markerVariants = cva(
+export const markerVariants = variants(
 	"group/marker relative flex min-h-4 w-full items-center gap-2 text-left text-xs text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5 [a]:underline [a]:underline-offset-3 [a]:hover:text-foreground [a]:active:text-foreground",
 	{
 		variants: {

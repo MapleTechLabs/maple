@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const emptyMediaVariants = cva(
+export const emptyMediaVariants = variants(
 	"flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0",
 	{
 		defaultVariants: {

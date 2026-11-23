@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { afterEach, assert, describe, expect, it, vi } from "vitest"
@@ -46,8 +45,11 @@ describe("island client entry", () => {
 		})
 		const element = document.body.appendChild(document.createElement("astro-island"))
 		element.innerHTML = (await renderer.renderToStaticMarkup(Switch, {})).html
+		const serverRoot = element.firstElementChild
 		await start(element)(Switch, {})
-		await vi.waitFor(() => expect(element.querySelector("button")?.textContent).toBe("off"))
+		// The live tree replaces the server markup on a later frame; clicks before that go nowhere.
+		await vi.waitFor(() => expect(element.firstElementChild).not.toBe(serverRoot))
+		expect(element.querySelector("button")?.textContent).toBe("off")
 
 		element.querySelector("button")?.click()
 		await vi.waitFor(() => expect(element.querySelector("button")?.textContent).toBe("on"))

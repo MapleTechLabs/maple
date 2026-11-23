@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { Virtualizer } from "@tanstack/virtual-core"
 import { describe, expect, test } from "vitest"
 import { bindFindable, type FindableMatch } from "./findable"

@@ -11,6 +11,8 @@ import { incident } from "../page/status-pages/shared/test-pages"
 // The live and internal pages have uploaded favicons.
 
 export const LAB_ORG = "org_lab_status_pages"
+/** `statusPageOrgKey(LAB_ORG)`, fixed here because the labs seed their models synchronously. */
+export const LAB_ORG_KEY = "b00995ea1f46"
 
 /** Uploaded images as the API stores them: base64 `data:` URLs. */
 export const LAB_FAVICON =
