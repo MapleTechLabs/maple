@@ -45,7 +45,7 @@ export const Message = defineMessageUnion({
 	PickedPreviewSignal: { signal: PreviewSignal },
 	PickedPreviewService: { service: Schema.String },
 	ClickedRetryPreview: {},
-	CompletedFetchImpact: { window: ImpactWindow, result: outcome(V2IngestRuleStats) },
+	CompletedFetchImpact: { seq: Schema.Number, result: outcome(V2IngestRuleStats) },
 	PickedImpactWindow: { window: ImpactWindow },
 	ElapsedEstimateDebounce: { seq: Schema.Number },
 	CompletedFetchEstimate: { key: Schema.String, result: outcome(V2IngestRulePreview) },

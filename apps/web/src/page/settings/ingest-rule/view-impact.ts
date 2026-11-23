@@ -118,7 +118,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 					{ divided: true },
 					Arr.map(totals.signals, (entry) =>
 						keyValue(h, { label: SIGNAL_LABELS[entry.signal] }, [
-							`${headline(effect, entry)} · ${detail(effect, entry)}`,
+							`${headline(effectKind(rule.action, entry), entry)} · ${detail(effectKind(rule.action, entry), entry)}`,
 						]),
 					),
 				)

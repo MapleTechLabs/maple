@@ -130,6 +130,7 @@ const initial = (route: EditorRoute, context: PageContext): Return => {
 		estimate: AsyncData.Idle(),
 		estimateKey: "",
 		estimateSeq: 0,
+		impactSeq: editingId === null ? 0 : 1,
 		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
@@ -145,7 +146,11 @@ const initial = (route: EditorRoute, context: PageContext): Return => {
 	if (editingId !== null)
 		return {
 			model: base,
-			commands: [...common, FetchRule({ id: editingId }), FetchImpact({ window: base.impactWindow })],
+			commands: [
+				...common,
+				FetchRule({ id: editingId }),
+				FetchImpact({ window: base.impactWindow, seq: base.impactSeq }),
+			],
 		}
 	const sampled = requestSamples(base)
 	return { model: sampled.model, commands: [...common, ...(sampled.commands ?? [])] }
@@ -296,16 +301,21 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 				? { model }
 				: requestSamples({ ...model, previewService: service }),
 		ClickedRetryPreview: () => requestSamples(model),
-		CompletedFetchImpact: ({ window, result }) =>
-			window === model.impactWindow
+		CompletedFetchImpact: ({ seq, result }) =>
+			seq === model.impactSeq
 				? { model: { ...model, impact: AsyncData.settle(model.impact, result) } }
 				: { model },
 		PickedImpactWindow: ({ window }) =>
 			window === model.impactWindow || model.editingId === null
 				? { model }
 				: {
-						model: { ...model, impactWindow: window, impact: AsyncData.Loading() },
-						commands: [FetchImpact({ window })],
+						model: {
+							...model,
+							impactWindow: window,
+							impactSeq: model.impactSeq + 1,
+							impact: AsyncData.Loading(),
+						},
+						commands: [FetchImpact({ window, seq: model.impactSeq + 1 })],
 					},
 		ElapsedEstimateDebounce: ({ seq }) => (seq === model.estimateSeq ? fetchEstimate(model) : { model }),
 		CompletedFetchEstimate: ({ key, result }) =>
@@ -317,8 +327,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 			model.editingId === null
 				? { model }
 				: {
-						model: { ...model, impact: AsyncData.Loading() },
-						commands: [FetchImpact({ window: model.impactWindow })],
+						model: { ...model, impactSeq: model.impactSeq + 1, impact: AsyncData.Loading() },
+						commands: [FetchImpact({ window: model.impactWindow, seq: model.impactSeq + 1 })],
 					},
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
