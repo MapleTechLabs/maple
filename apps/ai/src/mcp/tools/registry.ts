@@ -96,6 +96,7 @@ import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
 import { registerQueryDataTool } from "./query-data"
 import { registerQueryPromqlTool } from "./query-promql"
+import { registerGetMetricExemplarsTool } from "./get-metric-exemplars"
 import { registerRunSqlTool } from "./run-sql"
 import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
@@ -170,6 +171,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerListMetricsTool,
 	registerQueryDataTool,
 	registerQueryPromqlTool,
+	registerGetMetricExemplarsTool,
 	registerRunSqlTool,
 	registerServiceMapTool,
 	registerListAlertRulesTool,

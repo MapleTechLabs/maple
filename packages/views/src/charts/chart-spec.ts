@@ -447,6 +447,8 @@ export const ChartSpec = defineTaggedUnion({
 		yDomain: Schema.Array(Schema.String),
 		/** The y tick text per category, already shortened and truncated into the gutter. */
 		yLabels: Schema.Record(Schema.String, Schema.String),
+		/** The x tick text per category (time columns read as clock times); absent is the raw value. */
+		xLabels: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 		margin: Nullable(
 			Schema.Struct({
 				top: Schema.Number,

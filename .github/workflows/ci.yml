@@ -593,7 +593,7 @@ jobs:
                   MAPLE_REQUIRE_LIBCHDB: "1"
                   MAPLE_TELEMETRY: off
               run: |
-                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios retention-scenarios person-properties users-identity histogram-metrics exponential-histogram-metrics release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources traces-numeric-aggregation search-console-reads ingest-rule-preview; do
+                  for file in tenant-isolation scoped-delete local-service-map-rollup checkpoint-merge-freeze local-store-traces-rekey local-query-guard local-query-guard.fuzz funnel-scenarios retention-scenarios person-properties users-identity histogram-metrics exponential-histogram-metrics metric-distribution-exemplars release-verification profile-sample-types profile-hotspots service-usage-profiles search-traces-filters cloud-resources traces-numeric-aggregation search-console-reads ingest-rule-preview; do
                       bun test --timeout 30000 "test/$file.test.ts"
                   done
 

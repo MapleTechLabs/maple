@@ -95,6 +95,8 @@ export const formatDuration = (ms: number): string => {
 export const formatDecimal = (n: number): string => {
 	if (Number.isInteger(n)) return integerFormat.format(n)
 	const abs = Math.abs(n)
+	// Four decimals would round these to 0; a nonzero value must not read as zero.
+	if (abs < 0.00005) return n.toExponential(2)
 	const digits = abs >= 100 ? 1 : abs >= 1 ? 2 : 4
 	return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(n)
 }

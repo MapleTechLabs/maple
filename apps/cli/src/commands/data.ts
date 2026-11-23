@@ -5,7 +5,7 @@ import { Effect, Option, Array as Arr } from "effect"
 import * as f from "../lib/flags"
 import { CliNotFoundError } from "../lib/errors"
 import { printResult } from "../lib/output"
-import { metricSeriesView } from "../lib/views"
+import { metricExemplarsView, metricSeriesView } from "../lib/views"
 import { describeWindow, resolveRangeChecked } from "../core/time"
 import * as Ops from "../core/operations"
 
@@ -64,6 +64,87 @@ const show = Command.make("show", {
 	),
 )
 
+const exemplars = Command.make("exemplars", {
+	name: Argument.String("metric-name").pipe(
+		Argument.withDescription("Exact metric name (see `maple metrics`)"),
+	),
+	since: f.since,
+	start: f.start,
+	end: f.end,
+	service: f.service,
+	environment: f.environment,
+	bucket: Flag.optional(
+		Flag.Int("bucket").pipe(
+			Flag.withDescription(
+				"Bucket size in seconds exemplars are ranked within (default: about 30 buckets)",
+			),
+			Flag.filter(
+				(n) => n >= 1,
+				() => "a whole number of seconds, at least 1",
+			),
+		),
+	),
+	perBucket: Flag.Int("per-bucket").pipe(
+		Flag.withDescription("Exemplars kept per bucket, highest value first (1 to 20)"),
+		Flag.withDefault(3),
+		Flag.filter(
+			(n) => n >= 1 && n <= 20,
+			() => "a whole number from 1 to 20",
+		),
+	),
+	limit: f.limit,
+}).pipe(
+	Command.withDescription(
+		"List the traces behind a metric's highest values (the exemplars SDKs record, mostly on histograms); " +
+			"open one with `maple trace <trace-id>`",
+	),
+	Command.withExamples([
+		{
+			command: "maple metrics exemplars http.server.request.duration --since 1h --format table",
+			description: "The slowest requests' traces",
+		},
+		{
+			command: "maple metrics exemplars http.server.request.duration -s checkout --per-bucket 1",
+			description: "The top one per bucket for one service",
+		},
+	]),
+	Command.withHandler(
+		Effect.fnUntraced(function* (a) {
+			const range = yield* resolveRangeChecked(a)
+			const window = describeWindow(a, range)
+			const bucketSeconds = Option.getOrElse(a.bucket, () => Ops.bucketSecondsFor(range, 30))
+			const result = yield* Ops.metricExemplars({
+				name: a.name,
+				range,
+				bucketSeconds,
+				service: Option.getOrUndefined(a.service),
+				environment: Option.getOrUndefined(a.environment),
+				perBucket: a.perBucket,
+				limit: a.limit,
+			})
+			if (result._tag === "missing") {
+				const similar = result.similar.slice(0, 5)
+				return yield* new CliNotFoundError({
+					message: `no metric named '${a.name}' in ${window}`,
+					hint:
+						similar.length > 0
+							? `similar names: ${Arr.join(similar, ", ")}`
+							: "list the metrics that exist with `maple metrics`",
+				})
+			}
+			yield* printResult(
+				{
+					metricName: a.name,
+					metricType: result.metricType,
+					bucketSeconds,
+					exemplars: result.exemplars,
+				},
+				metricExemplarsView(`No exemplars on ${a.name} in ${window}`),
+			)
+		}),
+	),
+)
+
 export const metrics = Command.make("metrics", {
 	since: f.since,
 	start: f.start,
@@ -92,7 +173,7 @@ export const metrics = Command.make("metrics", {
 			yield* printResult(result, { empty: `No metrics in ${describeWindow(a, range)}` })
 		}),
 	),
-	Command.withSubcommands([show]),
+	Command.withSubcommands([show, exemplars]),
 )
 
 export const query = Command.make("query", {

@@ -53,7 +53,17 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 				x: {
 					scale: scaleBand<string>([...spec.xDomain], [0, 1]).paddingInner(spec.paddingInnerX),
 					grid: false,
-					axis: { line: false, ticks: { size: 0, padding: 6 } },
+					axis: {
+						line: false,
+						ticks: {
+							size: 0,
+							padding: 6,
+							format: (value: string) => spec.xLabels?.[value] ?? value,
+						},
+						...(spec.xLabels === undefined
+							? undefined
+							: { tickLabels: { thin: { priority: "ends" } } }),
+					},
 				},
 				y: {
 					scale: scaleBand<string>([...spec.yDomain], [0, 1]).paddingInner(spec.paddingInnerY),
