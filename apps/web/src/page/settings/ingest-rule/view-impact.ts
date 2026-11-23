@@ -13,10 +13,12 @@ import { statFigure } from "@maple/views/ui/stat-figure"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import {
+	bucketed,
 	detail,
 	effectOf,
 	headline,
 	hourlySeries,
+	IMPACT_BAR_HOURS,
 	IMPACT_HOURS,
 	type ImpactWindow,
 	keptOf,
@@ -79,20 +81,25 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 		h.div([h.Class("grid grid-cols-2 gap-4 sm:grid-cols-3")], [...figures(h, rule, totals)]),
 		vstack(h, { gap: "1" }, [
 			miniBars(h, {
-				values: hourlySeries(stats, rule.id, IMPACT_HOURS[model.impactWindow], (entry) =>
-					effectOf(rule.action, entry),
+				values: bucketed(
+					hourlySeries(stats, rule.id, IMPACT_HOURS[model.impactWindow], (entry) =>
+						effectOf(rule.action, entry),
+					),
+					IMPACT_BAR_HOURS[model.impactWindow],
 				),
 				floor: 6,
 				floorColor: "var(--input)",
 				gap: 1,
 				className: "text-primary h-12 w-full",
-				label: `${rule.name}: ${rule.action.type === "drop" ? "records dropped" : "values redacted"} per hour`,
+				label: `${rule.name}: ${rule.action.type === "drop" ? "records dropped" : "values redacted"} per ${model.impactWindow === "24h" ? "hour" : "6 hours"}`,
 			}),
 			hstack(h, { justify: "between" }, [
 				typography(h, { size: "2xs", tone: "muted" }, [
 					model.impactWindow === "24h" ? "24h ago" : "7d ago",
 				]),
-				typography(h, { size: "2xs", tone: "muted" }, ["Per hour, UTC"]),
+				typography(h, { size: "2xs", tone: "muted" }, [
+					model.impactWindow === "24h" ? "Per hour, UTC" : "Per 6 hours, UTC",
+				]),
 				typography(h, { size: "2xs", tone: "muted" }, ["Now"]),
 			]),
 		]),
