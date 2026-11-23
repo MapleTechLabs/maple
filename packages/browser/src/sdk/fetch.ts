@@ -34,12 +34,27 @@ interface Settled {
 
 type Observed = ReturnType<typeof observeResources> & { readonly url: string }
 
-/** Patch `globalThis.fetch`; returns the unpatch. */
-export function instrumentFetch(config: FetchInstrumentationConfig): () => void {
+/** Marks a span ended before its response body finished (the page left, or the SDK shut down). */
+const BODY_UNFINISHED = "maple.response_body_unfinished"
+
+export interface FetchInstrumentation {
+	/** Unpatch `fetch`. */
+	readonly stop: () => void
+	/**
+	 * End the spans of responses whose body is still streaming, at once, with their
+	 * headers-time data, and stop reading their clones. For page exit and shutdown.
+	 */
+	readonly endUnfinishedBodies: () => void
+}
+
+/** Patch `globalThis.fetch`. */
+export function instrumentFetch(config: FetchInstrumentationConfig): FetchInstrumentation {
 	const original = globalThis.fetch
-	if (typeof PerformanceObserver === "undefined" || typeof original !== "function") return () => {}
+	if (typeof PerformanceObserver === "undefined" || typeof original !== "function") return INACTIVE
 	let enabled = true
 	const used = new WeakSet<PerformanceResourceTiming>()
+	/** Responses whose body is still being read, and how to end each one now. */
+	const unfinished = new Map<Span, () => void>()
 
 	const endSpan = (span: Span, request: Observed, settled: Settled): void => {
 		const endTime = millisToHrTime(Date.now())
@@ -85,16 +100,33 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 		const fail = (error: Error | undefined): void => settle(error, { status: statusOf(error), url })
 		const onSuccess = (response: Response): Response => {
 			const ok = response.status >= 200 && response.status < 400
-			// An event stream may never end: its span ends at the headers, and no clone holds its data.
-			if (response.headers.get("content-type")?.startsWith("text/event-stream") === true) {
+			const settleResponse = (): void =>
 				settle(response, ok ? response : { status: response.status, url })
+			// An event stream may never end: its span ends at the headers, and no clone holds its data.
+			if (isEventStream(response)) {
+				settleResponse()
 				return response
 			}
-			readToEnd(
+			// Each outcome runs once: the body ending, failing, or being cut off by `endUnfinishedBodies`.
+			const first = (): boolean => unfinished.delete(span)
+			let cancelRead = (): void => {}
+			unfinished.set(span, () => {
+				cancelRead()
+				span.setAttribute(BODY_UNFINISHED, true)
+				settleResponse()
+				span.end()
+			})
+			cancelRead = readToEnd(
 				response,
-				() => settle(response, ok ? response : { status: response.status, url }),
-				fail,
-				() => endSpan(span, request, { status: 0, url }),
+				() => {
+					if (first()) settleResponse()
+				},
+				(error) => {
+					if (first()) fail(error)
+				},
+				() => {
+					if (first()) endSpan(span, request, { status: 0, url })
+				},
 			)
 			return response
 		}
@@ -114,13 +146,27 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 
 	if (!tryReplace(globalThis, "fetch", patched)) {
 		diag.warn("globalThis.fetch is read-only; fetch() calls will not be traced")
-		return () => {}
+		return INACTIVE
 	}
-	return () => {
-		enabled = false
-		// Guarded: a script that locked `fetch` since must not stop the rest of shutdown.
-		if (globalThis.fetch === patched) tryReplace(globalThis, "fetch", original)
+	return {
+		stop: () => {
+			enabled = false
+			// Guarded: a script that locked `fetch` since must not stop the rest of shutdown.
+			if (globalThis.fetch === patched) tryReplace(globalThis, "fetch", original)
+		},
+		endUnfinishedBodies: () => {
+			for (const cut of unfinished.values()) cut()
+			unfinished.clear()
+		},
 	}
+}
+
+const INACTIVE: FetchInstrumentation = { stop: () => {}, endUnfinishedBodies: () => {} }
+
+/** `text/event-stream` by media type, whatever its case, spacing or parameters. */
+function isEventStream(response: Response): boolean {
+	const type = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase()
+	return type === "text/event-stream"
 }
 
 /** Onto the Request itself, or the init's headers replaced by a `Headers` carrying them. */
@@ -141,16 +187,22 @@ function statusOf(error: Error | undefined): number {
 	return typeof status === "number" && !Number.isNaN(status) ? status : 0
 }
 
-/** Read a clone of the body to its end, so the span covers the download. */
+/**
+ * Read a clone of the body to its end, so the span covers the download. Returns a
+ * cancel for the clone only: the app's own body is untouched.
+ */
 function readToEnd(
 	response: Response,
 	done: () => void,
 	fail: (error: Error | undefined) => void,
 	broken: () => void,
-): void {
+): () => void {
 	try {
 		const body = response.clone().body
-		if (!body) return done()
+		if (!body) {
+			done()
+			return () => {}
+		}
 		const reader = body.getReader()
 		const read = (): void => {
 			reader.read().then(
@@ -159,8 +211,12 @@ function readToEnd(
 			)
 		}
 		read()
+		return () => {
+			reader.cancel().catch(() => {})
+		}
 	} catch (error) {
 		diag.error("Failed to read fetch response body", error)
 		broken()
+		return () => {}
 	}
 }

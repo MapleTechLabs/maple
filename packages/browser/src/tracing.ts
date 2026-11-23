@@ -28,7 +28,7 @@ import { flushUnloading, newestFirstOnExit, OtlpExporter } from "./otlp"
 import { SessionSampler } from "./sampling"
 import { BatchSpanProcessor } from "./sdk/batch"
 import { StackContextManager } from "./sdk/context"
-import { instrumentFetch } from "./sdk/fetch"
+import { type FetchInstrumentation, instrumentFetch } from "./sdk/fetch"
 import { JsonTraceSerializer } from "./sdk/otlp-json"
 import { CompositePropagator, W3CBaggagePropagator, W3CTraceContextPropagator } from "./sdk/propagation"
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from "./sdk/span"
@@ -368,9 +368,13 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	// entering the bfcache fires it too; ending there is still right, since it
 	// may never be restored.
 	const settledRequests = new Map<ApiSpan, number>()
+	// Set once the request instrumentation is installed, below.
+	let fetchInstrumentation: FetchInstrumentation | undefined
 	const onPageHide = (): void => {
 		noteLost("page_unload")
 		flushUnloading(() => {
+			// A response body still streaming would never end its span on a page that is gone.
+			fetchInstrumentation?.endUnfinishedBodies()
 			unloading = true
 			try {
 				for (const [span, endTime] of settledRequests) {
@@ -420,48 +424,46 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
 	}
 	const headers = config.captureHeaders
+	fetchInstrumentation = config.tracingInstrumentFetch
+		? instrumentFetch({
+				...requestOptions,
+				tracer: requestTracer(FETCH_SCOPE),
+				applyCustomAttributesOnSpan: (span, request, result) => {
+					noteSettled(span)
+					const sent = request instanceof Request ? request.headers : new Headers(request.headers)
+					setHeaderAttributes(span, "request", headers.request, (name) => sent.get(name))
+					if (result instanceof Response) {
+						setHeaderAttributes(span, "response", headers.response, (name) =>
+							result.headers.get(name),
+						)
+					} else if (
+						result instanceof Error &&
+						(isTimeout(result, request.signal) ||
+							(result.name !== "AbortError" && !request.signal?.aborted))
+					) {
+						// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
+						// An abort rejects with its reason, whatever that is, so the signal decides; a
+						// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
+						// One the page went away or offline under stays Unset, with the reason, as
+						// does one to a URL the app ignores failures for.
+						const lost = connectionLost(span)
+						if (lost !== undefined) {
+							span.setAttribute("maple.connection_lost", lost)
+							excusedFailures.add(result)
+						} else if (ignoredRequests.has(span)) {
+							span.setAttribute("maple.network_failure_ignored", true)
+							excusedFailures.add(result)
+						} else {
+							span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
+							span.setAttribute("error.type", result.name)
+							if (!isTimeout(result, request.signal)) failedLive.add(span)
+						}
+					}
+				},
+			})
+		: undefined
 	const unpatches = [
-		...(config.tracingInstrumentFetch
-			? [
-					instrumentFetch({
-						...requestOptions,
-						tracer: requestTracer(FETCH_SCOPE),
-						applyCustomAttributesOnSpan: (span, request, result) => {
-							noteSettled(span)
-							const sent =
-								request instanceof Request ? request.headers : new Headers(request.headers)
-							setHeaderAttributes(span, "request", headers.request, (name) => sent.get(name))
-							if (result instanceof Response) {
-								setHeaderAttributes(span, "response", headers.response, (name) =>
-									result.headers.get(name),
-								)
-							} else if (
-								result instanceof Error &&
-								(isTimeout(result, request.signal) ||
-									(result.name !== "AbortError" && !request.signal?.aborted))
-							) {
-								// A rejected fetch (offline, DNS, CORS) ends with status 0 and no error; XHR marks its own.
-								// An abort rejects with its reason, whatever that is, so the signal decides; a
-								// timeout (`AbortSignal.timeout()`) is a failure, not the app changing its mind.
-								// One the page went away or offline under stays Unset, with the reason, as
-								// does one to a URL the app ignores failures for.
-								const lost = connectionLost(span)
-								if (lost !== undefined) {
-									span.setAttribute("maple.connection_lost", lost)
-									excusedFailures.add(result)
-								} else if (ignoredRequests.has(span)) {
-									span.setAttribute("maple.network_failure_ignored", true)
-									excusedFailures.add(result)
-								} else {
-									span.setStatus({ code: SpanStatusCode.ERROR, message: result.message })
-									span.setAttribute("error.type", result.name)
-									if (!isTimeout(result, request.signal)) failedLive.add(span)
-								}
-							}
-						},
-					}),
-				]
-			: []),
+		...(fetchInstrumentation ? [fetchInstrumentation.stop] : []),
 		...(config.tracingInstrumentXhr
 			? [
 					instrumentXhr({
@@ -500,6 +502,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			window.removeEventListener("pagehide", onPageHide)
 			window.removeEventListener("offline", onOffline)
 		}
+		fetchInstrumentation?.endUnfinishedBodies()
 		for (const unpatch of unpatches) unpatch()
 		if (mapleProvider === provider) mapleProvider = undefined
 		// Release the globals so a later init() can register a live provider.

@@ -15,13 +15,15 @@ const settledWith: unknown[] = []
 
 const setup = (options: { propagateTo?: RegExp[]; ignore?: RegExp[] } = {}): void => {
 	const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] })
-	unpatch = instrumentFetch({
+	instrumentation = instrumentFetch({
 		tracer: provider.getTracer("test"),
 		ignoreUrls: options.ignore ?? [],
 		propagateTraceHeaderCorsUrls: options.propagateTo ?? [],
 		applyCustomAttributesOnSpan: (_span, _request, result) => void settledWith.push(result),
 	})
+	unpatch = instrumentation.stop
 }
+let instrumentation: ReturnType<typeof instrumentFetch> | undefined
 
 beforeEach(() => {
 	exporter.reset()
@@ -167,6 +169,32 @@ describe("instrumentFetch", () => {
 
 		const [span] = await finished(1)
 		expect(span?.attributes["http.response.status_code"]).toBe(200)
+	})
+
+	it("recognises an event stream whatever the media type's case and parameters", async () => {
+		const stream = new ReadableStream<Uint8Array>({ start: () => {} })
+		vi.stubGlobal("fetch", () =>
+			Promise.resolve(
+				new Response(stream, { headers: { "content-type": " Text/Event-Stream ; charset=utf-8" } }),
+			),
+		)
+		setup()
+		await fetch(`${location.origin}/api/events`)
+
+		expect(await finished(1)).toHaveLength(1)
+	})
+
+	it("ends a body still streaming when asked, at once, marked unfinished", async () => {
+		const stream = new ReadableStream<Uint8Array>({ start: () => {} })
+		vi.stubGlobal("fetch", () => Promise.resolve(new Response(stream, { status: 206 })))
+		setup()
+		await fetch(`${location.origin}/api/long-poll`)
+		expect(await finished(0)).toEqual([])
+
+		instrumentation?.endUnfinishedBodies()
+		const [span] = exporter.getFinishedSpans()
+		expect(span?.attributes["maple.response_body_unfinished"]).toBe(true)
+		expect(span?.attributes["http.response.status_code"]).toBe(206)
 	})
 
 	it("still ends any other streamed response's span only once its body is read", async () => {
