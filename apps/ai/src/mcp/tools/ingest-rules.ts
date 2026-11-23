@@ -1,9 +1,9 @@
 /**
- * Ingest rules: drop or redact telemetry before Maple stores or bills it. Anyone may list and
+ * Ingest rules: drop, parse or redact telemetry before Maple stores or bills it. Anyone may list and
  * preview them; creating, changing and deleting needs an engineer or admin, like the REST routes, since a
  * rule rewrites or discards the whole organization's incoming data.
  */
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { type IngestRuleRow } from "@maple/domain/mcp-outputs"
 import {
 	decodePublicId,
@@ -42,7 +42,6 @@ import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { truncate } from "../lib/format"
-import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 
@@ -137,7 +136,7 @@ const conditionsParam = P.optionalJson(
 	'Conditions that must all match, e.g. [{"field":"severity","op":"lt","value":"info"}] or [{"field":"attribute","key":"http.route","op":"in","values":["/health"]}]. Fields: service_name, name, attribute, resource_attribute, body, severity, span_kind, span_status. Ops: eq, neq, in, not_in, prefix, contains, regex, exists, not_exists, lt, gte (severity). Empty matches every record (redact rules only).',
 )
 const actionDescription =
-	'What to do: {"type":"drop","keep_percent":0} or {"type":"redact","keys":["*password*"],"detectors":["email","credit_card","jwt","api_token","ipv4","ipv6","phone","iban"],"patterns":["ORD-[0-9]+"],"scopes":["attributes","resource","events","body"],"method":"mask"|"hash"|"remove"}.'
+	'What to do: {"type":"drop","keep_percent":0} or {"type":"redact","keys":["*password*"],"detectors":["email","credit_card","jwt","api_token","ipv4","ipv6","phone","iban"],"patterns":["ORD-[0-9]+"],"scopes":["attributes","resource","events","body"],"method":"mask"|"hash"|"remove"} or, for logs only, {"type":"parse","steps":[{"type":"json","source":"body"},{"type":"grok","source":"body","pattern":"%{IP:client.address} %{WORD:method}"},{"type":"regex","source":"attribute","key":"msg","pattern":"user=(?<user_id>[0-9]+)"},{"type":"severity","source":"attribute","key":"level"},{"type":"timestamp","source":"attribute","key":"ts","format":"rfc3339"|"unix_s"|"unix_ms"|"unix_us"|"unix_ns"|"common_log"}]}.'
 
 const SPEC_FIELDS = {
 	signals: P.list(`Signals the rule applies to: ${Arr.join(SIGNALS, ", ")}`),
@@ -204,28 +203,52 @@ const sampleRecords = Effect.fnUntraced(function* (
 	)
 })
 
+// Parsed ints are bigints, which plain JSON cannot write.
+const encodeAttrJsonOption = Schema.encodeOption(
+	Schema.fromJsonString(Schema.Unknown, {
+		replacer: (_key: string, inner: unknown) => (typeof inner === "bigint" ? String(inner) : inner),
+	}),
+)
+const encodeAttrJson = (value: AttrValue): string | undefined =>
+	Option.getOrUndefined(encodeAttrJsonOption(value))
+
 /** A changed value as transcript text: strings raw, maps and lists as JSON rather than `[object Object]`. */
 const valueText = (value: AttrValue): string =>
-	typeof value === "string" ? value : (stringifyJson(value) ?? "[unserializable value]")
+	typeof value === "string" || typeof value === "bigint"
+		? String(value)
+		: (encodeAttrJson(value) ?? "[unserializable value]")
+/** Ints (bigints) and doubles of one number differ; the JSON form alone would equate them. */
+const sameValue = (left: AttrValue, right: AttrValue) =>
+	typeof left === typeof right && valueText(left) === valueText(right)
 
-/** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
+/** `key -> after` for every top-level value a rule changed or added; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
-	const diff = (scope: string, a: AttrMap, b: AttrMap) =>
-		Arr.flatMap(Rec.toEntries(a), ([key, value]) => {
+	const diff = (scope: string, a: AttrMap, b: AttrMap) => [
+		...Arr.flatMap(Rec.toEntries(a), ([key, value]) => {
 			const next = b[key]
 			if (next === undefined) return [`${scope}${key}: removed`]
-			return stringifyJson(next) === stringifyJson(value)
-				? []
-				: [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
-		})
+			return sameValue(next, value) ? [] : [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
+		}),
+		...Arr.flatMap(Rec.toEntries(b), ([key, value]) =>
+			key in a ? [] : [`${scope}${key} = ${truncate(valueText(value), 60)}`],
+		),
+	]
+	const severity =
+		after.severityText !== before.severityText ? [`severity -> ${after.severityText ?? ""}`] : []
+	const time =
+		after.timeUnixNano !== undefined && after.timeUnixNano !== before.timeUnixNano
+			? [`time -> ${new Date(Number(after.timeUnixNano / 1_000_000n)).toISOString()}`]
+			: []
 	const body =
-		before.body !== undefined && stringifyJson(before.body) !== stringifyJson(after.body)
+		before.body !== undefined && (after.body === undefined || !sameValue(before.body, after.body))
 			? [`body: ${truncate(after.body === undefined ? "removed" : valueText(after.body), 120)}`]
 			: []
 	return [
 		...diff("", before.attributes, after.attributes),
 		...diff("resource.", before.resource, after.resource),
 		...body,
+		...severity,
+		...time,
 	]
 }
 
@@ -264,6 +287,12 @@ export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRec
 	const redacted = Arr.flatMap(outcomes, ({ record, outcome }) =>
 		outcome._tag === "kept" && outcome.redactions.size > 0 ? [{ record, outcome }] : [],
 	)
+	const parsed = Arr.flatMap(outcomes, ({ record, outcome }) =>
+		outcome._tag === "kept" && spec.action._tag === "parse" && outcome.matched.length > 0
+			? [{ record, outcome }]
+			: [],
+	)
+	const failed = Arr.filter(parsed, ({ outcome }) => outcome.parseFailures.size > 0)
 	return {
 		sampled: records.length,
 		dropped: dropped.length,
@@ -273,6 +302,7 @@ export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRec
 			0,
 			(total, { outcome }) => total + Arr.reduce([...outcome.redactions.values()], 0, (a, b) => a + b),
 		),
+		...(spec.action._tag === "parse" ? { parsed: parsed.length, parseFailed: failed.length } : undefined),
 		examples: [
 			...Arr.map(dropped.slice(0, 3), ({ record }) => ({
 				service: recordService(record),
@@ -287,6 +317,19 @@ export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRec
 				outcome: "redacted" as const,
 				changes: changedValues(record, outcome.record),
 			})),
+			// Failures first: they are what a draft pattern needs fixed.
+			...Arr.map(
+				[...failed, ...Arr.filter(parsed, ({ outcome }) => outcome.parseFailures.size === 0)].slice(
+					0,
+					5,
+				),
+				({ record, outcome }) => ({
+					service: recordService(outcome.record),
+					label: recordLabel(record),
+					outcome: outcome.parseFailures.size > 0 ? ("parse_failed" as const) : ("parsed" as const),
+					changes: changedValues(record, outcome.record),
+				}),
+			),
 		],
 	}
 }
@@ -296,7 +339,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "list_ingest_rules",
 		title: "List Ingest Rules",
 		description:
-			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then redact rules by position).",
+			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then parse and redact rules by position).",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		scopeFamily: "ingest_rules",
@@ -344,7 +387,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "preview_ingest_rule",
 		title: "Preview Ingest Rule",
 		description:
-			"Run an ingest rule (an existing one by `rule`, or a draft from signals/conditions/rule_action) over recent stored traces or logs and report how many records it would drop or redact, with examples. Changes nothing. Recent data may already be redacted by existing rules; metrics are not previewed.",
+			"Run an ingest rule (an existing one by `rule`, or a draft from signals/conditions/rule_action) over recent stored traces or logs and report how many records it would drop, parse or redact, with examples. Changes nothing. Recent data may already be redacted by existing rules; metrics are not previewed.",
 		parameters: Schema.Struct({
 			rule: P.optionalText("An existing rule's name or id (list_ingest_rules lists them)"),
 			signals: P.optionalList(`Draft: signals, ${Arr.join(SIGNALS, ", ")}`),
@@ -426,7 +469,9 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 					: [
 							...Arr.map(output.notes ?? [], (note) => doc.text(note)),
 							doc.text(
-								`Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
+								output.parsed !== undefined
+									? `Of ${output.sampled} recent ${output.signal} records, the rule would parse ${output.parsed}; ${output.parseFailed ?? 0} of them would fail a step and get maple.parse.error.`
+									: `Of ${output.sampled} recent ${output.signal} records, ${output.dropped} would be dropped and ${output.redactedRecords} redacted (${output.redactedValues} values). Hashes use a preview key and differ from stored ones.`,
 							),
 							...(output.examples.length === 0
 								? []

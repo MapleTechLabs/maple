@@ -310,6 +310,7 @@ pub fn grpc_server_span(rpc_service: &'static str, signal_path: &'static str) ->
         "maple.ingest.rules.count" = Empty,
         "maple.ingest.rules.dropped_items" = Empty,
         "maple.ingest.rules.redacted_values" = Empty,
+        "maple.ingest.rules.parse_failed" = Empty,
     )
 }
 

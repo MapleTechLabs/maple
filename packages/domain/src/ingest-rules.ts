@@ -1,5 +1,7 @@
-import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Order, Record as Rec, Schema, String as Str } from "effect"
 import { IngestRuleId } from "@maple/primitives"
+import { RE2JS } from "re2js"
+import { expandGrok, type ExpandedGrok } from "./ingest-grok"
 
 // Customer ingest rules: drop or redact telemetry before the gateway stores or bills it.
 // This file is the contract. The Rust gateway (`apps/ingest/src/ingest_rules.rs`) and the TS
@@ -23,7 +25,21 @@ export const INGEST_RULE_LIMITS = {
 	 * gateway refuses an org whose regexes really compile past 16 MiB, so this keeps headroom.
 	 */
 	regexBudgetPerOrg: 8,
+	/** Steps in one parse rule. */
+	parseSteps: 10,
+	parsePrefixLength: 64,
+	/** A parse regex or grok pattern as written; grok expands past it. */
+	parsePatternLength: 1024,
+	/** JSON parsing reads at most this many UTF-8 bytes; a longer value fails. */
+	jsonBytes: 64 * 1024,
+	/** Deeper JSON or structured bodies fail rather than flatten. */
+	jsonDepth: 16,
+	/** A JSON step writes at most this many attributes; more fails and writes none. */
+	jsonFields: 128,
 } as const
+
+/** Log attribute a failed parse step sets, e.g. `regex: no match`. A rule keeps its first failure. */
+export const PARSE_ERROR_KEY = "maple.parse.error"
 
 export const IngestRuleSignal = Schema.Literals(["traces", "logs", "metrics"])
 export type IngestRuleSignal = Schema.Schema.Type<typeof IngestRuleSignal>
@@ -107,7 +123,66 @@ export const IngestRuleRedactAction = Schema.TaggedStruct("redact", {
 	scopes: Schema.Array(IngestRuleScope),
 	method: IngestRuleRedactMethod,
 })
-export const IngestRuleAction = Schema.Union([IngestRuleDropAction, IngestRuleRedactAction])
+/** What a parse step reads: the log body, or a log attribute by `key`. */
+export const IngestParseSource = Schema.Literals(["body", "attribute"])
+export type IngestParseSource = Schema.Schema.Type<typeof IngestParseSource>
+
+const parseSource = {
+	source: IngestParseSource,
+	/** Required for `attribute`, absent for `body`. */
+	key: Schema.optionalKey(Schema.String),
+}
+/** Prepended to every attribute key the step writes. */
+const parsePrefix = { prefix: Schema.optionalKey(Schema.String) }
+
+export const IngestTimestampFormat = Schema.Literals([
+	"rfc3339",
+	"unix_s",
+	"unix_ms",
+	"unix_us",
+	"unix_ns",
+	"common_log",
+])
+export type IngestTimestampFormat = Schema.Schema.Type<typeof IngestTimestampFormat>
+
+/** A JSON object (or a structured body) flattened into attributes with dotted keys. */
+export const IngestParseJsonStep = Schema.TaggedStruct("json", { ...parseSource, ...parsePrefix })
+/** Named capture groups become attributes. */
+export const IngestParseRegexStep = Schema.TaggedStruct("regex", {
+	...parseSource,
+	pattern: Schema.String,
+	...parsePrefix,
+})
+/** `%{PATTERN:field}` references to the curated library (`@maple/domain/ingest-grok`). */
+export const IngestParseGrokStep = Schema.TaggedStruct("grok", {
+	...parseSource,
+	pattern: Schema.String,
+	...parsePrefix,
+})
+/** Sets the log severity from a level name or number. */
+export const IngestParseSeverityStep = Schema.TaggedStruct("severity", parseSource)
+/** Sets the log timestamp. */
+export const IngestParseTimestampStep = Schema.TaggedStruct("timestamp", {
+	...parseSource,
+	format: IngestTimestampFormat,
+})
+export const IngestParseStep = Schema.Union([
+	IngestParseJsonStep,
+	IngestParseRegexStep,
+	IngestParseGrokStep,
+	IngestParseSeverityStep,
+	IngestParseTimestampStep,
+])
+export type IngestParseStep = Schema.Schema.Type<typeof IngestParseStep>
+
+/** Steps run in order on logs the rule's conditions match. */
+export const IngestRuleParseAction = Schema.TaggedStruct("parse", { steps: Schema.Array(IngestParseStep) })
+
+export const IngestRuleAction = Schema.Union([
+	IngestRuleDropAction,
+	IngestRuleRedactAction,
+	IngestRuleParseAction,
+])
 export type IngestRuleAction = Schema.Schema.Type<typeof IngestRuleAction>
 
 /** The part of a rule the engines evaluate; ids, names and timestamps live on the stored row. */
@@ -606,12 +681,94 @@ export const compileIngestRegex = (pattern: string, global = true): Option.Optio
 		: compileRegex(portable, `${global ? "g" : ""}${ignoreCase ? "i" : ""}u`)
 }
 
-/** The regexes a rule compiles in the gateway: regex conditions and redact patterns. */
+const compileRe2 = Option.liftThrowable((source: string) => RE2JS.compile(source))
+const GROUP_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
+
+/**
+ * Parse patterns run on linear-time engines in both places (the gateway's `regex` crate and
+ * RE2JS here), so unlike redact patterns they may repeat freely. They keep to the syntax both
+ * accept, with `\d`, `\w`, `\s` and `\b` meaning their ASCII forms. Null when usable.
+ */
+const parseRegexProblem = (source: string): string | null => {
+	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(source)) return message
+	if (/\\[QEC]/u.test(source)) return "\\Q, \\E and \\C are not supported"
+	if (portableRegexSource(splitRegexFlags(source).source) === null)
+		return "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["
+	if (Option.isNone(compileRe2(source))) return "pattern is not a valid regular expression"
+	const { source: body, ignoreCase } = splitRegexFlags(source)
+	if (compiledRegexWeight(body, ignoreCase) > 0.85)
+		return "pattern is too large for the gateway to compile; repeat \\p{...} less or use fewer counted repeats"
+	return null
+}
+
+/** The capture group names a parse regex sets, in group order. */
+export const parseRegexGroups = (pattern: string): ReadonlyArray<string> =>
+	Option.match(compileRe2(pattern), {
+		onNone: () => [],
+		onSome: (compiled) =>
+			Arr.map(
+				Arr.sort(
+					Rec.toEntries<string, number>(compiled.namedGroups()),
+					Order.mapInput(Order.Number, ([, index]: readonly [string, number]) => index),
+				),
+				([name]) => name,
+			),
+	})
+
+/** The regex a regex or grok step runs, with its fields; a problem string when it has none. */
+export const parsePatternRegex = (
+	step: Extract<IngestParseStep, { readonly _tag: "regex" | "grok" }>,
+): ExpandedGrok | string => {
+	if (step.pattern.length === 0) return "pattern is empty"
+	if (step.pattern.length > INGEST_RULE_LIMITS.parsePatternLength)
+		return `pattern is longer than ${INGEST_RULE_LIMITS.parsePatternLength} characters`
+	if (step._tag === "grok") {
+		if (/\(\?P?<[A-Za-z_]/u.test(step.pattern))
+			return "name fields with %{PATTERN:field}, not (?<name>...)"
+		const expanded = expandGrok(step.pattern)
+		if (typeof expanded === "string") return expanded
+		if (expanded.fields.length === 0) return "name at least one field, like %{WORD:method}"
+		return parseRegexProblem(expanded.regex) ?? expanded
+	}
+	const problem = parseRegexProblem(step.pattern)
+	if (problem !== null) return problem
+	const groups = parseRegexGroups(step.pattern)
+	if (groups.length === 0) return "add a named group, like (?<status>[0-9]+)"
+	const invalid = Arr.findFirst(groups, (name) => !GROUP_NAME.test(name))
+	if (Option.isSome(invalid)) return `group name ${invalid.value} may use letters, digits and _ only`
+	return { regex: step.pattern, fields: Arr.map(groups, (name) => ({ name, type: "string" as const })) }
+}
+
+const parseStepProblem = (step: IngestParseStep): string | null => {
+	if (step.source === "attribute" && (step.key === undefined || step.key.length === 0))
+		return "an attribute source needs a key"
+	if (step.source === "body" && step.key !== undefined) return "the body takes no key"
+	if (step.key !== undefined && step.key.length > INGEST_RULE_LIMITS.valueLength)
+		return "the key is too long"
+	if (step._tag === "json" || step._tag === "regex" || step._tag === "grok") {
+		if ((step.prefix?.length ?? 0) > INGEST_RULE_LIMITS.parsePrefixLength)
+			return `the prefix is longer than ${INGEST_RULE_LIMITS.parsePrefixLength} characters`
+	}
+	if (step._tag === "regex" || step._tag === "grok") {
+		const regex = parsePatternRegex(step)
+		return typeof regex === "string" ? regex : null
+	}
+	return null
+}
+
+/** The regexes a rule compiles in the gateway: regex conditions, redact patterns and parse patterns. */
 const ruleRegexes = (spec: IngestRuleSpec): ReadonlyArray<string> => [
 	...Arr.flatMap(spec.conditions, (condition) =>
 		condition.op === "regex" && condition.value !== undefined ? [condition.value] : [],
 	),
 	...(spec.action._tag === "redact" ? spec.action.patterns : []),
+	...(spec.action._tag === "parse"
+		? Arr.flatMap(spec.action.steps, (step) => {
+				if (step._tag !== "regex" && step._tag !== "grok") return []
+				const regex = parsePatternRegex(step)
+				return typeof regex === "string" ? [] : [regex.regex]
+			})
+		: []),
 ]
 
 /** Estimated MiB of compiled regex the rules need together; see `regexBudgetCost`. */
@@ -695,6 +852,18 @@ export const ingestRuleProblems = (spec: IngestRuleSpec): ReadonlyArray<string> 
 	const budget = regexBudgetProblem([spec], "this rule's regexes are")
 	if (budget !== null) problems.push(budget)
 	const action = spec.action
+	if (action._tag === "parse") {
+		if (spec.signals.length !== 1 || spec.signals[0] !== "logs")
+			problems.push("parse rules apply to logs only")
+		if (action.steps.length === 0) problems.push("add at least one step")
+		if (action.steps.length > INGEST_RULE_LIMITS.parseSteps)
+			problems.push(`at most ${INGEST_RULE_LIMITS.parseSteps} steps`)
+		Arr.forEach(action.steps, (step, index) => {
+			const problem = parseStepProblem(step)
+			if (problem !== null) problems.push(`step ${index + 1}: ${problem}`)
+		})
+		return problems
+	}
 	if (action._tag === "drop") {
 		if (!Number.isInteger(action.keepPercent) || action.keepPercent < 0 || action.keepPercent > 100)
 			problems.push("keep percent is a whole number from 0 to 100")
@@ -754,6 +923,14 @@ const OP_WORDS = {
 	gte: "is at least",
 } satisfies Record<IngestRuleOp, string>
 
+const PARSE_STEP_WORDS = {
+	json: "JSON",
+	regex: "regex",
+	grok: "grok",
+	severity: "severity",
+	timestamp: "timestamp",
+} satisfies Record<IngestParseStep["_tag"], string>
+
 const describeCondition = (condition: IngestRuleCondition): string => {
 	const subject = condition.key === undefined ? Str.replace("_", " ")(condition.field) : condition.key
 	const operand =
@@ -771,6 +948,13 @@ export const summarizeIngestRule = (spec: IngestRuleSpec): string => {
 			: ` where ${Arr.join(Arr.map(spec.conditions, describeCondition), " and ")}`
 	const signals = Arr.join(spec.signals, " and ")
 	const action = spec.action
+	if (action._tag === "parse") {
+		const steps = Arr.join(
+			Arr.map(action.steps, (step) => PARSE_STEP_WORDS[step._tag]),
+			", then ",
+		)
+		return `Parse ${signals} with ${steps === "" ? "no steps" : steps}${where}`
+	}
 	if (action._tag === "drop") {
 		const keep = action.keepPercent > 0 ? ` (keep ${action.keepPercent}%)` : ""
 		return `Drop ${signals}${where}${keep}`

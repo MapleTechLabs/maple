@@ -33,6 +33,7 @@
 		"./glob": "./src/glob.ts",
 		"./wire": "./src/wire.ts",
 		"./profiles": "./src/profiles.ts",
+		"./ingest-grok": "./src/ingest-grok.ts",
 		"./ingest-rules": "./src/ingest-rules.ts",
 		"./ai-triage": "./src/ai-triage.ts",
 		"./alert-maintenance-windows": "./src/alert-maintenance-windows.ts",
@@ -125,7 +126,8 @@
 		"@maple/strings": "workspace:*",
 		"@maple/widgets": "workspace:*",
 		"@noble/hashes": "^1.4.0",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"re2js": "2.10.0"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",

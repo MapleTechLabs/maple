@@ -68,14 +68,29 @@ export interface ValueChange {
 	readonly after: string | null
 }
 
+/** What a parse rule wrote: a new or changed attribute, the severity or the time. */
+export interface ParsedField {
+	readonly key: string
+	readonly value: string
+}
+
 export type PreviewRow =
 	| { readonly _tag: "dropped"; readonly record: RuleRecord }
 	| { readonly _tag: "redacted"; readonly record: RuleRecord; readonly changes: ReadonlyArray<ValueChange> }
+	| {
+			readonly _tag: "parsed"
+			readonly record: RuleRecord
+			readonly fields: ReadonlyArray<ParsedField>
+			/** `<step>: <reason>`, also written as `maple.parse.error`. */
+			readonly failure: string | null
+	  }
 
 export interface PreviewResult {
 	readonly total: number
 	readonly dropped: number
 	readonly redacted: number
+	readonly parsed: number
+	readonly failed: number
 	readonly rows: ReadonlyArray<PreviewRow>
 }
 
@@ -110,6 +125,23 @@ const changesOf = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ValueCh
 	),
 ]
 
+const PARSE_ERROR = "maple.parse.error"
+
+const parsedFields = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ParsedField> => [
+	...Arr.flatMap(Struct.keys(after.attributes), (key) => {
+		const now = show(after.attributes[key])
+		return key === PARSE_ERROR || (key in before.attributes && show(before.attributes[key]) === now)
+			? []
+			: [{ key, value: now }]
+	}),
+	...(after.severityText !== before.severityText
+		? [{ key: "severity", value: `${after.severityText ?? ""} (${after.severityNumber ?? 0})` }]
+		: []),
+	...(after.timeUnixNano !== undefined && after.timeUnixNano !== before.timeUnixNano
+		? [{ key: "timestamp", value: new Date(Number(after.timeUnixNano / 1_000_000n)).toISOString() }]
+		: []),
+]
+
 /** Runs the draft over the samples with the same engine the gateway's twin uses. */
 export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRecord>): PreviewResult => {
 	const compiled = compileRules([spec], PREVIEW_SALT)
@@ -118,14 +150,29 @@ export const runPreview = (spec: IngestRuleSpec, records: ReadonlyArray<RuleReco
 		// the preview's counts steady between renders.
 		const outcome = applyRules(compiled, record, () => (((index * 0.618_033_988_75) % 1) + 1) % 1)
 		if (outcome._tag === "dropped") return [{ _tag: "dropped", record }]
+		if (spec.action._tag === "parse")
+			return outcome.matched.length === 0
+				? []
+				: [
+						{
+							_tag: "parsed",
+							record,
+							fields: parsedFields(record, outcome.record),
+							failure: outcome.parseFailures.values().next().value ?? null,
+						},
+					]
 		const changes = changesOf(record, outcome.record)
 		return changes.length === 0 ? [] : [{ _tag: "redacted", record, changes }]
 	})
+	const isFailure = (row: PreviewRow) => row._tag === "parsed" && row.failure !== null
 	return {
 		total: records.length,
 		dropped: Arr.filter(rows, (row) => row._tag === "dropped").length,
 		redacted: Arr.filter(rows, (row) => row._tag === "redacted").length,
-		rows,
+		parsed: Arr.filter(rows, (row) => row._tag === "parsed").length,
+		failed: Arr.filter(rows, isFailure).length,
+		// Failures first: they are what a draft pattern needs fixed.
+		rows: [...Arr.filter(rows, isFailure), ...Arr.filter(rows, (row) => !isFailure(row))],
 	}
 }
 

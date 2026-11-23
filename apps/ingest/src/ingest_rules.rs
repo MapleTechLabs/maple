@@ -29,6 +29,9 @@ use regex_automata::{Input, MatchKind};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+mod parse;
+pub use parse::{ParseSource, ParseStepSpec, TimestampFormat, PARSE_ERROR_KEY};
+
 type HmacSha256 = Hmac<Sha256>;
 
 /// Detectors and patterns read at most this many bytes of one string value.
@@ -158,6 +161,8 @@ pub enum ActionSpec {
         scopes: Vec<RedactScope>,
         method: RedactMethod,
     },
+    /// Runs after drops and before redaction; logs only.
+    Parse { steps: Vec<ParseStepSpec> },
 }
 
 /// The evaluated part of a rule, as `packages/domain/src/ingest-rules.ts` encodes it.
@@ -234,6 +239,8 @@ pub struct RuleCounters {
     pub dropped_bytes: u64,
     /// Values replaced or removed, plus each detector or pattern match.
     pub redacted_values: u64,
+    /// Logs a parse rule ran on where a step failed (`maple.parse.error` was set).
+    pub parse_failed: u64,
 }
 
 impl RuleCounters {
@@ -242,6 +249,7 @@ impl RuleCounters {
         self.dropped += other.dropped;
         self.dropped_bytes += other.dropped_bytes;
         self.redacted_values += other.redacted_values;
+        self.parse_failed += other.parse_failed;
     }
 }
 
@@ -367,6 +375,7 @@ struct Redaction {
 enum CompiledAction {
     Drop { keep_percent: u8 },
     Redact(Redaction),
+    Parse(Vec<parse::CompiledStep>),
 }
 
 #[derive(Debug)]
@@ -385,10 +394,15 @@ impl CompiledRule {
         });
         let patterns: &[Regex] = match &self.action {
             CompiledAction::Redact(redaction) => &redaction.patterns,
-            CompiledAction::Drop { .. } => &[],
+            CompiledAction::Drop { .. } | CompiledAction::Parse(_) => &[],
+        };
+        let steps: &[parse::CompiledStep] = match &self.action {
+            CompiledAction::Parse(steps) => steps,
+            _ => &[],
         };
         conditions
             .chain(patterns.iter().map(Regex::memory_usage))
+            .chain(steps.iter().map(parse::CompiledStep::regex_bytes))
             .fold(0, usize::saturating_add)
     }
 }
@@ -400,6 +414,8 @@ pub struct CompiledRules {
     rules: Vec<CompiledRule>,
     /// Union of every rule's signal bits, so a signal no rule reads is skipped.
     signals: u8,
+    /// Some rule parses logs.
+    parses: bool,
     hash_salt: String,
     /// One payload's pass budget; `REQUEST_SCAN_BYTES` and `REQUEST_SCAN_TIME` outside tests.
     scan_bytes: u64,
@@ -412,6 +428,7 @@ impl Default for CompiledRules {
             ids: Vec::new(),
             rules: Vec::new(),
             signals: 0,
+            parses: false,
             hash_salt: String::new(),
             scan_bytes: REQUEST_SCAN_BYTES,
             scan_time: REQUEST_SCAN_TIME,
@@ -504,6 +521,7 @@ fn compile_rule(spec: IngestRuleSpec) -> Result<CompiledRule, String> {
             scopes: scopes.iter().fold(0, |bits, s| bits | scope_bit(*s)),
             method,
         }),
+        ActionSpec::Parse { steps } => CompiledAction::Parse(parse::compile_steps(steps)?),
     };
     Ok(CompiledRule {
         signals,
@@ -533,6 +551,7 @@ impl CompiledRules {
                         return Err(RegexBudgetExceeded { bytes: regex_bytes });
                     }
                     compiled.signals |= rule.signals;
+                    compiled.parses |= matches!(rule.action, CompiledAction::Parse(_));
                     compiled.rules.push(rule);
                     compiled.ids.push(id);
                 }
@@ -1143,6 +1162,8 @@ struct RecordTargets<'a> {
     body: Option<&'a mut AnyValue>,
     /// Span status message, scanned under the `attributes` scope.
     status_message: Option<&'a mut String>,
+    /// Attribute keys a parse rule wrote from the body; the `body` scope covers them.
+    body_keys: &'a [String],
 }
 
 /// One `apply_*` call: scratch space reused across records plus the stats sink.
@@ -1155,6 +1176,12 @@ struct Pass<'a> {
     /// Resource-scoped redact rules a surviving record of the current resource matched.
     resource_hits: Vec<bool>,
     budget: ScanBudget,
+    /// Per parse rule, started on first use; past it the rule stops parsing this payload.
+    parse_budgets: Vec<Option<ScanBudget>>,
+    /// What all parse rules may spend on this payload together.
+    parse_total: Option<ScanBudget>,
+    /// Keys the current record's parse rules wrote from its body.
+    body_keys: Vec<String>,
 }
 
 impl<'a> Pass<'a> {
@@ -1167,6 +1194,56 @@ impl<'a> Pass<'a> {
             matched: vec![false; rules.len()],
             resource_hits: vec![false; rules.len()],
             budget: ScanBudget::new(rules.scan_bytes, rules.scan_time),
+            parse_budgets: Vec::new(),
+            parse_total: None,
+            body_keys: Vec::new(),
+        }
+    }
+
+    /// Runs the parse rules in order on a kept log, each matched against the log as the
+    /// previous ones left it. A rule or payload past its parse budget records a failure.
+    fn parse_record(&mut self, resource: &[KeyValue], record: &mut LogRecord) {
+        self.body_keys.clear();
+        let rules = self.rules;
+        if !rules.parses {
+            return;
+        }
+        for (index, rule) in rules.rules.iter().enumerate() {
+            let CompiledAction::Parse(steps) = &rule.action else {
+                continue;
+            };
+            let view = RecordView {
+                resource,
+                attributes: &record.attributes,
+                name: None,
+                body: record.body.as_ref(),
+                severity: log_severity(record),
+                span_kind: None,
+                span_status: None,
+                trace_id: &record.trace_id,
+            };
+            if !rule.matches(self.signal, &view, &mut self.budget) {
+                continue;
+            }
+            if self.parse_budgets.len() < rules.len() {
+                self.parse_budgets.resize_with(rules.len(), || None);
+            }
+            let total = self
+                .parse_total
+                .get_or_insert_with(|| ScanBudget::new(parse::PAYLOAD_SCAN_BYTES, parse::PAYLOAD_SCAN_TIME));
+            let budget = self.parse_budgets[index]
+                .get_or_insert_with(|| ScanBudget::new(parse::RULE_SCAN_BYTES, parse::RULE_SCAN_TIME));
+            if total.spent() {
+                budget.remaining = 0;
+            }
+            let before = budget.remaining;
+            let failed = parse::run_steps(steps, record, budget, &mut self.body_keys).is_some();
+            total.charge(usize::try_from(before - budget.remaining).unwrap_or(usize::MAX));
+            let counters = &mut self.stats.per_rule[index];
+            counters.matched += 1;
+            if failed {
+                counters.parse_failed += 1;
+            }
         }
     }
 
@@ -1186,6 +1263,10 @@ impl<'a> Pass<'a> {
         let mut dropped_by = None;
         let mut bucket = None;
         for (index, rule) in self.rules.rules.iter().enumerate() {
+            if matches!(rule.action, CompiledAction::Parse(_)) {
+                self.matched[index] = false;
+                continue;
+            }
             let hit = rule.matches(self.signal, view, &mut self.budget);
             self.matched[index] = hit;
             if !hit {
@@ -1204,7 +1285,7 @@ impl<'a> Pass<'a> {
                         dropped_by = Some(index);
                     }
                 }
-                CompiledAction::Drop { .. } => {}
+                CompiledAction::Drop { .. } | CompiledAction::Parse(_) => {}
             }
         }
         if let Some(index) = dropped_by {
@@ -1251,6 +1332,13 @@ impl<'a> Pass<'a> {
             if redaction.scopes & SCOPE_BODY != 0 {
                 if let Some(body) = targets.body.as_deref_mut() {
                     redactor.redact_value(body);
+                }
+                // What parsing took from the body stays under the body's redaction.
+                if redaction.scopes & SCOPE_ATTRIBUTES == 0 && !targets.body_keys.is_empty() {
+                    let body_keys = targets.body_keys;
+                    targets.attributes.retain_mut(|kv| {
+                        !body_keys.contains(&kv.key) || redactor.redact_entry(kv, true)
+                    });
                 }
             }
             if redaction.scopes & SCOPE_RESOURCE != 0 {
@@ -1343,6 +1431,7 @@ impl Pass<'_> {
                 exemplars: &mut [],
                 body: None,
                 status_message: span.status.as_mut().map(|status| &mut status.message),
+                body_keys: &[],
             });
         }
         keep
@@ -1364,14 +1453,20 @@ impl Pass<'_> {
             trace_id: &record.trace_id,
         };
         let (keep, redact) = self.evaluate(&view, || record.encoded_len());
+        if keep {
+            self.parse_record(resource, record);
+        }
         if redact {
+            let body_keys = std::mem::take(&mut self.body_keys);
             self.redact_record(RecordTargets {
                 attributes: &mut record.attributes,
                 events: &mut [],
                 exemplars: &mut [],
                 body: record.body.as_mut(),
                 status_message: None,
+                body_keys: &body_keys,
             });
+            self.body_keys = body_keys;
         }
         keep
     }
@@ -1400,6 +1495,7 @@ impl Pass<'_> {
                 exemplars,
                 body: None,
                 status_message: None,
+                body_keys: &[],
             });
         }
         keep
@@ -1571,6 +1667,9 @@ pub mod conformance {
         pub events: Option<Vec<EventInput>>,
         #[serde(default)]
         pub status_message: Option<String>,
+        /// Decimal nanoseconds since the epoch.
+        #[serde(default)]
+        pub time_unix_nano: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -1729,8 +1828,14 @@ pub mod conformance {
             body: input.body.as_ref().map(to_any),
             attributes: to_kvs(&input.attributes),
             trace_id: input.trace_id.as_deref().map(decode_hex).unwrap_or_default(),
+            time_unix_nano: input
+                .time_unix_nano
+                .as_deref()
+                .map_or(0, |nanos| nanos.parse().expect("decimal nanoseconds")),
             ..Default::default()
         };
+        let (severity_number, time_unix_nano) = (record.severity_number, record.time_unix_nano);
+        let severity_text = record.severity_text.clone();
         let mut request = ExportLogsServiceRequest {
             resource_logs: vec![ResourceLogs {
                 resource: resource_of(input),
@@ -1753,6 +1858,16 @@ pub mod conformance {
         let mut out = kept(resource, &record.attributes);
         if input.body.is_some() {
             out["body"] = record.body.as_ref().map_or(Value::Null, from_any);
+        }
+        // Severity and time are listed only when a parse rule changed them.
+        if record.severity_number != severity_number {
+            out["severityNumber"] = json!(record.severity_number);
+        }
+        if record.severity_text != severity_text {
+            out["severityText"] = json!(record.severity_text);
+        }
+        if record.time_unix_nano != time_unix_nano {
+            out["timeUnixNano"] = json!(record.time_unix_nano.to_string());
         }
         out
     }
@@ -2012,6 +2127,7 @@ mod tests {
     const DROP_FIXTURES: &str = include_str!("../../../packages/ingest-rules/fixtures/drop.json");
     const REDACT_FIXTURES: &str =
         include_str!("../../../packages/ingest-rules/fixtures/redact.json");
+    const PARSE_FIXTURES: &str = include_str!("../../../packages/ingest-rules/fixtures/parse.json");
 
     fn run_fixtures(source: &str) {
         let cases: Vec<Case> = serde_json::from_str(source).expect("fixtures parse");
@@ -2175,6 +2291,11 @@ mod tests {
     }
 
     #[test]
+    fn parse_fixtures_conform() {
+        run_fixtures(PARSE_FIXTURES);
+    }
+
+    #[test]
     fn redact_fixtures_conform() {
         run_fixtures(REDACT_FIXTURES);
     }
@@ -2332,6 +2453,7 @@ mod tests {
             dropped: 1,
             dropped_bytes,
             redacted_values: 0,
+            parse_failed: 0,
         };
         assert_eq!(stats.per_rule, [first, RuleCounters { matched: 1, ..RuleCounters::default() }]);
         assert_eq!(stats.total.dropped_bytes, dropped_bytes);
@@ -2491,6 +2613,64 @@ mod tests {
                 ..Default::default()
             }],
         }
+    }
+
+    fn log_with_body(body: &str) -> LogRecord {
+        LogRecord {
+            body: Some(AnyValue { value: Some(any_value::Value::StringValue(body.to_owned())) }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn parse_rules_count_the_logs_they_ran_on_and_their_failures() {
+        let (rules, invalid) = compile(vec![
+            (
+                "json".to_owned(),
+                spec(json!({
+                    "signals": ["logs"],
+                    "conditions": [],
+                    "action": {"_tag": "parse", "steps": [{"_tag": "json", "source": "body"}]}
+                })),
+            ),
+            (
+                "drop".to_owned(),
+                spec(json!({
+                    "signals": ["logs"],
+                    "conditions": [{"field": "body", "op": "contains", "value": "noise"}],
+                    "action": {"_tag": "drop", "keepPercent": 0}
+                })),
+            ),
+        ]);
+        assert!(invalid.is_empty(), "{invalid:?}");
+        let mut request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![
+                        log_with_body(r#"{"a":1}"#),
+                        log_with_body("plain text"),
+                        log_with_body("noise, dropped before parsing"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let mut stats = RuleStats::default();
+        apply_logs(&rules, &mut request, &mut stats).expect("within budget");
+        let records = &request.resource_logs[0].scope_logs[0].log_records;
+        assert_eq!(records.len(), 2);
+        assert_eq!(conformance::from_kvs(&records[0].attributes), json!({"a": 1}).as_object().cloned().unwrap_or_default());
+        assert_eq!(
+            conformance::from_kvs(&records[1].attributes),
+            json!({PARSE_ERROR_KEY: "json: not valid JSON"}).as_object().cloned().unwrap_or_default()
+        );
+        assert_eq!(
+            stats.per_rule[0],
+            RuleCounters { matched: 2, parse_failed: 1, ..RuleCounters::default() },
+            "the dropped log is never parsed"
+        );
+        assert_eq!(stats.per_rule[1].dropped, 1);
     }
 
     #[test]

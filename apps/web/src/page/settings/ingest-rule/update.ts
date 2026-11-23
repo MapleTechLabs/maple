@@ -9,6 +9,8 @@ import { FetchKeys, FetchRule, FetchSamples, FetchServices, FetchSession, SaveRu
 import {
 	type ConditionDraft,
 	defaultCondition,
+	defaultStep,
+	type StepDraft,
 	type Draft,
 	draftProblems,
 	emptyDraft,
@@ -91,6 +93,36 @@ const mapCondition = (
 			condition.id === id ? change(condition) : condition,
 		),
 	})
+
+const mapStep = (model: Model, id: number, change: (step: StepDraft) => StepDraft): Return =>
+	patchDraft(model, {
+		steps: Arr.map(model.draft.steps, (step) => (step.id === id ? change(step) : step)),
+	})
+
+/** Parse rules are logs-only; the first switch to parse starts from a JSON step. */
+const pickAction = (model: Model, actionType: Draft["actionType"]): Return => {
+	if (actionType !== "parse") return patchDraft(model, { actionType })
+	const { steps, nextStepId } = model.draft
+	return steps.length > 0
+		? patchDraft(model, { actionType, signals: ["logs"] })
+		: patchDraft(model, {
+				actionType,
+				signals: ["logs"],
+				steps: [defaultStep(nextStepId, "json")],
+				nextStepId: nextStepId + 1,
+			})
+}
+
+const moveStep = (steps: ReadonlyArray<StepDraft>, id: number, by: -1 | 1): ReadonlyArray<StepDraft> => {
+	const from = Option.getOrElse(
+		Arr.findFirstIndex(steps, (step) => step.id === id),
+		() => -1,
+	)
+	const moving = steps[from]
+	const other = steps[from + by]
+	if (moving === undefined || other === undefined) return steps
+	return Arr.map(steps, (step, index) => (index === from ? other : index === from + by ? moving : step))
+}
 
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 	list.includes(value) ? Arr.filter(list, (entry) => entry !== value) : [...list, value]
@@ -200,7 +232,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedText: ({ part, value }) => patchDraft(model, { [part]: value }),
 		ToggledEnabled: () => patchDraft(model, { enabled: !model.draft.enabled }),
 		ToggledSignal: ({ signal }) => patchDraft(model, { signals: toggled(model.draft.signals, signal) }),
-		PickedAction: ({ actionType }) => patchDraft(model, { actionType }),
+		PickedAction: ({ actionType }) => pickAction(model, actionType),
+		AddedStep: ({ kind }) =>
+			patchDraft(model, {
+				steps: [...model.draft.steps, defaultStep(model.draft.nextStepId, kind)],
+				nextStepId: model.draft.nextStepId + 1,
+			}),
+		RemovedStep: ({ id }) =>
+			patchDraft(model, { steps: Arr.filter(model.draft.steps, (step) => step.id !== id) }),
+		MovedStep: ({ id, by }) => patchDraft(model, { steps: moveStep(model.draft.steps, id, by) }),
+		ChangedStepKind: ({ id, kind }) =>
+			mapStep(model, id, (step) => ({ ...defaultStep(id, kind), prefix: step.prefix })),
+		ChangedStepSource: ({ id, source }) => mapStep(model, id, (step) => ({ ...step, source })),
+		ChangedStepText: ({ id, part, value }) => mapStep(model, id, (step) => ({ ...step, [part]: value })),
+		ChangedStepFormat: ({ id, format }) => mapStep(model, id, (step) => ({ ...step, format })),
 		AddedCondition: () => {
 			const field = fieldsFor(model.draft.signals)[0] ?? "service_name"
 			return patchDraft(model, {

@@ -1,6 +1,8 @@
 import * as Policy from "@maple/domain/policy"
 import { V2IngestRule } from "@maple/domain/http/v2"
 import {
+	IngestParseSource,
+	IngestTimestampFormat,
 	IngestRuleDetector,
 	IngestRuleField,
 	IngestRuleOp,
@@ -12,7 +14,7 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
-import { ActionType, TextPart } from "./form"
+import { ActionType, StepKind, StepText, TextPart } from "./form"
 import { PreviewSignal, Samples } from "./preview"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -41,6 +43,13 @@ export const Message = defineMessageUnion({
 	ToggledDetector: { detector: IngestRuleDetector },
 	ToggledScope: { scope: IngestRuleScope },
 	PickedMethod: { method: IngestRuleRedactMethod },
+	AddedStep: { kind: StepKind },
+	RemovedStep: { id: Schema.Number },
+	MovedStep: { id: Schema.Number, by: Schema.Literals([-1, 1]) },
+	ChangedStepKind: { id: Schema.Number, kind: StepKind },
+	ChangedStepSource: { id: Schema.Number, source: IngestParseSource },
+	ChangedStepText: { id: Schema.Number, part: StepText, value: Schema.String },
+	ChangedStepFormat: { id: Schema.Number, format: IngestTimestampFormat },
 	PickedPreviewSignal: { signal: PreviewSignal },
 	PickedPreviewService: { service: Schema.String },
 	ClickedRetryPreview: {},

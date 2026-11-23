@@ -73,7 +73,8 @@ export const signalsClause = (h: H, model: Model): Html =>
 		typography(h, { size: "xs", tone: "muted", as: "p" }, ["arrive at Maple"]),
 	])
 
-const select = (
+/** A labelled native select whose shown choice always follows the model. */
+export const select = (
 	h: H,
 	options: Readonly<{
 		id: string

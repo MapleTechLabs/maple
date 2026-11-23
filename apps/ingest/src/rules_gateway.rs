@@ -18,7 +18,7 @@ use tracing::warn;
 use crate::KeyStore;
 
 const HOUR_MS: i64 = 60 * 60 * 1000;
-/// Rows per `INSERT`: 8 parameters each, far below Postgres' 65535 limit.
+/// Rows per `INSERT`: 9 parameters each, far below Postgres' 65535 limit.
 const STAT_ROWS_PER_STATEMENT: usize = 500;
 /// Consecutive failed flushes after which the pending counts are given up.
 const MAX_FAILED_FLUSHES: u32 = 10;
@@ -235,6 +235,7 @@ fn add_counts(total: &mut RuleCounters, more: &RuleCounters) {
     total.dropped += more.dropped;
     total.dropped_bytes += more.dropped_bytes;
     total.redacted_values += more.redacted_values;
+    total.parse_failed += more.parse_failed;
 }
 
 impl IngestRuleStatsSink {

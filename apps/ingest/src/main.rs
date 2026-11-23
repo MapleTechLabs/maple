@@ -5855,6 +5855,7 @@ async fn handle_profiles(
         "maple.ingest.native_rows" = tracing::field::Empty,
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.profiles.dropped" = tracing::field::Empty,
         "maple.sdk" = tracing::field::Empty,
         "user_agent.original" = tracing::field::Empty,
@@ -6380,6 +6381,7 @@ fn redact_profile_export(
     ingest_rules::redact_profiles(&rules.compiled, request, &mut stats, charge)?;
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    span.record("maple.ingest.rules.parse_failed", stats.total.parse_failed);
     Ok(())
 }
 
@@ -6948,6 +6950,7 @@ async fn handle_signal(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.payload_format" = tracing::field::Empty,
         "maple.ingest.content_encoding" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
@@ -7038,6 +7041,7 @@ async fn handle_cloudflare_logpush(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -7718,6 +7722,7 @@ async fn handle_gcp_logpush(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -8173,6 +8178,7 @@ async fn handle_aws_firehose(
         "maple.ingest.rules.count" = tracing::field::Empty,
         "maple.ingest.rules.dropped_items" = tracing::field::Empty,
         "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.ingest.rules.parse_failed" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
@@ -9902,6 +9908,7 @@ async fn apply_ingest_rules(
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.dropped_items", stats.total.dropped);
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    span.record("maple.ingest.rules.parse_failed", stats.total.parse_failed);
     if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
         // One walk, only when something changed. Redaction's size change is not tracked, so
         // `before` is after plus the dropped bytes: drops are discounted, redaction never bills more.
@@ -11346,20 +11353,20 @@ impl PostgresTarget {
     }
 }
 
-/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 8 parameters per row.
+/// One multi-row upsert adding counts into `org_ingest_rule_stats`; 9 parameters per row.
 /// Rows must have distinct keys, or Postgres refuses to update a row twice.
 fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
     let mut sql = String::from(
         "INSERT INTO org_ingest_rule_stats \
-         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values) VALUES ",
+         (org_id, rule_id, bucket, signal, matched, dropped, dropped_bytes, redacted_values, parse_failed) VALUES ",
     );
     for row in 0..rows {
-        let p = row * 8;
+        let p = row * 9;
         if row > 0 {
             sql.push_str(", ");
         }
         sql.push_str(&format!(
-            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
+            "(${}, ${}, to_timestamp(${}::bigint / 1000.0), ${}, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint, ${}::bigint)",
             p + 1,
             p + 2,
             p + 3,
@@ -11367,7 +11374,8 @@ fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
             p + 5,
             p + 6,
             p + 7,
-            p + 8
+            p + 8,
+            p + 9
         ));
     }
     sql.push_str(
@@ -11375,7 +11383,8 @@ fn ingest_rule_stats_upsert_sql(rows: usize) -> String {
          matched = org_ingest_rule_stats.matched + EXCLUDED.matched, \
          dropped = org_ingest_rule_stats.dropped + EXCLUDED.dropped, \
          dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes, \
-         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values",
+         redacted_values = org_ingest_rule_stats.redacted_values + EXCLUDED.redacted_values, \
+         parse_failed = org_ingest_rule_stats.parse_failed + EXCLUDED.parse_failed",
     );
     sql
 }
@@ -11822,7 +11831,7 @@ impl KeyStore for PostgresKeyStore {
         if rows.is_empty() {
             return Ok(());
         }
-        let numbers: Vec<[i64; 5]> = rows
+        let numbers: Vec<[i64; 6]> = rows
             .iter()
             .map(|row| {
                 let count = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
@@ -11832,11 +11841,12 @@ impl KeyStore for PostgresKeyStore {
                     count(row.counts.dropped),
                     count(row.counts.dropped_bytes),
                     count(row.counts.redacted_values),
+                    count(row.counts.parse_failed),
                 ]
             })
             .collect();
         let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-            Vec::with_capacity(rows.len() * 8);
+            Vec::with_capacity(rows.len() * 9);
         for (row, values) in rows.iter().zip(&numbers) {
             params.push(&row.org_id);
             params.push(&row.rule_id);
@@ -23358,10 +23368,11 @@ mod tests {
     fn rule_stats_upsert_numbers_every_row_and_adds_on_conflict() {
         let sql = ingest_rule_stats_upsert_sql(2);
         assert!(sql.contains(
-            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint), \
-             ($9, $10, to_timestamp($11::bigint / 1000.0), $12, $13::bigint, $14::bigint, $15::bigint, $16::bigint)"
+            "($1, $2, to_timestamp($3::bigint / 1000.0), $4, $5::bigint, $6::bigint, $7::bigint, $8::bigint, $9::bigint), \
+             ($10, $11, to_timestamp($12::bigint / 1000.0), $13, $14::bigint, $15::bigint, $16::bigint, $17::bigint, $18::bigint)"
         ));
         assert!(sql.contains("dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes"));
+        assert!(sql.contains("parse_failed = org_ingest_rule_stats.parse_failed + EXCLUDED.parse_failed"));
     }
 
     /// Prometheus remote write, posted over HTTP to the gateway's own routes.

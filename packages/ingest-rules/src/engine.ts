@@ -11,10 +11,12 @@ import {
 	type IngestRuleSignal,
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
-import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Order, Array as Arr, Record as Rec, String as Str } from "effect"
 import { DETECTORS, findAll, type Span } from "./detectors"
 import { hmacSha256, sha256, toHex, utf8 } from "./sha256"
 import { codeUnitAt } from "@maple/strings"
+import { comparable } from "./values"
+import { compileParseSteps, runParse, type CompiledParseStep } from "./parse"
 
 // The TS twin of `apps/ingest/src/ingest_rules.rs`; semantics in docs/ingest-rules.md.
 
@@ -43,6 +45,8 @@ export interface RuleRecord {
 	/** Span status message; scanned under the `attributes` scope. */
 	readonly statusMessage?: string
 	readonly events?: ReadonlyArray<RuleEvent>
+	/** Log timestamp; parse rules can set it. */
+	readonly timeUnixNano?: bigint
 }
 
 interface CompiledCondition {
@@ -58,6 +62,7 @@ interface CompiledRule {
 	readonly conditions: ReadonlyArray<CompiledCondition>
 	readonly keys: ReadonlyArray<string>
 	readonly patterns: ReadonlyArray<RegExp>
+	readonly parse: ReadonlyArray<CompiledParseStep>
 }
 
 export interface InvalidRule {
@@ -79,6 +84,8 @@ export type RuleOutcome =
 			readonly matched: ReadonlyArray<number>
 			/** Values replaced or removed, per rule index. */
 			readonly redactions: ReadonlyMap<number, number>
+			/** `<step>: <reason>` per parse rule index whose steps failed. */
+			readonly parseFailures: ReadonlyMap<number, string>
 	  }
 
 const compileCondition = (condition: IngestRuleCondition): CompiledCondition => ({
@@ -111,6 +118,7 @@ export const compileRules = (specs: ReadonlyArray<IngestRuleSpec>, salt: string)
 				action._tag === "redact"
 					? Arr.flatMap(action.patterns, (pattern) => Option.toArray(compileIngestRegex(pattern)))
 					: [],
+			parse: action._tag === "parse" ? compileParseSteps(action.steps) : [],
 		})
 	})
 	return { rules, invalid, salt: utf8(salt) }
@@ -120,34 +128,7 @@ export const isAttrList = (value: AttrValue): value is ReadonlyArray<AttrValue> 
 const isMap = (value: AttrValue): value is AttrMap =>
 	typeof value === "object" && !isAttrList(value) && !(value instanceof Uint8Array)
 
-/** A double as Rust's `{}` prints it: never exponent form, `-0` kept, `inf`/`NaN` spelled out. */
-export const formatDouble = (value: number): string => {
-	if (Number.isNaN(value)) return "NaN"
-	if (!Number.isFinite(value)) return value > 0 ? "inf" : "-inf"
-	if (Object.is(value, -0)) return "-0"
-	const text = String(Math.abs(value))
-	if (!Str.includes("e")(text)) return String(value)
-	// Shortest round-trip digits, then shifted: `1e+21` is "1000000000000000000000", `1.5e-7` "0.00000015".
-	const [mantissa, exponentText = "0"] = Str.split("e")(text)
-	const digits = Str.replace(".", "")(mantissa)
-	const point = Option.getOrElse(Str.indexOf(".")(mantissa), () => mantissa.length) + Number(exponentText)
-	const unsigned =
-		point >= digits.length
-			? digits + Str.repeat(point - digits.length)("0")
-			: point <= 0
-				? `0.${Str.repeat(-point)("0")}${digits}`
-				: `${Str.slice(0, point)(digits)}.${Str.slice(point)(digits)}`
-	return value < 0 ? `-${unsigned}` : unsigned
-}
-
-/** The string a value compares as; null for bytes, arrays and kvlists. */
-export const comparable = (value: AttrValue): string | null => {
-	if (typeof value === "string") return value
-	if (typeof value === "number") return formatDouble(value)
-	if (typeof value === "bigint") return String(value)
-	if (typeof value === "boolean") return value ? "true" : "false"
-	return null
-}
+export { comparable, formatDouble } from "./values"
 
 const SEVERITY_PREFIXES: ReadonlyArray<readonly [string, number]> = [
 	["trace", 1],
@@ -380,10 +361,15 @@ const keyReplacement = (value: AttrValue, ctx: RedactContext): AttrValue | typeo
 
 // `Object.fromEntries` keeps a `__proto__` key as data; assigning it onto `{}` would not.
 // Protected keys only route and bill at the top level; inside a kvlist they are customer data.
-const redactMap = (map: AttrMap, ctx: RedactContext, topLevel = true): AttrMap =>
+const redactMap = (
+	map: AttrMap,
+	ctx: RedactContext,
+	topLevel = true,
+	only: ReadonlySet<string> | null = null,
+): AttrMap =>
 	Rec.fromEntries(
 		Arr.flatMap(Rec.toEntries(map), ([key, value]) => {
-			if (topLevel && isProtectedKey(key)) return [[key, value]]
+			if ((topLevel && isProtectedKey(key)) || (only !== null && !only.has(key))) return [[key, value]]
 			const next = Arr.some(ctx.rule.keys, (pattern) => globMatches(pattern, key))
 				? keyReplacement(value, ctx)
 				: scanValue(value, ctx)
@@ -398,13 +384,20 @@ const redactRecord = (
 	record: RuleRecord,
 	rule: CompiledRule,
 	salt: Uint8Array,
+	bodyKeys: ReadonlySet<string>,
 ): { record: RuleRecord; count: number } => {
 	const action = rule.spec.action
 	if (action._tag !== "redact") return { record, count: 0 }
 	const ctx: RedactContext = { rule, method: action.method, detectors: action.detectors, salt, count: 0 }
+	// Values a parse rule took from the body stay under the body's redaction.
+	const attributes = scopeHas(rule, "attributes")
+		? redactMap(record.attributes, ctx)
+		: scopeHas(rule, "body") && bodyKeys.size > 0
+			? redactMap(record.attributes, ctx, true, bodyKeys)
+			: record.attributes
 	const next: RuleRecord = {
 		...record,
-		attributes: scopeHas(rule, "attributes") ? redactMap(record.attributes, ctx) : record.attributes,
+		attributes,
 		resource: scopeHas(rule, "resource") ? redactMap(record.resource, ctx) : record.resource,
 		events: scopeHas(rule, "events")
 			? record.events === undefined
@@ -433,7 +426,10 @@ export const applyRules = (
 	record: RuleRecord,
 	random: () => number = Math.random,
 ): RuleOutcome => {
-	const matching = Arr.filter(compiled.rules, (rule) => ruleMatches(rule, record))
+	const matching = Arr.filter(
+		compiled.rules,
+		(rule) => rule.spec.action._tag !== "parse" && ruleMatches(rule, record),
+	)
 	const matched = Arr.map(matching, (rule) => rule.index)
 	// One draw per record, shared by every drop rule, as the gateway does for records without a trace id.
 	const draw: RecordDraw = {}
@@ -445,17 +441,39 @@ export const applyRules = (
 			!keepBySample(record.traceId, rule.spec.action.keepPercent, once),
 	)
 	if (Option.isSome(dropper)) return { _tag: "dropped", ruleIndex: dropper.value.index, matched }
+	// Parse rules run after drops, in order, each seeing what the previous ones left.
+	const parseFailures = new Map<number, string>()
+	const parsedMatched: Array<number> = []
+	const bodyKeys = new Set<string>()
+	const parsed = Arr.reduce(
+		Arr.filter(compiled.rules, (rule) => rule.spec.action._tag === "parse"),
+		record,
+		(current, rule) => {
+			if (!ruleMatches(rule, current)) return current
+			parsedMatched.push(rule.index)
+			const outcome = runParse(rule.parse, current, scanCut)
+			if (outcome.failure !== null) parseFailures.set(rule.index, outcome.failure)
+			for (const key of outcome.bodyKeys) bodyKeys.add(key)
+			return outcome.record
+		},
+	)
 	const redactions = new Map<number, number>()
 	const redacted = Arr.reduce(
 		Arr.filter(matching, (rule) => rule.spec.action._tag === "redact"),
-		record,
+		parsed,
 		(current, rule) => {
-			const { record: next, count } = redactRecord(current, rule, compiled.salt)
+			const { record: next, count } = redactRecord(current, rule, compiled.salt, bodyKeys)
 			if (count > 0) redactions.set(rule.index, count)
 			return next
 		},
 	)
-	return { _tag: "kept", record: redacted, matched, redactions }
+	return {
+		_tag: "kept",
+		record: redacted,
+		matched: Arr.sort([...matched, ...parsedMatched], Order.Number),
+		redactions,
+		parseFailures,
+	}
 }
 
 /**

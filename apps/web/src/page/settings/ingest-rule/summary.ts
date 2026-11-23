@@ -4,7 +4,7 @@ import type {
 	IngestRuleDetector,
 	IngestRuleSignal,
 } from "@maple/domain/ingest-rules"
-import { FIELD_LABELS, isKeyed, OP_LABELS } from "./form"
+import { FIELD_LABELS, isKeyed, OP_LABELS, STEP_LABELS } from "./form"
 import { Array as Arr, String as Str } from "effect"
 
 // A rule as one plain sentence; `code` parts render as inline code (keys and values).
@@ -65,6 +65,19 @@ const actionParts = (action: IngestRuleAction): ReadonlyArray<SummaryPart> => {
 		return action.keepPercent === 0
 			? [text("drop")]
 			: [text(`keep ${action.keepPercent}%, drop the rest`)]
+	if (action._tag === "parse")
+		return [
+			text("parse with "),
+			...joined(
+				Arr.map(action.steps, (step) => [
+					step._tag === "json" || step._tag === "regex" || step._tag === "grok"
+						? text(STEP_LABELS[step._tag])
+						: text(Str.toLowerCase(STEP_LABELS[step._tag])),
+					...(step.source === "attribute" ? [text(" from "), code(step.key ?? "")] : []),
+				]),
+				", then ",
+			),
+		]
 	const targets = [
 		...Arr.map(action.detectors, (detector) => [text(Str.toLowerCase(DETECTOR_LABELS[detector]))]),
 		...Arr.map(action.keys, (key) => [code(key)]),

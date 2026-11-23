@@ -105,6 +105,38 @@ describe("ingest rule editor", () => {
 		)
 	})
 
+	test("a parse preview shows extracted fields, and failures first", () => {
+		const jsonLogs = (model: Model): Model =>
+			pageUpdate(
+				model,
+				Message.CompletedFetchSamples({
+					key: model.samplesKey,
+					result: Result.succeed({
+						_tag: "logs",
+						rows: [log("", '{"level":"warn","order":{"id":7}}'), log("", "{not json")],
+					}),
+				}),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(jsonLogs(fresh("parse-json-logs"))),
+			expectView(text("Would parse 2 of 2; 1 fail (50%)")).toExist(),
+			expectView(text("json: not valid JSON")).toExist(),
+			expectView(text("order.id")).toExist(),
+			expectView(text("WARN (13)")).toExist(),
+		)
+	})
+
+	test("switching to parse limits the rule to logs and adds a JSON step", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(fresh("redact-pii"), Message.PickedAction({ actionType: "parse" })).model),
+			expectView(role("combobox", { name: "Step 1 kind" })).toHaveValue("json"),
+			expectView(role("button", { name: "Move step 1 up" })).toBeDisabled(),
+			expectView(text("Ready to save")).toExist(),
+		)
+	})
+
 	test("hashing warns that it is pseudonymization", () => {
 		scene(
 			{ update: pageUpdate, view },

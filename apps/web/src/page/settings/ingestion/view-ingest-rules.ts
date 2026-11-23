@@ -38,6 +38,7 @@ type H = HtmlBuilder<Message>
 const ACTION_BADGE = {
 	drop: { label: "Drop", variant: "warn" },
 	redact: { label: "Redact", variant: "info" },
+	parse: { label: "Parse", variant: "done" },
 } as const
 
 const DENIAL = denialReason("ingest_rules:manage")

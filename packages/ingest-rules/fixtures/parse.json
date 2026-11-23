@@ -1,0 +1,2390 @@
+[
+	{
+		"name": "flattens a JSON body into dotted attributes",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"level\":\"warn\",\"msg\":\"slow\",\"http\":{\"status\":503,\"latency_ms\":12.5},\"tags\":[\"a\",\"b\",null],\"ok\":true,\"none\":null}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "warn",
+				"msg": "slow",
+				"http.status": 503,
+				"http.latency_ms": 12.5,
+				"tags": [
+					"a",
+					"b"
+				],
+				"ok": true
+			},
+			"body": "{\"level\":\"warn\",\"msg\":\"slow\",\"http\":{\"status\":503,\"latency_ms\":12.5},\"tags\":[\"a\",\"b\",null],\"ok\":true,\"none\":null}"
+		}
+	},
+	{
+		"name": "whole numbers within 2^53 become ints, others doubles",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"a\":1.0,\"b\":9007199254740993,\"c\":1e2,\"d\":-2.5,\"e\":{\"f\":[{\"g\":1,\"h\":null}]}}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"a": 1,
+				"b": 9007199254740992.0,
+				"c": 100,
+				"d": -2.5,
+				"e.f": [
+					{
+						"g": 1
+					}
+				]
+			},
+			"body": "{\"a\":1.0,\"b\":9007199254740993,\"c\":1e2,\"d\":-2.5,\"e\":{\"f\":[{\"g\":1,\"h\":null}]}}"
+		}
+	},
+	{
+		"name": "parses JSON from an attribute with a prefix",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "attribute",
+							"key": "payload",
+							"prefix": "app."
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"payload": "{\"user\":{\"id\":\"u_1\"},\"retry\":2}"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"payload": "{\"user\":{\"id\":\"u_1\"},\"retry\":2}",
+				"app.user.id": "u_1",
+				"app.retry": 2
+			}
+		}
+	},
+	{
+		"name": "flattens a structured body",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": {
+				"event": "login",
+				"user": {
+					"id": "u_9",
+					"roles": [
+						"admin"
+					]
+				}
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"event": "login",
+				"user.id": "u_9",
+				"user.roles": [
+					"admin"
+				]
+			},
+			"body": {
+				"event": "login",
+				"user": {
+					"id": "u_9",
+					"roles": [
+						"admin"
+					]
+				}
+			}
+		}
+	},
+	{
+		"name": "a later colliding key replaces an earlier one, keys visited in code point order",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"a.b\":1,\"a\":{\"b\":2}}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"a.b": 1
+			},
+			"body": "{\"a.b\":1,\"a\":{\"b\":2}}"
+		}
+	},
+	{
+		"name": "never writes protected keys",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"service.name\":\"spoof\",\"org_id\":\"o\",\"maple_org_id\":\"x\",\"maple_ai.prompt\":\"kept\",\"a\":1}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple_ai.prompt": "kept",
+				"a": 1
+			},
+			"body": "{\"service.name\":\"spoof\",\"org_id\":\"o\",\"maple_org_id\":\"x\",\"maple_ai.prompt\":\"kept\",\"a\":1}"
+		}
+	},
+	{
+		"name": "records a JSON failure: json: not an object",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "[1,2]"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: not an object"
+			},
+			"body": "[1,2]"
+		}
+	},
+	{
+		"name": "records a JSON failure: json: not valid JSON",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{not json"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: not valid JSON"
+			},
+			"body": "{not json"
+		}
+	},
+	{
+		"name": "records a JSON failure: json: not valid JSON",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "plain text line"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: not valid JSON"
+			},
+			"body": "plain text line"
+		}
+	},
+	{
+		"name": "records a JSON failure: json: nested deeper than 16 levels",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: nested deeper than 16 levels"
+			},
+			"body": "[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]"
+		}
+	},
+	{
+		"name": "records a JSON failure: json: more than 128 fields",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"k0\":0,\"k1\":1,\"k2\":2,\"k3\":3,\"k4\":4,\"k5\":5,\"k6\":6,\"k7\":7,\"k8\":8,\"k9\":9,\"k10\":10,\"k11\":11,\"k12\":12,\"k13\":13,\"k14\":14,\"k15\":15,\"k16\":16,\"k17\":17,\"k18\":18,\"k19\":19,\"k20\":20,\"k21\":21,\"k22\":22,\"k23\":23,\"k24\":24,\"k25\":25,\"k26\":26,\"k27\":27,\"k28\":28,\"k29\":29,\"k30\":30,\"k31\":31,\"k32\":32,\"k33\":33,\"k34\":34,\"k35\":35,\"k36\":36,\"k37\":37,\"k38\":38,\"k39\":39,\"k40\":40,\"k41\":41,\"k42\":42,\"k43\":43,\"k44\":44,\"k45\":45,\"k46\":46,\"k47\":47,\"k48\":48,\"k49\":49,\"k50\":50,\"k51\":51,\"k52\":52,\"k53\":53,\"k54\":54,\"k55\":55,\"k56\":56,\"k57\":57,\"k58\":58,\"k59\":59,\"k60\":60,\"k61\":61,\"k62\":62,\"k63\":63,\"k64\":64,\"k65\":65,\"k66\":66,\"k67\":67,\"k68\":68,\"k69\":69,\"k70\":70,\"k71\":71,\"k72\":72,\"k73\":73,\"k74\":74,\"k75\":75,\"k76\":76,\"k77\":77,\"k78\":78,\"k79\":79,\"k80\":80,\"k81\":81,\"k82\":82,\"k83\":83,\"k84\":84,\"k85\":85,\"k86\":86,\"k87\":87,\"k88\":88,\"k89\":89,\"k90\":90,\"k91\":91,\"k92\":92,\"k93\":93,\"k94\":94,\"k95\":95,\"k96\":96,\"k97\":97,\"k98\":98,\"k99\":99,\"k100\":100,\"k101\":101,\"k102\":102,\"k103\":103,\"k104\":104,\"k105\":105,\"k106\":106,\"k107\":107,\"k108\":108,\"k109\":109,\"k110\":110,\"k111\":111,\"k112\":112,\"k113\":113,\"k114\":114,\"k115\":115,\"k116\":116,\"k117\":117,\"k118\":118,\"k119\":119,\"k120\":120,\"k121\":121,\"k122\":122,\"k123\":123,\"k124\":124,\"k125\":125,\"k126\":126,\"k127\":127,\"k128\":128}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: more than 128 fields"
+			},
+			"body": "{\"k0\":0,\"k1\":1,\"k2\":2,\"k3\":3,\"k4\":4,\"k5\":5,\"k6\":6,\"k7\":7,\"k8\":8,\"k9\":9,\"k10\":10,\"k11\":11,\"k12\":12,\"k13\":13,\"k14\":14,\"k15\":15,\"k16\":16,\"k17\":17,\"k18\":18,\"k19\":19,\"k20\":20,\"k21\":21,\"k22\":22,\"k23\":23,\"k24\":24,\"k25\":25,\"k26\":26,\"k27\":27,\"k28\":28,\"k29\":29,\"k30\":30,\"k31\":31,\"k32\":32,\"k33\":33,\"k34\":34,\"k35\":35,\"k36\":36,\"k37\":37,\"k38\":38,\"k39\":39,\"k40\":40,\"k41\":41,\"k42\":42,\"k43\":43,\"k44\":44,\"k45\":45,\"k46\":46,\"k47\":47,\"k48\":48,\"k49\":49,\"k50\":50,\"k51\":51,\"k52\":52,\"k53\":53,\"k54\":54,\"k55\":55,\"k56\":56,\"k57\":57,\"k58\":58,\"k59\":59,\"k60\":60,\"k61\":61,\"k62\":62,\"k63\":63,\"k64\":64,\"k65\":65,\"k66\":66,\"k67\":67,\"k68\":68,\"k69\":69,\"k70\":70,\"k71\":71,\"k72\":72,\"k73\":73,\"k74\":74,\"k75\":75,\"k76\":76,\"k77\":77,\"k78\":78,\"k79\":79,\"k80\":80,\"k81\":81,\"k82\":82,\"k83\":83,\"k84\":84,\"k85\":85,\"k86\":86,\"k87\":87,\"k88\":88,\"k89\":89,\"k90\":90,\"k91\":91,\"k92\":92,\"k93\":93,\"k94\":94,\"k95\":95,\"k96\":96,\"k97\":97,\"k98\":98,\"k99\":99,\"k100\":100,\"k101\":101,\"k102\":102,\"k103\":103,\"k104\":104,\"k105\":105,\"k106\":106,\"k107\":107,\"k108\":108,\"k109\":109,\"k110\":110,\"k111\":111,\"k112\":112,\"k113\":113,\"k114\":114,\"k115\":115,\"k116\":116,\"k117\":117,\"k118\":118,\"k119\":119,\"k120\":120,\"k121\":121,\"k122\":122,\"k123\":123,\"k124\":124,\"k125\":125,\"k126\":126,\"k127\":127,\"k128\":128}"
+		}
+	},
+	{
+		"name": "records a missing source",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "attribute",
+							"key": "payload"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "x"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: source is missing"
+			},
+			"body": "x"
+		}
+	},
+	{
+		"name": "regex named groups become attributes",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "^(?<method>[A-Z]+) (?<path>\\S+) (?<status>\\d+)(?: (?<unused>x))?"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "GET /users/42 200 12ms"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"method": "GET",
+				"path": "/users/42",
+				"status": "200"
+			},
+			"body": "GET /users/42 200 12ms"
+		}
+	},
+	{
+		"name": "regex shorthands are ASCII in both engines",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "(?<digit>\\d)"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "count ٣"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "regex: no match"
+			},
+			"body": "count ٣"
+		}
+	},
+	{
+		"name": "regex runs on an attribute with a prefix and a leading (?i)",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "attribute",
+							"key": "msg",
+							"pattern": "(?i)user=(?<id>[a-z0-9_]+)",
+							"prefix": "user."
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"msg": "login USER=U_7 ok"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"msg": "login USER=U_7 ok",
+				"user.id": "U_7"
+			}
+		}
+	},
+	{
+		"name": "regex on a non-string source fails",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "attribute",
+							"key": "n",
+							"pattern": "(?<x>1)"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"n": 1
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"n": 1,
+				"maple.parse.error": "regex: source is not text"
+			}
+		}
+	},
+	{
+		"name": "grok parses a combined access log",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "grok",
+							"source": "body",
+							"pattern": "%{COMBINEDAPACHELOG}"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif?x=1 HTTP/1.0\" 200 2326 \"http://www.example.com/start.html\" \"Mozilla/4.08\""
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"client.address": "127.0.0.1",
+				"ident": "-",
+				"auth": "frank",
+				"timestamp": "10/Oct/2000:13:55:36 -0700",
+				"http.request.method": "GET",
+				"url.original": "/apache_pb.gif?x=1",
+				"network.protocol.version": "1.0",
+				"http.response.status_code": 200,
+				"http.response.body.size": 2326,
+				"http.request.referrer": "\"http://www.example.com/start.html\"",
+				"user_agent.original": "\"Mozilla/4.08\""
+			},
+			"body": "127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] \"GET /apache_pb.gif?x=1 HTTP/1.0\" 200 2326 \"http://www.example.com/start.html\" \"Mozilla/4.08\""
+		}
+	},
+	{
+		"name": "grok converts int and float fields and keeps text that does not convert",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "grok",
+							"source": "body",
+							"pattern": "%{TIMESTAMP_ISO8601:ts} %{LOGLEVEL:level} took=%{NUMBER:took:float} n=%{NOTSPACE:n:int} %{GREEDYDATA:message}"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "2024-03-01T12:34:56Z ERROR took=1.25 n=12x payment failed: card declined"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34:56Z",
+				"level": "ERROR",
+				"took": 1.25,
+				"n": "12x",
+				"message": "payment failed: card declined"
+			},
+			"body": "2024-03-01T12:34:56Z ERROR took=1.25 n=12x payment failed: card declined"
+		}
+	},
+	{
+		"name": "grok without a match records a failure",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "grok",
+							"source": "body",
+							"pattern": "%{IPV4:ip} %{WORD:verb}"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "no address here"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "grok: no match"
+			},
+			"body": "no address here"
+		}
+	},
+	{
+		"name": "severity from warning",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "warning"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "warning"
+			},
+			"severityNumber": 13,
+			"severityText": "WARN"
+		}
+	},
+	{
+		"name": "severity from Error",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "Error"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "Error"
+			},
+			"severityNumber": 17,
+			"severityText": "ERROR"
+		}
+	},
+	{
+		"name": "severity from 17",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "17"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "17"
+			},
+			"severityNumber": 17,
+			"severityText": "ERROR"
+		}
+	},
+	{
+		"name": "severity from notice",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "notice"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "notice"
+			},
+			"severityNumber": 10,
+			"severityText": "INFO"
+		}
+	},
+	{
+		"name": "severity from CRITICAL",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "CRITICAL"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "CRITICAL"
+			},
+			"severityNumber": 21,
+			"severityText": "FATAL"
+		}
+	},
+	{
+		"name": "severity from 3",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "3"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "3"
+			},
+			"severityNumber": 3,
+			"severityText": "TRACE"
+		}
+	},
+	{
+		"name": "severity from an int attribute",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": 21
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": 21
+			},
+			"severityNumber": 21,
+			"severityText": "FATAL"
+		}
+	},
+	{
+		"name": "unknown severity verbose is recorded",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "verbose"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "verbose",
+				"maple.parse.error": "severity: unknown level"
+			}
+		}
+	},
+	{
+		"name": "unknown severity 25 is recorded",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "25"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "25",
+				"maple.parse.error": "severity: unknown level"
+			}
+		}
+	},
+	{
+		"name": "unknown severity 0 is recorded",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "0"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "0",
+				"maple.parse.error": "severity: unknown level"
+			}
+		}
+	},
+	{
+		"name": "timestamp rfc3339 2024-03-01T12:34:56.789+02:00",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34:56.789+02:00"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34:56.789+02:00"
+			},
+			"timeUnixNano": "1709289296789000000"
+		}
+	},
+	{
+		"name": "timestamp rfc3339 2024-02-29 23:59:59Z",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-29 23:59:59Z"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-29 23:59:59Z"
+			},
+			"timeUnixNano": "1709251199000000000"
+		}
+	},
+	{
+		"name": "timestamp rfc3339 2024-02-29T23:59:59.123456789123",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-29T23:59:59.123456789123"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-29T23:59:59.123456789123"
+			},
+			"timeUnixNano": "1709251199123456789"
+		}
+	},
+	{
+		"name": "timestamp rfc3339 2024-01-01T00:30:00-0130",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-01-01T00:30:00-0130"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-01-01T00:30:00-0130"
+			},
+			"timeUnixNano": "1704074400000000000"
+		}
+	},
+	{
+		"name": "timestamp unix_s 1700000000.5",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_s"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000.5"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000.5"
+			},
+			"timeUnixNano": "1700000000500000000"
+		}
+	},
+	{
+		"name": "timestamp unix_ms 1700000000123",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_ms"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123"
+			},
+			"timeUnixNano": "1700000000123000000"
+		}
+	},
+	{
+		"name": "timestamp unix_us 1700000000123456.9",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_us"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123456.9"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123456.9"
+			},
+			"timeUnixNano": "1700000000123456900"
+		}
+	},
+	{
+		"name": "timestamp unix_ns 1700000000123456789",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_ns"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123456789"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1700000000123456789"
+			},
+			"timeUnixNano": "1700000000123456789"
+		}
+	},
+	{
+		"name": "timestamp common_log 10/Oct/2000:13:55:36 -0700",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "common_log"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "10/Oct/2000:13:55:36 -0700"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "10/Oct/2000:13:55:36 -0700"
+			},
+			"timeUnixNano": "971211336000000000"
+		}
+	},
+	{
+		"name": "timestamp from a double attribute in seconds",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_s"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": 1700000000.25
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": 1700000000.25
+			},
+			"timeUnixNano": "1700000000250000000"
+		}
+	},
+	{
+		"name": "timestamp failure rfc3339 2024-02-30T00:00:00Z",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-30T00:00:00Z"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-02-30T00:00:00Z",
+				"maple.parse.error": "timestamp: out of range"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure rfc3339 1969-12-31T23:59:59Z",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1969-12-31T23:59:59Z"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "1969-12-31T23:59:59Z",
+				"maple.parse.error": "timestamp: out of range"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure rfc3339 2024-03-01T12:34",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34",
+				"maple.parse.error": "timestamp: does not match rfc3339"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure rfc3339 2024-03-01T12:34:56+2",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34:56+2"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "2024-03-01T12:34:56+2",
+				"maple.parse.error": "timestamp: does not match rfc3339"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure unix_ms -5",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_ms"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "-5"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "-5",
+				"maple.parse.error": "timestamp: does not match unix_ms"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure unix_s 99999999999999999999",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "unix_s"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "99999999999999999999"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "99999999999999999999",
+				"maple.parse.error": "timestamp: out of range"
+			}
+		}
+	},
+	{
+		"name": "timestamp failure common_log 10/oct/2000:13:55:36 -0700",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "ts",
+							"format": "common_log"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "10/oct/2000:13:55:36 -0700"
+			}
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"ts": "10/oct/2000:13:55:36 -0700",
+				"maple.parse.error": "timestamp: does not match common_log"
+			}
+		}
+	},
+	{
+		"name": "steps chain: JSON, then severity and time from what it extracted",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						},
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						},
+						{
+							"_tag": "timestamp",
+							"source": "attribute",
+							"key": "time",
+							"format": "rfc3339"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"level\":\"error\",\"time\":\"2024-03-01T00:00:00Z\",\"msg\":\"boom\"}",
+			"severityNumber": 9,
+			"severityText": "INFO"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "error",
+				"time": "2024-03-01T00:00:00Z",
+				"msg": "boom"
+			},
+			"body": "{\"level\":\"error\",\"time\":\"2024-03-01T00:00:00Z\",\"msg\":\"boom\"}",
+			"severityNumber": 17,
+			"severityText": "ERROR",
+			"timeUnixNano": "1709251200000000000"
+		}
+	},
+	{
+		"name": "a failed step does not stop later steps; the rule keeps its first failure",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "^(?<a>x)"
+						},
+						{
+							"_tag": "json",
+							"source": "body"
+						},
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"level\":\"chatty\"}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "chatty",
+				"maple.parse.error": "regex: no match"
+			},
+			"body": "{\"level\":\"chatty\"}"
+		}
+	},
+	{
+		"name": "a later rule's failure replaces an earlier rule's",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "^(?<a>x)"
+						}
+					]
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "plain"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"maple.parse.error": "json: not valid JSON"
+			},
+			"body": "plain"
+		}
+	},
+	{
+		"name": "the filter decides which logs a rule parses",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [
+					{
+						"field": "service_name",
+						"op": "eq",
+						"value": "worker"
+					}
+				],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"a\":1}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"a\":1}"
+		}
+	},
+	{
+		"name": "a later parse rule sees what an earlier one extracted",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [
+					{
+						"field": "attribute",
+						"key": "level",
+						"op": "eq",
+						"value": "error"
+					}
+				],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "severity",
+							"source": "attribute",
+							"key": "level"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"level\":\"error\"}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "error"
+			},
+			"body": "{\"level\":\"error\"}",
+			"severityNumber": 17,
+			"severityText": "ERROR"
+		}
+	},
+	{
+		"name": "drop rules see the log as received, before parsing",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [
+					{
+						"field": "attribute",
+						"key": "level",
+						"op": "eq",
+						"value": "debug"
+					}
+				],
+				"action": {
+					"_tag": "drop",
+					"keepPercent": 0
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"level\":\"debug\"}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"level": "debug"
+			},
+			"body": "{\"level\":\"debug\"}"
+		}
+	},
+	{
+		"name": "body redaction covers what parsing took from the body",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [],
+					"detectors": [
+						"email"
+					],
+					"patterns": [],
+					"scopes": [
+						"body"
+					],
+					"method": "mask"
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"contact": "ops@example.com"
+			},
+			"body": "{\"user\":\"jane@example.com\",\"n\":1}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"contact": "ops@example.com",
+				"user": "[REDACTED:email]",
+				"n": 1
+			},
+			"body": "{\"user\":\"[REDACTED:email]\",\"n\":1}"
+		}
+	},
+	{
+		"name": "body redaction by key covers parsed keys too",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [
+						"*password*"
+					],
+					"detectors": [],
+					"patterns": [],
+					"scopes": [
+						"body"
+					],
+					"method": "remove"
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"db.password": "kept: not from the body"
+			},
+			"body": "{\"password\":\"hunter2\",\"user\":\"u\"}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"db.password": "kept: not from the body",
+				"user": "u"
+			},
+			"body": "{\"password\":\"hunter2\",\"user\":\"u\"}"
+		}
+	}
+]

@@ -1,4 +1,7 @@
 import {
+	IngestParseSource,
+	IngestTimestampFormat,
+	type IngestParseStep,
 	IngestRuleDetector,
 	IngestRuleField,
 	IngestRuleOp,
@@ -29,7 +32,25 @@ export const ConditionDraft = Schema.Struct({
 })
 export type ConditionDraft = typeof ConditionDraft.Type
 
-export const ActionType = Schema.Literals(["drop", "redact"])
+export const StepKind = Schema.Literals(["json", "regex", "grok", "severity", "timestamp"])
+export type StepKind = typeof StepKind.Type
+
+/** One parse step; fields a kind does not use are kept so switching back restores them. */
+export const StepDraft = Schema.Struct({
+	id: Schema.Number,
+	kind: StepKind,
+	source: IngestParseSource,
+	key: Schema.String,
+	pattern: Schema.String,
+	prefix: Schema.String,
+	format: IngestTimestampFormat,
+})
+export type StepDraft = typeof StepDraft.Type
+
+export const StepText = Schema.Literals(["key", "pattern", "prefix"])
+export type StepText = typeof StepText.Type
+
+export const ActionType = Schema.Literals(["drop", "redact", "parse"])
 export type ActionType = typeof ActionType.Type
 
 export const Draft = Schema.Struct({
@@ -47,6 +68,8 @@ export const Draft = Schema.Struct({
 	patterns: Schema.String,
 	scopes: Schema.Array(IngestRuleScope),
 	method: IngestRuleRedactMethod,
+	steps: Schema.Array(StepDraft),
+	nextStepId: Schema.Number,
 })
 export type Draft = typeof Draft.Type
 
@@ -66,6 +89,58 @@ export const emptyDraft: Draft = {
 	patterns: "",
 	scopes: ["attributes"],
 	method: "mask",
+	steps: [],
+	nextStepId: 1,
+}
+
+export const STEP_LABELS = {
+	json: "JSON",
+	regex: "Regex",
+	grok: "Grok",
+	severity: "Severity",
+	timestamp: "Timestamp",
+} satisfies Record<StepKind, string>
+
+/** A new step reads the body, except severity and time, which usually sit in an attribute. */
+export const defaultStep = (id: number, kind: StepKind): StepDraft => ({
+	id,
+	kind,
+	source: kind === "severity" || kind === "timestamp" ? "attribute" : "body",
+	key: kind === "severity" ? "level" : kind === "timestamp" ? "timestamp" : "",
+	pattern: kind === "grok" ? "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}" : "",
+	prefix: "",
+	format: "rfc3339",
+})
+
+const stepOf = (draft: StepDraft): IngestParseStep => {
+	const key = draft.source === "attribute" ? { key: Str.trim(draft.key) } : {}
+	const source = { source: draft.source, ...key }
+	const prefix = Str.trim(draft.prefix) === "" ? {} : { prefix: Str.trim(draft.prefix) }
+	switch (draft.kind) {
+		case "json":
+			return { _tag: "json", ...source, ...prefix }
+		case "regex":
+		case "grok":
+			return { _tag: draft.kind, ...source, pattern: draft.pattern, ...prefix }
+		case "severity":
+			return { _tag: "severity", ...source }
+		case "timestamp":
+			return { _tag: "timestamp", ...source, format: draft.format }
+	}
+}
+
+/** The editor's form of a stored step. */
+export const stepDraftOf = (step: IngestParseStep, id: number): StepDraft => {
+	const base = defaultStep(id, step._tag)
+	return {
+		...base,
+		source: step.source,
+		key: step.key ?? "",
+		pattern: step._tag === "regex" || step._tag === "grok" ? step.pattern : "",
+		prefix:
+			step._tag === "json" || step._tag === "regex" || step._tag === "grok" ? (step.prefix ?? "") : "",
+		format: step._tag === "timestamp" ? step.format : base.format,
+	}
 }
 
 // Which op a field allows comes from `@maple/domain/ingest-rules`.
@@ -150,14 +225,16 @@ export const keepPercentOf = (text: string): number =>
 const actionOf = (draft: Draft): IngestRuleAction =>
 	draft.actionType === "drop"
 		? { _tag: "drop", keepPercent: keepPercentOf(draft.keepPercent) }
-		: {
-				_tag: "redact",
-				keys: splitList(draft.keys),
-				detectors: draft.detectors,
-				patterns: splitLines(draft.patterns),
-				scopes: draft.scopes,
-				method: draft.method,
-			}
+		: draft.actionType === "parse"
+			? { _tag: "parse", steps: Arr.map(draft.steps, stepOf) }
+			: {
+					_tag: "redact",
+					keys: splitList(draft.keys),
+					detectors: draft.detectors,
+					patterns: splitLines(draft.patterns),
+					scopes: draft.scopes,
+					method: draft.method,
+				}
 
 export const specOf = (draft: Draft): IngestRuleSpec => ({
 	signals: draft.signals,
