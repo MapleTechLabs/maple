@@ -34,9 +34,15 @@ const map = (entries: Readonly<Record<string, string>>) =>
 const list = <A>(items: ReadonlyArray<A>, render: (item: A) => string) =>
 	`[${Arr.join(Arr.map(items, render), ", ")}]`
 
-const insertLog = (db: Chdb, attributes: Readonly<Record<string, string>>, traceId = TRACE, spanId = SPAN) =>
+const insertLog = (
+	db: Chdb,
+	attributes: Readonly<Record<string, string>>,
+	traceId = TRACE,
+	spanId = SPAN,
+	atMs = AT_MS,
+) =>
 	db.exec(
-		`INSERT INTO logs (OrgId, Timestamp, TimestampTime, TraceId, SpanId, ServiceName, Body, LogAttributes, ResourceAttributes) VALUES ('${ORG}', '${ts(AT_MS)}', '${ts(AT_MS)}', '${traceId}', '${spanId}', 'evaluator', '', ${map(attributes)}, ${map({ "deployment.environment.name": "production" })})`,
+		`INSERT INTO logs (OrgId, Timestamp, TimestampTime, TraceId, SpanId, ServiceName, Body, LogAttributes, ResourceAttributes) VALUES ('${ORG}', '${ts(atMs)}', '${ts(atMs)}', '${traceId}', '${spanId}', 'evaluator', '', ${map(attributes)}, ${map({ "deployment.environment.name": "production" })})`,
 	)
 
 const insertSpan = (db: Chdb, events: ReadonlyArray<readonly [string, Readonly<Record<string, string>>]>) =>
@@ -372,6 +378,29 @@ describeWithChdb("ai_evaluations reads", () => {
 		// The session-9 score on TRACE is not this session's: the session-id read owns it.
 		expect(rows.length).toBe(4)
 		expect(Arr.some(rows, (row) => row.name === "Session quality")).toBe(false)
+	})
+
+	test("lists an evaluator's scores newest first", () => {
+		const scored = (label: string, atMs: number) =>
+			insertLog(
+				db,
+				{
+					"event.name": "gen_ai.evaluation.result",
+					"gen_ai.evaluation.name": "Recency",
+					"gen_ai.evaluation.score.label": label,
+				},
+				TRACE,
+				SPAN,
+				atMs,
+			)
+		scored("oldest", AT_MS - 120_000)
+		scored("newest", AT_MS)
+		scored("middle", AT_MS - 60_000)
+		const rows = run(
+			Compile.compileUnsafe(CH.aiEvaluationScoresQuery({ name: "Recency" }), params),
+			Schema.Struct({ scoreLabel: Schema.String }),
+		)
+		expect(Arr.map(rows, (row) => row.scoreLabel)).toEqual(["newest", "middle", "oldest"])
 	})
 
 	test("lists the session-scope scores naming a session, with or without a trace", () => {
