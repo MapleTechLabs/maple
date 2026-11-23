@@ -10115,7 +10115,10 @@ async fn process_decoded_payload(
     };
     let stage = RowStage {
         metered_bytes: retained.metered_bytes(received.bytes),
-        decode_heap: received.decode_heap,
+        // Attributes parse rules wrote are held with the decoded payload until the rows are written.
+        decode_heap: received
+            .decode_heap
+            .saturating_add(applied.as_ref().map_or(0, |applied| applied.stats.parse_heap_added)),
         native,
         forward_bytes: forward_body.map_or(0, |body| body.heap_bytes()),
     };

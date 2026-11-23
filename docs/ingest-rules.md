@@ -272,8 +272,9 @@ source fails the step.
   cannot run a regex condition, so a rule filtered by one stops matching). The payload is still
   stored: parse rules never spend the payload's redaction budget, and parse time does not count
   against its 2 second redaction deadline. Redacting the keys parsing wrote spends the parse
-  budget too; if it runs out first, that log is stored as it was before parsing. The TS engine
-  has no budget.
+  budget too; if it runs out first, that log is stored as it was before parsing. The attributes
+  parsing adds count toward the decode memory the payload holds until its rows are written, so a
+  busy gateway answers 503 rather than holding unreserved memory. The TS engine has no budget.
 - **Stats.** A parse rule counts `matched` (logs it ran on) and `parse_failed` (logs where a step
   failed) in `org_ingest_rule_stats`.
 

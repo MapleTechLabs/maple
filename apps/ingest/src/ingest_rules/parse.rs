@@ -363,6 +363,12 @@ fn ascii_shorthands(pattern: &str) -> String {
             };
             if let Some(replacement) = replacement {
                 out.push_str(replacement);
+                // In RE2 a `-` after a class shorthand is a literal; after the expansion it would
+                // start a range from the expansion's last character (`[\w-a]`).
+                if in_class && chars.peek() == Some(&'-') {
+                    out.push_str(r"\-");
+                    chars.next();
+                }
             } else {
                 out.push('\\');
                 out.push(next);
@@ -645,6 +651,23 @@ fn flatten<'a>(entries: &'a [KeyValue], path: Option<&str>, out: &mut Vec<(Strin
             _ => out.push((full, value)),
         }
     }
+}
+
+/// Estimated heap a written attribute holds: its key and value text and the structs carrying them.
+pub(super) fn attribute_heap(kv: &KeyValue) -> u64 {
+    let own = size_of::<KeyValue>().saturating_add(kv.key.len());
+    u64::try_from(own).unwrap_or(u64::MAX).saturating_add(kv.value.as_ref().map_or(0, value_heap))
+}
+
+fn value_heap(value: &AnyValue) -> u64 {
+    let nested = match value.value.as_ref() {
+        Some(any_value::Value::StringValue(text)) => u64::try_from(text.len()).unwrap_or(u64::MAX),
+        Some(any_value::Value::BytesValue(bytes)) => u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        Some(any_value::Value::ArrayValue(array)) => array.values.iter().map(value_heap).fold(0, u64::saturating_add),
+        Some(any_value::Value::KvlistValue(list)) => list.values.iter().map(attribute_heap).fold(0, u64::saturating_add),
+        _ => 0,
+    };
+    u64::try_from(size_of::<AnyValue>()).unwrap_or(u64::MAX).saturating_add(nested)
 }
 
 /// What each array item or map entry adds to a written value's counted size.

@@ -711,6 +711,47 @@
 		}
 	},
 	{
+		"name": "a hyphen after a shorthand in a class is a literal",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "^(?<token>[\\w-a]+) (?<gap>[\\s-]+)end$"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "x-y_1 - end"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"token": "x-y_1",
+				"gap": "- "
+			},
+			"body": "x-y_1 - end"
+		}
+	},
+	{
 		"name": "regex shorthands are ASCII in both engines",
 		"salt": "fixture-salt",
 		"rules": [

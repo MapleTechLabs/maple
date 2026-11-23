@@ -353,7 +353,7 @@ mod tests {
 
     fn redacted(values: u64) -> RuleStats {
         let counters = RuleCounters { matched: 1, redacted_values: values, ..RuleCounters::default() };
-        RuleStats { per_rule: vec![counters.clone()], total: counters, parse_size_change: 0 }
+        RuleStats { per_rule: vec![counters.clone()], total: counters, parse_size_change: 0, parse_heap_added: 0 }
     }
 
     #[test]
