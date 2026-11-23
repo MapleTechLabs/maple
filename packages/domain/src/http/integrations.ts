@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema, String as Str } from "effect"
+import { Effect, Schema, String as Str } from "effect"
 import {
 	AwsAccountId,
 	GcpProjectId,
@@ -32,7 +32,11 @@ import {
 } from "./vcs"
 
 import { GcpCloudSqlSettings } from "../gcp"
-import { GithubAuditCategoryChanges, GithubAuditCategoryStates } from "../github-audit"
+import {
+	GithubAuditCategoryChanges,
+	GithubAuditCategoryStates,
+	githubAuditCategoryStates,
+} from "../github-audit"
 export { GcpCloudSqlSettings } from "../gcp"
 
 import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
@@ -919,7 +923,10 @@ export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatu
 		/** Whether organization and repository changes go to the Security audit log. True before the org has connected. */
 		auditLogEnabled: Schema.Boolean,
 		/** Whether each audit category is collected, its default before the org has connected. */
-		auditCategories: GithubAuditCategoryStates,
+		auditCategories: GithubAuditCategoryStates.pipe(
+			// An API from before the categories sends none: every category reads as its default.
+			Schema.withDecodingDefaultKey(Effect.sync(() => githubAuditCategoryStates({}))),
+		),
 		repositoryDiscovery: Schema.NullOr(VcsRepositoryDiscovery),
 		repositories: Schema.Array(GithubRepoSummary),
 	},

@@ -224,6 +224,15 @@ describe("githubAuditEvent", () => {
 		expect(Option.isNone(map("release", { action: "created", release, repository, sender }, "d"))).toBe(
 			true,
 		)
+		expect(
+			Option.isNone(
+				map(
+					"release",
+					{ action: "edited", release: { ...release, draft: true }, repository, sender },
+					"d",
+				),
+			),
+		).toBe(true)
 	})
 
 	it("records where a repository was forked to", () => {
@@ -253,8 +262,8 @@ describe("githubAuditEvent", () => {
 		expect(
 			mapped("deployment_review", {
 				action: "rejected",
-				environment: "production",
 				workflow_run: { name: "deploy" },
+				workflow_job_runs: [{ id: 1, environment: "production" }],
 				repository,
 				sender,
 			}),
@@ -263,6 +272,17 @@ describe("githubAuditEvent", () => {
 			category: "permission",
 			target: { type: "environment", name: "acme/api: production" },
 		})
+		// A review request, and a deployment still on its way, decide nothing yet.
+		const left = (event: string, payload: Record<string, unknown>) =>
+			Option.isNone(map(event, { ...payload, repository, sender }, "d"))
+		expect(left("deployment_review", { action: "requested", environment: "production" })).toBe(true)
+		expect(
+			left("deployment_status", {
+				action: "created",
+				deployment_status: { state: "in_progress" },
+				deployment,
+			}),
+		).toBe(true)
 	})
 
 	it("names security alerts by what they found", () => {

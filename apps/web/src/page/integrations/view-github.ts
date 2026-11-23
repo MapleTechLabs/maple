@@ -139,7 +139,6 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 	]
 }
 
-/** CI traces and the audit log switch here; PR review is per repository, so its row counts them and links there. */
 /**
  * What the audit log collects, one switch per category, nested under its row on the card. A
  * category that needs a permission the App asks for separately says which.
@@ -170,6 +169,7 @@ const auditCategoryList = (h: H, model: Model, lockReason: string | undefined): 
 		}),
 	)
 
+/** CI traces and the audit log switch here; PR review is per repository, so its row counts them and links there. */
 /** GitHub's switches: a titled panel on the card, a plain list inside the flow's Choose data step. */
 export const githubFeatures = (
 	h: H,

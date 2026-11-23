@@ -115,12 +115,26 @@ const alertTarget =
 
 const deploymentTarget = (payload: Json): Target | undefined => {
 	const deployment = objectAt(payload, "deployment")
-	const environment =
-		textAt(deployment, "environment") ??
-		textAt(payload, "environment") ??
-		textAt(objectAt(payload, "workflow_run"), "name")
-	return { type: "environment", id: idAt(deployment, "id"), name: withRepository(payload, environment) }
+	return {
+		type: "environment",
+		id: idAt(deployment, "id"),
+		name: withRepository(payload, textAt(deployment, "environment")),
+	}
 }
+
+/** An environment review names its environment on the job it held, not on a deployment. */
+const deploymentReviewTarget = (payload: Json): Target | undefined => {
+	const runs = payload["workflow_job_runs"]
+	const firstRun = Arr.isArray(runs) ? Arr.findFirst(runs, Predicate.isObject) : Option.none()
+	const environment =
+		Option.match(firstRun, { onNone: () => undefined, onSome: (run) => textAt(run, "environment") }) ??
+		textAt(objectAt(payload, "workflow_job_run"), "environment") ??
+		textAt(payload, "environment")
+	return { type: "environment", name: withRepository(payload, environment) }
+}
+
+/** A deployment's outcome; the states on the way there are not audit events. */
+const DEPLOYMENT_OUTCOMES: ReadonlySet<string> = new Set(["success", "failure", "error"])
 
 /** The releases worth an audit row: what people see change, not drafts being edited. */
 const RELEASE_ACTIONS: ReadonlySet<string> = new Set(["published", "unpublished", "edited", "deleted"])
@@ -292,8 +306,13 @@ const AUDITED_WEBHOOKS = {
 		target: pullRequestTarget,
 	},
 	release: {
-		action: (_payload, action) =>
-			action !== undefined && RELEASE_ACTIONS.has(action) ? action : undefined,
+		// A draft's edits are invisible to everyone else until it is published.
+		action: (payload, action) =>
+			action !== undefined &&
+			RELEASE_ACTIONS.has(action) &&
+			objectAt(payload, "release")?.["draft"] !== true
+				? action
+				: undefined,
 		category: () => "resource",
 		target: (payload) => {
 			const release = objectAt(payload, "release")
@@ -329,13 +348,18 @@ const AUDITED_WEBHOOKS = {
 	},
 	deployment_status: {
 		// The outcome is the action: `deployment_status.success`, `.failure`, `.error`.
-		action: (payload) => textAt(objectAt(payload, "deployment_status"), "state"),
+		action: (payload) => {
+			const state = textAt(objectAt(payload, "deployment_status"), "state")
+			return state !== undefined && DEPLOYMENT_OUTCOMES.has(state) ? state : undefined
+		},
 		category: () => "resource",
 		target: deploymentTarget,
 	},
 	deployment_review: {
+		// Who let a deployment through or stopped it; the request itself is not a decision.
+		action: (_payload, action) => (action === "approved" || action === "rejected" ? action : undefined),
 		category: () => "permission",
-		target: deploymentTarget,
+		target: deploymentReviewTarget,
 	},
 	secret_scanning_alert: {
 		category: () => "credential",
@@ -345,6 +369,8 @@ const AUDITED_WEBHOOKS = {
 		),
 	},
 	code_scanning_alert: {
+		// `appeared_in_branch` repeats an alert already reported on another branch.
+		action: (_payload, action) => (action === "appeared_in_branch" ? undefined : action),
 		category: () => "other",
 		target: alertTarget("code_scanning_alert", (alert) => {
 			const rule = objectAt(alert, "rule")
