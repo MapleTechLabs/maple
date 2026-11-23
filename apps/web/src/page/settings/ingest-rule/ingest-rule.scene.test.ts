@@ -1,11 +1,23 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { V2IngestRule } from "@maple/domain/http/v2"
-import { Result, Schema, Array as Arr } from "effect"
-import { change, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { IngestRuleValidationError } from "@maple/domain/http"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { Result, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Command,
+	change,
+	expect as expectView,
+	given,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { ORG } from "../../kit/alert-test-rows"
 import { PageOutMessage, type PageContext } from "../../contract"
+import { DebounceEstimate } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { LogSample } from "./preview"
@@ -83,6 +95,8 @@ describe("ingest rule editor", () => {
 			given(fresh("drop-debug-logs")),
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("lt"),
 			change(role("combobox", { name: "Condition 1 field" }), "body"),
+			// The edit asks for a fresh 24 hour count; an elapsed debounce for another draft does nothing.
+			Command.resolve(DebounceEstimate, Message.ElapsedEstimateDebounce({ seq: 0 })),
 			expectView(role("combobox", { name: "Condition 1 field" })).toHaveValue("body"),
 			expectView(role("combobox", { name: "Condition 1 operator" })).toHaveValue("eq"),
 		)
@@ -153,5 +167,359 @@ describe("ingest rule editor", () => {
 				},
 			}),
 		)
+	})
+})
+
+const savedRule = Schema.decodeSync(V2IngestRule)({
+	id: "irule_YofPTrK9782DWwcnXhpcCw",
+	object: "ingest_rule",
+	name: "Drop debug logs",
+	enabled: true,
+	position: 0,
+	signals: ["logs", "traces"],
+	conditions: [{ field: "service_name", op: "eq", value: "checkout" }],
+	action: { type: "drop", keep_percent: 0 },
+	created_at: "2026-10-28T12:00:00.000Z",
+	updated_at: "2026-10-28T12:00:00.000Z",
+})
+const editing = (): Model => {
+	const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+	return pageUpdate(
+		asAdmin(opened.model),
+		Message.CompletedFetchExisting({ result: Result.succeed(savedRule) }),
+	).model
+}
+const impactOf = (logs: number, traces: number) => {
+	const cell = (dropped: number) => ({
+		matched: dropped,
+		dropped,
+		dropped_bytes: dropped * 1000,
+		redacted_values: 0,
+	})
+	const total = cell(logs + traces)
+	return Schema.decodeSync(V2IngestRuleStats)({
+		object: "ingest_rule_stats",
+		start_time: "2026-10-27T12:00:00.000Z",
+		end_time: "2026-10-28T12:00:00.000Z",
+		rules:
+			logs + traces === 0
+				? []
+				: [
+						{
+							id: savedRule.id,
+							...total,
+							signals: [
+								{ signal: "logs", ...cell(logs) },
+								{ signal: "traces", ...cell(traces) },
+							],
+						},
+					],
+		signals: [],
+		hourly: [],
+	})
+}
+
+describe("ingest rule impact", () => {
+	test("a saved rule loads its last 24 hours of counts", () => {
+		const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+		expect(Arr.map(opened.commands ?? [], ({ name }) => name)).toContain("FetchIngestRuleImpact")
+	})
+
+	test("the impact panel shows what the rule dropped, the bytes dropped and a row per signal", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					editing(),
+					Message.CompletedFetchImpact({
+						seq: 1,
+						result: Result.succeed(impactOf(1_200_000, 3000)),
+					}),
+				).model,
+			),
+			expectView(text("Dropped, last 24 hours")).toExist(),
+			expectView(text("1.2M")).toExist(),
+			expectView(text("1.2 GB")).toExist(),
+			expectView(text("3K dropped")).toExist(),
+			expectView(text("3.0 MB")).toExist(),
+		)
+	})
+
+	test("a rule that changed from drop to redact still shows the drops in the window", () => {
+		const redacting = {
+			...savedRule,
+			action: {
+				type: "redact" as const,
+				keys: ["user.email"],
+				detectors: [],
+				patterns: [],
+				scopes: ["attributes" as const],
+				method: "mask" as const,
+			},
+		}
+		const opened = init({ _tag: "IngestRule", ruleId: savedRule.id }, context)
+		const model = pageUpdate(
+			asAdmin(opened.model),
+			Message.CompletedFetchExisting({ result: Result.succeed(redacting) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchImpact({
+						seq: 1,
+						result: Result.succeed(impactOf(2000, 0)),
+					}),
+				).model,
+			),
+			expectView(text("Dropped, last 24 hours")).toExist(),
+			expectView(text("2K")).toExist(),
+		)
+	})
+
+	test("each signal row and the list line name what was done to it, both effects when mixed", () => {
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
+			object: "ingest_rule_stats",
+			start_time: "2026-10-27T12:00:00.000Z",
+			end_time: "2026-10-28T12:00:00.000Z",
+			rules: [
+				{
+					id: savedRule.id,
+					matched: 160,
+					dropped: 10,
+					dropped_bytes: 1000,
+					redacted_values: 50,
+					signals: [
+						{ signal: "logs", matched: 10, dropped: 10, dropped_bytes: 1000, redacted_values: 0 },
+						{ signal: "traces", matched: 150, dropped: 0, dropped_bytes: 0, redacted_values: 50 },
+					],
+				},
+			],
+			signals: [],
+			hourly: [],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(editing(), Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(stats) }))
+					.model,
+			),
+			expectView(text("10 dropped")).toExist(),
+			expectView(text("1.0 KB")).toExist(),
+			expectView(text("50 values redacted")).toExist(),
+			expectView(text("Values redacted")).toExist(),
+		)
+	})
+
+	test("a rule with no hits says so", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					editing(),
+					Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(0, 0)) }),
+				).model,
+			),
+			expectView(text("No records matched in the last 24 hours.")).toExist(),
+		)
+	})
+
+	test("switching to 7 days refetches and ignores a late 24 hour answer", () => {
+		const switched = pageUpdate(editing(), Message.PickedImpactWindow({ window: "7d" }))
+		expect(Arr.map(switched.commands ?? [], ({ name }) => name)).toEqual(["FetchIngestRuleImpact"])
+		const late = pageUpdate(
+			switched.model,
+			Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(5, 0)) }),
+		)
+		expect(late.model.impact._tag).toBe("Loading")
+	})
+
+	test("24h, then 7d, then 24h again shows only the newest 24 hour answer", () => {
+		const week = pageUpdate(editing(), Message.PickedImpactWindow({ window: "7d" })).model
+		const back = pageUpdate(week, Message.PickedImpactWindow({ window: "24h" })).model
+		const stale = pageUpdate(
+			back,
+			Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(5, 0)) }),
+		).model
+		expect(stale.impact._tag).toBe("Loading")
+		const fresh = pageUpdate(
+			stale,
+			Message.CompletedFetchImpact({ seq: back.impactSeq, result: Result.succeed(impactOf(7, 0)) }),
+		).model
+		expect(fresh.impact._tag).toBe("Success")
+	})
+})
+
+describe("ingest rule 24 hour estimate", () => {
+	const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+		Arr.map(commands ?? [], ({ name }) => name)
+	const estimate = (dropped: number) =>
+		Schema.decodeSync(V2IngestRulePreview)({
+			object: "ingest_rule_preview",
+			start_time: "2026-11-22T12:00:00.000Z",
+			end_time: "2026-11-23T12:00:00.000Z",
+			signals: [
+				{
+					signal: "logs",
+					scanned_minutes: 1440,
+					stored: 8_000_000,
+					matched: 1_200_000,
+					estimated_dropped: dropped,
+					estimated_dropped_bytes: 340_000_000,
+					services: [
+						{ service_name: "checkout", stored: 5_000_000, matched: 900_000 },
+						{ service_name: "api", stored: 3_000_000, matched: 300_000 },
+					],
+				},
+			],
+		})
+
+	test("a template counts the last 24 hours once the debounce elapses", () => {
+		const opened = init({ _tag: "IngestRuleNew", search: { template: "drop-debug-logs" } }, context)
+		expect(names(opened.commands)).toContain("DebounceIngestRuleEstimate")
+		expect(opened.model.estimateKey).not.toBe("")
+		const fired = pageUpdate(
+			opened.model,
+			Message.ElapsedEstimateDebounce({ seq: opened.model.estimateSeq }),
+		)
+		expect(names(fired.commands)).toEqual(["FetchIngestRuleEstimate"])
+	})
+
+	test("typing a value and back again asks once, after the last edit", () => {
+		const model = fresh("drop-debug-logs")
+		const typed = pageUpdate(model, Message.ChangedText({ part: "keepPercent", value: "5" })).model
+		const back = pageUpdate(typed, Message.ChangedText({ part: "keepPercent", value: "0" })).model
+		expect(back.estimateKey).toBe(model.estimateKey)
+		expect(
+			names(pageUpdate(back, Message.ElapsedEstimateDebounce({ seq: model.estimateSeq })).commands),
+		).toEqual([])
+		expect(
+			names(pageUpdate(back, Message.ElapsedEstimateDebounce({ seq: back.estimateSeq })).commands),
+		).toEqual(["FetchIngestRuleEstimate"])
+	})
+
+	test("a draft without a name is still counted", () => {
+		const model = fresh("drop-debug-logs")
+		const unnamed = pageUpdate(model, Message.ChangedText({ part: "name", value: "" })).model
+		expect(unnamed.estimateKey).toBe(model.estimateKey)
+	})
+
+	test("the estimate says how much the rule would drop, the bytes and the busiest services", () => {
+		const model = fresh("drop-debug-logs")
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchEstimate({
+						key: model.estimateKey,
+						result: Result.succeed(estimate(1_200_000)),
+					}),
+				).model,
+			),
+			expectView(text("Would drop 1.2M of 8M logs (15%)")).toExist(),
+			expectView(text("About 340 MB kept off the bill")).toExist(),
+			expectView(text("checkout 900K · api 300K")).toExist(),
+		)
+	})
+
+	test("an edit asks again and drops the answer for the old draft", () => {
+		const model = fresh("drop-debug-logs")
+		const oldKey = model.estimateKey
+		const edited = pageUpdate(model, Message.PickedAction({ actionType: "redact" }))
+		expect(edited.model.estimateKey).not.toBe(oldKey)
+		const late = pageUpdate(
+			edited.model,
+			Message.CompletedFetchEstimate({ key: oldKey, result: Result.succeed(estimate(1)) }),
+		)
+		expect(late.model.estimate._tag).not.toBe("Success")
+	})
+
+	test("a rule the preview cannot run says so, without offering a retry", () => {
+		const model = fresh("drop-debug-logs")
+		const refused = toLoadFailure(
+			new IngestRuleValidationError({
+				message: "A pattern in this rule cannot be previewed; the gateway still applies it.",
+				problems: ["a regex uses syntax the preview's engine cannot run"],
+			}),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(
+					model,
+					Message.CompletedFetchEstimate({ key: model.estimateKey, result: Result.fail(refused) }),
+				).model,
+			),
+			expectView(
+				text("A pattern in this rule cannot be previewed; the gateway still applies it."),
+			).toExist(),
+			expectView(text("Couldn't count the last 24 hours.")).not.toExist(),
+		)
+	})
+
+	test("a draft that cannot be saved asks for nothing", () => {
+		const opened = init({ _tag: "IngestRuleNew", search: {} }, context)
+		expect(opened.model.estimateKey).toBe("")
+		expect(names(opened.commands)).not.toContain("DebounceIngestRuleEstimate")
+	})
+})
+
+describe("ingest rule from a suggestion", () => {
+	test("a suggestion link opens a draft for that service and level, ready to save", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				asAdmin(
+					init(
+						{ _tag: "IngestRuleNew", search: { service: "checkout", level: "info", keep: 10 } },
+						context,
+					).model,
+				),
+			),
+			expectView(role("textbox", { name: "Name" })).toHaveValue(
+				"Sample info and debug logs from checkout",
+			),
+			expectView(role("combobox", { name: "Condition 2 operator" })).toHaveValue("lt"),
+			expectView(text("Ready to save")).toExist(),
+		)
+	})
+
+	test("a span suggestion matches the exact span name in traces", () => {
+		const model = init(
+			{ _tag: "IngestRuleNew", search: { service: "api", span: "GET /healthz", keep: 0 } },
+			context,
+		).model
+		expect(model.draft.signals).toEqual(["traces"])
+		expect(
+			Arr.map(model.draft.conditions, (condition) => [condition.field, condition.op, condition.value]),
+		).toEqual([
+			["service_name", "eq", "api"],
+			["name", "eq", "GET /healthz"],
+		])
+		expect(model.draft.name).toBe("Drop GET /healthz in api")
+	})
+
+	test("a long span name still makes a name the rule accepts", () => {
+		const span = `GET /${Str.repeat(20)("segment/")}end`
+		const model = init(
+			{ _tag: "IngestRuleNew", search: { service: "api", span, keep: 0 } },
+			context,
+		).model
+		expect(model.draft.name.length).toBeLessThanOrEqual(120)
+		expect(model.estimateKey).not.toBe("")
+	})
+})
+
+describe("ingest rule impact failure", () => {
+	test("a failed load offers a retry that asks again for the same window", () => {
+		const failed = pageUpdate(
+			editing(),
+			Message.CompletedFetchImpact({ seq: 1, result: Result.fail(toLoadFailure("boom")) }),
+		).model
+		const retried = pageUpdate(failed, Message.ClickedRetryImpact())
+		expect(retried.model.impact._tag).toBe("Loading")
+		expect(Arr.map(retried.commands ?? [], ({ name }) => name)).toEqual(["FetchIngestRuleImpact"])
 	})
 })

@@ -199,14 +199,79 @@ character but `\n`", before compiling.
   Every failed lookup counts in `ingest_rules_fetch_failed_total`. A stored rule that does not
   parse or compile is skipped and counted in `ingest_rules_invalid_total`.
 - Only the share of the payload the rules leave is metered, on every path (OTLP HTTP and gRPC,
-  Cloudflare, GCP, AWS), and items are recounted after the rules. Dropped records are discounted
-  by their encoded size; redaction is not, so it never bills more or less than was received.
+  Cloudflare, GCP, AWS), and items are recounted after the rules. The metered bytes are the
+  request's original size times the share of its encoded bytes the rules kept, so a converted
+  payload (a GCP push body) is discounted by that share, not by the dropped records' encoded size.
+  Redaction is not discounted, so it never bills more or less than was received.
   Bytes of dropped records count in `ingest_rules_dropped_bytes_total`.
 - Per-rule counts (`matched`, `dropped`, `dropped_bytes`, `redacted_values`) are counted once the
   payload is written (or fully dropped), summed per org, rule, signal and UTC hour, and added into
   `org_ingest_rule_stats` every minute and on shutdown. A failed write keeps the counts for the
   next one; after 10 failures in a row they are dropped and counted in
   `ingest_rule_stats_dropped_total`.
+- `GET /v2/ingest_rules/stats` serves them per rule, per rule and signal, and per rule and hour.
+  The ingestion settings list shows each rule's last 24 whole UTC hours (records and bytes dropped,
+  or values redacted) with an hourly sparkline; a saved rule's page shows the same over 24 hours or
+  7 days, with a row per signal, and both effects when the rule changed action in the window.
+  - `matched - dropped` is not what a rule kept: a record several drop rules match is credited to
+    the first that drops it.
+  - `dropped_bytes` is the dropped records' encoded size, which the UI shows as bytes dropped;
+    the billed reduction is that share of the original request (see above).
+
+## Dry run
+
+`POST /v2/ingest_rules/preview` counts what a draft's conditions match in the last 24 hours of
+stored logs and spans (`ingestRuleLogMatchesQuery`, `ingestRuleSpanMatchesQuery`), per service.
+A drop rule's estimated drops are the matches times `(100 - keepPercent) / 100`, and its bytes are
+each service's drops times that service's average record size in `service_usage`. The rule editor
+shows it above the sample preview, a moment after the last edit.
+
+- A scoped key needs `logs:read` / `traces:read` for the signals it previews, since the counts
+  answer questions about that telemetry.
+- The scan is sized from `service_usage` per UTC hour, newest first: it covers the longest stretch
+  of latest hours whose buckets hold at most 50 million records (`PREVIEW_MAX_SCAN_ROWS`), or, when
+  not even an hour fits, the minutes that do. Under a day, each service's match rate in that
+  stretch is applied to its stored records for the day; `scanned_minutes` says how long it scanned,
+  and the editor says so.
+- Regexes run on ClickHouse's RE2, translated to mean what the gateway means: `\d`, `\w`, `\s` and
+  their negations become Unicode classes, `.` stops at a newline (`(?-s)`), and the spellings RE2
+  lacks are rewritten (`\u0041`, `\u{41}`, `(?<name>`, `\p{Script=Greek}`, `\p{Letter}`). RE2's
+  `\b` stays ASCII. A pattern that passes the validator but that RE2 still cannot compile is a 400
+  that says the rule cannot be previewed; the gateway still applies it.
+- A map or array log body is opaque to the gateway, but the warehouse stores it as JSON text, so
+  a body condition can count it in the preview while the gateway keeps it.
+
+It is an estimate, not the gateway's verdict: data the org's other rules dropped was never stored,
+and attribute values are compared as ingest stored them. Metrics are not counted. `apps/cli/test/ingest-rule-preview.test.ts` holds the translation to the semantics
+above on chDB.
+
+## Suggested rules
+
+`GET /v2/ingest_rules/suggestions` ranks the last 24 hours of stored data from the hourly rollups
+(`logs_aggregates_hourly` by service and level; `traces_aggregates_hourly` by service and raw span
+name, the name the gateway tests, its sampling-weighted counts scaled back to stored spans by each
+service's stored-to-weighted ratio; span bytes come from each service's average span in
+`service_usage`):
+
+- debug and trace logs of a service: drop;
+- spans whose name is a probe, as a whole word (`health`, `healthz`, `readyz`, `livez`,
+  `readiness`, `liveness`, `ping`, `heartbeat`): drop;
+- a service's logs below warn, when its info logs are at least a tenth of all log bytes: keep 10%.
+  The figures cover everything the rule would sample, debug logs included.
+
+No operation is suggested for sampling: the gateway decides per matching span, so sampling one
+operation drops those spans and keeps the rest of their traces. Log suggestions need `logs:read`
+and span suggestions `traces:read`; a scoped key without one gets none of that kind.
+
+Shares are of everything stored that day (`service_usage`), not only the groups read. A suggestion
+must hold 1,000 records and save at least 0.5% of all stored log and span bytes; the six with the
+most bytes saved are listed under the rule list, each opening the editor prefilled
+(`/settings/ingestion/rules/new?service=&level=|span=&keep=`). The list hides a suggestion only when
+an enabled drop rule has exactly the conditions it would create and keeps no more than it would;
+a rule with other conditions or a higher keep percent does not hide it.
+
+The log rollup keeps only `severity_text`, while the rule it opens tests `severity_number` first, so
+a log whose number and text disagree is ranked by its text.
 
 ## Limits
 
