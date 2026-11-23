@@ -5,6 +5,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { AppRoute, hrefOf } from "../../../route"
+import { osName } from "../../kit/platform-label"
 import type { ProviderId } from "../../kit/providers"
 import type { Devices, Model } from "./model"
 
@@ -131,25 +132,22 @@ export const appliesToLabel = (policy: DevicePolicyFinding): string => policy.gr
 export const criticalCount = (policies: ReadonlyArray<DevicePolicyFinding>): number =>
 	Arr.filter(policies, (policy) => policy.critical).length
 
-const PLATFORM_LABEL = new Map([
-	["darwin", "macOS"],
-	["windows", "Windows"],
-	["linux", "Linux"],
-	["chrome", "ChromeOS"],
-	["ios", "iOS"],
-	["ipados", "iPadOS"],
-	["android", "Android"],
-])
-
-const platformName = (platform: string): string => PLATFORM_LABEL.get(platform) ?? Str.capitalize(platform)
-
-/** "macOS, Windows" from "darwin,windows"; a policy with no platform runs on all of them. */
-export const platformLabel = (platform: string | null): string => {
-	const names = Arr.filter(
+/** The platforms a policy runs on (`["darwin", "windows"]`); none for a policy that runs on all of them. */
+export const platformsOf = (platform: string | null): ReadonlyArray<string> =>
+	Arr.filter(
 		Arr.map(Str.split(",")(platform ?? ""), (part) => Str.trim(part)),
 		Str.isNonEmpty,
 	)
-	return names.length === 0 ? "All platforms" : Arr.join(Arr.map(names, platformName), ", ")
+
+/** A platform's name; one the kit has no mark for is shown as the source spells it. */
+export const platformName = (platform: string): string => osName(platform) ?? Str.capitalize(platform)
+
+export const ALL_PLATFORMS = "All platforms"
+
+/** "macOS, Windows" from "darwin,windows"; a policy with no platform runs on all of them. */
+export const platformLabel = (platform: string | null): string => {
+	const names = platformsOf(platform)
+	return names.length === 0 ? ALL_PLATFORMS : Arr.join(Arr.map(names, platformName), ", ")
 }
 
 const plural = (count: number, one: string, many: string) =>

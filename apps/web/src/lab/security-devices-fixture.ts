@@ -118,7 +118,7 @@ const policies = (nowMs: number): Encoded["policies"] => [
 		description: null,
 		resolution: "Set the screen to lock after at most 5 minutes of inactivity.",
 		critical: false,
-		platform: "darwin",
+		platform: "darwin,windows,linux,chrome",
 		failingDeviceCount: 4,
 		passingDeviceCount: 182,
 		failingDevices: hosts(4, 5),

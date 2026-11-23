@@ -36,28 +36,32 @@ import {
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem } from "../../kit/stat-rail"
+import { osName, platformLabel as platformMark } from "../../kit/platform-label"
 import { securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
+	ALL_PLATFORMS,
 	appliesToLabel,
 	brandOf,
 	criticalCount,
 	cvssTone,
 	DEVICE_SOURCE_BRANDS,
-	type DeviceSourceBrand,
-	deviceTotal,
 	devicesLabel,
+	deviceTotal,
 	failingLabel,
 	hasScores,
 	knownExploitedCount,
 	moreVulnerabilitiesBySource,
 	noFailingPoliciesText,
 	platformLabel,
+	platformName,
+	platformsOf,
 	policyKeyOf,
 	screenOf,
 	softwareLabel,
 	sourceLabelOf,
 	sourceTagOf,
+	type DeviceSourceBrand,
 	unscoredKinds,
 } from "./derive"
 import { type Devices, Message, type Model } from "./model"
@@ -349,6 +353,22 @@ const policyDetail = (h: H, policy: DevicePolicyFinding): Html =>
 		]),
 	])
 
+/** The platforms a policy runs on, each as its mark beside its name. */
+const platformsCell = (h: H, platform: string | null): Html => {
+	const platforms = platformsOf(platform)
+	return typography(h, { size: "xs", as: "span" }, [
+		platforms.length === 0
+			? ALL_PLATFORMS
+			: hstack(
+					h,
+					{ gap: "3", as: "span", inline: true },
+					Arr.map(platforms, (name) =>
+						osName(name) === undefined ? platformName(name) : platformMark(h, "os", name),
+					),
+				),
+	])
+}
+
 const policyRows = (
 	h: H,
 	policy: DevicePolicyFinding,
@@ -420,7 +440,7 @@ const policyRows = (
 					[typography(h, { size: "xs", numeric: true }, [failingLabel(policy)])],
 					`${WIDE_COLUMN} whitespace-nowrap`,
 				),
-				tableCell(h, [typography(h, { size: "xs" }, [platformLabel(policy.platform)])], WIDE_COLUMN),
+				tableCell(h, [platformsCell(h, policy.platform)], `${WIDE_COLUMN} whitespace-nowrap`),
 				tableCell(
 					h,
 					[
