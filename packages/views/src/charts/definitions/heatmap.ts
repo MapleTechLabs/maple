@@ -63,8 +63,14 @@ export const buildHeatmap = (spec: HeatmapSpec): BuiltChart<Slot, string, string
 							padding: 6,
 							format: (value: string) => spec.xLabels?.[value] ?? value,
 						},
-						// Time columns come with their labels already spaced (`timeTickColumns`).
-						...(spec.xLabels === undefined ? undefined : { tickLabels: { thin: false } }),
+						// A full time grid comes with its labels already spaced (`timeTickColumns`).
+						...(spec.xLabels === undefined
+							? undefined
+							: {
+									tickLabels: {
+										thin: spec.xLabelsSpaced === true ? false : { priority: "ends" },
+									},
+								}),
 					},
 				},
 				y: {

@@ -85,4 +85,23 @@ describe("heatmap time columns", () => {
 		const columns = ["2026-11-22T14:00:00.000Z", "2026-11-22T14:01:00.000Z"]
 		expect(timeTickColumns(columns, 0, (x) => x, "UTC").size).toBe(0)
 	})
+
+	it("fall back to every few columns when a zone's offset misses every round step", () => {
+		// Hourly columns on the UTC hour read as :30 in Kolkata, so no column is on the hour there.
+		const columns = Arr.makeBy(24, (i) => new Date(Date.UTC(2026, 10, 22, i)).toISOString())
+		const label = timeColumnLabeler(columns, "Asia/Kolkata")
+		const picked = timeTickColumns(columns, 800, label, "Asia/Kolkata")
+		expect(picked.size).toBeGreaterThan(3)
+		expect(picked.has(columns[0] ?? "")).toBe(true)
+	})
+
+	it("label one column per minute when columns are shorter than a minute", () => {
+		const columns = Arr.makeBy(20, (i) => new Date(Date.UTC(2026, 10, 22, 0, 0, i * 30)).toISOString())
+		const label = timeColumnLabeler(columns, "UTC")
+		const labels = Arr.map(
+			Arr.filter(columns, (x) => timeTickColumns(columns, 2000, label, "UTC").has(x)),
+			label,
+		)
+		expect(labels).toEqual(Arr.dedupe(labels))
+	})
 })

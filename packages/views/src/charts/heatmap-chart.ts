@@ -256,7 +256,8 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		yLabels: Rec.fromEntries(
 			Arr.map(model.yDomain, (y) => [y, truncateYLabel(label(y), layout.yLabelChars)]),
 		),
-		...(allXIso
+		// Even ticks need every column in place; a grid with gaps dropped keeps the axis's thinning.
+		...(allXIso && inputs.xDomain !== undefined
 			? {
 					xLabels: xLabelsOf(
 						model.xDomain,
@@ -268,8 +269,11 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 						),
 						labelX,
 					),
+					xLabelsSpaced: true,
 				}
-			: undefined),
+			: allXIso
+				? { xLabels: Rec.fromEntries(Arr.map(model.xDomain, (x) => [x, labelX(x)])) }
+				: undefined),
 		margin: layout.margin,
 		paddingInnerX: layout.paddingInnerX,
 		paddingInnerY: layout.paddingInnerY,

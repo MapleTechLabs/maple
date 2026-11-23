@@ -109,7 +109,7 @@ export const exemplarOverlay = <M>(
 								h.span([
 									h.Class(
 										cn(
-											"block rounded-full ring-2 ring-background transition-[transform,opacity] duration-100 group-hover:scale-150 group-hover:bg-foreground group-hover:opacity-100 group-active:scale-150 group-active:bg-foreground group-active:opacity-100",
+											"block rounded-full ring-2 ring-background transition-[transform,opacity] duration-100 group-hover:scale-150 group-hover:bg-foreground group-hover:opacity-100 group-active:scale-150 group-active:bg-foreground group-active:opacity-100 group-focus-visible:opacity-100",
 											active ? "scale-125 bg-foreground" : "bg-muted-foreground",
 											shown ? "opacity-100" : "opacity-0",
 										),

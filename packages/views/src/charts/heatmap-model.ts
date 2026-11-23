@@ -270,22 +270,25 @@ export const timeTickColumns = (
 	const columnPx = plotWidth / columns.length
 	const longest = Arr.reduce(columns, 0, (max, iso) => Math.max(max, labelOf(iso).length))
 	const needPx = longest * TICK_CHAR_PX + TICK_GAP_PX
-	const step = Arr.findFirst(
-		TICK_STEPS_MIN,
-		(minutes) =>
-			minutes >= columnMin && minutes % columnMin === 0 && (minutes / columnMin) * columnPx >= needPx,
-	)
-	// Off the round steps (odd widths, multi-day windows): every k-th column from the first.
-	const every = Math.max(1, Math.ceil(needPx / columnPx))
-	const picked = Arr.filter(columns, (_, index) => {
-		const ms = times[index] ?? Number.NaN
-		const onStep = Option.match(step, {
-			onNone: () => index % every === 0,
-			onSome: (minutes) => localMinuteOfDay(ms, timeZone) % minutes === 0,
+	const fitsRight = (index: number) =>
+		(columns.length - index - 0.5) * columnPx >= (labelOf(columns[index] ?? "").length * TICK_CHAR_PX) / 2
+	// Columns on a round local time: whole minutes (sub-minute columns share one), on the step.
+	const onStep = (minutes: number) =>
+		Arr.filter(columns, (_, index) => {
+			const ms = times[index] ?? Number.NaN
+			return ms % 60_000 === 0 && localMinuteOfDay(ms, timeZone) % minutes === 0 && fitsRight(index)
 		})
-		const roomRight = (columns.length - index - 0.5) * columnPx
-		return onStep && roomRight >= (labelOf(columns[index] ?? "").length * TICK_CHAR_PX) / 2
+	// The finest round step that fits and that columns land on (a +5:30 zone misses hourly ones).
+	const stepped = Arr.findFirst(TICK_STEPS_MIN, (minutes) => {
+		if (minutes < columnMin || (minutes / columnMin) * columnPx < needPx) return Option.none()
+		const hits = onStep(minutes)
+		return hits.length >= 2 ? Option.some(hits) : Option.none()
 	})
+	// Otherwise (odd widths, offset zones, multi-day windows): every k-th column from the first.
+	const every = Math.max(1, Math.ceil(needPx / columnPx))
+	const picked = Option.getOrElse(stepped, () =>
+		Arr.filter(columns, (_, index) => index % every === 0 && fitsRight(index)),
+	)
 	return new Set(picked)
 }
 
