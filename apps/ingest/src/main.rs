@@ -9958,13 +9958,6 @@ impl Received {
             decode_heap: 0,
         }
     }
-
-    /// The decode memory the rows hold: the decoded payload's, plus the attributes parse rules
-    /// wrote into it, which live until the rows are written.
-    fn row_decode_heap(self, rules: Option<&RuleStats>) -> u64 {
-        self.decode_heap
-            .saturating_add(rules.map_or(0, |stats| stats.parse_heap_added))
-    }
 }
 
 /// What the stage after decoding is admitted on.
@@ -9977,6 +9970,9 @@ struct RowStage {
     native: bool,
     /// What building the body forwarded to a collector allocates.
     forward_bytes: u64,
+    /// What the attributes parse rules wrote hold; they were allocated after the decode
+    /// reservation, so they are reserved here with the rows.
+    parse_heap: u64,
 }
 
 /// Admits the stage after decoding, before any of it runs: refuses a request whose
@@ -10041,7 +10037,9 @@ fn admit_rows(
     }
     // The forward body is reserved whole. Within the decode limits it always fits an
     // otherwise idle budget, so this refusal is for a gateway configured too small.
-    let needed = rows_heap.saturating_add(stage.forward_bytes);
+    let needed = rows_heap
+        .saturating_add(stage.forward_bytes)
+        .saturating_add(stage.parse_heap);
     if needed > room {
         metrics::org_data_loss(org_id, signal.path(), INGEST_PAYLOAD_TOO_LARGE.error_kind);
         return Err(refuse(ApiError::payload_too_large(format!(
@@ -10122,7 +10120,8 @@ async fn process_decoded_payload(
     };
     let stage = RowStage {
         metered_bytes: retained.metered_bytes(received.bytes),
-        decode_heap: received.row_decode_heap(applied.as_ref().map(|applied| &applied.stats)),
+        decode_heap: received.decode_heap,
+        parse_heap: applied.as_ref().map_or(0, |applied| applied.stats.parse_heap_added),
         native,
         forward_bytes: forward_body.map_or(0, |body| body.heap_bytes()),
     };
@@ -17847,14 +17846,6 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
-    #[test]
-    fn rows_hold_the_heap_parse_rules_added() {
-        let received = Received { bytes: 10, decode_heap: 4096 };
-        let stats = RuleStats { parse_heap_added: 1024, ..RuleStats::default() };
-        assert_eq!(received.row_decode_heap(Some(&stats)), 5120);
-        assert_eq!(received.row_decode_heap(None), 4096);
-    }
-
     #[tokio::test]
     async fn the_row_stage_is_admitted_on_what_it_stores_and_allocates() {
         let queue_dir = unique_main_test_dir("row-admission");
@@ -17875,6 +17866,7 @@ mod tests {
             decode_heap: 4 * mib,
             native: true,
             forward_bytes: 2 * mib,
+            parse_heap: 0,
         };
         let admit = |stage: RowStage, memory: &mut DecodeReservation| {
             admit_rows(
@@ -17957,6 +17949,23 @@ mod tests {
             .expect_err("other requests hold the memory");
         assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
         assert!(error.kind.retryable);
+        drop(others);
+
+        // What parse rules wrote is reserved with the rows: it fits an idle gateway, and waits
+        // when other requests leave room for the rows but not for it.
+        let parsed = RowStage { parse_heap: mib, ..stage };
+        let mut memory = state.decode_memory.reservation();
+        admit(parsed, &mut memory).expect("fits an idle gateway");
+        assert_eq!(memory.held_bytes(), rows.heap_bytes() + 2 * mib + mib);
+        drop(memory);
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(total - rows.heap_bytes() - 2 * mib - mib / 2));
+        admit(stage, &mut state.decode_memory.reservation()).expect("the rows alone still fit");
+        let error = admit(parsed, &mut state.decode_memory.reservation())
+            .expect_err("no room left for the parsed attributes");
+        assert_eq!(error.kind.tag, "@maple/ingest/DecodeBusy");
+        assert!(error.kind.retryable);
+        drop(others);
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
