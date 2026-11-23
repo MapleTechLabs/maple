@@ -33,6 +33,7 @@ export const MCP_TOOL_MODULES: ReadonlyArray<McpToolModule> = [
 	{ name: "list_metrics", tool: "list_metrics", title: "List Metrics", audience: "public", readOnly: true, load: () => import("./tools/list-metrics").then((module) => module.registerListMetricsTool) },
 	{ name: "query_data", tool: "query_data", title: "Query Data", audience: "public", readOnly: true, load: () => import("./tools/query-data").then((module) => module.registerQueryDataTool) },
 	{ name: "query_promql", tool: "query_promql", title: "Query PromQL", audience: "public", readOnly: true, load: () => import("./tools/query-promql").then((module) => module.registerQueryPromqlTool) },
+	{ name: "get_metric_exemplars", tool: "get_metric_exemplars", title: "Get Metric Exemplars", audience: "public", readOnly: true, load: () => import("./tools/get-metric-exemplars").then((module) => module.registerGetMetricExemplarsTool) },
 	{ name: "run_sql", tool: "run_sql", title: "Run SQL", audience: "public", readOnly: true, load: () => import("./tools/run-sql").then((module) => module.registerRunSqlTool) },
 	{ name: "service_map", tool: "service_map", title: "Service Map", audience: "public", readOnly: true, load: () => import("./tools/service-map").then((module) => module.registerServiceMapTool) },
 	{ name: "list_alert_rules", tool: "list_alert_rules", title: "List Alert Rules", audience: "public", readOnly: true, load: () => import("./tools/list-alert-rules").then((module) => module.registerListAlertRulesTool) },
