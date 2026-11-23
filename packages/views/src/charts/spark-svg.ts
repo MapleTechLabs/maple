@@ -411,8 +411,9 @@ export const createSparkSvg = (
 			state.entered = true
 			if (state.data.animatesEntrance) enter()
 		}
-		// New data or a new size moves the points: re-pick the one under the pointer.
-		if (state.hoverIndex !== null && state.pointerX !== null) showHover(indexAt(state.pointerX))
+		// New data or a new size moves the points: re-pick the one under a pointer still over the
+		// sparkline, including when data returns after an empty series cleared the hover.
+		if (state.pointerX !== null) showHover(indexAt(state.pointerX))
 	}
 
 	const resizeObserver = new ResizeObserver((entries) => {
