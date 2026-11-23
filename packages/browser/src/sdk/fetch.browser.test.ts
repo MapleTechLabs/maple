@@ -139,6 +139,52 @@ describe("instrumentFetch", () => {
 		expect(await finished(0)).toEqual([])
 	})
 
+	it("still sends a Request whose headers cannot be changed, spanned but without traceparent", async () => {
+		setup()
+		const request = new Request(`${location.origin}/api/immutable`)
+		// What a Request with the "immutable" headers guard does on set.
+		Object.defineProperty(request.headers, "set", {
+			value: () => {
+				throw new TypeError("Headers are immutable")
+			},
+		})
+		const response = await fetch(request)
+
+		expect(response.status).toBe(201)
+		expect(sent).toEqual([null])
+		expect(await finished(1)).toHaveLength(1)
+	})
+
+	it("ends an event stream's span at its headers, though the stream never ends", async () => {
+		const stream = new ReadableStream<Uint8Array>({ start: () => {} })
+		vi.stubGlobal("fetch", () =>
+			Promise.resolve(
+				new Response(stream, { headers: { "content-type": "text/event-stream; charset=utf-8" } }),
+			),
+		)
+		setup()
+		await fetch(`${location.origin}/api/events`)
+
+		const [span] = await finished(1)
+		expect(span?.attributes["http.response.status_code"]).toBe(200)
+	})
+
+	it("still ends any other streamed response's span only once its body is read", async () => {
+		let close = (): void => {}
+		const stream = new ReadableStream<Uint8Array>({
+			start: (controller) => {
+				close = () => controller.close()
+			},
+		})
+		vi.stubGlobal("fetch", () => Promise.resolve(new Response(stream)))
+		setup()
+		await fetch(`${location.origin}/api/download`)
+
+		expect(await finished(0)).toEqual([])
+		close()
+		expect(await finished(1)).toHaveLength(1)
+	})
+
 	it("neither spans nor propagates to an ignored URL", async () => {
 		setup({ ignore: [/\/v1\//] })
 		await fetch(`${location.origin}/v1/traces`)

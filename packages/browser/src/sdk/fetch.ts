@@ -85,6 +85,11 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 		const fail = (error: Error | undefined): void => settle(error, { status: statusOf(error), url })
 		const onSuccess = (response: Response): Response => {
 			const ok = response.status >= 200 && response.status < 400
+			// An event stream may never end: its span ends at the headers, and no clone holds its data.
+			if (response.headers.get("content-type")?.startsWith("text/event-stream") === true) {
+				settle(response, ok ? response : { status: response.status, url })
+				return response
+			}
 			readToEnd(
 				response,
 				() => settle(response, ok ? response : { status: response.status, url }),
@@ -123,7 +128,10 @@ function addTraceHeaders(options: Request | RequestInit, url: string, corsUrls: 
 	const headers = traceHeaders(url, corsUrls)
 	if (!headers) return
 	const target = options instanceof Request ? options.headers : new Headers(options.headers)
-	for (const [name, value] of Object.entries(headers)) target.set(name, value)
+	// A Request with immutable headers throws on set: send it as it is rather than fail the app's fetch.
+	safely("inject trace headers", () => {
+		for (const [name, value] of Object.entries(headers)) target.set(name, value)
+	})
 	if (!(options instanceof Request)) options.headers = target
 }
 
