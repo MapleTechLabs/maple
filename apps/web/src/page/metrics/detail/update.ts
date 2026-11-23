@@ -1,7 +1,7 @@
 import { pickerStep } from "../../kit/page-time"
 import { keyedSlot } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
-import type { RequestMode } from "@maple/views/data/keyed"
+import type { ReadMode, RequestMode } from "@maple/views/data/keyed"
 import { Option, Array as Arr, Record as Rec, Schema } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as AddToDashboard from "./add-to-dashboard"
@@ -202,7 +202,7 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 }
 
 /** The picked cell's exemplars, read while a current cell is picked; a pick of a gone cell drops. */
-const requestCell = (model: Model, context: PageContext, mode: RequestMode): Return => {
+const requestCell = (model: Model, context: PageContext, mode: ReadMode): Return => {
 	const summary = summaryOf(model)
 	const rows = Option.match(AsyncData.getData(model.distribution.data), {
 		onNone: () => [],
@@ -495,12 +495,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, exemplars: Keyed.accept(model.exemplars, key, result) },
 		}),
 		// New buckets keep a pick whose cell is still there, and read it again: a reload of the
-		// same window keeps the cell's key, so only a refresh fetches its newer exemplars.
+		// same window keeps the cell's key, so the re-read supersedes any read still in flight.
 		CompletedFetchDistribution: ({ key, result }) =>
 			requestCell(
 				{ ...model, distribution: Keyed.accept(model.distribution, key, result) },
 				context,
-				"Refresh",
+				"Supersede",
 			),
 		CompletedFetchCellExemplars: ({ key, result }) => ({
 			model: { ...model, cellExemplars: Keyed.accept(model.cellExemplars, key, result) },

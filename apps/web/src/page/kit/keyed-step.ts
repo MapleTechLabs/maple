@@ -39,13 +39,13 @@ export const keyed = <Model, Message, A, E>(
 export const keyedSlot = <Message, A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
-	mode: Keyed.RequestMode,
+	mode: Keyed.ReadMode,
 	fetch: Fetch<Message>,
 ): Readonly<{
 	slot: Keyed.Keyed<A, E>
 	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
 }> =>
-	Option.match(Keyed.request(slot, key, mode), {
+	Option.match(Keyed.requestFor(slot, key, mode), {
 		onNone: () => ({ slot, commands: [] }),
 		onSome: (next) => ({ slot: next, commands: [fetch(next.key)] }),
 	})

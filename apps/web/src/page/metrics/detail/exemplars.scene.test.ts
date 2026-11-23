@@ -3,6 +3,7 @@ import type { MetricDistributionRow, MetricExemplarRow } from "@maple/domain/htt
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import * as Chart from "@maple/views/charts/chart"
 import { MeasureChartContainer, MountChart } from "@maple/views/charts/chart-mounts"
@@ -207,6 +208,40 @@ describe("metric exemplars and distribution", () => {
 		)
 		expect(names(reloaded.commands)).toEqual(["FetchMetricCellExemplars"])
 		expect(reloaded.model.selectedCell).toBe(answered.selectedCell)
+	})
+
+	test("new buckets while the cell read is in flight drop its answer for a fresh one", () => {
+		const shown = loaded("histogram", { display: "distribution" })
+		const picked = step(shown, pick(`${MINUTE_A}\u00001|inf`))
+		const reloaded = pageUpdate(
+			picked,
+			Message.CompletedFetchDistribution({
+				key: picked.distribution.key ?? "",
+				result: Result.succeed({ rows: DISTRIBUTION, bucketSeconds: 60 }),
+			}),
+		)
+		expect(names(reloaded.commands)).toEqual(["FetchMetricCellExemplars"])
+		const stale = step(
+			reloaded.model,
+			Message.CompletedFetchCellExemplars({
+				key: picked.cellExemplars.key ?? "",
+				result: Result.succeed([exemplar(MINUTE_A, 2.5, "trace-stale")]),
+			}),
+		)
+		const fresh = step(
+			stale,
+			Message.CompletedFetchCellExemplars({
+				key: reloaded.model.cellExemplars.key ?? "",
+				result: Result.succeed([exemplar(MINUTE_A, 3.1, "trace-fresh")]),
+			}),
+		)
+		const traces = (model: Model) =>
+			Option.match(AsyncData.getData(model.cellExemplars.data), {
+				onNone: () => [],
+				onSome: (rows) => Arr.map(rows, (row) => row.traceId),
+			})
+		expect(traces(stale)).toEqual([])
+		expect(traces(fresh)).toEqual(["trace-fresh"])
 	})
 
 	test("a pick of a cell the new buckets no longer have is dropped", () => {
