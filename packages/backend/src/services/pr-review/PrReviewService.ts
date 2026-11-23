@@ -2042,12 +2042,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.pipe(
 							Effect.map(
 								({ files, truncated }) =>
-									// A file without a patch, or under an ignored path, refuses whatever the pass says.
-									!Arr.some(
-										files,
-										(file) =>
-											file.patch === null || pathIgnored(file.path, config.ignorePaths),
-									) &&
+									// A file under an ignored path refuses whatever the pass says.
+									!Arr.some(files, (file) => pathIgnored(file.path, config.ignorePaths)) &&
 									prReviewDiffMayApprove(
 										prReviewDiffSignals({
 											files,

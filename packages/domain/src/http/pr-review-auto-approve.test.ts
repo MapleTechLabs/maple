@@ -546,6 +546,7 @@ describe("prReviewDiffMayApprove", () => {
 			sensitive: [file("src/a.ts"), file("pnpm-lock.yaml")],
 			nestedRules: [file("src/a.ts"), file("packages/api/AGENTS.md")],
 			unreviewedKind: [file("src/a.ts"), file("scripts/release.ts")],
+			patchless: [file("src/a.ts"), file("assets/logo.png", { patch: null })],
 			truncatedPatch: [file("src/a.ts", { patch: LONG_PATCH })],
 			tooManyLines: [file("src/a.ts", { additions: 401, deletions: 0 })],
 			tooManyFiles: Arr.makeBy(26, (i) => file(`src/f${i}.ts`)),

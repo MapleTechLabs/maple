@@ -4,9 +4,11 @@
  *   bun run --cwd apps/ai review:approval-replay fetch octo/shop --limit 200 --out /tmp/approval
  *   bun run --cwd apps/ai review:approval-replay score --dir /tmp/approval [--risk medium]
  *
- * `fetch` caches, per pull request, the reviewer's last summary comment, its file listing and its
- * reviews (your `gh` login). `score` reads each comment's "Not auto-approved" reasons, which are
- * what the gate said when it ran, and recomputes the diff checks with this checkout's rules. The
+ * `fetch` caches, per pull request, the reviewer's last completed summary, the head it reviewed, the
+ * current file listing and the reviewer's reviews (your `gh` login), in a directory kept to one
+ * repository. `score` reads each summary's "Not auto-approved" reasons, which are what the gate said
+ * when it ran, and recomputes the diff checks with this checkout's rules. A summary of an older head
+ * than the listing, or one with no gate result (approval was off), is counted as unscorable. The
  * model's own fields (risk, tests, verdict, findings, confidence) are taken as posted. A review that
  * read only the commits since the last one is listed as `needs whole-diff replay`, since a whole-diff
  * pass may rate it differently: replay those with `review:local`.
@@ -39,6 +41,10 @@ const decodeComment = Schema.decodeSync(
 const decodeReviews = Schema.decodeSync(
 	Schema.fromJsonString(Schema.Array(Schema.Struct({ state: Schema.String }))),
 )
+const Meta = Schema.Struct({ reviewedSha: Schema.NullOr(Schema.String), headSha: Schema.String })
+const decodeMeta = Schema.decodeSync(Schema.fromJsonString(Meta))
+const decodeManifest = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ repository: Schema.String })))
+const decodeHead = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ headRefOid: Schema.String })))
 const decodeNumbers = Schema.decodeSync(Schema.fromJsonString(Schema.Array(Schema.Number)))
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
@@ -60,6 +66,14 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 		console.error("fetch needs <owner/repo> --out <dir>")
 		process.exit(2)
 	}
+	mkdirSync(out, { recursive: true })
+	// Pull request numbers repeat across repositories, so a directory holds one repository.
+	const manifest = join(out, "repository.json")
+	if (existsSync(manifest) && decodeManifest(readFileSync(manifest, "utf8")).repository !== repo) {
+		console.error(`${out} holds another repository's reviews; use a new --out`)
+		process.exit(2)
+	}
+	writeFileSync(manifest, encodeJson({ repository: repo }))
 	const limit = flag(argv, "limit") ?? "200"
 	const numbers = decodeNumbers(
 		gh([
@@ -77,11 +91,11 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 			"[.[]|select(.isDraft==false)|.number]",
 		]),
 	)
-	mkdirSync(out, { recursive: true })
 	for (const n of numbers) {
 		const dir = join(out, String(n))
 		if (existsSync(join(dir, "files.json"))) continue
-		// One body per line across every page; the summary comment carries the review marker.
+		// One body per line across every page. A completed summary carries the heading; a
+		// "reviewing" or failure notice shares the marker but not the heading.
 		const bodies = Arr.filter(
 			Str.split("\n")(
 				gh([
@@ -89,7 +103,7 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 					`repos/${repo}/issues/${n}/comments`,
 					"--paginate",
 					"--jq",
-					`.[]|select(.user.login=="${BOT}" and (.body|contains("maple-pr-review")))|.body|@json`,
+					`.[]|select(.user.login=="${BOT}" and (.body|contains("maple-pr-review"))and(.body|contains("## Maple review")))|.body|@json`,
 				]),
 			),
 			Str.isNonEmpty,
@@ -97,6 +111,10 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 		const last = bodies.at(-1)
 		mkdirSync(dir, { recursive: true })
 		writeFileSync(join(dir, "comment.json"), last === undefined ? "null" : `{"body":${last}}`)
+		const head = decodeHead(gh(["pr", "view", String(n), "-R", repo, "--json", "headRefOid"])).headRefOid
+		// The summary's footer names the head it reviewed; the file listing below is the current head's.
+		const reviewed = last === undefined ? null : (/<sub>`([0-9a-f]{7,40})` ·/.exec(last)?.[1] ?? null)
+		writeFileSync(join(dir, "meta.json"), encodeJson({ reviewedSha: reviewed, headSha: head }))
 		writeFileSync(
 			join(dir, "reviews.json"),
 			gh([
@@ -157,9 +175,10 @@ const standInPatch = (lines: number, chars: number): string => {
 	)
 }
 
+/** The gate's posted reasons; `undefined` when the summary carries none (approval off, or approved). */
 const reasonsOf = (body: string): ReadonlyArray<string> | undefined => {
 	const match = /Not auto-approved: ([^<]*)/.exec(body)
-	if (match === null) return /\*\*Confidence \d+\/10\*\*/.test(body) ? [] : undefined
+	if (match === null) return undefined
 	return Arr.map(Str.split(" · ")(Str.trim(match[1] ?? "")), (reason) => {
 		const known = REASONS.find(([, pattern]) => pattern.test(reason))
 		return known?.[0] ?? `other: ${reason}`
@@ -170,16 +189,27 @@ const score = (argv: ReadonlyArray<string>) => {
 	const dir = resolve(flag(argv, "dir") ?? ".")
 	// What the replay may loosen besides the diff checks, for "what if" runs.
 	const allowMediumRisk = flag(argv, "risk") === "medium"
+	console.log(decodeManifest(readFileSync(join(dir, "repository.json"), "utf8")).repository)
+	const unscorable = new Map<string, number>()
+	const skip = (why: string) => {
+		unscorable.set(why, (unscorable.get(why) ?? 0) + 1)
+		return []
+	}
 	const rows = Arr.flatMap(readdirSync(dir), (entry) => {
 		const base = join(dir, entry)
-		if (!existsSync(join(base, "files.json"))) return []
+		if (!existsSync(join(base, "meta.json"))) return []
 		const comment = decodeComment(readFileSync(join(base, "comment.json"), "utf8"))
-		const posted = comment === null ? undefined : reasonsOf(comment.body)
-		if (posted === undefined) return []
+		if (comment === null) return skip("no completed review")
+		const meta = decodeMeta(readFileSync(join(base, "meta.json"), "utf8"))
+		if (meta.reviewedSha === null || !Str.startsWith(meta.reviewedSha)(meta.headSha))
+			return skip("reviewed an older head than the listing")
 		const approved = Arr.some(
 			decodeReviews(readFileSync(join(base, "reviews.json"), "utf8")),
 			(r) => r.state === "APPROVED",
 		)
+		const reasons = reasonsOf(comment.body)
+		if (reasons === undefined && !approved) return skip("no gate result (approval was off)")
+		const posted = reasons ?? []
 		const files = decodeFiles(readFileSync(join(base, "files.json"), "utf8"))
 		const signals = prReviewDiffSignals({
 			files: Arr.map(files, (file) => ({
@@ -236,7 +266,7 @@ const score = (argv: ReadonlyArray<string>) => {
 		Arr.reduce(rows, new Map<string, number>(), (acc, row) =>
 			acc.set(key(row), (acc.get(key(row)) ?? 0) + 1),
 		)
-	console.log(`${rows.length} reviews with a verdict`)
+	console.log(`${rows.length} reviews scored; unscorable:`, Object.fromEntries(unscorable))
 	console.table(Object.fromEntries(tally((row) => row.outcome)))
 	const onlyBlocker = new Map<string, number>()
 	for (const row of rows)

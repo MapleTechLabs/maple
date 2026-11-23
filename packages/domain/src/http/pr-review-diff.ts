@@ -205,6 +205,8 @@ export const PR_REVIEW_AUTO_APPROVE_MAX_FILES = 25
 export interface PrReviewDiffSignals {
 	/** Files of a kind no review reads (generated, tooling, lockfiles, non-prose docs). */
 	readonly unreviewedKindFiles: number
+	/** Files GitHub gives no patch for (binary, or too large): no review read them. */
+	readonly patchlessFiles: number
 	/** Files whose patch is longer than `pr_file_diff` shows. */
 	readonly truncatedPatchFiles: number
 	/** The diff has more files than the reviewer was listed, or the provider cut its own listing. */
@@ -222,6 +224,7 @@ export interface PrReviewDiffSignals {
  */
 export const prReviewDiffMayApprove = (signals: PrReviewDiffSignals): boolean =>
 	signals.unreviewedKindFiles === 0 &&
+	signals.patchlessFiles === 0 &&
 	signals.truncatedPatchFiles === 0 &&
 	!signals.truncatedListing &&
 	signals.sensitivePaths.length === 0 &&
@@ -245,6 +248,7 @@ export const prReviewDiffSignals = (input: {
 			read,
 			(file) => !PR_REVIEWED_FILE_KINDS.has(classifyChangedFile(file.path)) && !isProseFile(file.path),
 		).length,
+		patchlessFiles: Arr.filter(read, (file) => file.patch === null).length,
 		truncatedPatchFiles: Arr.filter(
 			reviewed,
 			(file) => file.patch !== null && annotatePatch(file.patch).truncated,
