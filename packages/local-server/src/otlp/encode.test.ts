@@ -14,7 +14,7 @@ import {
 	traceIdHex,
 } from "./encode"
 import { decodeMetricsRequest, decodeTraceRequest, encodeMetricsRequest, encodeTraceRequest } from "./proto"
-import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Result, Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Field-name set per datasource, parsed from the generated inputSchema string.
 // "start_time DateTime64(9), trace_id String, …" → { start_time, trace_id, … }
@@ -461,7 +461,7 @@ describe("OTLP/JSON hex ids", () => {
 describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 	it("traces: object → protobuf → decode → encode keeps the key-set invariant", () => {
 		const bytes = encodeTraceRequest(sampleTraceReq())
-		const decoded = decodeTraceRequest(bytes)
+		const decoded = Result.getOrThrow(decodeTraceRequest(bytes))
 		const [batch] = encodeTraces(decoded)
 		ok(batch !== undefined)
 		expect(keysOf(batch)).toEqual(schemaFields("traces"))
@@ -473,7 +473,7 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 
 	it("metrics: object → protobuf → decode → encode preserves all four datasources", () => {
 		const bytes = encodeMetricsRequest(sampleMetricsReq())
-		const decoded = decodeMetricsRequest(bytes)
+		const decoded = Result.getOrThrow(decodeMetricsRequest(bytes))
 		const datasources = new Set(Arr.map(encodeMetrics(decoded), (b) => b.datasource))
 		expect(datasources).toEqual(
 			new Set(["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]),
@@ -483,7 +483,9 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 
 describe("external OTLP protobuf compatibility", () => {
 	it("decodes a non-zero fixed32 span flags field emitted by the Python SDK", () => {
-		const decoded = decodeTraceRequest(Buffer.from(pythonSpanFlagsPayloadHex, "hex")) as {
+		const decoded = Result.getOrThrow(
+			decodeTraceRequest(Buffer.from(pythonSpanFlagsPayloadHex, "hex")),
+		) as {
 			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string; flags: number }> }> }>
 		}
 		const span = decoded.resourceSpans[0]?.scopeSpans[0]?.spans[0]
@@ -494,7 +496,7 @@ describe("external OTLP protobuf compatibility", () => {
 	})
 
 	it("decodes a Java agent OTLP/HTTP traces payload captured from the wire", () => {
-		const decoded = decodeTraceRequest(Buffer.from(javaAgentTracePayloadB64, "base64"))
+		const decoded = Result.getOrThrow(decodeTraceRequest(Buffer.from(javaAgentTracePayloadB64, "base64")))
 		const [batch] = encodeTraces(decoded)
 		ok(batch !== undefined)
 		expect(batch.datasource).toBe("traces")

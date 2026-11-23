@@ -1,0 +1,890 @@
+[
+	{
+		"name": "empty traces request",
+		"signal": "traces",
+		"hex": "",
+		"expected": {
+			"resourceSpans": []
+		}
+	},
+	{
+		"name": "empty logs request",
+		"signal": "logs",
+		"hex": "",
+		"expected": {
+			"resourceLogs": []
+		}
+	},
+	{
+		"name": "empty metrics request",
+		"signal": "metrics",
+		"hex": "",
+		"expected": {
+			"resourceMetrics": []
+		}
+	},
+	{
+		"name": "empty profiles request",
+		"signal": "profiles",
+		"hex": "",
+		"expected": {
+			"resourceProfiles": [],
+			"dictionary": null
+		}
+	},
+	{
+		"name": "empty nested messages take defaults",
+		"signal": "traces",
+		"hex": "0a0412021200",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "unknown fields of every wire type are skipped at the top",
+		"signal": "traces",
+		"hex": "a038ffffffffffffffffff01a9380100000000000000b23803010203bd3809000000c33808071314c4380a07120512032a0161a038ffffffffffffffffff01a9380100000000000000b23803010203bd3809000000c33808071314c438",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "a",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "unknown fields inside a span and an attribute value are skipped",
+		"signal": "traces",
+		"hex": "0a9501129201128f01a038ffffffffffffffffff01a9380100000000000000b23803010203bd3809000000c33808071314c4382a056e616d65644a320a016b122da038ffffffffffffffffff01a9380100000000000000b23803010203bd3809000000c33808071314c4380a0176a038ffffffffffffffffff01a9380100000000000000b23803010203bd3809000000c33808071314c438",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [
+										{
+											"key": "k",
+											"value": {
+												"stringValue": "v",
+												"value": "stringValue"
+											}
+										}
+									],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "named",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a known field on the wrong wire type is skipped",
+		"signal": "traces",
+		"hex": "0a0e120c120a280338012a046b657074",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "kept",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "last oneof member wins",
+		"signal": "traces",
+		"hex": "0a1a0a180a160a016b12110a047465787418fbffffffffffffffff01",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "k",
+								"value": {
+									"intValue": "-5",
+									"value": "intValue"
+								}
+							}
+						],
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a repeated singular message merges",
+		"signal": "traces",
+		"hex": "0a070a050a030a01610a070a050a030a0162",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "a",
+								"value": null
+							}
+						],
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				},
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "b",
+								"value": null
+							}
+						],
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "a later scalar replaces an earlier one",
+		"signal": "traces",
+		"hex": "0a17121512132a0566697273742a067365636f6e6430023000",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "second",
+									"kind": 0,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "unpacked repeated fixed64 and double",
+		"signal": "metrics",
+		"hex": "0a231221121f4a1d0a1b31ffffffffffffffff31020000000000000039000000000000f83f",
+		"expected": {
+			"resourceMetrics": [
+				{
+					"scopeMetrics": [
+						{
+							"metrics": [
+								{
+									"metadata": [],
+									"name": "",
+									"description": "",
+									"unit": "",
+									"histogram": {
+										"dataPoints": [
+											{
+												"bucketCounts": ["18446744073709551615", "2"],
+												"explicitBounds": [1.5],
+												"exemplars": [],
+												"attributes": [],
+												"startTimeUnixNano": "0",
+												"timeUnixNano": "0",
+												"count": "0",
+												"flags": 0
+											}
+										],
+										"aggregationTemporality": 0
+									},
+									"data": "histogram"
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "negative int32 enum as a 10-byte varint",
+		"signal": "traces",
+		"hex": "0a0f120d120b30ffffffffffffffffff01",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [
+						{
+							"spans": [
+								{
+									"attributes": [],
+									"events": [],
+									"links": [],
+									"traceId": "",
+									"spanId": "",
+									"traceState": "",
+									"parentSpanId": "",
+									"name": "",
+									"kind": -1,
+									"startTimeUnixNano": "0",
+									"endTimeUnixNano": "0",
+									"droppedAttributesCount": 0,
+									"droppedEventsCount": 0,
+									"droppedLinksCount": 0,
+									"status": null,
+									"flags": 0
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "sint32 zigzag scale and offset",
+		"signal": "metrics",
+		"hex": "0a0e120c120a52080a06302742020805",
+		"expected": {
+			"resourceMetrics": [
+				{
+					"scopeMetrics": [
+						{
+							"metrics": [
+								{
+									"metadata": [],
+									"name": "",
+									"description": "",
+									"unit": "",
+									"exponentialHistogram": {
+										"dataPoints": [
+											{
+												"attributes": [],
+												"exemplars": [],
+												"startTimeUnixNano": "0",
+												"timeUnixNano": "0",
+												"count": "0",
+												"scale": -20,
+												"zeroCount": "0",
+												"positive": {
+													"bucketCounts": [],
+													"offset": -3
+												},
+												"negative": null,
+												"flags": 0,
+												"zeroThreshold": 0
+											}
+										],
+										"aggregationTemporality": 0
+									},
+									"data": "exponentialHistogram"
+								}
+							],
+							"scope": null,
+							"schemaUrl": ""
+						}
+					],
+					"resource": null,
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "arrays nested 40 deep decode",
+		"signal": "traces",
+		"hex": "0ac2010abf010abc0112b9012ab6010ab3012ab0010aad012aaa010aa7012aa4010aa1012a9e010a9b012a98010a95012a92010a8f012a8c010a89012a86010a83012a80010a7e2a7c0a7a2a780a762a740a722a700a6e2a6c0a6a2a680a662a640a622a600a5e2a5c0a5a2a580a562a540a522a500a4e2a4c0a4a2a480a462a440a422a400a3e2a3c0a3a2a380a362a340a322a300a2e2a2c0a2a2a280a262a240a222a200a1e2a1c0a1a2a180a162a140a122a100a0e2a0c0a0a2a080a060a046c656166",
+		"expected": {
+			"resourceSpans": [
+				{
+					"scopeSpans": [],
+					"resource": {
+						"attributes": [
+							{
+								"key": "",
+								"value": {
+									"arrayValue": {
+										"values": [
+											{
+												"arrayValue": {
+													"values": [
+														{
+															"arrayValue": {
+																"values": [
+																	{
+																		"arrayValue": {
+																			"values": [
+																				{
+																					"arrayValue": {
+																						"values": [
+																							{
+																								"arrayValue": {
+																									"values": [
+																										{
+																											"arrayValue": {
+																												"values": [
+																													{
+																														"arrayValue": {
+																															"values": [
+																																{
+																																	"arrayValue": {
+																																		"values": [
+																																			{
+																																				"arrayValue": {
+																																					"values": [
+																																						{
+																																							"arrayValue": {
+																																								"values": [
+																																									{
+																																										"arrayValue": {
+																																											"values": [
+																																												{
+																																													"arrayValue": {
+																																														"values": [
+																																															{
+																																																"arrayValue": {
+																																																	"values": [
+																																																		{
+																																																			"arrayValue": {
+																																																				"values": [
+																																																					{
+																																																						"arrayValue": {
+																																																							"values": [
+																																																								{
+																																																									"arrayValue": {
+																																																										"values": [
+																																																											{
+																																																												"arrayValue": {
+																																																													"values": [
+																																																														{
+																																																															"arrayValue": {
+																																																																"values": [
+																																																																	{
+																																																																		"arrayValue": {
+																																																																			"values": [
+																																																																				{
+																																																																					"arrayValue": {
+																																																																						"values": [
+																																																																							{
+																																																																								"arrayValue": {
+																																																																									"values": [
+																																																																										{
+																																																																											"arrayValue": {
+																																																																												"values": [
+																																																																													{
+																																																																														"arrayValue": {
+																																																																															"values": [
+																																																																																{
+																																																																																	"arrayValue": {
+																																																																																		"values": [
+																																																																																			{
+																																																																																				"arrayValue": {
+																																																																																					"values": [
+																																																																																						{
+																																																																																							"arrayValue": {
+																																																																																								"values": [
+																																																																																									{
+																																																																																										"arrayValue": {
+																																																																																											"values": [
+																																																																																												{
+																																																																																													"arrayValue": {
+																																																																																														"values": [
+																																																																																															{
+																																																																																																"arrayValue": {
+																																																																																																	"values": [
+																																																																																																		{
+																																																																																																			"arrayValue": {
+																																																																																																				"values": [
+																																																																																																					{
+																																																																																																						"arrayValue": {
+																																																																																																							"values": [
+																																																																																																								{
+																																																																																																									"arrayValue": {
+																																																																																																										"values": [
+																																																																																																											{
+																																																																																																												"arrayValue": {
+																																																																																																													"values": [
+																																																																																																														{
+																																																																																																															"arrayValue": {
+																																																																																																																"values": [
+																																																																																																																	{
+																																																																																																																		"arrayValue": {
+																																																																																																																			"values": [
+																																																																																																																				{
+																																																																																																																					"arrayValue": {
+																																																																																																																						"values": [
+																																																																																																																							{
+																																																																																																																								"arrayValue": {
+																																																																																																																									"values": [
+																																																																																																																										{
+																																																																																																																											"arrayValue": {
+																																																																																																																												"values": [
+																																																																																																																													{
+																																																																																																																														"arrayValue": {
+																																																																																																																															"values": [
+																																																																																																																																{
+																																																																																																																																	"stringValue": "leaf",
+																																																																																																																																	"value": "stringValue"
+																																																																																																																																}
+																																																																																																																															]
+																																																																																																																														},
+																																																																																																																														"value": "arrayValue"
+																																																																																																																													}
+																																																																																																																												]
+																																																																																																																											},
+																																																																																																																											"value": "arrayValue"
+																																																																																																																										}
+																																																																																																																									]
+																																																																																																																								},
+																																																																																																																								"value": "arrayValue"
+																																																																																																																							}
+																																																																																																																						]
+																																																																																																																					},
+																																																																																																																					"value": "arrayValue"
+																																																																																																																				}
+																																																																																																																			]
+																																																																																																																		},
+																																																																																																																		"value": "arrayValue"
+																																																																																																																	}
+																																																																																																																]
+																																																																																																															},
+																																																																																																															"value": "arrayValue"
+																																																																																																														}
+																																																																																																													]
+																																																																																																												},
+																																																																																																												"value": "arrayValue"
+																																																																																																											}
+																																																																																																										]
+																																																																																																									},
+																																																																																																									"value": "arrayValue"
+																																																																																																								}
+																																																																																																							]
+																																																																																																						},
+																																																																																																						"value": "arrayValue"
+																																																																																																					}
+																																																																																																				]
+																																																																																																			},
+																																																																																																			"value": "arrayValue"
+																																																																																																		}
+																																																																																																	]
+																																																																																																},
+																																																																																																"value": "arrayValue"
+																																																																																															}
+																																																																																														]
+																																																																																													},
+																																																																																													"value": "arrayValue"
+																																																																																												}
+																																																																																											]
+																																																																																										},
+																																																																																										"value": "arrayValue"
+																																																																																									}
+																																																																																								]
+																																																																																							},
+																																																																																							"value": "arrayValue"
+																																																																																						}
+																																																																																					]
+																																																																																				},
+																																																																																				"value": "arrayValue"
+																																																																																			}
+																																																																																		]
+																																																																																	},
+																																																																																	"value": "arrayValue"
+																																																																																}
+																																																																															]
+																																																																														},
+																																																																														"value": "arrayValue"
+																																																																													}
+																																																																												]
+																																																																											},
+																																																																											"value": "arrayValue"
+																																																																										}
+																																																																									]
+																																																																								},
+																																																																								"value": "arrayValue"
+																																																																							}
+																																																																						]
+																																																																					},
+																																																																					"value": "arrayValue"
+																																																																				}
+																																																																			]
+																																																																		},
+																																																																		"value": "arrayValue"
+																																																																	}
+																																																																]
+																																																															},
+																																																															"value": "arrayValue"
+																																																														}
+																																																													]
+																																																												},
+																																																												"value": "arrayValue"
+																																																											}
+																																																										]
+																																																									},
+																																																									"value": "arrayValue"
+																																																								}
+																																																							]
+																																																						},
+																																																						"value": "arrayValue"
+																																																					}
+																																																				]
+																																																			},
+																																																			"value": "arrayValue"
+																																																		}
+																																																	]
+																																																},
+																																																"value": "arrayValue"
+																																															}
+																																														]
+																																													},
+																																													"value": "arrayValue"
+																																												}
+																																											]
+																																										},
+																																										"value": "arrayValue"
+																																									}
+																																								]
+																																							},
+																																							"value": "arrayValue"
+																																						}
+																																					]
+																																				},
+																																				"value": "arrayValue"
+																																			}
+																																		]
+																																	},
+																																	"value": "arrayValue"
+																																}
+																															]
+																														},
+																														"value": "arrayValue"
+																													}
+																												]
+																											},
+																											"value": "arrayValue"
+																										}
+																									]
+																								},
+																								"value": "arrayValue"
+																							}
+																						]
+																					},
+																					"value": "arrayValue"
+																				}
+																			]
+																		},
+																		"value": "arrayValue"
+																	}
+																]
+															},
+															"value": "arrayValue"
+														}
+													]
+												},
+												"value": "arrayValue"
+											}
+										]
+									},
+									"value": "arrayValue"
+								}
+							}
+						],
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			]
+		}
+	},
+	{
+		"name": "arrays nested past the depth cap fail",
+		"signal": "traces",
+		"hex": "0aba020ab7020ab40212b1022aae020aab022aa8020aa5022aa2020a9f022a9c020a99022a96020a93022a90020a8d022a8a020a87022a84020a81022afe010afb012af8010af5012af2010aef012aec010ae9012ae6010ae3012ae0010add012ada010ad7012ad4010ad1012ace010acb012ac8010ac5012ac2010abf012abc010ab9012ab6010ab3012ab0010aad012aaa010aa7012aa4010aa1012a9e010a9b012a98010a95012a92010a8f012a8c010a89012a86010a83012a80010a7e2a7c0a7a2a780a762a740a722a700a6e2a6c0a6a2a680a662a640a622a600a5e2a5c0a5a2a580a562a540a522a500a4e2a4c0a4a2a480a462a440a422a400a3e2a3c0a3a2a380a362a340a322a300a2e2a2c0a2a2a280a262a240a222a200a1e2a1c0a1a2a180a162a140a122a100a0e2a0c0a0a2a080a060a046c656166",
+		"fails": true
+	},
+	{
+		"name": "invalid UTF-8 in a string fails",
+		"signal": "traces",
+		"hex": "0a09120712052a0361ff62",
+		"fails": true
+	},
+	{
+		"name": "a length past the end fails",
+		"signal": "traces",
+		"hex": "0a050a00",
+		"fails": true
+	},
+	{
+		"name": "a truncated varint fails",
+		"signal": "traces",
+		"hex": "0a021280",
+		"fails": true
+	},
+	{
+		"name": "a truncated fixed64 fails",
+		"signal": "traces",
+		"hex": "0a081206120439010203",
+		"fails": true
+	},
+	{
+		"name": "a mismatched end group fails",
+		"signal": "traces",
+		"hex": "a338ac38",
+		"fails": true
+	},
+	{
+		"name": "an unterminated group fails",
+		"signal": "traces",
+		"hex": "a338",
+		"fails": true
+	},
+	{
+		"name": "a stray end group fails",
+		"signal": "traces",
+		"hex": "a438",
+		"fails": true
+	},
+	{
+		"name": "wire type 6 fails",
+		"signal": "logs",
+		"hex": "0e",
+		"fails": true
+	},
+	{
+		"name": "field number 0 fails",
+		"signal": "metrics",
+		"hex": "0000",
+		"fails": true
+	},
+	{
+		"name": "traces fixture truncated to 1 bytes",
+		"signal": "traces",
+		"hex": "0a",
+		"fails": true
+	},
+	{
+		"name": "traces fixture truncated to 7 bytes",
+		"signal": "traces",
+		"hex": "0ab8070aa2020a",
+		"fails": true
+	},
+	{
+		"name": "traces fixture truncated to 492 bytes",
+		"signal": "traces",
+		"hex": "0ab8070aa2020a1a0a0c736572766963652e6e616d65120a0a08636865636b6f75740a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e890a070a0162120210010a080a026266120210000a100a0169120b18808080808080808080010a120a04696d6178120a18ffffffffffffffff7f0a080a026930120218000a0e0a0164120921182d4454fb2109400a110a04646e656712092159f3f8c21f6ea5810a0e0a05627974657312053a0300ff100a090a05656d70747912000a1a0a0361727212132a110a030a01610a0218010a062a040a0210010a460a026b761240323e0a0c0a05696e6e657212030a01780a1f0a066e6573746564121532130a110a046465657012092100000000000004400a0d0a0362696e12063a04deadbeef100212e7040a210a067472616365721205312e322e331a0e0a0773636f70652e6b12030a0176200112ec030a100af7651916cd43dd8448eb211c80319c1208b7ad6b71692033311a15726f6a6f3d30306630363761613062613930326237220801020304050607082a0e474554202f75736572732f3a696430023915cd53eb0e25781841ffffffffffffffff4a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e894a070a0162120210014a080a026266120210004a100a0169120b18",
+		"fails": true
+	},
+	{
+		"name": "traces fixture truncated to 983 bytes",
+		"signal": "traces",
+		"hex": "0ab8070aa2020a1a0a0c736572766963652e6e616d65120a0a08636865636b6f75740a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e890a070a0162120210010a080a026266120210000a100a0169120b18808080808080808080010a120a04696d6178120a18ffffffffffffffff7f0a080a026930120218000a0e0a0164120921182d4454fb2109400a110a04646e656712092159f3f8c21f6ea5810a0e0a05627974657312053a0300ff100a090a05656d70747912000a1a0a0361727212132a110a030a01610a0218010a062a040a0210010a460a026b761240323e0a0c0a05696e6e657212030a01780a1f0a066e6573746564121532130a110a046465657012092100000000000004400a0d0a0362696e12063a04deadbeef100212e7040a210a067472616365721205312e322e331a0e0a0773636f70652e6b12030a0176200112ec030a100af7651916cd43dd8448eb211c80319c1208b7ad6b71692033311a15726f6a6f3d30306630363761613062613930326237220801020304050607082a0e474554202f75736572732f3a696430023915cd53eb0e25781841ffffffffffffffff4a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e894a070a0162120210014a080a026266120210004a100a0169120b18808080808080808080014a120a04696d6178120a18ffffffffffffffff7f4a080a026930120218004a0e0a0164120921182d4454fb2109404a110a04646e656712092159f3f8c21f6ea5814a0e0a05627974657312053a0300ff104a090a05656d70747912004a1a0a0361727212132a110a030a01610a0218010a062a040a0210014a460a026b761240323e0a0c0a05696e6e657212030a01780a1f0a066e6573746564121532130a110a046465657012092100000000000004400a0d0a0362696e12063a04deadbeef50035a2e090165c5010f2578181209657863657074696f6e1a180a0e657863657074696f6e2e7479706512060a04426f6f6d5a0060046a320a100af7651916cd43dd8448eb211c80319c1208b7ad6b71692033311a03613d6222080a016c12030a01312801350101000070057a13120f757073747265616d206661696c656418028501ffffffff12290a100af7651916cd43dd8448eb211c80319c120800000000000000012a056368696c6430037a02180112122a10756e7365742d65766572797468696e671a1468747470733a2f2f736368656d612f73636f70651a2768747470733a2f2f6f70656e74656c656d657472792e696f2f736368656d61732f312e33372e300a1b0a00121712152a116e6f2d7265736f757263652d617474727330",
+		"fails": true
+	},
+	{
+		"name": "logs fixture truncated to 1 bytes",
+		"signal": "logs",
+		"hex": "0a",
+		"fails": true
+	},
+	{
+		"name": "logs fixture truncated to 7 bytes",
+		"signal": "logs",
+		"hex": "0afb030a1a0a18",
+		"fails": true
+	},
+	{
+		"name": "logs fixture truncated to 255 bytes",
+		"signal": "logs",
+		"hex": "0afb030a1a0a180a0c736572766963652e6e616d6512080a06776f726b657212dc030a080a066c6f6767657212e002090100f8e30e25781810091a04494e464f2a110a0f706c61696e207465787420626f6479321d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e8932070a01621202100132080a0262661202100032100a0169120b188080808080808080800132120a04696d6178120a18ffffffffffffffff7f32080a02693012021800320e0a0164120921182d4454fb21094032110a04646e656712092159f3f8c21f6ea581320e0a05627974657312053a0300ff1032090a05656d7074791200321a0a0361727212132a110a",
+		"fails": true
+	},
+	{
+		"name": "logs fixture truncated to 509 bytes",
+		"signal": "logs",
+		"hex": "0afb030a1a0a180a0c736572766963652e6e616d6512080a06776f726b657212dc030a080a066c6f6767657212e002090100f8e30e25781810091a04494e464f2a110a0f706c61696e207465787420626f6479321d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e8932070a01621202100132080a0262661202100032100a0169120b188080808080808080800132120a04696d6178120a18ffffffffffffffff7f32080a02693012021800320e0a0164120921182d4454fb21094032110a04646e656712092159f3f8c21f6ea581320e0a05627974657312053a0300ff1032090a05656d7074791200321a0a0361727212132a110a030a01610a0218010a062a040a02100132460a026b761240323e0a0c0a05696e6e657212030a01780a1f0a066e6573746564121532130a110a046465657012092100000000000004400a0d0a0362696e12063a04deadbeef380145010000004a100af7651916cd43dd8448eb211c80319c5208b7ad6b7169203331590200f8e30e257818620a757365722e6c6f67696e122410112a20321e0a130a036d7367120c0a0a737472756374757265640a070a016e1202182a121610182a122a100a030a01610a0921000000000000f83f12082a063a04cafebabe120d2a0b18f9ffffffffffffffff0112042a021000120b2a09219a9999999999b93f12001a01",
+		"fails": true
+	},
+	{
+		"name": "metrics fixture truncated to 1 bytes",
+		"signal": "metrics",
+		"hex": "0a",
+		"fails": true
+	},
+	{
+		"name": "metrics fixture truncated to 7 bytes",
+		"signal": "metrics",
+		"hex": "0a940b0a170a15",
+		"fails": true
+	},
+	{
+		"name": "metrics fixture truncated to 715 bytes",
+		"signal": "metrics",
+		"hex": "0a940b0a170a150a0c736572766963652e6e616d6512050a0361706912f80a0a0a0a056d6574657212013112c3020a0167120567617567651a01312aa9020acd01110000f8e30e2578181900ca921f0f257818211f85eb51b81e09402a38110065c5010f25781819000000000000f83f2208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3a080a016512030a01312a38110065c5010f2578182208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c31fdffffffffffffff3a080a016512030a01313a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a0262661202100040010a57110000f8e30e2578181900ca921f0f2578183100000000000000803a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a0262661202100062080a016d12030a0164129e010a01733a98010a9101110000f8e30e2578181900ca921f0f2578182a38110065c5010f2578182208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3101000000000020003a080a016512030a0131312a000000000000003a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a026266120210001002180112660a07732d64656c74613a5b0a57110000f8e30e2578181900ca921f0f2578182100000000000000003a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a02626612021000100112b7020a01681a026d734aad020ad801110000f8e30e2578181900ca921f0f25781821ffffffffffffffff290000000000001640321801000000000000000200000000000000feffffffffffffff3a1000",
+		"fails": true
+	},
+	{
+		"name": "metrics fixture truncated to 1430 bytes",
+		"signal": "metrics",
+		"hex": "0a940b0a170a150a0c736572766963652e6e616d6512050a0361706912f80a0a0a0a056d6574657212013112c3020a0167120567617567651a01312aa9020acd01110000f8e30e2578181900ca921f0f257818211f85eb51b81e09402a38110065c5010f25781819000000000000f83f2208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3a080a016512030a01312a38110065c5010f2578182208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c31fdffffffffffffff3a080a016512030a01313a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a0262661202100040010a57110000f8e30e2578181900ca921f0f2578183100000000000000803a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a0262661202100062080a016d12030a0164129e010a01733a98010a9101110000f8e30e2578181900ca921f0f2578182a38110065c5010f2578182208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3101000000000020003a080a016512030a0131312a000000000000003a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a026266120210001002180112660a07732d64656c74613a5b0a57110000f8e30e2578181900ca921f0f2578182100000000000000003a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a02626612021000100112b7020a01681a026d734aad020ad801110000f8e30e2578181900ca921f0f25781821ffffffffffffffff290000000000001640321801000000000000000200000000000000feffffffffffffff3a10000000000000f03f00000000000004404238110065c5010f2578181900000000000000402208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3a080a016512030a01314a080a016b12030a01764a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e894a070a0162120210014a080a02626612021000599a9999999999b93f61cdcccccccccc23400a4e110000f8e30e2578181900ca921f0f2578184a080a016b12030a01764a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e894a070a0162120210014a080a02626612021000100212b5020a02656852ae020ad7010a080a016b12030a01760a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e890a070a0162120210010a080a02626612021000110000f8e30e2578181900ca921f0f2578182107000000000000002900000000000029403005390100000000000000420e0803120a010081808080808080104a05080a1201025a38110065c5010f2578181900000000000008402208b7ad6b71692033312a100af7651916cd43dd8448eb211c80319c3a080a016512030a013161000000000000f0bf6900000000000020407195d626e80b2e113e0a500a080a016b12030a01760a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e890a070a0162120210010a080a02626612021000110000f8e30e2578181900ca921f0f25781830281001129d010a02736d5a96010a9301110000f8e30e2578181900ca921f0f257818210400000000000000290000000000002440320911000000000000f03f321209000000000000e03f110000000000000440321209000000000000f03f1100000000000010403a080a016b12030a01763a1d0a017312180a1668c3a96c6c6f20e29c9320e6bca2e5ad9720f09f8e893a070a0162120210013a080a0262661202100012090a076e6f2d646174",
+		"fails": true
+	},
+	{
+		"name": "profiles fixture truncated to 1 bytes",
+		"signal": "profiles",
+		"hex": "0a",
+		"fails": true
+	},
+	{
+		"name": "profiles fixture truncated to 7 bytes",
+		"signal": "profiles",
+		"hex": "0acb010a330a16",
+		"fails": true
+	},
+	{
+		"name": "profiles fixture truncated to 194 bytes",
+		"signal": "profiles",
+		"hex": "0acb010a330a160a0c736572766963652e6e616d6512060a0470726f660a061202400418030a110a03617272120a2a080a0240010a0218051293010a140a04656270661203302e311a070a016b12021001127b0a040801100212270801120201021801220b05ffffffffffffffffff012a1000ca921f0f257818ffffffffffffffff120b2209ffffffffffffffff7f190000f8e30e2578182080c8afa0252a04080110023080ade2043a100102030405060708090a0b0c0d0e0f104a087070726f66",
+		"fails": true
+	},
+	{
+		"name": "profiles fixture truncated to 387 bytes",
+		"signal": "profiles",
+		"hex": "0acb010a330a160a0c736572766963652e6e616d6512060a0470726f660a061202400418030a110a03617272120a2a080a0240010a0218051293010a140a04656270661203302e311a070a016b12021001127b0a040801100212270801120201021801220b05ffffffffffffffffff012a1000ca921f0f257818ffffffffffffffff120b2209ffffffffffffffff7f190000f8e30e2578182080c8afa0252a04080110023080ade2043a100102030405060708090a0b0c0d0e0f104a087070726f6665787452041f8b08005a010212b3010a000a15088080800210ffffffffffffffffff0120052a010112001216080110b4241a0f0801102a18ffffffffffffffffff011a001a08080610061805200a2200221c0a100af7651916cd43dd8448eb211c80319c1208b7ad6b71692033312a002a036370752a0b6e616e6f7365636f6e64732a0b7468726561642e6e616d652a08636865636b6f75742a076d61696e2e676f2a046d61696e3200320608031202400432060801120218033a003a040a0201",
+		"fails": true
+	}
+]

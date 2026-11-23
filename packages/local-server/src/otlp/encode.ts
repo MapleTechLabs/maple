@@ -143,8 +143,7 @@ const SPAN_ID_BYTES = 8
  *     (an explicit deviation from proto3 JSON, which would base64 a `bytes`
  *     field), what every OTel language SDK emits over OTLP/HTTP+JSON, and what
  *     the Rust ingest gateway accepts on the same endpoints.
- *   - BASE64, which is what `decode*Request` produces, since protobufjs
- *     renders proto `bytes` as base64 under `bytes: String`.
+ *   - BASE64, which is what `decode*Request` produces for proto `bytes` fields.
  *
  * The two never collide: an id is read as hex only at its exact hex length (32
  * chars for a 16-byte trace id, 16 for an 8-byte span id), and the base64 form
