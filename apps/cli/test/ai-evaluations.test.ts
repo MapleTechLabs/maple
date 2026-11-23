@@ -94,12 +94,12 @@ describeWithChdb("ai_evaluations views", () => {
 			"maple_ai.evaluation.source": "maple_check",
 			"maple_ai.evaluation.target.trace_id": "11111111111111111111111111111111",
 		})
-		// A target trace with no target span grades the trace.
+		// A target trace with no target span grades the trace; an uppercase id is stored as span rows store it.
 		insertLog(db, {
 			"event.name": "gen_ai.evaluation.result",
 			"gen_ai.evaluation.name": "Answer quality",
 			"gen_ai.evaluation.score.label": "pass",
-			"maple_ai.evaluation.target.trace_id": "44444444444444444444444444444444",
+			"maple_ai.evaluation.target.trace_id": "4BF92F3577B34DA6A3CE929D0E0E4736",
 		})
 		// A non-finite value is no score: it would poison every mean.
 		insertLog(db, {
@@ -120,7 +120,7 @@ describeWithChdb("ai_evaluations views", () => {
 
 		expect(rows(db)).toEqual([
 			{
-				TraceId: "44444444444444444444444444444444",
+				TraceId: "4bf92f3577b34da6a3ce929d0e0e4736",
 				SpanId: "",
 				Name: "Answer quality",
 				ScoreValue: 0,
