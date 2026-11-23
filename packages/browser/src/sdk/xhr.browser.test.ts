@@ -14,6 +14,7 @@ let unpatch: (() => void) | undefined
 beforeEach(() => {
 	exporter.reset()
 	traceparents.length = 0
+	hookSaw.length = 0
 	vi.useFakeTimers({ toFake: ["setTimeout"] })
 	context.setGlobalContextManager(new StackContextManager().enable())
 	propagation.setGlobalPropagator(new W3CTraceContextPropagator())
@@ -36,8 +37,11 @@ const instrument = (): (() => void) =>
 		),
 		ignoreUrls: [],
 		propagateTraceHeaderCorsUrls: [],
-		applyCustomAttributesOnSpan: () => {},
+		applyCustomAttributesOnSpan: (_span, response) => void hookSaw.push(response.status),
 	})
+
+/** The response status the settlement hook saw, per request, in settling order. */
+const hookSaw: number[] = []
 
 /** Undoes a test's change to an XMLHttpRequest.prototype property. */
 let restoreProto: (() => void) | undefined
@@ -139,6 +143,27 @@ describe("instrumentXhr with one XMLHttpRequest reused from readystatechange", (
 	})
 })
 
+describe("instrumentXhr reused synchronously after a failure", () => {
+	it("hands the failed request's own empty response to the hook, not the next request's", async () => {
+		const a = blobUrl("gone")
+		URL.revokeObjectURL(a)
+		const xhr = new XMLHttpRequest()
+		xhr.onreadystatechange = () => {
+			if (xhr.readyState !== XMLHttpRequest.DONE || xhr.onreadystatechange === null) return
+			xhr.onreadystatechange = null
+			// A synchronous request completes inside this handler, before the first one's error event.
+			xhr.open("GET", blobUrl("b"), false)
+			xhr.send()
+		}
+		xhr.open("GET", a)
+		xhr.send()
+		await vi.waitFor(() => expect(hookSaw).toHaveLength(2), { interval: 0 })
+		await ended(2)
+
+		expect(hookSaw).toEqual([200, 0])
+	})
+})
+
 describe("instrumentXhr with one XMLHttpRequest reused", () => {
 	it("spans a second request sent from the first one's loadend", async () => {
 		const [a, b] = [blobUrl("a"), blobUrl("b")]
@@ -181,6 +206,31 @@ describe("instrumentXhr with one XMLHttpRequest reused", () => {
 		const spans = exporter.getFinishedSpans()
 		expectTwoRequests(spans, [a, b], [undefined, 200])
 		expect(spans.map((span) => span.events.at(-1)?.name)).toEqual(["abort", "loaded"])
+	})
+})
+
+describe("instrumentXhr unpatched after another script locked open", () => {
+	it("still restores send, so requests run untraced", async () => {
+		unpatch?.()
+		const proto = XMLHttpRequest.prototype
+		const open = Object.getOwnPropertyDescriptor(proto, "open")
+		const send = Object.getOwnPropertyDescriptor(proto, "send")
+		if (!open || !send) throw new Error("no XMLHttpRequest methods")
+		unpatch = instrument()
+		const patchedOpen = Object.getOwnPropertyDescriptor(proto, "open")
+		Object.defineProperty(proto, "open", { ...patchedOpen, writable: false })
+		restoreProto = () => Object.defineProperty(proto, "open", open)
+		unpatch()
+		unpatch = undefined
+
+		expect(Object.getOwnPropertyDescriptor(proto, "send")?.value).toBe(send.value)
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", blobUrl("a"))
+		const done = settled(xhr)
+		xhr.send()
+		await done
+		await ended(0)
+		expect(traceparents).toEqual([])
 	})
 })
 

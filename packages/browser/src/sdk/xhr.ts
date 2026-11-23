@@ -18,9 +18,18 @@ import {
 	tryReplace,
 } from "./web"
 
+/** What the settlement hook reads of a request's response: the live xhr, or a snapshot once it was reused. */
+export interface XhrResponse {
+	readonly status: number
+	getAllResponseHeaders(): string
+}
+
+/** A request that failed with no response, settled after the xhr went on to another one. */
+const NO_RESPONSE: XhrResponse = { status: 0, getAllResponseHeaders: () => "" }
+
 export interface XhrInstrumentationConfig extends RequestInstrumentationConfig {
 	/** Runs as the request settles, before the span's deferred end. */
-	readonly applyCustomAttributesOnSpan: (span: Span, xhr: XMLHttpRequest) => void
+	readonly applyCustomAttributesOnSpan: (span: Span, response: XhrResponse) => void
 }
 
 type OriginalOpen = (this: XMLHttpRequest, ...args: [string, string | URL, ...unknown[]]) => void
@@ -76,16 +85,16 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		entry: Pending,
 		eventName: string,
 		errorType?: string,
-		status: number = xhr.status,
+		response: XhrResponse = xhr,
 	): void => {
 		if (entry.settled === true) return
 		entry.settled = true
 		// Detached now, not at the deferred end: the app may reuse the xhr for its next request at once.
 		entry.detach?.()
-		entry.status = status
+		entry.status = response.status
 		if (pending.get(xhr) === entry) pending.delete(xhr)
 		const { span } = entry
-		safely("applyCustomAttributesOnSpan", () => config.applyCustomAttributesOnSpan(span, xhr))
+		safely("applyCustomAttributesOnSpan", () => config.applyCustomAttributesOnSpan(span, response))
 		if (errorType) {
 			span.setStatus({ code: SpanStatusCode.ERROR, message: errorType })
 			span.setAttribute("error.type", errorType)
@@ -128,7 +137,7 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 			setTimeout(() => {
 				if (staleFailure.get(xhr) !== previous) return
 				staleFailure.delete(xhr)
-				settle(xhr, previous, "error", "error", 0)
+				settle(xhr, previous, "error", "error", NO_RESPONSE)
 			}, 0)
 		}
 	}
@@ -162,7 +171,7 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 			const stale = staleFailure.get(xhr)
 			if (stale) {
 				staleFailure.delete(xhr)
-				settle(xhr, stale, eventName, errorType, 0)
+				settle(xhr, stale, eventName, errorType, NO_RESPONSE)
 			} else settle(xhr, entry, eventName, errorType)
 		}
 		const listeners = {
@@ -193,14 +202,15 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 
 	// Both or neither: `open` without `send` would start spans nothing ever ends.
 	if (!tryReplace(proto, "open", open) || !tryReplace(proto, "send", send)) {
-		if (proto.open === open) proto.open = originalOpen
+		if (proto.open === open) tryReplace(proto, "open", originalOpen)
 		diag.warn("XMLHttpRequest.prototype is read-only; XMLHttpRequest calls will not be traced")
 		return () => {}
 	}
 	return () => {
 		enabled = false
 		pending = new WeakMap()
-		if (proto.open === open) proto.open = originalOpen
-		if (proto.send === send) proto.send = originalSend
+		// Each guarded: a method another script locked since must not stop the rest of shutdown.
+		if (proto.open === open) tryReplace(proto, "open", originalOpen)
+		if (proto.send === send) tryReplace(proto, "send", originalSend)
 	}
 }

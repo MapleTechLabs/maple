@@ -94,7 +94,9 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 			return response
 		}
 		const onError = (error: unknown): never => {
-			fail(error instanceof Error ? error : undefined)
+			// A fetch wrapper earlier in the chain may reject with the Response itself: keep its status.
+			if (error instanceof Response) settle(error, { status: error.status, url })
+			else fail(error instanceof Error ? error : undefined)
 			throw error
 		}
 		return context.with(trace.setSpan(context.active(), span), () => {
@@ -111,7 +113,8 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 	}
 	return () => {
 		enabled = false
-		if (globalThis.fetch === patched) globalThis.fetch = original
+		// Guarded: a script that locked `fetch` since must not stop the rest of shutdown.
+		if (globalThis.fetch === patched) tryReplace(globalThis, "fetch", original)
 	}
 }
 

@@ -10,6 +10,8 @@ const exporter = new InMemorySpanExporter()
 /** The `traceparent` each request reached the network with, or null. */
 const sent: Array<string | null> = []
 let unpatch: (() => void) | undefined
+/** What the settlement hook was handed, per request. */
+const settledWith: unknown[] = []
 
 const setup = (options: { propagateTo?: RegExp[]; ignore?: RegExp[] } = {}): void => {
 	const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] })
@@ -17,13 +19,14 @@ const setup = (options: { propagateTo?: RegExp[]; ignore?: RegExp[] } = {}): voi
 		tracer: provider.getTracer("test"),
 		ignoreUrls: options.ignore ?? [],
 		propagateTraceHeaderCorsUrls: options.propagateTo ?? [],
-		applyCustomAttributesOnSpan: () => {},
+		applyCustomAttributesOnSpan: (_span, _request, result) => void settledWith.push(result),
 	})
 }
 
 beforeEach(() => {
 	exporter.reset()
 	sent.length = 0
+	settledWith.length = 0
 	vi.useFakeTimers({ toFake: ["setTimeout"] })
 	context.setGlobalContextManager(new StackContextManager().enable())
 	propagation.setGlobalPropagator(new W3CTraceContextPropagator())
@@ -106,6 +109,32 @@ describe("instrumentFetch", () => {
 		await fetch(`${location.origin}/api/locked`)
 
 		expect(globalThis.fetch).toBe(locked)
+		expect(sent).toEqual([null])
+		expect(await finished(0)).toEqual([])
+	})
+
+	it("keeps the status of a Response an earlier fetch wrapper rejected with", async () => {
+		const rejection = new Response("unavailable", { status: 503 })
+		vi.stubGlobal("fetch", () => Promise.reject(rejection))
+		setup()
+		await expect(fetch(`${location.origin}/api/wrapped`)).rejects.toBe(rejection)
+
+		const [span] = await finished(1)
+		expect(span?.attributes["http.response.status_code"]).toBe(503)
+		expect(span?.status.code).toBe(2)
+		expect(settledWith).toEqual([rejection])
+	})
+
+	it("stops tracing on unpatch when fetch was locked after install", async () => {
+		setup()
+		const patched = globalThis.fetch
+		Object.defineProperty(globalThis, "fetch", { value: patched, writable: false, configurable: true })
+		restoreFetch = () =>
+			Object.defineProperty(globalThis, "fetch", { value: patched, writable: true, configurable: true })
+		unpatch?.()
+		unpatch = undefined
+		await fetch(`${location.origin}/api/after`)
+
 		expect(sent).toEqual([null])
 		expect(await finished(0)).toEqual([])
 	})
