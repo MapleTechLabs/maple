@@ -94,6 +94,38 @@ const SEEDS: ReadonlyArray<Seed> = [
 		eventKey: " \t ",
 	},
 	{
+		spanId: "extends-tenant-a",
+		service: "checkout",
+		type: "PaymentError",
+		message: "card 4242 declined",
+		stacktrace: "PaymentError: card declined\n    at charge (/app/src/pay.ts:4:2)",
+		eventKey: "{{default}} tenant-a",
+	},
+	{
+		spanId: "extends-tenant-a-again",
+		service: "checkout",
+		type: "PaymentError",
+		message: "card 1111 declined",
+		stacktrace: "PaymentError: card declined\n    at charge (/app/src/pay.ts:9:1)",
+		eventKey: "{{ default }}  tenant-a ",
+	},
+	{
+		spanId: "extends-tenant-b",
+		service: "checkout",
+		type: "PaymentError",
+		message: "card 4242 declined",
+		stacktrace: "PaymentError: card declined\n    at charge (/app/src/pay.ts:4:2)",
+		spanKey: "{{default}} tenant-b",
+	},
+	{
+		spanId: "extends-nothing",
+		service: "checkout",
+		type: "PaymentError",
+		message: "card 4242 declined",
+		stacktrace: "PaymentError: card declined\n    at charge (/app/src/pay.ts:4:2)",
+		eventKey: "{{default}}",
+	},
+	{
 		spanId: "no-key",
 		service: "checkout",
 		type: "PaymentError",
@@ -195,6 +227,16 @@ describe.skipIf(!clickhouseE2eEnabled)("maple.fingerprint override (ClickHouse e
 	it("falls back to the span's key when the event's is blank after trimming", () => {
 		assert.strictEqual(hash("blank-event-span-key"), hash("event-key"))
 		assert.strictEqual(hash("empty-event-span-key"), hash("event-key"))
+	})
+
+	it("splits the default grouping by what a {{default}} key adds", () => {
+		assert.strictEqual(hash("extends-tenant-a-again"), hash("extends-tenant-a"))
+		assert.notStrictEqual(hash("extends-tenant-b"), hash("extends-tenant-a"))
+		assert.notStrictEqual(hash("extends-tenant-a"), hash("no-key"))
+	})
+
+	it("treats a key that is only {{default}} as the default grouping", () => {
+		assert.strictEqual(hash("extends-nothing"), hash("no-key"))
 	})
 
 	it("falls back to the computed fingerprint when the key is blank", () => {

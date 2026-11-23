@@ -12,6 +12,7 @@ This is the flow both humans and agents are meant to follow. If you are changing
 | Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                               |
 | Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                                    |
 | User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint: `cityHash64(org, service, key)`, unsalted. |
+| Grouping key  | `error_grouping_keys`                                       | Computed by the tick per hash; hashes sharing one are one issue.     |
 | Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet promoted (only past the day budget). |
 | **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.                |
 | Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.                 |
@@ -262,6 +263,19 @@ loop in verification without a human ever seeing it.
   that owner, so only errors first seen after the bump get the finer grouping. The error-spike detector
   adds to a re-keyed hash's 7 day baseline the history of its previous hashes, read from
   lineage, so it is judged against its history and not against the hours since the bump.
+- **The grouping key merges hashes after the warehouse made them, never splits one.** The hash is
+  deliberately fine (throw site plus message), so one bug used to open an issue per bundle chunk,
+  install root or caller. The first time the tick sees a hash it reads one sample event and its
+  span (`errorGroupingSamplesQuery`, `errorGroupingSpansQuery`), computes `groupingKey`
+  (`packages/domain/src/tinybird/grouping.ts`) and stores it in `error_grouping_keys`. Hashes
+  sharing a key go through the bump path above: a new hash joins the issue its siblings belong to
+  (a `group` alias, no new incident), issues the key unites are folded into the one being worked,
+  and new hashes sharing a key in one window open one issue. A sample whose span cannot be read is
+  left unkeyed, because its `maple.fingerprint` is unknown. Unmerging pins the issue's hashes
+  (`pinned`), so the tick never groups them again. A key change bumps `GROUPING_KEY_VERSION`, and
+  stored keys are recomputed as their hashes recur. Measure one with `errors:replay --labels`
+  before shipping it: the rules in `grouping.ts` are the ones that raised F1 on two blind-labelled
+  weeks, and its header lists the ones that did not.
 - **Merging moves fingerprints, not history.** A merged issue is archived with
   `merged_into_issue_id`, and its hashes become aliases of the kept issue
   (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
@@ -277,6 +291,7 @@ loop in verification without a human ever seeing it.
 | Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                               |
 | Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                          |
 | Merging and unmerging issues            | `packages/backend/src/services/errors/ErrorIssueMergeService.ts`                                             |
+| Grouping keys (which hashes are one)    | `packages/domain/src/tinybird/grouping.ts`, `packages/backend/src/services/errors/grouping-keys.ts`          |
 | The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                             |
 | Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                  |
 | The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |
@@ -294,9 +309,12 @@ loop in verification without a human ever seeing it.
 - **Run the tick now:** `bun run errors:tick` fires the alerting minute cron once instead of waiting
   for it. That cron runs the alert and escalation lanes too, not only the errors tick and fix
   verification, so alert rules evaluate (and may notify) on the same fire. `--url` targets a branch stack's `<branch>.alerting.localhost`.
-- **Measure a fingerprint change before shipping it:** `bun run errors:replay -- --file <sample>` groups
-  a sample of real error events with today's fingerprint and with the proposal in
+- **Measure a grouping change before shipping it:** `bun run errors:replay -- --file <sample>` groups
+  a sample of real error events as production does (hash, then grouping key) and with the proposal in
   `scripts/errors-replay/candidate.ts`, checks the TS mirror is in parity with production's hashes, and
-  lists the largest merges to read for false positives. The script header has the export query; samples
-  hold customer data and stay out of the repo.
+  lists the largest merges to read for false positives. Fewer issues is not better on its own: draw
+  pairs (`--draw`, and `--changed` for the pairs the proposal decides differently), have them labelled
+  "same bug or not" blind, by raters who never see which grouping put a pair where, and score
+  precision, recall and F1 with `--labels`. Check the winner on a second week it was not tuned on. The
+  script header has the export query; samples and labels hold customer data and stay out of the repo.
 - **The list without a backend:** `/lab/errors` renders the real list view over fixtures.

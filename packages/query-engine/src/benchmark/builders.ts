@@ -2200,6 +2200,29 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			CH.compileUnsafe(CH.errorFingerprintLineageQuery({ fingerprintHashes: [FINGERPRINT] }), window),
 	},
 	{
+		// ErrorsService tick: one sample per new fingerprint, for its grouping key.
+		module: "errors",
+		name: "errorGroupingSamplesQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.errorGroupingSamplesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
+	},
+	{
+		// ErrorsService tick: the spans behind those samples (span name, maple.fingerprint).
+		module: "errors",
+		name: "errorGroupingSpansQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.errorGroupingSpansQuery({
+					serviceNames: ["api"],
+					traceIds: [TRACE_ID],
+					spanIds: [SPAN_ID],
+				}),
+				window,
+			),
+	},
+	{
 		module: "errors",
 		name: "errorsSparkQuery",
 		label: "default",

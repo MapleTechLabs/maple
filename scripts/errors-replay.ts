@@ -41,7 +41,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { parseArgs } from "node:util"
 import { Schema, Array as Arr, String as Str } from "effect"
 
-import { candidateKey, currentKey, type ReplayEvent } from "./errors-replay/candidate"
+import { candidateKey, currentKey, hashKey, type ReplayEvent } from "./errors-replay/candidate"
 import { drawChangedPairs, drawPairs, Label, renderPair, score, variantId } from "./errors-replay/labels"
 
 const { values } = parseArgs({
@@ -88,12 +88,13 @@ const events = Arr.reduce(rows, 0, (sum, row) => sum + weight(row))
 
 interface Keyed {
 	readonly row: Row
+	readonly hash: string
 	readonly current: string
 	readonly candidate: string
 }
 const keyed: ReadonlyArray<Keyed> = Arr.map(rows, (row) => {
 	const event: ReplayEvent = row
-	return { row, current: currentKey(event), candidate: candidateKey(event) }
+	return { row, hash: hashKey(event), current: currentKey(event), candidate: candidateKey(event) }
 })
 
 const distinct = (keys: Iterable<string>) => new Set(keys).size
@@ -102,6 +103,7 @@ const candidateGroups = distinct(Arr.map(keyed, (k) => k.candidate))
 const pct = (from: number, to: number) => (from === 0 ? "0%" : `${Math.round(((from - to) / from) * 100)}%`)
 
 console.log(`\n${rows.length} sampled variants, ${events.toLocaleString()} events (${values.file})\n`)
+console.log(`  hashes            ${distinct(Arr.map(keyed, (k) => k.hash))}`)
 console.log(`  issues today      ${currentGroups}`)
 console.log(`  issues proposed   ${candidateGroups}   (${pct(currentGroups, candidateGroups)} fewer)`)
 
@@ -112,10 +114,10 @@ console.log(`  issues proposed   ${candidateGroups}   (${pct(currentGroups, cand
 const hashed = Arr.filter(keyed, (k) => k.row.fingerprintHash !== undefined)
 if (hashed.length > 0) {
 	const keysPerHash = Arr.groupBy(hashed, (k) => k.row.fingerprintHash ?? "")
-	const hashesPerKey = Arr.groupBy(hashed, (k) => k.current)
+	const hashesPerKey = Arr.groupBy(hashed, (k) => k.hash)
 	const split = Arr.filter(
 		Object.values(keysPerHash),
-		(ks) => distinct(Arr.map(ks, (k) => k.current)) > 1,
+		(ks) => distinct(Arr.map(ks, (k) => k.hash)) > 1,
 	).length
 	const merged = Arr.filter(
 		Object.values(hashesPerKey),
@@ -221,6 +223,7 @@ if (values.labels !== undefined) {
 	console.log(`Against ${labels.length} labelled pairs\n`)
 	console.log(`                 precision  recall   F1      false merges  false splits`)
 	for (const [name, key] of [
+		["hash only", hashKey],
 		["today", currentKey],
 		["proposed", candidateKey],
 	] as const) {

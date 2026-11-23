@@ -22,6 +22,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 import { foldIssues } from "./issue-fold"
+import { pinGroupingKeys } from "./grouping-keys"
 
 type MergeError = ErrorPersistenceError | ErrorIssueNotFoundError | ErrorValidationError
 
@@ -187,6 +188,19 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 							PG.update(ErrorIssues)
 								.set({ mergedIntoIssueId: null, archivedAt: null, updatedAt: timestamp })
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
+						)
+						// Someone said these are not one bug: their grouping key must not fold
+						// them back on the next tick.
+						const handedBack = yield* db.run(
+							PG.from(ErrorIssueFingerprints)
+								.select("fingerprintHash")
+								.where(($) => [$.orgId.eq(orgId), $.issueId.eq(issueId)]),
+						)
+						yield* pinGroupingKeys(
+							db,
+							orgId,
+							[issue.fingerprintHash, ...Arr.map(handedBack, (row) => row.fingerprintHash)],
+							timestamp,
 						)
 						if (Option.isSome(target)) {
 							yield* db.run(
