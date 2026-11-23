@@ -118,6 +118,7 @@ export type TableDeletePlans = Readonly<Record<string, TableDeletePlan>>
 /** Every table in the local schema; `validateDeletePlan` fails when one is missing. */
 export const TABLE_DELETE_PLAN = {
 	ai_crawler_requests: derived("Timestamp", { env: null }),
+	ai_evaluations: derived("Timestamp"),
 	ai_trace_index: derived("Timestamp"),
 	alert_checks: { strategy: "excluded", reason: NOT_TELEMETRY },
 	attribute_keys_hourly: unkeyed("Hour"),

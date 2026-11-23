@@ -303,6 +303,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					tabs: agentSessionsTabs(h, {
 						active: "tools",
 						search: model.search,
+						hasEvals: inputs.context.hasLlmEvals === true,
 						counts: tabCounts(model),
 					}),
 					scrollClassName: "p-0",

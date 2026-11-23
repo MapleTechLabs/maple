@@ -10,6 +10,7 @@ import {
 import { CurrentMcpRequestTenant } from "./tenant"
 import {
 	DATA_SOURCE_TOOLS,
+	LLM_EVALS_TOOLS,
 	refusesAnalyst,
 	refusesReadOnlyCredential,
 	type McpToolResult,
@@ -109,18 +110,22 @@ const hiddenFrom = (isRefused: (tenant: { readOnly?: true; roles: ReadonlyArray<
  * Hides the data source tools from an org outside the `dataSources` rollout: it has none to list.
  * Flags that cannot be read in time hide nothing: the tools still refuse an org without the rollout.
  */
-const HiddenWithoutDataSources = EffectMcpServer.visibility(
-	Effect.map(
-		OrganizationFeatureFlagsService,
-		(featureFlags) => () =>
-			Effect.gen(function* () {
-				const tenant = yield* CurrentMcpRequestTenant
-				if (tenant === undefined) return false
-				const flags = yield* flagsInTime(featureFlags, tenant.orgId)
-				return Option.isNone(flags) || flags.value.dataSources
-			}),
-	),
-)
+const hiddenWithoutFlag = (flag: "dataSources" | "llmEvals") =>
+	EffectMcpServer.visibility(
+		Effect.map(
+			OrganizationFeatureFlagsService,
+			(featureFlags) => () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentMcpRequestTenant
+					if (tenant === undefined) return false
+					const flags = yield* flagsInTime(featureFlags, tenant.orgId)
+					return Option.isNone(flags) || flags.value[flag]
+				}),
+		),
+	)
+const HiddenWithoutDataSources = hiddenWithoutFlag("dataSources")
+/** The same for the LLM evaluation tools and the `llmEvals` rollout. */
+const HiddenWithoutLlmEvals = hiddenWithoutFlag("llmEvals")
 
 const HiddenFromReadOnlyKeys = hiddenFrom((tenant) => tenant.readOnly === true)
 const HiddenFromAnalysts = hiddenFrom((tenant) => tenant.readOnly === true || Policy.isAnalyst(tenant.roles))
@@ -153,9 +158,11 @@ export class McpToolRegistration extends Context.Service<
 		const keyGate = yield* Layer.build(HiddenFromReadOnlyKeys.layer)
 		const analystGate = yield* Layer.build(HiddenFromAnalysts.layer)
 		const dataSourcesGate = yield* Layer.build(HiddenWithoutDataSources.layer)
+		const llmEvalsGate = yield* Layer.build(HiddenWithoutLlmEvals.layer)
 		// A dashboard tool is hidden from read-only keys alone; every other change from analysts too.
 		const gateFor = (name: string, readOnly: boolean) => {
 			if (DATA_SOURCE_TOOLS.has(name)) return { services: dataSourcesGate }
+			if (LLM_EVALS_TOOLS.has(name)) return { services: llmEvalsGate }
 			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
 			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
 		}

@@ -15,6 +15,8 @@ const RETENTION_DAYS = {
 	ai_trace_index: 30,
 	// Same raw-tier rule, and it matches the session_replays window the AI tab reads beside it.
 	ai_crawler_requests: 30,
+	// Past its 30-day sources on purpose: score trends outlive the traces they grade.
+	ai_evaluations: 90,
 	// Six years — HIPAA's documentation retention floor. Never rebuildable.
 	audit_log: 2190,
 	// Thirteen months: a year of audit history plus a month to compare against.

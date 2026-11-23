@@ -91,6 +91,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			filters: filtersRail(h, model),
 			tabs: agentSessionsTabs(h, {
 				active: "sessions",
+				hasEvals: inputs.context.hasLlmEvals === true,
 				counts: {
 					sessions: tabSessions,
 					tools: Option.getOrUndefined(AsyncData.getData(model.tabTools.data)),

@@ -555,7 +555,15 @@ pub fn log_plan(org_id: &str, request: &ExportLogsServiceRequest, piece_bytes: u
             tally.scope(scope.work);
             let shared = resource.json + scope.json;
             for log in &scope_logs.log_records {
-                let attributes = attributes_cost(&log.attributes);
+                let mut attributes = attributes_cost(&log.attributes);
+                // The row copies a record's `event_name` into its attributes as `event.name`
+                // (`telemetry::log_attributes`). Counted even when the emitter's own attribute
+                // wins: an upper bound may overcount, never undercount.
+                if !log.event_name.is_empty() {
+                    attributes.json += text_json("event.name") + 6 + text_json(&log.event_name);
+                    attributes.work +=
+                        MAP_ENTRY + "event.name".len() as u64 + log.event_name.len() as u64;
+                }
                 let mut body = log.body.as_ref().map(value_cost).unwrap_or_default();
                 // A text body is written from the request itself, not from a copy.
                 if matches!(

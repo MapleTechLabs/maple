@@ -144,6 +144,9 @@ export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
+/** The LLM evaluation tools: absent for an org outside the `llmEvals` rollout. */
+export const LLM_EVALS_TOOLS: ReadonlySet<string> = new Set(["list_evaluations", "get_evaluation_scores"])
+
 /**
  * Writes an analyst's role reaches all the same: `onboarding_status_update` changes only the
  * caller's own run (v2's `personal`), and `get_ingest_setup` only creates the org's keys the way

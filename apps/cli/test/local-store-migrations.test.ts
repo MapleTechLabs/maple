@@ -203,6 +203,9 @@ describe("current local schema identity", () => {
 		expect(Arr.filter([...currentNames], (name) => !v5Names.has(name))).toEqual([
 			"ai_crawler_requests",
 			"ai_crawler_requests_mv",
+			"ai_evaluations",
+			"ai_evaluations_mv",
+			"ai_evaluations_span_events_mv",
 			"ai_trace_index",
 			"ai_trace_index_mv",
 			"audit_log",
@@ -372,6 +375,9 @@ describe("current local schema identity", () => {
 		expect(Arr.filter([...currentSchemaNames], (name) => !v13Names.has(name))).toEqual([
 			"ai_crawler_requests",
 			"ai_crawler_requests_mv",
+			"ai_evaluations",
+			"ai_evaluations_mv",
+			"ai_evaluations_span_events_mv",
 			"ai_trace_index",
 			"ai_trace_index_mv",
 			"audit_log",

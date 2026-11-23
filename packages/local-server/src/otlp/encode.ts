@@ -627,6 +627,17 @@ export interface LogRecord {
 	flags?: number | string
 	traceId?: string
 	spanId?: string
+	eventName?: string
+}
+
+/** A record's attributes, plus its OTLP `eventName` as `event.name` unless it set that itself:
+ *  `ai_evaluations_mv` keys on it. The same rule as the ingest gateway's `log_attributes`. */
+function logAttributes(log: LogRecord): AttrMap {
+	const attributes = attrMap(log.attributes)
+	if (log.eventName !== undefined && log.eventName !== "" && attributes["event.name"] === undefined) {
+		attributes["event.name"] = log.eventName
+	}
+	return attributes
 }
 
 export function encodeLogs(req: unknown): EncodedBatch[] {
@@ -665,7 +676,7 @@ export function encodeLogs(req: unknown): EncodedBatch[] {
 					scope_name: scopeName,
 					scope_version: scopeVersion,
 					scope_attributes: scopeAttrs,
-					log_attributes: attrMap(log.attributes),
+					log_attributes: logAttributes(log),
 				})
 			}
 		}

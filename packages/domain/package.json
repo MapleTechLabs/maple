@@ -30,6 +30,7 @@
 		"./aws-infra": "./src/aws-infra.ts",
 		"./gcp-metrics": "./src/gcp-metrics.ts",
 		"./gen-ai": "./src/gen-ai.ts",
+		"./gen-ai-evaluation": "./src/gen-ai-evaluation.ts",
 		"./glob": "./src/glob.ts",
 		"./wire": "./src/wire.ts",
 		"./profiles": "./src/profiles.ts",

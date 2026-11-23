@@ -121,6 +121,69 @@ describe("local ingest rules", () => {
 		expect(encodeLogs(request)[0]?.ndjson).toContain('"order.id":"42"')
 	})
 
+	it("lets a rule remove or mask a log record's event name, and hands the rest back untouched", () => {
+		const eventNameRule = (keys: ReadonlyArray<string>, method: "remove" | "mask") =>
+			parseLocalIngestRules(
+				JSON.stringify([
+					{
+						signals: ["logs"],
+						conditions: [],
+						action: {
+							_tag: "redact",
+							keys,
+							detectors: [],
+							patterns: [],
+							scopes: ["attributes"],
+							method,
+						},
+					},
+				]),
+			).compiled
+		const ruled = (
+			compiled: ReturnType<typeof eventNameRule>,
+			attributes: Array<ReturnType<typeof str>> = [str("k", "v")],
+		) => {
+			const log = {
+				timeUnixNano: "1700000000000000000",
+				eventName: "gen_ai.evaluation.result",
+				attributes,
+			}
+			const request = { resourceLogs: [{ scopeLogs: [{ logRecords: [log] }] }] }
+			applyLocalIngestRules("logs", request, compiled)
+			const [batch] = encodeLogs(request)
+			const row = JSON.parse(Str.split("\n")(batch?.ndjson ?? "")[0] ?? "{}")
+			return { eventName: log.eventName, attributes: log.attributes, logAttributes: row.log_attributes }
+		}
+		// Removed: gone from the record, so neither the row nor the eventing projection sees it.
+		expect(ruled(eventNameRule(["event.name"], "remove"))).toEqual({
+			eventName: undefined,
+			attributes: [str("k", "v")],
+			logAttributes: { k: "v" },
+		})
+		// Untouched by the rule: the record keeps its eventName and its attributes as sent.
+		expect(ruled(eventNameRule(["k"], "remove"))).toEqual({
+			eventName: "gen_ai.evaluation.result",
+			attributes: [],
+			logAttributes: { "event.name": "gen_ai.evaluation.result" },
+		})
+		// Masked: the masked value is the record's eventName from here on.
+		const masked = ruled(eventNameRule(["event.name"], "mask"))
+		expect(masked.eventName).not.toBe("gen_ai.evaluation.result")
+		expect(masked.logAttributes).toEqual({ k: "v", "event.name": masked.eventName })
+		// A record with its own event.name too: masking that redacts eventName as well, and a rule
+		// that leaves it alone leaves eventName as sent.
+		const own = [str("event.name", "own.name")]
+		const ownMasked = ruled(eventNameRule(["event.name"], "mask"), own)
+		expect([
+			ownMasked.eventName === "gen_ai.evaluation.result",
+			ownMasked.eventName === "own.name",
+		]).toEqual([false, false])
+		expect(ownMasked.logAttributes).toEqual({ "event.name": ownMasked.eventName })
+		expect(ruled(eventNameRule(["k"], "remove"), [str("event.name", "own.name")]).eventName).toBe(
+			"gen_ai.evaluation.result",
+		)
+	})
+
 	it("removes a resource whose every record was dropped", () => {
 		const request = {
 			resourceLogs: [

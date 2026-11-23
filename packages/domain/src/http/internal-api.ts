@@ -1,5 +1,6 @@
 import { HttpApi, OpenApi } from "effect/http-api"
 import { AiModelsInternalApiGroup } from "./ai-models"
+import { AiEvaluationsInternalApiGroup } from "./ai-evaluations"
 import { AiSessionsInternalApiGroup } from "./ai-sessions"
 import { McpInternalApiGroup } from "./mcp"
 import { AiTriageApiGroup } from "./ai-triage"
@@ -66,6 +67,7 @@ import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
 export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(AiModelsInternalApiGroup)
 	.add(AiSessionsInternalApiGroup)
+	.add(AiEvaluationsInternalApiGroup)
 	.add(AiTriageApiGroup)
 	.add(AuditTrailApiGroup)
 	.add(BillingApiGroup)
