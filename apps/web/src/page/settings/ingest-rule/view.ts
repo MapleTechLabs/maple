@@ -18,6 +18,7 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { actionClause } from "./view-action"
 import { conditionsClause, type H, signalsClause } from "./view-form"
+import { impactPanel } from "./view-impact"
 import { previewPanel } from "./view-preview"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -154,6 +155,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (model.editingId !== null && !AsyncData.isSuccess(model.existing))
 		return dashboardPage(h, header, [skeleton(h, "h-10 w-full"), skeleton(h, "h-80 w-full")])
 	return dashboardPage(h, { ...header, gap: "lg" }, [
+		...impactPanel(h, model),
 		h.div(
 			[h.Class("grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]")],
 			[
