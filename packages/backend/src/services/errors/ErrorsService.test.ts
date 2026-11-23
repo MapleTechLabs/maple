@@ -5904,6 +5904,70 @@ describe("ErrorsService.runTick grouping keys", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
+	it.effect("a buffered sibling that follows a later leader brings its count and alias along", () => {
+		const rows = [row(H1, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1)]
+			const database = yield* Database
+			const earlier = sample(H2, "design-access-BaWgZTwa")
+			yield* database.execute((db) =>
+				Effect.all([
+					db.run(
+						PG.insertInto(ErrorFingerprintCandidates).values({
+							orgId: ORG,
+							fingerprintHash: H2,
+							serviceName: "checkout-api",
+							exceptionType: "SiteUnavailable",
+							exceptionMessage: MESSAGE,
+							topFrame: "",
+							occurrenceCount: 1,
+							firstSeenAt: TICK_MS - 600_000,
+							lastSeenAt: TICK_MS - 600_000,
+							updatedAt: TICK_MS - 600_000,
+						}),
+					),
+					db.run(
+						PG.insertInto(ErrorGroupingKeys).values({
+							orgId: ORG,
+							fingerprintHash: H2,
+							groupingKey: groupingKey({
+								serviceName: earlier.serviceName,
+								exceptionType: earlier.exceptionType,
+								statusMessage: earlier.statusMessage,
+								exceptionStacktrace: earlier.exceptionStacktrace,
+								span: { kind: "Internal", name: "SiteHosting.resolve" },
+							}),
+							keyVersion: GROUPING_KEY_VERSION,
+							rule: "type-message",
+							createdAt: TICK_MS - 600_000,
+							updatedAt: TICK_MS - 600_000,
+						}),
+					),
+				]),
+			)
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			const [issue] = yield* loadIssuesByFingerprint(H1)
+			assert.strictEqual(issue?.occurrenceCount, 2)
+			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 0)
+			assert.deepStrictEqual(yield* aliasesOf, [
+				{ fingerprintHash: H2, issueId: issue?.id, source: "group" },
+			])
+			const left = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select("fingerprintHash")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(left, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
 	it.effect("a hash whose previous version was pinned stays out of groups after a bump", () => {
 		const OLD = "5000000000000000009"
 		const rows = [row(H1, 2), row(H2, 3)]

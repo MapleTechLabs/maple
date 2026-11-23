@@ -25,9 +25,11 @@ export const variantId = (event: ReplayEvent): string =>
 				event.exceptionType,
 				event.statusMessage,
 				event.exceptionStacktrace,
-				// Only when present, so ids of samples without them stay what labels recorded.
-				...(event.customFingerprint === undefined ? [] : [`fp:${event.customFingerprint}`]),
-				...(event.span === undefined ? [] : [`span:${event.span.kind} ${event.span.name}`]),
+				// Only when present, so ids of samples without them stay what labels recorded; JSON
+				// keeps a custom key and a span from reading as one another.
+				...(event.customFingerprint === undefined && event.span === undefined
+					? []
+					: [JSON.stringify({ customFingerprint: event.customFingerprint, span: event.span })]),
 			].join("\u0000"),
 		)
 		.digest("hex")

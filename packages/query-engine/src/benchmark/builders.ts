@@ -2211,6 +2211,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "errors",
 		name: "errorGroupingSamplesQuery",
 		label: "default",
+		sampleValues: { traceId: TRACE_ID, spanId: SPAN_ID },
 		compile: () =>
 			CH.compileUnsafe(CH.errorGroupingSamplesQuery({ fingerprintHashes: [FINGERPRINT] }), window),
 	},
@@ -2219,6 +2220,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "errors",
 		name: "errorGroupingSpansQuery",
 		label: "default",
+		sampleValues: { traceId: TRACE_ID, spanId: SPAN_ID },
 		compile: () =>
 			CH.compileUnsafe(
 				CH.errorGroupingSpansQuery({

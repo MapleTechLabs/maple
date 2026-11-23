@@ -1808,8 +1808,8 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
 export function errorGroupingSamplesQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
 	return from(Datasources.errorEvents)
 		.select(($) => {
-			// The latest occurrence; the span id settles a tie within one second, so a re-read agrees.
-			const latest = CH.concat(CH.toString_($.Timestamp), $.SpanId)
+			// The latest occurrence; trace and span id settle a tie within one second, so a re-read agrees.
+			const latest = CH.concat(CH.toString_($.Timestamp), " ", $.TraceId, " ", $.SpanId)
 			return {
 				fingerprintHash: CH.toString_($.FingerprintHash),
 				serviceName: CH.argMax($.ServiceName, latest),

@@ -766,10 +766,11 @@ const groupPeers = (
 			if (a !== b) parent.set(a < b ? b : a, a < b ? a : b)
 		}),
 	)
+	// Buffered siblings follow too, so their counts are consumed and they are aliased on promotion.
 	return new Map(
-		Arr.flatMap(rows, (row) => {
-			const leader = root(row.fingerprintHash)
-			return leader === row.fingerprintHash ? [] : [[row.fingerprintHash, leader] as const]
+		Arr.flatMap([...inWindow], (hash) => {
+			const leader = root(hash)
+			return leader === hash ? [] : [[hash, leader] as const]
 		}),
 	)
 }
@@ -844,6 +845,28 @@ const canonicalizeScanRows = (
 					row: { ...row, fingerprintHash: peers.get(row.fingerprintHash) ?? row.fingerprintHash },
 				}),
 			),
+			// A buffered follower has no row this window: an empty one on its leader carries its
+			// candidate counts over (`withBufferedCandidates`).
+			...Arr.flatMap([...peers], ([follower, leader]) => {
+				if (Arr.some(unowned, (row) => row.fingerprintHash === follower)) return []
+				const host = Arr.findFirst(
+					unowned,
+					(row) => (peers.get(row.fingerprintHash) ?? row.fingerprintHash) === leader,
+				)
+				return host._tag === "None"
+					? []
+					: [
+							{
+								from: follower,
+								row: {
+									...host.value,
+									fingerprintHash: leader,
+									count: 0,
+									serviceVersions: [],
+								},
+							},
+						]
+			}),
 		]
 		const carried = yield* withBufferedCandidates(tx, orgId, redirected)
 		// The merge keeps the last row's display fields, so redirected rows go first and an
