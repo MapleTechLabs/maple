@@ -26,6 +26,7 @@ export class BatchQueue<T> {
 	private exporting = false
 	private shutdownPromise: Promise<void> | undefined
 	private readonly listening: boolean
+	private readonly inflight = new Set<Promise<void>>()
 	private readonly onHidden = (): void => {
 		if (document.visibilityState === "hidden") {
 			this.forceFlush().catch((error: unknown) => diag.error("batch flush failed", error))
@@ -65,9 +66,11 @@ export class BatchQueue<T> {
 		return this.shutdownPromise
 	}
 
+	/** The queued batches, and any export already in flight, whose failure that export's own caller reports. */
 	private async flushAll(): Promise<void> {
+		const inflight = [...this.inflight].map((sent) => sent.catch(() => {}))
 		const batches = Math.ceil(this.queue.length / MAX_BATCH)
-		await Promise.all(Array.from({ length: batches }, () => this.exportBatch()))
+		await Promise.all([...inflight, ...Array.from({ length: batches }, () => this.exportBatch())])
 	}
 
 	private exportBatch(): Promise<void> {
@@ -99,6 +102,11 @@ export class BatchQueue<T> {
 					})
 			}
 		})
+		this.inflight.add(exported)
+		const settled = (): void => {
+			this.inflight.delete(exported)
+		}
+		exported.then(settled, settled)
 		return this.strict
 			? exported
 			: exported.catch((error: unknown) => diag.error("batch export failed", error))

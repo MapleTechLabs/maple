@@ -1,6 +1,34 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { BatchQueue } from "./batch"
 import type { ExportResult } from "./span"
+
+afterEach(() => vi.useRealTimers())
+
+describe("BatchQueue.forceFlush", () => {
+	it("waits for the scheduled export already in flight, so an exit flush covers it", async () => {
+		vi.useFakeTimers()
+		const results: Array<(result: ExportResult) => void> = []
+		const queue = new BatchQueue<string>(
+			{ export: (_items, callback) => void results.push(callback), shutdown: () => Promise.resolve() },
+			1_000,
+			true,
+		)
+		queue.add("a")
+		await vi.advanceTimersByTimeAsync(1_000)
+		expect(results).toHaveLength(1)
+
+		let flushed = false
+		void queue.forceFlush().then(() => {
+			flushed = true
+		})
+		await vi.advanceTimersByTimeAsync(0)
+		expect(flushed).toBe(false)
+
+		results[0]?.({ code: 0 })
+		await vi.advanceTimersByTimeAsync(0)
+		expect(flushed).toBe(true)
+	})
+})
 
 describe("BatchQueue for log records", () => {
 	it("fails an export that throws synchronously at once, and keeps exporting later batches", async () => {
