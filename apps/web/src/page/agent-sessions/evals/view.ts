@@ -39,7 +39,7 @@ const head = (h: H): Html =>
 		th(h, { label: "Evaluator", width: columnClass({ min: "0" }) }),
 		th(h, { label: "Scores", width: "w-20 shrink-0", align: "right" }),
 		th(h, { label: "Pass rate", width: "w-20 shrink-0", align: "right" }),
-		th(h, { label: "Mean score", width: "w-24 shrink-0", align: "right" }),
+		th(h, { label: "Mean score", width: "w-24 shrink-0", align: "right", hidden: NARROW }),
 		th(h, { label: "Eval errors", width: "w-24 shrink-0", align: "right", hidden: NARROW }),
 		th(h, { label: "Traces", width: "w-20 shrink-0", align: "right", hidden: NARROW }),
 		th(h, { label: "Sources", width: "w-36 shrink-0", hidden: WIDE }),
@@ -89,7 +89,7 @@ const cells = (h: H, row: AiEvaluatorSummary, inputs: EvaluatorsTableInputs): Re
 		},
 		[passRateLabel(row)],
 	),
-	figure(h, meanScoreLabel(row), "w-24 shrink-0"),
+	figure(h, meanScoreLabel(row), "hidden w-24 shrink-0 @min-[720px]/panel:block"),
 	typography(
 		h,
 		{

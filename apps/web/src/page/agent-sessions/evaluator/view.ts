@@ -58,7 +58,8 @@ const summaryRow = (h: H, summary: AiEvaluatorSummary): Html =>
 		statFigure(h, { label: "Traces", value: formatNumber(summary.traceCount) }),
 	])
 
-/** Each bucket's pass rate as a bar, oldest first; a bucket with no verdicts draws empty. */
+/** Each bucket's pass rate as a bar on a 0-100% scale, oldest first; a bucket where nothing passed
+ *  (or with no verdicts) keeps a baseline, so an all-failing stretch still shows. */
 const passRateBars = (h: H, detail: EvaluatorDetail): Html =>
 	section(h, "Pass rate over time", undefined, [
 		miniBars(h, {
@@ -69,6 +70,8 @@ const passRateBars = (h: H, detail: EvaluatorDetail): Html =>
 				),
 				(bucket) => passRateOf(bucket) ?? 0,
 			),
+			max: 1,
+			floor: 4,
 			label: "Pass rate per bucket",
 			className: "h-16 w-full text-primary",
 		}),

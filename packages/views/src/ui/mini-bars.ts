@@ -12,6 +12,8 @@ export interface MiniBarsOptions {
 	readonly values: ReadonlyArray<number>
 	readonly color?: string
 	readonly floor?: number
+	/** The value a full-height bar stands for; default the largest value. `1` draws ratios as 0-100%. */
+	readonly max?: number
 	readonly floorColor?: string
 	readonly minHeight?: number
 	readonly gap?: number
@@ -59,7 +61,7 @@ export const miniBars = <M>(h: HtmlBuilder<M>, options: MiniBarsOptions): Html =
 	const floor = options.floor ?? 0
 	const minHeight = options.minHeight ?? 5
 	const count = values.length
-	const max = count > 0 ? Math.max(...Arr.map(values, finite)) : 0
+	const max = options.max ?? (count > 0 ? Math.max(...Arr.map(values, finite)) : 0)
 	const { barWidth, gap } = miniBarsLayout(count, options.gap ?? 2)
 	const tail = options.tail
 	const tailStart = tail === undefined ? 0 : count - Math.max(1, Math.round(count * tail))
@@ -72,7 +74,7 @@ export const miniBars = <M>(h: HtmlBuilder<M>, options: MiniBarsOptions): Html =
 			const opacity = options.floorColor ? 1 : dim ? 0.2 : 0.3
 			return [bar(h, x, 100 - floor, barWidth, floor, options.floorColor ?? color, opacity)]
 		}
-		const ratio = max > 0 ? value / max : 0
+		const ratio = max > 0 ? Math.min(value / max, 1) : 0
 		const height = Math.max(ratio * 100, minHeight)
 		const opacity = (options.opacityRamp === true ? 0.3 + ratio * 0.7 : 1) * (dim ? 0.5 : 1)
 		return [bar(h, x, 100 - height, barWidth, height, color, opacity)]
