@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { MapleBrowser } from "@maple-dev/browser"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import start from "../foldkit-island/client"
@@ -17,8 +16,11 @@ const mounted: Array<HTMLElement> = []
 const mount = async (): Promise<HTMLElement> => {
 	const element = document.body.appendChild(document.createElement("astro-island"))
 	element.innerHTML = (await renderer.renderToStaticMarkup(NavBar, props)).html
+	const serverRoot = element.firstElementChild
 	await start(element)(NavBar, props)
 	mounted.push(element)
+	// The live tree replaces the server markup on a later frame; clicks before that go nowhere.
+	await vi.waitFor(() => expect(element.firstElementChild).not.toBe(serverRoot))
 	return element
 }
 const navCta = () => document.querySelector('a[data-track-location="nav"]')

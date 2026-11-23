@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { type ChartSpec, decodeChartSpec } from "@maple/views/charts/chart-spec"
 import { Option } from "effect"
 import { assert, describe, expect, it, vi } from "vitest"
