@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "7bf911246322bb299392b25fb481cd6ba2555dd4713752dfbfb42c0d9554ed5b",
+	"id": "c4969237a921bff726f3a957a46a3b3e1ca3cb411479c3e7231d1f3396de47fc",
 	"prevIds": [
-		"c8ee060ec15bb2aa59eabc8589b508e06c6c8790c5ce3bccd45654bb574ccd88"
+		"0bdada97a16b772474296462810351ecfde840b8048bc0dc9f220c7d5fa5687c"
 	],
 	"entities": [
 		{
@@ -20746,8 +20746,18 @@
 		{
 			"kind": "column",
 			"table": "vcs_installations",
-			"name": "repository_discovery",
+			"name": "audit_categories",
 			"position": 14,
+			"type": "jsonb",
+			"notNull": true,
+			"default": "'{}'",
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "vcs_installations",
+			"name": "repository_discovery",
+			"position": 15,
 			"type": "jsonb",
 			"notNull": false,
 			"default": null,
@@ -20757,7 +20767,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "installed_by_user_id",
-			"position": 15,
+			"position": 16,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -20767,7 +20777,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "created_at",
-			"position": 16,
+			"position": 17,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -20777,7 +20787,7 @@
 			"kind": "column",
 			"table": "vcs_installations",
 			"name": "updated_at",
-			"position": 17,
+			"position": 18,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
