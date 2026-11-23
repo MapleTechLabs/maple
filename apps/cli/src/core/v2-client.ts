@@ -51,6 +51,15 @@ export const unsupportedInRemote = (pipeName: string, reason: string) =>
 		}),
 	)
 
+/** The local store keeps no users directory or product-event analytics: those read a workspace. */
+export const unsupportedInLocal = (pipeName: string) =>
+	Effect.fail(
+		new WarehouseClientError({
+			message: `\`${pipeName}\` reads a workspace, not the local store. Run \`maple login\`, then pass --remote.`,
+			pipeName,
+		}),
+	)
+
 export type RemoteError = WarehouseClientError | WarehouseQueryError | CliNotFoundError | CliUsageError
 
 /**

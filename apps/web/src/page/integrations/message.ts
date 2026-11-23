@@ -1,5 +1,6 @@
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
+import { GithubAuditCategoryId } from "@maple/domain/github-audit"
 import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
@@ -168,6 +169,12 @@ export const Message = defineMessageUnion({
 	CompletedCiTraces: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
 	ToggledAuditLog: {},
 	CompletedAuditLog: { enabled: Schema.Boolean, failure: Schema.NullOr(LoadFailure) },
+	ToggledAuditCategory: { id: GithubAuditCategoryId },
+	CompletedAuditCategory: {
+		id: GithubAuditCategoryId,
+		enabled: Schema.Boolean,
+		failure: Schema.NullOr(LoadFailure),
+	},
 	/** The 3 s status poll while the popup is out, a branch change settles or a repo syncs. */
 	TickedGithubPoll: {},
 	EndedGithubForcePoll: { version: Schema.Number },

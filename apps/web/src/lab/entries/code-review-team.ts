@@ -1,3 +1,4 @@
+import { githubAuditCategoryStates } from "@maple/domain/github-audit"
 import { OrgId } from "@maple/domain"
 import {
 	CodeReviewTeam,
@@ -269,6 +270,7 @@ const githubStatus = new GithubIntegrationStatus({
 	repositorySelection: null,
 	ciTracesEnabled: true,
 	auditLogEnabled: true,
+	auditCategories: githubAuditCategoryStates({}),
 	repositoryDiscovery: null,
 	repositories: Arr.map(
 		REPOSITORIES,

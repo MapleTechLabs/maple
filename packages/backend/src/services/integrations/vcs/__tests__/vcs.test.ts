@@ -1248,6 +1248,7 @@ const BRANCH_INSTALLATION = Schema.decodeSync(VcsInstallation)({
 	suspendedAt: null,
 	ciTracesEnabled: true,
 	auditLogEnabled: true,
+	auditCategories: {},
 	repositoryDiscovery: null,
 	installedByUserId: "user_1",
 	createdAt: 0,
@@ -2494,6 +2495,42 @@ describe("VcsSyncService orchestrator", () => {
 			assert.isTrue(yield* repo.setAuditLogEnabled(orgId, installation.value.id, false))
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", "team.created")))
 			assert.strictEqual(forwardedAudit.length, 2)
+		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))
+	})
+
+	it.effect("forwards an audit event only when the org collects its category", () => {
+		const testDb = createTestDb(trackedDbs)
+		const forwardedAudit: Array<{ orgId: string; action: string }> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_audit_categories")
+			yield* seedInstallation(repo, orgId)
+			const installation = yield* repo.resolveInstallation("github", "42")
+			if (Option.isNone(installation)) return assert.fail("installation not seeded")
+			const send = (action: string) =>
+				svc.processMessage(Schema.encodeSync(VcsSyncJob)(auditJob("42", action)))
+
+			// Defaults: force pushes are collected, branch creations are not.
+			yield* send("push.forced")
+			yield* send("create.branch")
+			// Two saves of different categories both stick.
+			yield* repo.setAuditCategories(orgId, installation.value.id, { forcePushes: false })
+			const saved = yield* repo.setAuditCategories(orgId, installation.value.id, { refCreations: true })
+			assert.deepStrictEqual(saved, Option.some({ forcePushes: false, refCreations: true }))
+			yield* send("push.forced")
+			yield* send("create.tag")
+			// An action outside every category, from an older job, still lands.
+			yield* send("workflow_run.completed")
+			assert.deepStrictEqual(
+				Arr.map(forwardedAudit, (row) => row.action),
+				["push.forced", "create.tag", "workflow_run.completed"],
+			)
+			const stored = yield* repo.resolveInstallation("github", "42")
+			assert.deepStrictEqual(
+				Option.map(stored, (row) => row.auditCategories),
+				Option.some({ forcePushes: false, refCreations: true }),
+			)
 		}).pipe(Effect.provide(orchestratorLayer(testDb, { sent: [], forwardedAudit })))
 	})
 
@@ -4651,6 +4688,7 @@ describe("GithubProvider rate-limit handling", () => {
 		suspendedAt: null,
 		ciTracesEnabled: true,
 		auditLogEnabled: true,
+		auditCategories: {},
 		repositoryDiscovery: null,
 		installedByUserId: "user_1",
 		createdAt: 0,

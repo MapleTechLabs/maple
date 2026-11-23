@@ -1603,6 +1603,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "person-properties",
+		name: "personPropertyStatesQuery",
+		label: "user profile",
+		compile: () =>
+			CH.compileUnsafe(CH.personPropertyStatesQuery({ kind: "user", ids: ["user_a"] }), window),
+	},
+	{
+		module: "person-properties",
 		name: "personPropertyKeysQuery",
 		label: "user",
 		compile: () => CH.compileUnsafe(CH.personPropertyKeysQuery({ kind: "user" }), window),

@@ -1,6 +1,12 @@
 import { ChartSpec } from "./chart-spec"
 import { Option } from "effect"
-import { type ChartHost, type ChartHostOptions, type CreateChartHost, hostFor, variant } from "./chart-host-base"
+import {
+	type ChartHost,
+	type ChartHostOptions,
+	type CreateChartHost,
+	hostFor,
+	variant,
+} from "./chart-host-base"
 import { buildAlertRule } from "./definitions/alert-rule"
 import { buildAnalyticsTraffic } from "./definitions/analytics-traffic"
 import { buildQueryBuilderArea } from "./definitions/area"
@@ -18,7 +24,6 @@ import { buildLogsVolume } from "./definitions/logs-volume"
 import { buildPie, buildPieSpike } from "./definitions/pie"
 import { buildOccurrences } from "./definitions/occurrences"
 import { buildAnomalySignal } from "./definitions/anomaly-signal"
-import { buildSparkline } from "./definitions/sparkline"
 import { buildStackedBreakdown } from "./definitions/stacked-breakdown"
 import { buildToolSeries } from "./definitions/tool-series"
 import { buildSpendCumulative } from "./definitions/spend"
@@ -51,8 +56,6 @@ const definedHost = (
 				buildCategoricalHistogram,
 				options,
 			),
-		Sparkline: (sparkline) =>
-			hostFor(container, sparkline, height, variant("Sparkline"), buildSparkline, options),
 		QueryBuilderArea: (area) =>
 			hostFor(container, area, height, variant("QueryBuilderArea"), buildQueryBuilderArea, options),
 		QueryBuilderBar: (bar) =>

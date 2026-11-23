@@ -3,7 +3,7 @@ import { Schema, SchemaGetter } from "effect"
 import { McpClientKind, McpSessionSource } from "./mcp"
 import { ErrorIssueId, ServiceNamespace } from "@maple/primitives"
 import { ErrorPersistenceError, WorkflowState } from "./errors"
-import { TinybirdDateTime } from "../query-engine"
+import { AttributeFilter, TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { warehouseReadHttpErrors } from "./warehouse"
@@ -101,6 +101,8 @@ export class UsersListRequest extends Schema.Class<UsersListRequest>("UsersListR
 	hasErrors: Schema.optionalKey(Schema.Literal(true)),
 	hasReplay: Schema.optionalKey(Schema.Literal(true)),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
+	/** Only users whose user properties (`identify()` traits, `set` writes) match every filter. */
+	userPropertyFilters: Schema.optionalKey(Schema.Array(AttributeFilter).check(Schema.isMaxLength(20))),
 	limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/** Only the users ordered after this position, for the public API's keyset cursor. */
 	after: Schema.optionalKey(UsersListKeyset),
@@ -119,6 +121,8 @@ export class UsersGroupsRequest extends Schema.Class<UsersGroupsRequest>("UsersG
 	hasErrors: Schema.optionalKey(Schema.Literal(true)),
 	hasReplay: Schema.optionalKey(Schema.Literal(true)),
 	groups: Schema.optionalKey(Schema.Array(groupId).check(Schema.isMaxLength(50))),
+	/** Only users whose user properties (`identify()` traits, `set` writes) match every filter. */
+	userPropertyFilters: Schema.optionalKey(Schema.Array(AttributeFilter).check(Schema.isMaxLength(20))),
 }) {}
 
 /**

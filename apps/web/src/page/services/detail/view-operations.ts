@@ -125,6 +125,7 @@ const operationRow = (
 							color: context.color,
 							className: "ml-auto h-5 w-24",
 							revision: 0,
+							animatesEntrance: false,
 							fillOpacity: [0.5, 0.1],
 						},
 						toParentMessage: toSparkline,

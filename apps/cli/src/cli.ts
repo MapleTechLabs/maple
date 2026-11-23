@@ -18,6 +18,7 @@ import { deleteCommand } from "./commands/delete"
 import { update } from "./commands/update"
 import { changelog } from "./commands/changelog"
 import { onboarding } from "./commands/onboarding"
+import { users, user, events } from "./commands/users"
 import { OutputFormatSetting } from "./lib/output"
 
 // One CLI, two backends. Local mode runs the query-engine helpers against the
@@ -72,6 +73,9 @@ export const cli = Command.make("maple").pipe(
 		attributes,
 		metrics,
 		promql,
+		users,
+		user,
+		events,
 		timeseries,
 		breakdown,
 		compare,
