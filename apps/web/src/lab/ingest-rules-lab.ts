@@ -266,11 +266,11 @@ const SUGGESTIONS = Schema.decodeSync(V2IngestRuleSuggestions)({
 			share: 0.24,
 		},
 		{
-			signal: "traces",
+			signal: "logs",
 			service_name: "api",
-			level: null,
-			span_name: "GET /v1/orders",
-			reason: "busy_operation",
+			level: "info",
+			span_name: null,
+			reason: "info_logs",
 			keep_percent: 10,
 			records: 1_920_000,
 			bytes: 576_000_000,
@@ -304,7 +304,7 @@ const ESTIMATE = (keepPercent: number) => {
 		signals: [
 			{
 				signal: "logs",
-				scanned_hours: 24,
+				scanned_minutes: 1440,
 				stored,
 				matched,
 				estimated_dropped: dropped,

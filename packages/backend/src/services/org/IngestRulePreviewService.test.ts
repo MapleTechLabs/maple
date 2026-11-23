@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
-import { PREVIEW_MAX_SCAN_ROWS, scanHours, suggestRules, summarize } from "./IngestRulePreviewService"
+import { PREVIEW_MAX_SCAN_ROWS, scanMinutes, suggestRules, summarize } from "./IngestRulePreviewService"
 
 describe("ingest rule preview totals", () => {
 	const rows = [
@@ -25,17 +25,33 @@ describe("ingest rule preview totals", () => {
 		expect(preview.estimatedDroppedBytes).toBe(90 * 1000)
 	})
 
-	it("scans the whole day until a day outgrows the budget, then the latest hours scaled to a day", () => {
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS)).toBe(24)
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 4)).toBe(6)
-		expect(scanHours(PREVIEW_MAX_SCAN_ROWS * 1000)).toBe(1)
-		const sixHours = summarize("logs", rows, sizes, 1, 6)
-		expect(sixHours).toMatchObject({
-			scannedHours: 6,
-			stored: 1550 * 4,
-			matched: 500 * 4,
-			estimatedDropped: 2000,
-		})
+	it("scans the longest stretch of newest hours that fits, even after a burst", () => {
+		const cap = PREVIEW_MAX_SCAN_ROWS
+		expect(scanMinutes(Arr.makeBy(25, () => cap / 100))).toBe(24 * 60)
+		// A burst ten hours back: the newest three hours (four buckets) fit, the rest do not.
+		const burst = [cap / 10, cap / 10, cap / 10, cap / 10, ...Arr.makeBy(21, () => cap)]
+		expect(scanMinutes(burst)).toBe(3 * 60)
+		// Not even an hour fits: the minutes the busier of the two newest buckets allows.
+		expect(scanMinutes([cap * 2, cap * 6])).toBe(10)
+	})
+
+	it("applies each service's match rate in the scanned stretch to its stored records for the day", () => {
+		const scanned = summarize(
+			"logs",
+			rows,
+			sizes,
+			1,
+			60,
+			new Map([
+				["checkout", 24_000],
+				["api", 12_000],
+			]),
+		)
+		expect(scanned.scannedMinutes).toBe(60)
+		expect(scanned.services).toEqual([
+			{ serviceName: "checkout", stored: 24_000, matched: 9600 },
+			{ serviceName: "api", stored: 12_000, matched: 2400 },
+		])
 	})
 
 	it("lists the services with matches, busiest first", () => {
@@ -78,24 +94,26 @@ describe("suggested ingest rules", () => {
 		expect(suggestions[1]).toMatchObject({ spanName: "GET /healthz", savedBytes: 20_000 * 500 })
 	})
 
-	it("samples a level or an operation that dominates its signal, and skips small ones", () => {
+	it("samples a service's logs below warn when its info logs dominate, counting its debug logs too", () => {
 		const suggestions = suggestRules(
 			[
 				{ serviceName: "api", level: "info", records: 900_000, bytes: 900_000 * KB },
+				{ serviceName: "api", level: "debug", records: 100_000, bytes: 100_000 * KB },
 				{ serviceName: "web", level: "info", records: 50_000, bytes: 50_000 * KB },
-				{ serviceName: "web", level: "debug", records: 10, bytes: 10 * KB },
 			],
+			// A busy operation is never sampled: the gateway would keep the rest of its traces.
 			[{ serviceName: "api", spanName: "GET /orders", records: 400_000 }],
 			spanSizes,
-			{ logBytes: 950_010 * KB, spanBytes: 400_000 * 500 },
+			{ logBytes: 1_050_000 * KB, spanBytes: 400_000 * 500 },
 		)
 		expect(Arr.map(suggestions, (entry) => [entry.reason, entry.serviceName, entry.keepPercent])).toEqual(
 			[
 				["info_logs", "api", 10],
-				["busy_operation", "api", 10],
+				["debug_logs", "api", 0],
 			],
 		)
-		expect(suggestions[0]?.savedBytes).toBeCloseTo(900_000 * KB * 0.9)
+		expect(suggestions[0]).toMatchObject({ records: 1_000_000, bytes: 1_000_000 * KB })
+		expect(suggestions[0]?.savedBytes).toBeCloseTo(1_000_000 * KB * 0.9)
 	})
 
 	it("suggests nothing for an org with no data", () => {

@@ -254,11 +254,11 @@ describe("suggested ingest rules", () => {
 				share: 0.21,
 			},
 			{
-				signal: "traces",
+				signal: "logs",
 				service_name: "api",
-				level: null,
-				span_name: "GET /orders",
-				reason: "busy_operation",
+				level: "info",
+				span_name: null,
+				reason: "info_logs",
 				keep_percent: 10,
 				records: 400_000,
 				bytes: 200_000_000,
@@ -287,7 +287,7 @@ describe("suggested ingest rules", () => {
 				"href",
 				"/settings/ingestion/rules/new?service=checkout&level=debug&keep=0",
 			),
-			expectView(text("GET /orders in api")).toExist(),
+			expectView(text("Info and debug logs from api")).toExist(),
 			expectView(role("link", { name: "Sample 10%" })).toExist(),
 		)
 	})
@@ -304,7 +304,31 @@ describe("suggested ingest rules", () => {
 			{ update: step, view },
 			given(withSuggestions([covering])),
 			expectView(text("Debug logs from checkout")).not.toExist(),
-			expectView(text("GET /orders in api")).toExist(),
+			expectView(text("Info and debug logs from api")).toExist(),
+		)
+	})
+
+	test("a rule with other conditions, or that keeps more, does not hide a suggestion", () => {
+		const errorsOnly = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "gte" as const, value: "error" },
+			],
+		}
+		const keepsHalf = {
+			...dropDebug,
+			id: redactTokens.id,
+			action: { type: "drop" as const, keep_percent: 50 },
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([errorsOnly, keepsHalf])),
+			expectView(text("Debug logs from checkout")).toExist(),
 		)
 	})
 

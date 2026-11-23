@@ -7,7 +7,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 import { suggestedRuleHref } from "../ingest-rule/suggested"
 import type { Model } from "./ingest-rules"
 import type { Message } from "./message"
@@ -39,9 +39,7 @@ const reasonOf = (suggestion: V2IngestRuleSuggestion): string => {
 		case "health_checks":
 			return `Health-check spans, ${ofSignal}`
 		case "info_logs":
-			return `Info logs, ${ofSignal}`
-		case "busy_operation":
-			return `${ofSignal}; sampling keeps whole traces`
+			return `Logs below warn, ${ofSignal}`
 	}
 }
 
@@ -66,29 +64,37 @@ const suggestionRow = (h: H, link: SuggestionLink, suggestion: V2IngestRuleSugge
 		]),
 	])
 
-/** A rule the suggestion link would create already exists: same service and level or span name. */
-const isCovered = (rules: ReadonlyArray<V2IngestRule>, suggestion: V2IngestRuleSuggestion): boolean =>
-	Arr.some(
+/** The conditions a suggestion's rule would have, as `field op value` keys in any order. */
+const conditionKeys = (conditions: ReadonlyArray<{ field: string; op: string; value?: string }>) =>
+	Arr.sort(
+		Arr.map(conditions, (condition) => `${condition.field} ${condition.op} ${condition.value ?? ""}`),
+		Order.String,
+	)
+
+const suggestedKeys = (suggestion: V2IngestRuleSuggestion) =>
+	conditionKeys([
+		{ field: "service_name", op: "eq", value: suggestion.service_name },
+		suggestion.span_name === null
+			? { field: "severity", op: "lt", value: suggestion.level === "info" ? "warn" : "info" }
+			: { field: "name", op: "eq", value: suggestion.span_name },
+	])
+
+/**
+ * An enabled drop rule already does what the suggestion would: the same conditions, no more and
+ * no fewer, keeping no more than the suggestion keeps. Anything looser or stricter is not covered.
+ */
+const isCovered = (rules: ReadonlyArray<V2IngestRule>, suggestion: V2IngestRuleSuggestion): boolean => {
+	const wanted = suggestedKeys(suggestion)
+	return Arr.some(
 		rules,
 		(rule) =>
 			rule.enabled &&
 			rule.action.type === "drop" &&
+			rule.action.keep_percent <= suggestion.keep_percent &&
 			rule.signals.includes(suggestion.signal) &&
-			Arr.some(
-				rule.conditions,
-				(condition) =>
-					condition.field === "service_name" &&
-					condition.op === "eq" &&
-					condition.value === suggestion.service_name,
-			) &&
-			Arr.some(rule.conditions, (condition) =>
-				suggestion.span_name === null
-					? condition.field === "severity"
-					: condition.field === "name" &&
-						condition.op === "eq" &&
-						condition.value === suggestion.span_name,
-			),
+			Arr.join(conditionKeys(rule.conditions), "\n") === Arr.join(wanted, "\n"),
 	)
+}
 
 export const ruleSuggestions = (h: H, model: Model, link: SuggestionLink): ReadonlyArray<Html> => {
 	if (!AsyncData.isSuccess(model.rules) || !AsyncData.isSuccess(model.suggestions)) return []

@@ -270,9 +270,9 @@ export type V2IngestRulePreviewParams = Schema.Schema.Type<typeof V2IngestRulePr
 
 export const V2IngestRulePreviewSignal = Schema.Struct({
 	signal: Schema.Literals(["traces", "logs"]),
-	scanned_hours: Count.annotate({
+	scanned_minutes: Count.annotate({
 		description:
-			"Hours scanned: 24, or the latest few when a day holds too many records, with the counts below scaled to 24 hours.",
+			"Minutes scanned: 1440, or the latest stretch that fits the scan budget; then each service's match rate there is applied to its stored records for the day.",
 	}),
 	stored: Count.annotate({ description: "Records stored in the window." }),
 	matched: Count.annotate({ description: "Stored records every condition matches." }),
@@ -313,9 +313,9 @@ export const V2IngestRuleSuggestion = Schema.Struct({
 	span_name: Schema.NullOr(Schema.String).annotate({
 		description: "Traces: the exact span name the rule covers. `null` for logs.",
 	}),
-	reason: Schema.Literals(["debug_logs", "info_logs", "health_checks", "busy_operation"]).annotate({
+	reason: Schema.Literals(["debug_logs", "info_logs", "health_checks"]).annotate({
 		description:
-			"Why: debug logs and health checks are dropped; a log level or operation that is a tenth of its signal is sampled.",
+			"Why: debug logs and health-check spans are dropped; a service's logs below warn are sampled when its info logs are a tenth of all log bytes.",
 	}),
 	keep_percent: Count.annotate({ description: "The rule's `keep_percent`: 0 drops, 10 samples." }),
 	records: Count.annotate({ description: "Records stored in the last 24 hours." }),
@@ -406,7 +406,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				identifier: "listIngestRuleSuggestions",
 				summary: "Suggested ingest rules",
 				description:
-					"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have kept off the bill. Requires the `ingest_rules:read` scope.",
+					"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have dropped. Requires the `ingest_rules:read` scope; log suggestions also need `logs:read` and span suggestions `traces:read`.",
 			}),
 		),
 	)
@@ -422,7 +422,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 					identifier: "previewIngestRule",
 					summary: "Preview an ingest rule",
 					description:
-						"Counts what a draft rule's conditions match in the last 24 hours of stored logs and spans, per service, and estimates the records and bytes it would drop. Saves nothing. Requires the `ingest_rules:read` scope.",
+						"Counts what a draft rule's conditions match in the last 24 hours of stored logs and spans, per service, and estimates the records and bytes it would drop. Saves nothing. Requires the `ingest_rules:read` scope, plus `logs:read` and `traces:read` for the signals it counts.",
 				}),
 			),
 	)

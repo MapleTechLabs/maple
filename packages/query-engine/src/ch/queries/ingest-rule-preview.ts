@@ -43,16 +43,54 @@ const CATEGORY_SHORT_NAMES = {
 	Control: "Cc",
 } as const satisfies Record<string, string>
 
+/** Rust's Unicode classes, which RE2 writes differently (its `\\d`, `\\w`, `\\s` are ASCII only). */
+const WORD = "\\p{L}\\p{Nl}\\p{M}\\p{Nd}\\p{Pc}"
+const SPACE =
+	"\\t\\n\\x{0B}\\f\\r \\x{85}\\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}"
+const IN_CLASS = { d: "\\p{Nd}", w: WORD, s: SPACE } as const satisfies Record<string, string>
+const OUTSIDE_CLASS = {
+	d: "\\p{Nd}",
+	D: "\\P{Nd}",
+	w: `[${WORD}]`,
+	W: `[^${WORD}]`,
+	s: `[${SPACE}]`,
+	S: `[^${SPACE}]`,
+} as const satisfies Record<string, string>
+
 /**
- * A validated rule pattern in ClickHouse's RE2 dialect. The validator accepts what Rust and JS
- * both accept; RE2 spells some of it differently: `\\u0041` and `\\u{41}` (RE2 `\\x{41}`),
- * `(?<name>` (RE2 `(?P<name>`), `\\p{Script=Greek}` (RE2 `\\p{Greek}`) and `\\p{Letter}` (RE2 `\\p{L}`).
+ * `\\d`, `\\w`, `\\s` and their negations as the Unicode classes the gateway means, read
+ * escape by escape so `\\\\d` stays a backslash and a `d`. The validator keeps the negations out
+ * of `[...]`.
+ */
+const unicodeShorthands = (pattern: string): string =>
+	Arr.reduce(Str.split("")(pattern), { out: "", escaped: false, inClass: false }, (state, char) => {
+		if (state.escaped) {
+			const table: ReadonlyArray<readonly [string, string]> = state.inClass
+				? Rec.toEntries(IN_CLASS)
+				: Rec.toEntries(OUTSIDE_CLASS)
+			const replaced = Option.match(
+				Arr.findFirst(table, ([shorthand]) => shorthand === char),
+				{ onNone: () => `\\${char}`, onSome: ([, unicode]) => unicode },
+			)
+			return { ...state, escaped: false, out: state.out + replaced }
+		}
+		if (char === "\\") return { ...state, escaped: true }
+		const inClass = state.inClass ? char !== "]" : char === "["
+		return { ...state, inClass, out: state.out + char }
+	}).out
+
+/**
+ * A validated rule pattern in ClickHouse's RE2 dialect, meaning what the gateway means. Shorthand
+ * classes become Unicode classes, `.` stops at a newline (ClickHouse lets it cross one), and the
+ * spellings RE2 lacks are rewritten: `\\u0041` and `\\u{41}` (RE2 `\\x{41}`), `(?<name>` (RE2
+ * `(?P<name>`), `\\p{Script=Greek}` (RE2 `\\p{Greek}`) and `\\p{Letter}` (RE2 `\\p{L}`). `\\b` stays
+ * ASCII in RE2, so a word boundary next to a non-ASCII letter can count differently.
  */
 export const toRe2 = (pattern: string): string =>
-	Arr.reduce(
+	`(?-s)${Arr.reduce(
 		Rec.toEntries(CATEGORY_SHORT_NAMES),
 		pipe(
-			pattern,
+			unicodeShorthands(pattern),
 			Str.replace(/(?<!\\)((?:\\\\)*)\\u\{([0-9A-Fa-f]{1,6})\}/gu, "$1\\x{$2}"),
 			Str.replace(/(?<!\\)((?:\\\\)*)\\u([0-9A-Fa-f]{4})/gu, "$1\\x{$2}"),
 			Str.replace(/\(\?<(?![=!])/gu, "(?P<"),
@@ -63,7 +101,7 @@ export const toRe2 = (pattern: string): string =>
 		),
 		(text, [long, short]) =>
 			Str.replace(new RegExp(`\\\\([pP])\\{${long}\\}`, "gu"), `\\$1{${short}}`)(text),
-	)
+	)}`
 
 type MapExpr = CH.Expr<Record<string, string>>
 
@@ -230,6 +268,24 @@ export function ingestRuleSpanMatchesQuery(opts: IngestRuleMatchOpts) {
 		.format("JSON")
 }
 
+/** Stored logs and spans per UTC hour bucket the window touches, newest first: sizes a scan. */
+export function ingestRuleHourlyVolumeQuery() {
+	return from(Datasources.serviceUsage)
+		.select(($) => ({
+			hour: $.Hour,
+			logs: CH.sum($.LogCount),
+			spans: CH.sum($.TraceCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(utcHourFloor("startTime")),
+			$.Hour.lte(utcHourFloor("endTime")),
+		])
+		.groupBy("hour")
+		.orderBy(["hour", "desc"])
+		.format("JSON")
+}
+
 // Suggested rules: the busiest log levels and span names per service, from the hourly rollups so
 // a day costs a few thousand rows, not a scan.
 
@@ -265,13 +321,17 @@ export function ingestRuleLogVolumeQuery() {
 		.format("JSON")
 }
 
-/** Stored spans per service and span name over the hours the window touches, busiest first. */
+/**
+ * Spans per service and span name as the gateway sees them (the raw `SpanName`, not the
+ * `METHOD /route` display name the operations rollup stores), busiest first. Counts are
+ * sampling-weighted, so a service that samples at its SDK shows more than it stores.
+ */
 export function ingestRuleSpanVolumeQuery() {
-	return from(Datasources.serviceOperationsHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,
-			records: CH.sum($.SpanCount),
+			records: CH.sum($.WeightedCount),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
