@@ -38,7 +38,6 @@
 		"@takumi-rs/helpers": "2.22.1",
 		"@takumi-rs/wasm": "2.22.1",
 		"astro": "^7.4.13",
-		"autumn-js": "1.6.35",
 		"effect": "catalog:effect",
 		"foldkit": "0.171.0",
 		"tailwindcss": "catalog:tailwind",

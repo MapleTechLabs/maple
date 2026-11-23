@@ -14,11 +14,51 @@
  * other locale inherits it.
  */
 import { PRICING_CARD_FEATURE_IDS, isAdvertisedPricingFeature } from "@maple/domain/billing"
-import { Autumn } from "autumn-js"
 import * as m from "../paraglide/messages.js"
-import { Array as Arr } from "effect"
+import { Array as Arr, Effect, Option, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
+/** Same base URL and pinned version as the backend's `autumn-api.ts`. */
+const AUTUMN_API_URL = "https://api.useautumn.com"
 const AUTUMN_API_VERSION = "2.3.0"
+const AUTUMN_PLANS_LIST_PATH = "/v1/plans.list"
+
+const PlanItem = Schema.Struct({
+	feature_id: Schema.String,
+	feature: Schema.optionalKey(
+		Schema.NullOr(Schema.Struct({ name: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
+	),
+	included: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	unlimited: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+	price: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				amount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+				billing_units: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+			}),
+		),
+	),
+})
+
+const Plan = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	add_on: Schema.Boolean,
+	price: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				amount: Schema.Number,
+				interval: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			}),
+		),
+	),
+	free_trial: Schema.optionalKey(Schema.NullOr(Schema.Struct({ duration_length: Schema.Number }))),
+	items: Schema.Array(PlanItem),
+})
+
+/** The `POST /v1/plans.list` body, narrowed to the fields the offer reads. */
+export const PlansListResponse = Schema.Struct({ list: Schema.Array(Plan) })
+export type PlansListResponse = typeof PlansListResponse.Type
 
 /**
  * browser_sessions is metered per session, product_events per event, and
@@ -104,17 +144,38 @@ export const platformFeatures = (): string[] => [
 ]
 
 /**
+ * Autumn's plans, or None when the key is missing or the call fails for any reason: the caller
+ * falls back to the mirror, so a build never breaks on billing being down.
+ */
+export const loadPlans = (secretKey: string | undefined) =>
+	Effect.gen(function* () {
+		if (secretKey === undefined || secretKey === "") {
+			return yield* Effect.fail("AUTUMN_SECRET_KEY is not set")
+		}
+		const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
+		const request = HttpClientRequest.post(`${AUTUMN_API_URL}${AUTUMN_PLANS_LIST_PATH}`, {
+			headers: { Authorization: `Bearer ${secretKey}`, "x-api-version": AUTUMN_API_VERSION },
+		}).pipe(HttpClientRequest.bodyJsonUnsafe({}))
+		const response = yield* client.execute(request)
+		return yield* HttpClientResponse.schemaBodyJson(PlansListResponse)(response)
+	}).pipe(
+		Effect.asSome,
+		Effect.catchCause((cause) =>
+			Effect.as(Effect.logError("Failed to fetch pricing from Autumn", cause), Option.none()),
+		),
+	)
+
+/**
  * One Autumn request per build: every feature page reads the offer, in three
  * locales. The response carries no localized text, so sharing it is safe; labels
  * are still resolved per call. The site is fully static, so nothing outlives a build.
  */
-let plansRequest: ReturnType<Autumn["plans"]["list"]> | undefined
+let plansRequest: Promise<Option.Option<PlansListResponse>> | undefined
 
 const listPlans = () =>
-	(plansRequest ??= new Autumn({
-		secretKey: import.meta.env.AUTUMN_SECRET_KEY,
-		xApiVersion: AUTUMN_API_VERSION,
-	}).plans.list())
+	(plansRequest ??= Effect.runPromise(
+		loadPlans(import.meta.env.AUTUMN_SECRET_KEY).pipe(Effect.provide(FetchHttpClient.layer)),
+	))
 
 /**
  * The live offer, or the `autumn.config.ts` mirror if Autumn is unreachable at
@@ -122,116 +183,117 @@ const listPlans = () =>
  * short fallback would render a meter that disagrees with the live one.
  */
 export async function getOffer(): Promise<Offer> {
+	return resolveOffer(await listPlans())
+}
+
+/** The offer from a plans.list response; the mirror when there is none or it has no base plan. */
+export const resolveOffer = (plans: Option.Option<PlansListResponse>): Offer => {
 	const labels = dataFeatureLabels()
+	const products = Arr.filter(
+		Option.match(plans, { onNone: () => [], onSome: (r) => r.list }),
+		(p) => !p.add_on,
+	)
 
-	try {
-		const result = await listPlans()
-		const products = Arr.filter(result.list ?? [], (p) => !p.addOn)
-
-		if (products.length > 1) {
-			// The layout renders one offer. A second tier must fail loudly at build
-			// time rather than silently vanishing off the pricing page.
-			console.warn(
-				`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${Arr.join(
-					Arr.map(products, (p) => p.id),
-					", ",
-				)}); only the first is rendered. Update PricingTable for multiple tiers.`,
-			)
-		}
-
-		const product = products[0]
-
-		if (product !== undefined) {
-			return {
-				name: product.name,
-				price: product.price?.amount ?? 0,
-				interval:
-					product.price?.interval == null || product.price.interval === ""
-						? undefined
-						: `/${product.price.interval}`,
-				hasTrial: !!product.freeTrial,
-				trialDuration: product.freeTrial?.durationLength,
-				allotments: Arr.map(
-					Arr.filter(product.items, (item) => isAdvertisedPricingFeature(item.featureId)),
-					(item) => {
-						const featureId = item.featureId
-						const unit = unitFor(featureId)
-						const billingUnits = Math.max(1, item.price?.billingUnits ?? 1)
-						const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
-						const amount = item.price?.amount
-						return {
-							featureId,
-							label: labels[featureId] ?? item.feature?.name ?? featureId,
-							unit,
-							included: Number(item.included ?? 0),
-							unlimited: item.unlimited === true,
-							rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
-							rateUnits,
-						}
-					},
-				).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
-				ctaLabel: product.freeTrial
-					? m.pricing_start_trial({ duration: String(product.freeTrial.durationLength) })
-					: m.cta_get_started(),
-			}
-		}
-	} catch (e) {
-		console.error("Failed to fetch pricing from Autumn:", e)
+	if (products.length > 1) {
+		// The layout renders one offer. A second tier must fail loudly at build
+		// time rather than silently vanishing off the pricing page.
+		console.warn(
+			`[pricing-offer] Autumn returned ${products.length} non-add-on plans (${Arr.join(
+				Arr.map(products, (p) => p.id),
+				", ",
+			)}); only the first is rendered. Update PricingTable for multiple tiers.`,
+		)
 	}
+
+	const product = products[0]
+	if (product === undefined) return fallbackOffer(labels)
+	const freeTrial = product.free_trial ?? undefined
+	const interval = product.price?.interval
 
 	return {
-		name: "Startup",
-		price: 39,
-		interval: "/month",
-		hasTrial: true,
-		trialDuration: 14,
-		allotments: [
-			{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
-			{
-				featureId: "traces",
-				label: labels.traces,
-				unit: "gb",
-				included: 100,
-				rate: 0.3,
-				rateUnits: 1,
+		name: product.name,
+		price: product.price?.amount ?? 0,
+		interval: interval == null || interval === "" ? undefined : `/${interval}`,
+		hasTrial: freeTrial !== undefined,
+		trialDuration: freeTrial?.duration_length,
+		allotments: Arr.map(
+			Arr.filter(product.items, (item) => isAdvertisedPricingFeature(item.feature_id)),
+			(item): Allotment => {
+				const featureId = item.feature_id
+				const unit = unitFor(featureId)
+				const billingUnits = Math.max(1, item.price?.billing_units ?? 1)
+				const rateUnits = unit === "events" ? EVENTS_QUOTE_UNITS : billingUnits
+				const amount = item.price?.amount
+				return {
+					featureId,
+					label: labels[featureId] ?? item.feature?.name ?? featureId,
+					unit,
+					included: Number(item.included ?? 0),
+					unlimited: item.unlimited === true,
+					rate: amount == null ? undefined : (amount / billingUnits) * rateUnits,
+					rateUnits,
+				}
 			},
-			{
-				featureId: "metrics",
-				label: labels.metrics,
-				unit: "gb",
-				included: 100,
-				rate: 0.3,
-				rateUnits: 1,
-			},
-			{
-				featureId: "browser_sessions",
-				label: labels.browser_sessions,
-				unit: "sessions",
-				included: 5000,
-				rate: 0.002,
-				rateUnits: 1,
-			},
-			{
-				featureId: "product_events",
-				label: labels.product_events,
-				unit: "events",
-				// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
-				included: 1_000_000,
-				rate: 5,
-				rateUnits: EVENTS_QUOTE_UNITS,
-			},
-			{
-				featureId: "ai_credits",
-				label: labels.ai_credits,
-				unit: "usd",
-				included: 10,
-				rate: 1,
-				rateUnits: 1,
-			},
-		],
-		ctaLabel: m.pricing_start_trial({ duration: "14" }),
+		).sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId)),
+		ctaLabel:
+			freeTrial === undefined
+				? m.cta_get_started()
+				: m.pricing_start_trial({ duration: String(freeTrial.duration_length) }),
 	}
 }
+
+const fallbackOffer = (labels: Record<string, string>): Offer => ({
+	name: "Startup",
+	price: 39,
+	interval: "/month",
+	hasTrial: true,
+	trialDuration: 14,
+	allotments: [
+		{ featureId: "logs", label: labels.logs, unit: "gb", included: 100, rate: 0.3, rateUnits: 1 },
+		{
+			featureId: "traces",
+			label: labels.traces,
+			unit: "gb",
+			included: 100,
+			rate: 0.3,
+			rateUnits: 1,
+		},
+		{
+			featureId: "metrics",
+			label: labels.metrics,
+			unit: "gb",
+			included: 100,
+			rate: 0.3,
+			rateUnits: 1,
+		},
+		{
+			featureId: "browser_sessions",
+			label: labels.browser_sessions,
+			unit: "sessions",
+			included: 5000,
+			rate: 0.002,
+			rateUnits: 1,
+		},
+		{
+			featureId: "product_events",
+			label: labels.product_events,
+			unit: "events",
+			// Mirrors `apps/api/autumn.config.ts`: $0.005 per 1,000, quoted per 1M.
+			included: 1_000_000,
+			rate: 5,
+			rateUnits: EVENTS_QUOTE_UNITS,
+		},
+		{
+			featureId: "ai_credits",
+			label: labels.ai_credits,
+			unit: "usd",
+			included: 10,
+			rate: 1,
+			rateUnits: 1,
+		},
+	],
+	ctaLabel: m.pricing_start_trial({ duration: "14" }),
+})
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
