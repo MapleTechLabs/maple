@@ -11,6 +11,7 @@ import { init, update } from "./update"
 import { hashedMarkdownTexts, transcriptRows } from "./transcript-rows"
 import { buildLargeSessionFixture } from "../../../lab/agent-transcript-fixture"
 import { toWire } from "../../../lab/session-lab"
+import { REST_LOAD_FAILURE } from "./view-load"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -226,6 +227,18 @@ describe("agent session detail", () => {
 			),
 		)
 		expect(traceIds).toEqual(Arr.map(ids, hex))
+		// A failed read keeps its failure for the view, and Try again reads the scores again.
+		const failed = update(
+			flagged.model,
+			Message.CompletedFetchScores({
+				key: flagged.model.scores.key ?? "",
+				result: Result.fail(REST_LOAD_FAILURE),
+			}),
+			{ ...context, hasLlmEvals: true },
+		)
+		expect(AsyncData.isFailure(failed.model.scores.data)).toBe(true)
+		const retried = update(failed.model, Message.ClickedRetryScores(), { ...context, hasLlmEvals: true })
+		expect(names(retried.commands)).toContain("FetchAgentSessionScores")
 	})
 
 	test("the transcript rows are read once per filter and collapse, not on every scroll tick", () => {

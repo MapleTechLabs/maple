@@ -12,6 +12,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { pressable } from "@maple/views/ui/pressable"
@@ -526,11 +527,23 @@ export const sessionChecks = (h: H, model: Model, report: SessionChecksReport): 
 					]
 				: []),
 		]),
-		...sessionScores(
-			h,
-			Option.getOrElse(AsyncData.getData(model.scores.data), () => []),
-			model.search.span,
-		),
+		// A failed read says so, with a retry; only a read that found nothing is silent.
+		...Option.match(AsyncData.getError(model.scores.data), {
+			onSome: (failure) => [
+				errorState(h, {
+					failure,
+					title: "Couldn't load this session's scores",
+					variant: "row",
+					onRetry: Message.ClickedRetryScores(),
+				}),
+			],
+			onNone: () =>
+				sessionScores(
+					h,
+					Option.getOrElse(AsyncData.getData(model.scores.data), () => []),
+					model.search.span,
+				),
+		}),
 		coverageLine(h, report.coverage),
 	])
 }

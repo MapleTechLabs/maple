@@ -457,6 +457,8 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		CompletedDetectModels: ({ key, models }) => ({
 			model: { ...model, detections: { ...model.detections, [key]: models } },
 		}),
+		// The scores read again: an idle slot lets `follow` request it as on first load.
+		ClickedRetryScores: () => follow(context)({ model: { ...model, scores: Keyed.idle() } }),
 		ClickedRetryLoad: () =>
 			model.more.status === "failed"
 				? drain({ model: { ...model, more: { ...model.more, status: "loading" } } })

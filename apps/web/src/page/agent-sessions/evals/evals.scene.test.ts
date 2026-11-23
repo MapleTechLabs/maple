@@ -88,6 +88,7 @@ describe("agent evals", () => {
 			),
 			expectView(text("labels_only")).toExist(),
 			expectView(text("80.0%")).not.toExist(),
+			expectView(role("link", { name: /labels_only/ })).toHaveText(/labels_only\s*[\d.K]+\s*-/),
 		)
 	})
 

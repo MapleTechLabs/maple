@@ -121,7 +121,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/meter.ts` `meter`, `segmentedBar`, `backdropBar`, `barFillClass`, `levelMeter`: Meter, SegmentedBar, BackdropBar and LevelMeter.
 - `packages/views/src/ui/metric-type.ts` `metricTypeLabel`, `metricTypeBadge`: A metric type's label, badge and colour, wherever a metric is listed.
 - `packages/views/src/ui/middle-truncate.ts` `middleTruncate`: Keeps the last `tail` characters visible and ellipsizes the middle.
-- `packages/views/src/ui/mini-bars.ts` `miniBarsLayout`, `miniBars`: A static bar sparkline in one <svg>.
+- `packages/views/src/ui/mini-bars.ts` `miniBarsLayout`, `miniBarsRatio`, `miniBars`: A static bar sparkline in one <svg>.
 - `packages/views/src/ui/native-select.ts` `nativeOption`, `nativeOptGroup`, `nativeSelect`: `<NativeSelect>`: a styled native `<select>` with the chevron overlay; uncontrolled (`defaultValue`).
 - `packages/views/src/ui/nav-rail-row.ts` `navRailRow`: `NavRailRow`: a page's own nav rail row (settings, security, alerts), with the app sidebar row's height, type, radius and flush 2px active lane.
 - `packages/views/src/ui/navigation-menu.ts` `triggerIdOf`, `viewportId`, `rootId`, `navigationMenuLink`, `view` (stateful: Model, init, update): Base UI `NavigationMenu` (`@maple/ui/navigation-menu`): a trigger opens its content in one shared popup below the list (offset 8, start-aligned) on click, or after the pointer r...

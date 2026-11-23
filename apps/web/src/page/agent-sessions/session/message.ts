@@ -37,6 +37,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedDetectModels: { key: Schema.String, models: Schema.Array(DetectedModel) },
 	ClickedRetryLoad: {},
+	ClickedRetryScores: {},
 	GotTabsMessage: { message: Tabs.Message },
 	PressedViewKey: { view: Schema.Literals(SESSION_VIEWS) },
 	GotDisplayPopoverMessage: { message: Popover.Message },

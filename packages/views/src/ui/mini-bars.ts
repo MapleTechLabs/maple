@@ -37,6 +37,9 @@ export const miniBarsLayout = (
 	return { barWidth: (100 - fitted * (slots - 1)) / slots, gap: fitted }
 }
 
+/** A bar's share of full height (0-1): its value over `max`, never past the top. */
+export const miniBarsRatio = (value: number, max: number): number => (max > 0 ? Math.min(value / max, 1) : 0)
+
 const bar = <M>(
 	h: HtmlBuilder<M>,
 	x: number,
@@ -74,7 +77,7 @@ export const miniBars = <M>(h: HtmlBuilder<M>, options: MiniBarsOptions): Html =
 			const opacity = options.floorColor ? 1 : dim ? 0.2 : 0.3
 			return [bar(h, x, 100 - floor, barWidth, floor, options.floorColor ?? color, opacity)]
 		}
-		const ratio = max > 0 ? Math.min(value / max, 1) : 0
+		const ratio = miniBarsRatio(value, max)
 		const height = Math.max(ratio * 100, minHeight)
 		const opacity = (options.opacityRamp === true ? 0.3 + ratio * 0.7 : 1) * (dim ? 0.5 : 1)
 		return [bar(h, x, 100 - height, barWidth, height, color, opacity)]
