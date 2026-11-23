@@ -1,0 +1,77 @@
+# A real Fleet server with four enrolled osquery devices, for `up.sh`. One compose project per
+# server version; FLEET_IMAGE, FLEET_PORT, FLEET_SERVE_FLAGS and FLEET_SUBNET come from `up.sh`.
+x-osquery: &osquery
+    image: osquery/osquery:5.17.0-ubuntu22.04
+    platform: linux/amd64
+    volumes:
+        - ./.state/fleet.crt:/etc/osquery/fleet.crt:ro
+        - ./osquery.flags:/etc/osquery/osquery.flags:ro
+    environment:
+        ENROLL_SECRET: "${ENROLL_SECRET:-unset}"
+    command: osqueryd --flagfile=/etc/osquery/osquery.flags --tls_hostname=fleet:8080
+    profiles: ["devices"]
+
+services:
+    mysql:
+        image: mysql:8.0.44
+        environment:
+            MYSQL_ROOT_PASSWORD: toor
+            MYSQL_DATABASE: fleet
+            MYSQL_USER: fleet
+            MYSQL_PASSWORD: insecure
+        command: mysqld --datadir=/tmp/mysqldata
+        healthcheck:
+            test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ufleet", "-pinsecure"]
+            interval: 3s
+            timeout: 3s
+            retries: 60
+
+    redis:
+        image: redis:7
+
+    fleet:
+        image: "${FLEET_IMAGE}"
+        depends_on:
+            mysql:
+                condition: service_healthy
+            redis:
+                condition: service_started
+        environment:
+            FLEET_MYSQL_ADDRESS: mysql:3306
+            FLEET_MYSQL_DATABASE: fleet
+            FLEET_MYSQL_USERNAME: fleet
+            FLEET_MYSQL_PASSWORD: insecure
+            FLEET_REDIS_ADDRESS: redis:6379
+            FLEET_SERVER_ADDRESS: 0.0.0.0:8080
+            FLEET_SERVER_CERT: /certs/fleet.crt
+            FLEET_SERVER_KEY: /certs/fleet.key
+            FLEET_SERVER_PRIVATE_KEY: "local-only-not-a-secret-0123456789ab"
+            # Devices answer policies within seconds, so the counts settle in under a minute.
+            FLEET_OSQUERY_POLICY_UPDATE_INTERVAL: 20s
+            FLEET_OSQUERY_DETAIL_UPDATE_INTERVAL: 30s
+            FLEET_OSQUERY_LABEL_UPDATE_INTERVAL: 30s
+        volumes:
+            - ./.state/fleet.crt:/certs/fleet.crt:ro
+            - ./.state/fleet.key:/certs/fleet.key:ro
+        command: sh -c "fleet prepare db --no-prompt && exec fleet serve --dev ${FLEET_SERVE_FLAGS:-}"
+        ports:
+            - "127.0.0.1:${FLEET_PORT}:8080"
+
+    ws-ada:
+        <<: *osquery
+        hostname: ws-ada
+    ws-bob:
+        <<: *osquery
+        hostname: ws-bob
+    srv-cid:
+        <<: *osquery
+        hostname: srv-cid
+    stray-dee:
+        <<: *osquery
+        hostname: stray-dee
+
+networks:
+    default:
+        ipam:
+            config:
+                - subnet: "${FLEET_SUBNET}"

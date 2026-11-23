@@ -286,6 +286,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/pick-list.ts` `pickList`: What a form has picked (destinations, people, schedules), each removable and, in an ordered list, movable, then an "Add" menu of the rest.
 - `apps/web/src/page/kit/picker-card.ts` `pickerCard`: A provider in a picker grid (`/sources/new`, the Cost page's add dialog): its tile, name and what it brings in, as one card that acts in place or navigates.
 - `apps/web/src/page/kit/pinned-namespace-notice.ts` `pinnedNamespaceNotice`: Replaces a rail's Namespace section while the org-global pin is on.
+- `apps/web/src/page/kit/platform-label.ts` `osName`, `platformLabel`: An operating system's name ("macOS" for `darwin`), or undefined for one with no mark.
 - `apps/web/src/page/kit/providers.ts` `providerBrand`: The integration providers: each one's name, mark, accent, docs and infra page, read by the integrations catalog, the sidebar, the infra overview, Sources and the provider pages.
 - `apps/web/src/page/kit/query-builder/change.ts` `withRootOnly`, `switchDataSource`, `applyQueryChange`: One edit a `QueryPanel` makes to its draft, as data the host applies.
 - `apps/web/src/page/kit/query-builder/condition-builder-view.ts` `conditionBuilder`: The where clause as `[field] [operator] [values]` rows, AND-ed, each picked from the query's own vocabulary.

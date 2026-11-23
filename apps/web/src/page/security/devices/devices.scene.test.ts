@@ -28,6 +28,7 @@ import {
 	freeDevices,
 	notConnectedDevices,
 	premiumDevices,
+	staleAllClearDevices,
 	syncErrorDevices,
 	firstSyncFailedDevices,
 	twoSourceDevices,
@@ -115,8 +116,10 @@ describe("security devices", () => {
 				"https://fleet.acme.dev/software/vulnerabilities",
 			),
 			expectView(text("Known exploited")).toExist(),
-			// One source: no source tag between the critical badge and the failing count.
-			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabledCritical7 of"),
+			// One source: no source tag between the critical badge and the fleet the policy belongs to.
+			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabledCriticalWorkstations"),
+			// A global policy is set for no one fleet.
+			expectView(nth(all.role("row"), 2)).toContainText("All fleets"),
 		)
 	})
 
@@ -125,7 +128,11 @@ describe("security devices", () => {
 			{ update: pageUpdate, view },
 			given(loaded(premiumDevices(NOW))),
 			expectView(role("link", { name: "mbp-anna" })).toBeAbsent(),
-			click(role("button", { name: /^Show failing devices: Disk encryption enabled, critical, 7 of/ })),
+			click(
+				role("button", {
+					name: /^Show failing devices: Disk encryption enabled, critical, Workstations, 7 of/,
+				}),
+			),
 			expectView(role("link", { name: "mbp-anna" })).toHaveAttr(
 				"href",
 				"https://fleet.acme.dev/hosts/100",
@@ -135,7 +142,11 @@ describe("security devices", () => {
 				"href",
 				"https://fleet.acme.dev/policies/12",
 			),
-			click(role("button", { name: /^Hide failing devices: Disk encryption enabled, critical, 7 of/ })),
+			click(
+				role("button", {
+					name: /^Hide failing devices: Disk encryption enabled, critical, Workstations, 7 of/,
+				}),
+			),
 			expectView(role("link", { name: "mbp-anna" })).toBeAbsent(),
 		)
 	})
@@ -152,7 +163,11 @@ describe("security devices", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(unsampled)),
-			click(role("button", { name: /^Show failing devices: Disk encryption enabled, critical, 7 of/ })),
+			click(
+				role("button", {
+					name: /^Show failing devices: Disk encryption enabled, critical, Workstations, 7 of/,
+				}),
+			),
 			expectView(text("Maple has no device names for this policy. Fleet lists them.")).toExist(),
 			expectView(text("Failing devices, 0 of 7")).toBeAbsent(),
 		)
@@ -192,9 +207,11 @@ describe("security devices", () => {
 			expectView(text("304")).toExist(),
 			// Both servers are Fleet, so the tag is the account; the larger failing count leads.
 			expectView(nth(all.role("row"), 1)).toContainText("Disk encryption enabled"),
-			expectView(nth(all.role("row"), 1)).toContainText("CriticalAcme7 of"),
+			expectView(nth(all.role("row"), 1)).toContainText("CriticalAcmeWorkstations · 7 of"),
 			// The EU source counts no passing devices, so its row gives the failing count alone.
-			expectView(nth(all.role("row"), 2)).toContainText("CriticalAcme EU3 devices failing"),
+			expectView(nth(all.role("row"), 2)).toContainText(
+				"CriticalAcme EUAll fleets · 3 devices failing",
+			),
 			expectView(text("Fleet rejected the saved token for Acme EU")).toExist(),
 			expectView(text("Fleet rejected the saved token for Acme")).toBeAbsent(),
 			expectView(role("link", { name: "Save a new token" })).toHaveAttr("href", FLEET_CARD),
@@ -214,7 +231,7 @@ describe("security devices", () => {
 			// Each row names its source, so the EU one is reachable by name alone.
 			click(
 				role("button", {
-					name: /^Show failing devices: Disk encryption enabled, critical, Acme EU, 3 devices failing/,
+					name: /^Show failing devices: Disk encryption enabled, critical, Acme EU, All fleets, 3 devices failing/,
 				}),
 			),
 			expectView(role("link", { name: "Open the policy in Fleet" })).toHaveAttr(
@@ -223,7 +240,7 @@ describe("security devices", () => {
 			),
 			expectView(
 				role("button", {
-					name: /^Show failing devices: Disk encryption enabled, critical, Acme, 7 of/,
+					name: /^Show failing devices: Disk encryption enabled, critical, Acme, Workstations, 7 of/,
 				}),
 			).toExist(),
 		)
@@ -244,7 +261,17 @@ describe("security devices", () => {
 			{ update: pageUpdate, view },
 			given(loaded(allClearDevices(NOW))),
 			expectView(text("No failing policies")).toExist(),
-			expectView(text("Team policies are not read yet.", { exact: false })).toExist(),
+			expectView(text("each fleet's and those for devices in no fleet", { exact: false })).toExist(),
+		)
+	})
+
+	test("an all-clear from before a failed sync says it may be out of date", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(staleAllClearDevices(NOW))),
+			expectView(text("The last sync failed")).toExist(),
+			expectView(text("at the last sync that worked", { exact: false })).toExist(),
+			expectView(text("Every enrolled device passes every policy", { exact: false })).toBeAbsent(),
 		)
 	})
 

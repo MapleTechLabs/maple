@@ -159,6 +159,7 @@ export class DeviceSecurityService extends Context.Service<DeviceSecurityService
 								connectionId: row.connectionId,
 								policyId: row.policyId,
 								name: row.name,
+								groupName: row.groupName,
 								description: row.description,
 								resolution: row.resolution,
 								critical: row.critical,
