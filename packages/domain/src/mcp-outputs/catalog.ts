@@ -159,6 +159,7 @@ import {
 	ServiceDeploymentsOutput,
 } from "./service-activity"
 import { ProfileHotspotsOutput } from "./profiles"
+import { GetIngestSetupOutput, OnboardingStatusUpdateOutput } from "./onboarding"
 import {
 	FindSlowTracesOutput,
 	InspectSpanOutput,
@@ -268,6 +269,7 @@ export const McpToolOutputs = {
 	get_dashboard: GetDashboardOutput,
 	get_evaluation_scores: GetEvaluationScoresOutput,
 	get_incident_timeline: GetIncidentTimelineOutput,
+	get_ingest_setup: GetIngestSetupOutput,
 	get_investigation: GetInvestigationOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
 	get_service_top_operations: GetServiceTopOperationsOutput,
@@ -317,6 +319,7 @@ export const McpToolOutputs = {
 	list_services: ListServicesOutput,
 	list_source_repositories: ListSourceRepositoriesOutput,
 	mine_log_patterns: MineLogPatternsOutput,
+	onboarding_status_update: OnboardingStatusUpdateOutput,
 	pr_changed_files: PrChangedFilesOutput,
 	pr_context: PrContextOutput,
 	pr_file_diff: PrFileDiffOutput,

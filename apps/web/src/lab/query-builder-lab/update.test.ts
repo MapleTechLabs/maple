@@ -52,7 +52,7 @@ describe("query builder lab", () => {
 
 	test("the session sends every autocomplete lookup over the window and the metric list", () => {
 		const step = update(init(flags()).model, Message.SucceededCheckSession({ orgId }))
-		expect(argsOf(step, "FetchQueryBuilderLabAutocomplete")).toHaveLength(7)
+		expect(argsOf(step, "FetchQueryBuilderLabAutocomplete")).toHaveLength(9)
 		expect(argsOf(step, "FetchQueryBuilderLabAutocomplete")).toContainEqual({
 			key: requestKey(orgId, "autocomplete.spanAttributeKeys", HOUR),
 			lookup: "spanAttributeKeys",

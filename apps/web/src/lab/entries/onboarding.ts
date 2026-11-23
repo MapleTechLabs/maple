@@ -20,10 +20,13 @@ import * as QuickStart from "../../page/onboarding/quick-start"
 import { ConnectMessage, SETUP_LINK_COPY } from "../../page/onboarding/quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick-start-state"
 import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
+import * as AgentHandoff from "../../page/kit/agent-handoff"
+import { LabAgentState, labAgentRun, labHandoff } from "../onboarding-agent-fixture"
 
 // `/lab/onboarding`: the real quick-start screen with a sample catalog; checkout, rename and invites are
 // simulated and nothing is saved. `?step=stack` opens a later step (`org` is the create-org screen,
-// `region` the region step), Restart starts over.
+// `region` the region step), Restart starts over. `&agent=waiting|progress|completed|expired` seeds the
+// connect step's agent progress; Copy prompt there uses a sample handoff code.
 
 const meteredItem = (
 	featureId: string,
@@ -103,9 +106,21 @@ const SAMPLE_ORG: CreateOrg.Model = {
 const quickStartStep = (step: LabStep): (typeof STEP_IDS)[number] =>
 	step === "org" || step === "region" ? "plan" : step
 
-export const init = (step: LabStep, run = 0): Model => ({
+const withAgentRun = (quickStart: QuickStart.Model, agent: LabAgentState): QuickStart.Model => ({
+	...quickStart,
+	connect: {
+		...quickStart.connect,
+		agent: {
+			...quickStart.connect.agent,
+			run: agent === "none" || agent === "control" ? null : labAgentRun(agent),
+			arm: agent === "control" ? "control" : "handoff",
+		},
+	},
+})
+
+export const init = (step: LabStep, run = 0, agent: LabAgentState = "none"): Model => ({
 	quickStart: {
-		...QuickStart.init("lab-onboarding").model,
+		...withAgentRun(QuickStart.init("lab-onboarding").model, agent),
 		state: { ...DEFAULT_QUICK_START_STATE, activeStep: quickStartStep(step) },
 		team: ready("Acme", [], true, null),
 	},
@@ -166,6 +181,49 @@ const copyStep = (model: Model, snippet: string, message: CopyButton.Message): R
 	}
 }
 
+/**
+ * The agent prompt with a sample handoff: the clipboard's own Commands run for real; the mint, run
+ * reads and analytics, which need the API, do not.
+ */
+const agentStep = (model: Model, message: AgentHandoff.Message): Return => {
+	const connect = model.quickStart.connect
+	const handled =
+		message._tag !== "ClickedCopyPrompt"
+			? message
+			: connect.agent.arm === "control"
+				? AgentHandoff.Message.SkippedMint({
+						publicKey: message.publicKey,
+						clipboard: "not_attempted",
+					})
+				: AgentHandoff.Message.SucceededMint({
+						publicKey: message.publicKey,
+						handoff: labHandoff(),
+						clipboard: "not_attempted",
+					})
+	const next = AgentHandoff.update(connect.agent, handled)
+	const copy =
+		handled._tag === "SucceededMint" || handled._tag === "SkippedMint"
+			? CopyButton.Message.ClickedCopy({ text: next.model.copiedPrompt ?? "" })
+			: handled._tag === "GotCopyMessage"
+				? handled.message
+				: null
+	return {
+		model: withQuickStart(model, { ...model.quickStart, connect: { ...connect, agent: next.model } }),
+		commands:
+			copy === null
+				? []
+				: Command.mapMessages(CopyButton.update(connect.agent.copy, copy).commands ?? [], (child) =>
+						Message.GotStepMessage({
+							message: QuickStart.Message.GotConnectMessage({
+								message: ConnectMessage.GotAgentMessage({
+									message: AgentHandoff.Message.GotCopyMessage({ message: child }),
+								}),
+							}),
+						}),
+					),
+	}
+}
+
 /** The screen's own update, minus its saves, analytics and navigation; a sample plan's checkout just succeeds. */
 const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 	switch (message._tag) {
@@ -179,6 +237,7 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 					SETUP_LINK_COPY,
 					CopyButton.Message.ClickedCopy({ text: "https://app.maple.dev/quick-start" }),
 				)
+			if (message.message._tag === "GotAgentMessage") return agentStep(model, message.message.message)
 			return message.message._tag === "GotSnippetCopyMessage"
 				? copyStep(model, message.message.snippet, message.message.message)
 				: { model: screenStep(model, message) }
@@ -346,11 +405,20 @@ const initialStep = (search: string): LabStep =>
 		step._tag === "Some" ? step.value : "org",
 	)
 
+/** `&agent=progress` seeds the connect step's agent run. */
+const initialAgent = (search: string): LabAgentState =>
+	Schema.decodeUnknownOption(LabAgentState)(new URLSearchParams(search).get("agent")).pipe((agent) =>
+		agent._tag === "Some" ? agent.value : "none",
+	)
+
 export const lab = defineLabWithFlags("Onboarding", {
 	Model,
-	Flags: Schema.Struct({ step: Step }),
-	flags: Effect.sync(() => ({ step: initialStep(window.location.search) })),
-	init: (flags) => ({ model: init(flags.step) }),
+	Flags: Schema.Struct({ step: Step, agent: LabAgentState }),
+	flags: Effect.sync(() => ({
+		step: initialStep(window.location.search),
+		agent: initialAgent(window.location.search),
+	})),
+	init: (flags) => ({ model: init(flags.step, 0, flags.agent) }),
 	update,
 	view,
 })

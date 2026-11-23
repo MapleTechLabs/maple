@@ -147,9 +147,21 @@ export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_source
 /** The LLM evaluation tools: absent for an org outside the `llmEvals` rollout. */
 export const LLM_EVALS_TOOLS: ReadonlySet<string> = new Set(["list_evaluations", "get_evaluation_scores"])
 
-/** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
+/**
+ * Writes an analyst's role reaches all the same: `onboarding_status_update` changes only the
+ * caller's own run (v2's `personal`), and `get_ingest_setup` only creates the org's keys the way
+ * the v2 public-key read every member may make already does.
+ */
+export const ANALYST_ALLOWED_WRITE_TOOLS: ReadonlySet<string> = new Set([
+	"onboarding_status_update",
+	"get_ingest_setup",
+])
+
+/** Whether an analyst is refused this tool: one that changes data, unless a dashboard or an allowed write. */
 export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
-	refusesReadOnlyCredential(name, readOnly) && !DASHBOARD_AUTHORING_TOOLS.has(name)
+	refusesReadOnlyCredential(name, readOnly) &&
+	!DASHBOARD_AUTHORING_TOOLS.has(name) &&
+	!ANALYST_ALLOWED_WRITE_TOOLS.has(name)
 
 /** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
 export const refusalFor = (

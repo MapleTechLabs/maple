@@ -1,8 +1,8 @@
 diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
-index 2e196fc..566f6cd 100644
+index 1d8b425800b99b57ae069e17171313be63fccb9f..aa8b251e294e104a4fe5af40efcb0aa92aeb0143 100644
 --- a/dist/OpenRouterLanguageModel.js
 +++ b/dist/OpenRouterLanguageModel.js
-@@ -762,7 +762,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -757,7 +757,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
        reasoning: undefined
      }
    };
@@ -26,7 +26,7 @@ index 2e196fc..566f6cd 100644
      const parts = [];
      if (Predicate.isNotUndefined(event.error)) {
        finishReason = "error";
-@@ -1048,7 +1063,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1043,7 +1058,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
      }
      // Usage is only emitted by the last part of the stream, so we need to
      // handle flushing any remaining text / reasoning / tool calls
@@ -44,7 +44,7 @@ index 2e196fc..566f6cd 100644
        // No finish reason was streamed: infer "tool-calls" only when every
        // tool call parsed, so a truncated call is never flushed as "{}"
        finishReason ??= resolveFinishReason(undefined, totalToolCalls > 0 && Object.keys(activeToolCalls).length === 0);
-@@ -1141,6 +1165,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+@@ -1136,6 +1160,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
          response: buildHttpResponseDetails(response),
          metadata
        });

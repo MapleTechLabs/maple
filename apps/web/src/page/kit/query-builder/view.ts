@@ -263,7 +263,7 @@ export const queryPanelView = Submodel.defineView<Model, Message, QueryPanelInpu
 				? Arr.filter(ADD_ON_KEYS, ({ key }) => key !== "groupBy")
 				: ADD_ON_KEYS,
 		),
-		...addOnSections(h, model, query),
+		...addOnSections(h, model, query, inputs.autocompleteValues ?? {}),
 	]
 	return h.div(
 		[h.Class("border rounded-md")],

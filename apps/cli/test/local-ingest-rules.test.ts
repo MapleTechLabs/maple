@@ -74,43 +74,52 @@ describe("local ingest rules", () => {
 		})
 	})
 
-	it("lets a rule remove a log record's event name, which the encoder then cannot restore", () => {
-		const removeEventName = parseLocalIngestRules(
-			JSON.stringify([
-				{
-					signals: ["logs"],
-					conditions: [],
-					action: {
-						_tag: "redact",
-						keys: ["event.name"],
-						detectors: [],
-						patterns: [],
-						scopes: ["attributes"],
-						method: "remove",
-					},
-				},
-			]),
-		)
-		const request = {
-			resourceLogs: [
-				{
-					scopeLogs: [
-						{
-							logRecords: [
-								{
-									timeUnixNano: "1700000000000000000",
-									eventName: "gen_ai.evaluation.result",
-									attributes: [str("k", "v")],
-								},
-							],
+	it("lets a rule remove or mask a log record's event name, and hands the rest back untouched", () => {
+		const eventNameRule = (keys: ReadonlyArray<string>, method: "remove" | "mask") =>
+			parseLocalIngestRules(
+				JSON.stringify([
+					{
+						signals: ["logs"],
+						conditions: [],
+						action: {
+							_tag: "redact",
+							keys,
+							detectors: [],
+							patterns: [],
+							scopes: ["attributes"],
+							method,
 						},
-					],
-				},
-			],
+					},
+				]),
+			).compiled
+		const ruled = (compiled: ReturnType<typeof eventNameRule>) => {
+			const log = {
+				timeUnixNano: "1700000000000000000",
+				eventName: "gen_ai.evaluation.result",
+				attributes: [str("k", "v")],
+			}
+			const request = { resourceLogs: [{ scopeLogs: [{ logRecords: [log] }] }] }
+			applyLocalIngestRules("logs", request, compiled)
+			const [batch] = encodeLogs(request)
+			const row = JSON.parse(Str.split("\n")(batch?.ndjson ?? "")[0] ?? "{}")
+			return { eventName: log.eventName, attributes: log.attributes, logAttributes: row.log_attributes }
 		}
-		applyLocalIngestRules("logs", request, removeEventName.compiled)
-		const [batch] = encodeLogs(request)
-		expect(JSON.parse(Str.split("\n")(batch?.ndjson ?? "")[0] ?? "{}").log_attributes).toEqual({ k: "v" })
+		// Removed: gone from the record, so neither the row nor the eventing projection sees it.
+		expect(ruled(eventNameRule(["event.name"], "remove"))).toEqual({
+			eventName: undefined,
+			attributes: [str("k", "v")],
+			logAttributes: { k: "v" },
+		})
+		// Untouched by the rule: the record keeps its eventName and its attributes as sent.
+		expect(ruled(eventNameRule(["k"], "remove"))).toEqual({
+			eventName: "gen_ai.evaluation.result",
+			attributes: [],
+			logAttributes: { "event.name": "gen_ai.evaluation.result" },
+		})
+		// Masked: the masked value is the record's eventName from here on.
+		const masked = ruled(eventNameRule(["event.name"], "mask"))
+		expect(masked.eventName).not.toBe("gen_ai.evaluation.result")
+		expect(masked.logAttributes).toEqual({ k: "v", "event.name": masked.eventName })
 	})
 
 	it("removes a resource whose every record was dropped", () => {

@@ -57,6 +57,10 @@ All three paths carry the same ids. `user_id` is whatever you pass to `identify(
 
 `group_id` is the account, workspace or org the event belongs to. It is a filter and breakdown dimension. Funnels count persons, visitors, users or sessions, never groups. An event that carries only a `group_id` is stored and queryable, but it cannot be linked to a person.
 
+## User and account properties
+
+Users and accounts carry properties: a user's `plan` or `role`, an account's seat count or industry. They come from browser `identify()` traits, from the `set`, `set_once` and `unset` fields of the [events API](/docs/product-events/api#user-and-account-properties) and the [server SDK](/docs/sdks/effect-server), and from [span attributes](/docs/product-events/from-traces#user-and-account-properties). A filter or breakdown by a property reads its current value, so filtering by `plan = pro` applies each user's plan today to all of their events.
+
 ## Naming
 
 Names are 1 to 128 bytes. Names starting with `$` are reserved for Maple's SDKs. Use stable, lowercase, past-tense names like `plan_started`. The name is the funnel step key, so renaming an event splits its history.

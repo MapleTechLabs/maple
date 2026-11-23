@@ -78,7 +78,6 @@ const renderPage = (
 	integrations: ShellInfraSurfaces["integrations"] | undefined,
 	remembered: ShellInfraSurfaces["remembered"],
 	audience: PageContext["audience"],
-	hasProductAnalytics: PageContext["hasProductAnalytics"],
 	hasProfiling: PageContext["hasProfiling"],
 	hasCloudSecurity: PageContext["hasCloudSecurity"],
 	isMobile: boolean,
@@ -97,7 +96,6 @@ const renderPage = (
 					? undefined
 					: { infra: { presence, isPresenceFailed, integrations, remembered } }),
 				...(audience === undefined ? undefined : { audience }),
-				...(hasProductAnalytics === undefined ? undefined : { hasProductAnalytics }),
 				...(hasProfiling === undefined ? undefined : { hasProfiling }),
 				...(hasCloudSecurity === undefined ? undefined : { hasCloudSecurity }),
 			},
@@ -117,16 +115,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
 		Option.map(
 			pageContextOf(model),
-			({
-				orgId,
-				pinnedNamespace,
-				timeZone,
-				infra,
-				audience,
-				hasProductAnalytics,
-				hasProfiling,
-				hasCloudSecurity,
-			}) =>
+			({ orgId, pinnedNamespace, timeZone, infra, audience, hasProfiling, hasCloudSecurity }) =>
 				lazyPage(position, renderPage, [
 					h,
 					page,
@@ -138,7 +127,6 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 					infra?.integrations,
 					infra?.remembered,
 					audience,
-					hasProductAnalytics,
 					hasProfiling,
 					hasCloudSecurity,
 					model.shell.isMobile,

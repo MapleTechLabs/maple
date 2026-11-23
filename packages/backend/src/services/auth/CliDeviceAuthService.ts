@@ -18,8 +18,14 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { ONBOARDING_HANDOFF_TTL_MS } from "@maple/domain/onboarding-agent-run"
 import { generateApiKey, hashApiKey, hashLookupToken } from "../../platform/credential-tokens"
-import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
+import {
+	ApiKeys,
+	CliDeviceAuthorizations,
+	OnboardingAgentRuns,
+	type CliDeviceAuthorizationRow,
+} from "@maple/db/tables"
 import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -40,10 +46,24 @@ const DEVICE_TTL_SECONDS = 15 * 60
  */
 const CLI_KEY_TTL_MS = 90 * 24 * 60 * 60 * 1000
 const POLL_INTERVAL_SECONDS = 5
+/** Marks a handoff code for people and secret scanners; the whole string is the device code. */
+export const HANDOFF_CODE_PREFIX = "maple_ho_"
+export const HANDOFF_DEVICE_NAME = "Coding agent (onboarding)"
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+/** A typed-in device name never takes the handoff's, which marks a row single-use. */
+const deviceLabel = (deviceName: string) => {
+	const label = Str.slice(0, 120)(Str.trim(deviceName))
+	return label === "" || label === HANDOFF_DEVICE_NAME ? "Maple CLI" : label
+}
 const normalizeUserCode = (value: string) => Str.replace(/[^A-Z0-9]/g, "")(Str.toUpperCase(value))
 const displayUserCode = (value: string) => `${Str.slice(0, 4)(value)}-${Str.slice(4, 8)(value)}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
+
+/** A handoff's run closed or was replaced before the claim: the claim rolls back, the CLI hears expired. */
+class HandoffRunClosed extends Schema.TaggedError<HandoffRunClosed>()(
+	"@maple/backend/CliDeviceHandoffRunClosed",
+	{ message: Schema.String },
+) {}
 
 const makeUserCode = () => {
 	let value = ""
@@ -110,6 +130,16 @@ export class CliDeviceAuthService extends Context.Service<
 			| CliDeviceExpiredError
 			| CliDeviceConflictError
 			| CliDevicePersistenceError
+		>
+		/**
+		 * A device login the signed-in person approves in advance, for a coding agent. The code
+		 * is the device code: `maple auth login` with `MAPLE_HANDOFF` polls it like any other.
+		 */
+		readonly createHandoff: (
+			identity: ApprovalIdentity,
+		) => Effect.Effect<
+			{ readonly code: string; readonly codeHash: string; readonly expiresAt: number },
+			CliDevicePersistenceError | CliDeviceRateLimitError
 		>
 	}
 >()("@maple/backend/services/CliDeviceAuthService", {
@@ -195,7 +225,7 @@ export class CliDeviceAuthService extends Context.Service<
 					PG.insertInto(CliDeviceAuthorizations).values({
 						deviceCodeHash: hashLookupToken("cli-device/device-code", deviceCode, apiKeyHmacKey),
 						userCodeHash: hashLookupToken("cli-device/user-code", userCode, apiKeyHmacKey),
-						deviceName: Str.slice(0, 120)(Str.trim(deviceName)) || "Maple CLI",
+						deviceName: deviceLabel(deviceName),
 						createdAt: now,
 						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
 					}),
@@ -345,6 +375,7 @@ export class CliDeviceAuthService extends Context.Service<
 				(message) => new CliDevicePersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
+			const isHandoff = row.deviceName === HANDOFF_DEVICE_NAME
 			const won = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -356,10 +387,36 @@ export class CliDeviceAuthService extends Context.Service<
 									tokenIv: encrypted.iv,
 									tokenTag: encrypted.tag,
 								})
-								.where(($) => [$.deviceCodeHash.eq(row.deviceCodeHash), $.apiKeyId.isNull()])
+								.where(($) => [
+									$.deviceCodeHash.eq(row.deviceCodeHash),
+									$.apiKeyId.isNull(),
+									// A handoff lapses at its own deadline, checked again at the claim.
+									...(isHandoff ? [$.expiresAt.gt(now)] : []),
+								])
 								.returning("deviceCodeHash"),
 						)
 						if (claimed.length === 0) return false
+						// A handoff's key is the only credential that reports to the run it started,
+						// and only while that run is open: a replaced or closed run rolls the claim back.
+						if (isHandoff) {
+							const bound = yield* db.run(
+								PG.update(OnboardingAgentRuns)
+									.set({ apiKeyId })
+									.where(($) => [
+										$.orgId.eq(approvedOrgId),
+										$.handoffCodeHash.eq(row.deviceCodeHash),
+										$.apiKeyId.isNull(),
+										$.status.neq("completed"),
+										$.status.neq("failed"),
+										$.status.neq("expired"),
+										$.expiresAt.gt(now),
+									])
+									.returning("id"),
+							)
+							if (bound.length !== 1) {
+								return yield* new HandoffRunClosed({ message: "The handoff's run is closed" })
+							}
+						}
 						yield* db.run(
 							PG.insertInto(ApiKeys).values({
 								id: apiKeyId,
@@ -384,7 +441,11 @@ export class CliDeviceAuthService extends Context.Service<
 						return true
 					}),
 				),
-			)
+			).pipe(Effect.catchTag("@maple/backend/CliDeviceHandoffRunClosed", () => Effect.succeed(false)))
+			// A handoff is single use: a concurrent claim that lost gets nothing, not the winner's key.
+			if (!won && isHandoff) {
+				return new CliDeviceExpiredResponse({ status: "expired" })
+			}
 			if (!won) {
 				const winner = yield* loadByDeviceCodeHash(row.deviceCodeHash)
 				if (
@@ -433,13 +494,46 @@ export class CliDeviceAuthService extends Context.Service<
 				return new CliDeviceExpiredResponse({ status: "expired" })
 			}
 			if (row.value.deniedAt !== null) return new CliDeviceDeniedResponse({ status: "denied" })
+			// A handoff code travels through an agent's transcript: it signs in once, never again.
+			if (row.value.deviceName === HANDOFF_DEVICE_NAME && row.value.apiKeyId !== null) {
+				return new CliDeviceExpiredResponse({ status: "expired" })
+			}
 			if (row.value.approvedAt === null) {
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
 			return yield* completeFromRow(row.value)
 		})
 
-		return { start, poll, inspect, approve, deny }
+		const createHandoff = Effect.fn("CliDeviceAuthService.createHandoff")(function* (
+			identity: ApprovalIdentity,
+		) {
+			yield* checkRateLimit(`handoff:${identity.orgId}:${identity.userId}`)
+			const now = yield* Clock.currentTimeMillis
+			yield* purgeExpired(now)
+			const code = `${HANDOFF_CODE_PREFIX}${randomBytes(32).toString("base64url")}`
+			const expiresAt = now + ONBOARDING_HANDOFF_TTL_MS
+			const codeHash = hashLookupToken("cli-device/device-code", code, apiKeyHmacKey)
+			yield* dbExecute((db) =>
+				db.run(
+					PG.insertInto(CliDeviceAuthorizations).values({
+						deviceCodeHash: codeHash,
+						// Never typed: a random user code keeps the unique index without a usable value.
+						userCodeHash: hashLookupToken("cli-device/user-code", randomUUID(), apiKeyHmacKey),
+						deviceName: HANDOFF_DEVICE_NAME,
+						approvedOrgId: identity.orgId,
+						approvedUserId: identity.userId,
+						approvedRoles: [...identity.roles],
+						approvedUserEmail: identity.userEmail,
+						approvedAt: now,
+						createdAt: now,
+						expiresAt,
+					}),
+				),
+			)
+			return { code, codeHash, expiresAt }
+		})
+
+		return { start, poll, inspect, approve, deny, createHandoff }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

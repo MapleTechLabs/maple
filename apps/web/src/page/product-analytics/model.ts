@@ -78,6 +78,9 @@ export const Model = Schema.Struct({
 	previousFunnel: KeyedSchema(Schema.Array(FunnelRow), LoadFailure),
 	funnelBreakdown: KeyedSchema(Schema.Array(FunnelGroupRow), LoadFailure),
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
+	/** The property keys users and accounts carry, for a breakdown by one. */
+	userPropertyKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
+	groupPropertyKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
 	pages: KeyedSchema(Schema.Array(PageRow), LoadFailure),
 	paths: KeyedSchema(Schema.Array(PathsRow), LoadFailure),
 	/** The funnel steps as edited; the URL catches up on a pick, or once typing pauses. */

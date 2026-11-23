@@ -61,6 +61,7 @@ import schemaV60Sql from "./schema/history/local-schema-v60.sql" with { type: "t
 import schemaV61Sql from "./schema/history/local-schema-v61.sql" with { type: "text" }
 import schemaV62Sql from "./schema/history/local-schema-v62.sql" with { type: "text" }
 import schemaV63Sql from "./schema/history/local-schema-v63.sql" with { type: "text" }
+import schemaV64Sql from "./schema/history/local-schema-v64.sql" with { type: "text" }
 import { Array as Arr } from "effect"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LEGACY_LOCAL_SCHEMA, LEGACY_LOCAL_SCHEMA_VERSION, type LocalSchemaIdentity } from "./schema-identity"
@@ -138,6 +139,7 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV61Sql,
 	schemaV62Sql,
 	schemaV63Sql,
+	schemaV64Sql,
 ]
 
 export interface LocalSchemaSnapshot {

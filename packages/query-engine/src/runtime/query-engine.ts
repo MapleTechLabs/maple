@@ -1199,7 +1199,8 @@ const applyAlertReducer = (
 /** Map query engine source/scope to the MV's AttributeScope value. */
 function resolveAttributeScope(
 	source: "traces" | "logs" | "metrics" | "product_events",
-	scope?: "span" | "resource",
+	// `user` / `group` are product_events scopes, answered before this is reached.
+	scope?: "span" | "resource" | "user" | "group",
 ): string {
 	if (source === "metrics") return "metric"
 	if (source === "product_events") return "event"
@@ -1955,6 +1956,54 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						spanId: row.spanId,
 						attributes: row.attributes ?? {},
 					})),
+				},
+			})
+		}
+
+		if (
+			request.query.source === "product_events" &&
+			request.query.kind === "attributeKeys" &&
+			(request.query.scope === "user" || request.query.scope === "group")
+		) {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.personPropertyKeysQuery({ kind: request.query.scope, limit: request.query.limit }),
+				{ orgId: tenant.orgId },
+				`attributeKeys:${request.query.scope}`,
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeKeys",
+					source: "product_events",
+					data: Arr.map(rows, (row) => ({ key: row.key, count: row.ids })),
+				},
+			})
+		}
+
+		if (
+			request.query.source === "product_events" &&
+			request.query.kind === "attributeValues" &&
+			(request.query.scope === "user" || request.query.scope === "group")
+		) {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.personPropertyValuesQuery({
+					kind: request.query.scope,
+					key: request.query.attributeKey,
+					limit: request.query.limit,
+				}),
+				{ orgId: tenant.orgId },
+				`attributeValues:${request.query.scope}`,
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeValues",
+					source: "product_events",
+					data: Arr.map(rows, (row) => ({ value: row.value, count: row.ids })),
 				},
 			})
 		}

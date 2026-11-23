@@ -295,6 +295,8 @@ export const PRODUCT_EVENTS_GROUP_BY = [
 	"service",
 	"group",
 	"attribute",
+	"user_property",
+	"group_property",
 	...PRODUCT_EVENTS_SESSION_GROUP_BY,
 ] as const
 export const ProductEventsGroupBy = Schema.Literals(PRODUCT_EVENTS_GROUP_BY)
@@ -332,6 +334,17 @@ export const ProductEventsFilters = Schema.Struct({
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	/** Required when `groupBy` includes `attribute`. */
 	groupByAttributeKey: Schema.optional(Schema.String),
+	/**
+	 * User properties (`identify()` traits, `set` / `set_once` writes), matched on the event's
+	 * user at the property's current value. A negated filter also keeps events with no user.
+	 */
+	userPropertyFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Account properties (`group_set` writes, the group's name), matched on the event's group. */
+	groupPropertyFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Required when `groupBy` includes `user_property`. */
+	groupByUserPropertyKey: Schema.optional(Schema.String),
+	/** Required when `groupBy` includes `group_property`. */
+	groupByGroupPropertyKey: Schema.optional(Schema.String),
 	/** The numeric prop a `sum`/`avg`/`min`/`max`/percentile metric reads; required by those. */
 	valueAttributeKey: Schema.optional(Schema.String),
 	referrerHost: Schema.optional(Schema.String),
@@ -528,7 +541,8 @@ export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsList
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
-	scope: Schema.optional(Schema.Literals(["span", "resource"])),
+	/** `user` / `group` (product_events only): the users' or accounts' property keys. */
+	scope: Schema.optional(Schema.Literals(["span", "resource", "user", "group"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
 	metricName: Schema.optional(Schema.String),
@@ -593,7 +607,8 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
 	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
-	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
+	/** `user` / `group` (product_events only): a user or account property's current values. */
+	scope: Schema.Literals(["span", "resource", "log", "metric", "event", "user", "group"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
 	// or to several metrics of one `metricType` with `metricNames`. Scoped metric

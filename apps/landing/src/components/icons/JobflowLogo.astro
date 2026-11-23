@@ -1,0 +1,22 @@
+---
+/**
+ * JobflowLogo — jobflow.de brand mark (the two interlocking strokes), from the
+ * site's header logo SVG with the wordmark dropped. White, as on their favicon
+ * tile, because the source #2C2E37 disappears on the dark-only landing.
+ */
+interface Props {
+	class?: string;
+}
+
+const { class: className = "h-5 w-auto" } = Astro.props;
+---
+
+<svg class={className} viewBox="0 -0.1 15.3 19.6" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+	<title>Jobflow</title>
+	<path
+		d="M14.5595 11.2109L8.22749 17.5859C7.69524 18.122 7.08451 18.7339 6.19089 19.0744C2.08666 20.6364 -1.26128 17.3327 0.463952 13.7076C0.837985 14.8613 2.38728 15.4778 4.07833 14.7057C4.46438 14.5291 4.80614 14.2658 5.10487 13.9645L11.1767 7.85155C13.1127 6.08582 16.2549 8.95087 14.5595 11.2109Z"
+	></path>
+	<path
+		d="M0.833082 8.26068L7.16505 1.88566C7.69729 1.34961 8.30802 0.737617 9.20167 0.397127C13.0958 -1.08445 16.1855 1.81415 15.0305 5.21081C15.028 5.21714 14.9792 5.4146 14.9748 5.40892C14.0147 4.26276 11.9161 4.12478 10.5586 5.23359L4.21518 11.6206C2.27921 13.3857 -0.863037 10.5207 0.833082 8.26068Z"
+	></path>
+</svg>
