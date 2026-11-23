@@ -494,12 +494,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchExemplars: ({ key, result }) => ({
 			model: { ...model, exemplars: Keyed.accept(model.exemplars, key, result) },
 		}),
-		// New buckets keep a pick whose cell is still there, and read it again.
+		// New buckets keep a pick whose cell is still there, and read it again: a reload of the
+		// same window keeps the cell's key, so only a refresh fetches its newer exemplars.
 		CompletedFetchDistribution: ({ key, result }) =>
 			requestCell(
 				{ ...model, distribution: Keyed.accept(model.distribution, key, result) },
 				context,
-				"Load",
+				"Refresh",
 			),
 		CompletedFetchCellExemplars: ({ key, result }) => ({
 			model: { ...model, cellExemplars: Keyed.accept(model.cellExemplars, key, result) },

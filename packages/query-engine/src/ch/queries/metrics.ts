@@ -863,7 +863,9 @@ export function histogramDistributionQuery(
 				dUp: CH.rawExpr("dUppers[dIdx]", T.float64),
 				dN: CH.rawExpr("dInc[dIdx]", T.float64),
 			}))
-			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+			// A point without usable buckets (OTLP allows a count with none) has no cell to sit in;
+			// it is left out on purpose, as the percentile path leaves it out.
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime")), CH.rawCond(HAS_BUCKETS)])
 		const summed = fromQuery(perSample, "per_sample")
 			.select(($) => ({
 				bucket: $.bucket,
@@ -969,8 +971,15 @@ const cellConditions = (
 export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 	const { tbl } = resolveMetricTable(opts.metricType)
 	const timeseriesOpts: MetricsTimeseriesOpts = { ...opts }
+	// Read the bucket before the window too, as the distribution reads its predecessors: an
+	// exemplar already exported there is a repeat, not a new one at the window's start.
+	const scanStart = CH.intervalSub(
+		param.dateTime("startTime"),
+		opts.lookbackSeconds ?? param.int("bucketSeconds"),
+	)
 	const unrolled = from(tbl as typeof Datasources.metricsHistogram)
 		.select(($) => ({
+			exportedAt: $.TimeUnix,
 			bucket: timeseriesBucket($.TimeUnix, false),
 			serviceName: $.ServiceName,
 			eIdx: CH.rawExpr("arrayJoin(arrayEnumerate(ExemplarsTraceId))", T.uint64),
@@ -981,13 +990,14 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 		}))
 		// An exemplar without a trace id links nowhere; a non-finite value has no place on a chart.
 		.where(($) => [
-			...metricsWhere($, timeseriesOpts),
+			...metricsWhere($, timeseriesOpts, scanStart),
 			CH.rawCond("notEmpty(ExemplarsTraceId) AND traceId != '' AND isFinite(value)"),
 		])
 	// A cumulative reservoir or a scrape repeats one exemplar on every datapoint: the same
 	// observation (trace, span, time, value) is listed once, in the bucket it was first exported in.
 	const distinct = fromQuery(unrolled, "unrolled")
 		.select(($) => ({
+			firstExportedAt: CH.min_($.exportedAt),
 			bucket: CH.min_($.bucket),
 			timestamp: $.timestamp,
 			value: $.value,
@@ -1006,8 +1016,26 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			serviceName: $.serviceName,
 			exemplarRank: CH.rawExpr("row_number() OVER (PARTITION BY bucket ORDER BY value DESC)", T.uint64),
 		}))
-		.where(($) => cellConditions($, opts.cell, opts.metricType))
-	return fromQuery(ranked, "ranked")
+		.where(($) => [
+			$.firstExportedAt.gte(param.dateTime("startTime")),
+			...cellConditions($, opts.cell, opts.metricType),
+		])
+	// The cap takes every bucket's top exemplar before any bucket's second, so a wide window
+	// keeps a dot on each bucket; the rows then read highest first.
+	const kept = fromQuery(ranked, "ranked")
+		.select(($) => ({
+			bucket: $.bucket,
+			timestamp: $.timestamp,
+			value: $.value,
+			traceId: $.traceId,
+			spanId: $.spanId,
+			serviceName: $.serviceName,
+			exemplarRank: $.exemplarRank,
+		}))
+		.where(($) => [$.exemplarRank.lte(opts.perBucket ?? METRIC_EXEMPLARS_PER_BUCKET)])
+		.orderBy(["exemplarRank", "asc"], ["value", "desc"])
+		.limit(opts.limit ?? METRIC_EXEMPLARS_LIMIT)
+	return fromQuery(kept, "kept")
 		.select(($) => ({
 			bucket: $.bucket,
 			timestamp: $.timestamp,
@@ -1016,9 +1044,7 @@ export function metricExemplarsQuery(opts: MetricExemplarsOpts) {
 			spanId: $.spanId,
 			serviceName: $.serviceName,
 		}))
-		.where(($) => [$.exemplarRank.lte(opts.perBucket ?? METRIC_EXEMPLARS_PER_BUCKET)])
 		.orderBy(["value", "desc"])
-		.limit(opts.limit ?? METRIC_EXEMPLARS_LIMIT)
 }
 
 // Rate/increase timeseries — raw SQL (requires CTE)

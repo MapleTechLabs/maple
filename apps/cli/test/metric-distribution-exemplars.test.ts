@@ -281,6 +281,16 @@ const insertSignedExemplar = (db: Chdb) => {
 	)
 }
 
+const BUCKETLESS_ORG = "org_bucketless"
+
+/** A point OTLP allows: four observations and no buckets, beside one with its buckets. */
+const insertBucketless = (db: Chdb) => {
+	const ts = quote(chTimestamp(10 * SECOND_MS))
+	db.exec(
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality) VALUES (${quote(BUCKETLESS_ORG)}, 'api', ${quote(METRIC)}, ${ts}, ${ts}, 4, 40, [], [], 1), (${quote(BUCKETLESS_ORG)}, 'worker', ${quote(METRIC)}, ${ts}, ${ts}, 2, 30, [1, 1], [10], 1)`,
+	)
+}
+
 const ExemplarRow = Schema.Struct({
 	bucket: Schema.String,
 	timestamp: Schema.String,
@@ -303,6 +313,7 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		insertExemplarRows(db)
 		insertRecordedRows(db)
 		insertSignedExemplar(db)
+		insertBucketless(db)
 	})
 
 	afterAll(() => {
@@ -430,8 +441,22 @@ describeWithChdb("histogram distribution and exemplars", () => {
 			500, 50, 20, 7,
 		])
 		expect(Arr.map(exemplars({ perBucket: 1 }), (e) => e.value)).toEqual([1_000, 7])
-		expect(Arr.map(exemplars({ limit: 2 }), (e) => e.value)).toEqual([1_000, 500])
 		expect(exemplars({ serviceName: "worker" })).toEqual([])
+	})
+
+	test("the limit takes every bucket's top exemplar before any bucket's second", () => {
+		// 0:00 holds 1000, 500 and 50; 1:00 holds only 7, which a cap of two by value would drop.
+		expect(Arr.map(exemplars({ limit: 2 }), (e) => e.value)).toEqual([1_000, 7])
+	})
+
+	test("an exemplar exported before the window is a repeat inside it, not a new one at its start", () => {
+		const fromTwo = (perBucket: number) =>
+			Arr.map(exemplars({ perBucket }, 60, RECORDED_ORG, window(2 * MINUTE_MS, 5 * MINUTE_MS)), (e) => [
+				e.traceId,
+				e.value,
+			])
+		// t-late (3) was first exported at 1:00.5; only 0.7, first exported at 2:00.5, is new.
+		expect(fromTwo(20)).toEqual([["t-late", 0.7]])
 	})
 
 	test("an exemplar keeps its own time and the time bucket it falls in", () => {
@@ -477,6 +502,13 @@ describeWithChdb("histogram distribution and exemplars", () => {
 		expect(cell(null, 0.1)).toEqual(["t-lowest"])
 		expect(cell(0.1, 1)).toEqual(["t-low", "t-lower"])
 		expect(cell(1, null)).toEqual(["t-late"])
+	})
+
+	test("a point with no buckets has no cell; its neighbours keep theirs", () => {
+		expect(distribution(BUCKETLESS_ORG, { metricType: "histogram" })).toEqual([
+			[0, null, 10, 1],
+			[0, 10, null, 1],
+		])
 	})
 
 	test("a request's candidate names supersede its scalar name, as MetricsFilters documents", () => {

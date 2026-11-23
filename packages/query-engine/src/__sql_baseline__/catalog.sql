@@ -4298,7 +4298,7 @@ SELECT
         WHERE dCounts[dIdx] > 0
         ORDER BY bucket ASC
 
--- builder:metrics:histogramDistributionQuery:histogram  [c8c45159]
+-- builder:metrics:histogramDistributionQuery:histogram  [daf7583b]
 SELECT
           summed.bucket AS bucket,
           if(isFinite(dLo), dLo, NULL) AS lowerBound,
@@ -4346,19 +4346,28 @@ SELECT
           dUppers[dIdx] AS dUp,
           dInc[dIdx] AS dN
         FROM hist_samples
-        WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00') AS per_sample
+        WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
+          AND length(buckets) = length(bounds) + 1) AS per_sample
         GROUP BY bucket, dLo, dUp) AS summed
         WHERE summed.dCount > 0
         ORDER BY bucket ASC
 
--- builder:metrics:metricExemplarsQuery:cell  [22d9914f]
+-- builder:metrics:metricExemplarsQuery:cell  [eb77c0e8]
 SELECT
+          kept.bucket AS bucket,
+          kept.timestamp AS timestamp,
+          kept.value AS value,
+          kept.traceId AS traceId,
+          kept.spanId AS spanId,
+          kept.serviceName AS serviceName
+        FROM (SELECT
           ranked.bucket AS bucket,
           ranked.timestamp AS timestamp,
           ranked.value AS value,
           ranked.traceId AS traceId,
           ranked.spanId AS spanId,
-          ranked.serviceName AS serviceName
+          ranked.serviceName AS serviceName,
+          ranked.exemplarRank AS exemplarRank
         FROM (SELECT
           distinct_exemplars.bucket AS bucket,
           distinct_exemplars.timestamp AS timestamp,
@@ -4368,6 +4377,7 @@ SELECT
           distinct_exemplars.serviceName AS serviceName,
           row_number() OVER (PARTITION BY bucket ORDER BY value DESC) AS exemplarRank
         FROM (SELECT
+          min(unrolled.exportedAt) AS firstExportedAt,
           min(unrolled.bucket) AS bucket,
           unrolled.timestamp AS timestamp,
           unrolled.value AS value,
@@ -4375,6 +4385,7 @@ SELECT
           unrolled.spanId AS spanId,
           any(unrolled.serviceName) AS serviceName
         FROM (SELECT
+          metrics_histogram.TimeUnix AS exportedAt,
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
           metrics_histogram.ServiceName AS serviceName,
           arrayJoin(arrayEnumerate(ExemplarsTraceId)) AS eIdx,
@@ -4385,25 +4396,35 @@ SELECT
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
-          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND notEmpty(ExemplarsTraceId) AND traceId != '' AND isFinite(value)) AS unrolled
         GROUP BY traceId, spanId, timestamp, value) AS distinct_exemplars
-        WHERE distinct_exemplars.bucket = '2026-01-01 10:30:00'
+        WHERE distinct_exemplars.firstExportedAt >= '2026-01-01 10:30:00'
+          AND distinct_exemplars.bucket = '2026-01-01 10:30:00'
           AND distinct_exemplars.value > 0.1
           AND distinct_exemplars.value <= 1) AS ranked
         WHERE ranked.exemplarRank <= 20
+        ORDER BY exemplarRank ASC, value DESC
+        LIMIT 500) AS kept
         ORDER BY value DESC
-        LIMIT 500
 
--- builder:metrics:metricExemplarsQuery:chart  [b5aafdea]
+-- builder:metrics:metricExemplarsQuery:chart  [35288b29]
 SELECT
+          kept.bucket AS bucket,
+          kept.timestamp AS timestamp,
+          kept.value AS value,
+          kept.traceId AS traceId,
+          kept.spanId AS spanId,
+          kept.serviceName AS serviceName
+        FROM (SELECT
           ranked.bucket AS bucket,
           ranked.timestamp AS timestamp,
           ranked.value AS value,
           ranked.traceId AS traceId,
           ranked.spanId AS spanId,
-          ranked.serviceName AS serviceName
+          ranked.serviceName AS serviceName,
+          ranked.exemplarRank AS exemplarRank
         FROM (SELECT
           distinct_exemplars.bucket AS bucket,
           distinct_exemplars.timestamp AS timestamp,
@@ -4413,6 +4434,7 @@ SELECT
           distinct_exemplars.serviceName AS serviceName,
           row_number() OVER (PARTITION BY bucket ORDER BY value DESC) AS exemplarRank
         FROM (SELECT
+          min(unrolled.exportedAt) AS firstExportedAt,
           min(unrolled.bucket) AS bucket,
           unrolled.timestamp AS timestamp,
           unrolled.value AS value,
@@ -4420,6 +4442,7 @@ SELECT
           unrolled.spanId AS spanId,
           any(unrolled.serviceName) AS serviceName
         FROM (SELECT
+          metrics_histogram.TimeUnix AS exportedAt,
           toStartOfInterval(metrics_histogram.TimeUnix, INTERVAL 300 SECOND) AS bucket,
           metrics_histogram.ServiceName AS serviceName,
           arrayJoin(arrayEnumerate(ExemplarsTraceId)) AS eIdx,
@@ -4430,13 +4453,15 @@ SELECT
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
-          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND notEmpty(ExemplarsTraceId) AND traceId != '' AND isFinite(value)) AS unrolled
-        GROUP BY traceId, spanId, timestamp, value) AS distinct_exemplars) AS ranked
+        GROUP BY traceId, spanId, timestamp, value) AS distinct_exemplars
+        WHERE distinct_exemplars.firstExportedAt >= '2026-01-01 10:30:00') AS ranked
         WHERE ranked.exemplarRank <= 3
+        ORDER BY exemplarRank ASC, value DESC
+        LIMIT 500) AS kept
         ORDER BY value DESC
-        LIMIT 500
 
 -- builder:pr-review:operationTrafficHourlyQuery:allServices  [e60e4684]
 SELECT

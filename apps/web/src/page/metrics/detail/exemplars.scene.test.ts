@@ -188,6 +188,27 @@ describe("metric exemplars and distribution", () => {
 		expect(step(answered, Message.ClearedCellSelection()).selectedCell).toBeNull()
 	})
 
+	test("new buckets for the same window read the picked cell's exemplars again", () => {
+		const shown = loaded("histogram", { display: "distribution" })
+		const picked = step(shown, pick(`${MINUTE_A}\u00001|inf`))
+		const answered = step(
+			picked,
+			Message.CompletedFetchCellExemplars({
+				key: picked.cellExemplars.key ?? "",
+				result: Result.succeed([exemplar(MINUTE_A, 2.5, "trace-slow")]),
+			}),
+		)
+		const reloaded = pageUpdate(
+			answered,
+			Message.CompletedFetchDistribution({
+				key: answered.distribution.key ?? "",
+				result: Result.succeed({ rows: DISTRIBUTION, bucketSeconds: 60 }),
+			}),
+		)
+		expect(names(reloaded.commands)).toEqual(["FetchMetricCellExemplars"])
+		expect(reloaded.model.selectedCell).toBe(answered.selectedCell)
+	})
+
 	test("a pick of a cell the new buckets no longer have is dropped", () => {
 		const shown = loaded("histogram", { display: "distribution" })
 		const picked = step(shown, pick(`${MINUTE_A}\u00001|inf`))
