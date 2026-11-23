@@ -224,10 +224,11 @@ describe("ingest rule impact", () => {
 					}),
 				).model,
 			),
-			expectView(text("Records dropped")).toExist(),
+			expectView(text("Dropped, last 24 hours")).toExist(),
 			expectView(text("1.2M")).toExist(),
 			expectView(text("1.2 GB")).toExist(),
-			expectView(text("3K dropped · 3.0 MB dropped")).toExist(),
+			expectView(text("3K dropped")).toExist(),
+			expectView(text("3.0 MB")).toExist(),
 		)
 	})
 
@@ -259,8 +260,7 @@ describe("ingest rule impact", () => {
 					}),
 				).model,
 			),
-			expectView(text("Records dropped")).toExist(),
-			expectView(text("Values redacted")).toExist(),
+			expectView(text("Dropped, last 24 hours")).toExist(),
 			expectView(text("2K")).toExist(),
 		)
 	})
@@ -292,8 +292,10 @@ describe("ingest rule impact", () => {
 				pageUpdate(editing(), Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(stats) }))
 					.model,
 			),
-			expectView(text("10 dropped · 1.0 KB dropped")).toExist(),
-			expectView(text("50 values redacted · 150 records matched")).toExist(),
+			expectView(text("10 dropped")).toExist(),
+			expectView(text("1.0 KB")).toExist(),
+			expectView(text("50 values redacted")).toExist(),
+			expectView(text("Values redacted")).toExist(),
 		)
 	})
 
