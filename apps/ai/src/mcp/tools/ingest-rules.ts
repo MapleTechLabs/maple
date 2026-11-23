@@ -226,7 +226,7 @@ const sameValue = (left: AttrValue, right: AttrValue) =>
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
 	const diff = (scope: string, a: AttrMap, b: AttrMap) => [
 		...Arr.flatMap(Rec.toEntries(a), ([key, value]) => {
-			const next = b[key]
+			const next = hasAttr(b, key) ? b[key] : undefined
 			if (next === undefined) return [`${scope}${key}: removed`]
 			return sameValue(next, value) ? [] : [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
 		}),
@@ -342,7 +342,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "list_ingest_rules",
 		title: "List Ingest Rules",
 		description:
-			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then parse and redact rules by position).",
+			"The organization's ingest rules: what telemetry is dropped, redacted or parsed before Maple stores or bills it. Drop rules run first, then redact rules, then parse rules, each kind by position; redact rules on attributes or the body run again on the keys parsing wrote.",
 		parameters: Schema.Struct({}),
 		hints: { readOnly: true, destructive: false, idempotent: true },
 		scopeFamily: "ingest_rules",
@@ -509,7 +509,9 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				name: P.text("A label for the rule"),
 				...SPEC_FIELDS,
 				enabled: P.optionalFlag("Start disabled with false; default true"),
-				position: P.optionalNumber("Run order among redact rules; default after the last rule"),
+				position: P.optionalNumber(
+					"Run order among rules of the same kind; default after the last rule",
+				),
 			}),
 			hints: { readOnly: false, destructive: false, idempotent: false },
 			handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
@@ -538,7 +540,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 				rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 				name: P.optionalText("A new name"),
 				enabled: P.optionalFlag("false turns the rule off, true turns it on"),
-				position: P.optionalNumber("New run order among redact rules"),
+				position: P.optionalNumber("New run order among rules of the same kind"),
 				signals: P.optionalList(`Replaces the signals: ${Arr.join(SIGNALS, ", ")}`),
 				conditions: conditionsParam,
 				rule_action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),

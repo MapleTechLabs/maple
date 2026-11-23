@@ -335,6 +335,25 @@ describe("ingest rule MCP tools", () => {
 		assert.deepEqual(preview.examples[0]?.changes, ["constructor = x", "toString = y"])
 	})
 
+	it("reports a removed attribute named like an Object method", () => {
+		const preview = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: {
+					_tag: "redact",
+					keys: ["toString"],
+					detectors: [],
+					patterns: [],
+					scopes: ["attributes"],
+					method: "remove",
+				},
+			},
+			[{ signal: "logs" as const, resource: {}, attributes: { toString: "secret" }, body: "hi" }],
+		)
+		assert.deepEqual(preview.examples[0]?.changes, ["toString: removed"])
+	})
+
 	it("names the argument a validation problem is about", () => {
 		assert.deepEqual(
 			Arr.map(
