@@ -306,13 +306,14 @@ const AUDITED_WEBHOOKS = {
 		target: pullRequestTarget,
 	},
 	release: {
-		// A draft's edits are invisible to everyone else until it is published.
-		action: (payload, action) =>
-			action !== undefined &&
-			RELEASE_ACTIONS.has(action) &&
-			objectAt(payload, "release")?.["draft"] !== true
-				? action
-				: undefined,
+		// A draft's edits are invisible to everyone else until it is published. An unpublished
+		// release arrives as a draft too, and that one is kept.
+		action: (payload, action) => {
+			if (action === undefined || !RELEASE_ACTIONS.has(action)) return undefined
+			return action === "edited" && objectAt(payload, "release")?.["draft"] === true
+				? undefined
+				: action
+		},
 		category: () => "resource",
 		target: (payload) => {
 			const release = objectAt(payload, "release")

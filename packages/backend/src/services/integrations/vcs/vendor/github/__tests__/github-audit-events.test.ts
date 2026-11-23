@@ -233,6 +233,15 @@ describe("githubAuditEvent", () => {
 				),
 			),
 		).toBe(true)
+		// Unpublishing turns the release back into a draft, and is kept.
+		expect(
+			mapped("release", {
+				action: "unpublished",
+				release: { ...release, draft: true },
+				repository,
+				sender,
+			}).action,
+		).toBe("release.unpublished")
 	})
 
 	it("records where a repository was forked to", () => {
