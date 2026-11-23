@@ -1,6 +1,7 @@
 // A fake Fleet server for tests, answering the `/api/v1/fleet/*` reads Maple makes from a mutable
-// world, with every request recorded.
-import { Array as Arr, Layer, Order } from "effect"
+// world, with every request recorded. Its policy and fleet paths follow `version`, as real servers
+// do: `/teams` before 4.82 (no fleet 0 before 4.57), `/fleets` from it, only `/policies` from Fleet 5.
+import { Array as Arr, Layer, Order, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
@@ -49,7 +50,16 @@ export interface FakeFleet {
 	/** An older server that pages from the start whatever `after` says. */
 	ignoresAfter: boolean
 	hostCount: number
+	/** The global policies. */
 	policies: Array<FakeFleetPolicy>
+	/** The server's fleets; null is Fleet Free, which has none and answers 402. */
+	fleets: Array<{ readonly id: number; readonly name: string }> | null
+	/** Each fleet's own policies, by fleet id; 0 holds those of devices in no fleet. */
+	fleetPolicies: Record<number, ReadonlyArray<FakeFleetPolicy>>
+	/** Fleets still listed whose policies answer 404: deleted between the two reads. */
+	vanishedFleets: ReadonlyArray<number>
+	/** Which paths the server has, when `version` names no release (a build from a commit). */
+	era: Era | null
 	/** The devices failing each policy, by policy id. */
 	failingHosts: Record<number, ReadonlyArray<{ readonly id: number; readonly hostname: string }>>
 	software: Array<FakeFleetSoftware>
@@ -70,6 +80,67 @@ export interface FakeFleet {
 
 /** Matched as a suffix: a server can sit under a path prefix. */
 const PREFIX = "/api/v1/fleet"
+
+/** `legacy` is `teams` before 4.57, when devices in no fleet had no policies of their own. */
+type Era = "legacy" | "teams" | "fleets" | "fleet5"
+
+const eraOf = (world: FakeFleet): Era => {
+	if (world.era !== null) return world.era
+	const [, major, minor] = /(\d+)\.(\d+)/.exec(world.version) ?? []
+	if (Number(major) >= 5) return "fleet5"
+	return Number(minor) >= 82 ? "fleets" : Number(minor) >= 57 ? "teams" : "legacy"
+}
+
+const usesTeams = (era: Era): boolean => era === "teams" || era === "legacy"
+
+/** Fleet 5's answer on a path it removed. */
+const gone = (endpoint: string) =>
+	VendorFake.json(
+		{
+			message: "Gone",
+			errors: [
+				{
+					name: "base",
+					reason: `The "GET ${endpoint}" endpoint is not available anymore. What to use instead: https://fleetdm.com/learn-more-about/fleet-5-upgrade`,
+				},
+			],
+		},
+		410,
+	)
+
+/** A path this version never had: the router's own plain 404. */
+const noRoute = () => VendorFake.text("404 page not found", 404)
+
+const needsPremium = () =>
+	VendorFake.json(
+		{ message: "Payment Required", errors: [{ name: "base", reason: "Requires Fleet Premium license" }] },
+		402,
+	)
+
+const paged = <A>(rows: ReadonlyArray<A>, search: URLSearchParams, defaultPerPage: number) => {
+	const perPage = Number(search.get("per_page") ?? String(defaultPerPage))
+	const page = Number(search.get("page") ?? "0")
+	return rows.slice(page * perPage, (page + 1) * perPage)
+}
+
+const policiesPage = (world: FakeFleet, policies: ReadonlyArray<FakeFleetPolicy>, search: URLSearchParams) =>
+	world.policyPaging === "ignored" ? policies : paged(policies, search, 100)
+
+/** A fleet's own policies, or undefined when the server has no such fleet. */
+const policiesOfFleet = (world: FakeFleet, id: number): ReadonlyArray<FakeFleetPolicy> | undefined =>
+	Arr.contains(world.vanishedFleets, id) ||
+	(id === 0 ? eraOf(world) === "legacy" : !Arr.some(world.fleets ?? [], (fleet) => fleet.id === id))
+		? undefined
+		: (world.fleetPolicies[id] ?? [])
+
+const fleetNotFound = (id: number) =>
+	VendorFake.json(
+		{
+			message: "Resource Not Found",
+			errors: [{ name: "base", reason: `Fleet ${id} was not found in the datastore` }],
+		},
+		404,
+	)
 
 /** `GET /activities` as Fleet pages it: `order_key=id` with `after` is a keyset cursor. */
 const activitiesPage = (world: FakeFleet, search: URLSearchParams) => {
@@ -110,6 +181,10 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 		ignoresAfter: false,
 		hostCount: 0,
 		policies: [],
+		fleets: null,
+		fleetPolicies: {},
+		vanishedFleets: [],
+		era: null,
 		failingHosts: {},
 		software: [],
 		policyPaging: "default-100",
@@ -158,13 +233,62 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 				{
 					path: new RegExp(`${PREFIX}/global/policies$`),
 					respond: (request) => {
-						const perPage = Number(request.search.get("per_page") ?? "100")
-						const page = Number(request.search.get("page") ?? "0")
-						const policies =
-							world.policyPaging === "ignored"
-								? world.policies
-								: world.policies.slice(page * perPage, (page + 1) * perPage)
+						if (eraOf(world) === "fleet5") return gone("/global/policies")
+						const policies = policiesPage(world, world.policies, request.search)
+						// Fleet 4 leaves an empty list out, as Go's omitempty does.
 						return VendorFake.json(policies.length === 0 ? {} : { policies })
+					},
+				},
+				{
+					// Fleet 5: every scope from one path, `fleet_id` picking a fleet (0 for no fleet).
+					path: new RegExp(`${PREFIX}/policies$`),
+					respond: (request) => {
+						if (eraOf(world) !== "fleet5") return noRoute()
+						const fleetId = request.search.get("fleet_id")
+						if (fleetId === null)
+							return VendorFake.json({
+								policies: policiesPage(world, world.policies, request.search),
+							})
+						if (world.fleets === null) return needsPremium()
+						const own = policiesOfFleet(world, Number(fleetId))
+						return own === undefined
+							? fleetNotFound(Number(fleetId))
+							: VendorFake.json({ policies: policiesPage(world, own, request.search) })
+					},
+				},
+				{
+					path: new RegExp(`${PREFIX}/(fleets|teams)$`),
+					respond: (request) => {
+						const era = eraOf(world)
+						const named = Str.endsWith("/fleets")(request.path) ? "fleets" : "teams"
+						if (era === "fleet5" && named === "teams") return gone("/teams")
+						if (usesTeams(era) && named === "fleets") return noRoute()
+						if (world.fleets === null) return needsPremium()
+						const fleets = paged(world.fleets, request.search, 100)
+						return VendorFake.json({
+							...(era === "fleet5" ? undefined : { teams: fleets }),
+							...(usesTeams(era) ? undefined : { fleets }),
+						})
+					},
+				},
+				{
+					// Fleet 4: a fleet's own policies, with the global ones beside them.
+					path: new RegExp(`${PREFIX}/(fleets|teams)/\\d+/policies$`),
+					respond: (request) => {
+						const era = eraOf(world)
+						const [, named = "", id = ""] =
+							/\/(fleets|teams)\/(\d+)\/policies$/.exec(request.path) ?? []
+						if (era === "fleet5") return gone(`/${named}/{fleet_id}/policies`)
+						if (usesTeams(era) && named === "fleets") return noRoute()
+						const own = policiesOfFleet(world, Number(id))
+						if (own === undefined) return fleetNotFound(Number(id))
+						const policies = policiesPage(world, own, request.search)
+						return VendorFake.json({
+							...(policies.length === 0 ? undefined : { policies }),
+							...(world.policies.length === 0
+								? undefined
+								: { inherited_policies: world.policies }),
+						})
 					},
 				},
 				{
@@ -217,9 +341,12 @@ export const makeFakeFleet = (overrides: Partial<Omit<FakeFleet, "fake">> = {}):
 	return world
 }
 
-/** Everything the Fleet services need, over the fake and a test database. */
-export const fakeFleetDeps = (testDb: TestDb, world: FakeFleet) =>
+/** Everything the Fleet services need, over a test database and whatever answers their requests. */
+export const fleetDeps = (testDb: TestDb, fetch: Layer.Layer<never>) =>
 	Layer.mergeAll(FetchHttpClient.layer, testDb.layer, Env.layer).pipe(
-		Layer.provide(world.fake.layer),
+		Layer.provide(fetch),
 		Layer.provide(fakeCostEnvConfig()),
 	)
+
+/** {@link fleetDeps} over the fake. */
+export const fakeFleetDeps = (testDb: TestDb, world: FakeFleet) => fleetDeps(testDb, world.fake.layer)

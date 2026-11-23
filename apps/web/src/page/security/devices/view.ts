@@ -36,27 +36,32 @@ import {
 import { relativeTime } from "../../kit/relative-time"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem } from "../../kit/stat-rail"
+import { osName, platformLabel as platformMark } from "../../kit/platform-label"
 import { securityLayout, WIDE_COLUMN } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import {
+	ALL_PLATFORMS,
+	appliesToLabel,
 	brandOf,
 	criticalCount,
 	cvssTone,
 	DEVICE_SOURCE_BRANDS,
-	type DeviceSourceBrand,
-	deviceTotal,
 	devicesLabel,
+	deviceTotal,
 	failingLabel,
 	hasScores,
 	knownExploitedCount,
 	moreVulnerabilitiesBySource,
 	noFailingPoliciesText,
 	platformLabel,
+	platformName,
+	platformsOf,
 	policyKeyOf,
 	screenOf,
 	softwareLabel,
 	sourceLabelOf,
 	sourceTagOf,
+	type DeviceSourceBrand,
 	unscoredKinds,
 } from "./derive"
 import { type Devices, Message, type Model } from "./model"
@@ -102,7 +107,8 @@ const notConnected = (h: H): Html =>
 			{
 				label: "Policies",
 				title: "Failing device policies",
-				description: "Each policy your devices fail, critical first, with the devices that fail it.",
+				description:
+					"Each policy your devices fail, critical first, with the group of devices it applies to and the devices that fail it.",
 			},
 			{
 				label: "Vulnerabilities",
@@ -283,7 +289,7 @@ const summary = (h: H, devices: Devices): Html => {
 	])
 }
 
-const POLICY_COLUMNS = 4
+const POLICY_COLUMNS = 5
 
 const policyDetail = (h: H, policy: DevicePolicyFinding): Html =>
 	vstack(h, { gap: "3", className: "px-4 py-3 sm:pl-9" }, [
@@ -347,6 +353,22 @@ const policyDetail = (h: H, policy: DevicePolicyFinding): Html =>
 		]),
 	])
 
+/** The platforms a policy runs on, each as its mark beside its name. */
+const platformsCell = (h: H, platform: string | null): Html => {
+	const platforms = platformsOf(platform)
+	return typography(h, { size: "xs", as: "span" }, [
+		platforms.length === 0
+			? ALL_PLATFORMS
+			: hstack(
+					h,
+					{ gap: "3", as: "span", inline: true },
+					Arr.map(platforms, (name) =>
+						osName(name) === undefined ? platformName(name) : platformMark(h, "os", name),
+					),
+				),
+	])
+}
+
 const policyRows = (
 	h: H,
 	policy: DevicePolicyFinding,
@@ -372,6 +394,7 @@ const policyRows = (
 										`${isExpanded ? "Hide" : "Show"} failing devices: ${policy.name}`,
 										...(policy.critical ? ["critical"] : []),
 										...(tag === null ? [] : [tag]),
+										appliesToLabel(policy),
 										failingLabel(policy),
 										platformLabel(policy.platform),
 									],
@@ -393,9 +416,9 @@ const policyRows = (
 											: []),
 										...sourceTag(h, tag),
 									]),
-									// A phone has no Failing or Platform column: both ride under the name.
+									// A phone has only the Policy column: the others ride under the name.
 									typography(h, { size: "2xs", tone: "muted", className: "sm:hidden" }, [
-										`${failingLabel(policy)} · ${platformLabel(policy.platform)}`,
+										`${appliesToLabel(policy)} · ${failingLabel(policy)} · ${platformLabel(policy.platform)}`,
 									]),
 								]),
 							],
@@ -405,10 +428,19 @@ const policyRows = (
 				),
 				tableCell(
 					h,
+					[
+						typography(h, { size: "xs", tone: policy.groupName === null ? "muted" : undefined }, [
+							appliesToLabel(policy),
+						]),
+					],
+					`${WIDE_COLUMN} whitespace-normal`,
+				),
+				tableCell(
+					h,
 					[typography(h, { size: "xs", numeric: true }, [failingLabel(policy)])],
 					`${WIDE_COLUMN} whitespace-nowrap`,
 				),
-				tableCell(h, [typography(h, { size: "xs" }, [platformLabel(policy.platform)])], WIDE_COLUMN),
+				tableCell(h, [platformsCell(h, policy.platform)], `${WIDE_COLUMN} whitespace-nowrap`),
 				tableCell(
 					h,
 					[
@@ -465,6 +497,7 @@ const policiesSection = (h: H, model: Model, devices: Devices): Html => {
 						tableHeader(h, [
 							tableRow(h, [
 								tableHead(h, ["Policy"]),
+								tableHead(h, ["Applies to"], WIDE_COLUMN),
 								tableHead(h, ["Failing"], WIDE_COLUMN),
 								tableHead(h, ["Platform"], WIDE_COLUMN),
 								tableHead(h, [""], WIDE_COLUMN),

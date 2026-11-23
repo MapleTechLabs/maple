@@ -26,7 +26,7 @@ import * as FleetApi from "./fleet/api"
 const VALIDATE_TIMEOUT = Duration.seconds(30)
 
 const NO_GLOBAL_ROLE =
-	"This token's user has no global role in Fleet, so it cannot read the activity feed or global policies. Give the API-only user the Observer role."
+	"This token's user has no global role in Fleet, so it cannot read the activity feed or every fleet's policies. Give the API-only user the Observer role."
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,

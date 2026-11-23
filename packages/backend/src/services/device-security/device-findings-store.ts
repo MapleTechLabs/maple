@@ -75,6 +75,7 @@ export const replaceDeviceFindings = (
 						target: ["orgId", "source", "connectionId", "policyId"],
 						set: (_, excluded) => ({
 							name: excluded.name,
+							groupName: excluded.groupName,
 							description: excluded.description,
 							resolution: excluded.resolution,
 							critical: excluded.critical,

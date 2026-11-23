@@ -108,25 +108,28 @@ describe("makeReviewCoverage", () => {
 		assert.isFalse(coverage.wholeDiff())
 	})
 
-	it("owes the pass after an unchecked fix every file, whatever changed since", () => {
-		const coverage = makeReviewCoverage(
-			Arr.join(
-				[
-					"Review pull request #7.",
-					...renderFollowUp({
-						previousSha: "abcdef1234",
-						changes: { paths: ["src/b.ts"], rewritten: false },
-						open: [],
-						recheck: true,
-					}),
-				],
-				"\n",
-			),
-		)
-		coverage.observe("pr_changed_files", listing)
-		assert.lengthOf(coverage.unread(), 3)
-		assert.isTrue(coverage.wholeDiff())
-	})
+	it.each(["defect", "approval"] as const)(
+		"owes a %s recheck every file, whatever changed since",
+		(recheck) => {
+			const coverage = makeReviewCoverage(
+				Arr.join(
+					[
+						"Review pull request #7.",
+						...renderFollowUp({
+							previousSha: "abcdef1234",
+							changes: { paths: ["src/b.ts"], rewritten: false },
+							open: [],
+							recheck,
+						}),
+					],
+					"\n",
+				),
+			)
+			coverage.observe("pr_changed_files", listing)
+			assert.lengthOf(coverage.unread(), 3)
+			assert.isTrue(coverage.wholeDiff())
+		},
+	)
 
 	// Without a listing nothing is due, so an empty unread list proves nothing was checked.
 	it("is no whole-diff read until a file listing arrives", () => {
