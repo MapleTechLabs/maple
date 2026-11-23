@@ -74,6 +74,45 @@ describe("local ingest rules", () => {
 		})
 	})
 
+	it("lets a rule remove a log record's event name, which the encoder then cannot restore", () => {
+		const removeEventName = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "redact",
+						keys: ["event.name"],
+						detectors: [],
+						patterns: [],
+						scopes: ["attributes"],
+						method: "remove",
+					},
+				},
+			]),
+		)
+		const request = {
+			resourceLogs: [
+				{
+					scopeLogs: [
+						{
+							logRecords: [
+								{
+									timeUnixNano: "1700000000000000000",
+									eventName: "gen_ai.evaluation.result",
+									attributes: [str("k", "v")],
+								},
+							],
+						},
+					],
+				},
+			],
+		}
+		applyLocalIngestRules("logs", request, removeEventName.compiled)
+		const [batch] = encodeLogs(request)
+		expect(JSON.parse(Str.split("\n")(batch?.ndjson ?? "")[0] ?? "{}").log_attributes).toEqual({ k: "v" })
+	})
+
 	it("removes a resource whose every record was dropped", () => {
 		const request = {
 			resourceLogs: [

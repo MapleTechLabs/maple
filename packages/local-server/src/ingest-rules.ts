@@ -290,6 +290,17 @@ const applyToTraces = (request: TraceRequest, run: Run) => {
 	})
 }
 
+/** A record's attributes with its `eventName` moved in as `event.name` (an own attribute wins), so a
+ *  rule can match, redact or remove it and the encoder cannot restore a removed name. */
+const liftEventName = (log: { attributes?: KeyValue[]; eventName?: string }): AttrMap => {
+	const attributes = toMap(log.attributes)
+	const eventName = log.eventName
+	log.eventName = undefined
+	return eventName === undefined || eventName === "" || attributes["event.name"] !== undefined
+		? attributes
+		: { ...attributes, "event.name": eventName }
+}
+
 const applyToLogs = (request: LogsRequest, run: Run) => {
 	request.resourceLogs = Arr.filter(request.resourceLogs ?? [], (resourceLogs) => {
 		const resource = toMap(resourceLogs.resource?.attributes)
@@ -300,7 +311,7 @@ const applyToLogs = (request: LogsRequest, run: Run) => {
 				const output = run({
 					signal: "logs",
 					resource,
-					attributes: toMap(log.attributes),
+					attributes: liftEventName(log),
 					body,
 					severityNumber: log.severityNumber,
 					severityText: log.severityText,
