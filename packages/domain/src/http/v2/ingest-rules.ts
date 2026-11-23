@@ -22,6 +22,8 @@ import {
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp, wireExample } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
+import { V2WarehouseReadErrors } from "./query-errors"
+import { AnalystAccess } from "../analyst-access"
 import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
 
@@ -341,16 +343,24 @@ export const V2IngestRuleStats = Schema.Struct({
 	object: Schema.Literal("ingest_rule_stats"),
 	start_time: Timestamp,
 	end_time: Timestamp,
-	rules: Schema.Array(Schema.Struct({ id: IngestRulePublicId, ...countFields })).annotate({
+	rules: Schema.Array(
+		Schema.Struct({
+			id: IngestRulePublicId,
+			...countFields,
+			signals: Schema.Array(Schema.Struct({ signal: IngestRuleSignal, ...countFields })).annotate({
+				description: "The rule's totals per signal; signals without hits are left out.",
+			}),
+		}),
+	).annotate({
 		description: "Totals per rule over the window; rules without hits are left out.",
 	}),
 	signals: Schema.Array(Schema.Struct({ signal: IngestRuleSignal, ...countFields })).annotate({
 		description: "Totals per signal: what rules kept off the bill.",
 	}),
 	hourly: Schema.Array(
-		Schema.Struct({ id: IngestRulePublicId, bucket: Timestamp, matched: Count }),
+		Schema.Struct({ id: IngestRulePublicId, bucket: Timestamp, ...countFields }),
 	).annotate({
-		description: "Matches per rule and UTC hour; empty for windows over 7 days.",
+		description: "Counts per rule and UTC hour; empty for windows over 7 days.",
 	}),
 }).annotate({
 	identifier: "IngestRuleStats",
@@ -358,6 +368,100 @@ export const V2IngestRuleStats = Schema.Struct({
 	description: "What the gateway's rules matched, dropped and redacted. Counts lag by up to a minute.",
 })
 export type V2IngestRuleStats = Schema.Schema.Type<typeof V2IngestRuleStats>
+
+export const V2IngestRulePreviewParams = Schema.Struct({
+	signals: signalsField,
+	conditions: Schema.optionalKey(conditionsField),
+	action: V2IngestRuleAction,
+}).annotate({
+	identifier: "IngestRulePreviewParams",
+	title: "Ingest rule preview parameters",
+	description: "A draft rule to dry-run against stored telemetry. Nothing is saved.",
+	examples: [
+		wireExample({
+			signals: ["logs"],
+			conditions: [{ field: "severity", op: "lt", value: "info" }],
+			action: { type: "drop", keep_percent: 0 },
+		}),
+	],
+})
+export type V2IngestRulePreviewParams = Schema.Schema.Type<typeof V2IngestRulePreviewParams>
+
+export const V2IngestRulePreviewSignal = Schema.Struct({
+	signal: Schema.Literals(["traces", "logs"]),
+	scanned_minutes: Count.annotate({
+		description:
+			"Minutes scanned: 1440, or the latest stretch that fits the scan budget; then each service's match rate there is applied to its stored records for the day.",
+	}),
+	stored: Count.annotate({ description: "Records stored in the window." }),
+	matched: Count.annotate({ description: "Stored records every condition matches." }),
+	estimated_dropped: Count.annotate({
+		description: "Matches a drop rule would have dropped after `keep_percent`; 0 for redact rules.",
+	}),
+	estimated_dropped_bytes: Count.annotate({
+		description:
+			"Bytes those drops would have kept off the bill, from each service's average record size.",
+	}),
+	services: Schema.Array(
+		Schema.Struct({ service_name: Schema.String, stored: Count, matched: Count }),
+	).annotate({ description: "The services with the most matches, at most 10." }),
+}).annotate({ identifier: "IngestRulePreviewSignal", title: "Ingest rule preview for one signal" })
+export type V2IngestRulePreviewSignal = Schema.Schema.Type<typeof V2IngestRulePreviewSignal>
+
+export const V2IngestRulePreview = Schema.Struct({
+	object: Schema.Literal("ingest_rule_preview"),
+	start_time: Timestamp,
+	end_time: Timestamp,
+	signals: Schema.Array(V2IngestRulePreviewSignal).annotate({
+		description: "One entry per previewable signal the draft covers. Metrics are not previewed.",
+	}),
+}).annotate({
+	identifier: "IngestRulePreview",
+	title: "Ingest rule preview",
+	description:
+		"What a draft rule would have matched in the last 24 hours of stored logs and spans. An estimate: data other rules already dropped is not stored, and regexes run on the warehouse's engine.",
+})
+export type V2IngestRulePreview = Schema.Schema.Type<typeof V2IngestRulePreview>
+
+export const V2IngestRuleSuggestion = Schema.Struct({
+	signal: Schema.Literals(["traces", "logs"]),
+	service_name: Schema.String,
+	level: Schema.NullOr(Schema.Literals(["debug", "info"])).annotate({
+		description: "Logs: the rule covers this level and every level below it. `null` for traces.",
+	}),
+	span_name: Schema.NullOr(Schema.String).annotate({
+		description: "Traces: the exact span name the rule covers. `null` for logs.",
+	}),
+	reason: Schema.Literals(["debug_logs", "info_logs", "health_checks"]).annotate({
+		description:
+			"Why: debug logs and health-check spans are dropped; a service's logs below warn are sampled when its info logs are a tenth of all log bytes.",
+	}),
+	keep_percent: Count.annotate({ description: "The rule's `keep_percent`: 0 drops, 10 samples." }),
+	records: Count.annotate({ description: "Records stored in the last 24 hours." }),
+	bytes: Count.annotate({
+		description: "Their bytes; for spans, estimated from the service's average span.",
+	}),
+	saved_bytes: Count.annotate({ description: "Bytes the rule would have kept off the bill." }),
+	share: Schema.Number.annotate({
+		description: "`bytes` as a share (0 to 1) of the signal's stored bytes.",
+	}),
+}).annotate({ identifier: "IngestRuleSuggestion", title: "Suggested ingest rule" })
+export type V2IngestRuleSuggestion = Schema.Schema.Type<typeof V2IngestRuleSuggestion>
+
+export const V2IngestRuleSuggestions = Schema.Struct({
+	object: Schema.Literal("ingest_rule_suggestions"),
+	start_time: Timestamp,
+	end_time: Timestamp,
+	data: Schema.Array(V2IngestRuleSuggestion).annotate({
+		description: "At most 6, most bytes saved first.",
+	}),
+}).annotate({
+	identifier: "IngestRuleSuggestions",
+	title: "Suggested ingest rules",
+	description:
+		"Rules the last 24 hours of stored logs and spans suggest: debug logs and health-check spans to drop, and a service's logs below warn to sample when its info logs dominate.",
+})
+export type V2IngestRuleSuggestions = Schema.Schema.Type<typeof V2IngestRuleSuggestions>
 
 export const V2IngestRuleReorderParams = Schema.Struct({
 	ids: Schema.Array(IngestRulePublicId).annotate({
@@ -411,6 +515,35 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 					"Per-rule and per-signal counts of what rules matched, dropped and redacted, at most 62 days. Requires the `ingest_rules:read` scope.",
 			}),
 		),
+	)
+	.add(
+		HttpApiEndpoint.get("suggestions", "/suggestions", {
+			success: V2IngestRuleSuggestions,
+			error: [...V2WarehouseReadErrors],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listIngestRuleSuggestions",
+				summary: "Suggested ingest rules",
+				description:
+					"Rules the last 24 hours of stored logs and spans suggest, from the hourly rollups, with the bytes each would have dropped. Requires the `ingest_rules:read` scope; log suggestions also need `logs:read` and span suggestions `traces:read`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("preview", "/preview", {
+			payload: V2IngestRulePreviewParams,
+			success: V2IngestRulePreview,
+			error: [ruleValidation, ...V2WarehouseReadErrors],
+		})
+			.annotate(AnalystAccess, "read")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "previewIngestRule",
+					summary: "Preview an ingest rule",
+					description:
+						"Counts what a draft rule's conditions match in the last 24 hours of stored logs and spans, per service, and estimates the records and bytes it would drop. Saves nothing. Requires the `ingest_rules:read` scope, plus `logs:read` and `traces:read` for the signals it counts.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.post("reorder", "/reorder", {

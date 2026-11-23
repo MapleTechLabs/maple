@@ -43,15 +43,27 @@ export interface IngestRuleCounts {
 }
 
 export interface IngestRuleStatsWindow {
-	readonly rules: ReadonlyArray<IngestRuleCounts & { readonly ruleId: IngestRuleId }>
+	readonly rules: ReadonlyArray<
+		IngestRuleCounts & {
+			readonly ruleId: IngestRuleId
+			readonly signals: ReadonlyArray<IngestRuleCounts & { readonly signal: string }>
+		}
+	>
 	readonly signals: ReadonlyArray<IngestRuleCounts & { readonly signal: string }>
 	/** Per rule and UTC hour; only for windows up to `HOURLY_MAX_MS`. */
-	readonly hourly: ReadonlyArray<{
-		readonly ruleId: IngestRuleId
-		readonly bucket: number
-		readonly matched: number
-	}>
+	readonly hourly: ReadonlyArray<
+		IngestRuleCounts & { readonly ruleId: IngestRuleId; readonly bucket: number }
+	>
 }
+
+const ZERO_COUNTS: IngestRuleCounts = { matched: 0, dropped: 0, droppedBytes: 0, redactedValues: 0 }
+
+const addCounts = (left: IngestRuleCounts, right: IngestRuleCounts): IngestRuleCounts => ({
+	matched: left.matched + right.matched,
+	dropped: left.dropped + right.dropped,
+	droppedBytes: left.droppedBytes + right.droppedBytes,
+	redactedValues: left.redactedValues + right.redactedValues,
+})
 
 export const HOURLY_MAX_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -326,30 +338,13 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 				endMs: number,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.ingest_rule.window_ms": endMs - startMs })
-				const [byRule, bySignal, hourly] = yield* Effect.all(
+				const [byRuleSignal, hourly] = yield* Effect.all(
 					[
 						dbExecute((db) =>
 							db.run(
 								PG.from(OrgIngestRuleStats)
 									.select(($) => ({
 										ruleId: $.ruleId,
-										matched: PG.sum($.matched),
-										dropped: PG.sum($.dropped),
-										droppedBytes: PG.sum($.droppedBytes),
-										redactedValues: PG.sum($.redactedValues),
-									}))
-									.where(($) => [
-										$.orgId.eq(orgId),
-										$.bucket.gte(startMs),
-										$.bucket.lt(endMs),
-									])
-									.groupBy("ruleId"),
-							),
-						),
-						dbExecute((db) =>
-							db.run(
-								PG.from(OrgIngestRuleStats)
-									.select(($) => ({
 										signal: $.signal,
 										matched: PG.sum($.matched),
 										dropped: PG.sum($.dropped),
@@ -361,7 +356,7 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 										$.bucket.gte(startMs),
 										$.bucket.lt(endMs),
 									])
-									.groupBy("signal"),
+									.groupBy("ruleId", "signal"),
 							),
 						),
 						endMs - startMs > HOURLY_MAX_MS
@@ -373,6 +368,9 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 												ruleId: $.ruleId,
 												bucket: $.bucket,
 												matched: PG.sum($.matched),
+												dropped: PG.sum($.dropped),
+												droppedBytes: PG.sum($.droppedBytes),
+												redactedValues: PG.sum($.redactedValues),
 											}))
 											.where(($) => [
 												$.orgId.eq(orgId),
@@ -386,13 +384,30 @@ export class IngestRuleService extends Context.Service<IngestRuleService>()(
 					],
 					{ concurrency: "unbounded" },
 				)
+				const cells = Arr.map(byRuleSignal, (row) => ({
+					ruleId: row.ruleId,
+					signal: row.signal,
+					...counts(row),
+				}))
+				const totalsBy = <K extends string>(key: (cell: (typeof cells)[number]) => K) =>
+					Arr.reduce(cells, new Map<K, IngestRuleCounts>(), (acc, cell) =>
+						acc.set(key(cell), addCounts(acc.get(key(cell)) ?? ZERO_COUNTS, cell)),
+					)
+				const ruleTotals = totalsBy((cell) => cell.ruleId)
+				const signalTotals = totalsBy((cell) => cell.signal)
 				return {
-					rules: Arr.map(byRule, (row) => ({ ruleId: row.ruleId, ...counts(row) })),
-					signals: Arr.map(bySignal, (row) => ({ signal: row.signal, ...counts(row) })),
+					rules: Arr.map([...ruleTotals], ([ruleId, totals]) => ({
+						ruleId,
+						...totals,
+						signals: Arr.flatMap(cells, ({ ruleId: owner, signal, ...cell }) =>
+							owner === ruleId ? [{ signal, ...cell }] : [],
+						),
+					})),
+					signals: Arr.map([...signalTotals], ([signal, totals]) => ({ signal, ...totals })),
 					hourly: Arr.map(hourly, (row) => ({
 						ruleId: row.ruleId,
 						bucket: row.bucket,
-						matched: Number(row.matched ?? 0),
+						...counts(row),
 					})),
 				} satisfies IngestRuleStatsWindow
 			})

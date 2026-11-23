@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule, V2IngestRuleStats } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRuleStats, V2IngestRuleSuggestions } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import { Submodel } from "foldkit"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
@@ -97,16 +97,15 @@ describe("ingest rules section", () => {
 		)
 	})
 
-	test("the last 24 hours show what each rule dropped or redacted, and No hits for the rest", () => {
+	test("the last 24 hours show what each rule dropped and the bytes dropped, and No hits for the rest", () => {
+		const counts = { matched: 1520, dropped: 1520, dropped_bytes: 340_000_000, redacted_values: 0 }
 		const stats = Schema.decodeSync(V2IngestRuleStats)({
 			object: "ingest_rule_stats",
 			start_time: "2026-10-27T12:00:00.000Z",
 			end_time: "2026-10-28T12:00:00.000Z",
-			rules: [
-				{ id: dropDebug.id, matched: 1520, dropped: 1520, dropped_bytes: 90000, redacted_values: 0 },
-			],
+			rules: [{ id: dropDebug.id, ...counts, signals: [{ signal: "logs", ...counts }] }],
 			signals: [],
-			hourly: [{ id: dropDebug.id, bucket: "2026-10-28T11:00:00.000Z", matched: 1520 }],
+			hourly: [{ id: dropDebug.id, bucket: "2026-10-28T11:00:00.000Z", ...counts }],
 		})
 		scene(
 			{ update: step, view },
@@ -117,8 +116,34 @@ describe("ingest rules section", () => {
 				).model,
 			),
 			expectView(text("1.5K dropped")).toExist(),
+			expectView(text("340 MB dropped")).toExist(),
 			expectView(text("No hits")).toExist(),
-			expectView(role("img", { name: "Drop debug logs matches per hour" })).toExist(),
+			expectView(role("img", { name: "Drop debug logs: records dropped per hour" })).toExist(),
+		)
+	})
+
+	test("a sampling rule shows its matches beside its drops, never as records kept", () => {
+		const sampled = { ...dropDebug, action: { type: "drop" as const, keep_percent: 10 } }
+		const counts = { matched: 1000, dropped: 900, dropped_bytes: 2_000_000, redacted_values: 0 }
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
+			object: "ingest_rule_stats",
+			start_time: "2026-10-27T12:00:00.000Z",
+			end_time: "2026-10-28T12:00:00.000Z",
+			rules: [{ id: dropDebug.id, ...counts, signals: [{ signal: "logs", ...counts }] }],
+			signals: [],
+			hourly: [],
+		})
+		scene(
+			{ update: step, view },
+			given(
+				step(
+					withRules([sampled]),
+					rules(RulesMessage.CompletedFetchStats({ result: Result.succeed(stats) })),
+				).model,
+			),
+			expectView(text("900 of 1K dropped")).toExist(),
+			expectView(text("2.0 MB dropped")).toExist(),
+			expectView(text("100 kept")).not.toExist(),
 		)
 	})
 
@@ -206,6 +231,116 @@ describe("ingest rules section", () => {
 				url: "/settings/ingestion/rules/irule_YofPTrK9782DWwcnXhpcCw",
 				isReplace: false,
 			}),
+		)
+	})
+})
+
+describe("suggested ingest rules", () => {
+	const suggestions = Schema.decodeSync(V2IngestRuleSuggestions)({
+		object: "ingest_rule_suggestions",
+		start_time: "2026-11-22T12:00:00.000Z",
+		end_time: "2026-11-23T12:00:00.000Z",
+		data: [
+			{
+				signal: "logs",
+				service_name: "checkout",
+				level: "debug",
+				span_name: null,
+				reason: "debug_logs",
+				keep_percent: 0,
+				records: 1_200_000,
+				bytes: 340_000_000,
+				saved_bytes: 340_000_000,
+				share: 0.21,
+			},
+			{
+				signal: "logs",
+				service_name: "api",
+				level: "info",
+				span_name: null,
+				reason: "info_logs",
+				keep_percent: 10,
+				records: 400_000,
+				bytes: 200_000_000,
+				saved_bytes: 180_000_000,
+				share: 0.4,
+			},
+		],
+	})
+	const withSuggestions = (list: ReadonlyArray<V2IngestRule>) =>
+		step(
+			withRules(list),
+			rules(RulesMessage.CompletedFetchSuggestions({ result: Result.succeed(suggestions) })),
+		).model
+
+	test("the tab asks for suggestions with the rules", () => {
+		expect(names(init(options).commands)).toContain("FetchIngestRuleSuggestions")
+	})
+
+	test("each suggestion says what it saves and links to a prefilled editor, even before the first rule", () => {
+		scene(
+			{ update: step, view },
+			given(withSuggestions([])),
+			expectView(text("Debug logs from checkout")).toExist(),
+			expectView(text("340 MB a day")).toExist(),
+			expectView(role("link", { name: "Drop: Debug logs from checkout" })).toHaveAttr(
+				"href",
+				"/settings/ingestion/rules/new?service=checkout&level=debug&keep=0",
+			),
+			expectView(text("Info and debug logs from api")).toExist(),
+			expectView(role("link", { name: "Sample 10%: Info and debug logs from api" })).toExist(),
+		)
+	})
+
+	test("a suggestion an enabled rule already covers is not shown again", () => {
+		const covering = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([covering])),
+			expectView(text("Debug logs from checkout")).not.toExist(),
+			expectView(text("Info and debug logs from api")).toExist(),
+		)
+	})
+
+	test("a rule with other conditions, or that keeps more, does not hide a suggestion", () => {
+		const errorsOnly = {
+			...dropDebug,
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "gte" as const, value: "error" },
+			],
+		}
+		const keepsHalf = {
+			...dropDebug,
+			id: redactTokens.id,
+			action: { type: "drop" as const, keep_percent: 50 },
+			conditions: [
+				{ field: "service_name" as const, op: "eq" as const, value: "checkout" },
+				{ field: "severity" as const, op: "lt" as const, value: "info" },
+			],
+		}
+		scene(
+			{ update: step, view },
+			given(withSuggestions([errorsOnly, keepsHalf])),
+			expectView(text("Debug logs from checkout")).toExist(),
+		)
+	})
+
+	test("no suggestions, or a failed read, shows nothing extra", () => {
+		const failed = step(
+			withRules([dropDebug]),
+			rules(RulesMessage.CompletedFetchSuggestions({ result: Result.fail(toLoadFailure("boom")) })),
+		).model
+		scene(
+			{ update: step, view },
+			given(failed),
+			expectView(role("group", { name: "Suggested rules" })).not.toExist(),
 		)
 	})
 })

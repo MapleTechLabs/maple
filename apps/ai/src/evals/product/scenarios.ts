@@ -285,6 +285,32 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 		args: { steps_json: stringifyJson(steps), ...window(range), ...extra },
 	})
 
+	// 19. A user property: the `role` each sign-up set, current for every user.
+	const owners = new Set(
+		Arr.map(
+			Arr.filter(world.users, (user) => user.role === "owner"),
+			(user) => user.userId,
+		),
+	)
+	const ownerExporters = distinct(
+		Arr.filter(exports, (row) => owners.has(row.userId)),
+		userOf,
+	).size
+
+	// 20. An account property: the `plan` the billing webhook set, held only by accounts it reported.
+	const proAccounts = new Set(
+		Arr.map(
+			Arr.filter(rowsWhere(world, named("plan_started")), (row) => row.attributes.plan === "pro"),
+			groupOf,
+		),
+	)
+	const proAccountsWithProject = distinct(
+		Arr.filter(rowsWhere(world, named("project_created"), inRange(fourWeeks)), (row) =>
+			proAccounts.has(row.groupId),
+		),
+		groupOf,
+	).size
+
 	return [
 		scenario(
 			"event-volume",
@@ -603,6 +629,46 @@ export const productScenarios = (world: World): ReadonlyArray<Scenario> => {
 			[
 				funnel([{ kind: "event", eventName: "plan_started" }], fourWeeks),
 				funnel([{ kind: "event", eventName: "plan_started" }], fourWeeks, { key_by: "group" }),
+			],
+		),
+		scenario(
+			"owner-exporters",
+			["properties", "users"],
+			`How many account owners (users whose role is owner) exported a report ${span(fourWeeks)}?`,
+			[answerNumber("owners who exported", ownerExporters)],
+			[
+				{
+					tool: "query_data",
+					args: {
+						source: "product_events",
+						kind: "breakdown",
+						metric: "users",
+						group_by: "event_name",
+						event_name: ["report_exported"],
+						user_property_filters: stringifyJson([{ key: "role", value: "owner" }]),
+						...window(fourWeeks),
+					},
+				},
+			],
+		),
+		scenario(
+			"pro-accounts-projects",
+			["properties", "accounts"],
+			`How many accounts on the pro plan created a project ${span(fourWeeks)}?`,
+			[answerNumber("pro accounts with a project", proAccountsWithProject)],
+			[
+				{
+					tool: "query_data",
+					args: {
+						source: "product_events",
+						kind: "breakdown",
+						metric: "groups",
+						group_by: "event_name",
+						event_name: ["project_created"],
+						group_property_filters: stringifyJson([{ key: "plan", value: "pro" }]),
+						...window(fourWeeks),
+					},
+				},
 			],
 		),
 	]

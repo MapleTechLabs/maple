@@ -207,7 +207,9 @@ describe("productEventsListQuery", () => {
 describe("attribute discovery", () => {
 	it("lists keys by array-joining the map keys", () => {
 		const { sql } = compileUnsafe(productEventAttributeKeysQuery({ limit: 10 }), params)
-		expect(sql).toContain("arrayJoin(mapKeys(product_events.Attributes)) AS attributeKey")
+		expect(sql).toContain("mapKeys(Attributes))) AS attributeKey")
+		// Property writes (`$set.plan`) are not event properties.
+		expect(sql).toContain("arrayFilter(k -> NOT (startsWith(k, '$set.')")
 		expect(sql).toContain("GROUP BY attributeKey")
 	})
 

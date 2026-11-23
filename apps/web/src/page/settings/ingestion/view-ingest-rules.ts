@@ -1,5 +1,4 @@
 import { fromV2IngestRuleAction, type V2IngestRule } from "@maple/domain/http/v2"
-import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -25,8 +24,10 @@ import { SIGNAL_LABELS, summaryParts } from "../ingest-rule/summary"
 import { TEMPLATE_IDS, TEMPLATES } from "../ingest-rule/templates"
 import { settingsSection } from "../../kit/settings-section"
 import { denialReason } from "../../kit/session-grants"
-import { hourlyMatches, menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
+import { detail, effectCount, effectKind, headline, hourlySeries } from "../ingest-rule/impact"
+import { menuIdOf, Message as RulesMessage, type Model } from "./ingest-rules"
 import { Message } from "./message"
+import { ruleSuggestions } from "./view-rule-suggestions"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Option } from "effect"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -51,16 +52,26 @@ const gate = (h: H, canManage: boolean, control: Html): Html =>
 const ruleLink = (
 	h: H,
 	canManage: boolean,
-	options: Readonly<{ href: string; variant?: "outline" }>,
+	options: Readonly<{ href: string; variant?: "outline"; ariaLabel?: string }>,
 	children: ReadonlyArray<Html | string>,
-): Html =>
-	canManage
-		? linkButton(h, { size: "sm", ...options }, children)
+): Html => {
+	const label = options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]
+	return canManage
+		? linkButton(
+				h,
+				{ size: "sm", href: options.href, variant: options.variant, attributes: label },
+				children,
+			)
 		: lockedControl(
 				h,
 				DENIAL,
-				button(h, { size: "sm", variant: options.variant, isDisabled: true }, children),
+				button(
+					h,
+					{ size: "sm", variant: options.variant, isDisabled: true, attributes: label },
+					children,
+				),
 			)
+}
 
 const addRuleButton = (h: H, canManage: boolean) =>
 	ruleLink(h, canManage, { href: newRuleHref() }, [
@@ -114,7 +125,7 @@ const rowEntries = (canManage: boolean, index: number, count: number): ReadonlyA
 
 const muted = (h: H, text: string): Html => typography(h, { size: "xs", tone: "muted" }, [text])
 
-/** Last 24h: dropped or redacted count and hourly matches; `-` when the stats did not load. */
+/** Last 24h: what the rule did, the bytes or records behind it, and its effect per hour; `-` when the stats did not load. */
 const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 	const content = AsyncData.matchData(model.stats, {
 		onEmpty: () => [skeleton(h, "h-3.5 w-16")],
@@ -123,25 +134,23 @@ const hitsCell = (h: H, model: Model, rule: V2IngestRule): Html => {
 			const found = Arr.findFirst(stats.rules, (entry) => entry.id === rule.id)
 			if (Option.isNone(found) || found.value.matched === 0) return [muted(h, "No hits")]
 			const totals = found.value
-			const count =
-				rule.action.type === "drop"
-					? `${formatNumber(totals.dropped)} dropped`
-					: `${formatNumber(totals.redacted_values)} redacted`
+			const effect = effectKind(rule.action, totals)
 			return [
-				typography(h, { size: "xs", numeric: true }, [count]),
+				typography(h, { size: "xs", numeric: true }, [headline(effect, totals)]),
+				typography(h, { size: "2xs", tone: "muted", numeric: true }, [detail(effect, totals)]),
 				miniBars(h, {
-					values: hourlyMatches(stats, rule.id),
+					values: hourlySeries(stats, rule.id, 24, (entry) => effectCount(effect, entry)),
 					// Empty hours draw a baseline so a single busy hour reads as a chart, not a stray tick.
 					floor: 12.5,
 					floorColor: "var(--input)",
 					gap: 1,
 					className: "text-muted-foreground h-3 w-full",
-					label: `${rule.name} matches per hour`,
+					label: `${rule.name}: ${effect === "drop" ? "records dropped" : "values redacted"} per hour`,
 				}),
 			]
 		},
 	})
-	return h.div([h.Class("hidden w-28 shrink-0 flex-col gap-1 sm:flex")], content)
+	return h.div([h.Class("hidden w-36 shrink-0 flex-col gap-1 sm:flex")], content)
 }
 
 const ruleRow = (
@@ -165,7 +174,7 @@ const ruleRow = (
 			),
 		],
 		[
-			vstack(h, { gap: "1", className: "w-28 shrink-0 md:w-40" }, [
+			vstack(h, { gap: "1", className: "min-w-0 flex-1 sm:w-28 sm:flex-none sm:shrink-0 md:w-40" }, [
 				truncatedText(h, { text: rule.name, className: "text-sm" }),
 				typography(h, { size: "2xs", tone: "muted" }, [
 					Arr.join(
@@ -178,7 +187,10 @@ const ruleRow = (
 				[h.Class("w-16 shrink-0")],
 				[badge(h, { variant: action.variant, size: "sm" }, [action.label])],
 			),
-			hstack(h, { align: "stretch", shrink: true, grow: true }, [summary(h, rule)]),
+			// Below `sm` a row is its name, action and switch; the summary needs the width.
+			hstack(h, { align: "stretch", shrink: true, grow: true, className: "hidden sm:flex" }, [
+				summary(h, rule),
+			]),
 			hitsCell(h, model, rule),
 			hstack(h, { align: "center", className: "w-10 shrink-0" }, [
 				gate(
@@ -216,10 +228,20 @@ const rulesTable = (h: H, model: Model, canManage: boolean, rules: ReadonlyArray
 		[],
 		[
 			hstack(h, { gap: "3", align: "center", className: "px-4 py-1.5" }, [
-				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+				eyebrow(
+					h,
+					{
+						variant: "mono",
+						className: "min-w-0 flex-1 sm:w-28 sm:flex-none sm:shrink-0 md:w-40",
+						as: "div",
+					},
+					["Name"],
+				),
 				eyebrow(h, { variant: "mono", className: "w-16 shrink-0", as: "div" }, ["Action"]),
-				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-				eyebrow(h, { variant: "mono", className: "hidden w-28 shrink-0 sm:block", as: "div" }, [
+				eyebrow(h, { variant: "mono", className: "hidden min-w-0 flex-1 sm:block", as: "div" }, [
+					"Rule",
+				]),
+				eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 sm:block", as: "div" }, [
 					"Last 24h",
 				]),
 				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
@@ -293,6 +315,9 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 								? rulesEmpty(h, canManage)
 								: rulesTable(h, model, canManage, rules),
 					}),
+					...ruleSuggestions(h, model, (inner, options, children) =>
+						ruleLink(inner, canManage, options, children),
+					),
 				],
 			),
 		],

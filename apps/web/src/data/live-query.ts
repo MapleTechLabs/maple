@@ -5,7 +5,7 @@ import {
 	type InitialQueryBuilder,
 	type QueryBuilder,
 } from "@tanstack/db"
-import { Effect, Queue, Schema, Stream } from "effect"
+import { Array as Arr, Effect, Queue, Schema, Stream } from "effect"
 
 interface LiveQuery {
 	readonly subscription: { readonly unsubscribe: () => void }
@@ -52,22 +52,30 @@ export const liveQueryStream = <TContext extends Context, Message>(
 		Effect.acquireRelease(
 			Effect.sync(() => {
 				const collection = createLiveQueryCollection({ query, startSync: true })
-				let announced = false
+				let sent: ReadonlyArray<GetResult<TContext>> = []
 				const emit = () => {
-					announced = true
-					Queue.offerUnsafe(queue, toMessage(collection.toArray))
+					sent = collection.toArray
+					Queue.offerUnsafe(queue, toMessage(sent))
+				}
+				// Rows sent last, compared by reference: an order-only move changes them, the empty
+				// event markReady sends right after the ready callbacks does not.
+				const moved = () => {
+					const rows = collection.toArray
+					return rows.length !== sent.length || Arr.some(rows, (row, index) => row !== sent[index])
 				}
 				// Without the initial state TanStack DB drops later deletes of rows this subscriber never
-				// received, so a deleted row stayed listed. Rows before the first ready are not emitted.
+				// received, so a deleted row stayed listed. The first ready emits once; changes emit after
+				// it, and an empty batch (TanStack's layout notification) only when the rows moved.
+				let isReady = false
 				const subscription = collection.subscribeChanges(
-					() => {
-						if (collection.isReady()) emit()
+					(changes) => {
+						if (isReady && (changes.length > 0 || moved())) emit()
 					},
 					{ includeInitialState: true },
 				)
-				// An already-ready query has emitted from its initial state; emit the first ready only once.
 				collection.onFirstReady(() => {
-					if (!announced) emit()
+					isReady = true
+					emit()
 				})
 				return { collection, subscription }
 			}),

@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { V2IngestRule } from "@maple/domain/http/v2"
+import { V2IngestRule, V2IngestRulePreview, V2IngestRuleStats } from "@maple/domain/http/v2"
 import {
 	IngestParseSource,
 	IngestTimestampFormat,
@@ -15,6 +15,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import { ActionType, StepKind, StepText, TextPart } from "./form"
+import { ImpactWindow } from "./impact"
 import { PreviewSignal, Samples } from "./preview"
 
 const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
@@ -53,6 +54,12 @@ export const Message = defineMessageUnion({
 	PickedPreviewSignal: { signal: PreviewSignal },
 	PickedPreviewService: { service: Schema.String },
 	ClickedRetryPreview: {},
+	CompletedFetchImpact: { seq: Schema.Number, result: outcome(V2IngestRuleStats) },
+	PickedImpactWindow: { window: ImpactWindow },
+	ElapsedEstimateDebounce: { seq: Schema.Number },
+	CompletedFetchEstimate: { key: Schema.String, result: outcome(V2IngestRulePreview) },
+	ClickedRetryEstimate: {},
+	ClickedRetryImpact: {},
 	ClickedSave: {},
 	CompletedSave: { result: outcome(V2IngestRule) },
 })

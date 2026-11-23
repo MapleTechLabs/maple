@@ -54,4 +54,93 @@ describe("liveQueryStream", () => {
 		await Effect.runPromise(Fiber.interrupt(fiber))
 		expect(emitted.at(-1)).toEqual(["b"])
 	})
+
+	test("emits a ready collection once, then once per change", async () => {
+		const collection = createCollection(
+			localOnlyCollectionOptions<{ id: string; name: string }>({
+				getKey: (row) => row.id,
+				initialData: [{ id: "a", name: "Platform" }],
+			}),
+		)
+		const emitted: Array<ReadonlyArray<string>> = []
+		const fiber = Effect.runFork(
+			Stream.runForEach(
+				liveQueryStream(
+					(q) => q.from({ d: collection }),
+					(rows) => Arr.map(rows, (row) => row.id),
+				),
+				(ids) => Effect.sync(() => emitted.push(ids)),
+			),
+		)
+		await settle()
+		collection.insert({ id: "b", name: "Checkout" })
+		await settle()
+		await Effect.runPromise(Fiber.interrupt(fiber))
+		expect(emitted).toEqual([["a"], ["a", "b"]])
+	})
+
+	test("emits once when the collection becomes ready after the subscription", async () => {
+		const collection = createCollection<{ id: string }, string>({
+			getKey: (row) => row.id,
+			sync: {
+				sync: ({ begin, write, commit, markReady }) => {
+					setTimeout(() => {
+						begin()
+						write({ type: "insert", value: { id: "a" } })
+						void commit()
+						markReady()
+					}, 5)
+				},
+			},
+		})
+		const emitted: Array<ReadonlyArray<string>> = []
+		const fiber = Effect.runFork(
+			Stream.runForEach(
+				liveQueryStream(
+					(q) => q.from({ d: collection }),
+					(rows) => Arr.map(rows, (row) => row.id),
+				),
+				(ids) => Effect.sync(() => emitted.push(ids)),
+			),
+		)
+		await settle()
+		await Effect.runPromise(Fiber.interrupt(fiber))
+		expect(emitted).toEqual([["a"]])
+	})
+
+	test("emits a reorder that changes no projected value", async () => {
+		const collection = createCollection(
+			localOnlyCollectionOptions<{ id: string; rank: number }>({
+				getKey: (row) => row.id,
+				initialData: [
+					{ id: "a", rank: 1 },
+					{ id: "b", rank: 2 },
+				],
+			}),
+		)
+		const emitted: Array<ReadonlyArray<string>> = []
+		const fiber = Effect.runFork(
+			Stream.runForEach(
+				liveQueryStream(
+					(q) =>
+						q
+							.from({ d: collection })
+							.orderBy(({ d }) => d.rank)
+							.select(({ d }) => ({ id: d.id })),
+					(rows) => Arr.map(rows, (row) => row.id),
+				),
+				(ids) => Effect.sync(() => emitted.push(ids)),
+			),
+		)
+		await settle()
+		collection.update("a", (draft) => {
+			draft.rank = 3
+		})
+		await settle()
+		await Effect.runPromise(Fiber.interrupt(fiber))
+		expect(emitted).toEqual([
+			["a", "b"],
+			["b", "a"],
+		])
+	})
 })

@@ -78,6 +78,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ingest-rules",
+		title: "Ingest rules",
+		description:
+			"The ingestion tab's rule list with each rule's last 24 hours and suggested rules, a saved rule's Impact panel (drop, sampling, redact, idle) and a new rule's 24 hour estimate (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/audit-log",
 		title: "Audit log",
 		description:
@@ -583,7 +591,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/product-analytics",
 		title: "Product analytics",
 		description:
-			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
+			"The Events, Funnels and Paths tabs over fixture events: populated, empty, loading, a new funnel's suggestions, a failed funnel, a breakdown by a user property, bars and drop-off views, and a paths anchor. Pick one with ?state=.",
 		kind: "lab",
 		session: "none",
 	},

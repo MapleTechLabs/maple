@@ -50,6 +50,8 @@ const SLOT_SCHEMAS = {
 	previousFunnel: Schema.Array(FunnelRow),
 	funnelBreakdown: Schema.Array(FunnelGroupRow),
 	attributeKeys: Schema.Array(AttributeKeyRow),
+	userPropertyKeys: Schema.Array(AttributeKeyRow),
+	groupPropertyKeys: Schema.Array(AttributeKeyRow),
 	pages: Schema.Array(PageRow),
 	paths: Schema.Array(PathsRow),
 } satisfies Record<SlotName, Schema.Top>
@@ -194,6 +196,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		previousFunnel: Keyed.idle(),
 		funnelBreakdown: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
+		userPropertyKeys: Keyed.idle(),
+		groupPropertyKeys: Keyed.idle(),
 		pages: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),

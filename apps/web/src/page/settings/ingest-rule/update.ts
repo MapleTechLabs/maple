@@ -5,7 +5,17 @@ import { AsyncData, Command } from "foldkit"
 import type { AppRoute } from "../../../route"
 import * as Combobox from "@maple/views/ui/combobox"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { FetchKeys, FetchRule, FetchSamples, FetchServices, FetchSession, SaveRule } from "./command"
+import {
+	DebounceEstimate,
+	FetchEstimate,
+	FetchImpact,
+	FetchKeys,
+	FetchRule,
+	FetchSamples,
+	FetchServices,
+	FetchSession,
+	SaveRule,
+} from "./command"
 import {
 	type ConditionDraft,
 	defaultCondition,
@@ -24,6 +34,8 @@ import { ingestionHref, ruleIdFromUrl } from "./hrefs"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import type { PreviewSignal } from "./preview"
+import { estimateKeyOf, estimateParamsOf } from "./estimate"
+import { draftFromSuggestion } from "./suggested"
 import { draftFromRule, isTemplateId, TEMPLATES } from "./templates"
 
 type Return = PageReturn<Model, Message>
@@ -138,11 +150,15 @@ const moveStep = (steps: ReadonlyArray<StepDraft>, id: number, by: -1 | 1): Read
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 	list.includes(value) ? Arr.filter(list, (entry) => entry !== value) : [...list, value]
 
-export const init = (route: EditorRoute, context: PageContext): Return => {
+const initial = (route: EditorRoute, context: PageContext): Return => {
 	const parsed = route._tag === "IngestRule" ? ruleIdFromUrl(route.ruleId) : Option.none()
 	const editingId = Option.getOrNull(parsed)
 	const template = route._tag === "IngestRuleNew" ? route.search.template : undefined
-	const draft = template !== undefined && isTemplateId(template) ? TEMPLATES[template].draft : emptyDraft
+	const suggested = route._tag === "IngestRuleNew" ? draftFromSuggestion(route.search) : undefined
+	const draft =
+		template !== undefined && isTemplateId(template)
+			? TEMPLATES[template].draft
+			: (suggested ?? emptyDraft)
 	const base: Model = withKeyBoxes({
 		editingId,
 		isBadId: route._tag === "IngestRule" && editingId === null,
@@ -157,6 +173,12 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewService: "",
 		samples: AsyncData.Idle(),
 		samplesKey: "",
+		impact: editingId === null ? AsyncData.Idle() : AsyncData.Loading(),
+		impactWindow: "24h",
+		estimate: AsyncData.Idle(),
+		estimateKey: "",
+		estimateSeq: 0,
+		impactSeq: editingId === null ? 0 : 1,
 		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
@@ -169,7 +191,15 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		FetchKeys({ scope: "resource" }),
 		FetchServices(),
 	]
-	if (editingId !== null) return { model: base, commands: [...common, FetchRule({ id: editingId })] }
+	if (editingId !== null)
+		return {
+			model: base,
+			commands: [
+				...common,
+				FetchRule({ id: editingId }),
+				FetchImpact({ window: base.impactWindow, seq: base.impactSeq }),
+			],
+		}
 	const sampled = requestSamples(base)
 	return { model: sampled.model, commands: [...common, ...(sampled.commands ?? [])] }
 }
@@ -207,7 +237,40 @@ const updateKeyBox = (model: Model, id: number, child: Combobox.Message): Return
 	}
 }
 
+/** A fresh count, after the debounce, when the step changed what the draft would count. */
+const withEstimate = (step: Return): Return => {
+	const key = estimateKeyOf(step.model.draft)
+	if (key === step.model.estimateKey) return step
+	const seq = step.model.estimateSeq + 1
+	return {
+		...step,
+		model: {
+			...step.model,
+			estimateKey: key,
+			estimateSeq: seq,
+			estimate: key === "" ? AsyncData.Idle() : AsyncData.Loading(),
+		},
+		commands: [...(step.commands ?? []), ...(key === "" ? [] : [DebounceEstimate({ seq })])],
+	}
+}
+
+const fetchEstimate = (model: Model): Return => {
+	const payload = estimateParamsOf(model.draft)
+	return payload === null
+		? { model }
+		: {
+				model: { ...model, estimate: AsyncData.Loading() },
+				commands: [FetchEstimate({ key: model.estimateKey, payload })],
+			}
+}
+
+export const init = (route: EditorRoute, context: PageContext): Return =>
+	withEstimate(initial(route, context))
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	withEstimate(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedFetchExisting: ({ result }) =>
 			Result.match(result, {
@@ -307,6 +370,35 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: requestSamples({ ...model, previewService: service }),
 		ClickedRetryPreview: () => requestSamples(model),
+		CompletedFetchImpact: ({ seq, result }) =>
+			seq === model.impactSeq
+				? { model: { ...model, impact: AsyncData.settle(model.impact, result) } }
+				: { model },
+		PickedImpactWindow: ({ window }) =>
+			window === model.impactWindow || model.editingId === null
+				? { model }
+				: {
+						model: {
+							...model,
+							impactWindow: window,
+							impactSeq: model.impactSeq + 1,
+							impact: AsyncData.Loading(),
+						},
+						commands: [FetchImpact({ window, seq: model.impactSeq + 1 })],
+					},
+		ElapsedEstimateDebounce: ({ seq }) => (seq === model.estimateSeq ? fetchEstimate(model) : { model }),
+		CompletedFetchEstimate: ({ key, result }) =>
+			key === model.estimateKey
+				? { model: { ...model, estimate: AsyncData.settle(model.estimate, result) } }
+				: { model },
+		ClickedRetryEstimate: () => fetchEstimate(model),
+		ClickedRetryImpact: () =>
+			model.editingId === null
+				? { model }
+				: {
+						model: { ...model, impactSeq: model.impactSeq + 1, impact: AsyncData.Loading() },
+						commands: [FetchImpact({ window: model.impactWindow, seq: model.impactSeq + 1 })],
+					},
 		ClickedSave: () => save(model),
 		CompletedSave: ({ result }) =>
 			Result.match(result, {

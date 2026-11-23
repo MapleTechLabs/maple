@@ -98,9 +98,15 @@ const LOOKUP_OPERATION = new Map<AutocompleteLookup, string>([
 	["productEventAttributeKeys", "getProductEventAttributeKeys"],
 ])
 
+/** A metric's where editor never offers user or account properties: those reads stay off this page. */
+const METRIC_LOOKUPS = Arr.filter(
+	AutocompleteLookup.literals,
+	(lookup) => lookup !== "productUserPropertyKeys" && lookup !== "productGroupPropertyKeys",
+)
+
 /** The autocomplete lookups for the window, fired with the page. */
 const requestAutocomplete = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode) => {
-	const steps = Arr.map(AutocompleteLookup.literals, (lookup) => {
+	const steps = Arr.map(METRIC_LOOKUPS, (lookup) => {
 		const operation = LOOKUP_OPERATION.get(lookup) ?? lookup
 		const input = lookup === "productEventNames" ? { ...window, limit: 200 } : window
 		return {

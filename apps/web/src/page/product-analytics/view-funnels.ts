@@ -72,32 +72,58 @@ const WINDOWS = Arr.map(FUNNEL_WINDOW_OPTIONS, (option) => ({
 	label: option.label,
 }))
 
-const ATTRIBUTE_PREFIX = "attribute:"
+/** The breakdowns that name a key, with the group the select lists them under. */
+const KEYED_BREAKDOWNS = [
+	{ prefix: "attribute:", label: "Event property", slot: "attributeKeys" },
+	{ prefix: "user:", label: "User property", slot: "userPropertyKeys" },
+	{ prefix: "group:", label: "Account property", slot: "groupPropertyKeys" },
+] as const
 
 /** What a breakdown splits by, as its panel title reads: "UTM source", or the property's key. */
 const breakdownLabel = (breakdownBy: FunnelBreakdownBy): string =>
 	Option.match(
 		Arr.findFirst(FUNNEL_SESSION_DIMENSIONS, (dimension) => dimension === breakdownBy),
 		{
-			onNone: () => Str.slice(ATTRIBUTE_PREFIX.length)(breakdownBy),
+			onNone: () =>
+				Option.match(
+					Arr.findFirst(KEYED_BREAKDOWNS, (keyed) => Str.startsWith(keyed.prefix)(breakdownBy)),
+					{
+						onNone: () => breakdownBy,
+						onSome: (keyed) => Str.slice(keyed.prefix.length)(breakdownBy),
+					},
+				),
 			onSome: (dimension) => FUNNEL_SESSION_DIMENSION_LABEL[dimension],
 		},
 	)
 
-/** None, where the session came from, then the event properties this org sends. */
+/** None, where the session came from, then the event, user and account properties this org sends. */
 const breakdownEntries = (
 	model: Model,
 	current: FunnelBreakdownBy | undefined,
 ): ReadonlyArray<SelectEntry> => {
-	const keys = Arr.map(
-		Option.getOrElse(AsyncData.getData(model.attributeKeys.data), () => []),
-		(row) => `${ATTRIBUTE_PREFIX}${row.attributeKey}`,
-	)
-	// A property from a shared link stays listed even when this window no longer sends it.
-	const properties =
-		current !== undefined && Str.startsWith(ATTRIBUTE_PREFIX)(current) && !keys.includes(current)
-			? [current, ...keys]
-			: keys
+	const keyedGroups = Arr.flatMap(KEYED_BREAKDOWNS, (keyed) => {
+		const keys = Arr.map(
+			Option.getOrElse(AsyncData.getData(model[keyed.slot].data), () => []),
+			(row) => `${keyed.prefix}${row.attributeKey}`,
+		)
+		// A property from a shared link stays listed even when this window no longer sends it.
+		const values =
+			current !== undefined && Str.startsWith(keyed.prefix)(current) && !keys.includes(current)
+				? [current, ...keys]
+				: keys
+		return values.length === 0
+			? []
+			: [
+					{
+						_tag: "Group" as const,
+						label: keyed.label,
+						items: Arr.map(values, (value) => ({
+							value,
+							label: Str.slice(keyed.prefix.length)(value),
+						})),
+					},
+				]
+	})
 	return [
 		{ _tag: "Item", item: { value: "", label: "None" } },
 		{
@@ -108,18 +134,7 @@ const breakdownEntries = (
 				label: FUNNEL_SESSION_DIMENSION_LABEL[dimension],
 			})),
 		},
-		...(properties.length === 0
-			? []
-			: [
-					{
-						_tag: "Group" as const,
-						label: "Event property",
-						items: Arr.map(properties, (value) => ({
-							value,
-							label: Str.slice(ATTRIBUTE_PREFIX.length)(value),
-						})),
-					},
-				]),
+		...keyedGroups,
 	]
 }
 
@@ -550,9 +565,11 @@ const breakdown = (
 		panelHeader(h, {
 			title: `By ${label}`,
 			scope: typography(h, { size: "2xs", tone: "muted" }, [
-				Str.startsWith(ATTRIBUTE_PREFIX)(breakdownBy)
+				Str.startsWith("attribute:")(breakdownBy)
 					? `each ${countNoun(inputs.keyBy, 1)} counts under the first value their step events carry; without one they are Not set`
-					: `each ${countNoun(inputs.keyBy, 1)} counts under the first value seen, most entered first`,
+					: Str.startsWith("user:")(breakdownBy) || Str.startsWith("group:")(breakdownBy)
+						? `each ${countNoun(inputs.keyBy, 1)} counts under the property's current value; without one they are Not set`
+						: `each ${countNoun(inputs.keyBy, 1)} counts under the first value seen, most entered first`,
 			]),
 		}),
 		AsyncData.isRefreshing(model.funnelBreakdown.data)

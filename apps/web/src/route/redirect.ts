@@ -223,20 +223,14 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		() => Option.none(),
 	)
 
-const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
-
 const isCloudSecurityRoute = AppRoute.isAnyOf(["SecurityCloud", "SecurityCloudFinding"])
 
-/**
- * A route an org outside its rollout cannot open goes home (`/product-analytics` without
- * `productAnalytics`, `/security/cloud` without `cloudSecurity`).
- */
+/** A route an org outside its rollout cannot open goes home (`/security/cloud` without `cloudSecurity`). */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "productAnalytics" | "cloudSecurity">,
+	flags: Pick<OrganizationFeatureFlags, "cloudSecurity">,
 ): Option.Option<Redirect> =>
-	(!flags.productAnalytics && isProductAnalyticsRoute(route)) ||
-	(!flags.cloudSecurity && isCloudSecurityRoute(route))
+	!flags.cloudSecurity && isCloudSecurityRoute(route)
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
 

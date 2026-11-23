@@ -5732,19 +5732,24 @@ async fn handle_product_events_inner(
 
     // One receipt time for the whole batch: rows without a `timestamp` all
     // land at the moment the request arrived, not spread across the parse.
+    // Each line adds its index in nanoseconds, so two property writes in one
+    // batch (`set` plan free, then pro) keep their order: the newest wins.
     let received_at = chrono::Utc::now();
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut dropped: u64 = 0;
+    let mut line_index: i64 = 0;
     for line in body.split(|&b| b == b'\n') {
         if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
+        let line_received_at = received_at + chrono::TimeDelta::nanoseconds(line_index);
+        line_index += 1;
         let mut value: serde_json::Value = serde_json::from_slice(line)
             .map_err(|e| ApiError::bad_request(format!("invalid product event JSON: {e}")))?;
         let obj = value
             .as_object_mut()
             .ok_or_else(|| ApiError::bad_request("product event must be a JSON object"))?;
-        if !sanitize_product_event(obj, received_at) {
+        if !sanitize_product_event(obj, line_received_at) {
             dropped += 1;
             continue;
         }
