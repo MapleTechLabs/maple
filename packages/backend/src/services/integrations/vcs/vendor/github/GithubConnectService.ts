@@ -20,6 +20,12 @@ import {
 	type VcsSyncJob,
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
+import {
+	GITHUB_AUDIT_CATEGORIES,
+	type GithubAuditCategoryChanges,
+	type GithubAuditCategoryStates,
+	githubAuditCategoryStates,
+} from "@maple/domain/github-audit"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import type { OAuthAuthStateRow } from "@maple/db/tables"
 import { Env } from "@maple/backend/platform/Env"
@@ -83,6 +89,7 @@ interface GithubConnectStatus {
 	readonly repositorySelection: VcsRepoSelection | null
 	readonly ciTracesEnabled: boolean
 	readonly auditLogEnabled: boolean
+	readonly auditCategories: GithubAuditCategoryStates
 	readonly repositoryDiscovery: VcsRepositoryDiscovery | null
 	readonly repositories: ReadonlyArray<GithubRepoStatus>
 }
@@ -172,6 +179,14 @@ export interface GithubConnectServiceApi {
 		enabled: boolean,
 	) => Effect.Effect<
 		{ readonly enabled: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
+	/** Collect the sent GitHub audit categories, or stop; returns every category's state after. */
+	readonly setAuditCategories: (
+		orgId: OrgId,
+		changes: GithubAuditCategoryChanges,
+	) => Effect.Effect<
+		{ readonly categories: GithubAuditCategoryStates },
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
 	/** Turn CI traces from GitHub Actions on or off for the org's active installation. */
@@ -829,6 +844,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						repositorySelection: active.repositorySelection,
 						ciTracesEnabled: active.ciTracesEnabled,
 						auditLogEnabled: active.auditLogEnabled,
+						auditCategories: githubAuditCategoryStates(active.auditCategories),
 						repositoryDiscovery: active.repositoryDiscovery,
 						repositories,
 					} satisfies GithubConnectStatus
@@ -856,6 +872,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						repositorySelection: null,
 						ciTracesEnabled: true,
 						auditLogEnabled: true,
+						auditCategories: githubAuditCategoryStates({}),
 						repositoryDiscovery: null,
 						repositories: [],
 					} satisfies GithubConnectStatus
@@ -880,6 +897,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					repositorySelection: deactivated.repositorySelection,
 					ciTracesEnabled: deactivated.ciTracesEnabled,
 					auditLogEnabled: deactivated.auditLogEnabled,
+					auditCategories: githubAuditCategoryStates(deactivated.auditCategories),
 					repositoryDiscovery: deactivated.repositoryDiscovery,
 					repositories,
 				} satisfies GithubConnectStatus
@@ -1110,6 +1128,42 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { enabled }
 			})
 
+			const setAuditCategories = Effect.fn("GithubConnectService.setAuditCategories")(function* (
+				orgId: OrgId,
+				changes: GithubAuditCategoryChanges,
+			) {
+				const notConnected = Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.set_audit_categories.outcome": "not_connected",
+				}).pipe(
+					Effect.andThen(new IntegrationsValidationError({ message: "GitHub is not connected." })),
+				)
+				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
+				const active = Option.getOrUndefined(
+					Arr.findFirst(
+						installations,
+						(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+					),
+				)
+				if (active === undefined) return yield* notConnected
+				// The stored row after the write also holds concurrent saves of other categories.
+				const stored = yield* asPersistence(repo.setAuditCategories(orgId, active.id, changes))
+				if (Option.isNone(stored)) return yield* notConnected
+				const categories = githubAuditCategoryStates(stored.value)
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.set_audit_categories.outcome": "changed",
+					"vcs.audit_categories.changed": Arr.join(
+						Arr.map(
+							Arr.filter(GITHUB_AUDIT_CATEGORIES, (spec) => changes[spec.id] !== undefined),
+							(spec) => spec.id,
+						),
+						",",
+					),
+				})
+				return { categories }
+			})
+
 			const setPrReviewEnabled = Effect.fn("GithubConnectService.setPrReviewEnabled")(function* (
 				orgId: OrgId,
 				repositoryId: VcsRepositoryId,
@@ -1243,6 +1297,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				setTrackedBranch,
 				setCiTracesEnabled,
 				setAuditLogEnabled,
+				setAuditCategories,
 				setPrReviewEnabled,
 				getPrReviewConfig,
 				getPrReviewSettings,

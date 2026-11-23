@@ -28,6 +28,7 @@ import {
 	type VcsRepositoryDiscovery,
 } from "@maple/domain/http"
 import type { MapleDb } from "@maple/db/client"
+import { GITHUB_AUDIT_CATEGORIES, type GithubAuditCategoryChanges } from "@maple/domain/github-audit"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewSettings,
@@ -130,6 +131,7 @@ const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
 		suspendedAt: row.suspendedAt,
 		ciTracesEnabled: row.ciTracesEnabled,
 		auditLogEnabled: row.auditLogEnabled,
+		auditCategories: row.auditCategories,
 		repositoryDiscovery: row.repositoryDiscovery,
 		installedByUserId: row.installedByUserId,
 		createdAt: row.createdAt,
@@ -592,6 +594,41 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 					),
 				)
 				return rows.length > 0
+			})
+
+			// Writes only the categories sent, each its own key, so two people saving different
+			// categories at once both keep their change. Same scoping as `setAuditLogEnabled`; none
+			// when nothing was written, else the stored choices after the write.
+			const setAuditCategories = Effect.fn("VcsRepository.setAuditCategories")(function* (
+				orgId: OrgId,
+				installationId: VcsInstallationId,
+				changes: GithubAuditCategoryChanges,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				const entries = Arr.flatMap(GITHUB_AUDIT_CATEGORIES, (spec) => {
+					const enabled = changes[spec.id]
+					return enabled === undefined ? [] : [[spec.id, enabled] as const]
+				})
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.update(VcsInstallations)
+							.set(($) => ({
+								auditCategories: Arr.match(entries, {
+									onEmpty: () => $.auditCategories,
+									onNonEmpty: ([[firstId, firstEnabled], ...rest]) =>
+										Arr.reduce(
+											rest,
+											PG.jsonSet($.auditCategories, [firstId], firstEnabled),
+											(doc, [id, enabled]) => PG.jsonSet(doc, [id], enabled),
+										),
+								}),
+								updatedAt: now,
+							}))
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(installationId), $.status.eq("active")])
+							.returning("auditCategories"),
+					),
+				)
+				return Option.map(Arr.head(rows), (row) => row.auditCategories)
 			})
 
 			const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
@@ -1425,6 +1462,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				markInstallationStatus,
 				setCiTracesEnabled,
 				setAuditLogEnabled,
+				setAuditCategories,
 				listRepositoriesByInstallation,
 				listActiveRepositoriesByOrg,
 				resolveRepository,

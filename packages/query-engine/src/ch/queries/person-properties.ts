@@ -8,7 +8,10 @@ import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, inSubquery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import type { AttributeFilter, AttributeFilterLeaf } from "@maple/domain/query-engine"
 import * as Datasources from "@maple/domain/tinybird/datasources"
-import { PERSON_PROPERTY_VALUE_SQL } from "@maple/domain/tinybird/product-event-attributes"
+import {
+	PERSON_PROPERTY_NEVER_SQL,
+	PERSON_PROPERTY_VALUE_SQL,
+} from "@maple/domain/tinybird/product-event-attributes"
 import { DateTimeUtcFromWarehouse64 } from "../../datetime"
 import { CHNumber } from "../schema"
 import { orgIdParam } from "../tables"
@@ -52,6 +55,45 @@ export function personPropertiesQuery(opts: PersonPropertiesOpts) {
 		.format("JSON")
 }
 
+export const personPropertyStateRowSchema = Schema.Struct({
+	id: Schema.String,
+	key: Schema.String,
+	/** `''` when cleared. */
+	value: Schema.String,
+	/** 1 when an `unset` cleared the key after its last write. */
+	cleared: CHNumber,
+	/** Epoch ms of the key's latest write (`set`, `unset` or first `set_once`). */
+	writtenAtMs: CHNumber,
+})
+export type PersonPropertyStateRow = typeof personPropertyStateRowSchema.Type
+
+/**
+ * Every key these users or groups ever wrote, cleared ones included, with when it was last written:
+ * what a reader merging another source of the same values needs to tell which is newer.
+ */
+export function personPropertyStatesQuery(opts: PersonPropertiesOpts) {
+	return from(Datasources.personProperties)
+		.select(($) => ({
+			id: $.Id,
+			key: $.Key,
+			value: resolvedValue(),
+			cleared: CH.rawExpr(`toUInt8(isNull(${PERSON_PROPERTY_VALUE_SQL}))`, T.uint8),
+			writtenAtMs: CH.rawExpr(
+				`toFloat64(toUnixTimestamp64Milli(greatest(max(SetAt), max(UnsetAt), if(min(OnceAt) < ${PERSON_PROPERTY_NEVER_SQL}, min(OnceAt), toDateTime64(0, 9, 'UTC')))))`,
+				T.float64,
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Kind.eq(opts.kind),
+			opts.ids.length === 0 ? CH.rawCond("1 = 0") : CH.inList($.Id, opts.ids),
+		])
+		.groupBy("id", "key")
+		.orderBy(["id", "asc"], ["key", "asc"])
+		.limit(opts.limit ?? 5_000)
+		.format("JSON")
+}
+
 const resolvedValue = (): CH.Expr<string> => CH.rawExpr(`ifNull(${PERSON_PROPERTY_VALUE_SQL}, '')`, T.string)
 
 /** The keys of one kind's properties: one contiguous range of the sort key. */
@@ -60,6 +102,18 @@ const keyRange = (
 	kind: PersonPropertyKind,
 	key: string,
 ) => [$.OrgId.eq(orgIdParam), $.Kind.eq(kind), $.Key.eq(key)]
+
+/** A property's value as a finite number, NULL for text, so a comparison never matches it. */
+const numeric = (value: CH.Expr<string>): CH.Expr<number | null> => {
+	const parsed = CH.compileTypedFnCall("toFloat64OrNull", T.nullable(T.float64).schema, value)
+	return CH.compileTypedFnCall(
+		"if",
+		T.nullable(T.float64).schema,
+		CH.compileFnCallCond("isFinite", parsed),
+		parsed,
+		CH.rawExpr("NULL", T.nullable(T.float64)),
+	)
+}
 
 /**
  * `value` holds for a property's current value (`''` when it has none). The same reading as
@@ -77,13 +131,13 @@ function valueCondition(value: CH.Expr<string>, filter: AttributeFilterLeaf): CH
 				? CH.rawCond("0")
 				: CH.inList(value, filter.values)
 		case "gt":
-			return value.neq("").and(CH.toFloat64OrZero(value).gt(Number(target)))
+			return numeric(value).gt(Number(target))
 		case "gte":
-			return value.neq("").and(CH.toFloat64OrZero(value).gte(Number(target)))
+			return numeric(value).gte(Number(target))
 		case "lt":
-			return value.neq("").and(CH.toFloat64OrZero(value).lt(Number(target)))
+			return numeric(value).lt(Number(target))
 		case "lte":
-			return value.neq("").and(CH.toFloat64OrZero(value).lte(Number(target)))
+			return numeric(value).lte(Number(target))
 		case "equals":
 			return value.eq(target)
 	}
@@ -91,11 +145,17 @@ function valueCondition(value: CH.Expr<string>, filter: AttributeFilterLeaf): CH
 
 /** The users or groups whose property `filter.key` currently matches `filter`, ignoring `negated`. */
 function matchingIds(kind: PersonPropertyKind, filter: AttributeFilterLeaf) {
-	return from(Datasources.personProperties)
-		.select(($) => ({ Id: $.Id }))
-		.where(($) => keyRange($, kind, filter.key))
-		.groupBy("Id")
-		.having(() => [valueCondition(resolvedValue(), filter)])
+	return (
+		from(Datasources.personProperties)
+			.select(($) => ({ Id: $.Id }))
+			.where(($) => keyRange($, kind, filter.key))
+			.groupBy("Id")
+			// A cleared key holds no value: it matches nothing, not `''`.
+			.having(() => [
+				CH.rawCond(`${PERSON_PROPERTY_VALUE_SQL} IS NOT NULL`),
+				valueCondition(resolvedValue(), filter),
+			])
+	)
 }
 
 /**

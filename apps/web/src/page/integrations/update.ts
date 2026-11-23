@@ -492,6 +492,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ToggledAuditLog: () => Github.toggledAuditLog(model),
 		CompletedAuditLog: ({ enabled, failure }) =>
 			Github.completedAuditLog(model, context, enabled, failure),
+		ToggledAuditCategory: ({ id }) => Github.toggledAuditCategory(model, id),
+		CompletedAuditCategory: ({ id, enabled, failure }) =>
+			Github.completedAuditCategory(model, context, id, enabled, failure),
 		TickedGithubPoll: () => requestStatus(model, context, "github", "Refresh"),
 		EndedGithubForcePoll: ({ version }) => Github.endedForcePoll(model, version),
 		ClickedRepoDelete: ({ repoId }) => Github.clickedRepoDelete(model, repoId),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { healthSummary, serviceHealthRowKey } from "./derive"
+import { healthSummary, perSecondRates, serviceHealthRowKey } from "./derive"
 import type { ServiceRow } from "./model"
 import type { HealthIncident } from "../../kit/service-health"
 
@@ -43,5 +43,43 @@ describe("healthSummary", () => {
 			"healthy",
 		])
 		expect(summary.counts).toEqual({ healthy: 1, degraded: 0, unhealthy: 2 })
+	})
+})
+
+describe("perSecondRates", () => {
+	const window = {
+		startMs: Date.parse("2026-10-01T00:00:00Z"),
+		endMs: Date.parse("2026-10-01T00:02:30Z"),
+		bucketSeconds: 60,
+	}
+
+	it("divides each full bucket's count by the bucket length", () => {
+		const rates = perSecondRates(
+			[
+				{ bucket: "2026-10-01 00:00:00", throughput: 120 },
+				{ bucket: "2026-10-01 00:01:00", throughput: 30 },
+			],
+			window,
+		)
+		expect(rates).toEqual([2, 0.5])
+	})
+
+	it("reads the bucket the window ends inside over the seconds it covers", () => {
+		// 00:02:00 to 00:02:30 is 30 seconds of a 60-second bucket.
+		const [rate] = perSecondRates([{ bucket: "2026-10-01 00:02:00", throughput: 30 }], window)
+		expect(rate).toBe(1)
+	})
+
+	it("a window ending exactly on a bucket edge leaves the last bucket whole", () => {
+		const [rate] = perSecondRates([{ bucket: "2026-10-01 00:01:00", throughput: 60 }], {
+			...window,
+			endMs: Date.parse("2026-10-01T00:02:00Z"),
+		})
+		expect(rate).toBe(1)
+	})
+
+	it("a bucket outside the window reads zero rather than dividing by nothing", () => {
+		const [rate] = perSecondRates([{ bucket: "2026-10-01 00:05:00", throughput: 10 }], window)
+		expect(rate).toBe(0)
 	})
 })
