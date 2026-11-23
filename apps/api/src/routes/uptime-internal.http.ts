@@ -121,7 +121,8 @@ export const UptimeInternalRouter = HttpRouter.use((router) =>
 
 /**
  * Public heartbeat pings: `GET|POST /hb/<token>` reports success, `/hb/<token>/fail` a failure.
- * The token is the credential. A hot path: one indexed lookup, one update, no spans of its own.
+ * The token is the credential: the server span records it as `REDACTED`. A hot path: one indexed
+ * lookup, one update, no spans of its own.
  */
 export const UptimeHeartbeatRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
@@ -146,9 +147,10 @@ export const UptimeHeartbeatRouter = HttpRouter.use((router) =>
 				)
 			})
 
-		yield* router.add("GET", "/hb/:token", ping(true))
-		yield* router.add("POST", "/hb/:token", ping(true))
-		yield* router.add("GET", "/hb/:token/fail", ping(false))
-		yield* router.add("POST", "/hb/:token/fail", ping(false))
+		const redacted = { redactedParams: ["token"] }
+		yield* router.add("GET", "/hb/:token", ping(true), redacted)
+		yield* router.add("POST", "/hb/:token", ping(true), redacted)
+		yield* router.add("GET", "/hb/:token/fail", ping(false), redacted)
+		yield* router.add("POST", "/hb/:token/fail", ping(false), redacted)
 	}),
 )

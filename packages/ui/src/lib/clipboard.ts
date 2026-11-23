@@ -3,7 +3,7 @@
  * landing site, the crash page) share one implementation of the fiddly insecure-origin fallback.
  */
 
-import { Effect, Option, Schema } from "effect"
+import { Deferred, Effect, Option, Schema } from "effect"
 
 import { trySync } from "./try-sync"
 
@@ -76,4 +76,45 @@ export const writeClipboard = (text: string): Effect.Effect<boolean> =>
 export async function writeClipboardText(text: string): Promise<boolean> {
 	if (!text) return false
 	return Effect.runPromise(writeClipboard(text))
+}
+
+/** A clipboard write opened in the user's gesture, for text that is still being produced. */
+export interface PendingClipboardWrite {
+	/** Supplies the text; call it exactly once, even on failure (with what should be copied then). */
+	readonly fill: (text: string) => void
+	/** Whether the browser took the write; `None` where it has no `ClipboardItem` (write later). */
+	readonly written: Option.Option<Promise<boolean>>
+}
+
+/**
+ * Opens the write now, inside the click, before the text exists. Safari refuses a clipboard write
+ * that starts after a network round trip; a `ClipboardItem` whose content is a promise keeps the
+ * gesture, and the text arrives when `fill` is called.
+ */
+export const openPendingClipboardWrite = (): PendingClipboardWrite => {
+	const text = Deferred.makeUnsafe<string>()
+	const canWrite =
+		typeof ClipboardItem !== "undefined" &&
+		typeof navigator !== "undefined" &&
+		typeof navigator.clipboard?.write === "function"
+	const written = canWrite
+		? trySync(() =>
+				navigator.clipboard
+					.write([
+						new ClipboardItem({
+							"text/plain": Effect.runPromise(
+								Effect.map(
+									Deferred.await(text),
+									(value) => new Blob([value], { type: "text/plain" }),
+								),
+							),
+						}),
+					])
+					.then(
+						() => true,
+						() => false,
+					),
+			)
+		: Option.none<Promise<boolean>>()
+	return { fill: (value) => void Deferred.doneUnsafe(text, Effect.succeed(value)), written }
 }

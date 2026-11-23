@@ -14,6 +14,7 @@ import { STACK_PLATFORM_IDS, type StackPlatform } from "./onboarding-stack"
 import type { Resources } from "../../platform/resources"
 import { AppRoute, hrefOf } from "../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import * as AgentHandoff from "../kit/agent-handoff"
 import * as Tabs from "@maple/views/ui/tabs"
 import { PACKAGE_TAB_VALUES, SETUP_TAB_VALUES } from "../kit/guided-setup"
 import { loadSources, sourcesListKey } from "../sources/kit/data"
@@ -58,6 +59,8 @@ export const Connect = Schema.Struct({
 	setupTabs: Tabs.Model,
 	packageTabs: Tabs.Model,
 	snippetCopies: Schema.Record(Schema.String, CopyButton.Model),
+	/** The agent prompt's handoff and the run it started, read on the poll while open. */
+	agent: AgentHandoff.Model,
 })
 export type Connect = typeof Connect.Type
 
@@ -67,6 +70,7 @@ export const ConnectMessage = defineMessageUnion({
 	LoadedPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	LoadedConnected: { connected: Schema.Record(Schema.String, Schema.Boolean) },
 	ElapsedPoll: {},
+	ElapsedAgentPoll: {},
 	ClickedSendTestTrace: { apiKey: Schema.String },
 	SucceededSendTestTrace: {},
 	FailedSendTestTrace: { message: Schema.String },
@@ -74,6 +78,7 @@ export const ConnectMessage = defineMessageUnion({
 	GotPackageTabsMessage: { message: Tabs.Message },
 	GotSnippetCopyMessage: { snippet: Schema.String, message: CopyButton.Message },
 	ClickedCopySetupLink: {},
+	GotAgentMessage: { message: AgentHandoff.Message },
 })
 export type ConnectMessage = typeof ConnectMessage.Type
 
@@ -103,9 +108,10 @@ export const initConnect = (): Connect => ({
 	presence: AsyncData.Idle(),
 	connected: {},
 	isActive: false,
-	setupTabs: Tabs.init({ idBase: 60, values: SETUP_TAB_VALUES, selected: "claude-code" }),
+	setupTabs: Tabs.init({ idBase: 60, values: SETUP_TAB_VALUES, selected: "agent" }),
 	packageTabs: Tabs.init({ idBase: 70, values: PACKAGE_TAB_VALUES, selected: "npm" }),
 	snippetCopies: {},
+	agent: AgentHandoff.init("connect_step"),
 })
 
 const FetchConnectKeys = Command.define("FetchOnboardingConnectKeys", {
@@ -258,7 +264,7 @@ export const SendTestTrace = Command.define("SendOnboardingTestTrace", {
 		),
 })
 
-const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
+export const LoadConnectPresence = Command.define("LoadOnboardingConnectPresence", {
 	args: { orgId: Schema.String },
 	messages: [ConnectMessage.LoadedPresence],
 	execute: ({ orgId }) =>
@@ -335,15 +341,39 @@ const reads = (orgId: string, platforms: ReadonlyArray<StackPlatform>): Step["co
 	...refreshConnected(orgId, platforms),
 ]
 
+const toAgent = (commands: ReadonlyArray<Command.Command<AgentHandoff.Message, never, Resources>>) =>
+	Command.mapMessages(commands, (message) => ConnectMessage.GotAgentMessage({ message }))
+
+/** The agent tab shows its prompt: tracked once per mount. */
+const agentShown = (connect: Connect): Step => {
+	if (connect.setupTabs.selected !== "agent") return { connect, commands: [] }
+	const next = AgentHandoff.shown(connect.agent)
+	return { connect: { ...connect, agent: next.model }, commands: toAgent(next.commands) }
+}
+
+/** The run is read on open (one left open from an earlier visit shows) and on the agent poll while open. */
+const agentReads = (connect: Connect): Step["commands"] =>
+	AgentHandoff.shouldReadRun(connect.agent) ? toAgent([AgentHandoff.LoadAgentRun()]) : []
+
 /** The step opens: the key once, then presence and providers on a poll until it closes. */
 export const openConnect = (
 	connect: Connect,
 	orgId: string,
 	platforms: ReadonlyArray<StackPlatform>,
-): Step => ({
-	connect: { ...connect, isActive: true },
-	commands: [...(connect.keys._tag === "Pending" ? [FetchConnectKeys()] : []), ...reads(orgId, platforms)],
-})
+): Step => {
+	// Opening the step looks again: a run started in another tab since the last 404 shows up.
+	const fresh = { ...connect, agent: { ...connect.agent, isRunMissing: false } }
+	const shown = agentShown({ ...fresh, isActive: true })
+	return {
+		connect: shown.connect,
+		commands: [
+			...(connect.keys._tag === "Pending" ? [FetchConnectKeys()] : []),
+			...reads(orgId, platforms),
+			...agentReads(fresh),
+			...shown.commands,
+		],
+	}
+}
 
 export const closeConnect = (connect: Connect): Connect => ({ ...connect, isActive: false })
 
@@ -379,7 +409,18 @@ export const updateConnect = (
 			},
 			commands: [],
 		}),
-		ElapsedPoll: () => ({ connect, commands: connect.isActive ? reads(orgId, platforms) : [] }),
+		ElapsedAgentPoll: () => ({ connect, commands: connect.isActive ? agentReads(connect) : [] }),
+		ElapsedPoll: () => ({
+			connect,
+			commands: connect.isActive
+				? [
+						...reads(orgId, platforms),
+						// No run yet: a failed first read, or a run started in another tab, still shows up.
+						// An open run has its own poll, timed from the copy.
+						...(connect.agent.run === null ? agentReads(connect) : []),
+					]
+				: [],
+		}),
 		ClickedSendTestTrace: ({ apiKey }) =>
 			connect.testTrace._tag === "Sending"
 				? { connect, commands: [] }
@@ -398,11 +439,19 @@ export const updateConnect = (
 		}),
 		GotSetupTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(connect.setupTabs, inner)
+			const switched = { ...connect, setupTabs: next.model }
+			const shown =
+				connect.setupTabs.selected === next.model.selected
+					? { connect: switched, commands: [] }
+					: agentShown(switched)
 			return {
-				connect: { ...connect, setupTabs: next.model },
-				commands: Command.mapMessages(next.commands, (child) =>
-					ConnectMessage.GotSetupTabsMessage({ message: child }),
-				),
+				connect: shown.connect,
+				commands: [
+					...Command.mapMessages(next.commands, (child) =>
+						ConnectMessage.GotSetupTabsMessage({ message: child }),
+					),
+					...shown.commands,
+				],
 			}
 		},
 		GotPackageTabsMessage: ({ message: inner }) => {
@@ -424,6 +473,10 @@ export const updateConnect = (
 			}
 		},
 		ClickedCopySetupLink: () => ({ connect, commands: [ReadSetupLink()] }),
+		GotAgentMessage: ({ message: inner }) => {
+			const next = AgentHandoff.update(connect.agent, inner)
+			return { connect: { ...connect, agent: next.model }, commands: toAgent(next.commands) }
+		},
 	})
 
 /**
@@ -433,6 +486,19 @@ export const updateConnect = (
 export const connectPollTicks = (presence?: Presence): Stream.Stream<void> =>
 	Stream.take(backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence), FAST_POLLS + SLOW_POLLS)
 
+/**
+ * An open run's reads, from the copy that started it: 5 s for ten minutes, then 30 s until the run
+ * closes (it takes reports for a day), paused while the tab is hidden. Its expiry is read too.
+ */
+export const agentRunPollTicks = (presence?: Presence): Stream.Stream<void> =>
+	backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence)
+
+/** The open run the agent poll follows: a newer run restarts it. */
+const openRunAt = (connect: Connect): string | null =>
+	connect.isActive && connect.agent.run !== null && AgentHandoff.isRunOpen(connect.agent.run)
+		? connect.agent.run.created_at
+		: null
+
 export const connectSubscriptions = Subscription.make<Connect, ConnectMessage>()((entry) => ({
 	onboardingConnectPoll: entry(
 		{ isActive: Schema.Boolean },
@@ -440,6 +506,16 @@ export const connectSubscriptions = Subscription.make<Connect, ConnectMessage>()
 			modelToDependencies: (connect) => ({ isActive: connect.isActive }),
 			dependenciesToStream: ({ isActive }) =>
 				isActive ? Stream.map(connectPollTicks(), () => ConnectMessage.ElapsedPoll()) : Stream.empty,
+		},
+	),
+	onboardingAgentRunPoll: entry(
+		{ openRunAt: Schema.NullOr(Schema.String) },
+		{
+			modelToDependencies: (connect) => ({ openRunAt: openRunAt(connect) }),
+			dependenciesToStream: ({ openRunAt: runAt }) =>
+				runAt === null
+					? Stream.empty
+					: Stream.map(agentRunPollTicks(), () => ConnectMessage.ElapsedAgentPoll()),
 		},
 	),
 }))
