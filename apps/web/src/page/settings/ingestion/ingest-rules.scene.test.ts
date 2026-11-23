@@ -141,8 +141,8 @@ describe("ingest rules section", () => {
 					rules(RulesMessage.CompletedFetchStats({ result: Result.succeed(stats) })),
 				).model,
 			),
-			expectView(text("900 dropped")).toExist(),
-			expectView(text("2.0 MB dropped · 1K matched")).toExist(),
+			expectView(text("900 of 1K dropped")).toExist(),
+			expectView(text("2.0 MB dropped")).toExist(),
 			expectView(text("100 kept")).not.toExist(),
 		)
 	})
