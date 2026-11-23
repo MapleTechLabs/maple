@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { eyebrowVariants } from "./eyebrow.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 import { icon, type IconName } from "./icon"

@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const navigationMenuTriggerStyle = cva(
+export const navigationMenuTriggerStyle = variants(
 	"bg-background hover:bg-accent active:bg-accent focus:bg-accent data-open:hover:bg-accent data-open:active:bg-accent data-open:focus:bg-accent data-open:bg-surface-sunken focus-visible:ring-ring data-popup-open:bg-surface-sunken data-popup-open:hover:bg-accent data-popup-open:active:bg-accent rounded-lg px-2.5 py-1.5 text-xs font-medium focus-visible:ring-1 focus-visible:outline-1 disabled:opacity-64 group/navigation-menu-trigger inline-flex h-9 w-max items-center justify-center disabled:pointer-events-none outline-none",
 )
 

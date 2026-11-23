@@ -1,9 +1,34 @@
-import { dark } from "@clerk/themes"
+// Clerk's prebuilt `dark` theme, inlined. It stays a base theme: Clerk resolves each layer on its
+// own, so our legacy keys below (colorText, colorInputBackground) still beat its canonical ones.
+const clerkDarkBaseTheme = {
+	variables: {
+		colorBackground: "#212126",
+		colorNeutral: "white",
+		colorPrimary: "#ffffff",
+		colorPrimaryForeground: "black",
+		colorForeground: "white",
+		colorInputForeground: "white",
+		colorInput: "#26262B",
+	},
+	// Dark-on-light provider marks would vanish on the dark card.
+	elements: {
+		providerIcon__apple: { filter: "invert(1)" },
+		providerIcon__github: { filter: "invert(1)" },
+		providerIcon__okx_wallet: { filter: "invert(1)" },
+		providerIcon__vercel: { filter: "invert(1)" },
+		activeDeviceIcon: {
+			"--cl-chassis-bottom": "#d2d2d2",
+			"--cl-chassis-back": "#e6e6e6",
+			"--cl-chassis-screen": "#e6e6e6",
+			"--cl-screen": "#111111",
+		},
+	},
+}
 
 // Provider-wide theme: every Clerk surface (user button popover, re-verification
 // modal, organization switcher) keeps its own card chrome on top of these tokens.
 export const clerkAppearance = {
-	baseTheme: dark,
+	baseTheme: clerkDarkBaseTheme,
 	variables: {
 		colorBackground: "oklch(0.207 0.008 67)",
 		colorInputBackground: "oklch(0.33 0.015 72)",

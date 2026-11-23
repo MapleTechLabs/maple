@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { afterEach, assert, describe, expect, it, vi } from "vitest"
 import start from "../../foldkit-island/client"
 import renderer from "../../foldkit-island/server"
@@ -101,7 +100,10 @@ describe("DocsSearch island", () => {
 		const element = document.body.appendChild(document.createElement("astro-island"))
 		mounted.push(element)
 		element.innerHTML = (await renderer.renderToStaticMarkup(DocsSearch, {})).html
+		const serverRoot = element.firstElementChild
 		await start(element)(DocsSearch, {})
+		// The live tree replaces the server markup on a later frame; keys before that go nowhere.
+		await vi.waitFor(() => expect(element.firstElementChild).not.toBe(serverRoot))
 		press("k", { metaKey: true })
 		await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
 		return element
@@ -132,10 +134,17 @@ describe("DocsSearch island", () => {
 
 	it("does not report a search that opened a result", async () => {
 		const track = vi.spyOn(MapleBrowser, "track").mockImplementation(() => undefined)
-		const assign = vi.spyOn(window.location, "assign").mockImplementation(() => undefined)
+		// Chromium's `location.assign` cannot be stubbed: catch the navigation and cancel it instead.
+		const visited: Array<string> = []
+		const cancel = (event: NavigateEvent) => {
+			visited.push(new URL(event.destination.url).pathname)
+			event.preventDefault()
+		}
+		navigation.addEventListener("navigate", cancel)
 		const input = await openWith("trace")
 		key(input, "Enter")
-		await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/docs/explore/traces"))
+		await vi.waitFor(() => expect(visited).toEqual(["/docs/explore/traces"]))
+		navigation.removeEventListener("navigate", cancel)
 		await vi.waitFor(isClosed)
 		expect(track).not.toHaveBeenCalled()
 	})

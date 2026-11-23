@@ -127,6 +127,8 @@ const editorFor = (state: LabState): EditorModel => {
 	return Arr.reduce(
 		[
 			M.ReadClock({ nowMs: NOW }),
+			// `statusPageOrgKey(ORG)`, fixed here because the lab seeds its model synchronously.
+			M.ComputedOrgKey({ orgKey: "b1bdca925bb8" }),
 			M.CompletedFetchSession({
 				orgId: ORG,
 				grants: Policy.grantsOf([state === "member" ? "org:member" : "org:admin"]),
