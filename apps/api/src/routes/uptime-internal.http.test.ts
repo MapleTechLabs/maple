@@ -9,6 +9,7 @@ import {
 	Schema,
 	Array as Arr,
 	String as Str,
+	Tracer,
 } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { IngestKeysResponse, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
@@ -76,8 +77,17 @@ const makeHarness = () => {
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
 	)
+	const spans: Array<Tracer.Span> = []
+	const tracer = Tracer.make({
+		span: (options) => {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
 	const routes = Layer.mergeAll(UptimeInternalRouter, UptimeHeartbeatRouter).pipe(
 		Layer.provide(Layer.mergeAll(uptimeLive, ingestKeysStub, envLive)),
+		Layer.provideMerge(Layer.succeed(Tracer.Tracer, tracer)),
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(uptimeLive)
@@ -102,6 +112,7 @@ const makeHarness = () => {
 	return {
 		request,
 		run,
+		spans,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -253,5 +264,16 @@ describe("uptime internal routes", () => {
 
 			expect((await harness.request("POST", "/hb/unknown-token-0000000000")).status).toBe(404)
 			expect((await harness.request("GET", "/hb/bad!")).status).toBe(404)
+		}))
+
+	it("traces a heartbeat ping by its route, never its token", () =>
+		withHarness(async (harness) => {
+			const { token } = await harness.run(createMonitors)
+			await harness.request("POST", `/hb/${token}/fail`)
+
+			const server = Arr.filter(harness.spans, (span) => span.kind === "server")
+			expect(Arr.map(server, (span) => span.attributes.get("http.route"))).toEqual(["/hb/:token/fail"])
+			expect(server[0]?.attributes.get("url.path")).toBe("/hb/REDACTED/fail")
+			expect(JSON.stringify(Arr.map(server, (span) => [...span.attributes]))).not.toContain(token)
 		}))
 })
