@@ -5,6 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
+import { PERSON_PROPERTY_VALUE_SQL } from "@maple/domain/tinybird/product-event-attributes"
 import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
@@ -143,7 +144,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	],
 	person_properties: [
 		"User (`Kind = 'user'`, `Id` = UserId) and group (`Kind = 'group'`, `Id` = GroupId) properties, from `identify()` traits and property writes on events and spans. One logical row per (`Kind`, `Id`, `Key`) spread over unmerged parts: always GROUP BY `Kind, Id, Key`.",
-		"A key's current value: `multiIf(max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue), min(OnceAt) < toDateTime64('2199-12-31 23:59:59', 9, 'UTC') AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue), NULL)`; NULL means unset. `SetValue` / `OnceValue` are aggregate states: never `SELECT *`.",
+		`A key's current value: \`${Str.replace(/\s+/g, " ")(PERSON_PROPERTY_VALUE_SQL)}\`; NULL means unset. \`SetValue\` / \`OnceValue\` are aggregate states: never \`SELECT *\`.`,
 		"Join it to `product_events` on `UserId = Id` (or `GroupId = Id` for groups), pinning `Kind` and `Key` first: sorting key `(OrgId, Kind, Key, Id)`. Values are current, not as of the event.",
 	],
 	metrics_histogram: [
