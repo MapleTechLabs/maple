@@ -8,6 +8,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
+import { CH as Compile, formatWarehouseDateTime } from "@maple/query-engine"
+import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
+import { OrgId } from "@maple/domain"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
@@ -174,5 +177,109 @@ describeWithChdb("ai_evaluations views", () => {
 				DeploymentEnv: "production",
 			},
 		])
+	})
+})
+
+describeWithChdb("ai_evaluations reads", () => {
+	let root = ""
+	let db: Chdb
+	const params = {
+		orgId: Schema.decodeSync(OrgId)(ORG),
+		startTime: formatWarehouseDateTime(AT_MS - 3_600_000),
+		endTime: formatWarehouseDateTime(AT_MS + 3_600_000),
+	}
+	const run = <A>(compiled: { readonly sql: string }, schema: Schema.Codec<A, unknown>) =>
+		decodeJsonEachRow(schema)(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
+
+	beforeAll(() => {
+		root = mkdtempSync(join(tmpdir(), "maple-ai-evaluations-reads-"))
+		db = Chdb.open({ dataDir: join(root, "data"), schemaSql })
+		const score = (name: string, extra: Readonly<Record<string, string>>, traceId = TRACE) =>
+			insertLog(
+				db,
+				{ "event.name": "gen_ai.evaluation.result", "gen_ai.evaluation.name": name, ...extra },
+				traceId,
+			)
+		score("Relevance", { "gen_ai.evaluation.score.value": "0.5" })
+		score("Relevance", { "gen_ai.evaluation.score.value": "1" })
+		score("Task completion", { "gen_ai.evaluation.score.label": "pass" })
+		score(
+			"Task completion",
+			{ "gen_ai.evaluation.score.label": "fail", "gen_ai.evaluation.explanation": "gave up" },
+			"22222222222222222222222222222222",
+		)
+		score(
+			"Task completion",
+			{ "gen_ai.evaluation.score.label": "fail", "error.type": "timeout" },
+			"33333333333333333333333333333333",
+		)
+	})
+
+	afterAll(() => {
+		db.close()
+		rmSync(root, { recursive: true, force: true })
+	})
+
+	test("summarizes each evaluator: verdicts, a mean only over numeric scores, evaluation failures", () => {
+		const rows = run(
+			Compile.compileUnsafe(CH.aiEvaluationsSummaryQuery(), params),
+			Schema.Struct({
+				name: Schema.String,
+				scoreCount: CH.CHNumber,
+				passCount: CH.CHNumber,
+				failCount: CH.CHNumber,
+				valueCount: CH.CHNumber,
+				avgValue: CH.CHNumber,
+				errorCount: CH.CHNumber,
+				traceCount: CH.CHNumber,
+			}),
+		)
+		expect(rows).toEqual([
+			{
+				name: "Task completion",
+				scoreCount: 3,
+				passCount: 1,
+				failCount: 2,
+				valueCount: 0,
+				avgValue: 0,
+				errorCount: 1,
+				traceCount: 3,
+			},
+			{
+				name: "Relevance",
+				scoreCount: 2,
+				passCount: 0,
+				failCount: 0,
+				valueCount: 2,
+				avgValue: 0.75,
+				errorCount: 0,
+				traceCount: 1,
+			},
+		])
+	})
+
+	test("lists a session's scores by its traces, failing first", () => {
+		const rows = run(
+			Compile.compileUnsafe(
+				CH.aiEvaluationScoresQuery({
+					traceIds: [TRACE, "22222222222222222222222222222222"],
+					sessionId: "s1",
+				}),
+				params,
+			),
+			Schema.Struct({
+				name: Schema.String,
+				verdict: Schema.String,
+				traceId: Schema.String,
+				explanation: Schema.String,
+			}),
+		)
+		expect(rows[0]).toEqual({
+			name: "Task completion",
+			verdict: "fail",
+			traceId: "22222222222222222222222222222222",
+			explanation: "gave up",
+		})
+		expect(rows.length).toBe(4)
 	})
 })

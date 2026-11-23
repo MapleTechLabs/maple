@@ -97,6 +97,8 @@ const TOOL_LABELS = new Map<string, string>([
 	["get_agent_session_transcript", "Agent Session Transcript"],
 	["get_agent_tools_overview", "Agent Tool Usage"],
 	["get_agent_tool_error", "Agent Tool Error"],
+	["list_evaluations", "Evaluations"],
+	["get_evaluation_scores", "Evaluation Scores"],
 	// misc
 	["run_sql", "Run SQL"],
 	["register_agent", "Register Agent"],
@@ -188,6 +190,8 @@ const TOOL_ICONS = new Map<string, IconName>([
 	["get_agent_session_transcript", "ChatBubbleSparkleIcon"],
 	["get_agent_tools_overview", "ChartBarTrendUpIcon"],
 	["get_agent_tool_error", "FireIcon"],
+	["list_evaluations", "ChartBarTrendUpIcon"],
+	["get_evaluation_scores", "ChartBarTrendUpIcon"],
 	["register_agent", "IdBadgeIcon"],
 	["send_maple_feedback", "ChatBubbleSparkleIcon"],
 	["get_event", "CircleInfoIcon"],

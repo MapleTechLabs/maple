@@ -144,6 +144,9 @@ export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
 /** The tools that read an org's connected data sources: absent for an org without that feature. */
 export const DATA_SOURCE_TOOLS: ReadonlySet<string> = new Set(["list_data_sources", "query_data_source"])
 
+/** The LLM evaluation tools: absent for an org outside the `llmEvals` rollout. */
+export const LLM_EVALS_TOOLS: ReadonlySet<string> = new Set(["list_evaluations", "get_evaluation_scores"])
+
 /** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
 export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
 	refusesReadOnlyCredential(name, readOnly) && !DASHBOARD_AUTHORING_TOOLS.has(name)

@@ -7,6 +7,7 @@ import { ListMapleFeedbackOutput, SendMapleFeedbackOutput } from "./feedback"
 import { InspectInfraOutput, ListInfraOutput } from "./infra"
 import { DeleteSourceOutput, ListSourcesOutput, SourceMutationOutput } from "./sources"
 import { ListDataSourcesOutput, QueryDataSourceOutput } from "./data-sources"
+import { GetEvaluationScoresOutput, ListEvaluationsOutput } from "./evaluations"
 import { SearchConsolePagesOutput, SearchConsoleQueriesOutput } from "./search-console"
 import { InspectUserOutput, ListUsersOutput } from "./users"
 import {
@@ -265,6 +266,7 @@ export const McpToolOutputs = {
 	get_agent_tools_overview: GetAgentToolsOverviewOutput,
 	get_alert_rule: GetAlertRuleOutput,
 	get_dashboard: GetDashboardOutput,
+	get_evaluation_scores: GetEvaluationScoresOutput,
 	get_incident_timeline: GetIncidentTimelineOutput,
 	get_investigation: GetInvestigationOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
@@ -285,6 +287,7 @@ export const McpToolOutputs = {
 	link_pull_request: LinkPullRequestOutput,
 	list_agent_sessions: ListAgentSessionsOutput,
 	list_alert_checks: ListAlertChecksOutput,
+	list_evaluations: ListEvaluationsOutput,
 	list_ingest_rules: ListIngestRulesOutput,
 	preview_alert_rule: PreviewAlertRuleOutput,
 	list_alert_destinations: ListAlertDestinationsOutput,

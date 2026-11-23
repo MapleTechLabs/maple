@@ -118,6 +118,7 @@ import { registerGetAgentSessionTool } from "./get-agent-session"
 import { registerGetAgentSessionTranscriptTool } from "./get-agent-session-transcript"
 import { registerGetAgentToolsOverviewTool } from "./get-agent-tools-overview"
 import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
+import { registerGetEvaluationScoresTool, registerListEvaluationsTool } from "./evaluations"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
@@ -163,6 +164,8 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerGetAgentSessionTranscriptTool,
 	registerGetAgentToolsOverviewTool,
 	registerGetAgentToolErrorTool,
+	registerListEvaluationsTool,
+	registerGetEvaluationScoresTool,
 	registerDiagnoseServiceTool,
 	registerFindSlowTracesTool,
 	registerErrorDetailTool,

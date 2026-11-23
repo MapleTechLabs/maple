@@ -7,6 +7,7 @@ import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { rawRoutes } from "@maple/backend/http/raw-routes"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
+import { HttpAiEvaluationsInternalLive } from "@/routes/internal/ai-evaluations.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
 import { HttpUsersInternalLive } from "@/routes/internal/users.http"
@@ -174,6 +175,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpQueryEngineLive,
 			HttpSessionReplaysInternalLive,
 			HttpAiSessionsInternalLive,
+			HttpAiEvaluationsInternalLive,
 			HttpAiModelsInternalLive,
 			HttpMcpInternalLive,
 			HttpUsersInternalLive,
