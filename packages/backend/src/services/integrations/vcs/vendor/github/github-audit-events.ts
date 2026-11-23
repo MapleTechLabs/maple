@@ -1,5 +1,10 @@
 // BOUNDARY-FILE: this module reads unparsed GitHub webhook payloads and narrows them field by field.
-import type { AuditTrailActorType, AuditTrailCategory, AuditTrailEvent } from "@maple/domain/audit-trail"
+import type {
+	AuditTrailActorType,
+	AuditTrailCategory,
+	AuditTrailEvent,
+	AuditTrailOutcome,
+} from "@maple/domain/audit-trail"
 import type { GithubAuditWebhookEvent } from "@maple/domain/github-audit"
 import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
 
@@ -63,6 +68,10 @@ interface AuditedWebhook {
 	readonly action?: (payload: Json, action: string | undefined) => string | undefined
 	readonly category: (action: string) => AuditTrailCategory
 	readonly target: (payload: Json, action: string) => Target | undefined
+	/** Whether what the event records worked; `success` without it. */
+	readonly outcome?: (action: string) => AuditTrailOutcome
+	/** The payload as stored, for an event that carries a value the trail must not keep. */
+	readonly redact?: (payload: Json) => Json
 }
 
 /** `refs/heads/main` as a branch named `main`, `refs/tags/v1` as a tag named `v1`. */
@@ -355,6 +364,7 @@ const AUDITED_WEBHOOKS = {
 		},
 		category: () => "resource",
 		target: deploymentTarget,
+		outcome: (action) => (action === "success" ? "success" : "failure"),
 	},
 	deployment_review: {
 		// Who let a deployment through or stopped it; the request itself is not a decision.
@@ -368,6 +378,11 @@ const AUDITED_WEBHOOKS = {
 			"secret_scanning_alert",
 			(alert) => textAt(alert, "secret_type_display_name") ?? textAt(alert, "secret_type"),
 		),
+		// The detected credential itself never reaches the trail.
+		redact: (payload) => {
+			const alert = objectAt(payload, "alert")
+			return alert === undefined ? payload : { ...payload, alert: Rec.remove(alert, "secret") }
+		},
 	},
 	code_scanning_alert: {
 		// `appeared_in_branch` repeats an alert already reported on another branch.
@@ -493,8 +508,8 @@ export const githubAuditEvent = (input: {
 		actor: actorOf(objectAt(payload, "sender")),
 		action: `${input.event}.${action}`,
 		category: webhook.category(action),
-		outcome: "success",
+		outcome: webhook.outcome?.(action) ?? "success",
 		target: webhook.target(payload, action),
-		raw: rawOf(payload),
+		raw: rawOf(webhook.redact?.(payload) ?? payload),
 	})
 }

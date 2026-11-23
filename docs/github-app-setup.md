@@ -117,7 +117,7 @@ On repositories where a Maple admin has switched on the pull request review, Map
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. CI logs behave the same way: until the installation accepts **Actions: Read**, GitHub refuses every job log download with `403 Resource not accessible by integration` and those repositories get traces without logs. To fix it, accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
-3. Under **Organization permissions**, set **Members** to **Read-only**. Maple uses it during connect, to confirm the person connecting an organization installation is an admin of that organization, and to receive member and team changes for the Security audit log. Without it, connecting an organization is refused. Leave every other organization permission and all **Account permissions** at **No access**.
+3. Under **Organization permissions**, set **Members** to **Read-only**. Maple uses it during connect, to confirm the person connecting an organization installation is an admin of that organization, and to receive member and team changes for the Security audit log. Without it, connecting an organization is refused. Optionally, set **Personal access token requests** to **Read-only** and subscribe to **Personal access token request**, so token requests to the organization reach the audit log. Leave every other organization permission and all **Account permissions** at **No access**.
 
 ---
 
@@ -126,36 +126,37 @@ On repositories where a Maple admin has switched on the pull request review, Map
 1. Find the **Subscribe to events** section (directly below permissions). The events listed here depend on the permissions you set in Step 5. If an event is missing, re-check the permissions.
 2. Check exactly these events:
 
-| Event to check                      | Why Maple needs it                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Create**                          | Detect newly created branches.                                                                        |
-| **Delete**                          | Detect deleted branches.                                                                              |
-| **Push**                            | Live-sync new commits on tracked branches; reconcile force-pushes.                                    |
-| **Pull request**                    | Link pull requests to error issues, and start the observability review on repositories that opted in. |
-| **Issue comment**                   | Answer `@maple` mentions in a pull request's conversation.                                            |
-| **Pull request review comment**     | Answer `@maple` mentions in a pull request's review threads.                                          |
-| **Workflow run**                    | Write one trace per GitHub Actions run attempt (CI traces).                                           |
-| **Workflow job**                    | Add each job and its steps to the run's trace, then download the job's log (CI logs).                 |
-| **Organization**                    | Audit log: people added to, removed from or invited to the organization.                              |
-| **Member**                          | Audit log: repository collaborators added, removed or given another role.                             |
-| **Membership**                      | Audit log: people added to or removed from a team.                                                    |
-| **Team**                            | Audit log: teams created, deleted, edited, or given or removed from a repository.                     |
-| **Repository**                      | Audit log: repositories created, deleted, renamed, transferred, archived or made public or private.   |
-| **Branch protection rule**          | Audit log: branch protection rules changed (needs **Administration**).                                |
-| **Branch protection configuration** | Audit log: branch protection turned on or off for a repository (needs **Administration**).            |
-| **Repository ruleset**              | Audit log: rulesets created, edited or deleted (needs **Administration**).                            |
-| **Deploy key**                      | Audit log: deploy keys added or removed (needs **Deployments**).                                      |
-| **Security and analysis**           | Audit log: code security settings changed (needs **Administration**).                                 |
-| **Pull request review**             | Audit log: pull request approvals and dismissed reviews.                                              |
-| **Release**                         | Audit log: releases published, edited or deleted.                                                     |
-| **Fork**                            | Audit log: repositories forked.                                                                       |
-| **Deployment**                      | Audit log: deployments created (needs **Deployments**).                                               |
-| **Deployment status**               | Audit log: a deployment's outcome (needs **Deployments**).                                            |
-| **Deployment review**               | Audit log: protected environment approvals and rejections (needs **Actions**).                        |
-| **Secret scanning alert**           | Audit log: secret scanning alerts (needs **Secret scanning alerts**).                                 |
-| **Code scanning alert**             | Audit log: code scanning alerts (needs **Code scanning alerts**).                                     |
-| **Dependabot alert**                | Audit log: Dependabot alerts (needs **Dependabot alerts**).                                           |
-| **Repository advisory**             | Audit log: repository security advisories (needs **Repository security advisories**).                 |
+| Event to check                      | Why Maple needs it                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Create**                          | Detect newly created branches.                                                                         |
+| **Delete**                          | Detect deleted branches.                                                                               |
+| **Push**                            | Live-sync new commits on tracked branches; reconcile force-pushes.                                     |
+| **Pull request**                    | Link pull requests to error issues, and start the observability review on repositories that opted in.  |
+| **Issue comment**                   | Answer `@maple` mentions in a pull request's conversation.                                             |
+| **Pull request review comment**     | Answer `@maple` mentions in a pull request's review threads.                                           |
+| **Workflow run**                    | Write one trace per GitHub Actions run attempt (CI traces).                                            |
+| **Workflow job**                    | Add each job and its steps to the run's trace, then download the job's log (CI logs).                  |
+| **Organization**                    | Audit log: people added to, removed from or invited to the organization.                               |
+| **Member**                          | Audit log: repository collaborators added, removed or given another role.                              |
+| **Membership**                      | Audit log: people added to or removed from a team.                                                     |
+| **Team**                            | Audit log: teams created, deleted, edited, or given or removed from a repository.                      |
+| **Repository**                      | Audit log: repositories created, deleted, renamed, transferred, archived or made public or private.    |
+| **Branch protection rule**          | Audit log: branch protection rules changed (needs **Administration**).                                 |
+| **Branch protection configuration** | Audit log: branch protection turned on or off for a repository (needs **Administration**).             |
+| **Repository ruleset**              | Audit log: rulesets created, edited or deleted (needs **Administration**).                             |
+| **Deploy key**                      | Audit log: deploy keys added or removed (needs **Deployments**).                                       |
+| **Security and analysis**           | Audit log: code security settings changed (needs **Administration**).                                  |
+| **Personal access token request**   | Audit log: fine-grained token requests to the organization (needs **Personal access token requests**). |
+| **Pull request review**             | Audit log: pull request approvals and dismissed reviews.                                               |
+| **Release**                         | Audit log: releases published, edited or deleted.                                                      |
+| **Fork**                            | Audit log: repositories forked.                                                                        |
+| **Deployment**                      | Audit log: deployments created (needs **Deployments**).                                                |
+| **Deployment status**               | Audit log: a deployment's outcome (needs **Deployments**).                                             |
+| **Deployment review**               | Audit log: protected environment approvals and rejections (needs **Deployments**).                     |
+| **Secret scanning alert**           | Audit log: secret scanning alerts (needs **Secret scanning alerts**).                                  |
+| **Code scanning alert**             | Audit log: code scanning alerts (needs **Code scanning alerts**).                                      |
+| **Dependabot alert**                | Audit log: Dependabot alerts (needs **Dependabot alerts**).                                            |
+| **Repository advisory**             | Audit log: repository security advisories (needs **Repository security advisories**).                  |
 
 > `Push`, `Create`, `Delete` and `Pull request` above also feed the audit log: force pushes, branch and tag deletions and creations, and merges. Each audit category has its own switch on the GitHub source; only its default-on categories are collected until an admin turns more on.
 
@@ -288,10 +289,11 @@ After setting the variables, **restart the Maple API** so they take effect. Mapl
 | Repository → Deployments                                                                                     | Read-only, optional (audit log: deploy keys, deployments)             |
 | Repository → Secret scanning alerts, Code scanning alerts, Dependabot alerts, Repository security advisories | Read-only, optional (audit log: security alerts)                      |
 | Organization → Members                                                                                       | Read-only (connect-time admin check, audit log: members and teams)    |
+| Organization → Personal access token requests                                                                | Read-only, optional (audit log: token requests)                       |
 
 ### Subscribed webhook events
 
-`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`, and for the audit log `Organization`, `Member`, `Membership`, `Team`, `Repository`, `Pull request review`, `Release`, `Fork`, `Deployment review`, plus with the optional permissions `Branch protection rule`, `Branch protection configuration`, `Repository ruleset`, `Security and analysis` (Administration), `Deploy key`, `Deployment`, `Deployment status` (Deployments), and `Secret scanning alert`, `Code scanning alert`, `Dependabot alert`, `Repository advisory` (their alert permissions). (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
+`Create`, `Delete`, `Push`, `Pull request`, `Issue comment`, `Pull request review comment`, `Workflow run`, `Workflow job`, and for the audit log `Organization`, `Member`, `Membership`, `Team`, `Repository`, `Pull request review`, `Release`, `Fork`, plus with the optional permissions `Branch protection rule`, `Branch protection configuration`, `Repository ruleset`, `Security and analysis` (Administration), `Deploy key`, `Deployment`, `Deployment status`, `Deployment review` (Deployments), `Personal access token request` (Personal access token requests), and `Secret scanning alert`, `Code scanning alert`, `Dependabot alert`, `Repository advisory` (their alert permissions). (`installation` and `installation_repositories` are delivered automatically and need no subscription.)
 
 ---
 

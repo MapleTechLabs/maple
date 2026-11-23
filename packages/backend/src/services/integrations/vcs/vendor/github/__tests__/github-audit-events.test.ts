@@ -294,6 +294,31 @@ describe("githubAuditEvent", () => {
 		).toBe(true)
 	})
 
+	it("never stores the credential a secret scanning alert found", () => {
+		const event = mapped("secret_scanning_alert", {
+			action: "created",
+			alert: { number: 4, secret_type: "aws_access_key_id", secret: "AKIAEXAMPLESECRET" },
+			repository,
+			sender,
+		})
+		expect(event.raw).toMatchObject({ alert: { number: 4, secret_type: "aws_access_key_id" } })
+		expect(JSON.stringify(event.raw)).not.toContain("AKIAEXAMPLESECRET")
+	})
+
+	it("marks a failed deployment as a failure", () => {
+		const status = (state: string) =>
+			mapped("deployment_status", {
+				action: "created",
+				deployment_status: { state },
+				deployment: { id: 5, environment: "production" },
+				repository,
+				sender,
+			}).outcome
+		expect(status("failure")).toBe("failure")
+		expect(status("error")).toBe("failure")
+		expect(status("success")).toBe("success")
+	})
+
 	it("names security alerts by what they found", () => {
 		expect(
 			mapped("secret_scanning_alert", {

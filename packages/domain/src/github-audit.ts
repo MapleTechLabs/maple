@@ -3,18 +3,21 @@ import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effe
 // What the GitHub audit log can collect, as categories an org turns on or off under the GitHub
 // integration's Audit log switch. Each category owns the GitHub webhook events that feed it.
 
-export interface GithubAuditCategorySpec<Id extends string = string> {
+export interface GithubAuditCategorySpec<Id extends string = string, Event extends string = string> {
 	readonly id: Id
 	readonly title: string
 	readonly summary: string
 	readonly defaultEnabled: boolean
 	/** GitHub webhook event names (`x-github-event`) whose audit events land in this category. */
-	readonly events: ReadonlyArray<string>
+	readonly events: ReadonlyArray<Event>
 	/** A GitHub App permission an installation must accept before these events arrive. */
 	readonly needsPermission?: string
 }
 
-const category = <const Id extends string>(spec: GithubAuditCategorySpec<Id>) => spec
+// Both literals stay narrow, so the backend's per-event mapper table must match the catalog exactly.
+const category = <const Id extends string, const Event extends string>(
+	spec: GithubAuditCategorySpec<Id, Event>,
+) => spec
 
 export const GITHUB_AUDIT_CATEGORIES = [
 	category({
@@ -46,7 +49,8 @@ export const GITHUB_AUDIT_CATEGORIES = [
 		summary: "Deploy keys added or removed, and fine-grained token requests to the organization.",
 		defaultEnabled: true,
 		events: ["deploy_key", "personal_access_token_request"],
-		needsPermission: "Deployments: read for deploy keys",
+		needsPermission:
+			"Deployments: read for deploy keys, and the organization's Personal access token requests: read for token requests",
 	}),
 	category({
 		id: "securitySettings",
