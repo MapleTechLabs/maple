@@ -1,5 +1,5 @@
 ---
 name: "Hazel"
 href: "https://hazel.sh"
-order: 3
+order: 4
 ---

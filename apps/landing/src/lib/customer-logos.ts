@@ -1,6 +1,7 @@
 import EffectLogomark from "../components/icons/EffectLogomark.astro"
 import GymscoreLogo from "../components/icons/GymscoreLogo.astro"
 import HazelLogo from "../components/icons/HazelLogo.astro"
+import JobflowLogo from "../components/icons/JobflowLogo.astro"
 import SakuraLogo from "../components/icons/SakuraLogo.astro"
 import SuperwallLogo from "../components/icons/SuperwallLogo.astro"
 
@@ -15,4 +16,5 @@ export const LOGOS: Record<string, typeof HazelLogo> = {
 	gymscore: GymscoreLogo,
 	superwall: SuperwallLogo,
 	effect: EffectLogomark,
+	jobflow: JobflowLogo,
 } satisfies Record<string, typeof HazelLogo>
