@@ -170,6 +170,17 @@ describe("ingest rule editor", () => {
 		)
 	})
 
+	test("a step reading an attribute asks for its key beside the prefix", () => {
+		const json = fresh("parse-json-logs")
+		const stepId = json.draft.steps[0]?.id ?? 0
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(json, Message.ChangedStepSource({ id: stepId, source: "attribute" })).model),
+			expectView(role("textbox", { name: "Step 1 attribute key" })).toExist(),
+			expectView(role("textbox", { name: "Step 1 key prefix" })).toExist(),
+		)
+	})
+
 	test("leaving parse gives back the signals it narrowed to logs", () => {
 		const viaParse = Arr.reduce(
 			[Message.PickedAction({ actionType: "parse" }), Message.PickedAction({ actionType: "redact" })],
