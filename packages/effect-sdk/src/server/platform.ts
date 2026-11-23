@@ -20,7 +20,7 @@
 // EC2-managed hosts and isn't a CI/CD provider in that taxonomy.
 
 import { Match, Option, Record as Rec, Schema } from "effect"
-import { DETECT_ENV_KEYS, detectEnvironment, readProcessEnv, type DetectInput } from "./runtime-detect.js"
+import { detectEnvironment, readProcessEnv, type DetectInput } from "./runtime-detect.js"
 
 export interface PlatformInputs {
 	/** Detected runtime: "node" | "bun" | "deno" | "workerd" | "edge-light" | "fastly" | "netlify" | string. */
@@ -276,7 +276,7 @@ const decodeArch = Schema.decodeUnknownOption(ProcessArch)
  */
 export const platformAttributesFrom = (input: DetectInput): PlatformAttributes => {
 	const { runtime, provider, platform } = detectEnvironment(input)
-	const env = Rec.fromIterableWith(PLATFORM_ENV_KEYS, (key) => [key, input.env[key]])
+	const env = Rec.fromIterableWith(PLATFORM_ENV_KEYS, (key) => [key, input.env(key)])
 	return derivePlatformAttributes({
 		runtime,
 		provider,
@@ -297,5 +297,5 @@ export const platformAttributesFrom = (input: DetectInput): PlatformAttributes =
 export const getAutoPlatformAttributes = (): PlatformAttributes =>
 	platformAttributesFrom({
 		globals: globalThis,
-		env: readProcessEnv(globalThis, [...DETECT_ENV_KEYS, ...PLATFORM_ENV_KEYS]),
+		env: readProcessEnv(globalThis),
 	})

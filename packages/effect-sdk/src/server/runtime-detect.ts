@@ -1,10 +1,11 @@
 // Runtime, hosting provider and OS platform detection. Same rules and order as
 // std-env 4.3 (`runtime`, `provider`, `platform`), kept in-house so the SDK has
-// no runtime dependencies. Pure over its input (a globals object and an env record).
+// no runtime dependencies. Pure over its input (a globals object and an env lookup).
 
-import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 export type EnvRecord = Readonly<Record<string, string | undefined>>
+export type EnvLookup = (key: string) => string | undefined
 
 /** The global object to probe: `globalThis`, or a stand-in record in tests. */
 export type RuntimeGlobals = typeof globalThis | Readonly<Record<string, unknown>>
@@ -12,8 +13,8 @@ export type RuntimeGlobals = typeof globalThis | Readonly<Record<string, unknown
 export interface DetectInput {
 	/** The global object (`globalThis` in production). Only the probed keys are read. */
 	readonly globals: RuntimeGlobals
-	/** Environment variables (`process.env` in production). */
-	readonly env: EnvRecord
+	/** Environment lookup (`process.env` in production), called only for the keys detection needs. */
+	readonly env: EnvLookup
 }
 
 export interface DetectedEnvironment {
@@ -113,10 +114,10 @@ const PROVIDERS: ReadonlyArray<readonly [string, string?]> = [
 
 export const detectProvider = ({ globals, env }: DetectInput): string =>
 	Option.match(
-		Arr.findFirst(PROVIDERS, ([name, key]) => Boolean(env[key ?? name])),
+		Arr.findFirst(PROVIDERS, ([name, key]) => Boolean(env(key ?? name))),
 		{
 			onSome: ([name]) => Str.toLowerCase(name),
-			onNone: () => (env.SHELL === "/bin/jsh" && webcontainer(globals) !== "" ? "stackblitz" : ""),
+			onNone: () => (env("SHELL") === "/bin/jsh" && webcontainer(globals) !== "" ? "stackblitz" : ""),
 		},
 	)
 
@@ -146,23 +147,32 @@ export const detectEnvironment = (input: DetectInput): DetectedEnvironment => ({
 	platform: processPlatform(input.globals),
 })
 
-/** Env var names detection reads, besides the caller's own. */
-export const DETECT_ENV_KEYS: ReadonlyArray<string> = [
-	...Arr.map(PROVIDERS, ([name, key]) => key ?? name),
-	"SHELL",
-]
-
-/**
- * The given keys of `process.env` on `globals`, read one by one (never
- * enumerated), or `{}` where there is no `process.env` (browsers, plain workerd).
- */
-export const readProcessEnv = (globals: RuntimeGlobals, keys: ReadonlyArray<string>): EnvRecord => {
-	const fields = Rec.fromIterableWith(keys, (key) => [key, Schema.optionalKey(Schema.String)] as const)
-	const decode = Schema.decodeUnknownOption(
-		Schema.Struct({ process: Schema.Struct({ env: Schema.Struct(fields) }) }),
+// One env var per decode, so a missing, odd or permission-denied key (Deno
+// `--deny-env` throws on access) only makes that key absent.
+const readEnvKey = (globals: RuntimeGlobals, key: string): string | undefined => {
+	const decode = Option.liftThrowable(
+		Schema.decodeUnknownOption(
+			Schema.Struct({
+				process: Schema.Struct({ env: Schema.Struct({ [key]: Schema.optional(Schema.String) }) }),
+			}),
+		),
 	)
-	return Option.getOrElse(
-		Option.map(decode(globals), (g) => g.process.env),
-		() => ({}),
+	return Option.getOrUndefined(
+		Option.flatMap(Option.flatten(decode(globals)), (g) => Option.fromNullishOr(g.process.env[key])),
 	)
 }
+
+/**
+ * Lazy lookup into `process.env` on `globals`: keys are read only when asked
+ * for, never enumerated, and anything unreadable (no `process`, browsers) is absent.
+ */
+export const readProcessEnv =
+	(globals: RuntimeGlobals): EnvLookup =>
+	(key) =>
+		readEnvKey(globals, key)
+
+/** Lookup over a plain record. */
+export const envFromRecord =
+	(record: EnvRecord): EnvLookup =>
+	(key) =>
+		record[key]

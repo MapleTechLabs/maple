@@ -7,7 +7,7 @@ import {
 	readRuntimeVersion,
 	type PlatformInputs,
 } from "./platform.js"
-import { detectRuntime, type RuntimeGlobals } from "./runtime-detect.js"
+import { detectRuntime, envFromRecord, readProcessEnv, type RuntimeGlobals } from "./runtime-detect.js"
 
 const baseInputs = (overrides: Partial<PlatformInputs> = {}): PlatformInputs => ({
 	runtime: "",
@@ -389,7 +389,63 @@ const cases: ReadonlyArray<DetectCase> = [
 
 describe("platformAttributesFrom", () => {
 	it.each(cases)("%s", (_name, globals, env, expected) => {
-		expect(platformAttributesFrom({ globals, env })).toEqual(expected)
+		expect(platformAttributesFrom({ globals, env: envFromRecord(env) })).toEqual(expected)
+	})
+})
+
+// A `process.env` that throws on access to denied keys, like Deno's `--deny-env`.
+const denyingEnv = (values: Record<string, string>, denied: ReadonlyArray<string>) =>
+	new Proxy(values, {
+		get: (target, key) => {
+			if (typeof key === "string" && denied.includes(key)) throw new TypeError(`denied: ${key}`)
+			return typeof key === "string" ? target[key] : undefined
+		},
+		has: (target, key) => {
+			if (typeof key === "string" && denied.includes(key)) throw new TypeError(`denied: ${key}`)
+			return key in target
+		},
+	})
+
+describe("readProcessEnv", () => {
+	it("reads keys from process.env on the globals", () => {
+		const env = readProcessEnv({ process: { env: { RENDER: "true", RENDER_INSTANCE_ID: "srv-1" } } })
+		expect(env("RENDER")).toBe("true")
+		expect(env("RENDER_INSTANCE_ID")).toBe("srv-1")
+		expect(env("VERCEL")).toBeUndefined()
+	})
+
+	it("treats every key as absent without process", () => {
+		expect(readProcessEnv({})("RENDER")).toBeUndefined()
+		expect(readProcessEnv({ process: {} })("RENDER")).toBeUndefined()
+	})
+
+	it("keeps the other keys when one holds undefined", () => {
+		const env = readProcessEnv({ process: { env: { VERCEL: "1", AWS_REGION: undefined } } })
+		expect(env("VERCEL")).toBe("1")
+		expect(env("AWS_REGION")).toBeUndefined()
+	})
+
+	it("treats a key whose read throws as absent", () => {
+		const env = readProcessEnv({ process: { env: denyingEnv({ RENDER: "true" }, ["VERCEL"]) } })
+		expect(env("VERCEL")).toBeUndefined()
+		expect(env("RENDER")).toBe("true")
+	})
+
+	it("derives attributes end to end with a denying env, reading only up to the first provider match", () => {
+		const read: Array<string> = []
+		const values = { DENO_DEPLOYMENT_ID: "dpl1" }
+		const env = new Proxy(denyingEnv(values, ["EO_PAGES_CI", "AWS_REGION"]), {
+			has: (target, key) => {
+				if (typeof key === "string") read.push(key)
+				return Reflect.has(target, key)
+			},
+		})
+		const globals = { Deno: { version: { deno: "2.1.4" } }, process: { env } }
+		const attrs = platformAttributesFrom({ globals, env: readProcessEnv(globals) })
+		expect(attrs["maple.provider"]).toBe("deno-deploy")
+		expect(attrs["cloud.platform"]).toBe("deno_deploy")
+		expect(attrs["faas.instance"]).toBe("dpl1")
+		expect(read).not.toContain("EO_PAGES_CI")
 	})
 })
 
