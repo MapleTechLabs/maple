@@ -1487,6 +1487,10 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
  * spec's encoding of an evaluation. The ingest gateway copies the record's `event_name` into
  * `LogAttributes['event.name']`; an emitter that sets the attribute itself lands here too. The
  * record's span context is the evaluated span (the spec parents the event to it).
+ *
+ * Read by `ch/queries/ai-evaluations.ts` in the query engine: the evaluator summary, series, breakdown
+ * and score lists behind `/internal/ai-evaluations`, the Evals pages and the evaluation MCP tools.
+ * Raw logs cannot serve them: every read would scan 30 days of logs for one event name.
  */
 export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
 	description:
@@ -1514,6 +1518,9 @@ export const aiEvaluationsMv = defineMaterializedView("ai_evaluations_mv", {
  * carrying the event is the evaluated span unless the event names a target. The row takes the carrying
  * span's time and service, not the event's, so a scoped delete removes the scores with the span that
  * sent them; a score is the evaluator's telemetry, like a log that names a trace.
+ *
+ * Read by the same evaluation queries as `ai_evaluations_mv`, so scores from either encoding meet in
+ * one table.
  */
 export const aiEvaluationsSpanEventsMv = defineMaterializedView("ai_evaluations_span_events_mv", {
 	description:
