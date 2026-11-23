@@ -235,19 +235,22 @@ const scoreCells = (h: H, score: AiEvaluationScore, timeZone: string): ReadonlyA
 		h,
 		{ size: "2xs", truncate: true, className: "hidden w-24 shrink-0 @min-[720px]/panel:block" },
 		[
-			textLink(
-				h,
-				{
-					tone: "muted",
-					isMono: true,
-					className: "block truncate",
-					href: hrefOf(
-						// No time hint: the score's time can be hours after the trace, outside the hint's reach.
-						AppRoute.Trace({ traceId: score.traceId, search: { spanId: score.spanId } }),
+			// A score written outside any trace (a session score from an offline job) links nowhere.
+			score.traceId === ""
+				? typography(h, { tone: "subtle" }, [NO_VALUE])
+				: textLink(
+						h,
+						{
+							tone: "muted",
+							isMono: true,
+							className: "block truncate",
+							href: hrefOf(
+								// No time hint: the score's time can be hours after the trace, outside the hint's reach.
+								AppRoute.Trace({ traceId: score.traceId, search: { spanId: score.spanId } }),
+							),
+						},
+						[Str.slice(0, 12)(score.traceId)],
 					),
-				},
-				[Str.slice(0, 12)(score.traceId)],
-			),
 		],
 	),
 ]
@@ -325,7 +328,10 @@ const loadedView = (h: H, model: Model, detail: EvaluatorDetail, timeZone: strin
 			isWaiting: AsyncData.isRefreshing(model.detail.data),
 		}),
 		summaryRow(h, detail.summary),
-		...(detail.series.length > 1 ? [passRateBars(h, detail)] : []),
+		// A purely numeric evaluator has no verdicts, so no pass rate to draw.
+		...(detail.series.length > 1 && Arr.some(detail.series, (bucket) => passRateOf(bucket) !== undefined)
+			? [passRateBars(h, detail)]
+			: []),
 		breakdownTable(h, detail.breakdown),
 		scoresTable(h, model, detail, timeZone),
 	])

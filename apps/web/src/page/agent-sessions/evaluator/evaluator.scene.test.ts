@@ -146,6 +146,40 @@ describe("agent evaluator", () => {
 		)
 	})
 
+	test("a score with no trace links nowhere, and an evaluator with no verdicts draws no pass-rate chart", () => {
+		const bucket = (at: string, passCount: number, failCount: number) => ({
+			bucket: at,
+			scoreCount: 4,
+			passCount,
+			failCount,
+			valueCount: 4,
+			avgValue: 0.5,
+			errorCount: 0,
+		})
+		const numericOnly: EvaluatorDetail = {
+			...detail,
+			series: [bucket("2026-10-01 09:00:00", 0, 0), bucket("2026-10-01 10:00:00", 0, 0)],
+			scores: [score({ traceId: "", verdict: "", label: "" })],
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(numericOnly)),
+			expectView(text("Two claims are not in the context.")).toExist(),
+			expectView(role("link", { name: /^4bf92f/ })).not.toExist(),
+			expectView(text("Pass rate over time")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				answered({
+					...detail,
+					series: [bucket("2026-10-01 09:00:00", 3, 1), bucket("2026-10-01 10:00:00", 0, 4)],
+				}),
+			),
+			expectView(text("Pass rate over time")).toExist(),
+		)
+	})
+
 	test("an evaluator with no scores in the window says how scores arrive", () => {
 		const { summary: _summary, ...empty } = detail
 		scene(

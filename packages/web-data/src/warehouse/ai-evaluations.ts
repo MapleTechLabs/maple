@@ -5,11 +5,11 @@
 import { Effect, Schema } from "effect"
 import {
 	AI_EVALUATION_SESSION_MAX_TRACES,
+	AI_EVALUATOR_NAME_MAX_UNITS,
 	GetAiEvaluatorRequest,
 	GetAiSessionEvaluationsRequest,
 	ListAiEvaluatorsRequest,
 } from "@maple/domain/http"
-import { EVALUATION_NAME_MAX } from "@maple/domain/gen-ai-evaluation"
 
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
@@ -23,7 +23,7 @@ export type EvaluationWindowInput = Schema.Schema.Type<typeof EvaluationWindowIn
 // Bounds mirror the domain request so a bad value is a decode failure, not a defect.
 const AiEvaluatorInput = Schema.Struct({
 	...EvaluationWindowInput.fields,
-	name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(EVALUATION_NAME_MAX)),
+	name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(AI_EVALUATOR_NAME_MAX_UNITS)),
 	bucketSeconds: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
 	verdict: Schema.optional(Schema.Literals(["pass", "fail"])),
 })
