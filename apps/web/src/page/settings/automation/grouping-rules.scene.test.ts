@@ -5,6 +5,7 @@ import { Array as Arr, Result, Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { click, expect as expectView, given, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Rules from "./grouping-rules"
 import { groupingRulesSection } from "./grouping-rules-view"
 
@@ -128,6 +129,13 @@ describe("grouping rules editor", () => {
 		expect(reloaded.draft).toEqual([])
 		expect(reloaded.baseUpdatedAt).toBe(NEWER_AT)
 		expect(reloaded.refusal).toBeNull()
+		const failedReload = run(refused, [
+			Rules.Message.ClickedLoadLatestRules(),
+			Rules.Message.CompletedFetchRules({
+				result: Result.fail(toLoadFailure(new Error("Network down"))),
+			}),
+		])
+		expect(failedReload.draft).toBeNull()
 	})
 
 	test("a refused save puts each problem under the rule it names, the rest above the list", () => {

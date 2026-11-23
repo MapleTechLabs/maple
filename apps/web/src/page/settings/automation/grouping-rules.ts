@@ -150,7 +150,7 @@ export const draftOf = (rule: OrgGroupingRule): RuleDraft => ({
 	title: rule.title ?? "",
 })
 
-/** The fields a kind reads: a frame rule reads only a service and a frame. */
+/** The fields a kind reads: a frame rule reads service, type and message filters and a frame; no title. */
 export const fieldsOf = (kind: RuleDraft["kind"]): ReadonlyArray<RuleField> =>
 	kind === "merge" ? RULE_FIELDS : ["service", "exceptionType", "message", "frame"]
 
@@ -226,7 +226,8 @@ export const update = (model: Model, message: Message, grants: ReadonlyArray<Pol
 		},
 		// After a refused save (another tab saved first), drop the edits and follow the stored rules.
 		ClickedLoadLatestRules: () => ({
-			model: { ...model, isDirty: false, refusal: null, rules: AsyncData.Loading() },
+			// The draft goes too, so the section shows loading and, if the read fails, the error to retry.
+			model: { ...model, isDirty: false, refusal: null, draft: null, rules: AsyncData.Loading() },
 			commands: [FetchGroupingRules()],
 		}),
 		ClickedRetryRules: () => ({

@@ -100,7 +100,7 @@ const ruleCard = (h: H, model: Model, rule: RuleDraft, inputs: GroupingRulesInpu
 					value: rule.kind,
 					isDisabled: isLocked,
 					attributes: [
-						h.AriaLabel("Rule kind"),
+						h.AriaLabel(`Rule kind for ${rule.id}`),
 						h.OnChange((value) => Message.ChangedRuleKind({ id: rule.id, value })),
 					],
 				},
@@ -111,7 +111,7 @@ const ruleCard = (h: H, model: Model, rule: RuleDraft, inputs: GroupingRulesInpu
 				iconButton(
 					h,
 					{
-						label: "Remove rule",
+						label: `Remove rule ${rule.id}`,
 						size: "icon-sm",
 						isDisabled: isLocked,
 						attributes: [h.OnClick(Message.ClickedRemoveRule({ id: rule.id }))],
