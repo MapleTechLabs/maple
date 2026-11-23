@@ -653,6 +653,23 @@ const hasRepeatedAssertion = (pattern: string): boolean => {
 	return false
 }
 
+/** True when a class starts with a literal `]` (`[]...]`, `[^]...]`), which the engines read differently. */
+const opensClassWithBracket = (source: string): boolean => {
+	let inClass = false
+	for (let at = 0; at < source.length; at += 1) {
+		const char = source[at]
+		if (char === "\\") at += 1
+		else if (inClass) inClass = char !== "]"
+		else if (char === "[") {
+			const next = source[at + 1] === "^" ? at + 2 : at + 1
+			if (source[next] === "]") return true
+			inClass = true
+			at = next - 1
+		}
+	}
+	return false
+}
+
 /** Null when the pattern is in the subset both the Rust `regex` crate and JS `RegExp` accept. */
 export const regexProblem = (pattern: string): string | null => {
 	if (pattern.length === 0) return "pattern is empty"
@@ -694,7 +711,7 @@ const GROUP_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const parseRegexProblem = (source: string): string | null => {
 	for (const [probe, message] of UNPORTABLE_REGEX) if (probe.test(source)) return message
 	if (/\\[QEC]/u.test(source)) return "\\Q, \\E and \\C are not supported"
-	if (/(?<!\\)\[\^?\]/u.test(source)) return "write a ] at the start of a class as \\]"
+	if (opensClassWithBracket(source)) return "write a ] at the start of a class as \\]"
 	if (portableRegexSource(splitRegexFlags(source).source) === null)
 		return "inside [...], use explicit characters instead of \\D, \\W, \\S, \\b, \\B or a nested ["
 	if (Option.isNone(compileRe2(source))) return "pattern is not a valid regular expression"

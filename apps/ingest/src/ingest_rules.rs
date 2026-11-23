@@ -1208,14 +1208,7 @@ impl<'a> Pass<'a> {
         if !rules.parses {
             return;
         }
-        // Parsing has its own budgets; its time does not count against the redaction deadline.
-        let started = Instant::now();
-        self.parse_rules(resource, record);
-        self.budget.deadline += started.elapsed();
-    }
 
-    fn parse_rules(&mut self, resource: &[KeyValue], record: &mut LogRecord) {
-        let rules = self.rules;
         for (index, rule) in rules.rules.iter().enumerate() {
             let CompiledAction::Parse(steps) = &rule.action else {
                 continue;
@@ -1245,7 +1238,11 @@ impl<'a> Pass<'a> {
                 budget.remaining = 0;
             }
             let before = budget.remaining;
+            // Steps have their own budgets; their time is kept off the redaction deadline at once,
+            // so a later rule's conditions are not judged against a clock parsing used up.
+            let started = Instant::now();
             let failed = parse::run_steps(steps, record, budget, &mut self.body_keys).is_some();
+            self.budget.deadline += started.elapsed();
             total.charge(usize::try_from(before - budget.remaining).unwrap_or(usize::MAX));
             let counters = &mut self.stats.per_rule[index];
             counters.matched += 1;
