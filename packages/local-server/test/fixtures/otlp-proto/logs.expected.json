@@ -1,0 +1,323 @@
+{
+	"resourceLogs": [
+		{
+			"scopeLogs": [
+				{
+					"logRecords": [
+						{
+							"attributes": [
+								{
+									"key": "s",
+									"value": {
+										"stringValue": "héllo ✓ 漢字 🎉",
+										"value": "stringValue"
+									}
+								},
+								{
+									"key": "b",
+									"value": {
+										"boolValue": true,
+										"value": "boolValue"
+									}
+								},
+								{
+									"key": "bf",
+									"value": {
+										"boolValue": false,
+										"value": "boolValue"
+									}
+								},
+								{
+									"key": "i",
+									"value": {
+										"intValue": "-9223372036854775808",
+										"value": "intValue"
+									}
+								},
+								{
+									"key": "imax",
+									"value": {
+										"intValue": "9223372036854775807",
+										"value": "intValue"
+									}
+								},
+								{
+									"key": "i0",
+									"value": {
+										"intValue": "0",
+										"value": "intValue"
+									}
+								},
+								{
+									"key": "d",
+									"value": {
+										"doubleValue": 3.141592653589793,
+										"value": "doubleValue"
+									}
+								},
+								{
+									"key": "dneg",
+									"value": {
+										"doubleValue": -1e-300,
+										"value": "doubleValue"
+									}
+								},
+								{
+									"key": "bytes",
+									"value": {
+										"bytesValue": "AP8Q",
+										"value": "bytesValue"
+									}
+								},
+								{
+									"key": "empty",
+									"value": {}
+								},
+								{
+									"key": "arr",
+									"value": {
+										"arrayValue": {
+											"values": [
+												{
+													"stringValue": "a",
+													"value": "stringValue"
+												},
+												{
+													"intValue": "1",
+													"value": "intValue"
+												},
+												{
+													"arrayValue": {
+														"values": [
+															{
+																"boolValue": true,
+																"value": "boolValue"
+															}
+														]
+													},
+													"value": "arrayValue"
+												}
+											]
+										},
+										"value": "arrayValue"
+									}
+								},
+								{
+									"key": "kv",
+									"value": {
+										"kvlistValue": {
+											"values": [
+												{
+													"key": "inner",
+													"value": {
+														"stringValue": "x",
+														"value": "stringValue"
+													}
+												},
+												{
+													"key": "nested",
+													"value": {
+														"kvlistValue": {
+															"values": [
+																{
+																	"key": "deep",
+																	"value": {
+																		"doubleValue": 2.5,
+																		"value": "doubleValue"
+																	}
+																}
+															]
+														},
+														"value": "kvlistValue"
+													}
+												},
+												{
+													"key": "bin",
+													"value": {
+														"bytesValue": "3q2+7w==",
+														"value": "bytesValue"
+													}
+												}
+											]
+										},
+										"value": "kvlistValue"
+									}
+								}
+							],
+							"timeUnixNano": "1763200000000000001",
+							"severityNumber": 9,
+							"severityText": "INFO",
+							"body": {
+								"stringValue": "plain text body",
+								"value": "stringValue"
+							},
+							"droppedAttributesCount": 1,
+							"flags": 1,
+							"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+							"spanId": "t61rcWkgMzE=",
+							"observedTimeUnixNano": "1763200000000000002",
+							"eventName": "user.login"
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 17,
+							"severityText": "",
+							"body": {
+								"kvlistValue": {
+									"values": [
+										{
+											"key": "msg",
+											"value": {
+												"stringValue": "structured",
+												"value": "stringValue"
+											}
+										},
+										{
+											"key": "n",
+											"value": {
+												"intValue": "42",
+												"value": "intValue"
+											}
+										}
+									]
+								},
+								"value": "kvlistValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 24,
+							"severityText": "",
+							"body": {
+								"arrayValue": {
+									"values": [
+										{
+											"stringValue": "a",
+											"value": "stringValue"
+										},
+										{
+											"doubleValue": 1.5,
+											"value": "doubleValue"
+										}
+									]
+								},
+								"value": "arrayValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 0,
+							"severityText": "",
+							"body": {
+								"bytesValue": "yv66vg==",
+								"value": "bytesValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 0,
+							"severityText": "",
+							"body": {
+								"intValue": "-7",
+								"value": "intValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 0,
+							"severityText": "",
+							"body": {
+								"boolValue": false,
+								"value": "boolValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 0,
+							"severityText": "",
+							"body": {
+								"doubleValue": 0.1,
+								"value": "doubleValue"
+							},
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						},
+						{
+							"attributes": [],
+							"timeUnixNano": "0",
+							"severityNumber": 0,
+							"severityText": "",
+							"body": null,
+							"droppedAttributesCount": 0,
+							"flags": 0,
+							"traceId": "",
+							"spanId": "",
+							"observedTimeUnixNano": "0",
+							"eventName": ""
+						}
+					],
+					"scope": {
+						"attributes": [],
+						"name": "logger",
+						"version": "",
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": "s"
+				}
+			],
+			"resource": {
+				"attributes": [
+					{
+						"key": "service.name",
+						"value": {
+							"stringValue": "worker",
+							"value": "stringValue"
+						}
+					}
+				],
+				"droppedAttributesCount": 0
+			},
+			"schemaUrl": ""
+		}
+	]
+}
