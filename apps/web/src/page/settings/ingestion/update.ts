@@ -4,6 +4,7 @@ import { Array, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
+import { SETUP_TAB_VALUES } from "../../kit/guided-setup"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -56,7 +57,7 @@ export const init = (options: InitOptions): Return => ({
 		framework: "nodejs",
 		setupTabs: Tabs.init({
 			idBase: 40,
-			values: ["install", "instrument", "claude-code"],
+			values: SETUP_TAB_VALUES,
 			selected: "install",
 		}),
 		packageTabs: Tabs.init({ idBase: 50, values: ["npm", "yarn", "pnpm", "bun"], selected: "npm" }),
@@ -88,6 +89,9 @@ const ingestRulesFetches = () => [
 		Message.GotIngestRulesMessage({ message }),
 	),
 	Command.mapMessage(IngestRules.FetchIngestRuleStats(), (message) =>
+		Message.GotIngestRulesMessage({ message }),
+	),
+	Command.mapMessage(IngestRules.FetchIngestRuleSuggestions(), (message) =>
 		Message.GotIngestRulesMessage({ message }),
 	),
 ]
@@ -216,9 +220,22 @@ export const revisit = (model: Model, options: InitOptions): Return => {
 			Message.GotIngestRulesMessage({ message }),
 		),
 	)
+	const suggestions = revisitData(model.ingestRules.suggestions, () =>
+		Command.mapMessage(IngestRules.FetchIngestRuleSuggestions(), (message) =>
+			Message.GotIngestRulesMessage({ message }),
+		),
+	)
 	return {
-		model: { ...base.model, ingestRules: { ...model.ingestRules, rules: rules.data, stats: stats.data } },
-		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands],
+		model: {
+			...base.model,
+			ingestRules: {
+				...model.ingestRules,
+				rules: rules.data,
+				stats: stats.data,
+				suggestions: suggestions.data,
+			},
+		},
+		commands: [...(base.commands ?? []), ...rules.commands, ...stats.commands, ...suggestions.commands],
 	}
 }
 

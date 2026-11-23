@@ -566,7 +566,7 @@
 								"message": "The sdk-core root tier is bundled server-side; it must not import the DOM tier."
 							},
 							{
-								"name": "web-vitals",
+								"regex": "^web-vitals($|/)",
 								"message": "The sdk-core root tier is bundled server-side; it must not import the DOM tier."
 							}
 						]

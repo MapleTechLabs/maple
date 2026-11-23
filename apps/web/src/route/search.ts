@@ -397,6 +397,11 @@ export const AlertsEscalationChainSearch = Schema.Struct({})
 /** `/settings/ingestion/rules/new`: `template` prefills the editor from an empty-state template. */
 export const IngestRuleNewSearch = Schema.Struct({
 	template: StringParam,
+	/** A suggested rule (`ingest-rule/suggested.ts`): its service, log level or span name, keep percent. */
+	service: StringParam,
+	level: StringParam,
+	span: StringParam,
+	keep: NumberParam,
 })
 
 /** The retired `/alerts/status-pages/$pageId`: `tab` picks the view its redirect opens. */

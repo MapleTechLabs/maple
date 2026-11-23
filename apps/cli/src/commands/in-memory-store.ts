@@ -80,9 +80,7 @@ const ownerPid = (root: string): Effect.Effect<Option.Option<number>> =>
 
 const isAbandonedRoot = (root: string, nowMs: number): Effect.Effect<boolean> =>
 	Effect.try({ try: () => statSync(root).mtimeMs, catch: stateFileError(root, "stat") }).pipe(
-		Effect.flatMap((mtimeMs) =>
-			Effect.map(ownerPid(root), (owner) => isAbandonedStore(owner, nowMs - mtimeMs)),
-		),
+		Effect.zipWith(ownerPid(root), (mtimeMs, owner) => isAbandonedStore(owner, nowMs - mtimeMs)),
 		Effect.orElseSucceed(() => false),
 	)
 

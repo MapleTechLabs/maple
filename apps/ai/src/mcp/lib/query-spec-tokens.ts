@@ -50,6 +50,8 @@ const PRODUCT_EVENTS_GROUP_BYS = [
 	"service",
 	"group",
 	"attribute",
+	"user_property",
+	"group_property",
 	"country",
 	"referrer_host",
 	"utm_source",

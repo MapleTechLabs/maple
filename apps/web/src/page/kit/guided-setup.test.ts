@@ -1,7 +1,7 @@
 import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { type FrameworkId, sdkSnippets } from "./sdk-snippets"
-import { NO_KEYS, promptKey, serverKey, type SetupKeys, setupBlocks } from "./guided-setup"
+import { NO_KEYS, serverKey, setupAgentPrompt, type SetupKeys, setupBlocks } from "./guided-setup"
 
 const KEYS = { privateKey: "maple_sk_secret", publicKey: "maple_pk_public" }
 
@@ -73,9 +73,10 @@ describe("setup snippets", () => {
 		expect(installOf("rust")).toContain("tracing-opentelemetry@0.32")
 	})
 
-	test("the coding-agent prompt carries the key the picked stack's setup uses", () => {
-		expect(promptKey("browser", KEYS)).toBe("maple_pk_public")
-		expect(promptKey("python", KEYS)).toBe("maple_sk_secret")
+	test("the coding-agent prompt carries the public key, never the private one", () => {
+		expect(setupAgentPrompt(KEYS)).toContain("Public ingest key: maple_pk_public")
+		expect(setupAgentPrompt(KEYS)).not.toContain("maple_sk_secret")
+		expect(setupAgentPrompt(NO_KEYS)).not.toContain("ingest key")
 	})
 
 	test("Ruby gets a Rails initializer, not a pointer to opentelemetry.io", () => {

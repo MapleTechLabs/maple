@@ -14,7 +14,7 @@
 		"@maple/infra": "workspace:*",
 		"@maple/primitives": "workspace:*",
 		"@maple/status-page": "workspace:*",
-		"@takumi-rs/wasm": "2.20.0",
+		"@takumi-rs/wasm": "2.22.1",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect"
 	},

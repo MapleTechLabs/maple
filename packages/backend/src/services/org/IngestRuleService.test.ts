@@ -233,6 +233,7 @@ describe("IngestRuleService", () => {
 			yield* insert(rule.id, hour, "logs", 10, 1000)
 			yield* insert(rule.id, hour + 3_600_000, "logs", 5, 500)
 			yield* insert(rule.id, hour - 3_600_000, "logs", 99, 9900)
+			yield* insert(rule.id, hour, "traces", 2, 200)
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
@@ -241,15 +242,32 @@ describe("IngestRuleService", () => {
 				),
 			)
 			const window = yield* service.stats(ORG, hour, hour + 2 * 3_600_000)
+			const counts = (n: number) => ({
+				matched: n,
+				dropped: n,
+				droppedBytes: n * 100,
+				redactedValues: 0,
+			})
 			expect(window.rules).toEqual([
-				{ ruleId: rule.id, matched: 15, dropped: 15, droppedBytes: 1500, redactedValues: 0 },
+				{
+					ruleId: rule.id,
+					...counts(17),
+					signals: expect.arrayContaining([
+						{ signal: "logs", ...counts(15) },
+						{ signal: "traces", ...counts(2) },
+					]),
+				},
 			])
-			expect(window.signals).toEqual([
-				{ signal: "logs", matched: 15, dropped: 15, droppedBytes: 1500, redactedValues: 0 },
-			])
+			expect(window.rules[0]?.signals).toHaveLength(2)
+			expect(window.signals).toEqual(
+				expect.arrayContaining([
+					{ signal: "logs", ...counts(15) },
+					{ signal: "traces", ...counts(2) },
+				]),
+			)
 			expect(window.hourly).toEqual([
-				{ ruleId: rule.id, bucket: hour, matched: 10 },
-				{ ruleId: rule.id, bucket: hour + 3_600_000, matched: 5 },
+				{ ruleId: rule.id, bucket: hour, ...counts(12) },
+				{ ruleId: rule.id, bucket: hour + 3_600_000, ...counts(5) },
 			])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})

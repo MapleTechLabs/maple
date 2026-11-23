@@ -272,6 +272,26 @@ export const productEventAttributeValues = Effect.fn("Observability.productEvent
 	})
 })
 
+/** The user or account property keys in use, by how many users or accounts hold each. */
+export const personPropertyKeys = Effect.fn("Observability.personPropertyKeys")(function* (
+	input: CH.PersonPropertyKeysOpts,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.person_property.kind": input.kind })
+	const compiled = CH.compile(CH.personPropertyKeysQuery(input), { orgId: executor.orgId })
+	return yield* executor.compiledQuery(compiled, { profile: "discovery", context: "personPropertyKeys" })
+})
+
+/** One user or account property's current values, by how many hold each. */
+export const personPropertyValues = Effect.fn("Observability.personPropertyValues")(function* (
+	input: CH.PersonPropertyValuesOpts,
+) {
+	const executor = yield* WarehouseExecutor
+	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, "maple.person_property.kind": input.kind })
+	const compiled = CH.compile(CH.personPropertyValuesQuery(input), { orgId: executor.orgId })
+	return yield* executor.compiledQuery(compiled, { profile: "discovery", context: "personPropertyValues" })
+})
+
 /** The event names in range, most frequent first: `{ eventName, kind, count, sessions, persons }`. */
 export const productEventNames = Effect.fn("Observability.productEventNames")(function* (
 	input: ProductEventNamesInput,

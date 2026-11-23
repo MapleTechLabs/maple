@@ -278,6 +278,7 @@ export const resolveMcpTenantContext = Effect.fn("McpTenant.resolveMcpTenantCont
 				roles: resolved.roles ?? apiKeyDefaultRoles,
 				authMode: "self_hosted",
 				rateLimitCredentialId: `key:${resolved.keyId}`,
+				...(isMcpOAuthToken ? undefined : { apiKeyId: resolved.keyId }),
 				...(actorId ? { actorId } : undefined),
 				...(scopeAccess === "read" ? { readOnly: true } : undefined),
 				...(isMcpOAuthToken || resolved.scopes === null ? undefined : { scopes: resolved.scopes }),

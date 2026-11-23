@@ -301,7 +301,7 @@ const dateOf = (ms: number) => DateTime.toDate(DateTime.makeUnsafe(ms))
 
 /** `effect`'s answer with the time it arrived: no finding in it is dated later than that. */
 const mapAt = <A, E, R, B>(effect: Effect.Effect<A, E, R>, f: (answer: A, nowMs: number) => B) =>
-	Effect.flatMap(effect, (answer) => Effect.map(Clock.currentTimeMillis, (nowMs) => f(answer, nowMs)))
+	Effect.zipWith(effect, Clock.currentTimeMillis, f)
 
 /** A sink that also keeps the newest update time it passed on, for readers sorted by it. */
 const trackingNewest = <E>(sink: Sink<FindingRead, E>) =>

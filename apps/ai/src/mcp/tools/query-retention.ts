@@ -19,6 +19,7 @@ import { CurrentMcpTenant } from "../tenant"
 import { formatNumber, formatPercent } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
+import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 import { doc } from "../lib/tool-doc"
 import { eventIdentityNote, isBlankStep } from "../lib/product-identity"
 
@@ -156,6 +157,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 				"Default true: a cohort is who did the start event for the first time ever. false: for the first time in the window, which counts everyone already active as new in its first interval.",
 			),
 			...WINDOW.fields,
+			...PROPERTY_FILTER_FIELDS,
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
@@ -212,8 +214,10 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 				"maple.ai.first_ever": firstEver,
 			})
 
+			const properties = yield* propertyFiltersOf(params)
 			const rows = yield* withTenantExecutor(
 				productEventsRetention({
+					...properties,
 					...(params.start_json === undefined ? undefined : { startEvent: params.start_json }),
 					...(params.return_json === undefined ? undefined : { returnEvent: params.return_json }),
 					keyBy,
@@ -268,6 +272,9 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 				firstEver,
 				...(params.start_json === undefined ? undefined : { start: params.start_json }),
 				...(params.return_json === undefined ? undefined : { return: params.return_json }),
+				...(Rec.isEmptyRecord(propertyFilterArgs(params))
+					? undefined
+					: { filters: propertyFilterArgs(params) }),
 				...retentionTable(rows, interval, periods, throughMs),
 			}
 		}),
@@ -284,6 +291,7 @@ export function registerQueryRetentionTool(server: McpToolRegistrar) {
 				...(output.return === undefined ? undefined : { return_json: stringifyJson(output.return) }),
 				periods: output.periods,
 				...(output.firstEver ? undefined : { first_ever: false }),
+				...output.filters,
 			}
 			const hasOpen = Arr.some(output.cohorts, (cohort) => cohort.completePeriods < output.periods)
 			// A cohort whose own interval has not ended has started no period after it.

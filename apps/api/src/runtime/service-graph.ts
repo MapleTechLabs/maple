@@ -119,7 +119,9 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
+import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
 import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
@@ -205,6 +207,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	SearchConsoleService.layer,
 	SearchConsoleImportService.layer,
 	OnboardingChecklistService.layer,
+	OnboardingAgentRunService.layer,
 	SupportChannelService.layer,
 	OrgIngestKeysService.layer,
 	SourcesService.layer,
@@ -234,6 +237,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	PlanetScaleWebhookService.layer,
 	IngestAttributeMappingService.layer,
 	IngestRuleService.layer,
+	IngestRulePreviewService.layer,
 	AutumnClient.layer,
 	StripeClient.layer,
 	DailySpendService.layer,

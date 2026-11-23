@@ -2021,7 +2021,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				}).pipe(
 					// Last, and never the publish's failure: the review is already posted, and a refused
 					// approval leaves the pull request where it was, waiting for a person.
-					Effect.flatMap((published) =>
+					Effect.zipWith(
 						applyApproval(installation, repo, publication).pipe(
 							Effect.tap((outcome) =>
 								outcome === undefined
@@ -2043,10 +2043,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 									Effect.as(undefined),
 								),
 							),
-							Effect.map((approval) =>
-								approval === undefined ? published : { ...published, approval },
-							),
 						),
+						(published, approval) =>
+							approval === undefined ? published : { ...published, approval },
 					),
 					Effect.mapError(toVcsError),
 					// One span over the three posts, so each step's outcome lands on the publish itself.

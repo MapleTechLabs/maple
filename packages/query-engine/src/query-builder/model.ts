@@ -860,7 +860,11 @@ interface ProductEventsFilterAccumulator {
 	utmCampaign?: string
 	visitorType?: "new" | "returning"
 	groupByAttributeKey?: string
+	groupByUserPropertyKey?: string
+	groupByGroupPropertyKey?: string
 	attributeFilters: AccumulatedAttributeFilter[]
+	userPropertyFilters: AccumulatedAttributeFilter[]
+	groupPropertyFilters: AccumulatedAttributeFilter[]
 }
 
 /** Row columns that take `=` / `!=` with a comma-separated value list. */
@@ -953,6 +957,31 @@ function applyProductEventsClause(
 		return { ...filters, visitorType: clause.value }
 	}
 
+	// `person.<key>` and `account.<key>`: the user's or the account's property, not the event's.
+	const property = Str.startsWith(USER_PROPERTY_PREFIX.prefix)(key)
+		? ({ field: "userPropertyFilters", prefix: USER_PROPERTY_PREFIX.prefix } as const)
+		: Str.startsWith(GROUP_PROPERTY_PREFIX.prefix)(key)
+			? ({ field: "groupPropertyFilters", prefix: GROUP_PROPERTY_PREFIX.prefix } as const)
+			: undefined
+	if (property !== undefined) {
+		const propertyKey = Str.slice(property.prefix.length)(rawKey)
+		if (propertyKey === "") {
+			warnings.push(`Invalid ${property.prefix}* filter ignored: ${clause.key}`)
+			return filters
+		}
+		if (filters[property.field].length >= 5) {
+			warnings.push(`Maximum of 5 ${property.prefix}* filters supported; ignoring ${clause.key}`)
+			return filters
+		}
+		return {
+			...filters,
+			[property.field]: [
+				...filters[property.field],
+				makeAttrFilter(propertyKey, clause.operator, clause.value),
+			],
+		}
+	}
+
 	// Anything else is a `track()` prop, prefixed or bare — same rule as traces.
 	const propKey = attributeKey ?? rawKey
 	if (!propKey) {
@@ -988,12 +1017,21 @@ function resolveProductEventsGroupByToken(
 			return resolution.token
 		case "Prefixed": {
 			const key = resolution.key
-			// One attribute group column, as on metrics.
-			if (filters.groupByAttributeKey !== undefined && filters.groupByAttributeKey !== key) {
-				warnings.push(`Product events queries support a single attr.* group by; ignoring attr.${key}`)
+			// One group column per kind of key, as on metrics.
+			const [field, prefix] =
+				resolution.token === "user_property"
+					? (["groupByUserPropertyKey", USER_PROPERTY_PREFIX.prefix] as const)
+					: resolution.token === "group_property"
+						? (["groupByGroupPropertyKey", GROUP_PROPERTY_PREFIX.prefix] as const)
+						: (["groupByAttributeKey", ATTRIBUTE_PREFIX.prefix] as const)
+			const current = filters[field]
+			if (current !== undefined && current !== key) {
+				warnings.push(
+					`Product events queries support a single ${prefix}* group by; ignoring ${prefix}${key}`,
+				)
 				return null
 			}
-			filters.groupByAttributeKey = key
+			filters[field] = key
 			return resolution.token
 		}
 	}
@@ -1002,12 +1040,16 @@ function resolveProductEventsGroupByToken(
 function buildProductEventsSpecFilters(
 	acc: ProductEventsFilterAccumulator,
 ): Record<string, unknown> | undefined {
-	const { attributeFilters, ...rest } = acc
+	const { attributeFilters, userPropertyFilters, groupPropertyFilters, ...rest } = acc
 	const filters: Record<string, unknown> = {}
-	for (const [field, value] of Rec.toEntries<string, unknown>(rest)) {
+	for (const [field, value] of Rec.toEntries<string, unknown>({
+		...rest,
+		attributeFilters,
+		userPropertyFilters,
+		groupPropertyFilters,
+	})) {
 		if (value !== undefined && !(Arr.isArray(value) && value.length === 0)) filters[field] = value
 	}
-	if (attributeFilters.length > 0) filters.attributeFilters = attributeFilters
 	return Rec.keys(filters).length > 0 ? filters : undefined
 }
 
@@ -1119,11 +1161,13 @@ type ProductEventsGroupByKey =
 	| "service"
 	| "group"
 	| "attribute"
+	| "user_property"
+	| "group_property"
 	| "none"
 type MetricsGroupByKey = "service" | "attribute" | "resource_attribute" | "none"
 
 /** Which bucket a prefixed token's key lands in. */
-type GroupByKeyBucket = "attributeKeys" | "resourceAttributeKeys"
+type GroupByKeyBucket = "attributeKeys" | "resourceAttributeKeys" | "propertyKeys"
 
 interface GroupByPrefixSpec<K extends string> {
 	readonly prefix: string
@@ -1149,10 +1193,29 @@ const RESOURCE_PREFIX = {
 	bucket: "resourceAttributeKeys",
 } as const satisfies GroupByPrefixSpec<"resource_attribute">
 
+/** A user property (`person.plan`): identify() traits and set writes, at their current value. */
+const USER_PROPERTY_PREFIX = {
+	prefix: "person.",
+	token: "user_property",
+	bucket: "propertyKeys",
+} as const satisfies GroupByPrefixSpec<"user_property">
+
+/** An account property (`account.tier`), read on the event's group. */
+const GROUP_PROPERTY_PREFIX = {
+	prefix: "account.",
+	token: "group_property",
+	bucket: "propertyKeys",
+} as const satisfies GroupByPrefixSpec<"group_property">
+
 /** Every prefix any source understands — a token wearing one of these is a
  * prefixed group-by everywhere, so a source that does not support it says so
  * rather than reporting it as an unknown token. */
-const ALL_GROUP_BY_PREFIXES = [ATTRIBUTE_PREFIX, RESOURCE_PREFIX] as const
+const ALL_GROUP_BY_PREFIXES = [
+	ATTRIBUTE_PREFIX,
+	RESOURCE_PREFIX,
+	USER_PROPERTY_PREFIX,
+	GROUP_PROPERTY_PREFIX,
+] as const
 
 /** A source with no prefixed group-by forms at all. */
 const NO_GROUP_BY_PREFIXES: ReadonlyArray<GroupByPrefixSpec<never>> = []
@@ -1220,7 +1283,7 @@ const GROUP_BY_ALIASES = {
 			none: "none",
 			all: "none",
 		},
-		prefixes: [ATTRIBUTE_PREFIX],
+		prefixes: [ATTRIBUTE_PREFIX, USER_PROPERTY_PREFIX, GROUP_PROPERTY_PREFIX],
 	},
 } as const satisfies {
 	readonly traces: GroupBySourceSpec<TracesGroupByKey>
@@ -1632,7 +1695,11 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 			}
 		}
 
-		const initialFilters: ProductEventsFilterAccumulator = { attributeFilters: [] }
+		const initialFilters: ProductEventsFilterAccumulator = {
+			attributeFilters: [],
+			userPropertyFilters: [],
+			groupPropertyFilters: [],
+		}
 		const filters = Arr.reduce(clauses, initialFilters, (acc, clause) =>
 			applyProductEventsClause(acc, clause, warnings),
 		)

@@ -475,6 +475,26 @@ const productEventsFixtures: ReadonlyArray<BuilderFixture> = [
 	{
 		module: "product-events",
 		name: "productEventsFunnelBreakdownQuery",
+		label: "user-property-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				Result.getOrThrow(
+					CH.productEventsFunnelBreakdownQuery({
+						steps: FUNNEL_STEPS,
+						keyBy: "person",
+						windowSeconds: 7 * 86_400,
+						breakdownBy: "user:plan",
+						userPropertyFilters: [{ key: "role", value: "admin", mode: "equals" }],
+						groupPropertyFilters: [{ key: "tier", value: "gold", mode: "equals", negated: true }],
+						limit: 10,
+					}),
+				),
+				window,
+			),
+	},
+	{
+		module: "product-events",
+		name: "productEventsFunnelBreakdownQuery",
 		label: "attribute-session-step",
 		compile: () =>
 			CH.compileUnsafe(
@@ -750,6 +770,22 @@ const productEventsExploreFixtures: ReadonlyArray<BuilderFixture> = [
 					bucketSeconds: 3600,
 				}),
 				{ ...window, bucketSeconds: 3600 },
+			),
+	},
+	{
+		module: "product-events-explore",
+		name: "productEventsBreakdownQuery",
+		label: "users-by-user-property",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.productEventsBreakdownQuery({
+					metric: "users",
+					groupBy: "user_property",
+					groupByUserPropertyKey: "plan",
+					eventNames: ["signup_completed"],
+					groupPropertyFilters: [{ key: "tier", value: "gold", mode: "equals" }],
+				}),
+				window,
 			),
 	},
 	{
@@ -1551,6 +1587,32 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	...searchConsoleFixtures,
 	...productEventsFixtures,
 	...productEventsExploreFixtures,
+	// Person and group properties: one user's, and a batch of accounts'.
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "user",
+		compile: () => CH.compileUnsafe(CH.personPropertiesQuery({ kind: "user", ids: ["user_a"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertiesQuery",
+		label: "groups",
+		compile: () =>
+			CH.compileUnsafe(CH.personPropertiesQuery({ kind: "group", ids: ["acme", "globex"] }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertyKeysQuery",
+		label: "user",
+		compile: () => CH.compileUnsafe(CH.personPropertyKeysQuery({ kind: "user" }), window),
+	},
+	{
+		module: "person-properties",
+		name: "personPropertyValuesQuery",
+		label: "group",
+		compile: () => CH.compileUnsafe(CH.personPropertyValuesQuery({ kind: "group", key: "tier" }), window),
+	},
 	// Signal presence — the org-wide "have you ever sent this?" probe behind every
 	// empty state (packages/backend/src/services/org/SignalPresenceService.ts). One fixture
 	// suffices: the builder takes no options, so there is only one SQL shape.

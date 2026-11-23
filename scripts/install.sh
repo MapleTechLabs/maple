@@ -29,6 +29,8 @@
 #                        writable of /usr/local/bin, ~/.local/bin)
 #   MAPLE_SKIP_CHECKSUM  set to 1 to skip SHA-256 and signature verification (not recommended)
 #   MAPLE_SKIP_SIGNATURE set to 1 to skip only the release signature check (not recommended)
+#   MAPLE_HANDOFF        handoff code from Maple's agent prompt: signs the CLI in
+#                        after installing (`maple auth login` reads it; never printed)
 set -eu
 
 REPO="MapleTechLabs/maple"
@@ -245,3 +247,12 @@ say "Get started:"
 say "  maple start                 # OTLP ingest + embedded ClickHouse + UI on :4318"
 say "  maple services              # query the running server"
 say "  maple traces"
+
+# A handoff code signs the new CLI in for a coding agent's setup. `maple auth
+# login` reads MAPLE_HANDOFF from the environment, so the code is never echoed.
+if [ -n "${MAPLE_HANDOFF:-}" ]; then
+	say ""
+	say "Signing in with the handoff code…"
+	"$INSTALL_DIR/maple" auth login \
+		|| die "installed, but sign-in failed; copy the agent prompt from Maple again, then run: MAPLE_HANDOFF=<code> maple auth login"
+fi
