@@ -9958,6 +9958,13 @@ impl Received {
             decode_heap: 0,
         }
     }
+
+    /// The decode memory the rows hold: the decoded payload's, plus the attributes parse rules
+    /// wrote into it, which live until the rows are written.
+    fn row_decode_heap(self, rules: Option<&RuleStats>) -> u64 {
+        self.decode_heap
+            .saturating_add(rules.map_or(0, |stats| stats.parse_heap_added))
+    }
 }
 
 /// What the stage after decoding is admitted on.
@@ -10115,10 +10122,7 @@ async fn process_decoded_payload(
     };
     let stage = RowStage {
         metered_bytes: retained.metered_bytes(received.bytes),
-        // Attributes parse rules wrote are held with the decoded payload until the rows are written.
-        decode_heap: received
-            .decode_heap
-            .saturating_add(applied.as_ref().map_or(0, |applied| applied.stats.parse_heap_added)),
+        decode_heap: received.row_decode_heap(applied.as_ref().map(|applied| &applied.stats)),
         native,
         forward_bytes: forward_body.map_or(0, |body| body.heap_bytes()),
     };
@@ -17841,6 +17845,14 @@ mod tests {
         assert!(nothing_is_exported(&mut imports).await);
 
         drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn rows_hold_the_heap_parse_rules_added() {
+        let received = Received { bytes: 10, decode_heap: 4096 };
+        let stats = RuleStats { parse_heap_added: 1024, ..RuleStats::default() };
+        assert_eq!(received.row_decode_heap(Some(&stats)), 5120);
+        assert_eq!(received.row_decode_heap(None), 4096);
     }
 
     #[tokio::test]
