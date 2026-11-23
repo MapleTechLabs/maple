@@ -21,9 +21,9 @@
 		"db:restore-test": "bun scripts/restore-test.ts"
 	},
 	"dependencies": {
-		"@effect/sql-pg": "4.1.4",
-		"@effect/sql-pglite": "4.1.4",
-		"@electric-sql/pglite": "^0.5.16",
+		"@effect/sql-pg": "4.1.5",
+		"@effect/sql-pglite": "4.1.5",
+		"@electric-sql/pglite": "^0.5.17",
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",
@@ -33,7 +33,7 @@
 	},
 	"devDependencies": {
 		"@maple/widgets": "workspace:*",
-		"@types/bun": "^1.4.4",
+		"@types/bun": "^1.4.5",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"

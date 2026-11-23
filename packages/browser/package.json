@@ -66,7 +66,7 @@
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitest/browser-playwright": "catalog:",
-		"fast-check": "^4.10.2",
+		"fast-check": "^4.11.0",
 		"playwright": "catalog:",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",

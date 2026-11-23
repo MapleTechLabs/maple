@@ -48,10 +48,8 @@ export const FetchVersions = Command.define("FetchDashboardVersions", {
 			}))
 		}).pipe(
 			settled,
-			Effect.flatMap((result) =>
-				Effect.map(Clock.currentTimeMillis, (nowMs) =>
-					Message.CompletedFetchVersions({ generation, nowMs, result }),
-				),
+			Effect.zipWith(Clock.currentTimeMillis, (result, nowMs) =>
+				Message.CompletedFetchVersions({ generation, nowMs, result }),
 			),
 		),
 })
