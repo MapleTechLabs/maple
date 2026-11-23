@@ -38,12 +38,13 @@ interface EventRow {
 	readonly userId?: string
 	readonly groupId?: string
 	readonly name?: string
+	readonly kind?: string
 	readonly attributes: Readonly<Record<string, string>>
 }
 
 const insertEvent = (db: Chdb, row: EventRow) =>
 	db.exec(
-		`INSERT INTO product_events (OrgId, Timestamp, Source, VisitorId, UserId, GroupId, Kind, EventName, Attributes) VALUES (${quote(ORG)}, ${quote(at(row.minute))}, ${quote(row.source ?? "server")}, ${quote(row.visitorId ?? "")}, ${quote(row.userId ?? "")}, ${quote(row.groupId ?? "")}, 'custom', ${quote(row.name ?? "$identify")}, ${mapLiteral(row.attributes)})`,
+		`INSERT INTO product_events (OrgId, Timestamp, Source, VisitorId, UserId, GroupId, Kind, EventName, Attributes) VALUES (${quote(ORG)}, ${quote(at(row.minute))}, ${quote(row.source ?? "server")}, ${quote(row.visitorId ?? "")}, ${quote(row.userId ?? "")}, ${quote(row.groupId ?? "")}, ${quote(row.kind ?? "custom")}, ${quote(row.name ?? "$identify")}, ${mapLiteral(row.attributes)})`,
 	)
 
 const insertSpan = (db: Chdb, minute: number, attributes: Readonly<Record<string, string>>) =>
@@ -62,11 +63,12 @@ const insertSession = (
 		readonly email?: string
 		readonly name?: string
 		readonly groupName?: string
+		readonly endMinute?: number
 		readonly traits: Readonly<Record<string, string>>
 	},
 ) =>
 	db.exec(
-		`INSERT INTO session_replays (OrgId, SessionId, StartTime, Status, UserId, Version, VisitorId, GroupId, UserEmail, UserName, GroupName, UserTraits) VALUES (${quote(ORG)}, ${quote(session.id)}, ${quote(at(session.minute))}, 'ended', ${quote(session.userId)}, ${session.version}, 'v-${session.id}', ${quote(session.groupId ?? "")}, ${quote(session.email ?? "")}, ${quote(session.name ?? "")}, ${quote(session.groupName ?? "")}, ${mapLiteral(session.traits)})`,
+		`INSERT INTO session_replays (OrgId, SessionId, StartTime, EndTime, Status, UserId, Version, VisitorId, GroupId, UserEmail, UserName, GroupName, UserTraits) VALUES (${quote(ORG)}, ${quote(session.id)}, ${quote(at(session.minute))}, ${session.endMinute === undefined ? "NULL" : quote(at(session.endMinute))}, 'ended', ${quote(session.userId)}, ${session.version}, 'v-${session.id}', ${quote(session.groupId ?? "")}, ${quote(session.email ?? "")}, ${quote(session.name ?? "")}, ${quote(session.groupName ?? "")}, ${mapLiteral(session.traits)})`,
 	)
 
 const props = (db: Chdb, kind: CH.PersonPropertyKind, ids: ReadonlyArray<string>) =>
@@ -167,6 +169,34 @@ describeWithChdb("person properties", () => {
 		})
 		insertSession(db, { id: "s2", minute: 50, version: 1, userId: "u7", traits: { plan: "pro" } })
 		insertSession(db, { id: "s3", minute: 50, version: 1, userId: "", traits: { plan: "anon" } })
+		// A session that closes after a backend upgrade repeats its old trait; the upgrade stands.
+		insertSession(db, {
+			id: "s4",
+			minute: 10,
+			endMinute: 40,
+			version: 2,
+			userId: "u12",
+			traits: { plan: "free" },
+		})
+		insertEvent(db, { minute: 20, userId: "u12", attributes: { "$set.plan": "pro" } })
+		// A trait cleared to '' in a later session is stored as ''.
+		insertSession(db, { id: "s5", minute: 10, version: 1, userId: "u13", traits: { plan: "pro" } })
+		insertSession(db, { id: "s6", minute: 30, version: 1, userId: "u13", traits: { plan: "" } })
+		// A page view (sessions-only key) and a trace row (its span applies itself) write nothing.
+		insertEvent(db, {
+			minute: 5,
+			kind: "navigation",
+			name: "$pageview",
+			userId: "u14",
+			attributes: { "$set.plan": "forged" },
+		})
+		insertEvent(db, {
+			minute: 5,
+			source: "trace",
+			name: "x",
+			userId: "u14",
+			attributes: { "$set.role": "twice" },
+		})
 
 		// Identity links: server and trace events link; a browser event is the session's job.
 		insertEvent(db, {
@@ -218,12 +248,19 @@ describeWithChdb("person properties", () => {
 		expect(props(db, "user", ["u7"])).toEqual(["u7 plan=pro"])
 		expect(props(db, "group", ["initech"])).toEqual(["initech name=Initech"])
 		expect(props(db, "user", [""])).toEqual([])
+		expect(props(db, "user", ["u12"])).toEqual(["u12 plan=pro"])
+		expect(props(db, "user", ["u13"])).toEqual(["u13 plan="])
+		expect(props(db, "user", ["u14"])).toEqual([])
+		expect(props(db, "user", [])).toEqual([])
 		expect(links(db)).toEqual([
 			JSON.stringify({ VisitorId: "dev-1", UserId: "u8" }),
 			JSON.stringify({ VisitorId: "dev-2", UserId: "u9" }),
 			// s1 and s2's own visitor ids come from identity_links_mv over session_replays.
 			JSON.stringify({ VisitorId: "v-s1", UserId: "u7" }),
 			JSON.stringify({ VisitorId: "v-s2", UserId: "u7" }),
+			JSON.stringify({ VisitorId: "v-s4", UserId: "u12" }),
+			JSON.stringify({ VisitorId: "v-s5", UserId: "u13" }),
+			JSON.stringify({ VisitorId: "v-s6", UserId: "u13" }),
 		])
 	}
 
@@ -243,6 +280,7 @@ describeWithChdb("person properties", () => {
 			operation.op === "backfill" ? operation.statements : [],
 		)
 		expect(statements.length).toBeGreaterThan(0)
+		db.exec("TRUNCATE TABLE person_properties")
 		Arr.forEach(statements, (statement) => db.exec(statement))
 		expectations()
 	})

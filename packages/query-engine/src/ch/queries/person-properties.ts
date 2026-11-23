@@ -38,7 +38,11 @@ export function personPropertiesQuery(opts: PersonPropertiesOpts) {
 			value: CH.rawExpr(`ifNull(${PERSON_PROPERTY_VALUE_SQL}, '')`, T.string),
 			lastSeen: CH.max_($.LastSeen),
 		}))
-		.where(($) => [$.OrgId.eq(orgIdParam), $.Kind.eq(opts.kind), CH.inList($.Id, opts.ids)])
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Kind.eq(opts.kind),
+			opts.ids.length === 0 ? CH.rawCond("1 = 0") : CH.inList($.Id, opts.ids),
+		])
 		.groupBy("id", "key")
 		.having(() => [CH.rawCond(`${PERSON_PROPERTY_VALUE_SQL} IS NOT NULL`)])
 		.orderBy(["id", "asc"], ["key", "asc"])
