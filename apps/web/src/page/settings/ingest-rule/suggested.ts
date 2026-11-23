@@ -37,7 +37,7 @@ const condition = (id: number, field: ConditionDraft["field"], op: ConditionDraf
 })
 
 /** The level a log suggestion covers, and every level below it, as the bound it stays under. */
-const BELOW = { debug: "info", info: "warn" } as const
+export const SEVERITY_BELOW = { debug: "info", info: "warn" } as const
 
 /** A generated name the rule accepts: long span names are cut to the limit. */
 const nameOf = (text: string): string =>
@@ -70,7 +70,7 @@ export const draftFromSuggestion = (search: SuggestionSearch): Draft | undefined
 		signals: ["logs"],
 		conditions: [
 			condition(1, "service_name", "eq", service),
-			condition(2, "severity", "lt", BELOW[level]),
+			condition(2, "severity", "lt", SEVERITY_BELOW[level]),
 		],
 		nextConditionId: 3,
 		keepPercent: keep,

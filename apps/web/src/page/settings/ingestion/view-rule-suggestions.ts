@@ -8,7 +8,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Order } from "effect"
-import { suggestedRuleHref } from "../ingest-rule/suggested"
+import { SEVERITY_BELOW, suggestedRuleHref } from "../ingest-rule/suggested"
 import type { Model } from "./ingest-rules"
 import type { Message } from "./message"
 
@@ -85,7 +85,7 @@ const suggestedKeys = (suggestion: V2IngestRuleSuggestion) =>
 	conditionKeys([
 		{ field: "service_name", op: "eq", value: suggestion.service_name },
 		suggestion.span_name === null
-			? { field: "severity", op: "lt", value: suggestion.level === "info" ? "warn" : "info" }
+			? { field: "severity", op: "lt", value: SEVERITY_BELOW[suggestion.level ?? "debug"] }
 			: { field: "name", op: "eq", value: suggestion.span_name },
 	])
 
