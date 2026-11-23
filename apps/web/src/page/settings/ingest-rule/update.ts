@@ -101,16 +101,21 @@ const mapStep = (model: Model, id: number, change: (step: StepDraft) => StepDraf
 
 /** Parse rules are logs-only; the first switch to parse starts from a JSON step. */
 const pickAction = (model: Model, actionType: Draft["actionType"]): Return => {
-	if (actionType !== "parse") return patchDraft(model, { actionType })
-	const { steps, nextStepId } = model.draft
-	return steps.length > 0
-		? patchDraft(model, { actionType, signals: ["logs"] })
-		: patchDraft(model, {
-				actionType,
-				signals: ["logs"],
-				steps: [defaultStep(nextStepId, "json")],
-				nextStepId: nextStepId + 1,
-			})
+	const { steps, nextStepId, signals, signalsBeforeParse } = model.draft
+	if (actionType === model.draft.actionType) return { model }
+	if (actionType !== "parse")
+		return patchDraft(model, {
+			actionType,
+			// Leaving parse gives back the signals parse narrowed to logs.
+			...(model.draft.actionType === "parse" && signalsBeforeParse.length > 0
+				? { signals: signalsBeforeParse, signalsBeforeParse: [] }
+				: undefined),
+		})
+	const firstStep =
+		steps.length > 0
+			? undefined
+			: { steps: [defaultStep(nextStepId, "json")], nextStepId: nextStepId + 1 }
+	return patchDraft(model, { actionType, signals: ["logs"], signalsBeforeParse: signals, ...firstStep })
 }
 
 const moveStep = (steps: ReadonlyArray<StepDraft>, id: number, by: -1 | 1): ReadonlyArray<StepDraft> => {
@@ -248,11 +253,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			patchDraft(model, { steps: Arr.filter(model.draft.steps, (step) => step.id !== id) }),
 		MovedStep: ({ id, by }) => patchDraft(model, { steps: moveStep(model.draft.steps, id, by) }),
 		ChangedStepKind: ({ id, kind }) =>
-			// Keep what was typed; an empty pattern takes the new kind's example.
+			// Keep what was typed; an empty or untouched example takes the new kind's example.
 			mapStep(model, id, (step) => ({
 				...step,
 				kind,
-				pattern: step.pattern === "" ? defaultStep(id, kind).pattern : step.pattern,
+				pattern:
+					step.pattern === "" || step.pattern === defaultStep(id, step.kind).pattern
+						? defaultStep(id, kind).pattern
+						: step.pattern,
 			})),
 		ChangedStepSource: ({ id, source }) => mapStep(model, id, (step) => ({ ...step, source })),
 		ChangedStepText: ({ id, part, value }) => mapStep(model, id, (step) => ({ ...step, [part]: value })),

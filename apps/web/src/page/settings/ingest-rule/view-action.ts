@@ -334,6 +334,13 @@ const stepFields = (h: H, step: StepDraft, label: string): ReadonlyArray<Html> =
 const parseControls = (h: H, model: Model): ReadonlyArray<Html> => {
 	const steps = model.draft.steps
 	return [
+		...(steps.length === 0
+			? [
+					typography(h, { size: "sm", tone: "muted", as: "p" }, [
+						"No steps yet. Add one to say how to parse.",
+					]),
+				]
+			: []),
 		h.ol(
 			[h.AriaLabel("Steps"), h.Class(vstackClass({ gap: "2" }))],
 			Arr.map(steps, (step, index) =>

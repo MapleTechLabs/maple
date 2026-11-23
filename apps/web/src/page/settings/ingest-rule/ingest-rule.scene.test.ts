@@ -137,6 +137,29 @@ describe("ingest rule editor", () => {
 		)
 	})
 
+	test("leaving parse gives back the signals it narrowed to logs", () => {
+		const viaParse = Arr.reduce(
+			[Message.PickedAction({ actionType: "parse" }), Message.PickedAction({ actionType: "redact" })],
+			fresh("redact-pii"),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		expect(viaParse.draft.signals).toEqual(["traces", "logs"])
+	})
+
+	test("changing a step's kind replaces an untouched example but keeps typed patterns", () => {
+		const parsing = pageUpdate(fresh(), Message.PickedAction({ actionType: "parse" })).model
+		const grok = pageUpdate(parsing, Message.AddedStep({ kind: "grok" })).model
+		const grokId = grok.draft.steps[1]?.id ?? 0
+		const regex = pageUpdate(grok, Message.ChangedStepKind({ id: grokId, kind: "regex" })).model
+		expect(regex.draft.steps[1]?.pattern).toBe("")
+		const typed = pageUpdate(
+			regex,
+			Message.ChangedStepText({ id: grokId, part: "pattern", value: "(?<a>x)" }),
+		).model
+		const back = pageUpdate(typed, Message.ChangedStepKind({ id: grokId, kind: "grok" })).model
+		expect(back.draft.steps[1]?.pattern).toBe("(?<a>x)")
+	})
+
 	test("hashing warns that it is pseudonymization", () => {
 		scene(
 			{ update: pageUpdate, view },

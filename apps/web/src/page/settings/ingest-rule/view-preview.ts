@@ -71,7 +71,9 @@ const recordLabel = (row: PreviewRow): string => {
 
 const fieldLine = (h: H, field: ParsedField): Html =>
 	hstack(h, { gap: "2", align: "start" }, [
-		typography(h, { size: "2xs", mono: true, tone: "muted", className: "shrink-0" }, [field.key]),
+		typography(h, { size: "2xs", mono: true, tone: "muted", className: "min-w-0 break-all" }, [
+			field.key,
+		]),
 		typography(h, { size: "2xs", mono: true, className: "break-all" }, [field.value]),
 	])
 

@@ -65,6 +65,7 @@ const actionParts = (action: IngestRuleAction): ReadonlyArray<SummaryPart> => {
 		return action.keepPercent === 0
 			? [text("drop")]
 			: [text(`keep ${action.keepPercent}%, drop the rest`)]
+	if (action._tag === "parse" && action.steps.length === 0) return [text("parse, with no steps yet")]
 	if (action._tag === "parse")
 		return [
 			text("parse with "),

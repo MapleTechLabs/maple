@@ -70,6 +70,8 @@ export const Draft = Schema.Struct({
 	method: IngestRuleRedactMethod,
 	steps: Schema.Array(StepDraft),
 	nextStepId: Schema.Number,
+	/** The signals chosen before switching to parse (which is logs-only), restored on the way back. */
+	signalsBeforeParse: Schema.Array(IngestRuleSignal),
 })
 export type Draft = typeof Draft.Type
 
@@ -91,6 +93,7 @@ export const emptyDraft: Draft = {
 	method: "mask",
 	steps: [],
 	nextStepId: 1,
+	signalsBeforeParse: [],
 }
 
 export const STEP_LABELS = {
