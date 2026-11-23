@@ -95,7 +95,11 @@ export interface PreviewResult {
 }
 
 const show = (value: AttrValue | undefined): string =>
-	value === undefined ? "" : typeof value === "string" ? value : encodeAttrJson(value)
+	value === undefined
+		? ""
+		: typeof value === "string" || typeof value === "bigint"
+			? String(value)
+			: encodeAttrJson(value)
 
 const mapChanges = (where: string, before: AttrMap, after: AttrMap): ReadonlyArray<ValueChange> =>
 	Arr.flatMap(Struct.keys(before), (key) => {
@@ -134,7 +138,7 @@ const parsedFields = (before: RuleRecord, after: RuleRecord): ReadonlyArray<Pars
 			? []
 			: [{ key, value: now }]
 	}),
-	...(after.severityText !== before.severityText
+	...(after.severityText !== before.severityText || after.severityNumber !== before.severityNumber
 		? [{ key: "severity", value: `${after.severityText ?? ""} (${after.severityNumber ?? 0})` }]
 		: []),
 	...(after.timeUnixNano !== undefined && after.timeUnixNano !== before.timeUnixNano

@@ -127,7 +127,7 @@ const backLink = (h: H) =>
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) => {
 	const header = {
 		title: model.editingId === null && !model.isBadId ? "New ingest rule" : "Edit ingest rule",
-		description: "Drop or redact telemetry before Maple stores or bills it.",
+		description: "Drop, parse or redact telemetry before Maple stores or bills it.",
 	}
 	if (model.isSessionLoaded && !canManage(model))
 		return dashboardPage(h, header, [

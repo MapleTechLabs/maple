@@ -208,5 +208,74 @@ fn bench_logs(c: &mut Criterion) {
     bench_signal(c, "ingest_rules_logs_10_records", &log_request(), apply_logs);
 }
 
-criterion_group!(benches, bench_traces, bench_logs);
+fn logs_with_bodies(body: impl Fn(usize) -> String) -> ExportLogsServiceRequest {
+    ExportLogsServiceRequest {
+        resource_logs: vec![ResourceLogs {
+            resource: resource(),
+            scope_logs: vec![ScopeLogs {
+                scope: scope(),
+                log_records: (0..BATCH)
+                    .map(|i| LogRecord {
+                        body: Some(AnyValue { value: Some(any_value::Value::StringValue(body(i))) }),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    }
+}
+
+fn parse_rule(steps: serde_json::Value) -> CompiledRules {
+    compile(&[json!({ "signals": ["logs"], "conditions": [], "action": { "_tag": "parse", "steps": steps } })])
+}
+
+/// Parse rules over the bodies they are written for: JSON app logs and combined access logs.
+fn bench_parse(c: &mut Criterion) {
+    let json_logs = logs_with_bodies(|i| {
+        format!(r#"{{"level":"info","msg":"order placed","order":{{"id":"ord_{i}","total":42.5,"items":3}},"user":{{"id":"u_{i}","plan":"pro"}},"ts":"2026-11-23T09:14:02.381Z"}}"#)
+    });
+    let access_logs = logs_with_bodies(|i| {
+        format!(r#"203.0.113.{i} - - [23/Nov/2026:09:14:02 +0000] "GET /api/orders/{i}?page=2 HTTP/1.1" 200 5123 "https://shop.example.com/cart" "Mozilla/5.0 (Macintosh)""#)
+    });
+    let mut group = c.benchmark_group("ingest_rules_parse_10_records");
+    group.warm_up_time(Duration::from_millis(500));
+    group.measurement_time(Duration::from_secs(2));
+    group.throughput(Throughput::Elements(BATCH as u64));
+    let cases = [
+        (
+            "json_severity_timestamp",
+            &json_logs,
+            parse_rule(json!([
+                { "_tag": "json", "source": "body" },
+                { "_tag": "severity", "source": "attribute", "key": "level" },
+                { "_tag": "timestamp", "source": "attribute", "key": "ts", "format": "rfc3339" }
+            ])),
+        ),
+        ("grok_combined_access_log", &access_logs, parse_rule(json!([{ "_tag": "grok", "source": "body", "pattern": "%{COMBINEDAPACHELOG}" }]))),
+        (
+            "regex_named_groups",
+            &access_logs,
+            parse_rule(json!([{ "_tag": "regex", "source": "body", "pattern": r#""(?<method>[A-Z]+) (?<path>[^ ?]+)[^"]*" (?<status>\d{3})"# }])),
+        ),
+    ];
+    for (name, request, rules) in &cases {
+        group.bench_function(*name, |b| {
+            b.iter_batched(
+                || (*request).clone(),
+                |mut request| {
+                    let mut stats = RuleStats::default();
+                    apply_logs(black_box(rules), &mut request, &mut stats).expect("within the scan budget");
+                    assert_eq!(stats.total.parse_failed, 0, "bench bodies must parse");
+                    black_box((request, stats))
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_traces, bench_logs, bench_parse);
 criterion_main!(benches);

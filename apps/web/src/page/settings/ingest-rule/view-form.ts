@@ -63,10 +63,12 @@ export const signalsClause = (h: H, model: Model): Html =>
 			ariaLabel: "Signals",
 			value: model.draft.signals,
 			onToggle: (signal) => Message.ToggledSignal({ signal }),
+			// Parse rules read log bodies, so a parse rule stays on logs.
 			options: Arr.map(IngestRuleSignal.literals, (signal) => ({
 				value: signal,
 				label: SIGNAL_LABELS[signal],
 				ariaLabel: SIGNAL_LABELS[signal],
+				isDisabled: model.draft.actionType === "parse",
 			})),
 			className: "self-start",
 		}),

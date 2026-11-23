@@ -81,7 +81,7 @@ export const TEMPLATES = {
 			...emptyDraft,
 			name: "Parse JSON logs",
 			signals: ["logs"],
-			conditions: [condition(1, { field: "body", op: "prefix", value: "{" })],
+			conditions: [condition(1, { field: "body", op: "regex", value: "^\\s*\\{" })],
 			nextConditionId: 2,
 			actionType: "parse",
 			steps: [defaultStep(1, "json"), defaultStep(2, "severity")],

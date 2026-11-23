@@ -114,14 +114,20 @@ const pickAction = (model: Model, actionType: Draft["actionType"]): Return => {
 }
 
 const moveStep = (steps: ReadonlyArray<StepDraft>, id: number, by: -1 | 1): ReadonlyArray<StepDraft> => {
-	const from = Option.getOrElse(
+	return Option.match(
 		Arr.findFirstIndex(steps, (step) => step.id === id),
-		() => -1,
+		{
+			onNone: () => steps,
+			onSome: (from) => {
+				const moving = steps[from]
+				const other = steps[from + by]
+				if (moving === undefined || other === undefined) return steps
+				return Arr.map(steps, (step, index) =>
+					index === from ? other : index === from + by ? moving : step,
+				)
+			},
+		},
 	)
-	const moving = steps[from]
-	const other = steps[from + by]
-	if (moving === undefined || other === undefined) return steps
-	return Arr.map(steps, (step, index) => (index === from ? other : index === from + by ? moving : step))
 }
 
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
@@ -242,7 +248,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			patchDraft(model, { steps: Arr.filter(model.draft.steps, (step) => step.id !== id) }),
 		MovedStep: ({ id, by }) => patchDraft(model, { steps: moveStep(model.draft.steps, id, by) }),
 		ChangedStepKind: ({ id, kind }) =>
-			mapStep(model, id, (step) => ({ ...defaultStep(id, kind), prefix: step.prefix })),
+			// Keep what was typed; an empty pattern takes the new kind's example.
+			mapStep(model, id, (step) => ({
+				...step,
+				kind,
+				pattern: step.pattern === "" ? defaultStep(id, kind).pattern : step.pattern,
+			})),
 		ChangedStepSource: ({ id, source }) => mapStep(model, id, (step) => ({ ...step, source })),
 		ChangedStepText: ({ id, part, value }) => mapStep(model, id, (step) => ({ ...step, [part]: value })),
 		ChangedStepFormat: ({ id, format }) => mapStep(model, id, (step) => ({ ...step, format })),

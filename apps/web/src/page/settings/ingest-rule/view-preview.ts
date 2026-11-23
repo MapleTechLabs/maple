@@ -70,9 +70,9 @@ const recordLabel = (row: PreviewRow): string => {
 }
 
 const fieldLine = (h: H, field: ParsedField): Html =>
-	hstack(h, { gap: "2", align: "start", className: "font-mono text-2xs" }, [
-		typography(h, { tone: "muted", className: "shrink-0" }, [field.key]),
-		h.span([h.Class("break-all")], [field.value]),
+	hstack(h, { gap: "2", align: "start" }, [
+		typography(h, { size: "2xs", mono: true, tone: "muted", className: "shrink-0" }, [field.key]),
+		typography(h, { size: "2xs", mono: true, className: "break-all" }, [field.value]),
 	])
 
 const ROW_BADGES = {

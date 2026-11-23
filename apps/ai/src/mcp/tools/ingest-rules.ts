@@ -234,7 +234,9 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 		),
 	]
 	const severity =
-		after.severityText !== before.severityText ? [`severity -> ${after.severityText ?? ""}`] : []
+		after.severityText !== before.severityText || after.severityNumber !== before.severityNumber
+			? [`severity -> ${after.severityText ?? ""} (${after.severityNumber ?? 0})`]
+			: []
 	const time =
 		after.timeUnixNano !== undefined && after.timeUnixNano !== before.timeUnixNano
 			? [`time -> ${new Date(Number(after.timeUnixNano / 1_000_000n)).toISOString()}`]
@@ -324,7 +326,7 @@ export const previewOver = (spec: IngestRuleSpec, records: ReadonlyArray<RuleRec
 					5,
 				),
 				({ record, outcome }) => ({
-					service: recordService(outcome.record),
+					service: recordService(record),
 					label: recordLabel(record),
 					outcome: outcome.parseFailures.size > 0 ? ("parse_failed" as const) : ("parsed" as const),
 					changes: changedValues(record, outcome.record),

@@ -126,6 +126,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/ingest-rule",
+		title: "Ingest rule editor",
+		description:
+			"The ingest rule editor building a parse rule over fixture logs: JSON with severity, grok on access logs, and several steps (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/escalation-editor",
 		title: "Escalation chain editor",
 		description:

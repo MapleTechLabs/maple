@@ -740,7 +740,7 @@ export const parsePatternRegex = (
 }
 
 const parseStepProblem = (step: IngestParseStep): string | null => {
-	if (step.source === "attribute" && (step.key === undefined || step.key.length === 0))
+	if (step.source === "attribute" && (step.key === undefined || Str.trim(step.key).length === 0))
 		return "an attribute source needs a key"
 	if (step.source === "body" && step.key !== undefined) return "the body takes no key"
 	if (step.key !== undefined && step.key.length > INGEST_RULE_LIMITS.valueLength)

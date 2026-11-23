@@ -185,7 +185,7 @@ const FORMAT_LABELS = {
 
 const STEP_HINTS = {
 	json: "Flattens a JSON object into attributes with dotted keys (http.status).",
-	regex: "Named groups become attributes: (?<status>[0-9]+). Linear-time, so .* is safe.",
+	regex: "Named groups become attributes: (?<status>[0-9]+). Group names use letters, digits and _; a prefix like http. gives dotted keys.",
 	grok: "%{PATTERN:field} or %{PATTERN:field:int}. Library: INT, NUMBER, WORD, NOTSPACE, DATA, GREEDYDATA, QS, IP, HOSTNAME, URIPATHPARAM, UUID, LOGLEVEL, TIMESTAMP_ISO8601, HTTPDATE, COMBINEDAPACHELOG.",
 	severity: "A level name (warn, ERROR, notice) or a number from 1 to 24 sets the log severity.",
 	timestamp: "Sets the log timestamp.",
@@ -240,11 +240,11 @@ const stepHeader = (h: H, step: StepDraft, index: number, count: number): Html =
 		]),
 	])
 
-const sourceControls = (h: H, step: StepDraft): Html =>
+const sourceControls = (h: H, step: StepDraft, label: string): Html =>
 	hstack(h, { gap: "2", wrap: true }, [
 		segmentedSelect<IngestParseSource, Message>(h, {
 			size: "xs",
-			ariaLabel: "Read from",
+			ariaLabel: `${label} reads from`,
 			value: step.source,
 			onChange: (source) => Message.ChangedStepSource({ id: step.id, source }),
 			options: Arr.map(IngestParseSource.literals, (source) => ({
@@ -259,7 +259,7 @@ const sourceControls = (h: H, step: StepDraft): Html =>
 						size: "sm",
 						className: "w-48 font-mono",
 						attributes: [
-							h.AriaLabel("Attribute key"),
+							h.AriaLabel(`${label} attribute key`),
 							h.Value(step.key),
 							h.Placeholder("message"),
 							h.OnInput((value) =>
@@ -271,8 +271,8 @@ const sourceControls = (h: H, step: StepDraft): Html =>
 			: []),
 	])
 
-const stepFields = (h: H, step: StepDraft): ReadonlyArray<Html> => [
-	sourceControls(h, step),
+const stepFields = (h: H, step: StepDraft, label: string): ReadonlyArray<Html> => [
+	sourceControls(h, step, label),
 	...(step.kind === "regex" || step.kind === "grok"
 		? [
 				textarea(h, {
@@ -280,7 +280,7 @@ const stepFields = (h: H, step: StepDraft): ReadonlyArray<Html> => [
 					size: "sm",
 					controlClassName: "font-mono",
 					attributes: [
-						h.AriaLabel(step.kind === "grok" ? "Grok pattern" : "Regex"),
+						h.AriaLabel(`${label} ${step.kind === "grok" ? "grok pattern" : "regex"}`),
 						h.Value(step.pattern),
 						h.Placeholder(
 							step.kind === "grok"
@@ -298,7 +298,7 @@ const stepFields = (h: H, step: StepDraft): ReadonlyArray<Html> => [
 		? [
 				select(h, {
 					id: stepId(step, "format"),
-					label: "Timestamp format",
+					label: `${label} timestamp format`,
 					value: step.format,
 					entries: Arr.map(IngestTimestampFormat.literals, (format) => ({
 						value: format,
@@ -320,7 +320,7 @@ const stepFields = (h: H, step: StepDraft): ReadonlyArray<Html> => [
 					size: "sm",
 					className: "w-48 font-mono",
 					attributes: [
-						h.AriaLabel("Key prefix"),
+						h.AriaLabel(`${label} key prefix`),
 						h.Value(step.prefix),
 						h.Placeholder("Key prefix (optional)"),
 						h.OnInput((value) => Message.ChangedStepText({ id: step.id, part: "prefix", value })),
@@ -343,7 +343,7 @@ const parseControls = (h: H, model: Model): ReadonlyArray<Html> => {
 						borderedBox(h, { overflow: "hidden", card: true, className: "p-3" }, [
 							vstack(h, { gap: "2" }, [
 								stepHeader(h, step, index, steps.length),
-								...stepFields(h, step),
+								...stepFields(h, step, `Step ${index + 1}`),
 							]),
 						]),
 					],

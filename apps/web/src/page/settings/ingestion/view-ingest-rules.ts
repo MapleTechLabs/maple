@@ -270,7 +270,7 @@ export const ingestRulesSection = (h: H, model: Model, canManage: boolean): Html
 			id: "ingestion-rules-heading",
 			title: "Ingest rules",
 			description: [
-				"Drop or redact telemetry before it is stored or billed. Applies to new data only.",
+				"Drop, parse or redact telemetry before it is stored or billed. Applies to new data only.",
 			],
 			padded: false,
 			actions: addRuleButton(h, canManage),
