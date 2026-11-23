@@ -35,23 +35,26 @@ export const effectKind = (action: V2IngestRule["action"], counts: RuleCounts): 
 export const effectCount = (effect: Effect, counts: RuleCounts): number =>
 	effect === "drop" ? counts.dropped : counts.redacted_values
 
-/** "1.2M dropped" / "340 values redacted". */
-export const headline = (effect: Effect, counts: RuleCounts): string =>
-	effect === "drop"
-		? `${formatNumber(counts.dropped)} dropped`
-		: `${formatNumber(counts.redacted_values)} values redacted`
+/**
+ * "1.2M dropped", "1.2M of 1.4M dropped" when the rule matched more than it dropped, or "340
+ * values redacted". Matches above the drops are not "kept": the gateway credits a record several
+ * drop rules match to the first that drops it.
+ */
+export const headline = (effect: Effect, counts: RuleCounts): string => {
+	if (effect !== "drop") return `${formatNumber(counts.redacted_values)} values redacted`
+	return counts.matched > counts.dropped
+		? `${formatNumber(counts.dropped)} of ${formatNumber(counts.matched)} dropped`
+		: `${formatNumber(counts.dropped)} dropped`
+}
 
 /**
  * The line under the headline. Bytes are the dropped records' encoded size, which is not always
- * what metering discounts (a converted payload is metered by its original body). Matches above
- * the drops are not "kept": the gateway credits a record dropped by several rules to the first.
+ * what metering discounts (a converted payload is metered by its original body).
  */
-export const detail = (effect: Effect, counts: RuleCounts): string => {
-	const matched = `${formatNumber(counts.matched)} matched`
-	if (effect !== "drop") return `${formatNumber(counts.matched)} records matched`
-	const bytes = `${formatStorageBytes(counts.dropped_bytes)} dropped`
-	return counts.matched > counts.dropped ? `${bytes} · ${matched}` : bytes
-}
+export const detail = (effect: Effect, counts: RuleCounts): string =>
+	effect === "drop"
+		? `${formatStorageBytes(counts.dropped_bytes)} dropped`
+		: `${formatNumber(counts.matched)} records matched`
 
 /** Sums of `size` consecutive values: 168 hours as 28 six-hour bars. */
 export const bucketed = (values: ReadonlyArray<number>, size: number): ReadonlyArray<number> =>
