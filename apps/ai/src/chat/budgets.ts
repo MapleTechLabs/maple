@@ -105,8 +105,9 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
  */
 export const PR_REVIEW_BUDGET: AgentBudget = {
 	maxToolCalls: 500,
-	// This plus `CLOSE_OUT_MAX_DURATION` and the margin must stay under `TURN_STALE_MS`.
-	maxDuration: "10 minutes",
+	// This plus `CLOSE_OUT_MAX_DURATION` and the margin must stay under `TURN_STALE_MS`. 15, as an
+	// investigation: a review reasons at high effort, and its children run six minutes each.
+	maxDuration: "15 minutes",
 	tokenBudget: 64_000_000,
 	completionReserveTokens: 48_000,
 	runStatus: true,

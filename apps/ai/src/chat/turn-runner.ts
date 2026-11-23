@@ -621,7 +621,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				Match.when("review", () =>
 					reviews
 						.reviewModel(tenant.orgId)
-						.pipe(Effect.map((chosen) => resolveReviewModel(settings, tags, chosen))),
+						.pipe(
+							Effect.map((chosen) =>
+								resolveReviewModel(
+									settings,
+									tags,
+									chosen,
+									autonomous && agent.autonomousReasoning === true,
+								),
+							),
+						),
 				),
 				Match.exhaustive,
 			)

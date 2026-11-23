@@ -23,7 +23,7 @@ import { Decision, DecisionModel, LanguageModel, Prompt, Tool, Toolkit } from "e
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { PR_REVIEW_MODELS } from "@maple/domain/http"
+import { PR_REVIEW_MODELS, type PrReviewModel } from "@maple/domain/http"
 import { FindingEmbedder } from "@maple/backend/services/pr-review/FindingEmbedder"
 import {
 	DEFAULT_DECISION_MODEL,
@@ -35,6 +35,7 @@ import {
 	loadLlmSettings,
 	resolveDecisionModel,
 	resolveReviewModel,
+	reviewReasoningEffort,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
 	resolveSecurityAuditDiscoveryFallback,
@@ -390,6 +391,29 @@ describe("reasoning effort", () => {
 			expect(captured.body).toMatchObject({ reasoning: { effort: "high" } })
 		}),
 	)
+
+	it.live("sends each review model its own effort on the review pass, and none for a reply", () =>
+		Effect.gen(function* () {
+			const reviewPass = (chosen: Option.Option<PrReviewModel>) =>
+				captureRequest(openRouterEnv, tags, (env, callTags) =>
+					resolveReviewModel(env, callTags, chosen, true),
+				)
+			// The flash default needs the thinking; a frontier pick is slow and costly at high.
+			const flash = yield* reviewPass(Option.none())
+			expect(flash.body).toMatchObject({ reasoning: { effort: "high" } })
+			const sol = yield* reviewPass(Option.some("openai/gpt-6.2-sol"))
+			expect(sol.body).toMatchObject({ reasoning: { effort: "medium" } })
+			const sonnet = yield* reviewPass(Option.some("anthropic/claude-sonnet-5.5"))
+			expect(sonnet.body).toMatchObject({ reasoning: { effort: "medium" } })
+
+			const reply = yield* captureRequest(openRouterEnv, tags, resolveReviewModel)
+			expect(reply.body).not.toHaveProperty("reasoning")
+		}),
+	)
+
+	it("reasons at medium on a deployment override outside the pickable list", () => {
+		expect(reviewReasoningEffort("vendor/unlisted-model")).toBe("medium")
+	})
 
 	it.live("keeps reasoning off the Workers AI path", () =>
 		Effect.gen(function* () {
