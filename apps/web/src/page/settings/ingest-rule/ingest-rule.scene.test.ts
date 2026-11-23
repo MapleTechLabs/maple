@@ -13,6 +13,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { ORG } from "../../kit/alert-test-rows"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { DebounceEstimate } from "./command"
@@ -389,5 +390,17 @@ describe("ingest rule 24 hour estimate", () => {
 		const opened = init({ _tag: "IngestRuleNew", search: {} }, context)
 		expect(opened.model.estimateKey).toBe("")
 		expect(names(opened.commands)).not.toContain("DebounceIngestRuleEstimate")
+	})
+})
+
+describe("ingest rule impact failure", () => {
+	test("a failed load offers a retry that asks again for the same window", () => {
+		const failed = pageUpdate(
+			editing(),
+			Message.CompletedFetchImpact({ window: "24h", result: Result.fail(toLoadFailure("boom")) }),
+		).model
+		const retried = pageUpdate(failed, Message.ClickedRetryImpact())
+		expect(retried.model.impact._tag).toBe("Loading")
+		expect(Arr.map(retried.commands ?? [], ({ name }) => name)).toEqual(["FetchIngestRuleImpact"])
 	})
 })

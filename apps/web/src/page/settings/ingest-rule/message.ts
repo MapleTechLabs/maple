@@ -50,6 +50,7 @@ export const Message = defineMessageUnion({
 	ElapsedEstimateDebounce: { seq: Schema.Number },
 	CompletedFetchEstimate: { key: Schema.String, result: outcome(V2IngestRulePreview) },
 	ClickedRetryEstimate: {},
+	ClickedRetryImpact: {},
 	ClickedSave: {},
 	CompletedSave: { result: outcome(V2IngestRule) },
 })
