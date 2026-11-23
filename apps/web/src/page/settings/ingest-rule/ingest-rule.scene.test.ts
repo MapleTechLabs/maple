@@ -219,7 +219,7 @@ describe("ingest rule impact", () => {
 				pageUpdate(
 					editing(),
 					Message.CompletedFetchImpact({
-						window: "24h",
+						seq: 1,
 						result: Result.succeed(impactOf(1_200_000, 3000)),
 					}),
 				).model,
@@ -254,7 +254,7 @@ describe("ingest rule impact", () => {
 				pageUpdate(
 					model,
 					Message.CompletedFetchImpact({
-						window: "24h",
+						seq: 1,
 						result: Result.succeed(impactOf(2000, 0)),
 					}),
 				).model,
@@ -265,13 +265,45 @@ describe("ingest rule impact", () => {
 		)
 	})
 
+	test("each signal row and the list line name what was done to it, both effects when mixed", () => {
+		const stats = Schema.decodeSync(V2IngestRuleStats)({
+			object: "ingest_rule_stats",
+			start_time: "2026-10-27T12:00:00.000Z",
+			end_time: "2026-10-28T12:00:00.000Z",
+			rules: [
+				{
+					id: savedRule.id,
+					matched: 160,
+					dropped: 10,
+					dropped_bytes: 1000,
+					redacted_values: 50,
+					signals: [
+						{ signal: "logs", matched: 10, dropped: 10, dropped_bytes: 1000, redacted_values: 0 },
+						{ signal: "traces", matched: 150, dropped: 0, dropped_bytes: 0, redacted_values: 50 },
+					],
+				},
+			],
+			signals: [],
+			hourly: [],
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(editing(), Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(stats) }))
+					.model,
+			),
+			expectView(text("10 dropped · 1.0 KB dropped")).toExist(),
+			expectView(text("50 values redacted · 150 records matched")).toExist(),
+		)
+	})
+
 	test("a rule with no hits says so", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(
 				pageUpdate(
 					editing(),
-					Message.CompletedFetchImpact({ window: "24h", result: Result.succeed(impactOf(0, 0)) }),
+					Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(0, 0)) }),
 				).model,
 			),
 			expectView(text("No records matched in the last 24 hours.")).toExist(),
@@ -283,9 +315,24 @@ describe("ingest rule impact", () => {
 		expect(Arr.map(switched.commands ?? [], ({ name }) => name)).toEqual(["FetchIngestRuleImpact"])
 		const late = pageUpdate(
 			switched.model,
-			Message.CompletedFetchImpact({ window: "24h", result: Result.succeed(impactOf(5, 0)) }),
+			Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(5, 0)) }),
 		)
 		expect(late.model.impact._tag).toBe("Loading")
+	})
+
+	test("24h, then 7d, then 24h again shows only the newest 24 hour answer", () => {
+		const week = pageUpdate(editing(), Message.PickedImpactWindow({ window: "7d" })).model
+		const back = pageUpdate(week, Message.PickedImpactWindow({ window: "24h" })).model
+		const stale = pageUpdate(
+			back,
+			Message.CompletedFetchImpact({ seq: 1, result: Result.succeed(impactOf(5, 0)) }),
+		).model
+		expect(stale.impact._tag).toBe("Loading")
+		const fresh = pageUpdate(
+			stale,
+			Message.CompletedFetchImpact({ seq: back.impactSeq, result: Result.succeed(impactOf(7, 0)) }),
+		).model
+		expect(fresh.impact._tag).toBe("Success")
 	})
 })
 
@@ -293,7 +340,7 @@ describe("ingest rule impact failure", () => {
 	test("a failed load offers a retry that asks again for the same window", () => {
 		const failed = pageUpdate(
 			editing(),
-			Message.CompletedFetchImpact({ window: "24h", result: Result.fail(toLoadFailure("boom")) }),
+			Message.CompletedFetchImpact({ seq: 1, result: Result.fail(toLoadFailure("boom")) }),
 		).model
 		const retried = pageUpdate(failed, Message.ClickedRetryImpact())
 		expect(retried.model.impact._tag).toBe("Loading")

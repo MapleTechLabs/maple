@@ -199,8 +199,10 @@ character but `\n`", before compiling.
   Every failed lookup counts in `ingest_rules_fetch_failed_total`. A stored rule that does not
   parse or compile is skipped and counted in `ingest_rules_invalid_total`.
 - Only the share of the payload the rules leave is metered, on every path (OTLP HTTP and gRPC,
-  Cloudflare, GCP, AWS), and items are recounted after the rules. Dropped records are discounted
-  by their encoded size; redaction is not, so it never bills more or less than was received.
+  Cloudflare, GCP, AWS), and items are recounted after the rules. The metered bytes are the
+  request's original size times the share of its encoded bytes the rules kept, so a converted
+  payload (a GCP push body) is discounted by that share, not by the dropped records' encoded size.
+  Redaction is not discounted, so it never bills more or less than was received.
   Bytes of dropped records count in `ingest_rules_dropped_bytes_total`.
 - Per-rule counts (`matched`, `dropped`, `dropped_bytes`, `redacted_values`) are counted once the
   payload is written (or fully dropped), summed per org, rule, signal and UTC hour, and added into
@@ -213,8 +215,8 @@ character but `\n`", before compiling.
   7 days, with a row per signal, and both effects when the rule changed action in the window.
   - `matched - dropped` is not what a rule kept: a record several drop rules match is credited to
     the first that drops it.
-  - `dropped_bytes` is the dropped records' encoded size. Metering discounts the same for OTLP,
-    but a converted payload (the GCP push path) is metered by its original body.
+  - `dropped_bytes` is the dropped records' encoded size, which the UI shows as bytes dropped;
+    the billed reduction is that share of the original request (see above).
 
 ## Limits
 

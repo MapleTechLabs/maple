@@ -245,7 +245,7 @@ const answerEditor = (model: EditorModel.Model, commands: ReadonlyArray<{ readon
 		if (command.name === "FetchIngestRuleImpact")
 			return step(
 				EditorMessage.Message.CompletedFetchImpact({
-					window: current.impactWindow,
+					seq: current.impactSeq,
 					result: Result.succeed(statsFor(current.impactWindow === "7d" ? 168 : 24)),
 				}),
 			)

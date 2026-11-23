@@ -37,6 +37,8 @@ export const Model = Schema.Struct({
 	/** What the saved rule did over `impactWindow`; idle while creating. */
 	impact: ImpactData.schema,
 	impactWindow: ImpactWindow,
+	/** Goes up with every impact request; only the newest one's answer is shown. */
+	impactSeq: Schema.Number,
 	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	isSaving: Schema.Boolean,
