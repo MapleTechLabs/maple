@@ -70,13 +70,14 @@ const recordLabel = (row: PreviewRow): string => {
 	)
 }
 
-// Keys and values in two columns, so a row's values line up.
+// Keys and values in two columns, so a row's values line up. Keyed by position: a parsed
+// attribute can share its name with the severity or timestamp line.
 const fieldList = (h: H, fields: ReadonlyArray<ParsedField>): Html =>
 	h.dl(
 		[h.Class("grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-2xs")],
-		Arr.flatMap(fields, (field) => [
-			h.dt([h.Key(`k:${field.key}`), h.Class("text-muted-foreground max-w-48 break-all")], [field.key]),
-			h.dd([h.Key(`v:${field.key}`), h.Class("break-words")], [field.value]),
+		Arr.flatMap(fields, (field, index) => [
+			h.dt([h.Key(`k:${index}`), h.Class("text-muted-foreground max-w-48 break-all")], [field.key]),
+			h.dd([h.Key(`v:${index}`), h.Class("break-words")], [field.value]),
 		]),
 	)
 
