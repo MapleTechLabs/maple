@@ -275,6 +275,20 @@ export const syncErrorDevices = (nowMs: number) =>
 export const allClearDevices = (nowMs: number) =>
 	decode({ sources: [source(nowMs)], policies: [], vulnerabilities: [], moreVulnerabilities: 0 })
 
+/** Nothing was failing two hours ago, and no sync has worked since. */
+export const staleAllClearDevices = (nowMs: number) =>
+	decode({
+		sources: [
+			source(nowMs, {
+				syncedAt: nowMs - 2 * 3_600_000,
+				error: "This Fleet server has 1204 fleets. Maple reads the policies of at most 1000.",
+			}),
+		],
+		policies: [],
+		vulnerabilities: [],
+		moreVulnerabilities: 0,
+	})
+
 /** The EU office's own Fleet server: smaller, and its token was revoked an hour after its last sync. */
 const euSource = (nowMs: number): Source =>
 	source(nowMs, {

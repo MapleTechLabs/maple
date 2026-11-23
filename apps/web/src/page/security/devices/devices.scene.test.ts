@@ -28,6 +28,7 @@ import {
 	freeDevices,
 	notConnectedDevices,
 	premiumDevices,
+	staleAllClearDevices,
 	syncErrorDevices,
 	firstSyncFailedDevices,
 	twoSourceDevices,
@@ -261,6 +262,16 @@ describe("security devices", () => {
 			given(loaded(allClearDevices(NOW))),
 			expectView(text("No failing policies")).toExist(),
 			expectView(text("each fleet's and those for devices in no fleet", { exact: false })).toExist(),
+		)
+	})
+
+	test("an all-clear from before a failed sync says it may be out of date", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(staleAllClearDevices(NOW))),
+			expectView(text("The last sync failed")).toExist(),
+			expectView(text("at the last sync that worked", { exact: false })).toExist(),
+			expectView(text("Every enrolled device passes every policy", { exact: false })).toBeAbsent(),
 		)
 	})
 

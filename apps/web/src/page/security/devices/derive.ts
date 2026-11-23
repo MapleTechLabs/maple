@@ -172,8 +172,16 @@ export const softwareLabel = (software: VulnerableSoftware): string => `${softwa
 export const cvssTone = (score: number): "crit" | "warn" | "neutral" =>
 	score >= 9 ? "crit" : score >= 7 ? "warn" : "neutral"
 
-/** The all-clear for policies: the source's own words when every source is one kind. */
+/** Whether a source's findings are from before a sync that failed, so older than they look. */
+const isStale = (source: DeviceSource): boolean => source.error !== null || source.authFailed
+
+/**
+ * The all-clear for policies: the source's own words when every source is one kind. After a failed
+ * sync it only speaks for the last one that worked.
+ */
 export const noFailingPoliciesText = (sources: ReadonlyArray<DeviceSource>): string => {
+	if (Arr.some(sources, isStale))
+		return "No device was failing a policy at the last sync that worked. A sync has failed since, so this may be out of date."
 	const kinds = Arr.dedupe(Arr.map(sources, (source) => source.kind))
 	const only = kinds.length === 1 ? kinds[0] : undefined
 	return only === undefined
