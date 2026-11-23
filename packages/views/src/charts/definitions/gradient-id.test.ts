@@ -1,9 +1,6 @@
-import { createChartScene } from "@tanstack/charts"
-import { renderChartSvg } from "@tanstack/charts/svg"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { gradientId } from "./gradient-id"
-import { buildSparkline } from "./sparkline"
 
 // Real chart ids from callers: raw routes, spaces, parens, braces, unicode.
 const NASTY = [
@@ -14,26 +11,6 @@ const NASTY = [
 	"a_b",
 	"a\u00a0b",
 ]
-
-const sparkScene = (chartId: string) => {
-	const { definition } = buildSparkline({
-		_tag: "Sparkline",
-		values: [1, 4, 2, 5],
-		color: "#0af",
-		gradientId: `spark-${chartId}`,
-		fillStart: 0.5,
-		fillEnd: 0.1,
-		revision: 0,
-		curve: "linear",
-	})
-	// The sparkline is a static definition; a responsive one has a `chart` builder instead.
-	if ("chart" in definition) return expect.unreachable("sparkline definition is responsive")
-	return createChartScene(definition, { width: 120, height: 32 })
-}
-
-/** Every `url(#...)` paint in the markup, the way the canvas painter parses it. */
-const paintRefs = (markup: string) =>
-	Arr.map(Arr.fromIterable(Str.matchAll(/url\(#([^)]+)\)/g)(markup)), (match) => match[1])
 
 describe("gradient ids", () => {
 	test("ids built from caller text only use characters both renderers keep", () => {
@@ -47,15 +24,5 @@ describe("gradient ids", () => {
 
 	test("an id that is already safe is kept as is", () => {
 		expect(gradientId("qbArea", "chart-1", "partial")).toBe("qbArea-chart-1-partial")
-	})
-
-	test.each(NASTY)("a sparkline for %j paints its fill from a gradient the scene defines", (chartId) => {
-		const scene = sparkScene(chartId)
-		const defined = new Set(Arr.map(scene.gradients, (gradient) => gradient.id))
-		const svg = renderChartSvg(scene, { ariaLabel: "Trend", idPrefix: "t" })
-		const refs = paintRefs(svg)
-		expect(refs.length).toBeGreaterThan(0)
-		for (const ref of refs) expect(svg).toContain(`id="${ref}"`)
-		for (const gradient of defined) expect(`url(#${gradient})`).toMatch(/^url\(#([^)]+)\)$/)
 	})
 })

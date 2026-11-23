@@ -226,13 +226,8 @@ export const MountChart = Mount.defineStream("MountChart", {
 											return { update: () => false, destroy: () => undefined }
 										},
 									)
-								// Fixed-height sparklines are measurable before drawing. Other charts
-								// keep the fallback to establish their flex minimum before measurement.
-								const initialMeasured =
-									initialSpec.value._tag === "Sparkline"
-										? Math.round(element.getBoundingClientRect().height)
-										: 0
-								const initialHeight = initialMeasured > 0 ? initialMeasured : FALLBACK_HEIGHT
+								// Drawn at the fallback first, so the chart establishes its flex minimum before measurement.
+								const initialHeight = FALLBACK_HEIGHT
 								host.style.height = `${initialHeight}px`
 								// The live handle and what it was last drawn from; local to this Mount's lifetime.
 								const state = {
