@@ -123,3 +123,25 @@ describe("fields the source drops", () => {
 		},
 	)
 })
+
+describe("user and account properties", () => {
+	const vocabulary = { attributeKeys: ["plan"], propertyKeys: ["person.plan", "account.tier"] }
+	const offered = (drill: "all" | "property", search: string) =>
+		fieldPickerItems(fieldsOf("product_events", vocabulary), drill, search, "product_events")
+
+	test("product events list them as their own group, which drills to its keys", () => {
+		expect(Arr.map(offered("all", ""), (item) => item.value)).toContain("@group:property")
+		expect(
+			Arr.flatMap(offered("property", ""), (item) => (item._tag === "Field" ? [item.field.key] : [])),
+		).toEqual(["person.plan", "account.tier"])
+	})
+
+	test("a typed person.* or account.* key stays a property, not an event prop of that name", () => {
+		expect(offered("all", "person.role")).toEqual([
+			{ _tag: "Custom", value: "@custom:person.role", key: "person.role" },
+		])
+		expect(offered("property", "seats")).toEqual([
+			{ _tag: "Custom", value: "@custom:person.seats", key: "person.seats" },
+		])
+	})
+})

@@ -130,19 +130,24 @@ export const sharesLabel = (field: ConditionField, known: ReadonlyArray<Conditio
 
 // The field picker's list: a drill-down over the groups, flat while searching.
 
-export const FieldDrill = Schema.Literals(["all", "resource", "attribute"])
+export const FieldDrill = Schema.Literals(["all", "resource", "attribute", "property"])
 export type FieldDrill = typeof FieldDrill.Type
 
 export type FieldPickerItem =
 	| Readonly<{ _tag: "Field"; value: string; field: ConditionField }>
-	| Readonly<{ _tag: "Group"; value: string; group: "resource" | "attribute"; count: number }>
+	| Readonly<{ _tag: "Group"; value: string; group: "resource" | "attribute" | "property"; count: number }>
 	| Readonly<{ _tag: "Back"; value: string }>
 	| Readonly<{ _tag: "Custom"; value: string; key: string }>
 
 const GROUP_VALUE = "@group:"
 const BACK_VALUE = "@back"
 const CUSTOM_VALUE = "@custom:"
-const KEY_PATTERN = /^[a-zA-Z0-9_.-]+$/
+/** A key the where-clause grammar can name. */
+export const KEY_PATTERN = /^[a-zA-Z0-9_.-]+$/
+
+/** A product event's user (`person.`) or account (`account.`) property key. */
+const isPropertyKey = (key: string): boolean =>
+	Str.startsWith("person.")(key) || Str.startsWith("account.")(key)
 
 const asField = (field: ConditionField): FieldPickerItem => ({ _tag: "Field", value: field.key, field })
 
@@ -157,8 +162,15 @@ const matchesQuery = (field: ConditionField, query: string): boolean => {
  * What a typed key means inside a group: the group's prefix unless it already has one. A bare key
  * is never free entry, so a source that drops unknown bare keys (logs, metrics) gets `attr.<key>`.
  */
-const customKeyOf = (typed: string, drill: FieldDrill, fields: ReadonlyArray<ConditionField>): string => {
+const customKeyOf = (
+	typed: string,
+	drill: FieldDrill,
+	fields: ReadonlyArray<ConditionField>,
+	dataSource: DataSource,
+): string => {
 	if (Str.startsWith(RESOURCE_PREFIX)(typed) || Str.startsWith(ATTRIBUTE_PREFIX)(typed)) return typed
+	if (dataSource === "product_events" && isPropertyKey(typed)) return typed
+	if (drill === "property") return `person.${typed}`
 	if (drill === "resource") return `${RESOURCE_PREFIX}${typed}`
 	if (drill === "all" && Arr.some(fields, (field) => field.group === "common" && field.key === typed))
 		return typed
@@ -176,7 +188,7 @@ export const fieldPickerItems = (
 	const inScope = drill === "all" ? fields : Arr.filter(fields, (field) => field.group === drill)
 	const back: ReadonlyArray<FieldPickerItem> = drill === "all" ? [] : [{ _tag: "Back", value: BACK_VALUE }]
 	if (typed !== "") {
-		const key = customKeyOf(typed, drill, fields)
+		const key = customKeyOf(typed, drill, fields, dataSource)
 		const custom: ReadonlyArray<FieldPickerItem> =
 			KEY_PATTERN.test(typed) &&
 			isPickable(key, dataSource) &&
@@ -192,7 +204,11 @@ export const fieldPickerItems = (
 		]
 	}
 	if (drill !== "all") return [...back, ...Arr.map(inScope, asField)]
-	const groupNames: ReadonlyArray<"resource" | "attribute"> = ["resource", "attribute"]
+	const groupNames: ReadonlyArray<"resource" | "attribute" | "property"> = [
+		"resource",
+		"attribute",
+		"property",
+	]
 	const groups = Arr.flatMap(groupNames, (group): ReadonlyArray<FieldPickerItem> => {
 		const count = Arr.filter(fields, (field) => field.group === group).length
 		return count === 0 ? [] : [{ _tag: "Group", value: `${GROUP_VALUE}${group}`, group, count }]
