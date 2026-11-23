@@ -10,18 +10,20 @@ import {
 	trace,
 	type Tracer,
 } from "@opentelemetry/api"
-import { TraceState } from "@opentelemetry/core"
-import { JsonLogsSerializer, JsonTraceSerializer } from "@opentelemetry/otlp-transformer"
-import { resourceFromAttributes } from "@opentelemetry/resources"
-import { InMemoryLogRecordExporter, LoggerProvider, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs"
-import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace"
 import { describe, expect, it } from "vitest"
 import goldenLogs from "./__golden__/otlp-logs.json"
 import goldenTraces from "./__golden__/otlp-traces.json"
+import { LoggerProvider, type ReadableLogRecord } from "./sdk/logs"
+import { JsonLogsSerializer, JsonTraceSerializer } from "./sdk/otlp-json"
+import { InMemorySpanExporter, SimpleSpanProcessor } from "./sdk/testing"
+import { TraceState } from "./sdk/trace-state"
+import { TracerProvider } from "./sdk/tracer"
 import { resourceAttributes } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 type Emit = Parameters<ReturnType<LoggerProvider["getLogger"]>["emit"]>[0]
+
+const resourceFromAttributes = (attributes: Record<string, string>) => ({ attributes })
 
 /** Span and log ids handed out in order, so the bodies are deterministic. */
 const sequentialIds = () => {
@@ -48,15 +50,17 @@ const wirePipeline = {
 		resource: Record<string, string>,
 		record: (emit: (log: Emit) => void) => void,
 	): Promise<Uint8Array> {
-		const memory = new InMemoryLogRecordExporter()
+		const memory: ReadableLogRecord[] = []
 		const provider = new LoggerProvider({
 			resource: resourceFromAttributes(resource),
-			processors: [new SimpleLogRecordProcessor({ exporter: memory })],
+			processors: [
+				{ onEmit: (log) => memory.push(log), forceFlush: async () => {}, shutdown: async () => {} },
+			],
 		})
 		const logger = provider.getLogger(SDK_NAME, SDK_VERSION)
 		record((log) => logger.emit(log))
 		await provider.forceFlush()
-		return JsonLogsSerializer.serializeRequest(memory.getFinishedLogRecords()) ?? new Uint8Array()
+		return JsonLogsSerializer.serializeRequest(memory) ?? new Uint8Array()
 	},
 }
 

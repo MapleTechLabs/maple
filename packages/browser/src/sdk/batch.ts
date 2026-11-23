@@ -1,0 +1,137 @@
+// The batching queue behind spans and log records: export every `delayMs`, or
+// as soon as a full batch is queued, and flush whenever the page is hidden.
+import { context, diag, TraceFlags } from "@opentelemetry/api"
+import { suppressTracing } from "./propagation"
+import {
+	type ExportResult,
+	ExportResultCode,
+	type ReadableSpan,
+	type SpanExporter,
+	type SpanProcessor,
+} from "./span"
+
+const MAX_QUEUE = 2048
+const MAX_BATCH = 512
+const EXPORT_TIMEOUT_MS = 30_000
+
+export interface BatchExporter<T> {
+	export(items: T[], callback: (result: ExportResult) => void): void
+	forceFlush?(): Promise<void>
+	shutdown(): Promise<void>
+}
+
+export class BatchQueue<T> {
+	private queue: T[] = []
+	private timer: ReturnType<typeof setTimeout> | undefined
+	private exporting = false
+	private shutdownPromise: Promise<void> | undefined
+	private readonly onHidden = (): void => {
+		if (document.visibilityState === "hidden") {
+			this.forceFlush().catch((error: unknown) => diag.error("batch flush failed", error))
+		}
+	}
+
+	/** `strict`: a failed export fails the flush (spans); otherwise it is only logged (logs). */
+	constructor(
+		private readonly exporter: BatchExporter<T>,
+		private readonly delayMs: number,
+		private readonly strict: boolean,
+	) {
+		if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onHidden)
+	}
+
+	add(item: T): void {
+		if (this.shutdownPromise || this.queue.length >= MAX_QUEUE) return
+		this.queue.push(item)
+		this.maybeStartTimer()
+	}
+
+	forceFlush(): Promise<void> {
+		if (this.shutdownPromise) return this.shutdownPromise
+		return this.flushAll()
+	}
+
+	shutdown(): Promise<void> {
+		this.shutdownPromise ??= Promise.resolve().then(async () => {
+			if (typeof document !== "undefined") {
+				document.removeEventListener("visibilitychange", this.onHidden)
+			}
+			await this.flushAll()
+			await this.exporter.shutdown()
+		})
+		return this.shutdownPromise
+	}
+
+	private async flushAll(): Promise<void> {
+		const batches = Math.ceil(this.queue.length / MAX_BATCH)
+		await Promise.all(Array.from({ length: batches }, () => this.exportBatch()))
+	}
+
+	private exportBatch(): Promise<void> {
+		this.clearTimer()
+		if (this.queue.length === 0) return Promise.resolve()
+		const batch = this.queue.splice(0, MAX_BATCH)
+		const exported = new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error("Timeout")), EXPORT_TIMEOUT_MS)
+			// The exporter's own request must not be traced.
+			context.with(suppressTracing(context.active()), () =>
+				this.exporter.export(batch, (result) => {
+					clearTimeout(timer)
+					if (result.code === ExportResultCode.SUCCESS) resolve()
+					else reject(result.error ?? new Error("export failed"))
+				}),
+			)
+		})
+		return this.strict
+			? exported
+			: exported.catch((error: unknown) => diag.error("batch export failed", error))
+	}
+
+	private maybeStartTimer(): void {
+		if (this.exporting) return
+		const flush = (): void => {
+			this.exporting = true
+			this.exportBatch()
+				.catch((error: unknown) => diag.error("batch export failed", error))
+				.finally(() => {
+					this.exporting = false
+					if (this.queue.length > 0) {
+						this.clearTimer()
+						this.maybeStartTimer()
+					}
+				})
+		}
+		if (this.queue.length >= MAX_BATCH) return flush()
+		if (this.timer !== undefined) return
+		this.timer = setTimeout(flush, this.delayMs)
+	}
+
+	private clearTimer(): void {
+		if (this.timer === undefined) return
+		clearTimeout(this.timer)
+		this.timer = undefined
+	}
+}
+
+/** Queues sampled spans as they end and exports them in batches. */
+export class BatchSpanProcessor implements SpanProcessor {
+	private readonly queue: BatchQueue<ReadableSpan>
+
+	constructor(options: { readonly exporter: SpanExporter; readonly scheduledDelayMillis: number }) {
+		this.queue = new BatchQueue(options.exporter, options.scheduledDelayMillis, true)
+	}
+
+	onStart(): void {}
+
+	onEnd(span: ReadableSpan): void {
+		if ((span.spanContext().traceFlags & TraceFlags.SAMPLED) !== 0) this.queue.add(span)
+	}
+
+	forceFlush(): Promise<void> {
+		return this.queue.forceFlush()
+	}
+
+	shutdown(): Promise<void> {
+		return this.queue.shutdown()
+	}
+}
