@@ -3,36 +3,39 @@
  * The five theme presets on the same page. One image is swapped rather than five toggled, because
  * the lightbox makes every image in the article a slide and closes onto it, hidden or not.
  */
+const theme = (id: string, label: string, mode: "light" | "dark") => ({
+    id,
+    label,
+    src: `/screenshots/docs/status-pages-theme-${id}.webp`,
+    alt: `The same status page in the ${label} preset, ${mode} mode.`,
+    caption: `${label}, shown in ${mode} mode. Every preset has both modes.`,
+});
+
+const first = theme("maple", "Maple", "dark");
 const THEMES = [
-    { id: "maple", label: "Maple", mode: "dark" },
-    { id: "default", label: "Default", mode: "light" },
-    { id: "paper", label: "Vintage Paper", mode: "light" },
-    { id: "midnight", label: "Cosmic Night", mode: "dark" },
-    { id: "mono", label: "Mono", mode: "dark" },
-].map((theme) => ({
-    ...theme,
-    src: `/screenshots/docs/status-pages-theme-${theme.id}.webp`,
-    alt: `The same status page in the ${theme.label} preset, ${theme.mode} mode.`,
-    caption: `${theme.label}, shown in ${theme.mode} mode. Every preset has both modes.`,
-}));
-const first = THEMES[0]!;
+    first,
+    theme("default", "Default", "light"),
+    theme("paper", "Vintage Paper", "light"),
+    theme("midnight", "Cosmic Night", "dark"),
+    theme("mono", "Mono", "dark"),
+];
 ---
 
 <div class="themes" data-status-page-themes>
     <div class="themes__tabs" role="radiogroup" aria-label="Theme preset" hidden>
         {
-            THEMES.map((theme) => (
+            THEMES.map((preset) => (
                 <label>
                     <input
                         type="radio"
                         name="status-page-theme"
-                        value={theme.id}
-                        checked={theme.id === first.id}
-                        data-src={theme.src}
-                        data-alt={theme.alt}
-                        data-caption={theme.caption}
+                        value={preset.id}
+                        checked={preset.id === first.id}
+                        data-src={preset.src}
+                        data-alt={preset.alt}
+                        data-caption={preset.caption}
                     />
-                    <span>{theme.label}</span>
+                    <span>{preset.label}</span>
                 </label>
             ))
         }
