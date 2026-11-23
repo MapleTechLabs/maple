@@ -18,8 +18,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join, resolve } from "node:path"
 import { Array as Arr, Schema, String as Str } from "effect"
 import {
+	PR_FILE_DIFF_MAX_LINES,
 	PR_REVIEW_AUTO_APPROVE_MAX_CHANGED_LINES,
 	PR_REVIEW_AUTO_APPROVE_MAX_FILES,
+	annotatePatch,
 	prReviewDiffSignals,
 } from "@maple/domain/http"
 
@@ -31,9 +33,18 @@ const CachedFile = Schema.Struct({
 	additions: Schema.Number,
 	deletions: Schema.Number,
 	hasPatch: Schema.Boolean,
-	patchLines: Schema.Number,
-	patchChars: Schema.Number,
+	/** What `annotatePatch` said of the real patch: longer than the reviewer is shown. */
+	patchTruncated: Schema.Boolean,
 })
+/** A file as GitHub lists it, with the patch read once at fetch time. */
+const ListedFile = Schema.Struct({
+	path: Schema.String,
+	previousPath: Schema.NullOr(Schema.String),
+	additions: Schema.Number,
+	deletions: Schema.Number,
+	patch: Schema.NullOr(Schema.String),
+})
+const decodeListedFile = Schema.decodeSync(Schema.fromJsonString(ListedFile))
 const decodeFiles = Schema.decodeSync(Schema.fromJsonString(Schema.Array(CachedFile)))
 const decodeComment = Schema.decodeSync(
 	Schema.fromJsonString(Schema.NullOr(Schema.Struct({ body: Schema.String }))),
@@ -41,7 +52,12 @@ const decodeComment = Schema.decodeSync(
 const decodeReviews = Schema.decodeSync(
 	Schema.fromJsonString(Schema.Array(Schema.Struct({ state: Schema.String }))),
 )
-const Meta = Schema.Struct({ reviewedSha: Schema.NullOr(Schema.String), headSha: Schema.String })
+const Meta = Schema.Struct({
+	reviewedSha: Schema.NullOr(Schema.String),
+	headSha: Schema.String,
+	/** The head read again after the file listing; a push in between makes the listing unknown. */
+	listedHeadSha: Schema.String,
+})
 const decodeMeta = Schema.decodeSync(Schema.fromJsonString(Meta))
 const decodeManifest = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ repository: Schema.String })))
 const decodeHead = Schema.decodeSync(Schema.fromJsonString(Schema.Struct({ headRefOid: Schema.String })))
@@ -93,7 +109,7 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 	)
 	for (const n of numbers) {
 		const dir = join(out, String(n))
-		if (existsSync(join(dir, "files.json"))) continue
+		if (existsSync(join(dir, "meta.json"))) continue
 		// One body per line across every page. A completed summary carries the heading; a
 		// "reviewing" or failure notice shares the marker but not the heading.
 		const bodies = Arr.filter(
@@ -111,29 +127,55 @@ const fetchAll = (argv: ReadonlyArray<string>) => {
 		const last = bodies.at(-1)
 		mkdirSync(dir, { recursive: true })
 		writeFileSync(join(dir, "comment.json"), last === undefined ? "null" : `{"body":${last}}`)
-		const head = decodeHead(gh(["pr", "view", String(n), "-R", repo, "--json", "headRefOid"])).headRefOid
+		const headOf = () =>
+			decodeHead(gh(["pr", "view", String(n), "-R", repo, "--json", "headRefOid"])).headRefOid
+		const head = headOf()
 		// The summary's footer names the head it reviewed; the file listing below is the current head's.
 		const reviewed = last === undefined ? null : (/<sub>`([0-9a-f]{7,40})` ·/.exec(last)?.[1] ?? null)
-		writeFileSync(join(dir, "meta.json"), encodeJson({ reviewedSha: reviewed, headSha: head }))
-		writeFileSync(
-			join(dir, "reviews.json"),
-			gh([
-				"api",
-				`repos/${repo}/pulls/${n}/reviews`,
-				"--jq",
-				`[.[]|select(.user.login=="${BOT}")|{state}]`,
-			]),
+		const reviews = Arr.filter(
+			Str.split("\n")(
+				gh([
+					"api",
+					`repos/${repo}/pulls/${n}/reviews`,
+					"--paginate",
+					"--jq",
+					`.[]|select(.user.login=="${BOT}")|{state}|@json`,
+				]),
+			),
+			Str.isNonEmpty,
 		)
-		const files = gh([
-			"api",
-			`repos/${repo}/pulls/${n}/files`,
-			"--paginate",
-			"--jq",
-			'.[]|{path:.filename,previousPath:(.previous_filename//null),additions,deletions,hasPatch:(.patch!=null),patchLines:((.patch//"")|split("\\n")|length),patchChars:((.patch//"")|length)}',
-		])
+		writeFileSync(join(dir, "reviews.json"), `[${Arr.join(reviews, ",")}]`)
+		const listed = Arr.map(
+			Arr.filter(
+				Str.split("\n")(
+					gh([
+						"api",
+						`repos/${repo}/pulls/${n}/files`,
+						"--paginate",
+						"--jq",
+						".[]|{path:.filename,previousPath:(.previous_filename//null),additions,deletions,patch:(.patch//null)}|@json",
+					]),
+				),
+				Str.isNonEmpty,
+			),
+			decodeListedFile,
+		)
 		writeFileSync(
 			join(dir, "files.json"),
-			`[${Arr.join(Arr.filter(Str.split("\n")(files), Str.isNonEmpty), ",")}]`,
+			encodeJson(
+				Arr.map(listed, (file) => ({
+					path: file.path,
+					previousPath: file.previousPath,
+					additions: file.additions,
+					deletions: file.deletions,
+					hasPatch: file.patch !== null,
+					patchTruncated: file.patch !== null && annotatePatch(file.patch).truncated,
+				})),
+			),
+		)
+		writeFileSync(
+			join(dir, "meta.json"),
+			encodeJson({ reviewedSha: reviewed, headSha: head, listedHeadSha: headOf() }),
 		)
 		console.error(`#${n}`)
 	}
@@ -165,15 +207,14 @@ const RECOMPUTED = new Set([
 	"truncated_patch",
 ])
 
-/** A patch of `lines` context lines totalling about `chars` characters. */
-const standInPatch = (lines: number, chars: number): string => {
-	const count = Math.max(1, lines)
-	const line = ` ${"x".repeat(Math.max(0, Math.floor(chars / count) - 2))}`
-	return Arr.join(
-		Arr.makeBy(count, () => line),
-		"\n",
-	)
-}
+/** A patch that `annotatePatch` cuts exactly when the real one was cut. */
+const standInPatch = (truncated: boolean): string =>
+	truncated
+		? Arr.join(
+				Arr.makeBy(PR_FILE_DIFF_MAX_LINES + 1, () => " x"),
+				"\n",
+			)
+		: " x"
 
 /** The gate's posted reasons; `undefined` when the summary carries none (approval off, or approved). */
 const reasonsOf = (body: string): ReadonlyArray<string> | undefined => {
@@ -201,6 +242,7 @@ const score = (argv: ReadonlyArray<string>) => {
 		const comment = decodeComment(readFileSync(join(base, "comment.json"), "utf8"))
 		if (comment === null) return skip("no completed review")
 		const meta = decodeMeta(readFileSync(join(base, "meta.json"), "utf8"))
+		if (meta.listedHeadSha !== meta.headSha) return skip("pushed to while it was fetched")
 		if (meta.reviewedSha === null || !Str.startsWith(meta.reviewedSha)(meta.headSha))
 			return skip("reviewed an older head than the listing")
 		const approved = Arr.some(
@@ -219,7 +261,7 @@ const score = (argv: ReadonlyArray<string>) => {
 				deletions: file.deletions,
 				status: "modified" as const,
 				// Only its size matters here: a stand-in of the same lines and characters.
-				patch: file.hasPatch ? standInPatch(file.patchLines, file.patchChars) : null,
+				patch: file.hasPatch ? standInPatch(file.patchTruncated) : null,
 			})),
 			truncated: false,
 			isIgnored: () => false,
