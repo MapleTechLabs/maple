@@ -58,6 +58,19 @@ describe("onboarding agent run poll", () => {
 			}),
 		))
 
+	test("an agent still working past the step's hour keeps being read until its run closes", () =>
+		run(
+			Effect.gen(function* () {
+				const working = { ...open, agent: { ...open.agent, run: labAgentRun("progress") } }
+				const deps = onboardingAgentRunPoll.modelToDependencies(working)
+				const polls = yield* counted(onboardingAgentRunPoll.dependenciesToStream(deps))
+				yield* TestClock.adjust("3 hours")
+				const atThree = yield* Ref.get(polls)
+				yield* TestClock.adjust("5 minutes")
+				expect(yield* Ref.get(polls)).toBe(atThree + 10)
+			}),
+		))
+
 	test("no open run, no agent poll", () =>
 		run(
 			Effect.gen(function* () {

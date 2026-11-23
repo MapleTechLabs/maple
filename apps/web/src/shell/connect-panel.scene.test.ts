@@ -401,3 +401,28 @@ describe("connect panel update", () => {
 		)
 	})
 })
+
+describe("connect panel handoff across openings", () => {
+	const mint = AgentHandoff.Message.SucceededMint({
+		publicKey: "maple_pk_a",
+		handoff: labHandoff(),
+		clipboard: "not_attempted",
+	})
+	const reopened: Model = {
+		...init(),
+		popover: { ...init().popover, isOpen: true },
+		orgId: "org_b",
+		keysRequest: 2,
+	}
+
+	test("a mint from an earlier opening changes nothing and copies nothing", () => {
+		const next = update(reopened, Message.GotAgentMessage({ message: mint, opening: 1 }), context)
+		expectVitest(next.model.agent.run).toBe(null)
+		expectVitest(next.commands ?? []).toHaveLength(0)
+	})
+
+	test("a mint from this opening lands", () => {
+		const next = update(reopened, Message.GotAgentMessage({ message: mint, opening: 2 }), context)
+		expectVitest(next.model.agent.run).not.toBe(null)
+	})
+})

@@ -193,13 +193,13 @@ const latestTrace = (
 		const serviceName = yield* Schema.decodeEffect(ServiceName)(service).pipe(
 			Effect.mapError(() => new CliUsageError({ message: `Not a service name: ${service}` })),
 		)
-		const window = toV2Window(range)
-		// Only traces sent since the run started count: older traffic proves nothing about this setup.
-		const startTime = verificationStart(window.start_time, notBefore)
+		const window = verificationWindow(toV2Window(range), notBefore)
+		// The run started within the current second: nothing to search until the next tick.
+		if (Option.isNone(window)) return Option.none<string>()
 		const list = yield* client.traces.search({
 			payload: {
-				start_time: startTime,
-				end_time: window.end_time,
+				start_time: window.value.start_time,
+				end_time: window.value.end_time,
 				limit: 1,
 				filters: {
 					service_name: serviceName,
@@ -225,6 +225,21 @@ export const verificationStart = (windowStart: string, runStart: Option.Option<s
 		onNone: () => windowStart,
 		onSome: (start) => (start > windowStart ? start : windowStart),
 	})
+
+/**
+ * The search window from the run's start, or none while it is empty: the window's end is whole
+ * seconds, so a run started later in the same second would put its start after its end.
+ */
+export const verificationWindow = (
+	window: { readonly start_time: string; readonly end_time: string },
+	runStart: Option.Option<string>,
+): Option.Option<{ readonly start_time: string; readonly end_time: string }> => {
+	// Only traces sent since the run started count: older traffic proves nothing about this setup.
+	const start = verificationStart(window.start_time, runStart)
+	return start < window.end_time
+		? Option.some({ start_time: start, end_time: window.end_time })
+		: Option.none()
+}
 
 export const isVerified = (run: V2OnboardingAgentRun): boolean =>
 	Arr.some(run.stages, (stage) => stage.id === "receive_verification" && stage.status === "completed")

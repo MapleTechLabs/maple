@@ -125,7 +125,10 @@ describe("agent progress", () => {
 			given(atConnect()),
 			indicatorMeasured(),
 			...polledRun({ ...labAgentRun("waiting"), status: "expired" }),
-			expectView(text(/Your agent never checked in, and this code has expired/)).toExist(),
+			expectView(text(/Your agent never checked in, and this code has expired/)).toHaveAttr(
+				"aria-live",
+				"polite",
+			),
 		)
 		scene(
 			{ update, view },
@@ -193,6 +196,29 @@ describe("agent run polling", () => {
 		).model
 		expect(finished.run).toBe(null)
 		expect(AgentHandoff.shouldReadRun(finished)).toBe(false)
+	})
+
+	test("a slow read of the same run from before its latest report is dropped, and nothing is tracked twice", () => {
+		const reported = AgentHandoff.update(
+			{ ...AgentHandoff.init("connect_step"), run: labAgentRun("waiting") },
+			AgentHandoff.Message.SucceededLoadRun({ run: labAgentRun("progress") }),
+		)
+		const late = AgentHandoff.update(
+			reported.model,
+			AgentHandoff.Message.SucceededLoadRun({ run: labAgentRun("waiting") }),
+		)
+		expect(late.model.run?.status).toBe("in_progress")
+		expect(late.commands).toHaveLength(0)
+		const completed = AgentHandoff.update(
+			late.model,
+			AgentHandoff.Message.SucceededLoadRun({ run: labAgentRun("completed") }),
+		).model
+		const reopened = AgentHandoff.update(
+			completed,
+			AgentHandoff.Message.SucceededLoadRun({ run: labAgentRun("progress") }),
+		)
+		expect(reopened.model.run?.status).toBe("completed")
+		expect(reopened.commands).toHaveLength(0)
 	})
 
 	test("an older run read mid-copy does not replace the newer one", () => {

@@ -106,7 +106,8 @@ export const Message = defineMessageUnion({
 	GotCopyMessage: { field: CopyField, message: CopyButton.Message },
 	ClickedRevealPublicKey: {},
 	ClickedRevealPrivateKey: {},
-	GotAgentMessage: { message: AgentHandoff.Message },
+	/** `opening` is the panel opening (`keysRequest`) the message belongs to. */
+	GotAgentMessage: { message: AgentHandoff.Message, opening: Schema.Number },
 })
 export type Message = typeof Message.Type
 
@@ -171,8 +172,10 @@ type UpdateReturn = Update.Return<Model, Message, Resources>
 
 const toPopover = (message: Popover.Message) => Message.GotPopoverMessage({ message })
 
-const toAgent = (commands: ReadonlyArray<Command.Command<AgentHandoff.Message, never, Resources>>) =>
-	Command.mapMessages(commands, (message) => Message.GotAgentMessage({ message }))
+const toAgent = (
+	opening: number,
+	commands: ReadonlyArray<Command.Command<AgentHandoff.Message, never, Resources>>,
+) => Command.mapMessages(commands, (message) => Message.GotAgentMessage({ message, opening }))
 
 /** `{open && <ConnectPanel />}`: opening mounts the panel's reads; closing unmounts its state. */
 const popoverStep = (model: Model, message: Popover.Message, context: Context): UpdateReturn => {
@@ -214,7 +217,7 @@ const popoverStep = (model: Model, message: Popover.Message, context: Context): 
 		},
 		commands: [
 			...commands,
-			...toAgent(shown.commands),
+			...toAgent(keysRequest, shown.commands),
 			FetchKeys({ orgId, request: keysRequest }),
 			ResolveWindow({ orgId }),
 		],
@@ -288,9 +291,11 @@ export const update = (model: Model, message: Message, context: Context): Update
 		ClickedRevealPrivateKey: () => ({
 			model: { ...model, isPrivateKeyVisible: !model.isPrivateKeyVisible },
 		}),
-		GotAgentMessage: ({ message: child }) => {
+		// A mint or copy from an earlier opening (closed, or another org's) never touches this one.
+		GotAgentMessage: ({ message: child, opening }) => {
+			if (opening !== model.keysRequest || !model.popover.isOpen) return { model }
 			const next = AgentHandoff.update(model.agent, child)
-			return { model: { ...model, agent: next.model }, commands: toAgent(next.commands) }
+			return { model: { ...model, agent: next.model }, commands: toAgent(opening, next.commands) }
 		},
 	})
 

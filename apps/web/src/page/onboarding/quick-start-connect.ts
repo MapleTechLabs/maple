@@ -487,16 +487,11 @@ export const connectPollTicks = (presence?: Presence): Stream.Stream<void> =>
 	Stream.take(backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence), FAST_POLLS + SLOW_POLLS)
 
 /**
- * An open run's reads: 5 s for ten minutes, then 30 s for an hour, from the copy that started it,
- * so an unused code (an hour) is seen to expire even when the copy came late in the step's poll.
+ * An open run's reads, from the copy that started it: 5 s for ten minutes, then 30 s until the run
+ * closes (it takes reports for a day), paused while the tab is hidden. Its expiry is read too.
  */
-const AGENT_SLOW_POLLS = 120
-
 export const agentRunPollTicks = (presence?: Presence): Stream.Stream<void> =>
-	Stream.take(
-		backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence),
-		FAST_POLLS + AGENT_SLOW_POLLS,
-	)
+	backoffPollTicks("5 seconds", FAST_POLLS, "30 seconds", presence)
 
 /** The open run the agent poll follows: a newer run restarts it. */
 const openRunAt = (connect: Connect): string | null =>

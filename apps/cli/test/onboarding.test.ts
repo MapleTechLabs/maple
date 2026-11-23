@@ -10,6 +10,7 @@ import {
 	isTransientSearchFailure,
 	isVerified,
 	verificationStart,
+	verificationWindow,
 } from "../src/commands/onboarding"
 import { AuthorizationUnavailableError, publicHttpErrorBody, UnauthorizedError } from "@maple/domain/http"
 import { makeV2Client } from "../src/core/v2-client"
@@ -367,6 +368,18 @@ describe("verify windows and outcomes", () => {
 		)
 		assert.equal(verificationStart(windowStart, Option.some("2026-11-22T15:00:00.000Z")), windowStart)
 		assert.equal(verificationStart(windowStart, Option.none()), windowStart)
+	})
+
+	it("waits for the next tick when the run started within the window's last second", () => {
+		const window = { start_time: "2026-11-22T09:45:00.000Z", end_time: "2026-11-22T10:00:00.000Z" }
+		assert.equal(Option.isNone(verificationWindow(window, Option.some("2026-11-22T10:00:00.500Z"))), true)
+		assert.deepEqual(
+			Option.getOrNull(verificationWindow(window, Option.some("2026-11-22T09:59:59.500Z"))),
+			{
+				start_time: "2026-11-22T09:59:59.500Z",
+				end_time: "2026-11-22T10:00:00.000Z",
+			},
+		)
 	})
 
 	it("knows a verified run, so a later miss leaves it verified", () => {

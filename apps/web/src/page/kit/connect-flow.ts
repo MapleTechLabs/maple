@@ -364,7 +364,13 @@ export const liveChecklist = <M>(h: HtmlBuilder<M>, options: LiveChecklistOption
 			),
 			...(options.summary === undefined
 				? []
-				: [h.p([h.Class("px-5 pb-2 text-sm text-muted-foreground")], [options.summary])]),
+				: [
+						// Announced too: a summary can change with no row changing (a run that expired unreported).
+						h.p(
+							[h.Class("px-5 pb-2 text-sm text-muted-foreground"), h.AriaLive("polite")],
+							[options.summary],
+						),
+					]),
 			h.p(
 				[h.Class("sr-only"), h.AriaLive("polite"), h.AriaAtomic(true)],
 				[checklistSummary(options.rows)],

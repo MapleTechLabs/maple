@@ -244,7 +244,7 @@ const agentPromptBlock = (h: H, model: Model): Html =>
 	AgentHandoffView.agentPrompt(h, {
 		model: model.agent,
 		publicKey: model.keys._tag === "Ready" ? model.keys.publicKey : "",
-		toMessage: (message) => Message.GotAgentMessage({ message }),
+		toMessage: (message) => Message.GotAgentMessage({ message, opening: model.keysRequest }),
 		showsProgress: false,
 	})
 

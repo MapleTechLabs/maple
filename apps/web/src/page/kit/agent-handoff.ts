@@ -258,6 +258,12 @@ const copyPrompt = (
 const track = (model: Model, event: typeof AgentEvent.Type) =>
 	TrackAgentEvent({ event, surface: model.surface, hasHandoffCode: null })
 
+/** A read of the shown run from before its latest report, or from before it closed. */
+const isOlderRead = (run: V2OnboardingAgentRun, shown: V2OnboardingAgentRun): boolean =>
+	(shown.last_reported_at !== null &&
+		(run.last_reported_at === null || run.last_reported_at < shown.last_reported_at)) ||
+	(!isRunOpen(shown) && isRunOpen(run))
+
 /**
  * A read run replaces the shown one when it is the same run or a newer one; with none shown, only
  * an open run is picked up. The first report and completing are tracked once each.
@@ -271,6 +277,8 @@ const loadedRun = (model: Model, run: V2OnboardingAgentRun): Step => {
 			: { model: { ...model, isRunMissing: true }, commands: [] }
 	if (run.created_at < previous.created_at) return { model, commands: [] }
 	const isSameRun = run.created_at === previous.created_at
+	// Polls overlap: a slower, older read of the same run never replaces a newer one.
+	if (isSameRun && isOlderRead(run, previous)) return { model, commands: [] }
 	return {
 		model: { ...model, run },
 		commands: [
