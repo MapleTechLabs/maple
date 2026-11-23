@@ -2054,7 +2054,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 							// Unknown reads as no: the push is reviewed as it would be without approval.
 							Effect.timeout("15 seconds"),
-							Effect.catchCause(() => Effect.succeed(false)),
+							Effect.catchCause(() =>
+								Effect.annotateCurrentSpan(
+									"maple.pr_review.recheck_listing_failed",
+									true,
+								).pipe(Effect.as(false)),
+							),
 						))
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
