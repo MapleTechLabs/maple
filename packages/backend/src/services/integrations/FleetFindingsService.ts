@@ -45,8 +45,9 @@ const CVE_PAGE_SIZE = 100
 const MAX_CVE_PAGES = 10
 const POLICY_PAGE_SIZE = 500
 const MAX_POLICY_PAGES = 10
-/** Fleets whose policies one sync reads, a request each. */
 const FLEET_PAGE_SIZE = 500
+/** Fleets whose policies one sync reads, a request each: what fits the lane's time two at a time. */
+const MAX_FLEETS = 1_000
 /** What Fleet calls the devices in no fleet. */
 const UNASSIGNED = "Unassigned"
 
@@ -200,8 +201,18 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 				readAll(
 					(page) => FleetApi.listFleets(fleet, dialect, page, FLEET_PAGE_SIZE),
 					FLEET_PAGE_SIZE,
-					1,
+					// One page past the cap, to tell a server at the cap from one over it.
+					MAX_FLEETS / FLEET_PAGE_SIZE + 1,
 				).pipe(
+					// Reading only some fleets would show the rest as passing: the sync fails instead.
+					Effect.filterOrFail(
+						(found) => found.length <= MAX_FLEETS,
+						(found) =>
+							new FleetApi.FleetApiError({
+								message: `This Fleet server has ${found.length > MAX_FLEETS + FLEET_PAGE_SIZE - 1 ? "more than " : ""}${found.length} fleets. Maple reads the policies of at most ${MAX_FLEETS}.`,
+								kind: "upstream",
+							}),
+					),
 					Effect.asSome,
 					Effect.catchIf(
 						(error) => error.status === 402,
@@ -228,12 +239,10 @@ export class FleetFindingsService extends Context.Service<FleetFindingsService, 
 					[policiesOf({ _tag: "Global" }), readFleets(fleet, dialect)],
 					{ concurrency: 2 },
 				)
-				const listed = Option.match(fleets, { onNone: () => 0, onSome: (found) => found.length })
-				yield* Effect.annotateCurrentSpan("maple.fleet.fleets", listed)
-				if (listed >= FLEET_PAGE_SIZE)
-					yield* Effect.logWarning("Fleet has more fleets than one sync reads").pipe(
-						Effect.annotateLogs({ read: listed }),
-					)
+				yield* Effect.annotateCurrentSpan(
+					"maple.fleet.fleets",
+					Option.match(fleets, { onNone: () => 0, onSome: (found) => found.length }),
+				)
 				const groups: ReadonlyArray<{ readonly scope: FleetApi.PolicyScope; readonly name: string }> =
 					Option.match(fleets, {
 						onNone: () => [],

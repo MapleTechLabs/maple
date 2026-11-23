@@ -536,6 +536,51 @@ describe("FleetFindingsService", () => {
 		)
 	})
 
+	const manyFleets = (count: number) =>
+		Arr.makeBy(count, (index) => ({ id: index + 10, name: `fleet-${index + 10}` }))
+
+	it.effect("reads every fleet of a server with more than one page of them", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("5.0.0")
+		// The last fleet listed, on the second page, holds a failing policy.
+		world.fleets = manyFleets(600)
+		world.fleetPolicies = {
+			609: [{ id: 90, name: "Last fleet's policy", failing_host_count: 2, passing_host_count: 0 }],
+		}
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				assert.strictEqual((yield* syncDue).failedConnections, 0)
+				assert.sameDeepMembers(yield* listedPolicies, [
+					["No compromised packages", null, 4],
+					["Last fleet's policy", "fleet-609", 2],
+				])
+			}),
+		)
+	})
+
+	it.effect("fails the sync rather than read only some fleets of a server with too many", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = fleetWithFleets("5.0.0")
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connect
+				yield* syncDue
+				world.fleets = manyFleets(1_001)
+				yield* TestClock.adjust(HOUR_MS)
+				assert.strictEqual((yield* syncDue).failedConnections, 1)
+				// The findings read before stay, and the card says why nothing new was read.
+				assert.sameDeepMembers(yield* listedPolicies, EVERY_SCOPE)
+				const card = yield* FleetConnectionService.use((service) => service.getStatus(ORG))
+				assert.include(card.lastError ?? "", "1001 fleets. Maple reads the policies of at most 1000")
+			}),
+		)
+	})
+
 	it.effect("stores a policy once when a fleet's read repeats a global one", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = fleetWithFleets("5.0.0")

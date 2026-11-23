@@ -76,6 +76,7 @@ The Devices page is for engineers and admins, as is the rest of the Security Cen
 
 - **Fleet rejects the token** (it was deleted, or the user was removed): reading stops and the card reads **Token rejected**. Paste a new token on the card to resume. The audit log continues from where it stopped, so activity from the gap still arrives as long as Fleet still holds it.
 - **Fleet asks Maple to slow down:** Maple waits at least 15 minutes, or as long as Fleet asks, up to an hour.
+- **The server has more than 1,000 fleets:** the Devices sync stops and the card says so, since reading only some fleets would show the rest as passing. The audit log is not affected.
 - **The server is unreachable or answers with an error:** the card and the Devices page show the error, the last findings stay, and the next read tries again.
 
 Pointing the integration at a different server makes a new connection: its audit log feed starts over from 7 days back, and the Devices page is empty until its first read, within 5 minutes. Disconnecting removes the token and the Devices findings. Audit log entries already written stay.
