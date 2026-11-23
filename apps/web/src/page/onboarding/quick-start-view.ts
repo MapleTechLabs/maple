@@ -55,9 +55,6 @@ type H = HtmlBuilder<Message>
 export const accountClusterOf = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	hstack(h, { gap: "3" }, children)
 
-/** The agent prompt's copy state, kept with the snippets'. */
-const AGENT_PROMPT_COPY = "agent-prompt"
-
 /** A fade out of blur as each step mounts (`theme.css`); keyed, so a new step plays it again. */
 export const ENTER_CLASS = "onboarding-enter"
 
@@ -696,16 +693,6 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 						),
 					),
 				]),
-				GuidedSetup.agentPromptButton(h, {
-					prompt: GuidedSetup.setupAgentPrompt(
-						GuidedSetup.promptKey(state.selectedFramework ?? "nodejs", keysOf(connect)),
-					),
-					copy: connect.snippetCopies[AGENT_PROMPT_COPY] ?? CopyButton.init(),
-					toCopyMessage: (message) =>
-						toConnect(
-							ConnectMessage.GotSnippetCopyMessage({ snippet: AGENT_PROMPT_COPY, message }),
-						),
-				}),
 				GuidedSetup.connectInstructions(h, {
 					slot: "onboarding-connect",
 					framework: state.selectedFramework ?? "nodejs",
@@ -717,6 +704,10 @@ export const connectStep = (h: H, model: Model, state: QuickStartState): Html =>
 					toPackageTabs: (message) => toConnect(ConnectMessage.GotPackageTabsMessage({ message })),
 					toSnippetCopy: (snippet, message) =>
 						toConnect(ConnectMessage.GotSnippetCopyMessage({ snippet, message })),
+					agent: {
+						model: connect.agent,
+						toMessage: (message) => toConnect(ConnectMessage.GotAgentMessage({ message })),
+					},
 					variant: "boxed",
 					...docsFor(state.stack),
 				}),

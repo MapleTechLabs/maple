@@ -1,4 +1,4 @@
-import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { OrgId, UserId } from "@maple/primitives"
 import {
@@ -367,4 +367,6 @@ export class AuthSessionApiGroup extends HttpApiGroup.make("authSession")
 		}).annotate(EndpointAccess, "personal"),
 	)
 	.prefix("/api/auth")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// A pending login's user code approves a CLI session: spans and request logs record it as `REDACTED`.
+	.annotate(HttpApi.RedactedNames, { params: ["userCode"] }) {}

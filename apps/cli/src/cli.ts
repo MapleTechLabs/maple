@@ -17,6 +17,7 @@ import { archive } from "./commands/archive"
 import { deleteCommand } from "./commands/delete"
 import { update } from "./commands/update"
 import { changelog } from "./commands/changelog"
+import { onboarding } from "./commands/onboarding"
 import { OutputFormatSetting } from "./lib/output"
 
 // One CLI, two backends. Local mode runs the query-engine helpers against the
@@ -79,6 +80,7 @@ export const cli = Command.make("maple").pipe(
 		auth,
 		logout,
 		whoami,
+		onboarding,
 		use,
 		api,
 		get,

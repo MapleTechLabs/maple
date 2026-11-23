@@ -1531,10 +1531,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			// remove. Refreshing the memo from a shared entry that writes evict is
 			// the intended convergence path, not a staleness leak.
 			const work = readSharedOrPostgres(orgId).pipe(
-				Effect.flatMap((value) =>
-					Clock.currentTimeMillis.pipe(
-						Effect.map((writeNowMs) => storeCachedSettings(orgId, value, writeNowMs)),
-					),
+				Effect.zipWith(Clock.currentTimeMillis, (value, writeNowMs) =>
+					storeCachedSettings(orgId, value, writeNowMs),
 				),
 				Effect.tapError((error) =>
 					Effect.logWarning("Org ClickHouse config refresh failed; serving stale").pipe(

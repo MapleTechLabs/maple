@@ -114,7 +114,7 @@ describe("what an analyst may change over MCP", () => {
 			(definition) => definition.name,
 		).sort()
 
-	it("is the dashboard tools and Maple's feedback channel, out of every tool that changes data", () => {
+	it("is the dashboard tools, onboarding setup and Maple's feedback channel, out of every tool that changes data", () => {
 		expect(openTo({ permissions: analystGrants })).toEqual(
 			[
 				"add_dashboard_widget",
@@ -125,6 +125,8 @@ describe("what an analyst may change over MCP", () => {
 				"replace_dashboard_widgets",
 				"update_dashboard",
 				"update_dashboard_widget",
+				"get_ingest_setup",
+				"onboarding_status_update",
 				FEEDBACK_TOOL,
 			].sort(),
 		)

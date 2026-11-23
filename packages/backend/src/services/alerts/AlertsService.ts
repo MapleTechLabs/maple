@@ -3316,11 +3316,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							failureCount: sum.failureCount + batch.failureCount,
 						})),
 					),
-					Effect.flatMap((batch) =>
-						Effect.map(
-							now,
-							(time) => batch.claimedCount === DELIVERY_DRAIN_LIMIT && time < deadline,
-						),
+					Effect.zipWith(
+						now,
+						(batch, time) => batch.claimedCount === DELIVERY_DRAIN_LIMIT && time < deadline,
 					),
 					Effect.repeat({ while: (more) => more }),
 				)

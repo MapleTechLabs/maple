@@ -1,6 +1,6 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Array as Arr, Schema, SchemaGetter, Context as EffectContext } from "effect"
-import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
+import { type ActorId, type ApiKeyId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
 import type { ChatMode, ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
 import { limitedAccessMessage, type Permission, PermissionName } from "../policy"
@@ -124,6 +124,8 @@ export interface TenantContext {
 	readonly impersonation?: SessionImpersonation | undefined
 	/** Set for a scoped API key that grants read access only: MCP tools that change data refuse it. */
 	readonly readOnly?: true
+	/** The API key the request came with; unset for OAuth tokens and sessions. */
+	readonly apiKeyId?: ApiKeyId | undefined
 	/** Pre-resolved actor for an API-key-backed agent, preferred over `ensureUserActor(userId)`. */
 	readonly actorId?: ActorId
 	/** The MCP client's `clientInfo.name`; issue writes attribute to that agent when no `actorId`. */

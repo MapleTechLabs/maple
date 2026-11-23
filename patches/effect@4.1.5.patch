@@ -1,5 +1,5 @@
 diff --git a/dist/ai/LanguageModel.js b/dist/ai/LanguageModel.js
-index a45cb6a..85bdd0a 100644
+index 3414e98847db5b909abd412080aa2b1841f44948..467e0c008438b8be4ee9c8275963cafe646bcf60 100644
 --- a/dist/ai/LanguageModel.js
 +++ b/dist/ai/LanguageModel.js
 @@ -340,16 +340,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
@@ -122,13 +122,13 @@ index a45cb6a..85bdd0a 100644
 -          }
 -        }
 -        return Effect.void;
--      }) : identity)));
-+      return deferDecodeFailure(streamWithNonIncrementalFallback(), encodedToolkit ? parts => decodeParts(parts).pipe(Effect.tap(() => validateProviderExecutedToolCalls(encodedToolkit, parts))) : decodeParts);
+-      }) : identity)), Stream.prepend(preResolvedStreamParts));
++      return deferDecodeFailure(streamWithNonIncrementalFallback(), encodedToolkit ? parts => decodeParts(parts).pipe(Effect.tap(() => validateProviderExecutedToolCalls(encodedToolkit, parts))) : decodeParts).pipe(Stream.prepend(preResolvedStreamParts));
      }
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
 diff --git a/dist/http-api/HttpApiBuilder.js b/dist/http-api/HttpApiBuilder.js
-index 3764c44..101ae35 100644
+index 7bb7c90629c17ca1634a5424c8ce06ef8802b981..66202c00196dd9fcbea18802e4a56dbf0e06ac86 100644
 --- a/dist/http-api/HttpApiBuilder.js
 +++ b/dist/http-api/HttpApiBuilder.js
 @@ -496,7 +496,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
@@ -140,11 +140,11 @@ index 3764c44..101ae35 100644
 +  // router graph is built, so a Worker's cold start does not pay for every route.
 +  let httpEffect;
 +  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), Effect.suspend(() => httpEffect ??= handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw)), {
-     uninterruptible: handler.uninterruptible
+     uninterruptible: handler.uninterruptible,
+     redactedParams: HttpApi.getEndpointRedactedParams(api, group, endpoint)
    });
- }
 diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
-index b71c514..6192bda 100644
+index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747ffd55692f 100644
 --- a/dist/internal/redacted.js
 +++ b/dist/internal/redacted.js
 @@ -1,5 +1,11 @@

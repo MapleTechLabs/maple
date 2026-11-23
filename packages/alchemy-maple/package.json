@@ -61,7 +61,7 @@
 		"@effect/vitest": "catalog:effect",
 		"@maple/domain": "workspace:*",
 		"@maple/local-server": "workspace:*",
-		"@types/bun": "^1.4.4",
+		"@types/bun": "^1.4.5",
 		"@types/node": "catalog:tooling",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",

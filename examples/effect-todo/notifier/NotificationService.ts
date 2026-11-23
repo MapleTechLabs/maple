@@ -39,9 +39,7 @@ const jitter = (minMs: number, maxMs: number) =>
  */
 const spanEvent = (name: string, attributes?: Record<string, unknown>) =>
 	Effect.currentSpan.pipe(
-		Effect.flatMap((span) =>
-			Clock.currentTimeNanos.pipe(Effect.map((nanos) => span.event(name, nanos, attributes))),
-		),
+		Effect.zipWith(Clock.currentTimeNanos, (span, nanos) => span.event(name, nanos, attributes)),
 		Effect.ignore,
 	)
 

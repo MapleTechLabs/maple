@@ -26,6 +26,8 @@ import { InvestigationService } from "@maple/backend/services/errors/Investigati
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { IngestSetupService } from "@maple/backend/services/onboarding/IngestSetupService"
+import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { SearchConsoleService } from "@maple/backend/services/integrations/SearchConsoleService"
@@ -79,10 +81,12 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	ErrorIssueMergeService.layer,
 	ErrorPolicyService.layer,
 	ErrorsService.layer,
+	IngestSetupService.layer,
 	IntegrationInventoryService.layer,
 	SourcesService.layer,
 	InvestigationService.layer,
 	IssueFixVerificationService.layer,
+	OnboardingAgentRunService.layer,
 	QueryEngineService.layer,
 	PromqlQueryService.layer,
 	RailwayMetricsService.layer,
