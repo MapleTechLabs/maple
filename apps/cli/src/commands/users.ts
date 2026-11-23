@@ -90,7 +90,10 @@ export const users = Command.make("users", {
 				notes: (data) =>
 					data.nextCursor === undefined
 						? []
-						: [`More users: rerun with the same flags plus --cursor ${data.nextCursor}`],
+						: [
+								// The window is pinned: `--since` would resolve against a later now on the next run.
+								`More users: rerun with the same filters plus --start '${range.startTime}' --end '${range.endTime}' --cursor ${data.nextCursor}`,
+							],
 			})
 		}),
 	),
