@@ -92,11 +92,14 @@ describe("local ingest rules", () => {
 					},
 				]),
 			).compiled
-		const ruled = (compiled: ReturnType<typeof eventNameRule>) => {
+		const ruled = (
+			compiled: ReturnType<typeof eventNameRule>,
+			attributes: Array<ReturnType<typeof str>> = [str("k", "v")],
+		) => {
 			const log = {
 				timeUnixNano: "1700000000000000000",
 				eventName: "gen_ai.evaluation.result",
-				attributes: [str("k", "v")],
+				attributes,
 			}
 			const request = { resourceLogs: [{ scopeLogs: [{ logRecords: [log] }] }] }
 			applyLocalIngestRules("logs", request, compiled)
@@ -120,6 +123,18 @@ describe("local ingest rules", () => {
 		const masked = ruled(eventNameRule(["event.name"], "mask"))
 		expect(masked.eventName).not.toBe("gen_ai.evaluation.result")
 		expect(masked.logAttributes).toEqual({ k: "v", "event.name": masked.eventName })
+		// A record with its own event.name too: masking that redacts eventName as well, and a rule
+		// that leaves it alone leaves eventName as sent.
+		const own = [str("event.name", "own.name")]
+		const ownMasked = ruled(eventNameRule(["event.name"], "mask"), own)
+		expect([
+			ownMasked.eventName === "gen_ai.evaluation.result",
+			ownMasked.eventName === "own.name",
+		]).toEqual([false, false])
+		expect(ownMasked.logAttributes).toEqual({ "event.name": ownMasked.eventName })
+		expect(ruled(eventNameRule(["k"], "remove"), [str("event.name", "own.name")]).eventName).toBe(
+			"gen_ai.evaluation.result",
+		)
 	})
 
 	it("removes a resource whose every record was dropped", () => {
