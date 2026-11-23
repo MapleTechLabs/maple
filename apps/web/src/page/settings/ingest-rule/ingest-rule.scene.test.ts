@@ -127,6 +127,25 @@ describe("ingest rule editor", () => {
 		)
 	})
 
+	test("a parsed field named like an Object method still shows", () => {
+		const model = pageUpdate(
+			fresh("parse-json-logs"),
+			Message.CompletedFetchSamples({
+				key: fresh("parse-json-logs").samplesKey,
+				result: Result.succeed({
+					_tag: "logs",
+					rows: [log("", '{"constructor":"x","toString":"y"}')],
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("constructor")).toExist(),
+			expectView(text("toString")).toExist(),
+		)
+	})
+
 	test("switching to parse limits the rule to logs and adds a JSON step", () => {
 		scene(
 			{ update: pageUpdate, view },

@@ -230,7 +230,7 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 			return sameValue(next, value) ? [] : [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
 		}),
 		...Arr.flatMap(Rec.toEntries(b), ([key, value]) =>
-			key in a ? [] : [`${scope}${key} = ${truncate(valueText(value), 60)}`],
+			Rec.has(a, key) ? [] : [`${scope}${key} = ${truncate(valueText(value), 60)}`],
 		),
 	]
 	const severity =

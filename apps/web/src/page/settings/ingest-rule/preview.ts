@@ -8,7 +8,7 @@ import {
 	type RuleRecord,
 	spanSampleToRecord,
 } from "@maple/ingest-rules"
-import { Schema, Array as Arr, String as Str, Struct } from "effect"
+import { Schema, Array as Arr, Record as Rec, String as Str, Struct } from "effect"
 
 const encodeAttrJson = Schema.encodeSync(
 	Schema.fromJsonString(Schema.Unknown, {
@@ -104,7 +104,7 @@ const show = (value: AttrValue | undefined): string =>
 const mapChanges = (where: string, before: AttrMap, after: AttrMap): ReadonlyArray<ValueChange> =>
 	Arr.flatMap(Struct.keys(before), (key) => {
 		const was = show(before[key])
-		const now = key in after ? show(after[key]) : null
+		const now = Rec.has(after, key) ? show(after[key]) : null
 		return now === was ? [] : [{ where, key, before: was, after: now }]
 	})
 
@@ -134,7 +134,8 @@ const PARSE_ERROR = "maple.parse.error"
 const parsedFields = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ParsedField> => [
 	...Arr.flatMap(Struct.keys(after.attributes), (key) => {
 		const now = show(after.attributes[key])
-		return key === PARSE_ERROR || (key in before.attributes && show(before.attributes[key]) === now)
+		return key === PARSE_ERROR ||
+			(Rec.has(before.attributes, key) && show(before.attributes[key]) === now)
 			? []
 			: [{ key, value: now }]
 	}),

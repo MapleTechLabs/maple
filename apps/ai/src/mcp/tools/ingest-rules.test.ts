@@ -316,6 +316,25 @@ describe("ingest rule MCP tools", () => {
 		)
 	})
 
+	it("lists parsed fields named like Object methods", () => {
+		const preview = previewOver(
+			{
+				signals: ["logs"],
+				conditions: [],
+				action: { _tag: "parse", steps: [{ _tag: "json", source: "body", prefix: "" }] },
+			},
+			[
+				{
+					signal: "logs" as const,
+					resource: {},
+					attributes: {},
+					body: '{"constructor":"x","toString":"y"}',
+				},
+			],
+		)
+		assert.deepEqual(preview.examples[0]?.changes, ["constructor = x", "toString = y"])
+	})
+
 	it("names the argument a validation problem is about", () => {
 		assert.deepEqual(
 			Arr.map(
