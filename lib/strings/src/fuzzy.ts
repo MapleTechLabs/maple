@@ -72,6 +72,8 @@ const typoMatch = (
 	field: ReadonlyArray<string>,
 	maxErrors: number,
 ): Option.Option<Typo> => {
+	// Each field letter covers at most one query letter; the rest are edits whatever the alignment.
+	if (query.length - field.length > maxErrors) return Option.none()
 	// Row i holds, per field position j, the cheapest alignment of query[0, i) ending at j, and
 	// where in the field that alignment starts. Row 0 is free anywhere: the match may start there.
 	let before: Array<number> = []
@@ -145,11 +147,12 @@ const scoreField = (query: Query, field: Field): Option.Option<number> => {
 	)
 }
 
-// Nudges within a kind, too small to cross into the next: a field of fewer words wins (a title beats a
-// sentence that contains it), and so does an item that also matches on its other keys.
-const WORD_NUDGE = 0.005
-const MAX_WORD_NUDGE = 0.09
+// Nudges within a kind: a field of fewer words wins (a title beats a sentence that contains it),
+// and so does an item that also matches on its other keys. Their caps sum below the 0.1 between kinds.
+const WORD_NUDGE = 0.004
+const MAX_WORD_NUDGE = 0.045
 const OTHER_KEY_NUDGE = 0.05
+const MAX_OTHER_KEY_NUDGE = 0.045
 
 const byScore = Order.combineAll<{ readonly score: number; readonly refIndex: number }>([
 	Order.mapInput(Order.Number, (match) => match.score),
@@ -185,7 +188,11 @@ const scoreItem = (
 	const [best, ...others] = Arr.sort(perKey, Order.Number)
 	if (best === undefined) return Option.none()
 	return Option.some(
-		best - OTHER_KEY_NUDGE * Arr.reduce(others, 0, (sum, other) => sum + Math.max(0, 1 - other)),
+		best -
+			Math.min(
+				MAX_OTHER_KEY_NUDGE,
+				OTHER_KEY_NUDGE * Arr.reduce(others, 0, (sum, other) => sum + Math.max(0, 1 - other)),
+			),
 	)
 }
 

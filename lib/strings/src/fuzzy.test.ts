@@ -87,3 +87,44 @@ describe("fuzzySearch", () => {
 		expect(Arr.map(search("beta"), (match) => match.refIndex)).toEqual([1, 0])
 	})
 })
+
+describe("fuzzySearch edge cases", () => {
+	const one = (fields: ReadonlyArray<string>, threshold = 0.3) =>
+		makeFuzzySearch(fields, { keys: [{ get: (field) => field, weight: 1 }], threshold })
+
+	it("matches a field shorter than the query only while the length gap fits the typo budget", () => {
+		// Five letters allow one edit: one extra letter still matches "logs", two do not.
+		expect(Arr.map(one(["logs"])("logsx"), (match) => match.item)).toEqual(["logs"])
+		expect(one(["logs"])("logsxx")).toEqual([])
+		expect(one(["ab"])("abcdefgh")).toEqual([])
+	})
+
+	it("keeps a word-start alignment when a deletion ties with a substitution", () => {
+		// Both are one edit at a word start ("logs" by deleting the x, "blogs" by substituting it),
+		// so input order decides; a lost word start would sink "a logs" below "blogs z".
+		const search = one(["a logs", "blogs z"])
+		expect(Arr.map(search("xlogs"), (match) => match.item)).toEqual(["a logs", "blogs z"])
+	})
+
+	it("ranks a higher match kind above a lower one whatever the word counts and other keys", () => {
+		const long = Arr.join(
+			Arr.makeBy(20, () => "word"),
+			" ",
+		)
+		const rows = [
+			{ heading: `Services ${long}`, title: "Zzz" },
+			{ heading: "A services", title: "B services" },
+			{ heading: "Services", title: "Services overview" },
+			{ heading: `A services ${long}`, title: "Zzz" },
+		]
+		const search = makeFuzzySearch(rows, {
+			keys: [
+				{ get: (row) => row.heading, weight: 0.6 },
+				{ get: (row) => row.title, weight: 0.4 },
+			],
+			threshold: 0.3,
+		})
+		// Exact, then prefix, then word start: within each kind, fewer words and more keys win.
+		expect(Arr.map(search("services"), (match) => match.refIndex)).toEqual([2, 0, 1, 3])
+	})
+})
