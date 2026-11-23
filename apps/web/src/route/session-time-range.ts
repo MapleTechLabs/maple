@@ -38,6 +38,8 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"ErrorIssue",
 			"AgentSessionTool",
 			"AgentSessionTools",
+			"AgentSessionEvals",
+			"AgentSessionEvaluator",
 			"McpServers",
 			"McpServer",
 			"McpServerTool",

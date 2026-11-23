@@ -477,6 +477,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/agent-evals",
+		title: "Agent evals",
+		description:
+			"The `/agent-sessions/evals` tab, the faithfulness evaluator's page (regressing, with eval errors) and a session's Scores group over a fixture week (?view=list|empty|detail|failing|session).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/mcp",
 		title: "MCP hub",
 		description:

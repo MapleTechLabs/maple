@@ -80,6 +80,7 @@ const renderPage = (
 	audience: PageContext["audience"],
 	hasProfiling: PageContext["hasProfiling"],
 	hasCloudSecurity: PageContext["hasCloudSecurity"],
+	hasLlmEvals: PageContext["hasLlmEvals"],
 	isMobile: boolean,
 	isBelowSm: boolean,
 	isBelowLg: boolean,
@@ -98,6 +99,7 @@ const renderPage = (
 				...(audience === undefined ? undefined : { audience }),
 				...(hasProfiling === undefined ? undefined : { hasProfiling }),
 				...(hasCloudSecurity === undefined ? undefined : { hasCloudSecurity }),
+				...(hasLlmEvals === undefined ? undefined : { hasLlmEvals }),
 			},
 			isMobile,
 			isBelowSm,
@@ -115,7 +117,16 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 	Option.flatMap(Option.fromNullishOr(model.page), (page) =>
 		Option.map(
 			pageContextOf(model),
-			({ orgId, pinnedNamespace, timeZone, infra, audience, hasProfiling, hasCloudSecurity }) =>
+			({
+				orgId,
+				pinnedNamespace,
+				timeZone,
+				infra,
+				audience,
+				hasProfiling,
+				hasCloudSecurity,
+				hasLlmEvals,
+			}) =>
 				lazyPage(position, renderPage, [
 					h,
 					page,
@@ -129,6 +140,7 @@ const lazyPageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosit
 					audience,
 					hasProfiling,
 					hasCloudSecurity,
+					hasLlmEvals,
 					model.shell.isMobile,
 					model.shell.isBelowSm,
 					model.shell.isFilterCollapsed,

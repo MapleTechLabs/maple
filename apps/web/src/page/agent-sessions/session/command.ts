@@ -1,5 +1,6 @@
 import { AiSessionSpanCursor } from "@maple/domain/http"
 import { getAiSessionSpans, getAiSessionSummary } from "@maple/web-data/warehouse/ai-sessions"
+import { getAiSessionEvaluations } from "@maple/web-data/warehouse/ai-evaluations"
 import { snapTimestamp } from "@maple/web-data/lib/time-range"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
@@ -80,6 +81,24 @@ export const FetchTotals = Command.define("FetchAgentSessionTotals", {
 	execute: ({ key, sessionId, window }) =>
 		getAiSessionSummary({ data: sessionInput(sessionId, window) }).pipe(
 			settleTo((result) => Message.CompletedFetchTotals({ key, result })),
+		),
+})
+
+/** The eval scores written against the session's loaded traces. */
+export const FetchScores = Command.define("FetchAgentSessionScores", {
+	args: {
+		key: Schema.String,
+		sessionId: Schema.String,
+		window: TimeWindow,
+		traceIds: Schema.Array(Schema.String),
+	},
+	messages: [Message.CompletedFetchScores],
+	execute: ({ key, sessionId, window, traceIds }) =>
+		getAiSessionEvaluations({
+			data: { sessionId, startTime: window.startTime, endTime: window.endTime, traceIds },
+		}).pipe(
+			Effect.map((response) => response.scores),
+			settleTo((result) => Message.CompletedFetchScores({ key, result })),
 		),
 })
 

@@ -240,6 +240,7 @@ export const ClerkOrganization = Schema.Struct({
 		aiAutoTriage: Schema.Boolean,
 		cloudSecurity: Schema.Boolean,
 		dataSources: Schema.Boolean,
+		llmEvals: Schema.Boolean,
 		profiling: Schema.Boolean,
 		securityAudit: Schema.Boolean,
 	}),

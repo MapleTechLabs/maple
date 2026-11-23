@@ -264,6 +264,12 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 									clerkOrganizationOf(model),
 									(organization) => organization.flags.cloudSecurity,
 								),
+							hasLlmEvals:
+								!isClerkAuthEnabled ||
+								Option.exists(
+									clerkOrganizationOf(model),
+									(organization) => organization.flags.llmEvals,
+								),
 						})),
 					),
 	}),
