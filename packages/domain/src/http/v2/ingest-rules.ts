@@ -1,5 +1,5 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import {
 	INGEST_RULE_LIMITS,
 	IngestRuleCondition,
@@ -7,6 +7,9 @@ import {
 	IngestRuleRedactMethod,
 	IngestRuleScope,
 	IngestRuleSignal,
+	IngestParseSource,
+	IngestTimestampFormat,
+	type IngestParseStep,
 	type IngestRuleAction,
 } from "../../ingest-rules"
 import { IngestRuleId } from "@maple/primitives"
@@ -36,6 +39,109 @@ const Position = Schema.Number.check(
 	Schema.isInt(),
 	Schema.isBetween({ minimum: 0, maximum: INGEST_RULE_LIMITS.maxPosition }),
 )
+
+const stepSource = {
+	source: IngestParseSource.annotate({ description: "Read the log `body`, or the log attribute `key`." }),
+	key: Schema.optionalKey(Schema.String).annotate({
+		description: "The attribute to read when `source` is `attribute`.",
+	}),
+}
+const stepPrefix = {
+	prefix: Schema.optionalKey(Schema.String).annotate({
+		description: "Prepended to every attribute key the step writes.",
+		examples: ["app."],
+	}),
+}
+
+export const V2IngestParseStep = Schema.Union([
+	Schema.Struct({ type: Schema.Literal("json"), ...stepSource, ...stepPrefix }).annotate({
+		identifier: "IngestParseJsonStep",
+		title: "JSON",
+		description: "Flattens a JSON object, or a structured body, into attributes with dotted keys.",
+	}),
+	Schema.Struct({
+		type: Schema.Literal("regex"),
+		...stepSource,
+		pattern: Schema.String.annotate({
+			description:
+				"A regular expression with named groups; each group that matched becomes an attribute.",
+			examples: ["^(?<method>[A-Z]+) (?<path>[^ ]+)"],
+		}),
+		...stepPrefix,
+	}).annotate({ identifier: "IngestParseRegexStep", title: "Regex" }),
+	Schema.Struct({
+		type: Schema.Literal("grok"),
+		...stepSource,
+		pattern: Schema.String.annotate({
+			description:
+				"A grok pattern: `%{PATTERN:field}` or `%{PATTERN:field:int}` from Maple's grok library.",
+			examples: ["%{IP:client.address} %{WORD:method} %{NOTSPACE:path}"],
+		}),
+		...stepPrefix,
+	}).annotate({ identifier: "IngestParseGrokStep", title: "Grok" }),
+	Schema.Struct({ type: Schema.Literal("severity"), ...stepSource }).annotate({
+		identifier: "IngestParseSeverityStep",
+		title: "Severity",
+		description: "Sets the log severity from a level name (`warn`, `error`) or number (1 to 24).",
+	}),
+	Schema.Struct({
+		type: Schema.Literal("timestamp"),
+		...stepSource,
+		format: IngestTimestampFormat.annotate({
+			description: "How the value is written.",
+			examples: ["rfc3339"],
+		}),
+	}).annotate({
+		identifier: "IngestParseTimestampStep",
+		title: "Timestamp",
+		description: "Sets the log timestamp.",
+	}),
+]).annotate({ identifier: "IngestParseStep", title: "Parse step" })
+export type V2IngestParseStep = Schema.Schema.Type<typeof V2IngestParseStep>
+
+const toV2Step = (step: IngestParseStep): V2IngestParseStep => {
+	switch (step._tag) {
+		case "json": {
+			const { _tag, ...rest } = step
+			return { type: _tag, ...rest }
+		}
+		case "regex":
+		case "grok": {
+			const { _tag, ...rest } = step
+			return { type: _tag, ...rest }
+		}
+		case "severity": {
+			const { _tag, ...rest } = step
+			return { type: _tag, ...rest }
+		}
+		case "timestamp": {
+			const { _tag, ...rest } = step
+			return { type: _tag, ...rest }
+		}
+	}
+}
+
+const fromV2Step = (step: V2IngestParseStep): IngestParseStep => {
+	switch (step.type) {
+		case "json": {
+			const { type, ...rest } = step
+			return { _tag: type, ...rest }
+		}
+		case "regex":
+		case "grok": {
+			const { type, ...rest } = step
+			return { _tag: type, ...rest }
+		}
+		case "severity": {
+			const { type, ...rest } = step
+			return { _tag: type, ...rest }
+		}
+		case "timestamp": {
+			const { type, ...rest } = step
+			return { _tag: type, ...rest }
+		}
+	}
+}
 
 export const V2IngestRuleAction = Schema.Union([
 	Schema.Struct({
@@ -76,32 +182,44 @@ export const V2IngestRuleAction = Schema.Union([
 			examples: ["mask"],
 		}),
 	}).annotate({ identifier: "IngestRuleRedactAction", title: "Redact" }),
+	Schema.Struct({
+		type: Schema.Literal("parse"),
+		steps: Schema.Array(V2IngestParseStep).annotate({
+			description:
+				"Run in order on logs the conditions match, after drop and redact rules, so they read redacted text; redact rules then also cover the attributes they write. A failed step sets `maple.parse.error` and the log is kept.",
+			examples: [[{ type: "json", source: "body" }]],
+		}),
+	}).annotate({ identifier: "IngestRuleParseAction", title: "Parse" }),
 ]).annotate({ identifier: "IngestRuleAction", title: "Ingest rule action" })
 export type V2IngestRuleAction = Schema.Schema.Type<typeof V2IngestRuleAction>
 
 export const toV2IngestRuleAction = (action: IngestRuleAction): V2IngestRuleAction =>
 	action._tag === "drop"
 		? { type: "drop", keep_percent: action.keepPercent }
-		: {
-				type: "redact",
-				keys: action.keys,
-				detectors: action.detectors,
-				patterns: action.patterns,
-				scopes: action.scopes,
-				method: action.method,
-			}
+		: action._tag === "parse"
+			? { type: "parse", steps: Arr.map(action.steps, toV2Step) }
+			: {
+					type: "redact",
+					keys: action.keys,
+					detectors: action.detectors,
+					patterns: action.patterns,
+					scopes: action.scopes,
+					method: action.method,
+				}
 
 export const fromV2IngestRuleAction = (action: V2IngestRuleAction): IngestRuleAction =>
 	action.type === "drop"
 		? { _tag: "drop", keepPercent: action.keep_percent }
-		: {
-				_tag: "redact",
-				keys: action.keys,
-				detectors: action.detectors,
-				patterns: action.patterns,
-				scopes: action.scopes,
-				method: action.method,
-			}
+		: action.type === "parse"
+			? { _tag: "parse", steps: Arr.map(action.steps, fromV2Step) }
+			: {
+					_tag: "redact",
+					keys: action.keys,
+					detectors: action.detectors,
+					patterns: action.patterns,
+					scopes: action.scopes,
+					method: action.method,
+				}
 
 const signalsField = Schema.Array(IngestRuleSignal).annotate({
 	description: "Signals the rule applies to.",
@@ -140,7 +258,8 @@ export const V2IngestRule = Schema.Struct({
 		examples: [true],
 	}),
 	position: Position.annotate({
-		description: "Redact rules run in ascending position; drop rules always run before redact rules.",
+		description:
+			"Drop rules always run first; redact rules, then parse rules, run in ascending position.",
 		examples: [0],
 	}),
 	signals: signalsField,
@@ -152,7 +271,7 @@ export const V2IngestRule = Schema.Struct({
 	identifier: "IngestRule",
 	title: "Ingest Rule",
 	description:
-		"A rule the ingest gateway applies before telemetry is stored or billed: drop matching records, or redact values in them. Applies to new data within 30 seconds.",
+		"A rule the ingest gateway applies before telemetry is stored or billed: drop matching records, parse log bodies into attributes, or redact values. Applies to new data within 30 seconds.",
 	examples: [wireExample(ingestRuleExample)],
 })
 export type V2IngestRule = Schema.Schema.Type<typeof V2IngestRule>
@@ -450,7 +569,7 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 				identifier: "createIngestRule",
 				summary: "Create an ingest rule",
 				description:
-					"Creates a drop or redact rule. Requires the `ingest_rules:write` scope and an admin role.",
+					"Creates a drop, parse or redact rule. Requires the `ingest_rules:write` scope and an admin role.",
 			}),
 		),
 	)
@@ -503,6 +622,6 @@ export class V2IngestRulesApiGroup extends HttpApiGroup.make("ingestRules")
 		OpenApi.annotations({
 			title: "Ingest Rules",
 			description:
-				"Drop or redact telemetry before Maple stores or bills it. Dropped data is not metered; redaction happens before anything is written to disk.",
+				"Drop, parse or redact telemetry before Maple stores or bills it. Dropped data is not metered; parsing and redaction happen before anything is written to disk.",
 		}),
 	) {}

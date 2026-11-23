@@ -1,6 +1,6 @@
 import { Effect, Schema, Array as Arr } from "effect"
 import { GetAiEvaluatorRequest, ListAiEvaluatorsRequest } from "@maple/domain/http"
-import { EVALUATION_NAME_MAX } from "@maple/domain/gen-ai-evaluation"
+import { AI_EVALUATOR_NAME_MAX_UNITS } from "@maple/domain/http"
 import type { AiEvaluationMeasures, AiEvaluationScore } from "@maple/domain/http"
 import { GetEvaluationScoresOutput, ListEvaluationsOutput } from "@maple/domain/mcp-outputs"
 import { AiEvaluationReadService } from "@maple/backend/services/ai-evaluations/AiEvaluationReadService"
@@ -126,7 +126,7 @@ export function registerGetEvaluationScoresTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			name: Schema.String.check(
 				Schema.isMinLength(1),
-				Schema.isMaxLength(EVALUATION_NAME_MAX),
+				Schema.isMaxLength(AI_EVALUATOR_NAME_MAX_UNITS),
 			).annotate({
 				description: "The evaluator's name (`gen_ai.evaluation.name`)",
 			}),

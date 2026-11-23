@@ -19,6 +19,8 @@ import {
 import {
 	type ConditionDraft,
 	defaultCondition,
+	defaultStep,
+	type StepDraft,
 	type Draft,
 	draftProblems,
 	emptyDraft,
@@ -103,6 +105,47 @@ const mapCondition = (
 			condition.id === id ? change(condition) : condition,
 		),
 	})
+
+const mapStep = (model: Model, id: number, change: (step: StepDraft) => StepDraft): Return =>
+	patchDraft(model, {
+		steps: Arr.map(model.draft.steps, (step) => (step.id === id ? change(step) : step)),
+	})
+
+/** Parse rules are logs-only; the first switch to parse starts from a JSON step. */
+const pickAction = (model: Model, actionType: Draft["actionType"]): Return => {
+	const { steps, nextStepId, signals, signalsBeforeParse } = model.draft
+	if (actionType === model.draft.actionType) return { model }
+	if (actionType !== "parse")
+		return patchDraft(model, {
+			actionType,
+			// Leaving parse gives back the signals parse narrowed to logs.
+			...(model.draft.actionType === "parse" && signalsBeforeParse.length > 0
+				? { signals: signalsBeforeParse, signalsBeforeParse: [] }
+				: undefined),
+		})
+	const firstStep =
+		steps.length > 0
+			? undefined
+			: { steps: [defaultStep(nextStepId, "json")], nextStepId: nextStepId + 1 }
+	return patchDraft(model, { actionType, signals: ["logs"], signalsBeforeParse: signals, ...firstStep })
+}
+
+const moveStep = (steps: ReadonlyArray<StepDraft>, id: number, by: -1 | 1): ReadonlyArray<StepDraft> => {
+	return Option.match(
+		Arr.findFirstIndex(steps, (step) => step.id === id),
+		{
+			onNone: () => steps,
+			onSome: (from) => {
+				const moving = steps[from]
+				const other = steps[from + by]
+				if (moving === undefined || other === undefined) return steps
+				return Arr.map(steps, (step, index) =>
+					index === from ? other : index === from + by ? moving : step,
+				)
+			},
+		},
+	)
+}
 
 const toggled = <A>(list: ReadonlyArray<A>, value: A): ReadonlyArray<A> =>
 	list.includes(value) ? Arr.filter(list, (entry) => entry !== value) : [...list, value]
@@ -263,7 +306,28 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ChangedText: ({ part, value }) => patchDraft(model, { [part]: value }),
 		ToggledEnabled: () => patchDraft(model, { enabled: !model.draft.enabled }),
 		ToggledSignal: ({ signal }) => patchDraft(model, { signals: toggled(model.draft.signals, signal) }),
-		PickedAction: ({ actionType }) => patchDraft(model, { actionType }),
+		PickedAction: ({ actionType }) => pickAction(model, actionType),
+		AddedStep: ({ kind }) =>
+			patchDraft(model, {
+				steps: [...model.draft.steps, defaultStep(model.draft.nextStepId, kind)],
+				nextStepId: model.draft.nextStepId + 1,
+			}),
+		RemovedStep: ({ id }) =>
+			patchDraft(model, { steps: Arr.filter(model.draft.steps, (step) => step.id !== id) }),
+		MovedStep: ({ id, by }) => patchDraft(model, { steps: moveStep(model.draft.steps, id, by) }),
+		ChangedStepKind: ({ id, kind }) =>
+			// Keep what was typed; an empty or untouched example takes the new kind's example.
+			mapStep(model, id, (step) => ({
+				...step,
+				kind,
+				pattern:
+					step.pattern === "" || step.pattern === defaultStep(id, step.kind).pattern
+						? defaultStep(id, kind).pattern
+						: step.pattern,
+			})),
+		ChangedStepSource: ({ id, source }) => mapStep(model, id, (step) => ({ ...step, source })),
+		ChangedStepText: ({ id, part, value }) => mapStep(model, id, (step) => ({ ...step, [part]: value })),
+		ChangedStepFormat: ({ id, format }) => mapStep(model, id, (step) => ({ ...step, format })),
 		AddedCondition: () => {
 			const field = fieldsFor(model.draft.signals)[0] ?? "service_name"
 			return patchDraft(model, {

@@ -14,7 +14,8 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/strings": "workspace:*",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"re2js": "2.10.0"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:effect",

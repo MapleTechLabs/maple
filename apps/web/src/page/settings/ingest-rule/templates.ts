@@ -1,11 +1,17 @@
 import { fromV2IngestRuleAction, type V2IngestRule } from "@maple/domain/http/v2"
 import type { IngestRuleCondition } from "@maple/domain/ingest-rules"
-import { type ConditionDraft, type Draft, emptyDraft, joinList } from "./form"
+import { type ConditionDraft, type Draft, defaultStep, emptyDraft, joinList, stepDraftOf } from "./form"
 import { Array as Arr } from "effect"
 
 // The empty state's starting points, and the draft an existing rule fills.
 
-export const TEMPLATE_IDS = ["redact-pii", "drop-debug-logs", "drop-health-checks", "hash-user-ids"] as const
+export const TEMPLATE_IDS = [
+	"redact-pii",
+	"drop-debug-logs",
+	"drop-health-checks",
+	"hash-user-ids",
+	"parse-json-logs",
+] as const
 export type TemplateId = (typeof TEMPLATE_IDS)[number]
 
 export const isTemplateId = (value: string): value is TemplateId =>
@@ -69,6 +75,19 @@ export const TEMPLATES = {
 			method: "hash",
 		},
 	},
+	"parse-json-logs": {
+		label: "Parse JSON logs",
+		draft: {
+			...emptyDraft,
+			name: "Parse JSON logs",
+			signals: ["logs"],
+			conditions: [condition(1, { field: "body", op: "regex", value: "^\\s*\\{" })],
+			nextConditionId: 2,
+			actionType: "parse",
+			steps: [defaultStep(1, "json"), defaultStep(2, "severity")],
+			nextStepId: 3,
+		},
+	},
 } satisfies Record<TemplateId, { readonly label: string; readonly draft: Draft }>
 
 const conditionDraft = (rule: IngestRuleCondition, index: number): ConditionDraft => ({
@@ -91,13 +110,19 @@ export const draftFromRule = (rule: V2IngestRule): Draft => {
 		nextConditionId: rule.conditions.length + 1,
 		...(action._tag === "drop"
 			? { actionType: "drop", keepPercent: String(action.keepPercent) }
-			: {
-					actionType: "redact",
-					keys: joinList(action.keys),
-					detectors: action.detectors,
-					patterns: Arr.join(action.patterns, "\n"),
-					scopes: action.scopes,
-					method: action.method,
-				}),
+			: action._tag === "parse"
+				? {
+						actionType: "parse",
+						steps: Arr.map(action.steps, (step, index) => stepDraftOf(step, index + 1)),
+						nextStepId: action.steps.length + 1,
+					}
+				: {
+						actionType: "redact",
+						keys: joinList(action.keys),
+						detectors: action.detectors,
+						patterns: Arr.join(action.patterns, "\n"),
+						scopes: action.scopes,
+						method: action.method,
+					}),
 	}
 }

@@ -85,7 +85,16 @@ const EvaluationWindow = {
 	endTime: TinybirdDateTime,
 }
 
-const EvaluatorName = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(EVALUATION_NAME_MAX))
+/**
+ * The longest evaluator name a read accepts, in UTF-16 units: storage cuts names at
+ * `EVALUATION_NAME_MAX` code points, which can be twice as many units (emoji, other astral text).
+ */
+export const AI_EVALUATOR_NAME_MAX_UNITS = EVALUATION_NAME_MAX * 2
+
+const EvaluatorName = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(AI_EVALUATOR_NAME_MAX_UNITS),
+)
 
 export class ListAiEvaluatorsRequest extends Schema.Class<ListAiEvaluatorsRequest>("ListAiEvaluatorsRequest")(
 	{

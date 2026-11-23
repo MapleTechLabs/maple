@@ -11,7 +11,7 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { MetricRow } from "../shared"
 import { MountWhereCaret } from "./command"
-import { distributionCells, timeGrid, valueFormat } from "./exemplars"
+import { distributionCells, exemplarDots, lineValuesByMs, timeGrid, valueFormat } from "./exemplars"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update, type Search } from "./update"
@@ -323,5 +323,27 @@ describe("metric exemplars and distribution", () => {
 			"2026-10-01T11:04:00.000Z",
 			"2026-10-01T11:05:00.000Z",
 		])
+	})
+
+	test("each dot carries the line's value at its bucket, whichever way the bucket is written", () => {
+		const line = lineValuesByMs([
+			{ bucket: "2026-10-01 11:00:00", A: 0.12 },
+			{ bucket: MINUTE_B, A: 0.25 },
+		])
+		const dots = exemplarDots(EXEMPLARS, valueFormat("duration_s"), "UTC", line)
+		expect(Arr.map(dots, (dot) => [dot.value, dot.baseline])).toEqual([
+			[2.5, 0.12],
+			[0.04, 0.12],
+			[0.3, 0.25],
+		])
+		// A bucket the line has no point for has no baseline, so its dot shows at rest.
+		expect(
+			exemplarDots(
+				[exemplar("2026-10-01T11:05:00.000Z", 1, "t")],
+				valueFormat("duration_s"),
+				"UTC",
+				line,
+			)[0]?.baseline,
+		).toBeUndefined()
 	})
 })
