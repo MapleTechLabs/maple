@@ -177,7 +177,7 @@ const scoreCells = (h: H, score: AiEvaluationScore, timeZone: string): ReadonlyA
 	timestamp(h, {
 		value: score.timestamp,
 		timeZone,
-		className: "w-32 shrink-0 font-mono text-2xs text-muted-foreground",
+		className: "hidden w-32 shrink-0 font-mono text-2xs text-muted-foreground @min-[720px]/panel:block",
 	}),
 	hstack(h, { gap: "1.5", align: "center", as: "span", className: "w-16 shrink-0" }, [
 		statusDot(h, { tone: verdictTone(score) }),
@@ -231,21 +231,25 @@ const scoreCells = (h: H, score: AiEvaluationScore, timeZone: string): ReadonlyA
 					),
 		],
 	),
-	typography(h, { size: "2xs", truncate: true, className: "w-24 shrink-0" }, [
-		textLink(
-			h,
-			{
-				tone: "muted",
-				isMono: true,
-				className: "block truncate",
-				href: hrefOf(
-					// No time hint: the score's time can be hours after the trace, outside the hint's reach.
-					AppRoute.Trace({ traceId: score.traceId, search: { spanId: score.spanId } }),
-				),
-			},
-			[Str.slice(0, 12)(score.traceId)],
-		),
-	]),
+	typography(
+		h,
+		{ size: "2xs", truncate: true, className: "hidden w-24 shrink-0 @min-[720px]/panel:block" },
+		[
+			textLink(
+				h,
+				{
+					tone: "muted",
+					isMono: true,
+					className: "block truncate",
+					href: hrefOf(
+						// No time hint: the score's time can be hours after the trace, outside the hint's reach.
+						AppRoute.Trace({ traceId: score.traceId, search: { spanId: score.spanId } }),
+					),
+				},
+				[Str.slice(0, 12)(score.traceId)],
+			),
+		],
+	),
 ]
 
 const scoresTable = (h: H, model: Model, detail: EvaluatorDetail, timeZone: string): Html =>
@@ -254,7 +258,12 @@ const scoresTable = (h: H, model: Model, detail: EvaluatorDetail, timeZone: stri
 			h,
 			[
 				toolTableHead(h, [
-					th(h, { label: "Time", width: "w-32 shrink-0" }),
+					// Time, Session and Trace hide on a phone, so the explanation keeps its room.
+					th(h, {
+						label: "Time",
+						width: "w-32 shrink-0",
+						hidden: "hidden @min-[720px]/panel:flex",
+					}),
 					th(h, { label: "Verdict", width: "w-16 shrink-0" }),
 					th(h, { label: "Score", width: "w-36 shrink-0" }),
 					th(h, { label: "Explanation", width: columnClass({ min: "0" }) }),
@@ -263,7 +272,11 @@ const scoresTable = (h: H, model: Model, detail: EvaluatorDetail, timeZone: stri
 						width: "w-28 shrink-0",
 						hidden: "hidden @min-[720px]/panel:flex",
 					}),
-					th(h, { label: "Trace", width: "w-24 shrink-0" }),
+					th(h, {
+						label: "Trace",
+						width: "w-24 shrink-0",
+						hidden: "hidden @min-[720px]/panel:flex",
+					}),
 				]),
 				toolTableBody(
 					h,
