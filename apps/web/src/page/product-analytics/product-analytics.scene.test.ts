@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Array as Arr, Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Order, Result, Schema } from "effect"
 import { fromString } from "foldkit/url"
 import { expect as expectView, given, Mount, scene, selector, text, withViewInputs } from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
@@ -625,6 +625,44 @@ describe("product analytics", () => {
 		expect(model.steps[1]).toMatchObject({ filterClause: 'method = "google"' })
 		const cleared = pageUpdate(model, Message.ToggledStepFilters())
 		expect(searchOf(cleared.outMessage).steps).toEqual(SIGNUP)
+	})
+
+	/** A key lookup's scope; the event properties' lookup names none. */
+	const scopeOf = (input: unknown): string =>
+		Option.match(
+			Schema.decodeUnknownOption(Schema.Struct({ scope: Schema.optional(Schema.String) }))(input),
+			{
+				onNone: () => "event",
+				onSome: (decoded) => decoded.scope ?? "event",
+			},
+		)
+
+	test("a user property breakdown asks for the property and titles its panel by the key", () => {
+		const { commands, model } = resolved({ tab: "funnels", steps: SIGNUP, breakdown: "user:plan" })
+		const scopes = Arr.flatMap(commands ?? [], (command) =>
+			command.name === "FetchProductAnalyticsAttributeKeys" ? [scopeOf(command.args?.input)] : [],
+		)
+		expect(Arr.sort(scopes, Order.String)).toEqual(["event", "group", "user"])
+		const split = Arr.findFirst(
+			commands ?? [],
+			(command) =>
+				command.name === "FetchProductAnalyticsFunnel" && command.args?.slot === "funnelBreakdown",
+		)
+		expect(Option.getOrUndefined(split)?.args).toMatchObject({ input: { breakdownBy: "user:plan" } })
+		const answered = settled(settled(model, "funnel", FUNNEL), "funnelBreakdown", [
+			{ name: "signup_started", value: 400, group: "pro" },
+			{ name: "signup_completed", value: 300, group: "pro" },
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			measured,
+			expectView(text("By plan")).toExist(),
+			expectView(
+				text("each person counts under the property's current value; without one they are Not set"),
+			).toExist(),
+		)
+		expect(searchOf(pickBreakdown(model, "group:tier").outMessage).breakdown).toBe("group:tier")
 	})
 
 	test("picking a breakdown writes it to the URL, and None clears it", () => {

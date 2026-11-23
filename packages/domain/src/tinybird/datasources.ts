@@ -3077,8 +3077,9 @@ export type ProductEventsRow = InferRow<typeof productEvents>
 
 /**
  * Identity links — one row per (visitor, user) pair ever observed together on a
- * session, materialized out of `session_replays` (later also from mobile
- * `identify` calls). This is how a funnel collapses a person's anonymous
+ * session, materialized out of `session_replays`, and on a server, mobile or
+ * trace product event (`identity_links_events_mv`). The `description` below still
+ * names sessions only, so the datafile changes no more than it has to. This is how a funnel collapses a person's anonymous
  * marketing visit (VisitorId only) and their later server-side events (UserId
  * only) into one row: a `product_events` row resolves its person as
  * `if(UserId != '', UserId, coalesce(link.UserId, VisitorId))`.
@@ -3109,6 +3110,11 @@ export const identityLinks = defineDatasource("identity_links", {
 		UserId: t.string(),
 		FirstSeen: t.simpleAggregateFunction("min", utcDateTime64(9)),
 	},
+	// REQUIRED: adding a feeding view makes Tinybird rebuild this table from its views, and
+	// `session_replays` keeps 30 days against these links' 365: without it every older link is
+	// dropped (seen in the #2960 preview plan). The copy and the views' backfill overlap, which
+	// the `min(FirstSeen)` merge collapses.
+	forwardQuery: "SELECT *",
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "tuple()",
 		sortingKey: ["OrgId", "VisitorId", "UserId"],
@@ -3120,6 +3126,50 @@ export const identityLinks = defineDatasource("identity_links", {
 })
 
 export type IdentityLinksRow = InferRow<typeof identityLinks>
+
+/**
+ * Person and group properties: one row per (Kind, Id, Key) after merging, where
+ * Kind is `user` (Id = UserId) or `group` (Id = GroupId). Written only by views:
+ * `person_properties_events_mv` from the `$<op>.<property>` keys a product event
+ * carries (`PERSON_PROPERTY_OPS` in `product-event-attributes.ts`) and
+ * `person_properties_traits_mv` from browser `identify()` traits.
+ *
+ * Each column merges to one answer whatever the merge timing, so a read never
+ * depends on which parts have merged: `set` keeps its newest value
+ * (`argMaxIf` by event time), `set_once` its earliest (`argMinIf`), `unset` its
+ * newest time. `PERSON_PROPERTY_VALUE_SQL` resolves them. Sorted by Key before Id
+ * so "everyone's plan" is one contiguous range.
+ *
+ * Kept a year past the property's last write. Browser traits rewrite their keys
+ * every session, so an active user never ages out.
+ */
+export const personProperties = defineDatasource("person_properties", {
+	tenantColumn: "OrgId",
+	description:
+		"Person (Kind = 'user', Id = UserId) and group (Kind = 'group', Id = GroupId) properties, one row per (Kind, Id, Key) after merging. Populated by views from product events' $set/$set_once/$unset attributes and browser identify() traits. Read the value with argMaxIfMerge(SetValue) when max(SetAt) > max(UnsetAt), else argMinIfMerge(OnceValue) when min(OnceAt) is after max(UnsetAt) and before 2199.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		/** `user` | `group`. */
+		Kind: t.string().lowCardinality(),
+		Id: t.string(),
+		Key: t.string(),
+		SetAt: t.simpleAggregateFunction("max", utcDateTime64(9)),
+		SetValue: t.aggregateFunction("argMaxIf", t.string(), utcDateTime64(9), t.uint8()),
+		/** `PERSON_PROPERTY_NEVER_SQL` when no `set_once` touched the key. */
+		OnceAt: t.simpleAggregateFunction("min", utcDateTime64(9)),
+		OnceValue: t.aggregateFunction("argMinIf", t.string(), utcDateTime64(9), t.uint8()),
+		UnsetAt: t.simpleAggregateFunction("max", utcDateTime64(9)),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime64(9)),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "tuple()",
+		sortingKey: ["OrgId", "Kind", "Key", "Id"],
+		ttl: "toDate(LastSeen) + INTERVAL 365 DAY",
+	}),
+})
+
+export type PersonPropertiesRow = InferRow<typeof personProperties>
 
 /**
  * Google Search Console per (site, grain, Pacific day as midnight UTC, page, query, country, device), from `SearchConsoleImportService`.

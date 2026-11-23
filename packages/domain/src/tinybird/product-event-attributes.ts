@@ -1,4 +1,4 @@
-import { Record as Rec } from "effect"
+import { Array as Arr, Record as Rec } from "effect"
 
 /**
  * The span-attribute contract that turns an instrumented span into a product
@@ -69,6 +69,74 @@ export const PRODUCT_EVENT_SESSION_ID_KEY = "session.id"
  * `server` and `mobile` (`POST /v1/events`).
  */
 export const PRODUCT_EVENT_SOURCE_TRACE = "trace"
+
+/**
+ * Person and group property operations. On a product event they are reserved
+ * `Attributes` keys, `$<op>.<property>`: the gateway writes the `set`,
+ * `set_once` and `unset` fields of a `POST /v1/events` row as these keys, and a
+ * browser `track()` prop may carry one. `person_properties_events_mv` applies
+ * them. On a span they are `maple.product_event.<op>.<property>` attributes,
+ * applied by `person_properties_traces_mv` (the trace projection leaves the
+ * namespace out of the event's `Attributes`). `group_*` ops apply to the
+ * event's group, the rest to its user; an event without that id applies nothing.
+ */
+export const PERSON_PROPERTY_OPS = [
+	"set",
+	"set_once",
+	"unset",
+	"group_set",
+	"group_set_once",
+	"group_unset",
+] as const
+export type PersonPropertyOp = (typeof PERSON_PROPERTY_OPS)[number]
+
+/** The `Attributes` key a property operation is stored under. */
+export const personPropertyAttributeKey = (op: PersonPropertyOp, property: string): string =>
+	`$${op}.${property}`
+
+/** The span attribute a trace sets to apply a property operation. */
+export const personPropertySpanKey = (op: PersonPropertyOp, property: string): string =>
+	`${PRODUCT_EVENT_ATTRIBUTE_NAMESPACE}${op}.${property}`
+
+/** Reserved event names that exist to carry property operations. */
+export const PRODUCT_EVENT_IDENTIFY_NAME = "$identify"
+export const PRODUCT_EVENT_GROUP_IDENTIFY_NAME = "$groupidentify"
+
+/** SQL predicate over the key expression `k`: an `Attributes` key holding a property operation. */
+export const personPropertyAttributeKeySql = (k: string): string =>
+	`(${Arr.join(
+		Arr.map(PERSON_PROPERTY_OPS, (op) => `startsWith(${k}, '$${op}.')`),
+		" OR ",
+	)})`
+
+/** SQL predicate over the key expression `k`: a span attribute holding a property operation. */
+export const personPropertySpanKeySql = (k: string): string =>
+	`(${Arr.join(
+		Arr.map(
+			PERSON_PROPERTY_OPS,
+			(op) => `startsWith(${k}, '${PRODUCT_EVENT_ATTRIBUTE_NAMESPACE}${op}.')`,
+		),
+		" OR ",
+	)})`
+
+/**
+ * `OnceAt` of a property no `set_once` touched: later than any real event, so
+ * `min(OnceAt)` keeps the earliest real one.
+ */
+export const PERSON_PROPERTY_NEVER_SQL = "toDateTime64('2199-12-31 23:59:59', 9, 'UTC')"
+
+/**
+ * A property's value from its `person_properties` rows, read per (Kind, Id, Key)
+ * group: the latest `set` unless an `unset` came after it; with no live `set`, the
+ * key's first `set_once` ever, unless an `unset` came after it; else NULL. So after
+ * an `unset`, a `set` brings the key back, and a `set_once` does only when it is the
+ * key's first. Two writes at the same instant: either may win.
+ */
+export const PERSON_PROPERTY_VALUE_SQL = `multiIf(
+    max(SetAt) > max(UnsetAt), argMaxIfMerge(SetValue),
+    min(OnceAt) < ${PERSON_PROPERTY_NEVER_SQL} AND min(OnceAt) > max(UnsetAt), argMinIfMerge(OnceValue),
+    NULL
+  )`
 
 /**
  * The `product_events` projection of one annotated span, in SCHEMA column order

@@ -33,7 +33,7 @@ import { Array as Arr, Option, String as Str } from "effect"
 
 type H = HtmlBuilder<Message>
 
-const GROUP_SHORT = { common: "", resource: "resource", attribute: "attr" }
+const GROUP_SHORT = { common: "", resource: "resource", attribute: "attr", property: "property" }
 
 /** The pick as the list shows it: no `attr.` / `resource.` prefix, the group named only to tell two fields apart. */
 const fieldTrigger = (h: H, field: ConditionField, isLabelShared: boolean): ReadonlyArray<Html | string> =>

@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import {
 	funnelStepLabel,
 	PathsAnchor,
@@ -14,6 +14,7 @@ import { MCP_PRODUCT_EVENTS_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
+import { PROPERTY_FILTER_FIELDS, propertyFilterArgs, propertyFiltersOf } from "../lib/attribute-filters"
 import { doc } from "../lib/tool-doc"
 import { eventIdentityNote, isBlankStep } from "../lib/product-identity"
 
@@ -64,6 +65,7 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 				noun: "members to list (the totals count everyone)",
 			}),
 			...WINDOW.fields,
+			...PROPERTY_FILTER_FIELDS,
 		}),
 		untrustedOutput: true,
 		hints: { readOnly: true },
@@ -97,8 +99,10 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 				"maple.ai.did_not_scope": didNot === undefined ? "none" : didNotScope,
 			})
 
+			const properties = yield* propertyFiltersOf(params)
 			const rows = yield* withTenantExecutor(
 				productEventsCohort({
+					...properties,
 					did,
 					...(didNot === undefined ? undefined : { didNot }),
 					didNotScope,
@@ -123,6 +127,7 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 					? (rows[0]?.didTotal ?? 0)
 					: yield* withTenantExecutor(
 							productEventsCohort({
+								...properties,
 								did,
 								didNotScope,
 								keyBy,
@@ -163,6 +168,9 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 				...(didNot === undefined ? undefined : { didNot, didNotScope }),
 				...(identity === undefined ? undefined : { identityNote: identity.note }),
 				...(identity?.keyBy === undefined ? undefined : { suggestedKeyBy: identity.keyBy }),
+				...(Rec.isEmptyRecord(propertyFilterArgs(params))
+					? undefined
+					: { filters: propertyFilterArgs(params) }),
 				didTotal,
 				total: rows[0]?.total ?? 0,
 				limit: params.limit,
@@ -264,6 +272,7 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 											? { did_not_scope: "window" }
 											: undefined),
 										key_by: output.suggestedKeyBy,
+										...output.filters,
 										...window,
 									},
 									`the same cohort counted by ${output.suggestedKeyBy}`,
@@ -286,6 +295,7 @@ export function registerQueryCohortTool(server: McpToolRegistrar) {
 									{
 										steps_json: stringifyJson([output.did, output.didNot]),
 										key_by: output.keyBy,
+										...output.filters,
 										...window,
 									},
 									"the conversion between the two, in order",

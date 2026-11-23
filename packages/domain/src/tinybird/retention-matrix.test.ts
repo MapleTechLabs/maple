@@ -85,6 +85,8 @@ const RETENTION_DAYS = {
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
 	identity_links: 365,
+	// A year past a property's last write. Browser traits refresh it every session; no email or name.
+	person_properties: 365,
 } as const
 
 const ZERO_RETENTION_DATASOURCES = ["service_map_edges_hourly_ingest"] as const

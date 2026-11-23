@@ -65,7 +65,6 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 
 const EVERY_FLAG = {
 	cloudSecurity: true,
-	productAnalytics: true,
 	securityAudit: true,
 }
 

@@ -33,6 +33,8 @@ import { SearchConsoleService } from "@maple/backend/services/integrations/Searc
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
+import { IngestSetupService } from "@maple/backend/services/onboarding/IngestSetupService"
+import { OnboardingAgentRunService } from "@maple/backend/services/onboarding/OnboardingAgentRunService"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { SlosService } from "@maple/backend/services/slos/SlosService"
 import { UsersReadService } from "@maple/backend/services/users/UsersReadService"
@@ -85,6 +87,8 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(VcsCommitService)({}),
 	Layer.mock(VcsSourceService)({}),
 	Layer.mock(SetupAuditService)({}),
+	Layer.mock(IngestSetupService)({}),
+	Layer.mock(OnboardingAgentRunService)({}),
 	Layer.mock(SlosService)({}),
 	Layer.mock(UptimeMonitorsService)({}),
 	Layer.mock(UsersReadService)({}),

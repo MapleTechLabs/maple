@@ -68,7 +68,11 @@ export const FetchFunnel = define(
 )
 export const FetchAttributeKeys = define(
 	"FetchProductAnalyticsAttributeKeys",
-	{ ...Window, limit: Schema.optional(Schema.Number) },
+	{
+		...Window,
+		limit: Schema.optional(Schema.Number),
+		scope: Schema.optional(Schema.Literals(["user", "group"])),
+	},
 	(data) => getProductEventAttributeKeys({ data }).pipe(Effect.map((response) => response.data)),
 )
 export const FetchPages = define(
