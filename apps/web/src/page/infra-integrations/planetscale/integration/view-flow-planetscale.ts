@@ -40,6 +40,7 @@ import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-pi
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { ruledSection } from "../../../kit/ruled-section"
 
 // PlanetScale in the connect flow: authorize (optionally a metrics token), pick the organization
 // and branches, then watch access, the inventory and the first metrics land.
@@ -226,7 +227,7 @@ const metricsPart = (h: H, model: Model, status: V2PlanetScaleIntegration): Html
 	const method = metricsMethodOf(model, status)
 	const select = (next: PlanetscaleMetricsMethod) =>
 		isAttached ? undefined : toHub(PlanetscaleMessage.SelectedMetricsMethod({ method: next }))
-	return vstack(h, { gap: "3", className: "border-t border-border pt-5" }, [
+	return ruledSection(h, [
 		heading(h, { level: 3, variant: "subsection" }, ["Branch metrics"]),
 		choiceTiles(h, [
 			{

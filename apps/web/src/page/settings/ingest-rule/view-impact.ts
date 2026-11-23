@@ -28,6 +28,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { SIGNAL_LABELS } from "./summary"
 import type { H } from "./view-form"
+import { ruledSection } from "../../kit/ruled-section"
 
 // The saved rule's impact: what the gateway counted it matching, dropping and redacting.
 
@@ -210,9 +211,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 				typography(h, { size: "xs", tone: "muted" }, ["Now"]),
 			]),
 		]),
-		...(totals.signals.length > 1
-			? [h.div([h.Class("border-t border-border pt-5")], [signalRows(h, rule, effect, totals)])]
-			: []),
+		...(totals.signals.length > 1 ? [ruledSection(h, [signalRows(h, rule, effect, totals)])] : []),
 	])
 }
 
