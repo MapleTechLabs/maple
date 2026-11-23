@@ -34,7 +34,12 @@ beforeEach(() => {
 	})
 })
 
+/** Undoes a test's change to the `fetch` property itself, before the global stubs are removed. */
+let restoreFetch: (() => void) | undefined
+
 afterEach(() => {
+	restoreFetch?.()
+	restoreFetch = undefined
 	unpatch?.()
 	vi.useRealTimers()
 	vi.unstubAllGlobals()
@@ -90,6 +95,19 @@ describe("instrumentFetch", () => {
 		const [span] = await finished(1)
 		if (!span) throw new Error("no span")
 		expect(sent).toEqual([traceparentOf(span)])
+	})
+
+	it("leaves a fetch another script locked alone, untraced, instead of failing setup", async () => {
+		const locked = globalThis.fetch
+		Object.defineProperty(globalThis, "fetch", { value: locked, writable: false, configurable: true })
+		restoreFetch = () =>
+			Object.defineProperty(globalThis, "fetch", { value: locked, writable: true, configurable: true })
+		setup()
+		await fetch(`${location.origin}/api/locked`)
+
+		expect(globalThis.fetch).toBe(locked)
+		expect(sent).toEqual([null])
+		expect(await finished(0)).toEqual([])
 	})
 
 	it("neither spans nor propagates to an ignored URL", async () => {

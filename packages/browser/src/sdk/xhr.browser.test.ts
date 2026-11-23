@@ -26,17 +26,26 @@ beforeEach(() => {
 		if (name === "traceparent") traceparents.push(value)
 		setRequestHeader.call(this, name, value)
 	})
-	const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] })
-	unpatch = instrumentXhr({
-		tracer: provider.getTracer("test"),
+	unpatch = instrument()
+})
+
+const instrument = (): (() => void) =>
+	instrumentXhr({
+		tracer: new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] }).getTracer(
+			"test",
+		),
 		ignoreUrls: [],
 		propagateTraceHeaderCorsUrls: [],
 		applyCustomAttributesOnSpan: () => {},
 	})
-})
+
+/** Undoes a test's change to an XMLHttpRequest.prototype property. */
+let restoreProto: (() => void) | undefined
 
 afterEach(() => {
 	unpatch?.()
+	restoreProto?.()
+	restoreProto = undefined
 	vi.useRealTimers()
 	vi.restoreAllMocks()
 	context.disable()
@@ -172,5 +181,27 @@ describe("instrumentXhr with one XMLHttpRequest reused", () => {
 		const spans = exporter.getFinishedSpans()
 		expectTwoRequests(spans, [a, b], [undefined, 200])
 		expect(spans.map((span) => span.events.at(-1)?.name)).toEqual(["abort", "loaded"])
+	})
+})
+
+describe("instrumentXhr when another script locked send", () => {
+	it("patches neither method, so requests run untraced instead of half-instrumented", async () => {
+		unpatch?.()
+		const proto = XMLHttpRequest.prototype
+		const open = Object.getOwnPropertyDescriptor(proto, "open")
+		const send = Object.getOwnPropertyDescriptor(proto, "send")
+		if (!open || !send) throw new Error("no XMLHttpRequest methods")
+		Object.defineProperty(proto, "send", { ...send, writable: false })
+		restoreProto = () => Object.defineProperty(proto, "send", send)
+		unpatch = instrument()
+
+		expect(Object.getOwnPropertyDescriptor(proto, "open")?.value).toBe(open.value)
+		const xhr = new XMLHttpRequest()
+		xhr.open("GET", blobUrl("a"))
+		const done = settled(xhr)
+		xhr.send()
+		await done
+		await ended(0)
+		expect(traceparents).toEqual([])
 	})
 })

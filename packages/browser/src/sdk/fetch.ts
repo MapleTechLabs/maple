@@ -15,6 +15,7 @@ import {
 	safely,
 	serverPort,
 	traceHeaders,
+	tryReplace,
 } from "./web"
 
 export interface FetchInstrumentationConfig extends RequestInstrumentationConfig {
@@ -104,7 +105,10 @@ export function instrumentFetch(config: FetchInstrumentationConfig): () => void 
 		})
 	}
 
-	globalThis.fetch = patched
+	if (!tryReplace(globalThis, "fetch", patched)) {
+		diag.warn("globalThis.fetch is read-only; fetch() calls will not be traced")
+		return () => {}
+	}
 	return () => {
 		enabled = false
 		if (globalThis.fetch === patched) globalThis.fetch = original

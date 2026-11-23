@@ -1,7 +1,7 @@
 // A CLIENT span per XMLHttpRequest, as OTel JS instrumentation-xml-http-request
 // 0.301 made it: opened at `open()`, propagated at `send()`, ended 300ms after
 // the request settles so its resource timing can be attached.
-import { context, type HrTime, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
+import { context, diag, type HrTime, type Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
 import { hrTime } from "./time"
 import {
 	addResourceTiming,
@@ -15,6 +15,7 @@ import {
 	safely,
 	serverPort,
 	traceHeaders,
+	tryReplace,
 } from "./web"
 
 export interface XhrInstrumentationConfig extends RequestInstrumentationConfig {
@@ -190,8 +191,12 @@ export function instrumentXhr(config: XhrInstrumentationConfig): () => void {
 		originalSend.apply(this, args)
 	}
 
-	proto.open = open
-	proto.send = send
+	// Both or neither: `open` without `send` would start spans nothing ever ends.
+	if (!tryReplace(proto, "open", open) || !tryReplace(proto, "send", send)) {
+		if (proto.open === open) proto.open = originalOpen
+		diag.warn("XMLHttpRequest.prototype is read-only; XMLHttpRequest calls will not be traced")
+		return () => {}
+	}
 	return () => {
 		enabled = false
 		pending = new WeakMap()

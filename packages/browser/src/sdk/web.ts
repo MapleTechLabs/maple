@@ -121,6 +121,16 @@ export function serverPort(url: URL): number | undefined {
 	return port !== 0 && !Number.isNaN(port) ? port : undefined
 }
 
+/** Replace `target[key]`; false when another script made it read-only (or the write did not take). */
+export function tryReplace<T extends object, K extends keyof T>(target: T, key: K, value: T[K]): boolean {
+	try {
+		target[key] = value
+	} catch {
+		return false
+	}
+	return target[key] === value
+}
+
 /** A hook the app or this SDK supplies; one that throws is logged, never surfaced. */
 export function safely(name: string, run: () => void): void {
 	try {
