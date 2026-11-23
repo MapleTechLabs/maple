@@ -1237,6 +1237,8 @@ impl<'a> Pass<'a> {
                 .get_or_insert_with(|| ScanBudget::new(parse::PAYLOAD_SCAN_BYTES, parse::PAYLOAD_SCAN_TIME));
             let budget = self.parse_budgets[index]
                 .get_or_insert_with(|| ScanBudget::new(parse::RULE_SCAN_BYTES, parse::RULE_SCAN_TIME));
+            // The payload's deadline caps the rule's, so the clock read before each step honours both.
+            budget.deadline = budget.deadline.min(total.deadline);
             total.check_clock();
             budget.check_clock();
             if total.spent() {

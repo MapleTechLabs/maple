@@ -246,8 +246,9 @@ source fails the step.
   counts as a parsed key, so an attribute redact rule can remove or mask it.
 - **Conditions.** Drop and redact rules decide whether they apply on the log before parsing, so
   their conditions never see a value parsing produces: `not_exists(level)` still matches a log
-  that parsing then gives a `level`, and a condition on a parsed attribute never matches; scope
-  the redact rule instead. A parse rule's conditions see the attributes and body as redaction and
+  that parsing then gives a `level`, and a condition can only match an attribute's value from
+  before parsing, never the one parsing writes over it. To redact parsed values, scope the redact
+  rule instead. A parse rule's conditions see the attributes and body as redaction and
   earlier parse rules left them, and the resource as received (the gateway redacts a resource once
   all its records were evaluated).
 - **Redaction.** Redaction runs before parsing, so a value a redact rule masks in the body or an
