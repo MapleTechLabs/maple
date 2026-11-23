@@ -89,7 +89,15 @@ export class BatchQueue<T> {
 			// microtask later, as the OTel logs processor did, so a page's exit flush
 			// sends its spans first and the logs take the keepalive room they leave.
 			if (this.strict) run()
-			else void Promise.resolve().then(run)
+			else {
+				// An exporter that throws (a cyclic log body) fails this export now, as one that reports failure.
+				Promise.resolve()
+					.then(run)
+					.catch((error: unknown) => {
+						clearTimeout(timer)
+						reject(error)
+					})
+			}
 		})
 		return this.strict
 			? exported

@@ -11,7 +11,9 @@ const isScalar = (value: unknown): value is string | number | boolean =>
 function isAnyValue(value: unknown, seen: WeakSet<object> = new WeakSet()): value is AnyValue {
 	if (isScalar(value) || value === null || value instanceof Uint8Array) return true
 	if (typeof value !== "object" || seen.has(value)) return false
-	if (!Array.isArray(value) && value.constructor !== Object && value.constructor !== undefined) return false
+	// The prototype, not `constructor`: a plain object may have an own key of that name.
+	const proto: unknown = Object.getPrototypeOf(value)
+	if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return false
 	seen.add(value)
 	const valid = Object.values(value).every((item) => item === undefined || isAnyValue(item, seen))
 	seen.delete(value)
@@ -59,7 +61,13 @@ export function addAttribute(
 		diag.warn(`Invalid attribute value set for key: ${key}`)
 		return "dropped"
 	}
-	target[key] = copyValue(value)
+	// Defined, not assigned: `target.__proto__ = v` would hit the inherited setter.
+	Object.defineProperty(target, key, {
+		value: copyValue(value),
+		enumerable: true,
+		writable: true,
+		configurable: true,
+	})
 	return isNew ? "added" : "replaced"
 }
 
