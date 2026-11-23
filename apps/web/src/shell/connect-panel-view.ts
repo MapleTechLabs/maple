@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { ingestUrl } from "../platform/ingest-url"
 import { mcpUrl } from "../platform/mcp-url"
 import { claudeCodeCommand, cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
-import { ONBOARD_SKILL_COMMAND } from "../page/kit/onboard-skill"
+import * as AgentHandoffView from "../page/kit/agent-handoff-view"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"
@@ -14,7 +14,6 @@ import { badge, separator } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import type { IconName } from "@maple/views/ui/icons.generated"
-import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel } from "@maple/views/ui/panel"
 import * as PopoverView from "@maple/views/ui/popover"
 import { skeleton } from "@maple/views/ui/skeleton"
@@ -23,7 +22,6 @@ import { toneBoxClass } from "@maple/views/ui/tone-box"
 import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, Option, String as Str } from "effect"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 
@@ -122,17 +120,22 @@ const credentials = (h: H, model: Model): Html =>
 									onToggle: Message.ClickedRevealPublicKey(),
 								},
 							}),
-							copyableField(h, {
-								id: "connect-private-key",
-								label: "Private key",
-								value: model.keys.privateKey,
-								copy: model.copies.privateKey,
-								toCopyMessage: toCopy("privateKey"),
-								masked: {
-									isVisible: model.isPrivateKeyVisible,
-									onToggle: Message.ClickedRevealPrivateKey(),
-								},
-							}),
+							// A member reads the public key only; the private field is left out for them.
+							...(model.keys.privateKey === null
+								? []
+								: [
+										copyableField(h, {
+											id: "connect-private-key",
+											label: "Private key",
+											value: model.keys.privateKey,
+											copy: model.copies.privateKey,
+											toCopyMessage: toCopy("privateKey"),
+											masked: {
+												isVisible: model.isPrivateKeyVisible,
+												onToggle: Message.ClickedRevealPrivateKey(),
+											},
+										}),
+									]),
 						]
 					: [fieldSkeleton(h, "Public key"), fieldSkeleton(h, "Private key")]),
 		],
@@ -236,48 +239,14 @@ const mcpCard = (h: H, model: Model): Html =>
 		],
 	)
 
-/** The command split before its first flag: each half stays on one line, so a wrap breaks only there. */
-const commandParts = (command: string): ReadonlyArray<string> => {
-	return Option.match(Str.indexOf(" --")(command), {
-		onNone: () => [command],
-		onSome: (flag) => [Str.slice(0, flag)(command), Str.slice(flag + 1)(command)],
+/** The prompt with its handoff code masked; Copy prompt mints the code. The public key only. */
+const agentPromptBlock = (h: H, model: Model): Html =>
+	AgentHandoffView.agentPrompt(h, {
+		model: model.agent,
+		publicKey: model.keys._tag === "Ready" ? model.keys.publicKey : "",
+		toMessage: (message) => Message.GotAgentMessage({ message, opening: model.keysRequest }),
+		showsProgress: false,
 	})
-}
-
-/** The onboarding command, wrapping before `--skill` so no part hides under the copy button. */
-const commandBlock = (h: H, model: Model): Html =>
-	hstack(
-		h,
-		{
-			gap: "2",
-			align: "start",
-			className: "rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
-		},
-		[
-			h.div(
-				[h.Class("min-w-0 flex-1 py-0.5")],
-				[
-					h.code(
-						[
-							h.Id("connect-skill-command"),
-							h.Class("select-all font-mono text-xs leading-5 break-words"),
-						],
-						Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
-							...(index > 0 ? [" "] : []),
-							h.span([h.Class("inline-block whitespace-nowrap")], [part]),
-						]),
-					),
-				],
-			),
-			CopyButton.view(h, {
-				model: model.copies.skill,
-				toParentMessage: toCopy("skill"),
-				value: ONBOARD_SKILL_COMMAND,
-				label: "Command",
-				className: COPY_CLASS,
-			}),
-		],
-	)
 
 /** The footer's two links share one style. */
 const LINK_CLASS =
@@ -307,13 +276,11 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 			h.div(
 				[h.Class("space-y-2")],
 				[
-					eyebrow(h, { variant: "label" }, ["Fastest path · Claude Code"]),
-					commandBlock(h, model),
+					eyebrow(h, { variant: "label" }, ["Use my coding agent"]),
 					typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-						"The ",
-						inlineCode(h, {}, ["maple-onboard"]),
-						" skill installs OpenTelemetry and wires traces, logs, and metrics end-to-end.",
+						"Paste this into Claude Code, Codex or Cursor. Your agent follows Maple's setup guide and checks that a real request arrives.",
 					]),
+					agentPromptBlock(h, model),
 				],
 			),
 			mcpCard(h, model),
