@@ -31,8 +31,11 @@ import { reportedCost } from "../../platform/reported-cost"
 
 export const REVIEW_FILES = "review_files"
 
-/** A child's wall clock. */
-const WORKER_DURATION = Duration.minutes(4)
+/**
+ * A child's wall clock. Six minutes: a child reasons at the review's high effort, and one call may
+ * run to `REVIEW_ATTEMPT_CAP` before its low retry.
+ */
+const WORKER_DURATION = Duration.minutes(6)
 
 /**
  * How much longer the parent waits for a child than the child runs. The child's own deadline then
@@ -109,7 +112,7 @@ const workerPolicy = AgentPolicy.make({
 	toolConcurrency: 4,
 	modelRetries: MODEL_RETRIES,
 	onExhaustion: "final-answer",
-	// A worker sees its own clock too, so it answers inside its four minutes.
+	// A worker sees its own clock too, so it answers inside its six minutes.
 	runStatus: "appended",
 })
 

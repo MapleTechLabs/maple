@@ -413,9 +413,49 @@ export const MODEL_CALL_OUTPUT_TOKENS = 32_000
  */
 export const MODEL_ATTEMPT_CAP = Duration.seconds(90)
 
+/**
+ * The cap for a pull request review's calls. A review asks for {@link reviewReasoningEffort}, and
+ * its hardest calls are the ones worth the wait: cut at 90s they were redone at low effort. Still
+ * leaves the low retry two minutes of `MODEL_CALL_TIMEOUT`.
+ */
+export const REVIEW_ATTEMPT_CAP = Duration.seconds(120)
+
+/**
+ * How hard an unattended review reasons on each model an organization can pick. Keyed by the
+ * pickable ids, so a model added to `PR_REVIEW_MODELS` does not compile until it has one.
+ *
+ * Flash and small models reason at high, where the extra thinking is cheap and they need it.
+ * Frontier models stop at medium: their high effort is slow and costly for little more recall.
+ */
+const REVIEW_REASONING_EFFORTS = {
+	"deepseek/deepseek-v4.1-flash-1017:nitro": "high",
+	"z-ai/glm-5.3-flash:nitro": "high",
+	// Its long reasoning ran investigations out of time (#1489).
+	"xiaomi/mimo-v2.6-pro": "medium",
+	"openai/gpt-5.6-luna": "high",
+	"openai/gpt-6-luna": "high",
+	"openai/gpt-6.1-sol": "medium",
+	"openai/gpt-6.2-sol": "medium",
+	"anthropic/claude-sonnet-5.5": "medium",
+	"anthropic/claude-haiku-5.5": "high",
+} as const satisfies { readonly [M in PrReviewModel]: ReasoningEffort }
+
+/** A deployment override outside the pickable list reasons at medium. */
+const DEFAULT_REVIEW_REASONING_EFFORT: ReasoningEffort = "medium"
+
+/** The reasoning effort a review pass sends for this model id. */
+export const reviewReasoningEffort = (model: string): ReasoningEffort =>
+	Option.getOrElse(
+		Option.map(
+			Arr.findFirst(PR_REVIEW_MODELS, (pickable) => pickable.id === model),
+			(pickable) => REVIEW_REASONING_EFFORTS[pickable.id],
+		),
+		() => DEFAULT_REVIEW_REASONING_EFFORT,
+	)
+
 /** The retry of a call cut at its cap: the same request, reasoning less. */
-const OPENROUTER_ATTEMPTS: ModelCallAttempts = {
-	cap: MODEL_ATTEMPT_CAP,
+const openRouterAttempts = (cap: Duration.Duration): ModelCallAttempts => ({
+	cap,
 	// A request field a model does not support is dropped by OpenRouter, not refused.
 	retry: (stream) =>
 		stream.pipe(
@@ -424,7 +464,7 @@ const OPENROUTER_ATTEMPTS: ModelCallAttempts = {
 			}),
 		),
 	retryReasoningLevel: "low",
-}
+})
 
 /**
  * The providers OpenRouter tries first, from `MAPLE_OPENROUTER_PROVIDER_ORDER`. A BYOK key is used
@@ -460,6 +500,8 @@ interface OpenRouterModelOptions {
 	readonly effort?: ReasoningEffort
 	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
 	readonly unattended: boolean
+	/** How long an unattended call streams before its low-effort retry; {@link MODEL_ATTEMPT_CAP} by default. */
+	readonly attemptCap?: Duration.Duration
 	readonly content: GenAiContent
 }
 
@@ -468,7 +510,7 @@ const openRouterModel = (
 	tags: LlmCallTags | undefined,
 	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const { effort, unattended, providerOrder, content } = options
+	const { effort, unattended, attemptCap = MODEL_ATTEMPT_CAP, providerOrder, content } = options
 	const limits = limitsFor(name)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
@@ -490,7 +532,9 @@ const openRouterModel = (
 				sessionAttributes: agentSessionSpanAttributes(tags),
 				content,
 			},
-			unattended ? { coalesceDeltas: true, attempts: OPENROUTER_ATTEMPTS } : { coalesceDeltas: false },
+			unattended
+				? { coalesceDeltas: true, attempts: openRouterAttempts(attemptCap) }
+				: { coalesceDeltas: false },
 		),
 		limits,
 		tags,
@@ -565,30 +609,31 @@ const servedReviewModel = (
  * The model pull request reviews and replies run on: the organization's pick, then the deployment's
  * override, then the region default. OpenRouter only: the id is an OpenRouter id, so a Workers AI
  * deployment reviews on its triage model rather than sending it one.
+ *
+ * `reasoning` marks the review pass: it sends the model's own {@link reviewReasoningEffort} and gets
+ * the longer {@link REVIEW_ATTEMPT_CAP}. Replies and the cancellation read send none and keep their
+ * latency.
  */
 export const resolveReviewModel = (
 	settings: LlmSettings,
 	tags?: LlmCallTags,
 	chosen: Option.Option<PrReviewModel> = Option.none(),
-): ResolvedModel =>
-	resolveLlmProvider(settings) === "workers-ai"
-		? resolveTriageModel(settings, tags, true)
-		: openRouterModel(
-				Option.getOrElse(
-					servedReviewModel(settings, chosen),
-					() =>
-						readString(settings, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
-						(openRouterRegion(settings) === "eu"
-							? EU_DEFAULT_REVIEW_MODEL
-							: DEFAULT_REVIEW_MODEL),
-				),
-				tags,
-				{
-					unattended: true,
-					providerOrder: openRouterProviderOrder(settings),
-					content: genAiContentOf(settings, tags),
-				},
-			)
+	reasoning = false,
+): ResolvedModel => {
+	if (resolveLlmProvider(settings) === "workers-ai") return resolveTriageModel(settings, tags, true)
+	const name = Option.getOrElse(
+		servedReviewModel(settings, chosen),
+		() =>
+			readString(settings, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+			(openRouterRegion(settings) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
+	)
+	return openRouterModel(name, tags, {
+		...(reasoning ? { effort: reviewReasoningEffort(name), attemptCap: REVIEW_ATTEMPT_CAP } : undefined),
+		unattended: true,
+		providerOrder: openRouterProviderOrder(settings),
+		content: genAiContentOf(settings, tags),
+	})
+}
 
 /**
  * The model a plan cancellation's second read runs on: the review model. One structured answer over

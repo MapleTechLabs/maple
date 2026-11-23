@@ -7,14 +7,14 @@ import { answeringWhenWarned, childFailureMessage, fanoutTimeRefusal } from "./f
 describe("fanoutTimeRefusal", () => {
 	it("starts a group with time for the child and the parent's submit", () => {
 		assert.isUndefined(fanoutTimeRefusal(10 * 60_000))
-		assert.isUndefined(fanoutTimeRefusal(5.75 * 60_000))
+		assert.isUndefined(fanoutTimeRefusal(7.75 * 60_000))
 	})
 
 	// A child started late cannot finish before the review is stopped, and loses its findings.
 	it("refuses a group that could not finish before the review is stopped", () => {
-		const late = fanoutTimeRefusal(5 * 60_000)
-		assert.include(late ?? "", "300 s are left")
-		assert.isDefined(fanoutTimeRefusal(5.4 * 60_000), "a child joins up to 15 s past its own clock")
+		const late = fanoutTimeRefusal(7 * 60_000)
+		assert.include(late ?? "", "420 s are left")
+		assert.isDefined(fanoutTimeRefusal(7.4 * 60_000), "a child joins up to 15 s past its own clock")
 		assert.include(late ?? "", "pr_file_diff")
 		assert.include(fanoutTimeRefusal(-1_000) ?? "", "0 s are left")
 	})
@@ -23,9 +23,9 @@ describe("fanoutTimeRefusal", () => {
 describe("childFailureMessage", () => {
 	it("tells the parent a child that ran out of time left the group unread, and what to do", () => {
 		const message = childFailureMessage(
-			AgentPolicyError.make({ limit: "duration", message: "Agent exceeded its 4m duration limit" }),
+			AgentPolicyError.make({ limit: "duration", message: "Agent exceeded its 6m duration limit" }),
 		)
-		assert.include(message, "ran out of its 4m")
+		assert.include(message, "ran out of its 6m")
 		assert.include(message, "pr_file_diff")
 	})
 

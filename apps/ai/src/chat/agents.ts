@@ -101,6 +101,8 @@ export interface AgentDefinition {
 	 * (`resolveReviewModel`), `triage` the deployment's chat and investigation model.
 	 */
 	readonly model: AgentModel
+	/** Its unattended pass reasons at the model's own effort (`reviewReasoningEffort`); others send none. */
+	readonly autonomousReasoning?: boolean
 	/** Offer `run_code` over the turn's read-only tools, where the runtime has a code executor. */
 	readonly codeMode?: boolean
 	/** Present on the agents whose session names a row: investigation, review, reply. */
@@ -155,6 +157,7 @@ export const AGENTS: {
 		autonomousPermission: PR_REVIEW_RULESETS,
 		budget: PR_REVIEW_BUDGET,
 		model: "review",
+		autonomousReasoning: true,
 		codeMode: true,
 		completion: {
 			tool: SUBMIT_REVIEW,
