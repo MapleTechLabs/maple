@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
-import { Effect, Fiber, Queue, Schema, Stream } from "effect"
+import { Effect, Equal, Fiber, Queue, Schema, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import { init, Message, ruleCounts, subscriptions, update } from "./index"
@@ -67,15 +67,27 @@ const subscribe = (stream: Stream.Stream<Message>) =>
 
 const next = (received: Queue.Queue<Message>) => Queue.take(received).pipe(Effect.timeout("1 second"))
 
+/** The next message that differs from `last`: a live query may repeat its current rows before a change lands. */
+const nextChange = (received: Queue.Queue<Message>, last: Message): Effect.Effect<Message, unknown> =>
+	next(received).pipe(
+		Effect.filterOrElse(
+			(message) => !Equal.equals(message, last),
+			() => nextChange(received, last),
+		),
+	)
+
 describe("alert rules liveQuery", () => {
 	test("emits the org's rows when ready and again after every change", () =>
 		Effect.runPromise(
 			Effect.gen(function* () {
 				const rules = rulesOf("org_a", 2)
 				const { received } = yield* subscribe(ruleCounts(orgA, rules))
-				expect(yield* next(received)).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 2 }))
+				const ready = yield* next(received)
+				expect(ready).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 2 }))
 				rules.insert(rule("org_a-new", "org_a"))
-				expect(yield* next(received)).toEqual(Message.UpdatedAlertRules({ orgId: orgA, count: 3 }))
+				expect(yield* nextChange(received, ready)).toEqual(
+					Message.UpdatedAlertRules({ orgId: orgA, count: 3 }),
+				)
 			}),
 		))
 
