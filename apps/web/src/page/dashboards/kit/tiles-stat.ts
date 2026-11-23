@@ -6,11 +6,13 @@ import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import * as Sparkline from "@maple/views/charts/sparkline"
 import { resolveColor } from "@maple/views/charts/theme-colors"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
+import { rollingNumber } from "@maple/views/ui/rolling-number"
 import type { WidgetDataState } from "./data-state"
 import { widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, Record as Rec, Option, Order } from "effect"
 
 type Widget = TileWidget
@@ -46,6 +48,14 @@ export const thresholdColor = (
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
+
+/** Each sparkline point's `bucket`, for the hovered point's time. */
+const sparklineBuckets = (state: WidgetDataState | null | undefined): ReadonlyArray<string> =>
+	state?._tag === "Ready" && state.data !== null && state.data._tag === "Rows"
+		? Arr.map(state.data.rows, (row) =>
+				isRecord(row) && typeof row.bucket === "string" ? row.bucket : "",
+			)
+		: []
 
 /** The sparkline's values: the first finite numeric column (not `bucket`) of the series rows. */
 export const sparklineValues = (state: WidgetDataState | null | undefined): ReadonlyArray<number> => {
@@ -113,7 +123,7 @@ const valueText = <M>(h: HtmlBuilder<M>, formatted: string, color: string | unde
 			...(color === undefined ? [] : [h.Style({ color })]),
 			h.Title(formatted),
 		],
-		[formatted],
+		[rollingNumber(h, { text: formatted })],
 	)
 
 export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
@@ -133,8 +143,23 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 	return widgetFrame(h, options, () => {
 		const data = options.state._tag === "Ready" ? options.state.data : null
 		const value = data === null ? undefined : data._tag === "Value" ? data.value : data.rows
-		const formatted = formatStatValue(value, display.unit, display.prefix, display.suffix)
 		const color = thresholdColor(value, display.thresholds)
+		// Hovering the sparkline shows that point's value in the headline, and when it was below.
+		const hoveredIndex = hasSparkline
+			? Sparkline.hoveredIndex(ctx.sparklineChart ?? Chart.init())
+			: Option.none()
+		const hovered = Option.flatMap(hoveredIndex, (index) =>
+			Arr.get(sparklineValues(ctx.sparkline), index),
+		)
+		const hoveredTime = Option.flatMap(hoveredIndex, (index) =>
+			Sparkline.hoveredPointLabel(sparklineBuckets(ctx.sparkline), index, ctx.timeZone),
+		)
+		const formatted = formatStatValue(
+			Option.getOrElse(hovered, () => value),
+			display.unit,
+			display.prefix,
+			display.suffix,
+		)
 		return hasSparkline
 			? [
 					hstack(
@@ -145,7 +170,17 @@ export const statTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widg
 							grow: true,
 							className: "px-2 pt-2 @min-[200px]/widget:px-4 @min-[200px]/widget:pt-4",
 						},
-						[valueText(h, formatted, color)],
+						[
+							vstack(h, { align: "center", className: "min-w-0 max-w-full" }, [
+								valueText(h, formatted, color),
+								...Option.match(hoveredTime, {
+									onNone: () => [],
+									onSome: (time) => [
+										typography(h, { size: "xs", tone: "muted", numeric: true }, [time]),
+									],
+								}),
+							]),
+						],
 					),
 					h.div(
 						[h.Class("hidden shrink-0 @min-[140px]/widget:block")],

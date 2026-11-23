@@ -40,10 +40,17 @@ export const ServiceRow = Schema.Struct({
 })
 export type ServiceRow = typeof ServiceRow.Type
 
-/** `getCustomChartServiceSparklines`, reduced to the two series the row draws. */
+/**
+ * `getCustomChartServiceSparklines`, reduced to the two series the row draws (throughput per second)
+ * and each point's bucket, for the hovered point's time.
+ */
 export const Sparklines = Schema.Record(
 	Schema.String,
-	Schema.Struct({ throughput: Schema.Array(Schema.Number), errorRate: Schema.Array(Schema.Number) }),
+	Schema.Struct({
+		buckets: Schema.Array(Schema.String),
+		throughput: Schema.Array(Schema.Number),
+		errorRate: Schema.Array(Schema.Number),
+	}),
 )
 export type Sparklines = typeof Sparklines.Type
 
@@ -96,5 +103,7 @@ export const Model = Schema.Struct({
 	isReloading: Schema.Boolean,
 	/** The keyboard-focused row, by its place in the table's order; none until J or K is pressed. */
 	focusedIndex: Schema.NullOr(Schema.Number),
+	/** The sparkline under the pointer and its hovered point; its cell shows that point's value. */
+	hoveredSparkline: Schema.NullOr(Schema.Struct({ slotId: Schema.String, index: Schema.Number })),
 })
 export type Model = typeof Model.Type

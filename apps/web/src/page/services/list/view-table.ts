@@ -12,6 +12,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Sparkline from "@maple/views/charts/sparkline"
+import { rollingNumber } from "@maple/views/ui/rolling-number"
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
@@ -55,7 +56,40 @@ import { isResolvableSha } from "../../kit/commit-card"
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
 const CHART_MODEL = Chart.init()
-const toSparklineMessage = (message: Chart.Message) => Message.GotSparklineMessage({ message })
+const toSparklineMessage = (slotId: string) => (message: Chart.Message) =>
+	Message.GotSparklineMessage({ slotId, message })
+
+/** When the hovered point of `slotId`'s sparkline was, while it is hovered. */
+const hoveredTime = (
+	ctx: TableContext,
+	slotId: string,
+	buckets: ReadonlyArray<string>,
+): Option.Option<string> =>
+	ctx.model.hoveredSparkline?.slotId === slotId
+		? Sparkline.hoveredPointLabel(buckets, ctx.model.hoveredSparkline.index, ctx.timeZone)
+		: Option.none()
+
+/** The hovered point's time under a cell's value. */
+const hoveredTimeLine = (h: HtmlBuilder<Message>, time: Option.Option<string>): ReadonlyArray<Html> =>
+	Option.match(time, {
+		onNone: () => [],
+		onSome: (label) => [
+			h.span(
+				[h.Class(cn("font-mono text-4xs whitespace-nowrap text-muted-foreground", TEXT_HALO))],
+				[label],
+			),
+		],
+	})
+
+/** The value under the pointer when `slotId`'s sparkline is hovered. */
+const hoveredValue = (
+	ctx: TableContext,
+	slotId: string,
+	values: ReadonlyArray<number>,
+): Option.Option<number> =>
+	ctx.model.hoveredSparkline?.slotId === slotId
+		? Arr.get(values, ctx.model.hoveredSparkline.index)
+		: Option.none()
 const SERVICE_OVERVIEW_ROW_CAP = 500
 const TEXT_HALO =
 	"[text-shadow:0_0_6px_var(--background),0_0_12px_var(--background),0_0_18px_var(--background)]"
@@ -111,13 +145,14 @@ const sparkline = (
 				slotId,
 				model: CHART_MODEL,
 				view: Sparkline.view,
-				toParentMessage: toSparklineMessage,
+				toParentMessage: toSparklineMessage(slotId),
 				viewInputs: {
 					chartId: slotId,
 					values,
 					color: resolveColor(ctx.theme, color),
 					className: "absolute inset-0 h-full w-full",
 					revision: ctx.model.rowRevision,
+					animatesEntrance: false,
 				},
 			})
 
@@ -209,6 +244,7 @@ const serviceRow = (
 	)
 	const throughput = Option.match(series, { onNone: () => [], onSome: (s) => s.throughput })
 	const errorRates = Option.match(series, { onNone: () => [], onSome: (s) => s.errorRate })
+	const buckets = Option.match(series, { onNone: () => [], onSome: (s) => s.buckets })
 	const delta = baselineDelta(
 		service.p95LatencyMs,
 		baselines?.get(baselineKey(service.serviceName, service.serviceNamespace, service.environment)),
@@ -220,6 +256,8 @@ const serviceRow = (
 		environment: service.environment,
 	})
 	const throughputText = formatThroughput(service.throughput, "/s")
+	const errorTime = hoveredTime(ctx, `err-${rowKey}`, buckets)
+	const throughputTime = hoveredTime(ctx, `thr-${rowKey}`, buckets)
 	return tableRow(
 		h,
 		[
@@ -288,12 +326,25 @@ const serviceRow = (
 								? TONE_COLOR.crit
 								: TONE_COLOR.neutral,
 						),
-						hstack(h, { align: "center", justify: "center", className: "absolute inset-0" }, [
-							errorRateValue(h, {
-								rate: service.errorRate,
-								className: cn("text-xs font-semibold", TEXT_HALO),
-							}),
-						]),
+						vstack(
+							h,
+							{
+								align: "center",
+								justify: "center",
+								className: "pointer-events-none absolute inset-0",
+							},
+							[
+								errorRateValue(h, {
+									rate: Option.getOrElse(
+										hoveredValue(ctx, `err-${rowKey}`, errorRates),
+										() => service.errorRate,
+									),
+									isRolling: true,
+									className: cn("text-xs font-semibold", TEXT_HALO),
+								}),
+								...hoveredTimeLine(h, errorTime),
+							],
+						),
 					],
 				),
 			]),
@@ -315,31 +366,52 @@ const serviceRow = (
 						},
 						[
 							sparkline(h, ctx, `thr-${rowKey}`, throughput, THROUGHPUT_COLOR),
-							vstack(h, { align: "center", justify: "center", className: "absolute inset-0" }, [
-								h.span(
-									[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
-									[...(service.hasSampling ? ["~"] : []), throughputText],
-								),
-								...(service.hasSampling
-									? [
-											h.span(
-												[
-													h.Class(
-														cn(
-															"font-mono text-4xs text-muted-foreground",
-															TEXT_HALO,
-														),
+							vstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									className: "pointer-events-none absolute inset-0",
+								},
+								[
+									h.span(
+										[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
+										[
+											...(service.hasSampling ? ["~"] : []),
+											rollingNumber(h, {
+												text: Option.match(
+													hoveredValue(ctx, `thr-${rowKey}`, throughput),
+													{
+														onNone: () => throughputText,
+														onSome: (value) => formatThroughput(value, "/s"),
+													},
+												),
+											}),
+										],
+									),
+									...(Option.isSome(throughputTime)
+										? hoveredTimeLine(h, throughputTime)
+										: service.hasSampling
+											? [
+													h.span(
+														[
+															h.Class(
+																cn(
+																	"font-mono text-4xs text-muted-foreground",
+																	TEXT_HALO,
+																),
+															),
+														],
+														[
+															"~",
+															formatThroughput(service.tracedThroughput, "/s"),
+															" traced",
+														],
 													),
-												],
-												[
-													"~",
-													formatThroughput(service.tracedThroughput, "/s"),
-													" traced",
-												],
-											),
-										]
-									: []),
-							]),
+												]
+											: []),
+								],
+							),
 						],
 					),
 				],

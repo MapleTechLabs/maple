@@ -1,5 +1,8 @@
 import { resolveWindowCommand } from "../../kit/time-frame"
-import { getCustomChartServiceSparklines } from "@maple/web-data/warehouse/custom-charts"
+import {
+	getCustomChartServiceSparklines,
+	serviceSparklineBucketSeconds,
+} from "@maple/web-data/warehouse/custom-charts"
 import { isMapleService, MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
 import {
 	getServiceHealthBaseline,
@@ -73,7 +76,14 @@ export const FetchSparklines = Command.define("FetchServiceSparklines", {
 					Arr.map(Rec.toEntries(response.data), ([service, points]) => [
 						service,
 						{
-							throughput: Arr.map(points, (point) => point.throughput),
+							buckets: Arr.map(points, (point) => point.bucket),
+							// Per second, like the row's throughput, so a hovered point reads in the same unit.
+							throughput: Arr.map(
+								points,
+								(point) =>
+									point.throughput /
+									serviceSparklineBucketSeconds(input.startTime, input.endTime),
+							),
 							errorRate: Arr.map(points, (point) => point.errorRate),
 						},
 					]),

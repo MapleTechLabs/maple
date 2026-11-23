@@ -116,18 +116,6 @@ export const ChartSpec = defineTaggedUnion({
 		useLogY: Schema.Boolean,
 		showTooltip: Schema.Boolean,
 	},
-	/** The services table's trend line. */
-	Sparkline: {
-		values: Schema.Array(Schema.Number),
-		color: Schema.String,
-		gradientId: Schema.String,
-		fillStart: Schema.Number,
-		fillEnd: Schema.Number,
-		/** Bumped when the data arrives again: every new result rebuilds the definition. */
-		revision: Schema.Number,
-		/** Absent is linear. */
-		curve: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
-	},
 	/**
 	 * The query-builder area chart (unstacked, linear): the query's rows as returned, the resolved colour
 	 * per series key (`s1..sN`), and the clock that decides the in-flight tail.
