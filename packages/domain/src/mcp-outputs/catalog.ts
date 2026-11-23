@@ -90,6 +90,7 @@ import {
 } from "./dashboards"
 import { ErrorDetailOutput, FindErrorsOutput } from "./errors"
 import { QueryPromqlOutput } from "./promql"
+import { GetMetricExemplarsOutput } from "./metrics"
 import { GetInvestigationOutput } from "./investigations"
 import {
 	ClaimErrorIssueOutput,
@@ -267,6 +268,7 @@ export const McpToolOutputs = {
 	get_dashboard: GetDashboardOutput,
 	get_incident_timeline: GetIncidentTimelineOutput,
 	get_investigation: GetInvestigationOutput,
+	get_metric_exemplars: GetMetricExemplarsOutput,
 	get_instrumentation_recommendations: GetInstrumentationRecommendationsOutput,
 	get_service_top_operations: GetServiceTopOperationsOutput,
 	profile_hotspots: ProfileHotspotsOutput,

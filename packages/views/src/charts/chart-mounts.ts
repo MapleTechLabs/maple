@@ -1,8 +1,8 @@
-import { Effect, Option, Queue, Schema, Stream } from "effect"
+import { Array as Arr, Effect, Option, Queue, Schema, Stream } from "effect"
 import { Mount } from "foldkit"
 import { Message } from "./chart"
 import type { ChartBounds } from "@tanstack/charts"
-import type { ChartHost, CreateChartHost, TimeAxis } from "./chart-host-base"
+import type { ChartHost, CreateChartHost, TimeAxis, ValueAxis } from "./chart-host-base"
 import { CHART_LABEL_ATTRIBUTE, CHART_SPEC_ATTRIBUTE, decodeChartSpec } from "./chart-spec"
 import { encodePlotTimeAxis, PLOT_TIME_AXIS_ATTRIBUTE } from "./plot-time-axis"
 
@@ -19,6 +19,7 @@ const ChartMountMessage = Schema.Union([
 	Message.FailedMountChart,
 	Message.RenderedPlot,
 	Message.ChangedChartFocus,
+	Message.SelectedChartPoint,
 	Message.ChangedChartTooltip,
 	Message.ToggledLegendSeries,
 ])
@@ -81,6 +82,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 		Message.FailedMountChart,
 		Message.RenderedPlot,
 		Message.ChangedChartFocus,
+		Message.SelectedChartPoint,
 		Message.ChangedChartTooltip,
 		Message.ToggledLegendSeries,
 	],
@@ -123,6 +125,7 @@ export const MountChart = Mount.defineStream("MountChart", {
 								const reportPlotOnce = (
 									bounds: ChartBounds,
 									timeAxis: Option.Option<TimeAxis>,
+									valueAxis: Option.Option<ValueAxis>,
 								) =>
 									Option.map(
 										Option.orElseSome(timeAxis, () => NO_AXIS),
@@ -133,8 +136,28 @@ export const MountChart = Mount.defineStream("MountChart", {
 												width: bounds.width,
 												height: bounds.height,
 												...axis,
+												...Option.getOrUndefined(valueAxis),
 											}
-											const key = `${plot.x}|${plot.y}|${plot.width}|${plot.height}|${plot.domainStartMs}|${plot.domainEndMs}|${plot.rangeStart}|${plot.rangeEnd}`
+											const key = Arr.join(
+												Arr.map(
+													[
+														plot.x,
+														plot.y,
+														plot.width,
+														plot.height,
+														plot.domainStartMs,
+														plot.domainEndMs,
+														plot.rangeStart,
+														plot.rangeEnd,
+														plot.valueStart,
+														plot.valueEnd,
+														plot.valueRangeStart,
+														plot.valueRangeEnd,
+													],
+													String,
+												),
+												"|",
+											)
 											if (key === sent.key) return
 											sent.key = key
 											Queue.offerUnsafe(queue, Message.RenderedPlot({ plot }))
@@ -153,6 +176,11 @@ export const MountChart = Mount.defineStream("MountChart", {
 														queue,
 														Message.ChangedChartFocus({ maybeKey }),
 													),
+												onSelect: (maybeKey) =>
+													Queue.offerUnsafe(
+														queue,
+														Message.SelectedChartPoint({ maybeKey }),
+													),
 												onTooltipChange: (maybeTooltip) =>
 													Queue.offerUnsafe(
 														queue,
@@ -163,8 +191,9 @@ export const MountChart = Mount.defineStream("MountChart", {
 														queue,
 														Message.ToggledLegendSeries({ key, keys }),
 													),
-												onRender: (bounds, timeAxis) => {
-													if (reportPlot) reportPlotOnce(bounds, timeAxis)
+												onRender: (bounds, timeAxis, valueAxis) => {
+													if (reportPlot)
+														reportPlotOnce(bounds, timeAxis, valueAxis)
 													if (!anchor) return
 													anchor.style.transform = `translate(${bounds.x}px, ${bounds.y}px)`
 													anchor.style.width = `${bounds.width}px`

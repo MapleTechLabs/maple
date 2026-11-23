@@ -524,6 +524,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/metric-exemplars",
+		title: "Metric exemplars",
+		description:
+			"The metric page for a latency histogram over one hour with a slow dependency at 0:38: exemplar dots on the p95 line, the Exemplars table, ?display=distribution for the bucket heatmap (click a cell to narrow the table); ?state=empty has no exemplars, ?state=failed fails both reads.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:

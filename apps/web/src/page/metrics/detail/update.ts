@@ -41,6 +41,9 @@ import {
 	FetchAutocomplete,
 	FetchBreakdown,
 	FetchCatalog,
+	FetchCellExemplars,
+	FetchDistribution,
+	FetchExemplars,
 	FetchTimeseries,
 	ReadLocation,
 	ResolveWindow,
@@ -55,6 +58,8 @@ import {
 	SERVICE_KEY,
 	summarizeCatalogRows,
 } from "./derive"
+import { isHistogramType, pickedCell, valueFormat } from "./exemplars"
+import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { Message } from "./message"
 import { AutocompleteLookup, type Model } from "./model"
 
@@ -122,6 +127,10 @@ const requestAutocomplete = (model: Model, context: PageContext, window: TimeWin
 	}
 }
 
+/** A histogram whose URL asks for the bucket heatmap. */
+export const showsDistribution = (model: Model, summary: CatalogSummary): boolean =>
+	isHistogramType(summary.metricType) && model.search.display === "distribution"
+
 /** What the content reads once the summary exists: scoped keys, the chart and the breakdown. */
 const requestContent = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const summary = summaryOf(model)
@@ -154,15 +163,67 @@ const requestContent = (model: Model, context: PageContext, mode: RequestMode): 
 		mode,
 		(key) => FetchBreakdown({ key, input: breakdownInput }),
 	)
+	// Exemplars and the distribution ignore the aggregation and grouping: the filters decide them.
+	const scopeInput = { ...window, query: { ...draft, groupBy: [], seriesLimit: undefined } }
+	const exemplars = keyedSlot(
+		model.exemplars,
+		requestKey(org, "getMetricExemplars", { data: scopeInput }),
+		mode,
+		(key) => FetchExemplars({ key, input: scopeInput }),
+	)
+	const distribution = showsDistribution(model, summary)
+		? keyedSlot(
+				model.distribution,
+				requestKey(org, "getMetricDistribution", { data: scopeInput }),
+				mode,
+				(key) => FetchDistribution({ key, input: scopeInput }),
+			)
+		: { slot: model.distribution, commands: [] }
 	return {
 		model: {
 			...syncControls(model),
 			attributeKeys: attributeKeys.slot,
 			timeseries: timeseries.slot,
 			breakdown: breakdown.slot,
+			exemplars: exemplars.slot,
+			distribution: distribution.slot,
 		},
-		commands: [...attributeKeys.commands, ...timeseries.commands, ...breakdown.commands],
+		commands: [
+			...attributeKeys.commands,
+			...timeseries.commands,
+			...breakdown.commands,
+			...exemplars.commands,
+			...distribution.commands,
+		],
 	}
+}
+
+/** The picked cell's exemplars, read while a current cell is picked; a pick of a gone cell drops. */
+const requestCell = (model: Model, context: PageContext, mode: RequestMode): Return => {
+	const summary = summaryOf(model)
+	const rows = Option.getOrElse(AsyncData.getData(model.distribution.data), () => [])
+	const cell =
+		summary === null || model.window === null || model.selectedCell === null
+			? null
+			: pickedCell(
+					rows,
+					model.selectedCell,
+					valueFormat(chartUnitFromOtel(summary.unit, summary.metricName)),
+				)
+	if (summary === null || model.window === null || cell === null) {
+		return {
+			model: AsyncData.isSuccess(model.distribution.data) ? { ...model, selectedCell: null } : model,
+		}
+	}
+	const draft = draftOf(model, summary)
+	const input = { ...model.window, query: { ...draft, groupBy: [], seriesLimit: undefined }, cell }
+	const slot = keyedSlot(
+		model.cellExemplars,
+		requestKey(context.orgId, "getMetricExemplars", { data: input }),
+		mode,
+		(key) => FetchCellExemplars({ key, input }),
+	)
+	return { model: { ...model, cellExemplars: slot.slot }, commands: slot.commands }
 }
 
 /** Every query the page reads for the resolved window. */
@@ -269,6 +330,11 @@ export const init = (route: Route, context: PageContext): Return => {
 		attributeKeys: Keyed.idle(),
 		timeseries: Keyed.idle(),
 		breakdown: Keyed.idle(),
+		exemplars: Keyed.idle(),
+		cellExemplars: Keyed.idle(),
+		distribution: Keyed.idle(),
+		distributionChart: Chart.init(),
+		selectedCell: null,
 		whereInput: route.search.where ?? "",
 		whereGeneration: 0,
 		whereEditor: initWhereEditor(route.search.where ?? ""),
@@ -423,6 +489,57 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchBreakdown: ({ key, result }) => ({
 			model: { ...model, breakdown: Keyed.accept(model.breakdown, key, result) },
 		}),
+		CompletedFetchExemplars: ({ key, result }) => ({
+			model: { ...model, exemplars: Keyed.accept(model.exemplars, key, result) },
+		}),
+		// New buckets keep a pick whose cell is still there, and read it again.
+		CompletedFetchDistribution: ({ key, result }) =>
+			requestCell(
+				{ ...model, distribution: Keyed.accept(model.distribution, key, result) },
+				context,
+				"Load",
+			),
+		CompletedFetchCellExemplars: ({ key, result }) => ({
+			model: { ...model, cellExemplars: Keyed.accept(model.cellExemplars, key, result) },
+		}),
+		ChangedChartDisplay: ({ display }) =>
+			patchSearch(
+				{ ...model, selectedCell: null },
+				{ ...model.search, display: display === "distribution" ? "distribution" : undefined },
+			),
+		ClearedCellSelection: () => ({ model: { ...model, selectedCell: null } }),
+		ClickedExemplar: ({ traceId, spanId }) => ({
+			model,
+			outMessage: PageOutMessage.RequestedNavigation({
+				url: hrefOf(AppRoute.Trace({ traceId, search: { spanId } })),
+				isReplace: false,
+			}),
+		}),
+		GotDistributionChartMessage: ({ message: inner }) => {
+			const next = Chart.update(model.distributionChart, inner)
+			// A picked cell narrows the exemplars; picking it again, or empty space, clears it.
+			const selectedCell =
+				inner._tag === "SelectedChartPoint"
+					? Option.match(inner.maybeKey, {
+							onNone: () => null,
+							onSome: (key) => (key === model.selectedCell ? null : key),
+						})
+					: model.selectedCell
+			const picked = requestCell(
+				{ ...model, distributionChart: next.model, selectedCell },
+				context,
+				"Load",
+			)
+			return {
+				model: picked.model,
+				commands: [
+					...Command.mapMessages(next.commands ?? [], (chart) =>
+						Message.GotDistributionChartMessage({ message: chart }),
+					),
+					...(picked.commands ?? []),
+				],
+			}
+		},
 		ChangedWhereInput: ({ value }) => {
 			const whereGeneration = model.whereGeneration + 1
 			return {

@@ -1,6 +1,7 @@
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
+import { MetricDistributionRow, MetricExemplarRow } from "@maple/domain/http"
 import * as AddToDashboard from "./add-to-dashboard"
 import { CaretMessage } from "./where-editor"
 import { defineMessageUnion } from "foldkit/message"
@@ -28,6 +29,14 @@ export const Message = defineMessageUnion({
 	CompletedFetchAttributeKeys: result(Schema.Array(AttributeKeyRow)),
 	CompletedFetchTimeseries: result(TimeseriesRows),
 	CompletedFetchBreakdown: result(Schema.Array(BreakdownRow)),
+	CompletedFetchExemplars: result(Schema.Array(MetricExemplarRow)),
+	CompletedFetchDistribution: result(Schema.Array(MetricDistributionRow)),
+	CompletedFetchCellExemplars: result(Schema.Array(MetricExemplarRow)),
+	/** A histogram's chart: its aggregation's line, or the bucket heatmap. */
+	ChangedChartDisplay: { display: Schema.Literals(["line", "distribution"]) },
+	ClearedCellSelection: {},
+	ClickedExemplar: { traceId: Schema.String, spanId: Schema.String },
+	GotDistributionChartMessage: { message: Chart.Message },
 	ChangedWhereInput: { value: Schema.String },
 	PressedWhereEnter: {},
 	GotCaretMessage: { message: CaretMessage },

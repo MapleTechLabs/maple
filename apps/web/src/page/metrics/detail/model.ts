@@ -1,4 +1,5 @@
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
+import { MetricDistributionRow, MetricExemplarRow } from "@maple/domain/http"
 import { Schema } from "effect"
 import { LookupNames } from "../../kit/autocomplete-lookups"
 import * as AddToDashboard from "./add-to-dashboard"
@@ -42,6 +43,15 @@ export const Model = Schema.Struct({
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
 	timeseries: KeyedSchema(TimeseriesRows, LoadFailure),
 	breakdown: KeyedSchema(Schema.Array(BreakdownRow), LoadFailure),
+	/** The traces behind the chart's values, highest per time bucket. */
+	exemplars: KeyedSchema(Schema.Array(MetricExemplarRow), LoadFailure),
+	/** A histogram's bucket counts per time bucket, read while the distribution shows. */
+	distribution: KeyedSchema(Schema.Array(MetricDistributionRow), LoadFailure),
+	distributionChart: Chart.Model,
+	/** The heatmap cell the exemplars list is narrowed to (its focus key), if one was clicked. */
+	selectedCell: Schema.NullOr(Schema.String),
+	/** The picked cell's own exemplars: more than a bucket's top few, in the cell's range. */
+	cellExemplars: KeyedSchema(Schema.Array(MetricExemplarRow), LoadFailure),
 	/** The where clause as typed; committed to the URL 400 ms after the last keystroke. */
 	whereInput: Schema.String,
 	whereGeneration: Schema.Number,

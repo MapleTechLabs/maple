@@ -31,6 +31,7 @@ import {
 	serviceMap as obsServiceMap,
 	findSlowTraces as obsFindSlowTraces,
 	topOperations as obsTopOperations,
+	metricExemplars as obsMetricExemplars,
 	type MineLogPatternsOutput,
 	type SearchLogsOutput,
 	type SearchTracesOutput,
@@ -1023,6 +1024,32 @@ const remoteMetricSeries = (client: MapleV2Client, p: MetricSeriesInput) =>
 
 export const metricSeries = (p: MetricSeriesInput) =>
 	dispatch(localMetricSeries(p), ({ v2 }) => remoteMetricSeries(v2, p), "metrics_timeseries")
+
+export interface MetricExemplarsInput {
+	readonly name: string
+	readonly range: Range
+	readonly bucketSeconds: number
+	readonly service?: string
+	readonly environment?: string
+	readonly perBucket?: number
+	readonly limit?: number
+}
+
+/** The traces behind a metric's highest values: its exemplars, a few per time bucket. */
+export const metricExemplars = (p: MetricExemplarsInput) =>
+	dispatch(
+		obsMetricExemplars({
+			metricName: p.name,
+			timeRange: p.range,
+			bucketSeconds: p.bucketSeconds,
+			...(p.service ? { service: p.service } : undefined),
+			...(p.environment ? { environment: p.environment } : undefined),
+			...(p.perBucket === undefined ? undefined : { perBucket: p.perBucket }),
+			...(p.limit === undefined ? undefined : { limit: p.limit }),
+		}),
+		({ mcp }) => RemoteMcp.metricExemplars(mcp, p),
+		"metric_exemplars",
+	)
 
 /** A parsed PromQL query over its evaluation grid (see `core/promql.ts`). */
 export const promqlQuery = (p: { query: string; expr: Expr; window: PromqlWindow; step?: string }) =>

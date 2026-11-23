@@ -1,4 +1,4 @@
-import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Option, Order, Array as Arr, Record as Rec, String as Str } from "effect"
 import { cellText } from "./series/breakdown-rows"
 import { formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
 import { resolveSequentialDomain, type SequentialScaleType } from "./sequential-domain"
@@ -75,7 +75,9 @@ const EMPTY_MODEL: HeatmapModel = {
 /** All-zero axes pruned (and counted), y reversed, the cross-product split into cells and holes. */
 export const buildHeatmapModel = (points: ReadonlyArray<HeatmapPoint>): HeatmapModel => {
 	if (points.length === 0) return EMPTY_MODEL
-	const xs = [...new Set(Arr.map(points, (p) => p.x))]
+	// Time columns read left to right whatever order the rows came in.
+	const seenX = [...new Set(Arr.map(points, (p) => p.x))]
+	const xs = Arr.every(seenX, (x) => ISO_RE.test(x)) ? Arr.sort(seenX, Order.String) : seenX
 	const ys = [...new Set(Arr.map(points, (p) => p.y))]
 	const live = Arr.filter(points, (p) => p.value !== 0)
 	const liveX = new Set(Arr.map(live, (p) => p.x))

@@ -148,6 +148,7 @@ const tooltipBody = (
 	h: H,
 	tooltip: ChartTooltip,
 	colorAt: (value: number) => string,
+	labelX: (x: string) => string,
 	label: (y: string) => string,
 	unit: string | undefined,
 	portal: Attribute<Message>,
@@ -159,7 +160,7 @@ const tooltipBody = (
 					[h.Class("contents"), portal],
 					[
 						typography(h, { tone: "muted", as: "div" }, [
-							h.span([], [tooltip.x]),
+							h.span([], [labelX(tooltip.x)]),
 							h.span([h.Class("px-1 text-foreground-faint")], ["·"]),
 							h.span([], [label(tooltip.y)]),
 						]),
@@ -205,6 +206,8 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 	const colorAt = sequentialColorScale({ stops, domain: model.domain, scaleType })
 	const allYIso = Arr.every(model.yDomain, (value) => ISO_RE.test(value))
 	const label = (y: string) => shortenYLabel(y, allYIso, inputs.timeZone)
+	const allXIso = Arr.every(model.xDomain, (value) => ISO_RE.test(value))
+	const labelX = (x: string) => (allXIso ? shortenYLabel(x, true, inputs.timeZone) : x)
 	const footnote = footnoteOf(model.hiddenX, model.hiddenY)
 	const layout = solveHeatmapLayout({
 		containerW: chart.containerWidth,
@@ -235,6 +238,11 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 		yLabels: Rec.fromEntries(
 			Arr.map(model.yDomain, (y) => [y, truncateYLabel(label(y), layout.yLabelChars)]),
 		),
+		...(allXIso
+			? {
+					xLabels: Rec.fromEntries(Arr.map(model.xDomain, (x) => [x, labelX(x)])),
+				}
+			: undefined),
 		margin: layout.margin,
 		paddingInnerX: layout.paddingInnerX,
 		paddingInnerY: layout.paddingInnerY,
@@ -287,7 +295,7 @@ export const view = Submodel.defineView<Model, Message, HeatmapChartInputs>((cha
 						}),
 				tooltipBody: (portal) =>
 					Option.flatMap(chart.tooltip, (tooltip) =>
-						tooltipBody(h, tooltip, colorAt, label, inputs.unit, portal),
+						tooltipBody(h, tooltip, colorAt, labelX, label, inputs.unit, portal),
 					),
 			}),
 		],
