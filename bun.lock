@@ -850,6 +850,7 @@
         "@maple/widgets": "workspace:*",
         "@noble/hashes": "^1.4.0",
         "effect": "catalog:effect",
+        "re2js": "2.10.0",
       },
       "devDependencies": {
         "@types/node": "catalog:tooling",
@@ -935,6 +936,7 @@
         "@maple/domain": "workspace:*",
         "@maple/strings": "workspace:*",
         "effect": "catalog:effect",
+        "re2js": "2.10.0",
       },
       "devDependencies": {
         "@effect/vitest": "catalog:effect",

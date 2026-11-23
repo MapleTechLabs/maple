@@ -74,6 +74,53 @@ describe("local ingest rules", () => {
 		})
 	})
 
+	it("parses log bodies into attributes, severity and time before encoding", () => {
+		const parse = parseLocalIngestRules(
+			JSON.stringify([
+				{
+					name: "JSON logs",
+					signals: ["logs"],
+					conditions: [],
+					action: {
+						_tag: "parse",
+						steps: [
+							{ _tag: "json", source: "body" },
+							{ _tag: "severity", source: "attribute", key: "level" },
+							{ _tag: "timestamp", source: "attribute", key: "ts", format: "unix_ms" },
+						],
+					},
+				},
+			]),
+		)
+		const log = {
+			severityNumber: 9,
+			severityText: "INFO",
+			timeUnixNano: "1",
+			body: { stringValue: '{"level":"error","ts":1700000000123,"order":{"id":42}}' },
+			attributes: [],
+		}
+		const request = {
+			resourceLogs: [
+				{
+					resource: { attributes: [str("service.name", "api")] },
+					scopeLogs: [{ logRecords: [log] }],
+				},
+			],
+		}
+		applyLocalIngestRules("logs", request, parse.compiled)
+		expect(log).toMatchObject({
+			severityNumber: 17,
+			severityText: "ERROR",
+			timeUnixNano: "1700000000123000000",
+			attributes: [
+				{ key: "level", value: { stringValue: "error" } },
+				{ key: "order.id", value: { intValue: "42" } },
+				{ key: "ts", value: { intValue: "1700000000123" } },
+			],
+		})
+		expect(encodeLogs(request)[0]?.ndjson).toContain('"order.id":"42"')
+	})
+
 	it("removes a resource whose every record was dropped", () => {
 		const request = {
 			resourceLogs: [

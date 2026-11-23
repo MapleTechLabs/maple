@@ -18,22 +18,31 @@ const hourOf = (timestamp: string): number =>
 		onSome: (time) => Math.floor(DateTime.toEpochMillis(time) / HOUR_MS),
 	})
 
-export type Effect = "drop" | "redact"
+export type Effect = "drop" | "redact" | "parse"
 
 /**
  * What the rule did in the window: its current action's effect, unless only the other one was
  * counted (the rule changed action inside the window).
  */
 export const effectKind = (action: V2IngestRule["action"], counts: RuleCounts): Effect => {
+	// A parse rule's count is the logs it matched; it neither drops nor redacts.
+	if (action.type === "parse") return "parse"
 	const own: Effect = action.type === "drop" ? "drop" : "redact"
 	const ownCount = own === "drop" ? counts.dropped : counts.redacted_values
 	const otherCount = own === "drop" ? counts.redacted_values : counts.dropped
 	return ownCount === 0 && otherCount > 0 ? (own === "drop" ? "redact" : "drop") : own
 }
 
-/** The counter behind an effect: records dropped, or values redacted. */
+/** The counter behind an effect: records dropped, values redacted, or logs parsed. */
 export const effectCount = (effect: Effect, counts: RuleCounts): number =>
-	effect === "drop" ? counts.dropped : counts.redacted_values
+	effect === "drop" ? counts.dropped : effect === "parse" ? counts.matched : counts.redacted_values
+
+/** What an effect counts, for chart labels: "records dropped". */
+export const EFFECT_UNITS = {
+	drop: "records dropped",
+	redact: "values redacted",
+	parse: "logs parsed",
+} as const satisfies Record<Effect, string>
 
 /**
  * "1.2M dropped", "1.2M of 1.4M dropped" when the rule matched more than it dropped, or "340
@@ -41,7 +50,8 @@ export const effectCount = (effect: Effect, counts: RuleCounts): number =>
  * drop rules match to the first that drops it.
  */
 export const headline = (effect: Effect, counts: RuleCounts): string => {
-	if (effect !== "drop") return `${formatNumber(counts.redacted_values)} values redacted`
+	if (effect === "parse") return `${formatNumber(counts.matched)} logs parsed`
+	if (effect === "redact") return `${formatNumber(counts.redacted_values)} values redacted`
 	return counts.matched > counts.dropped
 		? `${formatNumber(counts.dropped)} of ${formatNumber(counts.matched)} dropped`
 		: `${formatNumber(counts.dropped)} dropped`
@@ -52,6 +62,7 @@ export const headline = (effect: Effect, counts: RuleCounts): string => {
  * what metering discounts (a converted payload is metered by its original body).
  */
 export const detail = (effect: Effect, counts: RuleCounts): string => {
+	if (effect === "parse") return "Failed steps set maple.parse.error"
 	// A rule that changed action inside the window names the other effect too.
 	if (effect === "drop") {
 		const bytes = `${formatStorageBytes(counts.dropped_bytes)} dropped`

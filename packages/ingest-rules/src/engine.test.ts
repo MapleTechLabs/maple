@@ -141,3 +141,29 @@ describe("scanCut", () => {
 		},
 	)
 })
+
+describe("parse number types", () => {
+	it("keeps whole numbers within 2^53 as ints and the rest as doubles", () => {
+		const parseJson = compileRules(
+			[
+				{
+					signals: ["logs"],
+					conditions: [],
+					action: { _tag: "parse", steps: [{ _tag: "json", source: "body" }] },
+				},
+			],
+			"salt",
+		)
+		const outcome = applyRules(
+			parseJson,
+			logRecord({}, '{"a":1.0,"b":9007199254740993,"c":1e2,"d":-2.5}'),
+		)
+		const attributes = outcome._tag === "kept" ? outcome.record.attributes : {}
+		expect(Rec.map(attributes, (value) => typeof value)).toEqual({
+			a: "bigint",
+			b: "number",
+			c: "bigint",
+			d: "number",
+		})
+	})
+})
