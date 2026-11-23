@@ -1,0 +1,90 @@
+---
+/** The five theme presets on the same page, switched without script. */
+const THEMES = [
+    { id: "maple", label: "Maple", mode: "dark" },
+    { id: "default", label: "Default", mode: "light" },
+    { id: "paper", label: "Vintage Paper", mode: "light" },
+    { id: "midnight", label: "Cosmic Night", mode: "dark" },
+    { id: "mono", label: "Mono", mode: "dark" },
+] as const;
+---
+
+<div class="themes">
+    <div class="themes__tabs" role="radiogroup" aria-label="Theme preset">
+        {
+            THEMES.map((theme, index) => (
+                <label>
+                    <input type="radio" name="status-page-theme" value={theme.id} checked={index === 0} />
+                    <span>{theme.label}</span>
+                </label>
+            ))
+        }
+    </div>
+    {
+        THEMES.map((theme) => (
+            <figure class="shot" data-theme-pane={theme.id}>
+                <img
+                    src={`/screenshots/docs/status-pages-theme-${theme.id}.webp`}
+                    alt={`The same status page in the ${theme.label} preset, ${theme.mode} mode.`}
+                    width="1520"
+                    height="1120"
+                    loading="lazy"
+                    decoding="async"
+                    data-zoomable
+                />
+                <figcaption>{theme.label}, shown in {theme.mode} mode. Every preset has both modes.</figcaption>
+            </figure>
+        ))
+    }
+</div>
+
+<style>
+    .themes {
+        margin-block: 24px;
+    }
+    .themes__tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    .themes__tabs label {
+        position: relative;
+        cursor: pointer;
+    }
+    .themes__tabs input {
+        position: absolute;
+        inset: 0;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .themes__tabs span {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 11px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .themes__tabs input:checked + span {
+        border-color: var(--primary);
+        color: var(--foreground);
+    }
+    .themes__tabs input:focus-visible + span {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+    }
+    .themes [data-theme-pane] {
+        display: none;
+        margin-block: 0;
+    }
+    .themes:has(input[value="maple"]:checked) [data-theme-pane="maple"],
+    .themes:has(input[value="default"]:checked) [data-theme-pane="default"],
+    .themes:has(input[value="paper"]:checked) [data-theme-pane="paper"],
+    .themes:has(input[value="midnight"]:checked) [data-theme-pane="midnight"],
+    .themes:has(input[value="mono"]:checked) [data-theme-pane="mono"] {
+        display: block;
+    }
+</style>

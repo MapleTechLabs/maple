@@ -1,0 +1,526 @@
+---
+import DocsFigure from "./DocsFigure.astro";
+
+/** The status pages doc's diagrams. One color per status, the same in every diagram. */
+interface Props {
+    kind: "resolution" | "bars" | "lifecycle" | "domain" | "delivery";
+}
+
+const { kind } = Astro.props;
+
+const LADDER = [
+    { tone: "ok", label: "Operational" },
+    { tone: "maintenance", label: "Maintenance" },
+    { tone: "degraded", label: "Degraded" },
+    { tone: "partial", label: "Partial outage" },
+    { tone: "major", label: "Major outage" },
+];
+
+const INPUTS = [
+    { name: "Monitor", value: "Up", tone: "ok", result: "Operational" },
+    { name: "Override status", value: "Automatic", tone: "none", result: "No effect" },
+    { name: "Active incident", value: "Major impact", tone: "partial", result: "Partial outage" },
+];
+
+const BARS = [
+    { tone: "major", label: "Outage", rule: "A Major or Critical incident, or the monitor down for 1% of its checks or more" },
+    { tone: "degraded", label: "Degraded", rule: "A Minor incident, shorter downtime, or 5% of checks or more failing without going down" },
+    { tone: "maintenance", label: "Maintenance", rule: "Maintenance on the component, with no other incident that day" },
+    { tone: "ok", label: "Operational", rule: "Checks with no downtime, including a few scattered failures" },
+    { tone: "empty", label: "No data", rule: "No checks and no incident" },
+];
+
+const LIFECYCLES = [
+    {
+        name: "Incident",
+        steps: [
+            { label: "Investigating", tone: "none" },
+            { label: "Identified", tone: "none" },
+            { label: "Monitoring", tone: "none" },
+            { label: "Resolved", tone: "ok" },
+        ],
+        notes: ["You post each update", "", "", "Listed for 14 days"],
+    },
+    {
+        name: "Maintenance",
+        steps: [
+            { label: "Scheduled", tone: "maintenance" },
+            { label: "In progress", tone: "maintenance" },
+            { label: "Completed", tone: "ok" },
+        ],
+        notes: ["Shown as upcoming", "Starts at the window's start", "At the end, or when you complete it"],
+    },
+];
+
+const DOMAIN_STATES = [
+    { label: "Waiting for DNS", tone: "degraded", note: "Maple looks for both records" },
+    { label: "Issuing certificate", tone: "maintenance", note: "Ownership proved" },
+    { label: "Active", tone: "ok", note: "The page answers on your domain" },
+];
+
+const LANES = [
+    {
+        name: "Normal operation",
+        nodes: [
+            { title: "Maple", note: "Dashboard, API, MCP", tone: "ok" },
+            { title: "Hosted page", note: "Stored apart from Maple", tone: "ok" },
+            { title: "Visitors", note: "Page, feeds, JSON", tone: "none" },
+        ],
+        arrows: ["publishes within a minute", "reads"],
+    },
+    {
+        name: "Maple is down",
+        nodes: [
+            { title: "You", note: "Break-glass token", tone: "degraded" },
+            { title: "Hosted page", note: "Last state + your post", tone: "ok" },
+            { title: "Visitors", note: "See the update at once", tone: "none" },
+        ],
+        arrows: ["posts to /_manage", "reads"],
+    },
+];
+
+const CAPTIONS = {
+    resolution: "A component shows the worst of its three inputs",
+    bars: "What each daily uptime bar means",
+    lifecycle: "How incidents and maintenance move through their statuses",
+    domain: "Two DNS records, then three states",
+    delivery: "The page does not depend on Maple being up",
+} as const;
+---
+
+<DocsFigure caption={CAPTIONS[kind]}>
+    <div class="sp">
+        {
+            kind === "resolution" && (
+                <>
+                    <div class="resolve">
+                        <div class="resolve__inputs">
+                            {INPUTS.map((input) => (
+                                <div class="card">
+                                    <span class="card__name">{input.name}</span>
+                                    <span class="card__value">{input.value}</span>
+                                    <span class="pill" data-tone={input.tone}>
+                                        {input.result}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        <div class="resolve__arrow" aria-hidden="true">
+                            <span>worst wins</span>
+                        </div>
+                        <div class="card card--result" data-tone="partial">
+                            <span class="card__name">API shows</span>
+                            <span class="card__big">Partial outage</span>
+                            <span class="card__note">The page banner shows the worst component.</span>
+                        </div>
+                    </div>
+                    <div class="ladder" aria-label="Statuses from least to most severe">
+                        <span class="ladder__end">Least severe</span>
+                        {LADDER.map((step) => (
+                            <span class="pill" data-tone={step.tone} data-current={step.tone === "partial" ? "" : undefined}>
+                                {step.label}
+                            </span>
+                        ))}
+                        <span class="ladder__end">Most severe</span>
+                    </div>
+                </>
+            )
+        }
+        {
+            kind === "bars" && (
+                <div class="bars">
+                    {BARS.map((bar) => (
+                        <div class="bars__row">
+                            <span class="bars__strip" data-tone={bar.tone} aria-hidden="true">
+                                <i /><i /><i /><i /><i />
+                            </span>
+                            <span class="bars__label">{bar.label}</span>
+                            <span class="bars__rule">{bar.rule}</span>
+                        </div>
+                    ))}
+                </div>
+            )
+        }
+        {
+            kind === "lifecycle" && (
+                <div class="tracks">
+                    {LIFECYCLES.map((track) => (
+                        <div class="track">
+                            <span class="track__name">{track.name}</span>
+                            <ol class="track__steps" style={`--steps: ${track.steps.length}`}>
+                                {track.steps.map((step, index) => (
+                                    <li>
+                                        <span class="pill" data-tone={step.tone}>
+                                            {step.label}
+                                        </span>
+                                        {track.notes[index] !== "" && <span class="track__note">{track.notes[index]}</span>}
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    ))}
+                </div>
+            )
+        }
+        {
+            kind === "domain" && (
+                <div class="domain">
+                    <div class="domain__records">
+                        <div class="record">
+                            <span class="record__type">CNAME</span>
+                            <code>status.acme.com</code>
+                            <span class="record__arrow" aria-hidden="true">→</span>
+                            <code>the target Maple shows</code>
+                            <span class="record__why">Points the domain at Maple</span>
+                        </div>
+                        <div class="record">
+                            <span class="record__type">TXT</span>
+                            <code>_maple-challenge.status.acme.com</code>
+                            <span class="record__arrow" aria-hidden="true">→</span>
+                            <code>the value Maple shows</code>
+                            <span class="record__why">Proves you own the domain</span>
+                        </div>
+                    </div>
+                    <ol class="track__steps" style="--steps: 3">
+                        {DOMAIN_STATES.map((state) => (
+                            <li>
+                                <span class="pill" data-tone={state.tone}>
+                                    {state.label}
+                                </span>
+                                <span class="track__note">{state.note}</span>
+                            </li>
+                        ))}
+                    </ol>
+                </div>
+            )
+        }
+        {
+            kind === "delivery" && (
+                <div class="lanes">
+                    {LANES.map((lane) => (
+                        <div class="lane">
+                            <span class="track__name">{lane.name}</span>
+                            <div class="lane__flow">
+                                {lane.nodes.map((node, index) => (
+                                    <>
+                                        <div class="node" data-tone={node.tone}>
+                                            <span class="node__title">{node.title}</span>
+                                            <span class="node__note">{node.note}</span>
+                                        </div>
+                                        {index < lane.arrows.length && (
+                                            <div class="link">
+                                                <span>{lane.arrows[index]}</span>
+                                            </div>
+                                        )}
+                                    </>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    <p class="lanes__note">When Maple is back, it imports the updates you posted into the page's incidents.</p>
+                </div>
+            )
+        }
+    </div>
+</DocsFigure>
+
+<style>
+    .sp {
+        --sp-ok: var(--severity-info);
+        --sp-maintenance: oklch(0.66 0.17 255);
+        --sp-degraded: var(--severity-warn);
+        --sp-partial: oklch(0.7 0.18 48);
+        --sp-major: var(--severity-error);
+        color: var(--foreground);
+        font-size: 13px;
+        line-height: 1.4;
+    }
+    [data-tone="ok"] { --tone: var(--sp-ok); }
+    [data-tone="maintenance"] { --tone: var(--sp-maintenance); }
+    [data-tone="degraded"] { --tone: var(--sp-degraded); }
+    [data-tone="partial"] { --tone: var(--sp-partial); }
+    [data-tone="major"] { --tone: var(--sp-major); }
+    [data-tone="none"], [data-tone="empty"] { --tone: var(--muted-foreground); }
+
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        width: fit-content;
+        border: 1px solid color-mix(in oklab, var(--tone) 45%, transparent);
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--tone) 13%, transparent);
+        padding: 2px 9px;
+        color: var(--foreground);
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .pill::before {
+        width: 6px;
+        height: 6px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--tone);
+        content: "";
+    }
+    .card {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        padding: 10px 12px;
+    }
+    .card__name, .track__name {
+        color: var(--muted-foreground);
+        font-size: 12px;
+    }
+    .card__value { font-weight: 550; margin-bottom: 4px; }
+    .card--result {
+        justify-content: center;
+        border-color: color-mix(in oklab, var(--tone) 60%, var(--border));
+        background: color-mix(in oklab, var(--tone) 10%, var(--card));
+    }
+    .card__big { font-size: 18px; font-weight: 600; }
+    .card__note { color: var(--muted-foreground); font-size: 12px; }
+
+    .resolve {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) 92px minmax(0, 1fr);
+        align-items: stretch;
+    }
+    .resolve__inputs { display: grid; gap: 8px; }
+    .resolve__inputs .card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 10px;
+    }
+    .resolve__inputs .card__name { grid-column: 1; }
+    .resolve__inputs .card__value { grid-column: 1; margin: 0; }
+    .resolve__inputs .pill { grid-column: 2; grid-row: 1 / span 2; }
+    .resolve__arrow {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted-foreground);
+        font-size: 11px;
+    }
+    .resolve__arrow::before {
+        position: absolute;
+        inset-inline: 8px;
+        top: 50%;
+        height: 1px;
+        background: var(--muted-foreground);
+        content: "";
+    }
+    .resolve__arrow::after {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        width: 7px;
+        height: 7px;
+        border-top: 1px solid var(--muted-foreground);
+        border-right: 1px solid var(--muted-foreground);
+        content: "";
+        transform: translateY(-50%) rotate(45deg);
+    }
+    .resolve__arrow span {
+        position: relative;
+        z-index: 1;
+        background: var(--background);
+        padding: 2px 4px;
+        white-space: nowrap;
+    }
+    .ladder {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-top: 14px;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+    }
+    .ladder__end { color: var(--muted-foreground); font-size: 11px; }
+    .ladder .pill:not([data-current]) { opacity: 0.62; }
+    .ladder .pill[data-current] { outline: 1px solid var(--tone); outline-offset: 1px; }
+
+    .bars { display: grid; gap: 2px; }
+    .bars__row {
+        display: grid;
+        grid-template-columns: 58px 96px minmax(0, 1fr);
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+        padding-block: 8px;
+    }
+    .bars__row:last-child { border-bottom: 0; }
+    .bars__strip { display: flex; gap: 3px; }
+    .bars__strip i {
+        width: 7px;
+        height: 22px;
+        border-radius: 2px;
+        background: var(--tone);
+    }
+    .bars__strip[data-tone="empty"] i {
+        background: color-mix(in oklab, var(--muted-foreground) 24%, transparent);
+    }
+    .bars__label { font-weight: 550; }
+    .bars__rule { color: var(--muted-foreground); }
+
+    .tracks, .lanes { display: grid; gap: 18px; }
+    .track, .lane { display: grid; gap: 8px; }
+    .track__steps {
+        display: grid;
+        grid-template-columns: repeat(var(--steps), minmax(0, 1fr));
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .track__steps li {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 0;
+        padding: 0 14px 0 0;
+    }
+    .track__steps li::before { display: none; }
+    .track__steps li:not(:last-child)::after {
+        position: absolute;
+        top: 11px;
+        right: 2px;
+        width: 7px;
+        height: 7px;
+        border-top: 1px solid var(--muted-foreground);
+        border-right: 1px solid var(--muted-foreground);
+        content: "";
+        transform: rotate(45deg);
+    }
+    .track__note { color: var(--muted-foreground); font-size: 12px; }
+
+    .domain { display: grid; gap: 16px; }
+    .domain__records { display: grid; gap: 8px; }
+    .record {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1.3fr) 16px minmax(0, 1fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        padding: 9px 12px;
+    }
+    .record__type { font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 600; }
+    .record code {
+        overflow-wrap: anywhere;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        font-size: 12px;
+    }
+    .record__arrow { color: var(--muted-foreground); }
+    .record__why { color: var(--muted-foreground); font-size: 12px; }
+
+    .lane__flow {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(82px, 0.7fr) minmax(0, 1fr) minmax(52px, 0.4fr) minmax(0, 1fr);
+        align-items: center;
+    }
+    .node {
+        display: flex;
+        min-height: 62px;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        border: 1px solid color-mix(in oklab, var(--tone) 42%, var(--border));
+        border-radius: 8px;
+        background: color-mix(in oklab, var(--tone) 7%, var(--card));
+        padding: 8px 10px;
+    }
+    .node__title { font-weight: 600; }
+    .node__note { color: var(--muted-foreground); font-size: 11.5px; }
+    .link {
+        position: relative;
+        display: flex;
+        min-height: 40px;
+        align-items: flex-start;
+        justify-content: center;
+        padding-inline: 5px;
+        color: var(--muted-foreground);
+        font-size: 11px;
+        line-height: 1.2;
+        text-align: center;
+    }
+    .link span { padding-bottom: 8px; }
+    .link::before {
+        position: absolute;
+        inset-inline: 4px;
+        bottom: 12px;
+        height: 1px;
+        background: var(--muted-foreground);
+        content: "";
+    }
+    .link::after {
+        position: absolute;
+        right: 4px;
+        bottom: 9px;
+        width: 6px;
+        height: 6px;
+        border-top: 1px solid var(--muted-foreground);
+        border-right: 1px solid var(--muted-foreground);
+        content: "";
+        transform: rotate(45deg);
+    }
+    .lanes__note {
+        margin: 0;
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+    }
+
+    @container (max-width: 620px) {
+        .resolve { grid-template-columns: minmax(0, 1fr); }
+        .resolve__arrow { min-height: 42px; }
+        .resolve__arrow::before {
+            inset-block: 4px;
+            inset-inline: auto;
+            top: 4px;
+            left: 50%;
+            width: 1px;
+            height: auto;
+        }
+        .resolve__arrow::after {
+            top: auto;
+            right: auto;
+            bottom: 5px;
+            left: calc(50% - 3px);
+            transform: rotate(135deg);
+        }
+        .bars__row { grid-template-columns: 58px minmax(0, 1fr); row-gap: 2px; }
+        .bars__rule { grid-column: 2; }
+        .track__steps { grid-template-columns: minmax(0, 1fr); }
+        .track__steps li { padding: 0 0 14px; }
+        .track__steps li:last-child { padding-bottom: 0; }
+        .track__steps li:not(:last-child)::after {
+            top: auto;
+            right: auto;
+            bottom: 3px;
+            left: 12px;
+            transform: rotate(135deg);
+        }
+        .record { grid-template-columns: 52px minmax(0, 1fr); }
+        .record code, .record__why { grid-column: 2; }
+        .record__arrow { display: none; }
+        .lane__flow { grid-template-columns: minmax(0, 1fr); }
+        .link { min-height: 34px; align-items: center; justify-content: flex-start; padding-left: 22px; text-align: left; }
+        .link span { padding: 0; }
+        .link::before { inset-block: 2px; inset-inline: auto; bottom: 2px; left: 10px; width: 1px; height: auto; }
+        .link::after { right: auto; bottom: 3px; left: 7px; transform: rotate(135deg); }
+    }
+</style>
