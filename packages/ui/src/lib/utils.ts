@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from "clsx"
+import { cx, type ClassValue } from "./variants"
 import { extendTailwindMerge } from "tailwind-merge"
 
 // Custom font-size tokens (tokens.css); otherwise text-ui, text-title, ... merge as colors.
@@ -9,5 +9,5 @@ const twMerge = extendTailwindMerge({
 })
 
 export function cn(...inputs: ClassValue[]) {
-	return twMerge(clsx(inputs))
+	return twMerge(cx(inputs))
 }

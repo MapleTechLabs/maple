@@ -1,0 +1,197 @@
+{
+	"resourceProfiles": [
+		{
+			"scopeProfiles": [
+				{
+					"profiles": [
+						{
+							"samples": [
+								{
+									"attributeIndices": [1, 2],
+									"values": ["5", "-1"],
+									"timestampsUnixNano": ["1763200001000000000", "18446744073709551615"],
+									"stackIndex": 1,
+									"linkIndex": 1
+								},
+								{
+									"attributeIndices": [],
+									"values": ["9223372036854775807"],
+									"timestampsUnixNano": [],
+									"stackIndex": 0,
+									"linkIndex": 0
+								}
+							],
+							"attributeIndices": [2],
+							"sampleType": {
+								"typeStrindex": 1,
+								"unitStrindex": 2
+							},
+							"timeUnixNano": "1763200000000000000",
+							"durationNano": "10000000000",
+							"periodType": {
+								"typeStrindex": 1,
+								"unitStrindex": 2
+							},
+							"period": "10000000",
+							"profileId": "AQIDBAUGBwgJCgsMDQ4PEA==",
+							"droppedAttributesCount": 0,
+							"originalPayloadFormat": "pprofext",
+							"originalPayload": "H4sIAA=="
+						}
+					],
+					"scope": {
+						"attributes": [
+							{
+								"key": "k",
+								"value": {
+									"boolValue": true,
+									"value": "boolValue"
+								},
+								"keyStrindex": 0
+							}
+						],
+						"name": "ebpf",
+						"version": "0.1",
+						"droppedAttributesCount": 0
+					},
+					"schemaUrl": ""
+				}
+			],
+			"resource": {
+				"attributes": [
+					{
+						"key": "service.name",
+						"value": {
+							"stringValue": "prof",
+							"value": "stringValue"
+						},
+						"keyStrindex": 0
+					},
+					{
+						"key": "",
+						"value": {
+							"stringValueStrindex": 4,
+							"value": "stringValueStrindex"
+						},
+						"keyStrindex": 3
+					},
+					{
+						"key": "arr",
+						"value": {
+							"arrayValue": {
+								"values": [
+									{
+										"stringValueStrindex": 1,
+										"value": "stringValueStrindex"
+									},
+									{
+										"intValue": "5",
+										"value": "intValue"
+									}
+								]
+							},
+							"value": "arrayValue"
+						},
+						"keyStrindex": 0
+					}
+				],
+				"droppedAttributesCount": 0
+			},
+			"schemaUrl": ""
+		}
+	],
+	"dictionary": {
+		"mappingTable": [
+			{
+				"attributeIndices": [],
+				"memoryStart": "0",
+				"memoryLimit": "0",
+				"fileOffset": "0",
+				"filenameStrindex": 0
+			},
+			{
+				"attributeIndices": [1],
+				"memoryStart": "4194304",
+				"memoryLimit": "18446744073709551615",
+				"fileOffset": "0",
+				"filenameStrindex": 5
+			}
+		],
+		"locationTable": [
+			{
+				"lines": [],
+				"attributeIndices": [],
+				"mappingIndex": 0,
+				"address": "0"
+			},
+			{
+				"lines": [
+					{
+						"functionIndex": 1,
+						"line": "42",
+						"column": "-1"
+					}
+				],
+				"attributeIndices": [],
+				"mappingIndex": 1,
+				"address": "4660"
+			}
+		],
+		"functionTable": [
+			{
+				"nameStrindex": 0,
+				"systemNameStrindex": 0,
+				"filenameStrindex": 0,
+				"startLine": "0"
+			},
+			{
+				"nameStrindex": 6,
+				"systemNameStrindex": 6,
+				"filenameStrindex": 5,
+				"startLine": "10"
+			}
+		],
+		"linkTable": [
+			{
+				"traceId": "",
+				"spanId": ""
+			},
+			{
+				"traceId": "CvdlGRbNQ92ESOshHIAxnA==",
+				"spanId": "t61rcWkgMzE="
+			}
+		],
+		"stringTable": ["", "cpu", "nanoseconds", "thread.name", "checkout", "main.go", "main"],
+		"attributeTable": [
+			{
+				"keyStrindex": 0,
+				"value": null,
+				"unitStrindex": 0
+			},
+			{
+				"keyStrindex": 3,
+				"value": {
+					"stringValueStrindex": 4,
+					"value": "stringValueStrindex"
+				},
+				"unitStrindex": 0
+			},
+			{
+				"keyStrindex": 1,
+				"value": {
+					"intValue": "3",
+					"value": "intValue"
+				},
+				"unitStrindex": 0
+			}
+		],
+		"stackTable": [
+			{
+				"locationIndices": []
+			},
+			{
+				"locationIndices": [1, 1]
+			}
+		]
+	}
+}

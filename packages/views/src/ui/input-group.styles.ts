@@ -1,6 +1,6 @@
-import { cva } from "class-variance-authority"
+import { variants } from "@maple/ui/lib/variants"
 
-export const inputGroupAddonVariants = cva(
+export const inputGroupAddonVariants = variants(
 	"flex h-auto cursor-text select-none items-center justify-center gap-2 leading-none [&>kbd]:rounded-xs in-[[data-slot=input-group]:has([data-slot=input-control],[data-slot=textarea-control])]:[&_svg:not([class*='size-'])]:size-4.5 sm:in-[[data-slot=input-group]:has([data-slot=input-control],[data-slot=textarea-control])]:[&_svg:not([class*='size-'])]:size-4 [&_svg]:-mx-0.5 not-has-[button]:**:[svg:not([class*='opacity-'])]:opacity-80",
 	{
 		defaultVariants: {

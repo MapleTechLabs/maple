@@ -222,7 +222,7 @@ describe("encodeProfiles", () => {
 		const request = cpuRequest([
 			{ stackIndex: 2, linkIndex: 1, values: ["5"], timestampsUnixNano: ["1763200001000000000"] },
 		])
-		const viaProto = rowsOf(decodeProfilesRequest(encodeProfilesRequest(request)))
+		const viaProto = rowsOf(Result.getOrThrow(decodeProfilesRequest(encodeProfilesRequest(request))))
 		expect(viaProto.rows).toEqual(rowsOf(request).rows)
 	})
 
@@ -280,7 +280,9 @@ describe("encodeProfiles", () => {
 		expect(rows).toEqual(rowsOf(inline).rows)
 		expect(rows[0]?.resource_attributes).toMatchObject({ tags, labels })
 		expect(rows[0]?.sample_attributes).toEqual({ "thread.name": tags, "service.name": labels })
-		expect(rowsOf(decodeProfilesRequest(encodeProfilesRequest(byReference))).rows).toEqual(rows)
+		expect(
+			rowsOf(Result.getOrThrow(decodeProfilesRequest(encodeProfilesRequest(byReference)))).rows,
+		).toEqual(rows)
 	})
 
 	it("reads a null integer as unset", () => {

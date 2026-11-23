@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { alertActionStyles, alertDescriptionStyles, alertTitleStyles, alertVariants } from "./alert.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // The Alert callout: a toned box with an icon, title, description and an action.

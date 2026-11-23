@@ -1,6 +1,6 @@
 import { Array as Arr, Option, String as Str } from "effect"
 import { Command, type Update } from "foldkit"
-import Fuse from "fuse.js"
+import { fuzzySearch, type FuzzyOptions } from "@maple/strings"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { Resources } from "../../platform/resources"
@@ -13,6 +13,7 @@ import {
 	MAX_RESULTS,
 	type PaletteEntry,
 	paletteEntries,
+	type SearchEntry,
 	searchEntriesOf,
 } from "./entries"
 import { LoadPaletteServices, ScrollHighlighted } from "./command"
@@ -28,13 +29,12 @@ const entriesOf = (model: Model, context: Context) =>
 
 export type Shown = Readonly<{ entries: ReadonlyArray<PaletteEntry>; isSearch: boolean }>
 
-/** Title-weighted, location-free, threshold 0.35. */
-const FUSE_OPTIONS = {
+/** Title-weighted, threshold 0.35. */
+const SEARCH_OPTIONS: FuzzyOptions<SearchEntry> = {
 	keys: [
-		{ name: "title", weight: 0.7 },
-		{ name: "keywords", weight: 0.3 },
+		{ get: (entry) => entry.title, weight: 0.7 },
+		{ get: (entry) => entry.keywords, weight: 0.3 },
 	],
-	ignoreLocation: true,
 	threshold: 0.35,
 }
 
@@ -49,16 +49,16 @@ const isWordStartMatch = (title: string, query: string): boolean => {
 }
 
 /**
- * `fuse.search(query)` over the entries the viewer can be shown, best first. When some titles have
+ * The fuzzy search over the entries the viewer can be shown, best first. When some titles have
  * a word starting with the query, the fuzzy mid-word hits drop out; a typo still falls back to them.
  */
 const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> => {
-	const items = Arr.map(new Fuse(searchEntriesOf(entries), FUSE_OPTIONS).search(query), ({ item }) => item)
+	const items = Arr.map(fuzzySearch(searchEntriesOf(entries), query, SEARCH_OPTIONS), ({ item }) => item)
 	const prefixed = Arr.filter(items, (item) => isWordStartMatch(item.title, query))
 	return Arr.map(prefixed.length > 0 ? prefixed : items, (item) => item.id)
 }
 
-/** Browse mode for an empty query; otherwise fuse's top matches, ranked in render as cmdk does. */
+/** Browse mode for an empty query; otherwise the fuzzy top matches, ranked in render as cmdk does. */
 const computeShownEntries = (
 	model: Model,
 	context: Context,

@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 import { bubbleContentStyles, bubbleGroupStyles, bubbleVariants } from "./bubble.styles"
-import type { VariantProps } from "class-variance-authority"
+import type { VariantProps } from "@maple/ui/lib/variants"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
 // A chat bubble and its group.

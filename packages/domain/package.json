@@ -128,7 +128,6 @@
 		"@maple/security-audit": "workspace:*",
 		"@maple/strings": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"@noble/hashes": "^1.4.0",
 		"effect": "catalog:effect",
 		"re2js": "2.10.0"
 	},
