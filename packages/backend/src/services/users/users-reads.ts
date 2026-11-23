@@ -177,17 +177,27 @@ const propertiesRead = <A, E, R>(
 	read.pipe(Effect.catchIf(isMissingPersonProperties, () => Effect.succeed<ReadonlyArray<A>>([])))
 
 type Trait = Readonly<{ key: string; value: string }>
+type PropertyState = Readonly<{ key: string; value: string; cleared: boolean; writtenAtMs: number }>
 
 /**
- * A profile's traits: the user's properties (`person_properties`, every `identify()` and `set`
- * write) at their current value, then the keys only the latest session's traits carry.
+ * A profile's traits, by key the newer of two sources: the latest session's traits (resolved by
+ * session version) and the user's properties (`person_properties`). A session's traits are
+ * stamped there at its start, so a key written at or before `sessionAtMs` reads from the session;
+ * one written after it (a backend `set` or `unset`) reads from the properties, a cleared key not at all.
  */
 export const mergeTraits = (
-	sessionTraits: ReadonlyArray<Trait>,
-	properties: ReadonlyArray<Trait>,
+	session: Readonly<{ traits: ReadonlyArray<Trait>; atMs: number }>,
+	properties: ReadonlyArray<PropertyState>,
 ): ReadonlyArray<Trait> => {
+	const fromSession = new Map(Arr.map(session.traits, (trait) => [trait.key, trait.value] as const))
+	const merged = Arr.flatMap(properties, (property): ReadonlyArray<Trait> => {
+		const sessionValue = fromSession.get(property.key)
+		if (sessionValue !== undefined && property.writtenAtMs <= session.atMs)
+			return [{ key: property.key, value: sessionValue }]
+		return property.cleared ? [] : [{ key: property.key, value: property.value }]
+	})
 	const held = new Set(Arr.map(properties, (property) => property.key))
-	return [...properties, ...Arr.filter(sessionTraits, (trait) => !held.has(trait.key))]
+	return [...merged, ...Arr.filter(session.traits, (trait) => !held.has(trait.key))]
 }
 
 /** A rollup identity read's one row, `None` on a cluster without migration 0056 or 0065. */
@@ -1010,7 +1020,7 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 			propertiesRead(
 				warehouse.compiledQuery(
 					tenant,
-					CH.compile(CH.personPropertiesQuery({ kind: "user", ids: [payload.userId] }), params),
+					CH.compile(CH.personPropertyStatesQuery({ kind: "user", ids: [payload.userId] }), params),
 					{ profile: "list", context: "userPersonProperties" },
 				),
 			),
@@ -1086,8 +1096,16 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		groupId,
 		groupName: profileGroupName,
 		traits: mergeTraits(
-			Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
-			Arr.map(properties, (row) => ({ key: row.key, value: row.value })),
+			{
+				traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),
+				atMs: replay[0] === undefined ? 0 : toMs(replay[0].traitsAt),
+			},
+			Arr.map(properties, (row) => ({
+				key: row.key,
+				value: row.value,
+				cleared: row.cleared === 1,
+				writtenAtMs: row.writtenAtMs,
+			})),
 		),
 		visitorIds: Arr.map(visitors, (row) => row.visitorId),
 		firstSeenMs: Math.min(...firstSeens),

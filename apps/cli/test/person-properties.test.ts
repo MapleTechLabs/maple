@@ -307,6 +307,7 @@ describeWithChdb("person properties", () => {
 // before signing in, and the $identify that set a's plan also linked the device.
 const Q_ORG = "org_props_reads"
 const WINDOW = { orgId: OrgId.make(Q_ORG), startTime: "2026-11-20 00:00:00", endTime: "2026-11-21 00:00:00" }
+const decodeStates = decodeJsonEachRow(CH.personPropertyStateRowSchema)
 const decodeUserIds = decodeJsonEachRow(Schema.Struct({ userId: Schema.String }))
 const decodeNamed = decodeJsonEachRow(Schema.Struct({ name: Schema.String, value: CH.CHNumber }))
 const decodeSteps = decodeJsonEachRow(CH.productEventsFunnelRowSchema)
@@ -336,6 +337,11 @@ describeWithChdb("reads by person and group property", () => {
 		})
 		insert({ minute: 0, userId: "b", attributes: { "$set.plan": "free" } })
 		insert({ minute: 0, userId: "c", attributes: { "$set.plan": "pro" } })
+		// a: a blank note and 5 seats; b: a note set then unset; c: seats as text.
+		insert({ minute: 0, userId: "a", attributes: { "$set.note": "", "$set.seats": "5" } })
+		insert({ minute: 0, userId: "b", attributes: { "$set.note": "renewal" } })
+		insert({ minute: 4, userId: "b", attributes: { "$unset.note": "" } })
+		insert({ minute: 0, userId: "c", attributes: { "$set.seats": "unlimited" } })
 		insert({ minute: 0, groupId: "acme", attributes: { "$group_set.tier": "gold" } })
 		insert({ minute: 0, groupId: "globex", attributes: { "$group_set.tier": "silver" } })
 		for (const [user, group] of [
@@ -616,5 +622,27 @@ describeWithChdb("reads by person and group property", () => {
 				search: "c",
 			}),
 		).toEqual(["c"])
+	})
+
+	test("a blank directory filter matches a blank value, not a cleared one", () => {
+		expect(directory({ userProperties: [{ key: "note", mode: "equals", value: "" }] })).toEqual(["a"])
+	})
+
+	test("a numeric directory filter skips a text value", () => {
+		expect(directory({ userProperties: [{ key: "seats", mode: "lt", value: "10" }] })).toEqual(["a"])
+	})
+
+	test("the profile's property states keep a cleared key, with when it was written", () => {
+		const rows = decodeStates(
+			run(db, CH.compileUnsafe(CH.personPropertyStatesQuery({ kind: "user", ids: ["b"] }), WINDOW).sql),
+		)
+		expect(Arr.map(rows, (row) => `${row.key}=${row.value} cleared=${row.cleared}`)).toEqual([
+			"note= cleared=1",
+			"plan=free cleared=0",
+		])
+		const note = Arr.findFirst(rows, (row) => row.key === "note")
+		expect(Option.map(note, (row) => row.writtenAtMs)).toEqual(
+			Option.some(Date.parse("2026-11-20T10:04:00Z")),
+		)
 	})
 })

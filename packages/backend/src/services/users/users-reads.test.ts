@@ -315,26 +315,53 @@ describe("mergeCalendarDays", () => {
 })
 
 describe("mergeTraits", () => {
-	it("reads a user's properties first, at their value, then the keys only the session carries", () => {
+	const SESSION_AT = 1_000
+	const state = (key: string, value: string, writtenAtMs: number, cleared = false) => ({
+		key,
+		value,
+		cleared,
+		writtenAtMs,
+	})
+
+	it("reads a key written after the session's start from the properties, at its value", () => {
 		expect(
-			mergeTraits(
-				[
-					{ key: "plan", value: "free" },
-					{ key: "locale", value: "de" },
-				],
-				[
-					{ key: "plan", value: "pro" },
-					{ key: "seats", value: "12" },
-				],
-			),
+			mergeTraits({ traits: [{ key: "plan", value: "free" }], atMs: SESSION_AT }, [
+				state("plan", "pro", 2_000),
+			]),
+		).toEqual([{ key: "plan", value: "pro" }])
+	})
+
+	it("keeps the session's version-resolved value for a key stamped at its start", () => {
+		// identify() changed plan mid-session: both versions are stamped at the start and tie there.
+		expect(
+			mergeTraits({ traits: [{ key: "plan", value: "pro" }], atMs: SESSION_AT }, [
+				state("plan", "free", SESSION_AT),
+			]),
+		).toEqual([{ key: "plan", value: "pro" }])
+	})
+
+	it("drops a key cleared after the session, and keeps one the session set again after the unset", () => {
+		expect(
+			mergeTraits({ traits: [{ key: "trial_ends", value: "2026-12-01" }], atMs: SESSION_AT }, [
+				state("trial_ends", "", 2_000, true),
+			]),
+		).toEqual([])
+		expect(
+			mergeTraits({ traits: [{ key: "trial_ends", value: "2026-12-01" }], atMs: SESSION_AT }, [
+				state("trial_ends", "", 500, true),
+			]),
+		).toEqual([{ key: "trial_ends", value: "2026-12-01" }])
+	})
+
+	it("adds the properties the session lacks, then the keys only the session carries", () => {
+		expect(
+			mergeTraits({ traits: [{ key: "locale", value: "de" }], atMs: SESSION_AT }, [
+				state("seats", "12", 500),
+				state("gone", "", 500, true),
+			]),
 		).toEqual([
-			{ key: "plan", value: "pro" },
 			{ key: "seats", value: "12" },
 			{ key: "locale", value: "de" },
 		])
-	})
-
-	it("keeps the session's traits when the user has no properties", () => {
-		expect(mergeTraits([{ key: "plan", value: "free" }], [])).toEqual([{ key: "plan", value: "free" }])
 	})
 })

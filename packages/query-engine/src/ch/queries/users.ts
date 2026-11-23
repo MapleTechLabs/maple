@@ -1050,6 +1050,8 @@ export function userReplayProfileQuery(scope: UsersScope) {
 			groupName: latestPaired($.groupName, $.groupId, $.lastActivity),
 			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
 			traitValues: CH.argMax($.traitValues, $.lastActivity),
+			// The start of the session the traits come from: `person_properties` stamps its traits there.
+			traitsAt: CH.argMax($.startTime, $.lastActivity),
 			country: nonEmpty($.country),
 			sessions: CH.count(),
 			recordedMs: CH.toUInt64(CH.sum($.durationMs)),
