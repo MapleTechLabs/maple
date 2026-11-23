@@ -3,6 +3,7 @@ import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import { card, cardAction, cardDescription, cardHeader, cardTitle } from "@maple/views/ui/card"
 import type { Html } from "foldkit/html"
+import { separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { meter } from "@maple/views/ui/meter"
 import { miniBars } from "@maple/views/ui/mini-bars"
@@ -219,7 +220,7 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 			]),
 		]),
 		...(totals.signals.length > 1
-			? [h.div([h.Class("border-t border-border pt-5")], [signalRows(h, rule, effect, totals)])]
+			? [separator(h, "horizontal", undefined), signalRows(h, rule, effect, totals)]
 			: []),
 	])
 }
