@@ -17,7 +17,9 @@ export interface ExemplarDot {
 	readonly rows: ReadonlyArray<{ readonly label: string; readonly value: string }>
 }
 
-const DOT = 9
+/** The visible dot, and the larger box that takes the pointer around it. */
+const DOT = 6
+const HIT = 16
 
 /**
  * The dot's centre on the plot, or none when the plot has no numeric y or the time is off the plot.
@@ -67,16 +69,15 @@ export const exemplarOverlay = <M>(
 						{
 							onClick: options.onSelect(dot.key),
 							label: `Open the trace behind ${dot.title}`,
-							className:
-								"pointer-events-auto absolute rotate-45 rounded-2xs border border-background bg-primary transition-transform duration-100 hover:scale-150 active:scale-150",
+							className: "group pointer-events-auto absolute grid place-items-center",
 							attributes: [
 								h.Key(dot.key),
 								h.DataAttribute("chart-overlay", ""),
 								h.Style({
-									left: `${left - DOT / 2}px`,
-									top: `${top - DOT / 2}px`,
-									width: `${DOT}px`,
-									height: `${DOT}px`,
+									left: `${left - HIT / 2}px`,
+									top: `${top - HIT / 2}px`,
+									width: `${HIT}px`,
+									height: `${HIT}px`,
 								}),
 								...tooltipTrigger(h, "Exemplar", {
 									title: dot.title,
@@ -85,7 +86,14 @@ export const exemplarOverlay = <M>(
 								}),
 							],
 						},
-						[],
+						[
+							h.span([
+								h.Class(
+									"block rounded-full bg-muted-foreground ring-2 ring-background transition-transform duration-100 group-hover:scale-150 group-hover:bg-foreground group-active:scale-150 group-active:bg-foreground",
+								),
+								h.Style({ width: `${DOT}px`, height: `${DOT}px` }),
+							]),
+						],
 					),
 				],
 			}),

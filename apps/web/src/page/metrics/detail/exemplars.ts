@@ -112,6 +112,14 @@ export const exemplarTime = (iso: string, timeZone: string): string =>
 		hour12: false,
 	}).format(isoMs(iso))
 
+/**
+ * What the chart draws: each time bucket's highest exemplar (rows come highest first), so a
+ * quiet hour reads as a light trail and a spike stands out by height. The table lists the rest.
+ */
+export const chartExemplars = (
+	exemplars: ReadonlyArray<MetricExemplarRow>,
+): ReadonlyArray<MetricExemplarRow> => Arr.dedupeWith(exemplars, (a, b) => a.bucket === b.bucket)
+
 /** The chart's dots: one per exemplar, at its time and value. */
 export const exemplarDots = (
 	exemplars: ReadonlyArray<MetricExemplarRow>,

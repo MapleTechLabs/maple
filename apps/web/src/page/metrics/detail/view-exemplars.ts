@@ -32,6 +32,7 @@ import { typography } from "@maple/views/ui/typography"
 import { AppRoute, hrefOf } from "../../../route"
 import {
 	distributionCells,
+	chartExemplars,
 	exemplarDots,
 	exemplarKey,
 	exemplarTime,
@@ -56,8 +57,9 @@ export const displayToggle = (h: H, model: Model): Html =>
 		onChange: (display) => Message.ChangedChartDisplay({ display }),
 	})
 
+/** The exemplars the chart draws, one per time bucket. */
 const exemplarRows = (model: Model): ReadonlyArray<MetricExemplarRow> =>
-	Option.getOrElse(AsyncData.getData(model.exemplars.data), () => [])
+	chartExemplars(Option.getOrElse(AsyncData.getData(model.exemplars.data), () => []))
 
 /** Dots over the line chart, once it reported its plot, when its line reads in an observation's unit. */
 export const exemplarChartOverlay = (
@@ -160,8 +162,8 @@ export const distributionBody = (h: H, model: Model, unit: string | undefined, t
 						}),
 	})
 
-/** Rows the table lists; the rest stay on the chart as dots. */
-const TABLE_ROWS = 25
+/** Rows the table lists; a picked heatmap cell lists the rest. */
+const TABLE_ROWS = 10
 
 const exemplarTable = (
 	h: H,
@@ -293,7 +295,7 @@ export const exemplarsPanel = (
 									h,
 									{ size: "xs", tone: "muted", as: "p", className: "px-3 py-2" },
 									[
-										`The ${shown.length} highest of ${countLabel(rows.length, "exemplar")}; the chart shows them all.`,
+										`The ${shown.length} highest of ${countLabel(rows.length, "exemplar")}; the chart marks the highest in each bucket.`,
 									],
 								),
 							]

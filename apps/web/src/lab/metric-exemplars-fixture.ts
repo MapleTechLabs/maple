@@ -15,7 +15,15 @@ const iso = (ms: number) => new Date(ms).toISOString()
 const minuteAt = (index: number) => START + index * 60_000
 
 /** Minutes 38 to 43 carry the slow dependency. */
-const isSlow = (index: number) => index >= 38 && index <= 43
+/** How far the slow dependency has taken hold: it builds from 0:36, holds 0:38 to 0:43, then drains. */
+const SEVERITY = new Map([
+	[36, 0.15],
+	[37, 0.55],
+	[44, 0.45],
+	[45, 0.1],
+])
+const severity = (index: number) => (index >= 38 && index <= 43 ? 1 : (SEVERITY.get(index) ?? 0))
+const blend = (index: number, calm: number, slow: number) => calm + (slow - calm) * severity(index)
 
 export const EXEMPLARS_CATALOG: ReadonlyArray<MetricRow> = [
 	{
@@ -40,7 +48,7 @@ export const EXEMPLARS_TIMESERIES: ReadonlyArray<Readonly<Record<string, string 
 	MINUTES,
 	(index) => ({
 		bucket: iso(minuteAt(index)),
-		A: isSlow(index) ? 1.42 * wobble(index, 1) : 0.118 * wobble(index, 2),
+		A: blend(index, 0.118 * wobble(index, 2), 1.42 * wobble(index, 1)),
 	}),
 )
 
@@ -71,9 +79,11 @@ export const EXEMPLARS_ROWS: ReadonlyArray<MetricExemplarRow> = Arr.sort(
 		(index) =>
 			Arr.makeBy(3, (rank): MetricExemplarRow => {
 				const seed = index * 3 + rank + 1
-				const value = isSlow(index)
-					? (SLOW_TOP[rank] ?? 0) * wobble(index, rank)
-					: (FAST_TOP[rank] ?? 0) * wobble(index, rank + 3)
+				const value = blend(
+					index,
+					(FAST_TOP[rank] ?? 0) * wobble(index, rank + 3),
+					(SLOW_TOP[rank] ?? 0) * wobble(index, rank),
+				)
 				return {
 					bucket: iso(minuteAt(index)),
 					timestamp: iso(minuteAt(index) + (7 + rank * 17) * 1000),
@@ -93,7 +103,7 @@ const BOUNDS = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5
 /** Requests per bucket per minute: a hump around 50 ms, and in the slow minutes a second one past a second. */
 const countAt = (index: number, bucket: number): number => {
 	const fast = [4, 22, 160, 410, 290, 120, 38, 6, 1, 0, 0, 0, 0][bucket] ?? 0
-	const slow = isSlow(index) ? ([0, 0, 0, 0, 0, 0, 2, 9, 31, 58, 44, 4, 0][bucket] ?? 0) : 0
+	const slow = severity(index) * ([0, 0, 0, 0, 0, 0, 2, 9, 31, 58, 44, 4, 0][bucket] ?? 0)
 	return Math.round(fast * wobble(index, bucket + 11) + slow * wobble(index, bucket + 23))
 }
 
