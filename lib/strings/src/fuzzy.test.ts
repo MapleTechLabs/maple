@@ -44,6 +44,15 @@ describe("fuzzySearch", () => {
 		expect(titles("sxxxxces")).toEqual([])
 	})
 
+	it("scores swapped first letters as a word-start typo, not a mid-word one", () => {
+		// "onde" is one swap from "node" and one deletion from the "ode" inside "code".
+		const search = makeFuzzySearch([{ title: "Code review" }, { title: "Node.js" }], {
+			keys: [{ get: (item) => item.title, weight: 1 }],
+			threshold: 0.3,
+		})
+		expect(Arr.map(search("onde"), (match) => match.item.title)).toEqual(["Node.js", "Code review"])
+	})
+
 	it("ranks a match in a lighter key below the same match in a heavier one", () => {
 		const both = [
 			{ title: "Keys", tags: "ingest" },

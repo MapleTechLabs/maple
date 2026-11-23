@@ -86,19 +86,19 @@ const typoMatch = (
 			const f = field[j - 1]
 			let best = cell(previous, j - 1) + (q === f ? 0 : 1)
 			let from = cell(previousStart, j - 1)
-			if (cell(previous, j) + 1 < best) {
-				best = cell(previous, j) + 1
-				from = cell(previousStart, j)
+			// An equally cheap alignment that starts a word wins, so "onde" keeps the swap to "node".
+			const consider = (candidate: number, candidateStart: number) => {
+				const isBetter =
+					candidate < best ||
+					(candidate === best && isWordStart(field, candidateStart) && !isWordStart(field, from))
+				if (!isBetter) return
+				best = candidate
+				from = candidateStart
 			}
-			if (cell(cost, j - 1) + 1 < best) {
-				best = cell(cost, j - 1) + 1
-				from = cell(start, j - 1)
-			}
-			const swapped = i > 1 && j > 1 && q === field[j - 2] && query[i - 2] === f
-			if (swapped && cell(before, j - 2) + 1 < best) {
-				best = cell(before, j - 2) + 1
-				from = cell(beforeStart, j - 2)
-			}
+			consider(cell(previous, j) + 1, cell(previousStart, j))
+			consider(cell(cost, j - 1) + 1, cell(start, j - 1))
+			if (i > 1 && j > 1 && q === field[j - 2] && query[i - 2] === f)
+				consider(cell(before, j - 2) + 1, cell(beforeStart, j - 2))
 			cost.push(best)
 			start.push(from)
 		}

@@ -71,6 +71,10 @@ describe("docs fuzzy fallback", () => {
 		expect(top3(query)).toEqual(expected)
 	})
 
+	it("puts the Node.js guide first for its first two letters swapped", () => {
+		expect(top3("onde")[0]).toBe("guides/instrumentation-nodejs")
+	})
+
 	it("finds every guide for a misspelt shared word", () => {
 		expect(top3("instrumentaton")).toHaveLength(3)
 		expect(top3("instrumentaton").every((url) => url.startsWith("guides/instrumentation-"))).toBe(true)
