@@ -2198,6 +2198,7 @@ describe("ErrorsService.runTick", () => {
 						autoResolveMinutes: 30,
 						claimToken: "a-token-this-worker-no-longer-holds",
 						earlyPromotionsPerDay: 10,
+						groupingDigest: "",
 						makeIssueId: () => asIssueId(randomUUID()),
 						makeIncidentId: () => asIncidentId(randomUUID()),
 						makeEventId: () => asEventId(randomUUID()),
@@ -3928,6 +3929,7 @@ const makeIdleTickHarness = (
 			edgeBackend,
 			dispatcher: opts.dispatcher,
 			earlyPromotionsPerDay: 0,
+			groupingDigest: "",
 		}),
 		db,
 		errors,
@@ -5605,6 +5607,232 @@ describe("ErrorsService.runTick grouping keys", () => {
 			assert.lengthOf(yield* loadIssuesByFingerprint(H1), 1)
 			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 0)
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a grouping key never folds an ignored issue into a live one", () => {
+		const rows = [row(H1, 1), row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const ignored = asIssueId(randomUUID())
+			const live = asIssueId(randomUUID())
+			yield* seedIssue(ignored, {
+				fingerprintHash: H1,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* seedIssue(live, { fingerprintHash: H2, exceptionType: "SiteUnavailable" })
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
+			assert.isNull((yield* loadIssueById(live)).mergedIntoIssueId)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("live issues sharing a key still fold when a settled one shares it too", () => {
+		const rows = [row(H1, 1), row(H2, 1), row(H3, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [
+				sample(H1, "design-access-BaWgZTwa"),
+				sample(H2, "portal-native-VejMLjva"),
+				sample(H3, "billing-C9EyLIyc"),
+			]
+			grouping.spans = [span(H1), span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const a = asIssueId(randomUUID())
+			const b = asIssueId(randomUUID())
+			const fixed = asIssueId(randomUUID())
+			yield* seedIssue(a, { fingerprintHash: H1, exceptionType: "SiteUnavailable", occurrenceCount: 5 })
+			yield* seedIssue(b, { fingerprintHash: H2, exceptionType: "SiteUnavailable", occurrenceCount: 1 })
+			yield* seedIssue(fixed, {
+				fingerprintHash: H3,
+				exceptionType: "SiteUnavailable",
+				workflowState: "done",
+			})
+			yield* errors.runTick
+
+			assert.strictEqual((yield* loadIssueById(b)).mergedIntoIssueId, a)
+			assert.isNull((yield* loadIssueById(fixed)).mergedIntoIssueId)
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a bumped hash never folds a settled issue it reached only through the key", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H2, 1), row(H3, 1)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva"), sample(H3, "billing-C9EyLIyc")]
+			grouping.spans = [span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const carried = asIssueId(randomUUID())
+			const ignored = asIssueId(randomUUID())
+			yield* seedIssue(carried, { fingerprintHash: OLD, exceptionType: "SiteUnavailable" })
+			yield* seedIssue(ignored, {
+				fingerprintHash: H3,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("an ignored issue carried across a bump is not folded into a live sibling", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H2, 1), row(H3, 1)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H2, "portal-native-VejMLjva"), sample(H3, "billing-C9EyLIyc")]
+			grouping.spans = [span(H2), span(H3)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const ignored = asIssueId(randomUUID())
+			const live = asIssueId(randomUUID())
+			yield* seedIssue(ignored, {
+				fingerprintHash: OLD,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+			})
+			yield* seedIssue(live, { fingerprintHash: H3, exceptionType: "SiteUnavailable" })
+			yield* errors.runTick
+
+			assert.isNull((yield* loadIssueById(ignored)).mergedIntoIssueId)
+			assert.strictEqual((yield* loadIssueById(ignored)).workflowState, "wontfix")
+			assert.isNull((yield* loadIssueById(live)).mergedIntoIssueId)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
+	})
+
+	it.effect("hashes that each own an issue are never folded as new peers", () => {
+		const rows = [row(H1, 1), row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			const live = asIssueId(randomUUID())
+			const ignored = asIssueId(randomUUID())
+			yield* seedIssue(live, {
+				fingerprintHash: H2,
+				exceptionType: "SiteUnavailable",
+				occurrenceCount: 5,
+			})
+			yield* seedIssue(ignored, {
+				fingerprintHash: H1,
+				exceptionType: "SiteUnavailable",
+				workflowState: "wontfix",
+				occurrenceCount: 5,
+			})
+			yield* errors.runTick
+
+			// The live issue keeps its occurrence; the ignored one stays suppressed, as before.
+			assert.strictEqual((yield* loadIssueById(live)).occurrenceCount, 6)
+			assert.strictEqual((yield* loadIssueById(ignored)).occurrenceCount, 5)
+			assert.deepStrictEqual(yield* aliasesOf, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a follower's buffered occurrences move to the issue its group opens", () => {
+		const rows = [row(H1, 1), row(H2, 1)]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(ErrorFingerprintCandidates).values({
+						orgId: ORG,
+						fingerprintHash: H2,
+						serviceName: "checkout-api",
+						exceptionType: "SiteUnavailable",
+						exceptionMessage: MESSAGE,
+						topFrame: "",
+						occurrenceCount: 2,
+						firstSeenAt: TICK_MS - 600_000,
+						lastSeenAt: TICK_MS - 300_000,
+						updatedAt: TICK_MS - 300_000,
+					}),
+				),
+			)
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			const [issue] = yield* loadIssuesByFingerprint(H1)
+			assert.strictEqual(issue?.occurrenceCount, 4)
+			const left = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorFingerprintCandidates)
+						.select("fingerprintHash")
+						.where(($) => [$.orgId.eq(ORG)]),
+				),
+			)
+			assert.deepStrictEqual(left, [])
+		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+	})
+
+	it.effect("a hash whose previous version was pinned stays out of groups after a bump", () => {
+		const OLD = "5000000000000000009"
+		const rows = [row(H1, 2), row(H2, 3)]
+		const lineage = [{ fingerprintHash: H2, previousFingerprintHash: OLD }]
+		return Effect.gen(function* () {
+			grouping.samples = [sample(H1, "design-access-BaWgZTwa"), sample(H2, "portal-native-VejMLjva")]
+			grouping.spans = [span(H1), span(H2)]
+			const database = yield* Database
+			yield* database.execute((db) => pinGroupingKeys(db, ORG, [OLD], TICK_MS))
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedIngestKey(ORG)
+			yield* errors.runTick
+
+			assert.lengthOf(yield* loadIssuesByFingerprint(H1), 1)
+			assert.lengthOf(yield* loadIssuesByFingerprint(H2), 1)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => rows,
+					undefined,
+					undefined,
+					undefined,
+					undefined,
+					() => lineage,
+				),
+			),
+		)
 	})
 
 	it.effect("a pinned hash is never grouped again", () => {

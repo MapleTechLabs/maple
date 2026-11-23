@@ -74,7 +74,7 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 			const detachNext = Arr.map(Arr.take(detachable, 1), (fp): NextCall =>
 				doc.next(
 					"detach_error_fingerprint",
-					{ issue_id: output.issueId, fingerprint_hash: fp.fingerprintHash },
+					{ issue_id: output.issueId, fingerprint: fp.fingerprintHash },
 					"only if this grouped fingerprint is a different bug",
 				),
 			)
@@ -182,18 +182,17 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 			"Split one fingerprint off an error issue that the grouping key put there by mistake. Only fingerprints joined by the grouping key detach (source `group` in explain_error_grouping); one folded in by a merge is unmerged from the dashboard instead, and the issue's own fingerprint stays. The detached fingerprint is pinned, so its next occurrence opens an issue of its own.",
 		parameters: Schema.Struct({
 			issue_id: issueIdParam("The issue holding the fingerprint, from list_error_issues"),
-			fingerprint_hash: P.text("The fingerprint to split off, from explain_error_grouping"),
+			fingerprint: P.text("The fingerprint to split off, from explain_error_grouping"),
 		}),
-		aliases: { fingerprint: "fingerprint_hash" },
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Detaching a fingerprint"],
 		handler: Effect.fn("McpTool.detachErrorFingerprint")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const fingerprintHash = Str.trim(params.fingerprint_hash)
+			const fingerprintHash = Str.trim(params.fingerprint)
 			if (fingerprintHash.length === 0) {
 				return yield* new McpInvalidInputError({
-					message: "fingerprint_hash is empty. Use a fingerprint from explain_error_grouping.",
-					parameter: "fingerprint_hash",
+					message: "fingerprint is empty. Use a fingerprint from explain_error_grouping.",
+					parameter: "fingerprint",
 				})
 			}
 			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, "maple.issue.id": params.issue_id })
@@ -204,7 +203,7 @@ export function registerErrorGroupingTools(server: McpToolRegistrar) {
 				.pipe(
 					Effect.catchTags({
 						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
-						"@maple/http/errors/ErrorValidationError": validationFailed("fingerprint_hash"),
+						"@maple/http/errors/ErrorValidationError": validationFailed("fingerprint"),
 						"@maple/http/errors/ErrorPersistenceError":
 							persistenceFailed("detach_error_fingerprint"),
 					}),

@@ -4,7 +4,8 @@ import { Array as Arr, Clock, Effect, Layer, Schema } from "effect"
 import { ErrorIssueId, OrgId, UserId } from "@maple/primitives"
 import { ErrorIssueFingerprints, ErrorIssues } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { GroupingConfig, OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
+import { OrgGroupingRule } from "@maple/domain/tinybird/grouping-rules"
+import { GroupingRulesUpdateRequest } from "@maple/domain/http"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -100,26 +101,54 @@ describe("ErrorGroupingService rules", () => {
 			const grouping = yield* ErrorGroupingService
 			assert.deepStrictEqual((yield* grouping.getRules(ORG)).rules, [])
 			const rule = new OrgGroupingRule({ id: "timeouts", kind: "merge", message: "*timed out*" })
-			const saved = yield* grouping.updateRules(ORG, USER, new GroupingConfig({ rules: [rule] }))
+			const saved = yield* grouping.updateRules(
+				ORG,
+				USER,
+				new GroupingRulesUpdateRequest({ rules: [rule], expectedUpdatedAt: null }),
+			)
 			assert.strictEqual(saved.rules[0]?.id, "timeouts")
-			assert.isNotNull((yield* grouping.getRules(ORG)).updatedAt)
+			assert.isNotNull(saved.updatedAt)
 
 			const bad = yield* Effect.flip(
 				grouping.updateRules(
 					ORG,
 					USER,
-					new GroupingConfig({
+					new GroupingRulesUpdateRequest({
 						rules: [
 							new OrgGroupingRule({ id: "a", kind: "library-frames" }),
 							new OrgGroupingRule({ id: "b", kind: "merge" }),
 							rule,
 							rule,
 						],
+						expectedUpdatedAt: saved.updatedAt,
 					}),
 				),
 			)
 			assert.strictEqual(bad._tag, "@maple/http/errors/ErrorValidationError")
 			assert.lengthOf(bad.details, 3)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("refuses a save built on rules that changed since", () =>
+		Effect.gen(function* () {
+			const grouping = yield* ErrorGroupingService
+			const first = new OrgGroupingRule({ id: "a", kind: "merge", message: "*a*" })
+			yield* grouping.updateRules(
+				ORG,
+				USER,
+				new GroupingRulesUpdateRequest({ rules: [first], expectedUpdatedAt: null }),
+			)
+
+			const stale = yield* Effect.flip(
+				grouping.updateRules(
+					ORG,
+					USER,
+					new GroupingRulesUpdateRequest({ rules: [], expectedUpdatedAt: null }),
+				),
+			)
+
+			assert.include(stale.message, "changed since")
+			assert.lengthOf((yield* grouping.getRules(ORG)).rules, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

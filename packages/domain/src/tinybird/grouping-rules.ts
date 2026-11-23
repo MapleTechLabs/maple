@@ -6,14 +6,14 @@
  * - `library-frames` / `app-frames`: frames matching `frame` count as a dependency's
  *   (skipped when the error has frames of its own) or as the application's.
  *
- * Patterns are globs (`*` is any run of characters), case-insensitive, matched against
- * the whole value: `*timeout*`, `@acme/http/errors/*`, `*node_modules/@acme/*`.
- * Rules only merge: a rule can join hashes, never split one.
+ * Every field is a glob (`*` is any run of characters), case-insensitive, matched against
+ * the whole value: `checkout-*`, `*timeout*`, `*node_modules/@acme/*`. Fields given on a
+ * rule all have to match. The last matching rule wins. Rules only merge, never split.
  */
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 export const MAX_GROUPING_RULES = 100
-export const MAX_GROUPING_PATTERN_CHARS = 300
+const MAX_GROUPING_PATTERN_CHARS = 300
 
 export const GroupingRuleKind = Schema.Literals(["merge", "library-frames", "app-frames"]).annotate({
 	identifier: "@maple/GroupingRuleKind",
@@ -27,7 +27,7 @@ export class OrgGroupingRule extends Schema.Class<OrgGroupingRule>("@maple/OrgGr
 	/** Stable across edits, so an issue grouped by a rule keeps its key. */
 	id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
 	kind: GroupingRuleKind,
-	/** Exact service name; every service when absent. */
+	/** Every service when absent. */
 	service: Schema.optionalKey(Pattern),
 	exceptionType: Schema.optionalKey(Pattern),
 	message: Schema.optionalKey(Pattern),
@@ -58,18 +58,42 @@ export const groupingRuleProblem = (rule: OrgGroupingRule): string | undefined =
 	return undefined
 }
 
-const escapeRegex = (text: string) => Str.replace(/[.+?^${}()|[\]\\]/g, "\\$&")(text)
+/** How much of a value a glob reads: bounds the match work per rule. */
+const GLOB_SCAN_CHARS = 2_000
 
-/** A glob as an anchored, case-insensitive regex: `*` is any run, everything else literal. */
-export const globRegex = (glob: string): RegExp =>
-	new RegExp(`^${Arr.join(Arr.map(Str.split("*")(glob), escapeRegex), "[\\s\\S]*")}$`, "i")
+/**
+ * A glob as a matcher: `*` is any run, everything else literal, case-insensitive, whole value.
+ * Greedy segment search, so a hostile pattern cannot backtrack: work is linear per segment.
+ */
+const globMatcher = (glob: string): ((value: string) => boolean) => {
+	const segments = Str.split("*")(Str.toLowerCase(glob))
+	const first = segments[0] ?? ""
+	const last = segments[segments.length - 1] ?? ""
+	const middle = segments.slice(1, -1)
+	return (raw) => {
+		const value = Str.toLowerCase(Str.slice(0, GLOB_SCAN_CHARS)(raw))
+		if (segments.length === 1) return value === first
+		if (!Str.startsWith(first)(value) || value.length < first.length + last.length) return false
+		const end = value.length - last.length
+		if (!Str.endsWith(last)(value)) return false
+		const reached = Arr.reduce(middle, first.length as number | undefined, (at, segment) => {
+			if (at === undefined) return undefined
+			const found = Option.map(Str.indexOf(segment)(Str.slice(at)(value)), (offset) => at + offset)
+			return Option.isNone(found) || found.value + segment.length > end
+				? undefined
+				: found.value + segment.length
+		})
+		return reached !== undefined
+	}
+}
 
 export interface CompiledGroupingRules {
-	readonly merges: ReadonlyArray<{
-		readonly rule: OrgGroupingRule
-		readonly matches: (sample: GroupingRuleSample, frames: ReadonlyArray<string>) => boolean
-	}>
-	readonly frameKind: (frame: string, serviceName: string) => "app" | "library" | undefined
+	/** The merge rule an error matches; the last matching rule wins, as for frame rules. */
+	readonly mergeRule: (
+		sample: GroupingRuleSample,
+		frames: ReadonlyArray<string>,
+	) => OrgGroupingRule | undefined
+	readonly frameKind: (frame: string, sample: GroupingRuleSample) => "app" | "library" | undefined
 	readonly hasFrameRules: boolean
 }
 
@@ -80,33 +104,36 @@ export interface GroupingRuleSample {
 }
 
 export const compileGroupingRules = (config: GroupingConfig): CompiledGroupingRules => {
-	const compiled = Arr.map(config.rules, (rule) => ({
-		rule,
-		service: rule.service,
-		exceptionType: rule.exceptionType === undefined ? undefined : globRegex(rule.exceptionType),
-		message: rule.message === undefined ? undefined : globRegex(rule.message),
-		frame: rule.frame === undefined ? undefined : globRegex(rule.frame),
-	}))
-	const usable = Arr.filter(compiled, ({ rule }) => groupingRuleProblem(rule) === undefined)
+	const optional = (glob: string | undefined) => (glob === undefined ? undefined : globMatcher(glob))
+	const usable = Arr.map(
+		Arr.filter(config.rules, (rule) => groupingRuleProblem(rule) === undefined),
+		(rule) => ({
+			rule,
+			service: optional(rule.service),
+			exceptionType: optional(rule.exceptionType),
+			message: optional(rule.message),
+			frame: optional(rule.frame),
+		}),
+	)
+	type Entry = (typeof usable)[number]
+	const sampleMatches = (entry: Entry, sample: GroupingRuleSample) =>
+		(entry.service?.(sample.serviceName) ?? true) &&
+		(entry.exceptionType?.(sample.exceptionType) ?? true) &&
+		(entry.message?.(sample.statusMessage) ?? true)
+	const merges = Arr.filter(usable, ({ rule }) => rule.kind === "merge")
 	const frameRules = Arr.filter(usable, ({ rule }) => rule.kind !== "merge")
+	// The last matching rule wins, so a narrower rule added below a broad one overrides it.
 	return {
-		merges: Arr.map(
-			Arr.filter(usable, ({ rule }) => rule.kind === "merge"),
-			(entry) => ({
-				rule: entry.rule,
-				matches: (sample, frames) =>
-					(entry.service === undefined || entry.service === sample.serviceName) &&
-					(entry.exceptionType === undefined || entry.exceptionType.test(sample.exceptionType)) &&
-					(entry.message === undefined || entry.message.test(sample.statusMessage)) &&
-					(entry.frame === undefined ||
-						Arr.some(frames, (frame) => entry.frame?.test(frame) ?? false)),
-			}),
-		),
-		// The last matching rule wins, so a narrower rule below a broad one overrides it.
-		frameKind: (frame, serviceName) =>
+		mergeRule: (sample, frames) =>
+			Arr.reduce(merges, undefined as OrgGroupingRule | undefined, (found, entry) =>
+				sampleMatches(entry, sample) &&
+				(entry.frame === undefined || Arr.some(frames, (frame) => entry.frame?.(frame) ?? false))
+					? entry.rule
+					: found,
+			),
+		frameKind: (frame, sample) =>
 			Arr.reduce(frameRules, undefined as "app" | "library" | undefined, (kind, entry) =>
-				(entry.service === undefined || entry.service === serviceName) &&
-				(entry.frame?.test(frame) ?? false)
+				sampleMatches(entry, sample) && (entry.frame?.(frame) ?? false)
 					? entry.rule.kind === "app-frames"
 						? "app"
 						: "library"

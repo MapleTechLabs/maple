@@ -1,20 +1,7 @@
 /**
- * The grouping key: which issue a fingerprint joins, decided after the hash.
- *
- * `FingerprintHash` is computed by the warehouse when an event is written, and it is
- * deliberately fine: it keeps the throw site and the message. That splits one bug
- * into several issues whenever a deploy moves code between bundle chunks, a laptop and
- * a container print different install roots, or one tagged error is raised from two
- * callers. The errors tick reads one sample event per new hash, computes this key from
- * it, and hashes that share a key join one issue (`docs/error-issue-lifecycle.md`).
- *
- * A key only ever MERGES hashes, never splits one. That is what lets it change without
- * rotating a single hash, and why an unmerge can pin a hash out of its group.
- *
- * Measured with `errors:replay` against two weeks of blind-labelled pairs from 32 orgs
- * (2026-11-23): issues fell 9.7% and 8.9%, and 91% of the merges it adds are one bug.
- * Rules that did not raise F1 (keying on a cause chain's root type, keeping the first
- * named caller for every error) were measured and left out.
+ * The grouping key: which issue a warehouse fingerprint joins, computed by the errors tick
+ * from one sample. Keys only merge hashes, never split one; why and how it was measured is
+ * in `docs/error-issue-lifecycle.md` ("The grouping key").
  */
 import { Array as Arr, Schema, String as Str } from "effect"
 
@@ -24,6 +11,7 @@ import {
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
 	type FingerprintInputs,
 	isLibraryFrame,
+	SPAN_SIGNATURE_PREFIX,
 } from "./fingerprint"
 import {
 	compileGroupingRules,
@@ -42,7 +30,7 @@ export const GROUPING_KEY_VERSION = 1
  * custom error, `@acme/http/errors/Unauthorized`) names one failure, so with its message
  * the throw site adds nothing but splits.
  */
-export const GENERIC_ERROR_TYPE_PATTERN =
+const GENERIC_ERROR_TYPE_PATTERN =
 	"^(Error|TypeError|RangeError|ReferenceError|SyntaxError|EvalError|URIError|AggregateError|DOMException|" +
 	"Exception|RuntimeError|ValueError|KeyError|AttributeError|IndexError|OSError|" +
 	"NSError|HttpClientError|SchemaError|UnknownException|TimeoutError|ErrorInfo|" +
@@ -52,7 +40,7 @@ export const GENERIC_ERROR_TYPE_PATTERN =
  * A chunk the browser failed to load. Its message names a content-hashed asset, so every
  * deploy opened another issue for the one failure: the app is out of date in the tab.
  */
-export const CHUNK_LOAD_PATTERN =
+const CHUNK_LOAD_PATTERN =
 	"ChunkLoadError|Loading chunk [^ ]+ failed|Failed to fetch dynamically imported module|" +
 	"error loading dynamically imported module|Importing a module script failed"
 
@@ -105,7 +93,7 @@ export interface GroupingSample {
 }
 
 /** A frame's file, cut to its last two path segments: install roots and worktrees vary. */
-export const trimFramePath = (frame: string): string => {
+const trimFramePath = (frame: string): string => {
 	const match = framePathRe.exec(frame)
 	if (match === null) return frame
 	const [whole, lead = "", tail = ""] = match
@@ -113,7 +101,7 @@ export const trimFramePath = (frame: string): string => {
 }
 
 /** The function a frame names, unless it is plumbing or minified away. */
-export const frameFunction = (frame: string): string | undefined => {
+const frameFunction = (frame: string): string | undefined => {
 	const name = namedFrameRe.exec(frame)?.[1]
 	return name === undefined || plumbingRe.test(name) ? undefined : name
 }
@@ -140,7 +128,7 @@ const chooseFrames = (
 ): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } => {
 	const { frames: candidates, maxFrames } = currentFrameCandidates(sample)
 	const isApp = (frame: string) => {
-		const kind = rules.frameKind(frame, sample.serviceName)
+		const kind = rules.frameKind(frame, sample)
 		return kind === undefined ? !isLibraryFrame(frame) : kind === "app"
 	}
 	const app = Arr.filter(candidates, isApp)
@@ -173,7 +161,7 @@ export const explainGrouping = (
 	if (inputs.hashInputs[0] === CUSTOM_FINGERPRINT_ATTRIBUTE && inputs.hashInputs.length === 2) {
 		return explained({ rule: "custom", parts: inputs.hashInputs }, [])
 	}
-	if (Str.startsWith("span:")(inputs.msgSignature)) {
+	if (Str.startsWith(SPAN_SIGNATURE_PREFIX)(inputs.msgSignature)) {
 		return explained({ rule: "span", parts: inputs.hashInputs }, [])
 	}
 	// A `{{default}}` key splits whatever the rules below join.
@@ -183,13 +171,9 @@ export const explainGrouping = (
 		rule: parts.rule,
 		parts: [...parts.parts, ...extension],
 	})
-	const merge = Arr.findFirst(rules.merges, (entry) => entry.matches(sample, frames))
-	if (merge._tag === "Some") {
-		return explained(
-			extend({ rule: "org-rule", parts: ["org-rule", merge.value.rule.id] }),
-			[],
-			merge.value.rule,
-		)
+	const merge = rules.mergeRule(sample, frames)
+	if (merge !== undefined) {
+		return explained(extend({ rule: "org-rule", parts: ["org-rule", merge.id] }), [], merge)
 	}
 	if (chunkLoadRe.test(sample.exceptionType) || chunkLoadRe.test(sample.statusMessage)) {
 		return explained(extend({ rule: "chunk-load", parts: ["chunk-load"] }), [])
@@ -217,8 +201,10 @@ export const groupingParts = (
 	return { rule, parts }
 }
 
+/** The stored key for a service and its parts, as `groupingKey` computes it. */
+export const keyOfParts = (serviceName: string, { rule, parts }: GroupingParts): string =>
+	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, rule, ...parts], "\u0000"))
+
 /** The key two hashes must share to join one issue. Scoped to the service, as the hash is. */
-export const groupingKey = (sample: GroupingSample, rules: CompiledGroupingRules = NO_RULES): string => {
-	const { parts } = groupingParts(sample, rules)
-	return stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, sample.serviceName, ...parts], "\u0000"))
-}
+export const groupingKey = (sample: GroupingSample, rules: CompiledGroupingRules = NO_RULES): string =>
+	keyOfParts(sample.serviceName, groupingParts(sample, rules))

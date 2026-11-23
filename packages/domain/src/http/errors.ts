@@ -459,6 +459,15 @@ export class ErrorIssueSimilarResponse extends Schema.Class<ErrorIssueSimilarRes
 	issues: Schema.Array(ErrorIssueSimilarIssue),
 }) {}
 
+/** The whole rule list, replacing the stored one if it is still the one the editor loaded. */
+export class GroupingRulesUpdateRequest extends Schema.Class<GroupingRulesUpdateRequest>(
+	"GroupingRulesUpdateRequest",
+)({
+	rules: GroupingConfig.fields.rules,
+	/** `updatedAt` of the rules the edit started from; null when there were none. */
+	expectedUpdatedAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
 export class GroupingConfigDocument extends Schema.Class<GroupingConfigDocument>("GroupingConfigDocument")({
 	rules: Schema.Array(OrgGroupingRule),
 	updatedAt: Schema.NullOr(IsoDateTimeString),
@@ -988,7 +997,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 	)
 	.add(
 		HttpApiEndpoint.put("updateGroupingRules", "/grouping-rules", {
-			payload: GroupingConfig,
+			payload: GroupingRulesUpdateRequest,
 			success: GroupingConfigDocument,
 			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
 		}),
