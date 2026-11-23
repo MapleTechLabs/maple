@@ -42,6 +42,7 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 
 // https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
 const CF_STARTUP_BUDGET_MS = 1_000
+const WRANGLER_VERSION = "4.166.0"
 const OBSERVED_BLOWUP_MS = 1000 // what the team saw blow up (per the fix session)
 
 type Sample = { wallMs: number; cpuMs: number }
@@ -387,11 +388,20 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		}),
 	)
 	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")
-	// Repo-pinned wrangler (not @latest); deterministic --outfile so we parse the
-	// exact file rather than guessing.
+	// Pinned wrangler (not @latest), fetched on demand so it stays out of the install;
+	// deterministic --outfile so we parse the exact file rather than guessing.
 	const res = spawnSync(
 		"bunx",
-		["wrangler", "check", "startup", "--args=--no-bundle", "--config", configPath, "--outfile", outfile],
+		[
+			`wrangler@${WRANGLER_VERSION}`,
+			"check",
+			"startup",
+			"--args=--no-bundle",
+			"--config",
+			configPath,
+			"--outfile",
+			outfile,
+		],
 		{ stdio: "inherit", cwd: checkDir },
 	)
 	if (res.status !== 0) {
