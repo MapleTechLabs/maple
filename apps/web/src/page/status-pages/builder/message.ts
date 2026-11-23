@@ -23,6 +23,7 @@ import { SessionGrants } from "../../kit/session-grants"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	ComputedOrgKey: { orgKey: Schema.String },
 	CompletedFetchSession: SessionGrants,
 	CompletedFetchMonitors: { key: Schema.String, result: LoadOutcome(Schema.Array(V2UptimeMonitor)) },
 	ClickedRetry: {},
