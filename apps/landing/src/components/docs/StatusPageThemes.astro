@@ -59,6 +59,8 @@ const THEMES = [
             if (src === undefined || alt === undefined || text === undefined) return;
             image.src = src;
             image.alt = alt;
+            // The lightbox names the image once, from its first alt; without it there is no label.
+            if (image.hasAttribute("aria-label")) image.setAttribute("aria-label", `Enlarge screenshot: ${alt}`);
             caption.textContent = text;
         });
     }
