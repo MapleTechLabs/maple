@@ -153,9 +153,12 @@ const severityOf = (record: RuleRecord): number | null => {
 }
 
 /** Own keys only: an attribute named `constructor` is not inherited from `Object.prototype`. */
-const ownValue = (map: AttrMap, key: string): AttrValue | undefined =>
+export const hasAttr = (map: AttrMap, key: string): boolean =>
 	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.has would need a cast
-	Object.hasOwn(map, key) ? map[key] : undefined
+	Object.hasOwn(map, key)
+
+const ownValue = (map: AttrMap, key: string): AttrValue | undefined =>
+	hasAttr(map, key) ? map[key] : undefined
 
 /** `undefined` = missing, `null` = present but not comparable. */
 const fieldValue = (record: RuleRecord, condition: IngestRuleCondition): string | null | undefined => {

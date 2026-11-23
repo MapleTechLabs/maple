@@ -31,6 +31,7 @@ import { WarehouseExecutor } from "@maple/query-engine/observability"
 import {
 	applyRules,
 	compileRules,
+	hasAttr,
 	logSampleToRecord,
 	spanSampleToRecord,
 	type AttrMap,
@@ -230,7 +231,7 @@ const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<str
 			return sameValue(next, value) ? [] : [`${scope}${key} -> ${truncate(valueText(next), 60)}`]
 		}),
 		...Arr.flatMap(Rec.toEntries(b), ([key, value]) =>
-			Rec.has(a, key) ? [] : [`${scope}${key} = ${truncate(valueText(value), 60)}`],
+			hasAttr(a, key) ? [] : [`${scope}${key} = ${truncate(valueText(value), 60)}`],
 		),
 	]
 	const severity =
