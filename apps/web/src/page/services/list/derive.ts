@@ -206,20 +206,24 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 }
 
 /**
- * `commitsQueryKey`: one lookup for the deploy cells and the release facet. The deploy shas of the
- * rows on screen come first, then the filter's, then the facet's; deduped, resolvable only, capped at the endpoint's
- * batch size, sorted. "" means no request.
+ * `commitsQueryKey`: one lookup for the deploy cells and the release facet, in priority order: the
+ * deploy shas of the rows on screen (sorted, so a row reorder keeps the key), then `otherShas` as
+ * given. Deduped, resolvable only, capped at the endpoint's batch size. The order is kept because
+ * the server only probes the provider for the first few unstored shas. "" means no request.
  */
 export const commitsKey = (
 	services: ReadonlyArray<ServiceRow>,
-	facetShas: ReadonlyArray<string> = [],
+	otherShas: ReadonlyArray<string> = [],
 ): string => {
 	const deployShas = Arr.flatMap(services, (service) => {
 		const sha = deployInfo(service.commits)?.sha
 		return sha === undefined ? [] : [sha]
 	})
-	const wanted = Arr.filter([...new Set([...deployShas, ...facetShas])], isResolvableSha)
-	return Arr.join(Arr.sort(wanted.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS), Order.String), ",")
+	const wanted = Arr.filter(
+		[...new Set([...Arr.sort(deployShas, Order.String), ...otherShas])],
+		isResolvableSha,
+	)
+	return Arr.join(wanted.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS), ",")
 }
 
 /** The resolved commits by sha; empty until the lookup lands, and when it fails. */

@@ -3,7 +3,7 @@ import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Chart from "@maple/views/charts/chart"
@@ -176,7 +176,10 @@ const followData =
 			onNone: () => [],
 			onSome: (facets) => Arr.map(facets.commitShas, (option) => option.name),
 		})
-		const chosenShas = [...(model.search.commitShas ?? []), ...(model.search.excludedCommitShas ?? [])]
+		const chosenShas = Arr.sort(
+			[...(model.search.commitShas ?? []), ...(model.search.excludedCommitShas ?? [])],
+			Order.String,
+		)
 		const shas = commitsKey(services, [...chosenShas, ...facetShas])
 		const commits =
 			shas === ""

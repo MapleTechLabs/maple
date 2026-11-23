@@ -470,7 +470,7 @@ describe("services list keys", () => {
 		).model
 		const painted = pageUpdate(withFacets, Message.PaintedTable())
 		const lookup = Arr.findFirst(painted.commands ?? [], ({ name }) => name === FetchCommitSummaries.name)
-		expect(Option.getOrUndefined(lookup)?.args).toMatchObject({ shas: `${older},${newer},${unresolved}` })
+		expect(Option.getOrUndefined(lookup)?.args).toMatchObject({ shas: `${unresolved},${older},${newer}` })
 		const resolved = pageUpdate(
 			painted.model,
 			Message.CompletedFetchCommitSummaries({

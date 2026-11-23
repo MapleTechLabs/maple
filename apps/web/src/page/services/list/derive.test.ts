@@ -99,10 +99,13 @@ const deployed = (name: string, commitSha: string): ServiceRow => ({
 })
 
 describe("commitsKey", () => {
-	it("asks for the deploy commits and the release facet's in one deduped, sorted batch", () => {
-		expect(commitsKey([deployed("api", sha("b"))], [sha("a"), sha("b"), "v1.2.3"])).toBe(
-			`${sha("a")},${sha("b")}`,
-		)
+	it("asks for the deploy commits first, then the facet's, in one deduped batch", () => {
+		expect(
+			commitsKey(
+				[deployed("api", sha("f")), deployed("web", sha("b"))],
+				[sha("a"), sha("b"), "v1.2.3"],
+			),
+		).toBe(`${sha("b")},${sha("f")},${sha("a")}`)
 	})
 
 	it("keeps the deploy commits when the facet would push the batch past 50", () => {
