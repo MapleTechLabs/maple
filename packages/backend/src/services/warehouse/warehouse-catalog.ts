@@ -51,7 +51,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"A trace's time range: `SELECT min(MinTimestamp), max(MaxTimestamp) FROM trace_index WHERE OrgId = … AND TraceId = … GROUP BY TraceId`.",
 	],
 	ai_evaluations: [
-		"LLM evaluation scores, one row per score: the OTel `gen_ai.evaluation.result` event from log records and span events. `TraceId`/`SpanId` are the span the score GRADES; join to `ai_trace_index` on them for the model, agent and session.",
+		"LLM evaluation scores, one row per score: the OTel `gen_ai.evaluation.result` event from log records and span events. `TraceId`/`SpanId` are the span the score GRADES; join to `ai_trace_index` on them for the model and agent. For the session, use the score's `SessionId` when `Scope` is 'session'; otherwise resolve `max(SessionId) GROUP BY TraceId` over `ai_trace_index`, because the graded span's row can have an empty `SessionId`.",
 		"`Name` is the evaluator (`gen_ai.evaluation.name`). `ScoreValue` is only meaningful where `HasScore = 1`; `Verdict` is 'pass'/'fail' read from `ScoreLabel`, '' when the label says neither. Pass rate = `countIf(Verdict = 'pass') / countIf(Verdict != '')`.",
 		"`Scope` is 'span', 'trace' or 'session' (session scores carry `SessionId`); `Source` is who wrote it ('otel' unless the emitter set `maple_ai.evaluation.source`); `ErrorType` non-empty means the evaluation itself failed, not the graded call.",
 		"Sorting key: `(OrgId, Name, Timestamp)` with a bloom index on `TraceId`; 90-day TTL, longer than `traces`, so an old score's trace may be gone.",

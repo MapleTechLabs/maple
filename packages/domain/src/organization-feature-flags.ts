@@ -29,7 +29,8 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	dataSources: DisabledByDefaultFeatureFlag,
 	/**
 	 * Gates LLM evals: the Evals tab under Agent sessions, scores on a session, the score filter
-	 * and the evaluation MCP tools. Internal-only while it is built out.
+	 * and the evaluation MCP tools. Internal-only while it is built out. Only the product surface:
+	 * `ai_evaluations` stores every org's scores, as any telemetry is stored.
 	 */
 	llmEvals: DisabledByDefaultFeatureFlag,
 	/**
