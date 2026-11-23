@@ -1,3 +1,4 @@
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorGroupingConfigs,
@@ -137,6 +138,10 @@ const make: Effect.Effect<
 			yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						// Saves serialize on the org even before any rules or cursor row exist.
+						yield* db.execute(
+							Orm.sql`select pg_advisory_xact_lock(hashtext(${`grouping:${orgId}`}))`,
+						)
 						// The tick's cursor lock: a window keying under the old rules finishes first,
 						// and one that starts later reads these.
 						yield* db.run(

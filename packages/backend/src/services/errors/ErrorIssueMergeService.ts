@@ -260,7 +260,7 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 						if (issue === undefined) return yield* ErrorIssueNotFoundError.forIssue(issueId)
 						const [alias] = yield* db.run(
 							PG.from(ErrorIssueFingerprints)
-								.select("source")
+								.select("source", "originIssueId")
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.issueId.eq(issueId),
@@ -274,9 +274,9 @@ const make: Effect.Effect<ErrorIssueMergeServiceApi, never, Database | ErrorIssu
 									: "This issue does not hold that fingerprint.",
 							)
 						}
-						if (alias.source !== "group") {
+						if (alias.source !== "group" || alias.originIssueId !== null) {
 							return yield* invalid(
-								alias.source === "merge"
+								alias.source === "merge" || alias.originIssueId !== null
 									? "This fingerprint came with a merged issue: unmerge that issue instead."
 									: "This fingerprint carried the issue across a fingerprint version, so it stays.",
 							)

@@ -25,6 +25,9 @@ export const variantId = (event: ReplayEvent): string =>
 				event.exceptionType,
 				event.statusMessage,
 				event.exceptionStacktrace,
+				// Only when present, so ids of samples without them stay what labels recorded.
+				...(event.customFingerprint === undefined ? [] : [`fp:${event.customFingerprint}`]),
+				...(event.span === undefined ? [] : [`span:${event.span.kind} ${event.span.name}`]),
 			].join("\u0000"),
 		)
 		.digest("hex")

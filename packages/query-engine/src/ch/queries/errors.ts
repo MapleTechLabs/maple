@@ -1807,20 +1807,24 @@ export function errorsWindowTotalsQuery(opts: Omit<ErrorsByTypeOpts, "limit" | "
  */
 export function errorGroupingSamplesQuery(opts: { readonly fingerprintHashes: readonly string[] }) {
 	return from(Datasources.errorEvents)
-		.select(($) => ({
-			fingerprintHash: CH.toString_($.FingerprintHash),
-			serviceName: CH.argMax($.ServiceName, $.Timestamp),
-			timestamp: CH.max_($.Timestamp),
-			traceId: CH.argMax($.TraceId, $.Timestamp),
-			spanId: CH.argMax($.SpanId, $.Timestamp),
-			exceptionType: CH.argMax($.ExceptionType, $.Timestamp),
-			// The view's message precedence: the span's status message, else the event's.
-			statusMessage: CH.argMax(
-				CH.if_($.StatusMessage.eq(""), $.ExceptionMessage, $.StatusMessage),
-				$.Timestamp,
-			),
-			exceptionStacktrace: CH.argMax($.ExceptionStacktrace, $.Timestamp),
-		}))
+		.select(($) => {
+			// The latest occurrence; the span id settles a tie within one second, so a re-read agrees.
+			const latest = CH.concat(CH.toString_($.Timestamp), $.SpanId)
+			return {
+				fingerprintHash: CH.toString_($.FingerprintHash),
+				serviceName: CH.argMax($.ServiceName, latest),
+				timestamp: CH.max_($.Timestamp),
+				traceId: CH.argMax($.TraceId, latest),
+				spanId: CH.argMax($.SpanId, latest),
+				exceptionType: CH.argMax($.ExceptionType, latest),
+				// The view's message precedence: the span's status message, else the event's.
+				statusMessage: CH.argMax(
+					CH.if_($.StatusMessage.eq(""), $.ExceptionMessage, $.StatusMessage),
+					latest,
+				),
+				exceptionStacktrace: CH.argMax($.ExceptionStacktrace, latest),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.Timestamp.gte(utcSecondsParam("startTime")),
