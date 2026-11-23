@@ -14285,6 +14285,10 @@
       "name": "Onboarding Checklist"
     },
     {
+      "description": "A coding agent's Maple setup: the handoff that starts it and the progress it reports.",
+      "name": "Onboarding Agent Run"
+    },
+    {
       "description": "A shared Slack channel between the org and the Maple team.",
       "name": "Support Channel"
     },

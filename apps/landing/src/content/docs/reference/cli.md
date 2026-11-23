@@ -28,6 +28,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple promql`](#maple-promql-query) · [`promql metrics`](#maple-promql-metrics-filter)                                                                          | Run PromQL over metrics, list the names it can select        |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
 | [`maple auth …`](#maple-auth-login) · [`whoami`](#maple-whoami) · [`use`](#maple-use-localremoteauto)                                                             | Sign in to a workspace, see the resolved backend, pin one    |
+| [`maple onboarding …`](#maple-onboarding)                                                                                                                         | Report a coding agent's Maple setup to the onboarding run    |
 
 ## Global flags
 
@@ -450,7 +451,10 @@ Sign in to a hosted Maple workspace. Opens your browser to approve the CLI; the 
 ```bash
 maple auth login
 echo "$MAPLE_TOKEN" | maple auth login --with-token
+MAPLE_HANDOFF=<code> maple auth login
 ```
+
+A handoff code works once and for an hour, and only over HTTPS. Signing in with one also reports the `connect_agent` stage of your [onboarding run](#maple-onboarding). It is meant for your coding agent to run; if you type it yourself, start the line with a space (shells with `HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE` skip it) so the code stays out of your shell history.
 
 ### `maple auth status`
 
@@ -473,6 +477,27 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 1. An explicit `--local` or `--remote` flag.
 2. The default pinned with `maple use`.
 3. Auto-detect: an explicitly set `MAPLE_LOCAL_URL` means local; otherwise a stored credential means remote; otherwise the CLI probes the local server (`GET /local/status`, falling back to `/health` for older binaries). If neither is available the CLI prints what to do next.
+
+### `maple onboarding`
+
+Commands a coding agent runs while it sets Maple up for you, so the connect step in Maple shows its progress live. Hosted Maple only: they always use the stored login and refuse `--local`. Sign in first with the handoff code from the agent prompt (`MAPLE_HANDOFF=<code> maple auth login`).
+
+| Command                                    | Description                                                                                                                                                                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maple onboarding status`                  | Print your latest onboarding run and each stage's status                                                                                                                                                       |
+| `maple onboarding report <stage> <status>` | Report a stage. Stages: `connect_agent`, `analyze_project`, `instrument_app`, `send_verification`, `receive_verification`, `prepare_production`. Status: `active`, `waiting`, `completed`, `skipped`, `failed` |
+| `maple onboarding keys`                    | Print the ingest endpoint and your organization's public ingest key. Never the private key                                                                                                                     |
+| `maple onboarding verify --service <name>` | Poll for a trace with a span from the service (last 15 minutes, every 5 seconds) and report `receive_verification`                                                                                             |
+
+`report` flags: `--note <text>` (short plain text, never file contents, paths, output or secrets), `--service <name>` (repeatable), `--trace-id <id>`, `--run-status completed|failed` to close the run. Reporting never fails the setup: a closed run prints `run is closed; stop reporting`, a missing run prints a note, and a network error prints a warning, all with exit code 0.
+
+`verify` takes `--env <name>` to count only traces from that `deployment.environment.name` (pass the one you just configured, so another deployment of the same service never verifies it) and `--timeout <seconds>` (default `120`). A refused key or a bad request fails at once; network and server errors are retried until the timeout. On success it prints the trace id and its dashboard link; on timeout it reports the stage as `waiting` and exits 1 with what to check (region, key, init order, exporter errors).
+
+```bash
+maple onboarding report instrument_app active --note "Instrumenting 2 services"
+maple onboarding verify --service checkout-api --env development
+maple onboarding report prepare_production completed --run-status completed
+```
 
 ## Server endpoints
 
@@ -542,6 +567,7 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_API_URL`              | `https://api.maple.dev`   | Remote API base URL                                                                                                                                            |
 | `MAPLE_API_TOKEN`            |                           | Remote bearer token; overrides the stored credential                                                                                                           |
 | `MAPLE_ORG_ID`               |                           | Remote organization override                                                                                                                                   |
+| `MAPLE_HANDOFF`              |                           | One-time handoff code from Maple's agent prompt; `maple auth login` signs in with it instead of opening a browser                                              |
 | `MAPLE_DEBUG`                |                           | `1` enables `--debug`                                                                                                                                          |
 | `MAPLE_FORMAT`               | `json`                    | `json` or `table`, same as `--format`                                                                                                                          |
 | `MAPLE_NO_UPDATE_CHECK`      |                           | Any non-empty value disables the startup update check (the Homebrew wrapper sets it). The check runs at most once per 24 hours, only when stderr is a terminal |
@@ -563,6 +589,7 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_INSTALL_DIR`   | `~/.maple/bin` | Where the two-file bundle lands                          |
 | `MAPLE_BIN_DIR`       | _(auto)_       | Where `maple` is symlinked onto `PATH`                   |
 | `MAPLE_SKIP_CHECKSUM` | `0`            | `1` skips SHA-256 verification (air-gapped mirrors only) |
+| `MAPLE_HANDOFF`       |                | Signs the installed CLI in with this handoff code        |
 
 `~/.maple/config.json` stores `apiUrl`, `orgId`, `defaultMode` and, when the keychain is unavailable, the token. Environment variables take precedence over stored values.
 

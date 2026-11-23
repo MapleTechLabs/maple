@@ -34,6 +34,7 @@ import { registerGetAlertRuleTool } from "./get-alert-rule"
 import { registerGetDashboardTool } from "./get-dashboard"
 import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
 import { registerAuditSetupTool } from "./audit-setup"
+import { registerOnboardingTools } from "./onboarding"
 import { registerListIntegrationsTool } from "./list-integrations"
 import { registerListSecurityFindingsTool } from "./list-security-findings"
 import { registerInspectSecurityFindingTool } from "./inspect-security-finding"
@@ -220,6 +221,7 @@ const MAPLE_TOOL_REGISTERS: ReadonlyArray<McpToolRegister> = [
 	registerIngestUsageTool,
 	registerGetInstrumentationRecommendationsTool,
 	registerAuditSetupTool,
+	registerOnboardingTools,
 	registerListIntegrationsTool,
 	registerSearchConsoleQueriesTool,
 	registerSearchConsolePagesTool,

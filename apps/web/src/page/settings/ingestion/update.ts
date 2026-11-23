@@ -4,6 +4,7 @@ import { Array, Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
+import { SETUP_TAB_VALUES } from "../../kit/guided-setup"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -56,7 +57,7 @@ export const init = (options: InitOptions): Return => ({
 		framework: "nodejs",
 		setupTabs: Tabs.init({
 			idBase: 40,
-			values: ["install", "instrument", "claude-code"],
+			values: SETUP_TAB_VALUES,
 			selected: "install",
 		}),
 		packageTabs: Tabs.init({ idBase: 50, values: ["npm", "yarn", "pnpm", "bun"], selected: "npm" }),

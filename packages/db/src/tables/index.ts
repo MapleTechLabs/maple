@@ -59,6 +59,7 @@ import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "
 import { MobileDevices } from "./mobile-devices"
 import { OAuthConnections, OAuthAuthStates } from "./oauth-connections"
 import { OrgOnboardingState } from "./onboarding"
+import { OnboardingAgentRuns } from "./onboarding-agent-runs"
 import { OrgClickHouseSchemaApplyRuns } from "./org-clickhouse-schema-apply-runs"
 import { OrgClickHouseSettings } from "./org-clickhouse-settings"
 import { OrgIngestAttributeMappings } from "./org-ingest-attribute-mappings"
@@ -169,6 +170,7 @@ export * from "./mcp-oauth"
 export * from "./mobile-devices"
 export * from "./oauth-connections"
 export * from "./onboarding"
+export * from "./onboarding-agent-runs"
 export * from "./org-clickhouse-schema-apply-runs"
 export * from "./org-clickhouse-settings"
 export * from "./org-ingest-attribute-mappings"
@@ -270,6 +272,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	OAuthConnections,
 	OAuthAuthStates,
 	OrgOnboardingState,
+	OnboardingAgentRuns,
 	OrgClickHouseSchemaApplyRuns,
 	OrgClickHouseSettings,
 	OrgIngestAttributeMappings,
