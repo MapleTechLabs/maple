@@ -647,8 +647,12 @@ fn flatten<'a>(entries: &'a [KeyValue], path: Option<&str>, out: &mut Vec<(Strin
     }
 }
 
+/// What each array item or map entry adds to a written value's counted size.
+const ENTRY_BYTES: usize = 8;
+
 /// Bytes a written value counts, as `parseOutputSize` in the TS engine: UTF-8 text and keys,
-/// byte arrays as is, 8 per number or bool.
+/// byte arrays as is, 8 per number or bool, and 8 more per array item or map entry so nested
+/// empty containers are not free.
 fn value_size(value: &AnyValue) -> usize {
     match value.value.as_ref() {
         None => 0,
@@ -657,7 +661,7 @@ fn value_size(value: &AnyValue) -> usize {
         Some(any_value::Value::ArrayValue(array)) => array
             .values
             .iter()
-            .map(value_size)
+            .map(|item| value_size(item).saturating_add(ENTRY_BYTES))
             .fold(0, usize::saturating_add),
         Some(any_value::Value::KvlistValue(list)) => list
             .values
@@ -665,6 +669,7 @@ fn value_size(value: &AnyValue) -> usize {
             .map(|kv| {
                 kv.key
                     .len()
+                    .saturating_add(ENTRY_BYTES)
                     .saturating_add(kv.value.as_ref().map_or(0, value_size))
             })
             .fold(0, usize::saturating_add),

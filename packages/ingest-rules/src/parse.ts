@@ -157,28 +157,59 @@ const flatten = (map: AttrMap, path: string | null, out: Array<readonly [string,
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u
 
-const isStrictJson = (json: unknown): boolean => {
-	if (typeof json === "number") return Number.isFinite(json)
-	if (typeof json === "string") return !LONE_SURROGATE.test(json)
-	if (Arr.isArray(json)) return Arr.every(json, isStrictJson)
-	if (typeof json === "object" && json !== null)
-		return Arr.every(
-			Rec.toEntries(json),
-			([key, item]) => !LONE_SURROGATE.test(key) && isStrictJson(item),
-		)
+const JSON_NUMBER = /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y
+const isHighSurrogate = (unit: number) => unit >= 0xd800 && unit <= 0xdbff
+const isLowSurrogate = (unit: number) => unit >= 0xdc00 && unit <= 0xdfff
+
+/**
+ * Whether the gateway's parser accepts the text's strings and numbers: no lone surrogate, raw or
+ * escaped, and no number past f64. Read from the text, not the decoded value, because a duplicate
+ * key keeps only its last member and would hide an earlier one the gateway refuses.
+ */
+const isStrictJsonText = (text: string): boolean => {
+	if (LONE_SURROGATE.test(text)) return false
+	let index = 0
+	while (index < text.length) {
+		const char = text[index]
+		if (char === '"') {
+			index += 1
+			let pendingHigh = false
+			while (index < text.length && text[index] !== '"') {
+				const isUnicodeEscape = text[index] === "\\" && text[index + 1] === "u"
+				const unit = isUnicodeEscape
+					? Number.parseInt(Str.slice(index + 2, index + 6)(text), 16)
+					: Number.NaN
+				// A high surrogate escape must be followed by a low one, and a low one preceded by a high.
+				if (pendingHigh !== isLowSurrogate(unit)) return false
+				pendingHigh = isHighSurrogate(unit)
+				index += isUnicodeEscape ? 6 : text[index] === "\\" ? 2 : 1
+			}
+			if (pendingHigh) return false
+			index += 1
+		} else if (char === "-" || (char !== undefined && char >= "0" && char <= "9")) {
+			JSON_NUMBER.lastIndex = index
+			const token = JSON_NUMBER.exec(text)?.[0] ?? char
+			if (!Number.isFinite(Number(token))) return false
+			index += token.length
+		} else index += 1
+	}
 	return true
 }
 
 /** Bytes a written value counts: UTF-8 text and keys, byte arrays as is, 8 per number or bool. */
+/** What each list item or map entry adds, so nested empty containers are not free. */
+const ENTRY_BYTES = 8
+
 export const parseOutputSize = (value: AttrValue): number => {
 	if (typeof value === "string") return utf8(value).length
 	if (value instanceof Uint8Array) return value.length
-	if (isList(value)) return Arr.reduce(value, 0, (total, item) => total + parseOutputSize(item))
+	if (isList(value))
+		return Arr.reduce(value, 0, (total, item) => total + ENTRY_BYTES + parseOutputSize(item))
 	if (isMap(value))
 		return Arr.reduce(
 			Rec.toEntries(value),
 			0,
-			(total, [key, item]) => total + utf8(key).length + parseOutputSize(item),
+			(total, [key, item]) => total + ENTRY_BYTES + utf8(key).length + parseOutputSize(item),
 		)
 	return 8
 }
@@ -198,9 +229,10 @@ const runJson = (value: AttrValue): StepResult => {
 	if (typeof value === "string") {
 		if (utf8(value).length > INGEST_RULE_LIMITS.jsonBytes) return failed("larger than 64 KiB")
 		if (jsonDepth(value) > INGEST_RULE_LIMITS.jsonDepth) return failed("nested deeper than 16 levels")
-		const parsed = decodeJson(value)
 		// The gateway's parser refuses numbers past f64 and lone surrogates; so does this one.
-		if (Option.isNone(parsed) || !isStrictJson(parsed.value)) return failed("not valid JSON")
+		if (!isStrictJsonText(value)) return failed("not valid JSON")
+		const parsed = decodeJson(value)
+		if (Option.isNone(parsed)) return failed("not valid JSON")
 		const json = parsed.value
 		if (typeof json !== "object" || json === null || Arr.isArray(json)) return failed("not an object")
 		const converted = fromJson(json)

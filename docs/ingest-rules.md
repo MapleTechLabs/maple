@@ -209,15 +209,17 @@ source fails the step.
 | `timestamp` | text or number                                              | `time_unix_nano`                                                                 |
 
 - **Output limit.** A `json`, `regex` or `grok` step writes at most 64 KiB, counting the UTF-8
-  bytes of each key (prefix included) and string, byte arrays as they are, and 8 per number or
-  bool; past it the step fails (`writes more than 64 KiB`) and writes nothing.
+  bytes of each key (prefix included) and string, byte arrays as they are, 8 per number or
+  bool, and 8 more per array item or map entry; past it the step fails (`writes more than 64 KiB`) and writes nothing.
 - **Writing attributes.** A written key replaces the first attribute with that key, or is
   appended. Protected keys (`service.name`, `org_id`, `maple_*` stamps) are never written.
 - **JSON.** At most 64 KiB (UTF-8) of text, 16 levels of nesting (objects and arrays) and 128
   leaves; past any of these the step fails and writes nothing. Keys are visited in code point
   order, so when two paths flatten to one key (`{"a.b":1,"a":{"b":2}}`) the later one wins. An
   empty key below the top level is still a path component: `{"":{"x":1}}` writes `.x`. Arrays are kept whole as array values. `null` is skipped. A number that is a whole number
-  within ±(2^53 - 1) becomes an int, any other a double.
+  within ±(2^53 - 1) becomes an int, any other the nearest double. Text with a lone surrogate
+  (`"\ud800"`) or a number past f64 is not valid JSON, even in a member a later duplicate key
+  replaces; of two valid duplicates the last wins.
 - **Regex and grok** match unanchored within the first 16 KiB, like redaction. Both engines are
   linear-time (the `regex` crate here, RE2JS in the TS engine), so patterns may repeat freely.
   `\d`, `\w`, `\s` and `\b` (and negations) mean their ASCII forms. The validator accepts only
@@ -263,12 +265,15 @@ source fails the step.
   with its length prefix; the prefixes of the enclosing scope and resource can still move by a
   byte or two each.
 - **Budget.** In the gateway each parse rule may read 256 MiB and spend 250 ms per payload, and
-  all parse rules together 1 GiB and 1 s; a rule's conditions and steps both count, and the
+  all parse rules together 1 GiB and 1 s; a rule's conditions and steps both count, a rule
+  never gets more than the payload has left, and the
   clock is read before every rule and step. Past that, the rule stops parsing for the rest of that
   payload and each log it still matches gets `maple.parse.error: budget: ...` (a spent budget
   cannot run a regex condition, so a rule filtered by one stops matching). The payload is still
   stored: parse rules never spend the payload's redaction budget, and parse time does not count
-  against its 2 second redaction deadline. The TS engine has no budget.
+  against its 2 second redaction deadline. Redacting the keys parsing wrote spends the parse
+  budget too; if it runs out first, that log is stored as it was before parsing. The TS engine
+  has no budget.
 - **Stats.** A parse rule counts `matched` (logs it ran on) and `parse_failed` (logs where a step
   failed) in `org_ingest_rule_stats`.
 
