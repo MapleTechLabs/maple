@@ -1,10 +1,10 @@
-// Migration 0071: `ai_evaluations`, one row per LLM evaluation score (the OTel GenAI
+// Migration 0072: `ai_evaluations`, one row per LLM evaluation score (the OTel GenAI
 // `gen_ai.evaluation.result` event), filled from OTLP log records and from span events. A new table
 // with nothing to backfill: scores emitted before it exist only as raw logs and span events.
 // `requiredForIngest: false`: the gateway writes `logs` and `traces`, never this table.
-// Frozen v71 DDL: never re-derive it from a later snapshot.
-export const migration_0071_ai_evaluations = {
-	version: 71,
+// Frozen v72 DDL: never re-derive it from a later snapshot.
+export const migration_0072_ai_evaluations = {
+	version: 72,
 	description:
 		"Create ai_evaluations and its two views (gen_ai.evaluation.result from log records and from span events)",
 	requiredForIngest: false,

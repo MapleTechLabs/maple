@@ -11,7 +11,7 @@
 		"test": "vitest run"
 	},
 	"devDependencies": {
-		"fast-check": "^4.10.2",
+		"fast-check": "^4.11.0",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

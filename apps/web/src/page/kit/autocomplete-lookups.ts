@@ -22,6 +22,8 @@ export const AutocompleteLookup = Schema.Literals([
 	"metricAttributeKeys",
 	"productEventNames",
 	"productEventAttributeKeys",
+	"productUserPropertyKeys",
+	"productGroupPropertyKeys",
 ])
 export type AutocompleteLookup = typeof AutocompleteLookup.Type
 
@@ -80,5 +82,9 @@ export const autocompleteLookup = (
 			}))
 		case "productEventAttributeKeys":
 			return Effect.map(getProductEventAttributeKeys({ data: window }), keysOf)
+		case "productUserPropertyKeys":
+			return Effect.map(getProductEventAttributeKeys({ data: { ...window, scope: "user" } }), keysOf)
+		case "productGroupPropertyKeys":
+			return Effect.map(getProductEventAttributeKeys({ data: { ...window, scope: "group" } }), keysOf)
 	}
 }

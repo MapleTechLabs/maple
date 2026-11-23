@@ -100,6 +100,21 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 					input: keysInput,
 					command: (key) => FetchAttributeKeys({ slot: "attributeKeys", key, input: keysInput }),
 				},
+				...Arr.map(
+					[
+						["userPropertyKeys", "user"],
+						["groupPropertyKeys", "group"],
+					] as const,
+					([slot, scope]): Request => {
+						const input = { ...keysInput, scope }
+						return {
+							slot,
+							fn: "getProductEventAttributeKeys",
+							input,
+							command: (key) => FetchAttributeKeys({ slot, key, input }),
+						}
+					},
+				),
 				...funnel("funnel", window, funnelParamsOf(model.search)),
 				...funnel(
 					"previousFunnel",

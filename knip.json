@@ -111,8 +111,7 @@
 				"test/native-service-map-ingest-bridge-probe.ts",
 				"test/native-projector-modules.ts"
 			],
-			// The credential-file test makes a FIFO with the system mkfifo.
-			"ignoreBinaries": ["duckdb", "mkfifo"]
+			"ignoreBinaries": ["duckdb"]
 		},
 		"packages/local-server": {
 			// The session model test spawns this as a process, which knip does not follow.

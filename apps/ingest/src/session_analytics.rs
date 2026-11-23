@@ -323,10 +323,82 @@ pub fn sanitize_session_event(obj: &mut serde_json::Map<String, serde_json::Valu
 /// page views.
 const PRODUCT_EVENT_SOURCES: [&str; 2] = ["server", "mobile"];
 
-/// The only reserved (`$`-prefixed) event name direct ingest accepts: mobile
-/// screen views. `$pageview` and every other reserved name are owned by the
-/// browser SDK and arrive via the `session_events` materialized view.
+/// Reserved (`$`-prefixed) event name for mobile screen views. `$pageview` is
+/// owned by the browser SDK and arrives via the `session_events` materialized view.
 const PRODUCT_EVENT_SCREEN_NAME: &str = "$screen";
+
+/// Reserved event names that exist to carry property operations, the other
+/// reserved names direct ingest accepts.
+const PRODUCT_EVENT_IDENTIFY_NAMES: [&str; 2] = ["$identify", "$groupidentify"];
+
+/// Body fields carrying person and group property operations. Each is written
+/// into `attributes` as `$<field>.<property>`, the keys `person_properties_events_mv`
+/// applies (`PERSON_PROPERTY_OPS` in `@maple/domain`'s product-event-attributes.ts).
+/// The `unset` fields take a list of property names, the rest an object.
+const PERSON_PROPERTY_OP_FIELDS: [&str; 6] = [
+    "set",
+    "set_once",
+    "unset",
+    "group_set",
+    "group_set_once",
+    "group_unset",
+];
+
+/// Caps on one event's property operations, across all six fields.
+const PERSON_PROPERTY_MAX_OPS: usize = 64;
+const PERSON_PROPERTY_MAX_KEY_BYTES: usize = 64;
+const PERSON_PROPERTY_MAX_VALUE_BYTES: usize = 1024;
+
+/// Whether an `attributes` key is a property operation (`$set.plan`). Such keys
+/// are only accepted through the typed body fields, so the caps above hold.
+fn is_person_property_attribute(key: &str) -> bool {
+    key.strip_prefix('$')
+        .and_then(|rest| rest.split_once('.'))
+        .is_some_and(|(op, property)| {
+            PERSON_PROPERTY_OP_FIELDS.contains(&op) && !property.is_empty()
+        })
+}
+
+/// The property operations in a `/v1/events` body as `attributes` entries.
+/// Blank names, `null` values and off-type fields are skipped; non-string values
+/// are stringified like every other attribute.
+fn person_property_attributes(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut ops = serde_json::Map::new();
+    let mut push = |op: &str, property: &str, value: String| {
+        let property = property.trim();
+        if ops.len() < PERSON_PROPERTY_MAX_OPS && !property.is_empty() {
+            ops.insert(
+                format!(
+                    "${op}.{}",
+                    truncate_str(property, PERSON_PROPERTY_MAX_KEY_BYTES)
+                ),
+                serde_json::Value::String(truncate_str(&value, PERSON_PROPERTY_MAX_VALUE_BYTES)),
+            );
+        }
+    };
+    for op in PERSON_PROPERTY_OP_FIELDS {
+        match obj.get(op) {
+            Some(serde_json::Value::Array(names)) if op.ends_with("unset") => {
+                for name in names.iter().filter_map(|name| name.as_str()) {
+                    push(op, name, String::new());
+                }
+            }
+            Some(serde_json::Value::Object(values)) if !op.ends_with("unset") => {
+                for (property, value) in values {
+                    match value {
+                        serde_json::Value::Null => {}
+                        serde_json::Value::String(text) => push(op, property, text.clone()),
+                        other => push(op, property, other.to_string()),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    ops
+}
 
 /// Caps on a direct-ingested product event, enforced gateway-side.
 const PRODUCT_EVENT_MAX_NAME_BYTES: usize = 128;
@@ -459,7 +531,10 @@ pub fn sanitize_product_event(
         // dropping keeps `EventName` exactly what the caller intended, or nothing.
         return false;
     }
-    if name.starts_with('$') && name != PRODUCT_EVENT_SCREEN_NAME {
+    if name.starts_with('$')
+        && name != PRODUCT_EVENT_SCREEN_NAME
+        && !PRODUCT_EVENT_IDENTIFY_NAMES.contains(&name)
+    {
         return false;
     }
     let kind = if name == PRODUCT_EVENT_SCREEN_NAME {
@@ -534,8 +609,9 @@ pub fn sanitize_product_event(
     );
     row.insert("url".to_string(), serde_json::Value::String(url));
 
-    let attributes = match obj.remove("attributes") {
+    let mut attributes = match obj.remove("attributes") {
         Some(serde_json::Value::Object(mut attributes)) => {
+            attributes.retain(|key, _| !is_person_property_attribute(key));
             // Same caps as `track()` props on session events: customer-chosen
             // keys into a Map(String, String) column.
             clamp_string_map(
@@ -550,6 +626,7 @@ pub fn sanitize_product_event(
         // quarantining the row.
         _ => serde_json::Map::new(),
     };
+    attributes.extend(person_property_attributes(obj));
     row.insert(
         "attributes".to_string(),
         serde_json::Value::Object(attributes),
@@ -865,7 +942,7 @@ mod tests {
             serde_json::json!({ "name": "   " }),
             serde_json::json!({ "name": 42 }),
             serde_json::json!({ "name": "$pageview" }),
-            serde_json::json!({ "name": "$identify" }),
+            serde_json::json!({ "name": "$set" }),
             serde_json::json!({ "name": "x".repeat(PRODUCT_EVENT_MAX_NAME_BYTES + 1) }),
         ] {
             let mut obj = product_event(rejected.clone());
@@ -879,6 +956,52 @@ mod tests {
             serde_json::json!({ "name": "x".repeat(PRODUCT_EVENT_MAX_NAME_BYTES) }),
         );
         assert!(sanitize_product_event(&mut max, received_at()));
+    }
+
+    #[test]
+    fn product_event_property_operations_become_reserved_attributes() {
+        let mut identify = product_event(serde_json::json!({
+            "name": "$identify",
+            "user_id": "u1",
+            "group_id": "acme",
+            "attributes": { "plan": "pro", "$set.forged": "x", "$set_once": "kept" },
+            "set": { "plan": "pro", "seats": 12, "trial": true, " ": "blank", "gone": null },
+            "set_once": { "first_plan": "free" },
+            "unset": ["legacy", 7, ""],
+            "group_set": { "tier": "gold" },
+            "group_unset": "not-a-list",
+        }));
+        assert!(sanitize_product_event(&mut identify, received_at()));
+        assert_eq!(identify["event_name"], "$identify");
+        assert_eq!(identify["kind"], "custom");
+        assert_eq!(
+            identify["attributes"],
+            serde_json::json!({
+                "plan": "pro",
+                "$set_once": "kept",
+                "$set.plan": "pro",
+                "$set.seats": "12",
+                "$set.trial": "true",
+                "$set_once.first_plan": "free",
+                "$unset.legacy": "",
+                "$group_set.tier": "gold",
+            })
+        );
+
+        let mut group =
+            product_event(serde_json::json!({ "name": "$groupidentify", "group_id": "acme" }));
+        assert!(sanitize_product_event(&mut group, received_at()));
+
+        // Operations are capped per event, across fields.
+        let many: serde_json::Map<String, serde_json::Value> = (0..100)
+            .map(|n| (format!("p{n}"), serde_json::Value::String("v".into())))
+            .collect();
+        let mut capped = product_event(serde_json::json!({ "name": "e", "set": many }));
+        assert!(sanitize_product_event(&mut capped, received_at()));
+        assert_eq!(
+            capped["attributes"].as_object().unwrap().len(),
+            PERSON_PROPERTY_MAX_OPS
+        );
     }
 
     #[test]

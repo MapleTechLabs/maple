@@ -68,6 +68,24 @@ Two optional attributes narrow or replace that default:
 
 `include` switches on key presence, so an empty string means "no span attributes". A server span's attribute map is mostly semconv keys, and product events are kept for 365 days, longer than raw traces (see [Retention](/docs/reference/retention)). Set `include` once you know which properties you need.
 
+## User and account properties
+
+A product-event span can also set properties on its user and account, with the same three operations the [events API](/docs/product-events/api#user-and-account-properties) takes:
+
+```ts
+span.setAttributes({
+	"maple.product_event.name": "plan_upgraded",
+	"maple.product_event.user_id": user.id,
+	"maple.product_event.group_id": org.id,
+	"maple.product_event.set.plan": "pro", // replace the user's plan
+	"maple.product_event.set_once.first_plan": "free", // keep the first value ever set
+	"maple.product_event.unset.trial_ends": "", // remove a property; the value is ignored
+	"maple.product_event.group_set.seats": "12", // the account's properties
+})
+```
+
+`set`, `set_once` and `unset` apply to the user in `maple.product_event.user_id`; `group_set`, `group_set_once` and `group_unset` to the account in `maple.product_event.group_id`. A span without that id, or without `maple.product_event.name`, sets nothing. To set properties without counting a step, name the event `$identify`.
+
 ## Where the link shows up
 
 `product_events` rows from this path carry the trace and span id.

@@ -19,6 +19,7 @@ import {
 	type ProductEventsSessionGroupBy,
 } from "@maple/domain/query-engine"
 import * as Datasources from "@maple/domain/tinybird/datasources"
+import { personPropertyAttributeKeySql } from "@maple/domain/tinybird/product-event-attributes"
 import { orgIdParam, utcSecondsParam } from "../tables"
 import { buildAttrFilterCondition } from "../../traces-shared"
 import { finalizeTimeseries } from "./series-cap"
@@ -27,6 +28,7 @@ import { replaysWhere, needsSessionSemiJoin, type WebAnalyticsFilters } from "./
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { Array as Arr, Record as Rec } from "effect"
 import type { OpenJoinAccessor, OpenJoinQuery } from "./product-events"
+import { propertyFilterCondition, propertyValuesById } from "./person-properties"
 
 type EventsColumns = typeof Datasources.productEvents.columns
 type EventsAccessor = ColumnAccessor<EventsColumns>
@@ -53,6 +55,10 @@ export interface ProductEventsQueryOpts {
 	excludedServiceNames?: readonly string[]
 	attributeFilters?: readonly AttributeFilter[]
 	groupByAttributeKey?: string
+	userPropertyFilters?: readonly AttributeFilter[]
+	groupPropertyFilters?: readonly AttributeFilter[]
+	groupByUserPropertyKey?: string
+	groupByGroupPropertyKey?: string
 	valueAttributeKey?: string
 	referrerHost?: string
 	country?: string
@@ -193,6 +199,12 @@ function eventConditions($: EventsAccessor, opts: ProductEventsQueryOpts): Array
 		notInListOpt($.PagePath, opts.excludedPagePaths),
 		notInListOpt($.ServiceName, opts.excludedServiceNames),
 		...Arr.map(opts.attributeFilters ?? [], (filter) => buildAttrFilterCondition(filter, "Attributes")),
+		...Arr.map(opts.userPropertyFilters ?? [], (filter) =>
+			propertyFilterCondition($.UserId, "user", filter),
+		),
+		...Arr.map(opts.groupPropertyFilters ?? [], (filter) =>
+			propertyFilterCondition($.GroupId, "group", filter),
+		),
 		sessionSemiJoin($, opts),
 	]
 }
@@ -305,15 +317,42 @@ function sessionDimensions(keys: ReadonlyArray<ProductEventsSessionGroupBy>) {
 		.groupBy("SessionId")
 }
 
-/** `product_events`, joined to its sessions' dimensions only when a group-by reads one. */
-function eventsGroupedBy(groupBy: ReadonlyArray<ProductEventsGroupByKey>): OpenJoinQuery<EventsColumns> {
-	const events: OpenJoinQuery<EventsColumns> = from(Datasources.productEvents)
+const USER_PROPERTY_ALIAS = "up"
+const GROUP_PROPERTY_ALIAS = "gp"
+
+/**
+ * `product_events`, joined to its sessions' dimensions, and to its user's or group's current
+ * property value, only when a group-by reads one.
+ */
+function eventsGroupedBy(
+	groupBy: ReadonlyArray<ProductEventsGroupByKey>,
+	opts: ProductEventsQueryOpts,
+): OpenJoinQuery<EventsColumns> {
+	let events: OpenJoinQuery<EventsColumns> = from(Datasources.productEvents)
 	const keys = Arr.dedupe(Arr.filter(groupBy, isSessionGroupBy))
-	return keys.length === 0
-		? events
-		: events.leftJoinQuery(sessionDimensions(keys), SESSION_ALIAS, (event, session) =>
-				event.SessionId.eq(session.SessionId),
-			)
+	if (keys.length > 0)
+		events = events.leftJoinQuery(sessionDimensions(keys), SESSION_ALIAS, (event, session) =>
+			event.SessionId.eq(session.SessionId),
+		)
+	if (Arr.contains(groupBy, "user_property"))
+		events = events.leftJoinQuery(
+			propertyValuesById("user", opts.groupByUserPropertyKey ?? ""),
+			USER_PROPERTY_ALIAS,
+			(event, property) => event.UserId.eq(property.Id),
+		)
+	if (Arr.contains(groupBy, "group_property"))
+		events = events.leftJoinQuery(
+			propertyValuesById("group", opts.groupByGroupPropertyKey ?? ""),
+			GROUP_PROPERTY_ALIAS,
+			(event, property) => event.GroupId.eq(property.Id),
+		)
+	return events
+}
+
+/** A joined property value; `''` for an event whose user or group has none. */
+const joinedValue = ($: GroupedAccessor, alias: string): CH.Expr<string> => {
+	const value = $[alias]?.value
+	return value === undefined ? CH.lit("") : CH.coalesce(value, CH.lit(""))
 }
 
 function dimensionColumn(
@@ -343,6 +382,10 @@ function dimensionColumn(
 			return $.GroupId
 		case "attribute":
 			return $.Attributes.get(attributeKey ?? "")
+		case "user_property":
+			return joinedValue($, USER_PROPERTY_ALIAS)
+		case "group_property":
+			return joinedValue($, GROUP_PROPERTY_ALIAS)
 	}
 }
 
@@ -372,7 +415,7 @@ const TS_COLUMNS: ColumnDefs = {
 export function productEventsTimeseriesQuery(
 	opts: ProductEventsTimeseriesOpts,
 ): CHQuery<ColumnDefs, ProductEventsTimeseriesOutput> {
-	const inner = eventsGroupedBy(opts.groupBy ?? [])
+	const inner = eventsGroupedBy(opts.groupBy ?? [], opts)
 		.select(($) => ({
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: groupNameExpr($, opts),
@@ -395,7 +438,7 @@ export function productEventsTimeseriesQuery(
 export function productEventsBreakdownQuery(
 	opts: ProductEventsBreakdownOpts,
 ): CHQuery<ColumnDefs, ProductEventsBreakdownOutput> {
-	return eventsGroupedBy([opts.groupBy])
+	return eventsGroupedBy([opts.groupBy], opts)
 		.select(($) => ({
 			name: dimensionColumn($, opts.groupBy, opts.groupByAttributeKey),
 			value: metricExpr($, opts.metric, opts.valueAttributeKey),
@@ -449,8 +492,14 @@ export function productEventAttributeKeysQuery(
 	opts: ProductEventAttributeKeysOpts = {},
 ): CHQuery<ColumnDefs, ProductEventAttributeKeysOutput> {
 	return from(Datasources.productEvents)
-		.select(($) => ({
-			attributeKey: CH.arrayJoin(CH.mapKeys($.Attributes)),
+		.select(() => ({
+			// The `$set.*`-style keys are property writes, read through `person_properties` instead.
+			attributeKey: CH.arrayJoin(
+				CH.rawExpr<ReadonlyArray<string>>(
+					`arrayFilter(k -> NOT ${personPropertyAttributeKeySql("k")}, mapKeys(Attributes))`,
+					T.array(T.string),
+				),
+			),
 			usageCount: CH.count(),
 		}))
 		.where(($) => eventConditions($, opts))

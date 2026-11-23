@@ -1,11 +1,16 @@
 import * as Animation from "@foldkit/ui/animation"
 import { Array as Arr } from "effect"
 import { ingestUrl } from "../platform/ingest-url"
+import { apiPublicUrl } from "../platform/api-base-url"
 import { mcpUrl } from "../platform/mcp-url"
 import { cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
 import { click, Command, expect, given, Mount, role, scene, selector, text } from "foldkit/scene"
 import { describe, expect as expectVitest, test } from "vitest"
 import * as Popover from "@maple/views/ui/popover"
+import * as CopyButton from "@maple/views/ui/copy-button"
+import { agentSetupPrompt } from "../page/kit/onboard-skill"
+import * as AgentHandoff from "../page/kit/agent-handoff"
+import { labHandoff } from "../lab/onboarding-agent-fixture"
 import {
 	close,
 	FetchKeys,
@@ -32,6 +37,16 @@ const opened = [
 	Mount.resolve(Popover.MountPopover, Popover.Message.CompletedMountPopover()),
 	Command.resolve(Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })),
 	Command.resolve(Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })),
+	// Each opening shows the coding-agent prompt once, after reading the org's handoff arm.
+	Command.resolve(AgentHandoff.ResolveArm, AgentHandoff.Message.ResolvedArm({ arm: "handoff" })),
+	Command.resolve(
+		AgentHandoff.TrackAgentEvent({
+			event: "onboarding_agent_prompt_shown",
+			surface: "connect_panel",
+			hasHandoffCode: null,
+		}),
+		AgentHandoff.Message.CompletedTrack(),
+	),
 ]
 
 describe("connect panel scene", () => {
@@ -45,9 +60,10 @@ describe("connect panel scene", () => {
 			expect(selector("#connect-ingest-endpoint")).toHaveValue(ingestUrl),
 			expect(text("Waiting for telemetry")).toExist(),
 			Command.resolve(
-				FetchKeys({ orgId: ORG }),
+				FetchKeys({ orgId: ORG, request: 1 }),
 				Message.SucceededLoadKeys({
 					orgId: ORG,
+					request: 1,
 					publicKey: "maple_pk_0123456789abcdef",
 					privateKey: "maple_sk_x",
 				}),
@@ -71,12 +87,124 @@ describe("connect panel scene", () => {
 		)
 	})
 
+	test("Copy prompt mints a handoff and copies the prompt with its code, never the private key", () => {
+		const handoff = labHandoff()
+		const prompt = agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", {
+			code: handoff.handoff_code,
+			apiUrl: apiPublicUrl,
+		})
+		expectVitest(prompt).toContain("https://maple.dev/SKILL.md")
+		expectVitest(prompt).toContain("maple_ho_")
+		expectVitest(prompt).not.toContain("maple_sk_")
+		scene(
+			config,
+			given(init()),
+			...opened,
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.SucceededLoadKeys({
+					orgId: ORG,
+					request: 1,
+					publicKey: "maple_pk_0123456789abcdef",
+					privateKey: "maple_sk_secret",
+				}),
+			),
+			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
+			Command.resolve(
+				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
+				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
+			),
+			expect(text(/maple_sk_secret/)).toBeAbsent(),
+			expect(text(/Handoff code \(single use, 1 hour\): ••••••••••/)).toExist(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_0123456789abcdef",
+					handoff,
+					clipboard: "not_attempted",
+				}),
+			),
+			Command.expectHas(CopyButton.WriteClipboard({ text: prompt, generation: 1 })),
+			Command.resolve(
+				AgentHandoff.TrackAgentEvent({
+					event: "onboarding_agent_prompt_copied",
+					surface: "connect_panel",
+					hasHandoffCode: true,
+				}),
+				AgentHandoff.Message.CompletedTrack(),
+			),
+			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
+		)
+	})
+
+	test("a member copies the public key, and sees no private key field", () => {
+		scene(
+			config,
+			given(init()),
+			...opened,
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.SucceededLoadKeys({
+					orgId: ORG,
+					request: 1,
+					publicKey: "maple_pk_0123456789abcdef",
+					privateKey: null,
+				}),
+			),
+			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
+			Command.resolve(
+				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
+				Message.FailedLoadOverview({ orgId: ORG, request: 1 }),
+			),
+			expect(selector("#connect-private-key")).toBeAbsent(),
+			click(role("button", { name: "Copy prompt" })),
+			Command.resolve(
+				AgentHandoff.MintHandoff({ publicKey: "maple_pk_0123456789abcdef" }),
+				AgentHandoff.Message.SucceededMint({
+					publicKey: "maple_pk_0123456789abcdef",
+					handoff: labHandoff(),
+					clipboard: "not_attempted",
+				}),
+			),
+			Command.expectHas(
+				CopyButton.WriteClipboard({
+					text: agentSetupPrompt(ingestUrl, "maple_pk_0123456789abcdef", {
+						code: labHandoff().handoff_code,
+						apiUrl: apiPublicUrl,
+					}),
+					generation: 1,
+				}),
+			),
+			Command.resolve(
+				AgentHandoff.TrackAgentEvent({
+					event: "onboarding_agent_prompt_copied",
+					surface: "connect_panel",
+					hasHandoffCode: true,
+				}),
+				AgentHandoff.Message.CompletedTrack(),
+			),
+			Command.resolve(CopyButton.WriteClipboard, CopyButton.Message.SucceededCopy({ generation: 1 })),
+			Command.resolve(
+				CopyButton.WaitCopyStatus,
+				CopyButton.Message.ElapsedCopyStatus({ generation: 1 }),
+			),
+		)
+	})
+
 	test("a member who cannot read the keys gets the settings note", () => {
 		scene(
 			config,
 			given(init()),
 			...opened,
-			Command.resolve(FetchKeys({ orgId: ORG }), Message.FailedLoadKeys({ orgId: ORG })),
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.FailedLoadKeys({ orgId: ORG, request: 1 }),
+			),
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
@@ -102,7 +230,7 @@ describe("connect panel update", () => {
 		).model
 		const stale = update(
 			opened,
-			Message.SucceededLoadKeys({ orgId: "org_b", publicKey: "pk", privateKey: "sk" }),
+			Message.SucceededLoadKeys({ orgId: "org_b", request: 1, publicKey: "pk", privateKey: "sk" }),
 			context,
 		)
 		expectVitest(stale.model.keys).toEqual({ _tag: "Loading" })
@@ -194,10 +322,10 @@ describe("connect panel update", () => {
 		expectVitest(update(stale.model, Message.TickedPoll(), context).commands ?? []).toEqual([])
 	})
 
-	test("a reopen in the same org keeps the keys it read and does not read them again", () => {
+	test("a reopen reads the keys again, so a key rolled since the last open is never copied", () => {
 		const ready = update(
 			open(init()).model,
-			Message.SucceededLoadKeys({ orgId: ORG, publicKey: "pk", privateKey: "sk" }),
+			Message.SucceededLoadKeys({ orgId: ORG, request: 1, publicKey: "pk_old", privateKey: "sk" }),
 			context,
 		)
 		const closed = update(
@@ -211,8 +339,29 @@ describe("connect panel update", () => {
 			reopened.commands === undefined
 				? undefined
 				: Arr.map(reopened.commands, (command) => command.name),
-		).not.toContain("FetchConnectIngestKeys")
-		expectVitest(reopened.model.keys._tag).toBe("Ready")
+		).toContain("FetchConnectIngestKeys")
+		expectVitest(reopened.model.keys._tag).toBe("Loading")
+	})
+
+	test("a key read from an earlier opening that lands late is dropped", () => {
+		const first = open(init()).model
+		const closed = update(
+			first,
+			Message.GotPopoverMessage({ message: Popover.Message.ClickedClose() }),
+			context,
+		).model
+		const reopened = open(closed).model
+		const fresh = update(
+			reopened,
+			Message.SucceededLoadKeys({ orgId: ORG, request: 2, publicKey: "pk_new", privateKey: "sk" }),
+			context,
+		).model
+		const late = update(
+			fresh,
+			Message.SucceededLoadKeys({ orgId: ORG, request: 1, publicKey: "pk_old", privateKey: "sk" }),
+			context,
+		).model
+		expectVitest(late.keys).toEqual({ _tag: "Ready", publicKey: "pk_new", privateKey: "sk" })
 	})
 
 	test("navigating away closes an open panel and stops its poll", () => {
@@ -231,7 +380,10 @@ describe("connect panel update", () => {
 			config,
 			given(init()),
 			...opened,
-			Command.resolve(FetchKeys({ orgId: ORG }), Message.FailedLoadKeys({ orgId: ORG })),
+			Command.resolve(
+				FetchKeys({ orgId: ORG, request: 1 }),
+				Message.FailedLoadKeys({ orgId: ORG, request: 1 }),
+			),
 			Command.resolve(ResolveWindow({ orgId: ORG }), Message.ResolvedWindow({ orgId: ORG, window })),
 			Command.resolve(
 				FetchOverview({ orgId: ORG, window, request: 1, pinnedNamespace: "prod" }),
@@ -247,5 +399,30 @@ describe("connect panel update", () => {
 			),
 			expect(role("link", { name: "All clients" })).toHaveAttr("href", "/settings/mcp"),
 		)
+	})
+})
+
+describe("connect panel handoff across openings", () => {
+	const mint = AgentHandoff.Message.SucceededMint({
+		publicKey: "maple_pk_a",
+		handoff: labHandoff(),
+		clipboard: "not_attempted",
+	})
+	const reopened: Model = {
+		...init(),
+		popover: { ...init().popover, isOpen: true },
+		orgId: "org_b",
+		keysRequest: 2,
+	}
+
+	test("a mint from an earlier opening changes nothing and copies nothing", () => {
+		const next = update(reopened, Message.GotAgentMessage({ message: mint, opening: 1 }), context)
+		expectVitest(next.model.agent.run).toBe(null)
+		expectVitest(next.commands ?? []).toHaveLength(0)
+	})
+
+	test("a mint from this opening lands", () => {
+		const next = update(reopened, Message.GotAgentMessage({ message: mint, opening: 2 }), context)
+		expectVitest(next.model.agent.run).not.toBe(null)
 	})
 })

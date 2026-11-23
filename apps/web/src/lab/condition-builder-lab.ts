@@ -32,11 +32,19 @@ export const LAB_VALUES: WhereClauseAutocompleteValues = {
 	],
 	// `service.version` is in both groups: its trigger names the group.
 	resourceAttributeKeys: ["host.name", "k8s.pod.name", "cloud.region", "service.version"],
+	// A product events query also offers the users' and accounts' properties.
+	propertyKeys: ["person.plan", "person.role", "account.tier", "account.industry"],
+	eventNames: ["signup_completed", "project_created", "plan_started"],
 }
 
 type Scenario = Readonly<{ title: string; hint: string; query: QueryDraft }>
 
-const draft = (id: string, name: string, dataSource: "traces" | "logs", whereClause: string): QueryDraft => ({
+const draft = (
+	id: string,
+	name: string,
+	dataSource: "traces" | "logs" | "product_events",
+	whereClause: string,
+): QueryDraft => ({
 	...resetQueryForDataSource({ ...createQueryDraft(0), id, name }, dataSource),
 	whereClause,
 })
@@ -71,6 +79,16 @@ export const SCENARIOS: ReadonlyArray<Scenario> = [
 			"E",
 			"traces",
 			'(service.name = "checkout" OR service.name = "worker") AND attr.http.route exists',
+		),
+	},
+	{
+		title: "Product events by user and account property",
+		hint: "person.* and account.* rows read the event's user's and account's current properties.",
+		query: draft(
+			"properties",
+			"F",
+			"product_events",
+			'event.name = "signup_completed" AND person.plan = "pro" AND account.tier = "gold"',
 		),
 	},
 	{

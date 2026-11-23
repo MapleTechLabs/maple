@@ -145,8 +145,8 @@ const servicesItem: NavItem = {
 	],
 }
 
-/** Explore's signals; Product analytics joins them for an org in the productAnalytics rollout. */
-const exploreItem = (productAnalytics: boolean): NavItem => ({
+/** Explore's signals and the product analytics page. */
+const exploreItem: NavItem = {
 	title: "Explore",
 	href: "/traces",
 	icon: "LayersIcon",
@@ -155,20 +155,11 @@ const exploreItem = (productAnalytics: boolean): NavItem => ({
 		{ title: "Logs", href: "/logs", icon: "FileIcon" },
 		{ title: "Metrics", href: "/metrics", icon: "ChartLineIcon" },
 		{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
-		...(productAnalytics
-			? [
-					{
-						title: "Product analytics",
-						href: "/product-analytics",
-						icon: "ChartBarTrendUpIcon",
-						badge: "New",
-					} as const,
-				]
-			: []),
+		{ title: "Product analytics", href: "/product-analytics", icon: "ChartBarTrendUpIcon", badge: "New" },
 		{ title: "Agent sessions", href: "/agent-sessions", icon: "SquareSparkleIcon" },
 		{ title: "MCP servers", href: "/mcp-servers", icon: "PlugIcon" },
 	],
-})
+}
 
 const alertsItem: NavItem = {
 	title: "Alerts",
@@ -251,7 +242,6 @@ export type NavAudience = typeof NavAudience.Type
 export type NavFlags = Readonly<{
 	/** Cloud security findings live in the Security hub, so they show its row too. */
 	cloudSecurity: boolean
-	productAnalytics: boolean
 	securityAudit: boolean
 }>
 
@@ -290,7 +280,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		id: "analyze",
 		label: "Analyze",
 		items: [
-			exploreItem(flags.productAnalytics),
+			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
@@ -323,7 +313,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 ]
 
 /**
- * `navGroups(flags, audience)`; `productAnalytics`, `releases` and `securityAudit` (or
+ * `navGroups(flags, audience)`; `releases` and `securityAudit` (or
  * `cloudSecurity`) gate a row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>

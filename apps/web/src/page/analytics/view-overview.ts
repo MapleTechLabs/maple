@@ -218,12 +218,9 @@ const googleSearchNote = (model: Model, referrers: ReadonlyArray<{ name: string;
 
 /**
  * The overview's cards, built from the page's data (the dialog reads the same list). The events
- * card links to Product analytics only for an org in that rollout.
+ * card links to Product analytics.
  */
-export const overviewCards = (
-	model: Model,
-	hasProductAnalytics = false,
-): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
+export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
 	const breakdowns = dataOf(model.breakdowns)
 	if (breakdowns === undefined) return []
 	const pages = dataOf(model.pages) ?? []
@@ -402,7 +399,7 @@ export const overviewCards = (
 				},
 			],
 		},
-		hasProductAnalytics ? { ...eventsCard, link: funnelsLink } : eventsCard,
+		{ ...eventsCard, link: funnelsLink },
 	]
 }
 
@@ -476,7 +473,7 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 	})
 }
 
-const breakdownSection = (h: H, model: Model, timeZone: string, hasProductAnalytics: boolean): Html =>
+const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () =>
 			h.div(
@@ -497,7 +494,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string, hasProductAnalyt
 			return h.div(
 				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
 				[
-					...Arr.map(overviewCards(model, hasProductAnalytics), (card) =>
+					...Arr.map(overviewCards(model), (card) =>
 						h.div(
 							[
 								h.Key(card.id),
@@ -528,21 +525,12 @@ export const sharedPageFailure = (model: Model) => {
 		: undefined
 }
 
-export const overviewContent = (
-	h: H,
-	model: Model,
-	timeZone: string,
-	isNarrow: boolean,
-	hasProductAnalytics: boolean,
-): Html => {
+export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
 	const shared = sharedPageFailure(model)
 	return h.div(
 		[h.Class("space-y-6")],
 		shared === undefined
-			? [
-					...summarySection(h, model, timeZone, isNarrow),
-					breakdownSection(h, model, timeZone, hasProductAnalytics),
-				]
+			? [...summarySection(h, model, timeZone, isNarrow), breakdownSection(h, model, timeZone)]
 			: [
 					errorState(h, {
 						failure: shared,
