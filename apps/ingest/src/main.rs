@@ -9912,9 +9912,9 @@ async fn apply_ingest_rules(
     if stats.total.dropped > 0 || stats.total.redacted_values > 0 {
         // One walk, only when something changed. Redaction's size change is not tracked, so
         // `before` is after plus the dropped bytes: drops are discounted, redaction never bills more.
-        // Bytes parse rules added are taken back out, so parsing never shrinks the discount.
-        let parse_added = usize::try_from(stats.parse_added_bytes).unwrap_or(usize::MAX);
-        let after = decoded.encoded_len().saturating_sub(parse_added);
+        // Parsing's net size change is taken back out, so parsing never moves the bill.
+        let encoded = i64::try_from(decoded.encoded_len()).unwrap_or(i64::MAX);
+        let after = usize::try_from(encoded.saturating_sub(stats.parse_size_change)).unwrap_or(0);
         let dropped_bytes = usize::try_from(stats.total.dropped_bytes).unwrap_or(usize::MAX);
         retained.retain(after.saturating_add(dropped_bytes), after);
         if stats.total.dropped > 0 {

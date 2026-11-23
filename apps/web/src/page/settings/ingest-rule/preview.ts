@@ -135,8 +135,11 @@ const PARSE_ERROR = "maple.parse.error"
 const parsedFields = (before: RuleRecord, after: RuleRecord): ReadonlyArray<ParsedField> => [
 	...Arr.flatMap(Struct.keys(after.attributes), (key) => {
 		const now = show(after.attributes[key])
+		// The type too: `%{INT:status:int}` over a text `"200"` stores a changed value.
 		return key === PARSE_ERROR ||
-			(hasAttr(before.attributes, key) && show(before.attributes[key]) === now)
+			(hasAttr(before.attributes, key) &&
+				typeof before.attributes[key] === typeof after.attributes[key] &&
+				show(before.attributes[key]) === now)
 			? []
 			: [{ key, value: now }]
 	}),

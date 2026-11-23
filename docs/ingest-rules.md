@@ -215,8 +215,8 @@ source fails the step.
   appended. Protected keys (`service.name`, `org_id`, `maple_*` stamps) are never written.
 - **JSON.** At most 64 KiB (UTF-8) of text, 16 levels of nesting (objects and arrays) and 128
   leaves; past any of these the step fails and writes nothing. Keys are visited in code point
-  order, so when two paths flatten to one key (`{"a.b":1,"a":{"b":2}}`) the later one wins.
-  Arrays are kept whole as array values. `null` is skipped. A number that is a whole number
+  order, so when two paths flatten to one key (`{"a.b":1,"a":{"b":2}}`) the later one wins. An
+  empty key below the top level is still a path component: `{"":{"x":1}}` writes `.x`. Arrays are kept whole as array values. `null` is skipped. A number that is a whole number
   within ±(2^53 - 1) becomes an int, any other a double.
 - **Regex and grok** match unanchored within the first 16 KiB, like redaction. Both engines are
   linear-time (the `regex` crate here, RE2JS in the TS engine), so patterns may repeat freely.
@@ -242,22 +242,32 @@ source fails the step.
   before 1970, `0` and values past `i64::MAX` nanoseconds (what the warehouse stores) fail.
 - **Failures.** A failed step sets the log attribute `maple.parse.error` to
   `<step>: <reason>` (`regex: no match`, `json: not valid JSON`, `timestamp: out of range`, ...).
-  Later steps still run and a rule keeps its first failure. The log is always kept.
-- **Conditions.** Drop and redact rules decide whether they apply before parsing, so a redact
-  condition on a parsed attribute never matches; scope the redact rule instead.
+  Later steps still run and a rule keeps its first failure. The log is always kept. The marker
+  counts as a parsed key, so an attribute redact rule can remove or mask it.
+- **Conditions.** Drop and redact rules decide whether they apply on the log before parsing, so
+  their conditions never see a value parsing produces: `not_exists(level)` still matches a log
+  that parsing then gives a `level`, and a condition on a parsed attribute never matches; scope
+  the redact rule instead. A parse rule's conditions see the attributes and body as redaction and
+  earlier parse rules left them, and the resource as received (the gateway redacts a resource once
+  all its records were evaluated).
 - **Redaction.** Redaction runs before parsing, so a value a redact rule masks in the body or an
   attribute is masked in everything parsed from it, through any number of steps, and a
   contextual pattern (`password=[^ ]+`) masks the secret before a step could extract it. A parse
   step may therefore see `[REDACTED]` where it expects a value. Afterwards, the matched
   `attributes`- and `body`-scoped redact rules run on the keys parsing wrote; their counts add to
   the rule's `redacted_values`.
-- **Metering.** Bytes parse rules add are not billed: a payload is metered on the size it was
-  sent, less what drop rules removed.
+- **Metering.** Parsing never moves the bill: the net size change of parsing, including the
+  redaction of the keys it wrote and overwrites that shorten a value, is taken back out, so a
+  payload is metered on the size it was sent, less what drop rules removed. Measured per record
+  with its length prefix; the prefixes of the enclosing scope and resource can still move by a
+  byte or two each.
 - **Budget.** In the gateway each parse rule may read 256 MiB and spend 250 ms per payload, and
-  all parse rules together 1 GiB and 1 s. Past that, the rule stops parsing for the rest of that
-  payload and each log it matches gets `maple.parse.error: budget: ...`; the payload is still
-  stored, and parse time does not count against the payload's 2 second redaction deadline. The
-  TS engine has no budget.
+  all parse rules together 1 GiB and 1 s; a rule's conditions and steps both count, and the
+  clock is read before every rule and step. Past that, the rule stops parsing for the rest of that
+  payload and each log it still matches gets `maple.parse.error: budget: ...` (a spent budget
+  cannot run a regex condition, so a rule filtered by one stops matching). The payload is still
+  stored: parse rules never spend the payload's redaction budget, and parse time does not count
+  against its 2 second redaction deadline. The TS engine has no budget.
 - **Stats.** A parse rule counts `matched` (logs it ran on) and `parse_failed` (logs where a step
   failed) in `org_ingest_rule_stats`.
 

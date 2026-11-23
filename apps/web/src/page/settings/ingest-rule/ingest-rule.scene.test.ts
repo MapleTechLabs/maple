@@ -146,6 +146,20 @@ describe("ingest rule editor", () => {
 		)
 	})
 
+	test("a parsed value that only changes type still shows", () => {
+		const model = pageUpdate(
+			fresh("parse-json-logs"),
+			Message.CompletedFetchSamples({
+				key: fresh("parse-json-logs").samplesKey,
+				result: Result.succeed({
+					_tag: "logs",
+					rows: [{ ...log("", '{"status":200}'), logAttributes: { status: "200" } }],
+				}),
+			}),
+		).model
+		scene({ update: pageUpdate, view }, given(model), expectView(text("status")).toExist())
+	})
+
 	test("switching to parse limits the rule to logs and adds a JSON step", () => {
 		scene(
 			{ update: pageUpdate, view },

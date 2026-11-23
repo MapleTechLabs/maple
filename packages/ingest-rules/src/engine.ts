@@ -448,7 +448,8 @@ export const applyRules = (
 		count(rule.index, found)
 		return next
 	})
-	// Parse rules run in order, each seeing what the previous ones left.
+	// Parse rules run in order, each seeing what the previous ones left. Their conditions read the
+	// resource as received: the gateway redacts a resource once all its records were evaluated.
 	const parseFailures = new Map<number, string>()
 	const parsedMatched: Array<number> = []
 	const written = new Set<string>()
@@ -456,7 +457,7 @@ export const applyRules = (
 		Arr.filter(compiled.rules, (rule) => rule.spec.action._tag === "parse"),
 		redacted,
 		(current, rule) => {
-			if (!ruleMatches(rule, current)) return current
+			if (!ruleMatches(rule, { ...current, resource: record.resource })) return current
 			parsedMatched.push(rule.index)
 			const outcome = runParse(rule.parse, current, scanCut)
 			if (outcome.failure !== null) parseFailures.set(rule.index, outcome.failure)

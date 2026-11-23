@@ -6,7 +6,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import * as RuleMessage from "../page/settings/ingest-rule/message"
 import * as RuleModel from "../page/settings/ingest-rule/model"
-import type { LogSample } from "../page/settings/ingest-rule/preview"
+import type { LogSample, PreviewSignal, Samples } from "../page/settings/ingest-rule/preview"
 import { init as ruleInit, update as ruleUpdate } from "../page/settings/ingest-rule/update"
 import { view as ruleView } from "../page/settings/ingest-rule/view"
 import { ORG } from "../page/kit/alert-test-rows"
@@ -114,14 +114,30 @@ const pageFor = (state: LabState): RuleModel.Model => {
 	return run(steps, [samples(JSON_LOGS)(steps)])
 }
 
+/** What the lab answers a preview request with: its fixture logs, and no spans. */
+const fixtureSamples = (state: LabState, signal: PreviewSignal): Samples =>
+	signal === "traces"
+		? { _tag: "traces", rows: [] }
+		: { _tag: "logs", rows: state === "parse-grok" ? ACCESS_LOGS : JSON_LOGS }
+
 export const init = (flags: Flags): Return => ({ model: { state: flags.state, page: pageFor(flags.state) } })
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		GotPageMessage: ({ message: child }) => {
 			const next = ruleUpdate(model.page, child, CONTEXT)
+			// The real fetch is dropped below, so a new preview request is answered from the fixtures.
+			const page =
+				next.model.samplesKey === model.page.samplesKey
+					? next.model
+					: run(next.model, [
+							M.CompletedFetchSamples({
+								key: next.model.samplesKey,
+								result: Result.succeed(fixtureSamples(model.state, next.model.previewSignal)),
+							}),
+						])
 			return {
-				model: { ...model, page: next.model },
+				model: { ...model, page },
 				commands: Command.mapMessages(keepLocal(next.commands), (inner) =>
 					Message.GotPageMessage({ message: inner }),
 				),

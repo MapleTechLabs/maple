@@ -217,6 +217,11 @@ impl ScanBudget {
         self.remaining == 0 || self.expired
     }
 
+    /// Reads the clock now, for work that charges few bytes between `charge`'s own reads.
+    fn check_clock(&mut self) {
+        self.expired = self.expired || Instant::now() >= self.deadline;
+    }
+
     fn charge(&mut self, bytes: usize) {
         self.remaining = self
             .remaining
@@ -258,9 +263,9 @@ impl RuleCounters {
 pub struct RuleStats {
     pub per_rule: Vec<RuleCounters>,
     pub total: RuleCounters,
-    /// Encoded bytes parse rules added to kept logs; metering takes them back out, so a parsed
-    /// log is billed at the size it was sent.
-    pub parse_added_bytes: u64,
+    /// Net encoded bytes parse rules (and the redaction of the keys they wrote) changed kept logs
+    /// by; metering takes it back out, so a parsed log is billed at the size it was sent.
+    pub parse_size_change: i64,
 }
 
 impl RuleStats {
@@ -1224,9 +1229,6 @@ impl<'a> Pass<'a> {
                 span_status: None,
                 trace_id: &record.trace_id,
             };
-            if !rule.matches(self.signal, &view, &mut self.budget) {
-                continue;
-            }
             if self.parse_budgets.len() < rules.len() {
                 self.parse_budgets.resize_with(rules.len(), || None);
             }
@@ -1235,16 +1237,24 @@ impl<'a> Pass<'a> {
                 .get_or_insert_with(|| ScanBudget::new(parse::PAYLOAD_SCAN_BYTES, parse::PAYLOAD_SCAN_TIME));
             let budget = self.parse_budgets[index]
                 .get_or_insert_with(|| ScanBudget::new(parse::RULE_SCAN_BYTES, parse::RULE_SCAN_TIME));
+            total.check_clock();
+            budget.check_clock();
             if total.spent() {
                 budget.remaining = 0;
             }
             let before = budget.remaining;
-            // Steps have their own budgets; their time is kept off the redaction deadline at once,
-            // so a later rule's conditions are not judged against a clock parsing used up.
+            // Conditions and steps both spend the parse budgets, never the one that refuses the
+            // payload; their time is kept off the redaction deadline at once, so a later rule's
+            // conditions are not judged against a clock parsing used up. A spent budget cannot run
+            // a regex condition, so the rule matches only on conditions that need no scan.
             let started = Instant::now();
-            let failed = parse::run_steps(steps, record, budget, &mut self.written_keys).is_some();
+            let matched = rule.matches(self.signal, &view, budget);
+            let failed = matched && parse::run_steps(steps, record, budget, &mut self.written_keys).is_some();
             self.budget.deadline += started.elapsed();
             total.charge(usize::try_from(before - budget.remaining).unwrap_or(usize::MAX));
+            if !matched {
+                continue;
+            }
             let counters = &mut self.stats.per_rule[index];
             counters.matched += 1;
             if failed {
@@ -1487,13 +1497,21 @@ impl Pass<'_> {
             });
         }
         if keep && self.rules.parses {
-            let before = record.encoded_len();
+            // With its length prefix, as the record sits in the payload. The scope's and resource's
+            // own prefixes can still move by a byte or two per container.
+            let framed = |record: &LogRecord| {
+                let len = record.encoded_len();
+                i64::try_from(len + prost::length_delimiter_len(len)).unwrap_or(i64::MAX)
+            };
+            let before = framed(record);
             self.parse_record(resource, record);
-            let added = record.encoded_len().saturating_sub(before);
-            self.stats.parse_added_bytes += u64::try_from(added).unwrap_or(u64::MAX);
             if redact && !self.written_keys.is_empty() {
                 self.redact_written(&mut record.attributes);
             }
+            // Signed and measured after the parsed keys' redaction: an overwrite that shortens a
+            // value or a parsed key redaction removes moves the billed size neither way.
+            let change = framed(record) - before;
+            self.stats.parse_size_change = self.stats.parse_size_change.saturating_add(change);
         }
         keep
     }
@@ -2733,11 +2751,67 @@ mod tests {
             let mut request = batch();
             let mut stats = RuleStats::default();
             apply_logs(&rules, &mut request, &mut stats).expect("within budget");
-            (request.encoded_len() as u64 - stats.parse_added_bytes, stats.total.dropped_bytes)
+            (request.encoded_len() as i64 - stats.parse_size_change, stats.total.dropped_bytes)
         };
         let without = metered(vec![drop_noise.clone()]);
         let with = metered(vec![drop_noise, parse_json]);
         assert_eq!(with, without, "(kept bytes as sent, dropped bytes) must not depend on parsing");
+    }
+
+    #[test]
+    fn parse_overwrites_and_redacted_parsed_keys_never_lower_the_bill() {
+        let remove_secret = json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": {"_tag": "redact", "keys": ["secret"], "detectors": [], "patterns": [],
+                       "scopes": ["attributes"], "method": "remove"}
+        });
+        let parse_json = json!({
+            "signals": ["logs"],
+            "conditions": [],
+            "action": {"_tag": "parse", "steps": [{"_tag": "json", "source": "body"}]}
+        });
+        // `note` is overwritten with a shorter value; `secret` is parsed, then removed.
+        // The body keeps the record and its containers over 128 bytes, so no length prefix shrinks.
+        let body = format!(r#"{{"note":"x","secret":"s3cr3t-value","pad":"{}"}}"#, "p".repeat(200));
+        let mut record = log_with_body(&body);
+        record.attributes.push(string_kv("note", &"long".repeat(64)));
+        let mut request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs { log_records: vec![record], ..Default::default() }],
+                ..Default::default()
+            }],
+        };
+        let sent = request.encoded_len() as i64;
+        let (rules, _) = compile(vec![
+            ("redact".to_owned(), spec(remove_secret)),
+            ("parse".to_owned(), spec(parse_json)),
+        ]);
+        let mut stats = RuleStats::default();
+        apply_logs(&rules, &mut request, &mut stats).expect("within budget");
+        let attributes = &request.resource_logs[0].scope_logs[0].log_records[0].attributes;
+        assert!(attributes.iter().any(|kv| kv.key == "note"), "{attributes:?}");
+        assert!(!attributes.iter().any(|kv| kv.key == "secret"), "{attributes:?}");
+        assert_eq!(request.encoded_len() as i64 - stats.parse_size_change, sent);
+    }
+
+    #[test]
+    fn parse_conditions_never_refuse_a_payload() {
+        let rule = spec(json!({
+            "signals": ["logs"],
+            "conditions": [{ "field": "body", "op": "regex", "value": "x" }],
+            "action": { "_tag": "parse", "steps": [{ "_tag": "severity", "source": "body" }] }
+        }));
+        let rules = compile(vec![("parse".to_owned(), rule)]).0.with_scan_budget(10_000, REQUEST_SCAN_TIME);
+        let record = log_with_body(&"x".repeat(4096));
+        let mut request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs { log_records: vec![record; 3], ..Default::default() }],
+                ..Default::default()
+            }],
+        };
+        // 12 KiB of conditions would spend a 10,000-byte refusal budget; they spend the parse budget.
+        apply_logs(&rules, &mut request, &mut RuleStats::default()).expect("parse conditions never refuse");
     }
 
     #[test]

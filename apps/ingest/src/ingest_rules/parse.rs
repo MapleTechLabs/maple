@@ -628,20 +628,20 @@ fn from_json(value: &Value) -> Option<AnyValue> {
 }
 
 /// Flattens kvlist entries into dotted keys, visiting keys in code point order; arrays stay whole.
-fn flatten<'a>(entries: &'a [KeyValue], path: &str, out: &mut Vec<(String, &'a AnyValue)>) {
+/// `path` is `None` at the root, so an empty key below it is still a path component (`.x`).
+fn flatten<'a>(entries: &'a [KeyValue], path: Option<&str>, out: &mut Vec<(String, &'a AnyValue)>) {
     let mut sorted: Vec<&KeyValue> = entries.iter().collect();
     sorted.sort_by(|left, right| left.key.cmp(&right.key));
     for kv in sorted {
         let Some(value) = kv.value.as_ref().filter(|value| value.value.is_some()) else {
             continue;
         };
-        let full = if path.is_empty() {
-            kv.key.clone()
-        } else {
-            format!("{path}.{}", kv.key)
+        let full = match path {
+            None => kv.key.clone(),
+            Some(path) => format!("{path}.{}", kv.key),
         };
         match value.value.as_ref() {
-            Some(any_value::Value::KvlistValue(list)) => flatten(&list.values, &full, out),
+            Some(any_value::Value::KvlistValue(list)) => flatten(&list.values, Some(&full), out),
             _ => out.push((full, value)),
         }
     }
@@ -725,7 +725,7 @@ fn run_json(value: &AnyValue, prefix: &str, budget: &mut ScanBudget) -> Outcome 
             else {
                 return Outcome::Failed("not an object");
             };
-            flatten(&list.values, "", &mut fields);
+            flatten(&list.values, None, &mut fields);
             if let Some(reason) = checked_output(prefix, &fields, budget) {
                 return Outcome::Failed(reason);
             }
@@ -735,7 +735,7 @@ fn run_json(value: &AnyValue, prefix: &str, budget: &mut ScanBudget) -> Outcome 
             if value_depth(value) > JSON_DEPTH {
                 return Outcome::Failed("nested deeper than 16 levels");
             }
-            flatten(&list.values, "", &mut fields);
+            flatten(&list.values, None, &mut fields);
             if let Some(reason) = checked_output(prefix, &fields, budget) {
                 return Outcome::Failed(reason);
             }
@@ -1158,6 +1158,7 @@ pub(super) fn run_steps(
 ) -> Option<String> {
     let mut failure = None;
     for step in steps {
+        budget.check_clock();
         if budget.spent() {
             failure.get_or_insert_with(|| {
                 "budget: this rule ran out of time on this batch".to_owned()
@@ -1226,6 +1227,8 @@ pub(super) fn run_steps(
             PARSE_ERROR_KEY.to_owned(),
             any(any_value::Value::StringValue(failure.clone())),
         );
+        // Listed like any parsed key, so redact rules reach the marker too.
+        written_keys.push(PARSE_ERROR_KEY.to_owned());
     }
     failure
 }

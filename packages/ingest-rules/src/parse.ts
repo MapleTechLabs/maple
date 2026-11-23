@@ -138,15 +138,18 @@ const fromJson = (json: unknown): AttrValue | null => {
 	return null
 }
 
-/** Flattens a map into dotted keys, visiting keys in code point order; arrays stay whole. */
-const flatten = (map: AttrMap, path: string, out: Array<readonly [string, AttrValue]>): void => {
+/**
+ * Flattens a map into dotted keys, visiting keys in code point order; arrays stay whole. `path` is
+ * null at the root, so an empty key below it is still a path component (`.x`).
+ */
+const flatten = (map: AttrMap, path: string | null, out: Array<readonly [string, AttrValue]>): void => {
 	for (const key of Arr.sort(
 		Arr.map(Rec.toEntries(map), ([key]) => key),
 		byCodePoint,
 	)) {
 		const value = ownValue(map, key)
 		if (value === undefined) continue
-		const full = path === "" ? key : `${path}.${key}`
+		const full = path === null ? key : `${path}.${key}`
 		if (isMap(value)) flatten(value, full, out)
 		else out.push([full, value])
 	}
@@ -207,7 +210,7 @@ const runJson = (value: AttrValue): StepResult => {
 		map = value
 	} else return failed("source is not text or a map")
 	const fields: Array<readonly [string, AttrValue]> = []
-	flatten(map, "", fields)
+	flatten(map, null, fields)
 	if (fields.length > INGEST_RULE_LIMITS.jsonFields) return failed("more than 128 fields")
 	return { _tag: "fields", fields }
 }
@@ -257,6 +260,7 @@ const SEVERITY_PREFIXES: ReadonlyArray<readonly [string, number]> = [
 	["alert", 21],
 	["emerg", 21],
 ]
+const LONGEST_SEVERITY_PREFIX = Math.max(...Arr.map(SEVERITY_PREFIXES, ([prefix]) => prefix.length))
 
 /** The OTel short name for a severity number. */
 export const severityName = (number: number): string =>
@@ -282,11 +286,13 @@ const runSeverity = (value: AttrValue): StepResult => {
 	const text = comparable(value)
 	if (text === null) return failed("source is not text")
 	const numeric = /^[0-9]{1,2}$/u.test(text) ? Number(text) : 0
+	// Only as many characters as the longest prefix are lowercased.
+	const head = asciiLower(Str.slice(0, LONGEST_SEVERITY_PREFIX)(text))
 	const number =
 		numeric >= 1 && numeric <= 24
 			? numeric
 			: Option.match(
-					Arr.findFirst(SEVERITY_PREFIXES, ([prefix]) => Str.startsWith(prefix)(asciiLower(text))),
+					Arr.findFirst(SEVERITY_PREFIXES, ([prefix]) => Str.startsWith(prefix)(head)),
 					{ onNone: () => 0, onSome: ([, level]) => level },
 				)
 	return number === 0 ? failed("unknown level") : { _tag: "severity", number, text: severityName(number) }
@@ -509,7 +515,10 @@ export const runParse = (
 			}
 		}
 	}
-	if (failure !== null)
+	if (failure !== null) {
 		current = { ...current, attributes: { ...current.attributes, [PARSE_ERROR_KEY]: failure } }
+		// Listed like any parsed key, so redact rules reach the marker too.
+		writtenKeys.push(PARSE_ERROR_KEY)
+	}
 	return { record: current, failure, writtenKeys }
 }

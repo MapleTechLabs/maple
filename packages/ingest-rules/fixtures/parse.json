@@ -3032,5 +3032,172 @@
 			},
 			"body": "::ffff:192.0.2.24 - - [10/Oct/2000:13:55:36 -0700] \"GET / HTTP/1.0\" 200 2"
 		}
+	},
+	{
+		"name": "an empty JSON key is still a path component",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "{\"\":{\"x\":1},\"x\":2}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				".x": 1,
+				"x": 2
+			},
+			"body": "{\"\":{\"x\":1},\"x\":2}"
+		}
+	},
+	{
+		"name": "attribute redaction covers the parse failure marker",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [
+						"maple.parse.*"
+					],
+					"detectors": [],
+					"patterns": [],
+					"scopes": [
+						"attributes"
+					],
+					"method": "remove"
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "regex",
+							"source": "body",
+							"pattern": "(?<id>[0-9]+)"
+						},
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {},
+			"body": "order 42"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"id": "42"
+			},
+			"body": "order 42"
+		}
+	},
+	{
+		"name": "parse conditions read the resource as received, before resource redaction",
+		"salt": "fixture-salt",
+		"rules": [
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [],
+				"action": {
+					"_tag": "redact",
+					"keys": [
+						"env"
+					],
+					"detectors": [],
+					"patterns": [],
+					"scopes": [
+						"resource"
+					],
+					"method": "remove"
+				}
+			},
+			{
+				"signals": [
+					"logs"
+				],
+				"conditions": [
+					{
+						"field": "resource_attribute",
+						"key": "env",
+						"op": "eq",
+						"value": "prod"
+					}
+				],
+				"action": {
+					"_tag": "parse",
+					"steps": [
+						{
+							"_tag": "json",
+							"source": "body"
+						}
+					]
+				}
+			}
+		],
+		"input": {
+			"signal": "logs",
+			"resource": {
+				"service.name": "api",
+				"env": "prod"
+			},
+			"attributes": {},
+			"body": "{\"a\":1}"
+		},
+		"expected": {
+			"dropped": false,
+			"resource": {
+				"service.name": "api"
+			},
+			"attributes": {
+				"a": 1
+			},
+			"body": "{\"a\":1}"
+		}
 	}
 ]
