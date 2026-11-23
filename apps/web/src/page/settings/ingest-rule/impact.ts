@@ -29,7 +29,7 @@ export const keptOf = (counts: RuleCounts): number => Math.max(0, counts.matched
 export const headline = (action: V2IngestRule["action"], counts: RuleCounts): string =>
 	action.type === "drop"
 		? `${formatNumber(counts.dropped)} dropped`
-		: `${formatNumber(counts.redacted_values)} redacted`
+		: `${formatNumber(counts.redacted_values)} values redacted`
 
 /** The line under the headline: bytes kept off the bill and what sampling kept, or the records touched. */
 export const detail = (action: V2IngestRule["action"], counts: RuleCounts): string => {
@@ -38,6 +38,10 @@ export const detail = (action: V2IngestRule["action"], counts: RuleCounts): stri
 	const bytes = `${formatStorageBytes(counts.dropped_bytes)} saved`
 	return kept > 0 ? `${bytes} · ${formatNumber(kept)} kept` : bytes
 }
+
+/** Sums of `size` consecutive values: 168 hours as 28 six-hour bars. */
+export const bucketed = (values: ReadonlyArray<number>, size: number): ReadonlyArray<number> =>
+	Arr.map(Arr.chunksOf(values, size), (chunk) => Arr.reduce(chunk, 0, (total, value) => total + value))
 
 /** One rule's `pick` per UTC hour over the last `hours` hours of the window, oldest first. */
 export const hourlySeries = (
@@ -60,3 +64,6 @@ export const ImpactWindow = Schema.Literals(["24h", "7d"])
 export type ImpactWindow = typeof ImpactWindow.Type
 
 export const IMPACT_HOURS = { "24h": 24, "7d": 168 } as const satisfies Record<ImpactWindow, number>
+
+/** Hours per bar: one bar an hour for a day, six for a week, so a phone still shows bars. */
+export const IMPACT_BAR_HOURS = { "24h": 1, "7d": 6 } as const satisfies Record<ImpactWindow, number>
