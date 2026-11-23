@@ -97,7 +97,7 @@ const sideTiles = (effect: Effect, totals: RuleCounts, peak: number, perBar: str
 	...(effect === "redact" && totals.dropped > 0
 		? [{ label: "Records dropped", value: formatNumber(totals.dropped) }]
 		: []),
-	{ label: `Peak ${perBar}`, value: formatNumber(peak) },
+	{ label: perBar === "hour" ? "Peak hour" : "Peak 6h", value: formatNumber(peak) },
 ]
 
 type Totals = RuleCounts & { readonly signals: V2IngestRuleStats["rules"][number]["signals"] }
@@ -175,7 +175,13 @@ const body = (h: H, model: Model, rule: V2IngestRule, stats: V2IngestRuleStats):
 	const side = sideTiles(effect, totals, peak, perBar)
 	return vstack(h, { gap: "6", className: "px-4 pb-4" }, [
 		h.div(
-			[h.Class(side.length > 1 ? "grid grid-cols-2 gap-3 sm:grid-cols-4" : "grid grid-cols-2 gap-3 sm:grid-cols-3")],
+			[
+				h.Class(
+					side.length > 1
+						? "grid grid-cols-2 gap-3 sm:grid-cols-4"
+						: "grid grid-cols-2 gap-3 sm:grid-cols-3",
+				),
+			],
 			[
 				tile(h, heroTile(effect, totals, window), true),
 				...Arr.map(side, (entry) => tile(h, entry, false)),
