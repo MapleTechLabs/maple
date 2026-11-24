@@ -115,15 +115,16 @@ const rawStrip = (h: H, stacktrace: string | null): ReadonlyArray<Html> =>
 		? []
 		: [disclosureStrip(h, { label: "Full stack trace", text: stripAnsi(stacktrace) })]
 
-/** Where to start when no map matched: the first minified file the backend looked for. */
+/** Where to start when nothing mapped: the first minified file that did not map to source. */
 const missingMapHint = (h: H, stack: SymbolicatedStack | null): ReadonlyArray<Html> => {
 	const file = stack?.status === "missing_map" ? stack.missing[0] : undefined
 	return file === undefined
 		? []
 		: [
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "break-all" }, [
-					`No source map found for ${file}. Upload maps with `,
+					`Could not map ${file} to source. Upload this build's maps with `,
 					inlineCode(h, {}, ["maple sourcemaps upload"]),
+					", or check the uploaded map matches the build.",
 				]),
 			]
 }
@@ -141,10 +142,6 @@ const symbolicatedStrip = (h: H, model: Model, stacktrace: string | null, stack:
 						{
 							variant: stack.status === "resolved" ? "ok" : "meta",
 							size: "sm",
-							attributes:
-								stack.status === "partial" && stack.missing.length > 0
-									? [h.Title(`No source map for ${Arr.join(stack.missing, ", ")}`)]
-									: [],
 						},
 						stack.status === "resolved"
 							? [icon(h, "CircleCheckIcon", {}), "Source mapped"]
@@ -166,6 +163,15 @@ const symbolicatedStrip = (h: H, model: Model, stacktrace: string | null, stack:
 							),
 						]),
 			]),
+			...(stack.status === "partial" && stack.missing.length > 0
+				? [
+						typography(
+							h,
+							{ size: "xs", tone: "muted", as: "p", className: "break-all border-t px-4 py-2" },
+							[`Not mapped to source: ${Arr.join(stack.missing, ", ")}`],
+						),
+					]
+				: []),
 			model.isShowingRawStack && stacktrace !== null
 				? monospaceBlock(h, stripAnsi(stacktrace))
 				: stackFrameList(h, {

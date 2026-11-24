@@ -154,11 +154,25 @@ describe("issue stack trace", () => {
 			{ update: pageUpdate, view },
 			given(loadedWith(missingMap)),
 			expectView(
-				text(/No source map found for https:\/\/app\.acme\.dev\/assets\/index-Bx81\.js/),
+				text(/Could not map https:\/\/app\.acme\.dev\/assets\/index-Bx81\.js to source/),
 			).toExist(),
 			expectView(text("maple sourcemaps upload")).toExist(),
 			expectView(text("Full stack trace")).toExist(),
 			expectView(text("Source mapped")).toBeAbsent(),
+		)
+	})
+
+	test("a partly mapped stack lists the files that did not map, in the page rather than a tooltip", () => {
+		const partial: SymbolicatedStack = {
+			...resolved,
+			status: "partial",
+			missing: ["https://app.acme.dev/assets/vendor-9f.js"],
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loadedWith(partial)),
+			expectView(text("Partly source mapped")).toExist(),
+			expectView(text("Not mapped to source: https://app.acme.dev/assets/vendor-9f.js")).toExist(),
 		)
 	})
 
@@ -167,7 +181,7 @@ describe("issue stack trace", () => {
 			{ update: pageUpdate, view },
 			given(loadedWith(null)),
 			expectView(text("Full stack trace")).toExist(),
-			expectView(text(/No source map found/)).toBeAbsent(),
+			expectView(text(/Could not map/)).toBeAbsent(),
 			expectView(role("button", { name: "Raw" })).toBeAbsent(),
 		)
 	})
