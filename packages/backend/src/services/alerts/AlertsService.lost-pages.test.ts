@@ -403,6 +403,64 @@ describe("AlertsService rule deletion with pages in other states", () => {
 		)
 	})
 
+	it.effect("sends no all-clear for a post that was skipped, unless an earlier page went out", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<Sent> = []
+		return Effect.gen(function* () {
+			const { alerts, orgId, rule, destinations, incidentId } = yield* openIncidentWith(testDb, [
+				"team",
+				"muted",
+				"later-muted",
+			])
+			const page = (index: number, destinationId: string, eventType: string, skipped: boolean) =>
+				Effect.promise(async () => {
+					const id = `00000000-0000-4000-8000-0000000008a${index}`
+					await insertDeliveryEventRow(testDb, {
+						id,
+						orgId,
+						incidentId,
+						ruleId: rule.id,
+						destinationId,
+						deliveryKey: `skipped-case-${index}`,
+						eventType,
+						attemptNumber: 1,
+						status: "success",
+						scheduledAt: DEFAULT_CLOCK_EPOCH_MS + index * 1000,
+						payloadJson: JSON.stringify({ rule: { id: rule.id, comparator: "gt" }, incidentId }),
+						createdAt: DEFAULT_CLOCK_EPOCH_MS + index * 1000,
+					})
+					if (skipped) {
+						await executeSql(
+							testDb,
+							"update alert_delivery_events set provider_message = $1 where id = $2",
+							["Skipped: alert notifications are off for this Slack workspace", id],
+						)
+					}
+				})
+			// "muted" only ever had a post that was not made; "later-muted" was paged, then skipped.
+			yield* page(1, destinations[1]?.id ?? "", "trigger", true)
+			yield* page(2, destinations[2]?.id ?? "", "trigger", false)
+			yield* page(3, destinations[2]?.id ?? "", "renotify", true)
+
+			yield* alerts.deleteRule(orgId, adminRoles, rule.id)
+			yield* tick(alerts)
+
+			assert.sameMembers(
+				Arr.map(
+					Arr.filter(sent, (request) => request.event === "resolve"),
+					(request) => request.destination,
+				),
+				["team", "later-muted"],
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: errorRateRows(10) }), {
+					fetch: capturingFetch(sent, { resolves: false }),
+				}),
+			),
+		)
+	})
+
 	it.effect("answers a page still on its way out a minute later, and a waiting one not at all", () => {
 		const testDb = createTestDb(trackedDbs)
 		const sent: Array<Sent> = []
