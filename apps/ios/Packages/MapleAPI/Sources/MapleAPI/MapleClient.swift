@@ -232,7 +232,10 @@ extension MapleAPI {
 public struct MapleClient: MapleAPI {
 	let client: Client
 	private let tokens: any MapleTokenProvider
-	let serverURL: URL
+	/// Each region's API host. A request goes to its organization's region, so one
+	/// client serves every organization the user belongs to.
+	let servers: APIServers
+	let regions: OrganizationRegions
 	private let transport: any ClientTransport
 	/// Nil means every environment. Sent per request as a query parameter or a
 	/// body filter — never a header, unlike the organization scope — so it only
@@ -249,13 +252,14 @@ public struct MapleClient: MapleAPI {
 
 	/// - Parameters:
 	///   - tokens: supplies the Clerk session JWT.
-	///   - baseURL: defaults to the server declared in the OpenAPI document
-	///     (`https://api.maple.dev`), so the production URL is never hardcoded
-	///     in Swift. Override for a locally-run API.
-	public init(tokens: any MapleTokenProvider, baseURL: URL? = nil) throws {
+	///   - servers: the API host of each region, normally `.production()` from the
+	///     OpenAPI document; `.single` for a locally run API.
+	///   - regions: which region each organization lives in.
+	public init(tokens: any MapleTokenProvider, servers: APIServers, regions: OrganizationRegions) {
 		self.init(
 			tokens: tokens,
-			serverURL: try baseURL ?? Servers.Server1.url(),
+			servers: servers,
+			regions: regions,
 			transport: URLSessionTransport(),
 			organizationId: nil,
 			environment: nil,
@@ -271,9 +275,20 @@ public struct MapleClient: MapleAPI {
 		transport: any ClientTransport,
 		coalescer: RequestCoalescer = RequestCoalescer()
 	) {
+		self.init(tokens: tokens, servers: .single(serverURL), regions: OrganizationRegions(), transport: transport, coalescer: coalescer)
+	}
+
+	init(
+		tokens: any MapleTokenProvider,
+		servers: APIServers,
+		regions: OrganizationRegions,
+		transport: any ClientTransport,
+		coalescer: RequestCoalescer = RequestCoalescer()
+	) {
 		self.init(
 			tokens: tokens,
-			serverURL: serverURL,
+			servers: servers,
+			regions: regions,
 			transport: transport,
 			organizationId: nil,
 			environment: nil,
@@ -283,32 +298,52 @@ public struct MapleClient: MapleAPI {
 
 	private init(
 		tokens: any MapleTokenProvider,
-		serverURL: URL,
+		servers: APIServers,
+		regions: OrganizationRegions,
 		transport: any ClientTransport,
 		organizationId: String?,
 		environment: String?,
 		coalescer: RequestCoalescer
 	) {
 		self.tokens = tokens
-		self.serverURL = serverURL
+		self.servers = servers
+		self.regions = regions
 		self.transport = transport
 		self.environment = environment
 		self.organizationId = organizationId
 		self.coalescer = coalescer
 
 		// Order matters, outermost first: auth runs outermost so the error
-		// mapper sees the response to a request that actually carried a token,
-		// and coalescing runs innermost so its key is computed over the finished
-		// request — bearer token and organization header included — and so every
-		// waiter still gets its own typed error from the mapper above it.
+		// mapper sees the response to a request that actually carried a token.
+		// Routing follows the token and organization header, so it reads the org
+		// the request is for. Coalescing runs innermost so its key is computed
+		// over the finished request (token, organization header and host), and
+		// every waiter still gets its own typed error from the mapper above it.
 		var middlewares: [any ClientMiddleware] = [BearerAuthMiddleware(tokens: tokens)]
 		if let organizationId {
 			middlewares.append(OrganizationMiddleware(organizationId: organizationId))
 		}
+		middlewares.append(RegionRoutingMiddleware(servers: servers, regions: regions))
 		middlewares.append(ErrorMappingMiddleware())
 		middlewares.append(CoalescingMiddleware(coalescer: coalescer))
 
-		self.client = Client(serverURL: serverURL, transport: transport, middlewares: middlewares)
+		// The routing middleware replaces this per request.
+		self.client = Client(serverURL: servers.url(for: .default), transport: transport, middlewares: middlewares)
+	}
+
+	/// The API host this client's requests go to right now: its scoped
+	/// organization's region, else the active organization's. For what has to
+	/// name the host itself: a DPoP proof's URL, and the host a credential is
+	/// stored with.
+	public func serverURL() async throws -> URL {
+		let organizationId: String?
+		if let scoped = self.organizationId {
+			organizationId = scoped
+		} else {
+			guard let token = try await tokens.token() else { throw MapleAPIError.notAuthenticated }
+			organizationId = SessionTokenClaims.organizationId(in: token)
+		}
+		return try servers.url(for: organizationId, in: regions)
 	}
 
 	/// The transport is shared rather than rebuilt, so scoping to three
@@ -321,7 +356,8 @@ public struct MapleClient: MapleAPI {
 	public func scoped(to organizationId: String) -> any MapleAPI {
 		MapleClient(
 			tokens: tokens,
-			serverURL: serverURL,
+			servers: servers,
+			regions: regions,
 			transport: transport,
 			organizationId: organizationId,
 			environment: environment,
@@ -335,7 +371,8 @@ public struct MapleClient: MapleAPI {
 	public func scoped(toEnvironment environment: String?) -> any MapleAPI {
 		MapleClient(
 			tokens: tokens,
-			serverURL: serverURL,
+			servers: servers,
+			regions: regions,
 			transport: transport,
 			organizationId: organizationId,
 			environment: environment,
