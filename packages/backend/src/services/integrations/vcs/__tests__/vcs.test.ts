@@ -2624,10 +2624,10 @@ describe("VcsSyncService orchestrator", () => {
 					],
 				})
 				assert.deepStrictEqual(mergedSince.actions, ["push.forced.non_author"])
-				// Closed a day before the push: not the branch's pull request any more.
+				// Closed, then edited after the push: being changed later does not make it open at the push.
 				const closedBefore = yield* run({
 					pullRequests: [
-						{ ...pullRequest("alice"), state: "closed", updatedAtMs: 1_699_913_600_000 },
+						{ ...pullRequest("alice"), state: "closed", updatedAtMs: 1_700_000_060_000 },
 					],
 				})
 				assert.deepStrictEqual(closedBefore.actions, ["push.forced"])
