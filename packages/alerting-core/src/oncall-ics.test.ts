@@ -10,7 +10,6 @@ const names = new Map([
 
 const feed = (scheduleName = "API primary") =>
 	renderOnCallCalendar({
-		scheduleId: "sched-1",
 		scheduleName,
 		shifts: [
 			{ userId: "user_ana", startMs: at("2026-11-09T08:00:00Z"), endMs: at("2026-11-16T08:00:00Z") },
@@ -18,6 +17,7 @@ const feed = (scheduleName = "API primary") =>
 			{ userId: "user_gone", startMs: at("2026-11-23T08:00:00Z"), endMs: at("2026-11-30T08:00:00Z") },
 		],
 		nameOf: (userId) => names.get(userId) ?? null,
+		uidOf: (shift) => `shift-${shift.startMs}`,
 		nowMs: at("2026-11-10T12:00:00Z"),
 	})
 
@@ -40,15 +40,17 @@ describe("renderOnCallCalendar", () => {
 		expect(valuesOf(body, "SUMMARY")).toEqual([
 			"On call: Ana Alves (API primary)",
 			"On call: Ben Brook (API primary)",
-			// Someone the directory no longer knows still has their shift shown.
-			"On call: unknown (API primary)",
+			// Someone the directory cannot name still has their shift shown.
+			"On call (API primary)",
 		])
 	})
 
-	it("gives each shift an id that stays the same on the next render", () => {
-		const first = valuesOf(feed(), "UID")
-		expect(new Set(first).size).toBe(3)
-		expect(valuesOf(feed(), "UID")).toEqual(first)
+	it("names each event by the id the caller gives its shift", () => {
+		expect(valuesOf(feed(), "UID")).toEqual([
+			`shift-${at("2026-11-09T08:00:00Z")}@maple.dev`,
+			`shift-${at("2026-11-16T08:00:00Z")}@maple.dev`,
+			`shift-${at("2026-11-23T08:00:00Z")}@maple.dev`,
+		])
 	})
 
 	it("is a calendar a client can parse: wrapped, CRLF line endings, a trailing line break", () => {

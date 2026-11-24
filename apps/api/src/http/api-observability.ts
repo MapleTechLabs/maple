@@ -1,4 +1,4 @@
-import { Layer } from "effect"
+import { Layer, String as Str } from "effect"
 import { Headers, HttpMiddleware, UrlParams } from "effect/http"
 import { VCS_SYNC_BATCH_PATH } from "../worker/vcs-sync-dispatch"
 
@@ -34,7 +34,14 @@ const isUnroutedHeartbeat = (request: { url: string; method: string }) =>
 // An on-call calendar feed's path holds the feed's token, the only credential it has, and calendar
 // apps poll it for as long as the link lives. The server span would keep that token in telemetry,
 // so it is suppressed for the whole prefix; `OnCallCalendarRouter` carries its own span without it.
-const ONCALL_CALENDAR_PATH = /^\/calendar\/oncall(?:\/|$)/
+// The router matches without regard to case and collapses repeated slashes, so the filter does too.
+const ONCALL_CALENDAR_PATH = /^\/+calendar\/+oncall(?:\/|$)/i
+
+// Paths whose next segment is a credential: an on-call calendar link and a heartbeat ping. What
+// logs a request path outside a span (a route graph that failed to build, a cause that escaped it)
+// writes this form of it.
+const CREDENTIAL_SEGMENT = /^(\/+(?:calendar\/+oncall|hb)\/+)[^/?#]+/i
+export const loggablePath = (path: string): string => Str.replace(CREDENTIAL_SEGMENT, "$1[redacted]")(path)
 
 // The `TracerDisabledWhen` filter and the header-redaction list — both
 // references `HttpMiddleware.tracer` reads regardless of which Tracer is

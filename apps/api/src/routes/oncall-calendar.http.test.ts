@@ -1,27 +1,42 @@
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { AlertPersistenceError } from "@maple/domain/http"
+import { AlertMemberDirectoryUnavailableError, AlertPersistenceError } from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { HttpRouter } from "effect/http"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { onCallCalendarFeedUrl, OnCallCalendarRouter } from "./oncall-calendar.http"
 
 const TOKEN = "mcal_known"
 const CALENDAR = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"
 const asked: Array<string> = []
 
-/** One feed exists, behind `TOKEN`; `mcal_down` stands for a database that cannot be read. */
+/** One feed exists, behind `TOKEN`; `mcal_down` and `mcal_nodir` stand for two things being down. */
 const schedules = Layer.mock(OnCallSchedulesService)({
 	calendarFeed: (token) => {
 		asked.push(token)
 		if (token === "mcal_down")
 			return Effect.fail(new AlertPersistenceError({ message: "Alert persistence failed" }))
+		if (token === "mcal_nodir")
+			return Effect.fail(
+				new AlertMemberDirectoryUnavailableError({ message: "No answer", cause: "timeout" }),
+			)
 		return Effect.succeed(token === TOKEN ? Option.some(CALENDAR) : Option.none())
 	},
 })
 
-const { handler, dispose } = HttpRouter.toWebHandler(OnCallCalendarRouter.pipe(Layer.provide(schedules)), {
-	disableLogger: true,
+const limited = { now: false }
+const checked: Array<{ readonly tokenHashPrefix: string; readonly ip: string | undefined }> = []
+const rateLimiter = Layer.succeed(ShareRateLimiter, {
+	check: (input) => {
+		checked.push(input)
+		return Effect.succeed(limited.now ? ("limited" as const) : ("allowed" as const))
+	},
 })
+
+const { handler, dispose } = HttpRouter.toWebHandler(
+	OnCallCalendarRouter.pipe(Layer.provide(Layer.merge(schedules, rateLimiter))),
+	{ disableLogger: true },
+)
 afterAll(() => dispose())
 
 const get = (path: string, method = "GET") =>
@@ -54,5 +69,25 @@ describe("OnCallCalendarRouter", () => {
 		expect(response.status).toBe(503)
 		expect(response.headers.get("retry-after")).toBe("60")
 		expect(await response.text()).toBe("Temporarily unavailable")
+	})
+
+	it("answers 503, not a feed without names, when the member directory is down", async () => {
+		const response = await get("/calendar/oncall/mcal_nodir.ics")
+		expect(response.status).toBe(503)
+		expect(response.headers.get("retry-after")).toBe("300")
+		expect(response.headers.get("content-type")).not.toContain("text/calendar")
+	})
+
+	it("refuses a link polled too fast before reading anything, keyed by a hash of the link", async () => {
+		limited.now = true
+		const before = asked.length
+		const response = await get(`/calendar/oncall/${TOKEN}.ics`)
+		limited.now = false
+		expect(response.status).toBe(429)
+		expect(response.headers.get("retry-after")).toBe("60")
+		expect(asked).toHaveLength(before)
+		const key = checked[checked.length - 1]?.tokenHashPrefix ?? ""
+		expect(key).toMatch(/^[0-9a-f]{24}$/)
+		expect(key).not.toContain(TOKEN)
 	})
 })

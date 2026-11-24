@@ -23,7 +23,7 @@ import {
 	OnCallShiftDocument,
 	OnCallShiftsResponse,
 	type AlertMemberDirectoryNotConfiguredError,
-	type AlertMemberDirectoryUnavailableError,
+	AlertMemberDirectoryUnavailableError,
 	type EscalationChainId,
 	type OnCallLayers,
 	type OnCallOverride,
@@ -159,17 +159,41 @@ export interface OnCallSchedulesServiceApi {
 		scheduleId: OnCallScheduleId,
 	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError>
 	/** The feed a token opens, as an iCalendar body; none when no schedule holds the token. */
-	readonly calendarFeed: (token: string) => Effect.Effect<Option.Option<string>, AlertPersistenceError>
+	readonly calendarFeed: (
+		token: string,
+	) => Effect.Effect<Option.Option<string>, AlertPersistenceError | AlertMemberDirectoryUnavailableError>
 }
 
 const validationError = (message: string) => new AlertValidationError({ message, details: [message] })
 
+/** The org's members as one directory read gave them; `ids` null when it could not say who is in. */
+interface MemberDirectory {
+	readonly ids: MemberIds
+	readonly names: ReadonlyMap<string, string>
+	/** The directory is configured but did not answer, as opposed to a deployment without one. */
+	readonly isUnavailable: boolean
+}
+const NO_DIRECTORY = { ids: null, names: new Map<string, string>() } as const
+
 const scheduleNotFound = (scheduleId: OnCallScheduleId) =>
 	new OnCallScheduleNotFoundError({ message: "On-call schedule not found", scheduleId })
 
+const DAY_MS = 24 * 60 * 60_000
 /** What a calendar feed shows: a week back, so a past shift does not vanish, and two months on. */
-export const ONCALL_CALENDAR_PAST_MS = 7 * 24 * 60 * 60_000
-export const ONCALL_CALENDAR_AHEAD_MS = 60 * 24 * 60 * 60_000
+export const ONCALL_CALENDAR_PAST_MS = 7 * DAY_MS
+export const ONCALL_CALENDAR_AHEAD_MS = 60 * DAY_MS
+/**
+ * Shifts are rendered this far past each end of the feed's window, so one that straddles an end
+ * keeps its real start and end (and so its event id) instead of the window's.
+ */
+const ONCALL_CALENDAR_MARGIN_MS = 14 * DAY_MS
+
+/** A shift's event id: stable across fetches, and no schedule or user id can be read off it. */
+const calendarShiftUid = (scheduleId: string, shift: { readonly userId: string; readonly startMs: number }) =>
+	Str.slice(
+		0,
+		32,
+	)(createHash("sha256").update(`${scheduleId}\n${shift.startMs}\n${shift.userId}`, "utf8").digest("hex"))
 
 export const CALENDAR_FEED_TOKEN_PREFIX = "mcal_"
 /** 32 random bytes: the link is the only credential, so it must not be guessable. */
@@ -337,18 +361,34 @@ export class OnCallSchedulesService extends Context.Service<
 
 		// Every schedule read asks who is still a member; a minute of staleness spares the directory.
 		// An empty list is a directory that could not answer, not an org everyone left.
-		const memberIdsByOrg = yield* Cache.make({
+		const directoryByOrg = yield* Cache.make({
 			capacity: 512,
 			timeToLive: Duration.minutes(1),
 			lookup: (orgId: OrgId) =>
 				orgMembers.listMembers(orgId).pipe(
-					Effect.map((members): MemberIds =>
-						members.length === 0 ? null : new Set(Arr.map(members, (member) => member.userId)),
-					),
-					Effect.orElseSucceed((): MemberIds => null),
+					Effect.map((members): MemberDirectory => ({
+						ids:
+							members.length === 0
+								? null
+								: new Set(Arr.map(members, (member) => member.userId)),
+						// Names only: an email is never a display name.
+						names: new Map(
+							Arr.flatMap(members, (m) =>
+								m.name === null ? [] : [[m.userId, m.name] as const],
+							),
+						),
+						isUnavailable: false,
+					})),
+					Effect.catchTags({
+						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>
+							Effect.succeed<MemberDirectory>({ ...NO_DIRECTORY, isUnavailable: false }),
+						"@maple/http/errors/AlertMemberDirectoryUnavailableError": () =>
+							Effect.succeed<MemberDirectory>({ ...NO_DIRECTORY, isUnavailable: true }),
+					}),
 				),
 		})
-		const memberIdsOf = (orgId: OrgId) => Cache.get(memberIdsByOrg, orgId)
+		const directoryOf = (orgId: OrgId) => Cache.get(directoryByOrg, orgId)
+		const memberIdsOf = (orgId: OrgId) => Effect.map(directoryOf(orgId), (directory) => directory.ids)
 
 		const findRow = (db: MapleDb, orgId: OrgId, scheduleId: OnCallScheduleId) =>
 			db
@@ -535,7 +575,7 @@ export class OnCallSchedulesService extends Context.Service<
 				yield* requireMembers(orgId, participantsOf(request.layers))
 				// The check above read the directory fresh; the answer must not come from an older read
 				// that predates someone it just accepted.
-				yield* Cache.invalidate(memberIdsByOrg, orgId)
+				yield* Cache.invalidate(directoryByOrg, orgId)
 			}
 			const nowMs = yield* runtime.now
 			const members = yield* memberIdsOf(orgId)
@@ -887,27 +927,37 @@ export class OnCallSchedulesService extends Context.Service<
 			if (schedule === undefined) return Option.none<string>()
 			yield* Effect.annotateCurrentSpan({ orgId: schedule.orgId })
 			yield* annotate(schedule.id)
+			// A directory that is down gives no names and no say on who left: the caller is told to
+			// come back, so a calendar app keeps its last good copy instead of a feed of nobody.
+			const directory = yield* directoryOf(schedule.orgId)
+			if (directory.isUnavailable) {
+				return yield* new AlertMemberDirectoryUnavailableError({
+					message: "The member directory did not answer",
+					cause: "member directory unavailable",
+				})
+			}
 			const nowMs = yield* runtime.now
-			const fromMs = nowMs - ONCALL_CALENDAR_PAST_MS
-			const toMs = nowMs + ONCALL_CALENDAR_AHEAD_MS
+			// Whole UTC days, so the window's own ends move once a day and not on every fetch.
+			const fromMs = Math.floor((nowMs - ONCALL_CALENDAR_PAST_MS) / DAY_MS) * DAY_MS
+			const toMs = Math.ceil((nowMs + ONCALL_CALENDAR_AHEAD_MS) / DAY_MS) * DAY_MS
+			const renderFromMs = fromMs - ONCALL_CALENDAR_MARGIN_MS
+			const renderToMs = toMs + ONCALL_CALENDAR_MARGIN_MS
 			const overrides = yield* dbExecute((db) =>
-				overlappingOverrides(db, schedule.orgId, fromMs, toMs, schedule.id),
+				overlappingOverrides(db, schedule.orgId, renderFromMs, renderToMs, schedule.id),
 			)
-			const members = yield* memberIdsOf(schedule.orgId)
-			const names = yield* memberNames(schedule.orgId)
 			const render = renderOnCall(
 				configOf(schedule),
 				Arr.map(overrides, toOverride),
-				fromMs,
-				toMs,
-				presenceOf(members),
+				renderFromMs,
+				renderToMs,
+				presenceOf(directory.ids),
 			)
 			return Option.some(
 				renderOnCallCalendar({
-					scheduleId: schedule.id,
 					scheduleName: schedule.name,
-					shifts: render.final,
-					nameOf: (userId) => names.get(userId) ?? null,
+					shifts: Arr.filter(render.final, (shift) => shift.endMs > fromMs && shift.startMs < toMs),
+					nameOf: (userId) => directory.names.get(userId) ?? null,
+					uidOf: (shift) => calendarShiftUid(schedule.id, shift),
 					nowMs,
 				}),
 			)

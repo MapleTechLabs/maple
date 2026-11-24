@@ -9,12 +9,15 @@ export interface CalendarShift {
 }
 
 export interface OnCallCalendarInput {
-	/** Stable across renders: a calendar app matches a shift it already holds by this and its start. */
-	readonly scheduleId: string
 	readonly scheduleName: string
 	readonly shifts: ReadonlyArray<CalendarShift>
 	/** The person's display name, or null when the directory does not know them. */
 	readonly nameOf: (userId: string) => string | null
+	/**
+	 * A shift's event id, without the `@host` part. It must be the same on every render, since a
+	 * calendar app matches an event it already holds by it, and should give away no internal id.
+	 */
+	readonly uidOf: (shift: CalendarShift) => string
 	/** When the feed was rendered: every event's DTSTAMP. */
 	readonly nowMs: number
 }
@@ -63,11 +66,12 @@ const eventLines = (input: OnCallCalendarInput, shift: CalendarShift): ReadonlyA
 	const who = input.nameOf(shift.userId)
 	return [
 		"BEGIN:VEVENT",
-		`UID:${input.scheduleId}-${shift.startMs}-${shift.userId}@maple.dev`,
+		`UID:${input.uidOf(shift)}@maple.dev`,
 		`DTSTAMP:${icsDateTime(input.nowMs)}`,
 		`DTSTART:${icsDateTime(shift.startMs)}`,
 		`DTEND:${icsDateTime(shift.endMs)}`,
-		`SUMMARY:${icsText(`On call: ${who ?? "unknown"} (${input.scheduleName})`)}`,
+		// Without a name the event still says a shift is covered, and by which schedule.
+		`SUMMARY:${icsText(who === null ? `On call (${input.scheduleName})` : `On call: ${who} (${input.scheduleName})`)}`,
 		// Shown as free time: being on call is not a meeting.
 		"TRANSP:TRANSPARENT",
 		"END:VEVENT",

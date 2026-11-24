@@ -324,6 +324,21 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 	),
 })
 
+/**
+ * What this page did to the feed, against a later read of the schedule. A link someone else made
+ * since (a different time than ours) wins: ours is dead, or our "off" is no longer true. A read
+ * that still says off while we hold a link is taken as one that left before our change landed.
+ */
+const reconcileCalendarFeed = (
+	local: Model["calendarFeed"],
+	schedule: V2OnCallSchedule,
+): Model["calendarFeed"] =>
+	local === null ||
+	schedule.calendar_feed_created_at === null ||
+	schedule.calendar_feed_created_at === local.createdAt
+		? local
+		: null
+
 const updateCalendarDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: {
 		...model,
@@ -359,7 +374,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ReadClock: ({ nowMs }) => clockRead(model, context, nowMs),
 		CompletedFetchSchedule: ({ key, readAtMs, result }) =>
 			requestShifts(
-				{ ...model, schedule: Keyed.accept(model.schedule, key, result, readAtMs) },
+				{
+					...model,
+					schedule: Keyed.accept(model.schedule, key, result, readAtMs),
+					calendarFeed: Result.match(result, {
+						onFailure: () => model.calendarFeed,
+						onSuccess: (schedule) => reconcileCalendarFeed(model.calendarFeed, schedule),
+					}),
+				},
 				context,
 				"Load",
 			),

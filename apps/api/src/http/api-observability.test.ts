@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import { HttpMiddleware, HttpServerRequest, UrlParams } from "effect/http"
-import { ApiObservabilityLive } from "./api-observability"
+import { ApiObservabilityLive, loggablePath } from "./api-observability"
 
 const tracedFor = (url: string, method = "GET") =>
 	Effect.gen(function* () {
@@ -29,6 +29,19 @@ describe("ApiObservabilityLive", () => {
 		expect(tracedFor("/calendar/oncall/mcal_abc123secret.ics?x=1")).toBe(false)
 		expect(tracedFor("/calendar/oncall/mcal_abc123secret/typo", "POST")).toBe(false)
 		expect(tracedFor("/calendar/oncallers")).toBe(true)
+		// Spellings the router still routes to the feed.
+		expect(tracedFor("/Calendar/OnCall/mcal_abc123secret.ics")).toBe(false)
+		expect(tracedFor("//calendar/oncall/mcal_abc123secret.ics")).toBe(false)
+		expect(tracedFor("/calendar//oncall/mcal_abc123secret.ics")).toBe(false)
+	})
+
+	it("writes a request path to the logs without the credential it holds", () => {
+		expect(loggablePath("/calendar/oncall/mcal_abc123secret.ics")).toBe("/calendar/oncall/[redacted]")
+		expect(loggablePath("/Calendar//oncall/mcal_abc123secret.ics?x=1")).toBe(
+			"/Calendar//oncall/[redacted]?x=1",
+		)
+		expect(loggablePath("/hb/abc123secret/fail")).toBe("/hb/[redacted]/fail")
+		expect(loggablePath("/v2/alerts/rules")).toBe("/v2/alerts/rules")
 	})
 
 	// The audit log is filtered by a member's email. The span of that request is kept for weeks

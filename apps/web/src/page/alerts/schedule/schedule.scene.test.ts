@@ -683,4 +683,27 @@ describe("on-call schedule page, calendar feed", () => {
 			expectView(text(/^A calendar link was made on /u)).not.toExist(),
 		)
 	})
+	test("a link someone else made since replaces what this page thought of the feed", () => {
+		const page = loaded(ONCALL_NOW)
+		const feed = checkoutCalendarFeed(ONCALL_NOW)
+		const made = pageUpdate(
+			page,
+			Message.CompletedCreateCalendarFeed({ result: Result.succeed(feed) }),
+		).model
+		const reread = (createdAt: string | undefined) =>
+			pageUpdate(
+				made,
+				Message.CompletedFetchSchedule({
+					key: made.schedule.key ?? "",
+					readAtMs: ONCALL_NOW,
+					result: Result.succeed(checkoutSchedule(ONCALL_NOW, [], createdAt)),
+				}),
+			).model
+		// The same link, read back: still shown.
+		expect(reread(feed.created_at).calendarFeed?.url).toBe(feed.url)
+		// A read that left before the link was made still says off: the link stays.
+		expect(reread(undefined).calendarFeed?.url).toBe(feed.url)
+		// Someone replaced it a minute later: this page's link is dead and no longer shown.
+		expect(reread(msIso(ONCALL_NOW + 60_000)).calendarFeed).toBeNull()
+	})
 })

@@ -11,7 +11,7 @@ Schedules live under **Alerts → On-call**. Org admins and engineers can create
 
 ## Create a schedule
 
-1. Open **Alerts → On-call** and select **Create schedule**.
+1. Open **Alerts → On-call** and select **New schedule** (**Create schedule** while there are none).
 2. Name it, and pick its **Time zone**. Handoff times and restrictions are read in that zone, whatever zone each person is in.
 3. Add a **layer**: the people on it, in rotation order, and when they **hand off**.
 4. Select **Create schedule** at the bottom of the form.
@@ -72,7 +72,7 @@ Calendar apps refresh subscriptions on their own schedule, often every few hours
 ## API and MCP
 
 - The [API](/docs/reference/api) has the schedules under `/v2/alerts/oncall_schedules`, with `/{id}/oncall` (who is on call at an instant), `/{id}/shifts`, `/{id}/overrides` and `/{id}/calendar_feed`.
-- The [MCP server](/docs/reference/mcp) has `list_oncall_schedules` and `who_is_on_call`.
+- The [MCP server](/docs/reference/mcp) has `list_oncall_schedules`, `who_is_on_call` and `manage_oncall_schedule`.
 
 ## Related
 

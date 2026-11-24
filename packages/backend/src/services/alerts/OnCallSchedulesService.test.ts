@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	AlertMemberDirectoryNotConfiguredError,
+	AlertMemberDirectoryUnavailableError,
 	AlertValidationError,
 	OnCallOverrideCreateRequest,
 	OnCallScheduleCreateRequest,
@@ -447,11 +448,11 @@ describe("OnCallSchedulesService calendar feed", () => {
 			assert.strictEqual((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt, feed.createdAt)
 
 			const calendar = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
-			// A week back to 60 days on: Ana's week, then Ben's, then Chen, whom the directory cannot name.
+			// A week back to 60 days on: Ana's week, then Ben's, then Chen, who has no display name.
 			assert.deepStrictEqual(Arr.take(summaries(calendar), 3), [
 				"SUMMARY:On call: Ana Alves (Checkout primary)",
 				"SUMMARY:On call: Ben Brook (Checkout primary)",
-				"SUMMARY:On call: unknown (Checkout primary)",
+				"SUMMARY:On call (Checkout primary)",
 			])
 
 			// A guess, a truncated link and a link of the wrong shape open nothing.
@@ -459,6 +460,83 @@ describe("OnCallSchedulesService calendar feed", () => {
 			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(Str.slice(0, -1)(feed.token))))
 			assert.isTrue(Option.isNone(yield* schedules.calendarFeed("")))
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("keeps a shift's real start, end and event id from one fetch to the next", () => {
+		const testDb = createTestDb(createdDbs)
+		const eventsOf = (calendar: string) => {
+			const lines = Str.split("\r\n")(calendar)
+			const valuesOf = (property: string) =>
+				Arr.map(
+					Arr.filter(lines, (line) => Str.startsWith(`${property}:`)(line)),
+					(line) => Str.slice(property.length + 1)(line),
+				)
+			return Arr.zip(valuesOf("UID"), Arr.zip(valuesOf("DTSTART"), valuesOf("DTEND")))
+		}
+		return Effect.gen(function* () {
+			// Mid-week, at no round time: the feed's window starts and ends inside a weekly shift.
+			yield* TestClock.setTime(at("2026-11-25T12:34:56Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const first = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+			yield* TestClock.adjust("5 minutes")
+			const second = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+
+			assert.deepStrictEqual(second, first)
+			// Weekly handoff, Monday 09:00 Berlin: every event starts and ends on one, never mid-shift.
+			assert.isAbove(first.length, 8)
+			assert.isTrue(
+				Arr.every(
+					first,
+					([, [start, end]]) => Str.endsWith("T080000Z")(start) && Str.endsWith("T080000Z")(end),
+				),
+			)
+			// No schedule or user id can be read off an event id.
+			assert.isTrue(Arr.every(first, ([uid]) => /^[0-9a-f]{32}@maple\.dev$/.test(uid)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("fails, and serves no feed without names, when the member directory is down", () => {
+		const testDb = createTestDb(createdDbs)
+		const directory = { isDown: false }
+		const members = stubOrgMembersService([
+			{ userId: ana, email: "ana@acme.test", name: "Ana Alves", imageUrl: null },
+			{ userId: ben, email: "ben@acme.test", name: "Ben Brook", imageUrl: null },
+			{ userId: chen, email: "chen@acme.test", name: null, imageUrl: null },
+		])
+		const layer = Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+			Layer.provide(
+				Layer.merge(
+					testDb.layer,
+					Layer.succeed(OrgMembersService, {
+						...members,
+						listMembers: (orgId) =>
+							directory.isDown
+								? Effect.fail(
+										new AlertMemberDirectoryUnavailableError({
+											message: "The member directory did not answer",
+											cause: "timeout",
+										}),
+									)
+								: members.listMembers(orgId),
+					}),
+				),
+			),
+		)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			directory.isDown = true
+			// Past the directory's minute of cache.
+			yield* TestClock.adjust("2 minutes")
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.calendarFeed(feed.token))),
+				"@maple/http/errors/AlertMemberDirectoryUnavailableError",
+			)
+		}).pipe(Effect.provide(layer))
 	})
 
 	it.effect("stores only a hash of the link", () => {
