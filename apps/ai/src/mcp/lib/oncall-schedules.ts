@@ -159,7 +159,7 @@ export const formatCoverageWarning = (schedule: ScheduleRow): string | null => {
 	const departed =
 		schedule.departed.length === 0
 			? null
-			: `left the org (their shifts pass to the next person): ${Arr.join(Arr.map(schedule.departed, personLabel), ", ")}`
+			: `left the org (their shifts pass to the next person still in it, or go uncovered): ${Arr.join(Arr.map(schedule.departed, personLabel), ", ")}`
 	const parts = Arr.filter([gaps, departed], (part) => part !== null)
 	return parts.length === 0 ? null : Arr.join(parts, "; ")
 }

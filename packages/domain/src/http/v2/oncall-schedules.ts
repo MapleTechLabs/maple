@@ -261,7 +261,7 @@ export const V2OnCallSchedule = Schema.Struct({
 	}),
 	departed_user_ids: Schema.Array(UserId).annotate({
 		description:
-			"Participants who are no longer members of the organization. Their shifts pass to the next person in the rotation until the schedule is edited.",
+			"Participants who are no longer members of the organization. Their shifts pass to the next person in the rotation who is still a member, and are a coverage gap when nobody is, until the schedule is edited.",
 	}),
 	chain_ids: Schema.Array(EscalationChainPublicId).annotate({
 		description: "Escalation chains (`esc_…`) that page this schedule.",
