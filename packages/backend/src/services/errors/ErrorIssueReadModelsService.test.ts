@@ -508,6 +508,7 @@ describe("ErrorIssueReadModelsService", () => {
 				}),
 			symbolicateWithOutcome: () => Effect.die("symbolicateWithOutcome"),
 			hasSourceMaps: () => Effect.succeed(true),
+			sourceMapsKnown: () => Effect.succeedSome(true),
 		})
 		return Effect.gen(function* () {
 			const readModels = yield* ErrorIssueReadModelsService
@@ -542,6 +543,7 @@ describe("ErrorIssueReadModelsService", () => {
 				}),
 			symbolicateWithOutcome: () => Effect.die("symbolicateWithOutcome"),
 			hasSourceMaps: () => Effect.succeed(false),
+			sourceMapsKnown: () => Effect.succeedSome(false),
 		})
 		return Effect.gen(function* () {
 			const readModels = yield* ErrorIssueReadModelsService
