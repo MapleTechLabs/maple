@@ -41,7 +41,8 @@ extension MapleClient {
 	) async throws -> DeviceCredential {
 		let jwk = key.publicJWK
 		return try await mapping {
-			let url = serverURL.appendingPathComponent("v2/device_credentials").appendingPathComponent(installationId)
+			let host = try await self.serverURL()
+			let url = host.appendingPathComponent("v2/device_credentials").appendingPathComponent(installationId)
 			let proof = try DPoPProof.make(key: key.signer, method: "PUT", url: url, issuedAt: Date())
 			let output = try await client.registerDeviceCredential(
 				.init(
@@ -69,8 +70,9 @@ extension MapleClient {
 				credentialId: credential.id,
 				jkt: credential.jkt,
 				// The host this client talks to, for the same reason as the legacy
-				// credential: a key registered locally means nothing to production.
-				apiBaseURL: serverURL,
+				// credential: a key registered locally, or in the other region,
+				// means nothing elsewhere.
+				apiBaseURL: host,
 				attested: credential.attested,
 				expiresAt: expiresAt,
 				hardExpiresAt: hardExpiresAt,

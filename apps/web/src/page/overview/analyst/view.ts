@@ -237,16 +237,21 @@ const uptimeSection = (h: H, model: Model, nowMs: number | null): Html => {
 const SLO_STATE = {
 	burning: "Burning",
 	spent: "Out of budget",
+	"no-data": "No traffic matches",
 } as const satisfies Record<SloTrouble["state"], string>
 
+/** An SLO that counts nothing is neutral: its row names the filter, with no bar to read as healthy. */
 const sloRow = (h: H, { slo, state, budgetRemaining }: SloTrouble): Html =>
 	listRow(h, {
 		href: sloHref(slo.id),
 		divided: true,
-		leading: statusDot(h, { tone: "crit", size: "lg" }),
+		leading: statusDot(h, { tone: state === "no-data" ? "neutral" : "crit", size: "lg" }),
 		title: slo.name,
 		meta: `${SLO_STATE[state]} · ${scopeLine(slo)}`,
-		trailing: budgetBar(h, budgetRemaining),
+		trailing:
+			budgetRemaining === null
+				? typography(h, { size: "xs", tone: "muted" }, ["No data"])
+				: budgetBar(h, budgetRemaining),
 	})
 
 const slosSection = (h: H, model: Model): Html => {

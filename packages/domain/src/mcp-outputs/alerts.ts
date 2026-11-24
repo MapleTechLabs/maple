@@ -384,6 +384,14 @@ export const AcknowledgeAlertIncidentOutput = Schema.Struct({
 	changed: Schema.Boolean,
 })
 
+export const ResolveAlertIncidentOutput = Schema.Struct({
+	id: Schema.String,
+	ruleId: Schema.String,
+	ruleName: Schema.String,
+	status: Schema.String,
+	resolvedAt: NullableString,
+})
+
 export const GetIncidentTimelineOutput = Schema.Struct({
 	incidents: Schema.Array(IncidentTimelineRow),
 	total: Schema.Number,

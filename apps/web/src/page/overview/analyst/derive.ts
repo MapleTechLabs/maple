@@ -5,7 +5,7 @@ import { rowsToAlertIncidentDocuments } from "@maple/web-data/collections/alerts
 import type { ErrorByType } from "@maple/web-data/warehouse/errors"
 import { Option, Order, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
-import { isBudgetSpent, isBurning } from "../../alerts/shared/slo-derive"
+import { budgetLeft, hasNoData, isBurning, isSpent } from "../../alerts/shared/slo-derive"
 import { sortIncidents } from "../../alerts/shared/sort"
 import { GENERIC_TYPES } from "../../errors/hub/view-signal"
 import { buildErrorSignals, type ErrorSignal } from "../../errors/kit/error-signal"
@@ -89,15 +89,16 @@ export const uptimeOf = (model: Model): Part<UptimeSummary> =>
 
 export type SloTrouble = Readonly<{
 	slo: SloRow["slo"]
-	state: "burning" | "spent"
-	/** The share of the error budget left; negative once it is overspent. */
-	budgetRemaining: number
+	/** `no-data`: its window counted no events, so nothing says whether it is within budget. */
+	state: "burning" | "spent" | "no-data"
+	/** The share of the error budget left, negative once overspent; `null` with no events to measure. */
+	budgetRemaining: number | null
 }>
 
 export type SlosSummary = Readonly<{
 	total: number
 	within: number
-	/** Burning first, then the ones out of budget. */
+	/** Burning first, then the ones out of budget, then the ones without data. */
 	troubled: ReadonlyArray<SloTrouble>
 	isSetUp: boolean
 }>
@@ -109,9 +110,10 @@ export const slosOf = (model: Model): Part<SlosSummary> =>
 		const incidents = Option.getOrElse(AsyncData.getData(model.incidents), () => [])
 		const troubleOf = (row: SloRow): ReadonlyArray<SloTrouble> => {
 			if (row.status === null) return []
-			const budgetRemaining = row.status.budget_remaining
+			const budgetRemaining = budgetLeft(row.status)
 			if (isBurning(row, incidents)) return [{ slo: row.slo, state: "burning", budgetRemaining }]
-			return isBudgetSpent(budgetRemaining) ? [{ slo: row.slo, state: "spent", budgetRemaining }] : []
+			if (isSpent(row.slo, row.status)) return [{ slo: row.slo, state: "spent", budgetRemaining }]
+			return hasNoData(row.status) ? [{ slo: row.slo, state: "no-data", budgetRemaining }] : []
 		}
 		const troubled = Arr.flatMap(rows, troubleOf)
 		const known = Arr.filter(rows, (row) => row.status !== null).length
@@ -121,6 +123,7 @@ export const slosOf = (model: Model): Part<SlosSummary> =>
 			troubled: [
 				...Arr.filter(troubled, (trouble) => trouble.state === "burning"),
 				...Arr.filter(troubled, (trouble) => trouble.state === "spent"),
+				...Arr.filter(troubled, (trouble) => trouble.state === "no-data"),
 			],
 			isSetUp: rows.length > 0,
 		})
@@ -155,8 +158,11 @@ const uptimeLine = (part: Part<UptimeSummary>): string => {
 
 const slosLine = (part: Part<SlosSummary>): string => {
 	if (part._tag !== "Ready") return "Couldn't check SLOs"
-	const { total, within, isSetUp } = part.value
-	return isSetUp ? `${within} of ${total} ${pluralize(total, "SLO")} within budget` : "No SLOs"
+	const { total, within, isSetUp, troubled } = part.value
+	if (!isSetUp) return "No SLOs"
+	const silent = Arr.filter(troubled, (trouble) => trouble.state === "no-data").length
+	const line = `${within} of ${total} ${pluralize(total, "SLO")} within budget`
+	return silent === 0 ? line : `${line}, ${silent} without data`
 }
 
 const listOf = (names: ReadonlyArray<string>): string =>
@@ -173,8 +179,9 @@ const problemsOf = (
 	const open = incidents._tag === "Ready" ? incidents.value.open.length : 0
 	const failing = uptime._tag === "Ready" ? uptime.value.failing.length : 0
 	const troubled = slos._tag === "Ready" ? slos.value.troubled : []
+	// An SLO without data is listed, not a problem: nothing says it is failing.
 	const burning = Arr.filter(troubled, (trouble) => trouble.state === "burning").length
-	const spent = troubled.length - burning
+	const spent = Arr.filter(troubled, (trouble) => trouble.state === "spent").length
 	return [
 		...(open > 0 ? [`${countLabel(open, "incident")} open.`] : []),
 		...(failing > 0 ? [`${countLabel(failing, "check")} failing.`] : []),

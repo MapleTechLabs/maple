@@ -7,7 +7,8 @@
 		".": "./src/index.ts",
 		"./hysteresis": "./src/hysteresis.ts",
 		"./tiers": "./src/tiers.ts",
-		"./oncall": "./src/oncall.ts"
+		"./oncall": "./src/oncall.ts",
+		"./oncall-ics": "./src/oncall-ics.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

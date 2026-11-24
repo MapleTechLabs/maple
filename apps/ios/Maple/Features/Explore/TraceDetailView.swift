@@ -86,7 +86,7 @@ struct TraceDetailView: View {
 					Button("Copy trace ID", pixelIcon: .copy) {
 						UIPasteboard.general.string = traceID
 					}
-					OpenOnWebButton(url: MapleWeb.trace(traceID), style: .menuItem)
+					OpenOnWebButton(url: session.web.trace(traceID), style: .menuItem)
 				} label: {
 					PixelIcon.dotsVertical.image
 						.resizable()

@@ -1,5 +1,5 @@
 import type { AlertIncidentDocument, AlertIncidentId, AlertRuleDocument } from "@maple/domain/http"
-import { acknowledgedLine } from "@maple/web-data/alerts/incident-timeline"
+import { acknowledgedSummary } from "@maple/web-data/alerts/incident-timeline"
 import { countLabel } from "@maple/ui/lib/format"
 import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
@@ -207,7 +207,7 @@ const openIncidentRow = <M>(
 	isFocused: boolean,
 ): Html => {
 	const isHeld = incident.holdReason !== null
-	const acked = acknowledgedLine(incident)
+	const acked = acknowledgedSummary(incident)
 	const tone = incident.severity === "critical" ? "text-severity-error" : "text-severity-warn"
 	return gridListRow(h, { key: incident.id, grid: INCIDENT_GRID, isFocused }, [
 		h.span([

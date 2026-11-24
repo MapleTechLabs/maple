@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "a04247ff6a31fba67a5e9f41673eff1319e3aec62983ecaa18cae379e675535d",
+	"id": "0547461b8cb3cb21339a0308c81d9631a756c53e7169b2e0a80b1a5639d9ff3e",
 	"prevIds": [
 		"8cd2f550684d206677ae8b010ff57a931da5257f77f4bd9379ebeab88b2b7eb7"
 	],
@@ -1321,16 +1321,6 @@
 		},
 		{
 			"kind": "table",
-			"name": "source_map_files",
-			"primaryKey": {
-				"name": "source_map_files_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
 			"name": "sources",
 			"primaryKey": {
 				"name": "sources_pkey",
@@ -2514,8 +2504,18 @@
 		{
 			"kind": "column",
 			"table": "alert_incident_events",
-			"name": "created_at",
+			"name": "detail",
 			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -18483,116 +18483,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "source_map_files",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "debug_id",
-			"position": 2,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "service_name",
-			"position": 3,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "version",
-			"position": 4,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "minified_path",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "size_bytes",
-			"position": 6,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "has_sources_content",
-			"position": 7,
-			"type": "boolean",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "object_key",
-			"position": 8,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "created_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": "now()",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "last_used_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "sources",
 			"name": "id",
 			"position": 0,
@@ -24532,44 +24422,6 @@
 			"columns": [
 				"\"org_id\"",
 				"\"name\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_created_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"created_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_debug_id_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"debug_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_release_path_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"service_name\"",
-				"\"version\"",
-				"\"minified_path\""
 			],
 			"where": null
 		},

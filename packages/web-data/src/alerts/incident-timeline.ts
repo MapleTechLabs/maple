@@ -8,6 +8,7 @@ import type {
 	AlertSignalType,
 	InvestigationId,
 } from "@maple/domain/http"
+import { isSloBudgetIncident } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
@@ -57,6 +58,40 @@ export function acknowledgedLine(
 		: `Acknowledged by ${ackActorLabel(incident.acknowledgedByName, incident.acknowledgedVia)}`
 }
 
+/** "4m", "1h 5m", "under 1m": how long the incident stood before anyone first acknowledged it. */
+export function timeToAcknowledge(
+	incident: Pick<AlertIncidentDocument, "firstTriggeredAt" | "firstAcknowledgedAt">,
+): string | null {
+	if (incident.firstAcknowledgedAt == null) return null
+	const waitedMs = Date.parse(incident.firstAcknowledgedAt) - Date.parse(incident.firstTriggeredAt)
+	if (!(waitedMs >= 0)) return null
+	return waitedMs < 60_000
+		? "under 1m"
+		: formatAlertDuration(incident.firstTriggeredAt, incident.firstAcknowledgedAt)
+}
+
+/**
+ * "Acknowledged by Dana Kim, 4m after it opened", or null while nobody holds the acknowledgement.
+ * A second acknowledgement names its own person and says when the first one came.
+ */
+export function acknowledgedSummary(
+	incident: Pick<
+		AlertIncidentDocument,
+		| "acknowledgedAt"
+		| "acknowledgedByName"
+		| "acknowledgedVia"
+		| "firstTriggeredAt"
+		| "firstAcknowledgedAt"
+	>,
+): string | null {
+	const line = acknowledgedLine(incident)
+	const waited = timeToAcknowledge(incident)
+	if (line === null || waited === null) return line
+	return incident.acknowledgedAt === incident.firstAcknowledgedAt
+		? `${line}, ${waited} after it opened`
+		: `${line} · first acknowledged after ${waited}`
+}
+
 function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 	const who = ackActorLabel(event.actor?.name ?? null, event.source)
 	const from = event.source != null ? `From ${ackSourceLabel[event.source]}` : null
@@ -93,6 +128,33 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				tone: "warn",
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
+			}
+		case "resolved":
+			return {
+				...base,
+				tone: "ok",
+				title: `Resolved by ${who}`,
+				detail: Arr.join(
+					Arr.filter(
+						[from, "nothing reopens until the rule has been healthy once"],
+						(p) => p != null,
+					),
+					" · ",
+				),
+			}
+		case "on_call_gap":
+			return {
+				...base,
+				tone: "warn",
+				// With no schedule named, the step's own targets were all unreachable.
+				title:
+					event.detail === undefined
+						? "An escalation step reached nobody"
+						: `Nobody on call on ${event.detail}`,
+				detail:
+					event.detail === undefined
+						? "Its destinations are off or its people have left the organization"
+						: "The escalation step paged no one for it",
 			}
 		case "paged":
 			// Without its page the event says only that someone was paged: no channel or outcome invented.
@@ -139,10 +201,19 @@ export function incidentGroup(
 	incident: Pick<AlertIncidentDocument, "groupKey"> &
 		Partial<Pick<AlertIncidentDocument, "groupLabel" | "signalType">>,
 ): string | null {
+	// An SLO's budget key says which of its incidents this is, not a group to name: checked
+	// first, since the incident is stored with a label ("Error budget") all the same.
+	if (isSloBudgetIncident({ signalType: incident.signalType ?? "", groupKey: incident.groupKey }))
+		return null
 	// An anomaly's key is the anomaly incident id: its stored label is what people read.
 	if (incident.groupLabel != null) return incident.groupLabel
 	if (incident.signalType === "anomaly") return null
 	return incident.groupKey == null || incident.groupKey === UNGROUPED_GROUP_KEY ? null : incident.groupKey
+}
+
+/** "135% of the error budget used": what an SLO's budget incident observes, a share of the budget. */
+export function budgetUsedLabel(used: number | null): string {
+	return used === null ? "Error budget spent" : `${Math.round(used * 100)}% of the error budget used`
 }
 
 export function signalTitle(signalType: AlertSignalType): string {
@@ -218,11 +289,14 @@ export interface IncidentPage {
 	readonly errorMessage: string | null
 }
 
-/** "email", "Slack DM", "Discord DM". */
+/** "email", "phone", "Slack DM", "Discord DM". */
 export function pageChannelLabel(channel: string): string {
 	switch (channel) {
 		case "email":
 			return "email"
+		// A push to the member's own phones.
+		case "push":
+			return "phone"
 		case "slack":
 			return "Slack DM"
 		case "discord":
@@ -325,16 +399,20 @@ export function buildIncidentTimeline(input: {
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
+	const isBudget = isSloBudgetIncident(incident)
 	// An uptime rule has no threshold to read out; an SLO's reads its tier factor, not today's burn.
+	// A spent budget is no burn at all: it says the budget is gone, with no factor to compare.
 	const condition = isUptimeCertificateIncident(incident)
 		? `${incident.ruleName}'s certificate entered its expiry window`
 		: incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
-			: incident.signalType === "slo_burn_rate"
-				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
-				: incident.signalType === "anomaly"
-					? "Maple detected an anomaly"
-					: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+			: isBudget
+				? "The SLO's error budget is spent"
+				: incident.signalType === "slo_burn_rate"
+					? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
+					: incident.signalType === "anomaly"
+						? "Maple detected an anomaly"
+						: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",
@@ -375,22 +453,27 @@ export function buildIncidentTimeline(input: {
 			investigation: null,
 		})
 	} else if (incident.status === "open") {
+		// A spent budget reminds once a day whatever the rule's interval, and has no value to breach.
 		const reminder =
 			incident.acknowledgedAt != null
 				? "reminders paused while acknowledged"
-				: input.renotifyIntervalMinutes != null
-					? `reminders every ${input.renotifyIntervalMinutes}m while open`
-					: null
+				: isBudget
+					? "one reminder a day while open"
+					: input.renotifyIntervalMinutes != null
+						? `reminders every ${input.renotifyIntervalMinutes}m while open`
+						: null
 		events.push({
 			key: "breaching",
 			at: Date.parse(incident.lastTriggeredAt),
-			tone: "crit",
+			tone: isBudget ? "warn" : "crit",
 			pending: true,
-			title: "Still breaching",
+			title: isBudget ? "Budget still spent" : "Still breaching",
 			detail: Arr.join(
 				Arr.filter(
 					[
-						`Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+						isBudget
+							? budgetUsedLabel(incident.lastObservedValue)
+							: `Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
 						reminder,
 					],
 					(part) => part != null,

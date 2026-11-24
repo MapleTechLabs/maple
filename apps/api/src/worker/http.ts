@@ -17,6 +17,7 @@ import {
 } from "@maple/backend/http/api-cors"
 import { aiUnavailableResponse, forwardsToAi, forwardToAi } from "./ai-forward"
 import { v2ShareBodyTooLargeResponse, v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
+import { loggablePath } from "../http/api-observability"
 import { AiWorkerFetcher, type MapleDbConnection } from "@maple/backend/platform/bindings"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { recordRenderedFailure } from "@maple/backend/http/rendered-failure"
@@ -182,7 +183,7 @@ const recordEscapedCause = (method: string, path: string, cause: Cause.Cause<unk
 	const first = Cause.prettyErrors(cause)[0]
 	return recordRenderedFailure({
 		group: "route-graph",
-		operation: `${method} ${path}`,
+		operation: `${method} ${loggablePath(path)}`,
 		errorType: first?.name ?? "Unknown",
 		summary: "Cause escaped the route graph",
 		message: first?.message ?? "",
@@ -260,7 +261,7 @@ export const makeFetch = <E>(
 				const aiWorker = yield* AiWorkerFetcher
 				if (Option.isNone(aiWorker)) {
 					yield* Effect.logError("AI worker binding is missing").pipe(
-						Effect.annotateLogs({ method: request.method, path }),
+						Effect.annotateLogs({ method: request.method, path: loggablePath(path) }),
 					)
 					return aiUnavailableResponse()
 				}
@@ -274,7 +275,7 @@ export const makeFetch = <E>(
 			const built = yield* Effect.exit(selectedApp)
 			if (Exit.isFailure(built)) {
 				yield* Effect.logError("API worker route graph failed to build", built.cause).pipe(
-					Effect.annotateLogs({ method: request.method, path }),
+					Effect.annotateLogs({ method: request.method, path: loggablePath(path) }),
 				)
 				return unavailableResponse(path)
 			}

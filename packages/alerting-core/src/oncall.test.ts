@@ -1,7 +1,14 @@
 import { Array as Arr, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { OnCallOverride, OnCallScheduleConfig } from "@maple/domain/http"
-import { ONCALL_LOOKAROUND_MS, onCallAt, renderOnCall, type OnCallShift } from "./oncall"
+import {
+	ONCALL_LOOKAROUND_MS,
+	absentParticipants,
+	onCallAt,
+	renderOnCall,
+	uncoveredIntervals,
+	type OnCallShift,
+} from "./oncall"
 
 const HOUR = 3_600_000
 const DAN_OVERRIDE = "0b7f6a3e-1c2d-4e5f-8a9b-1c2d3e4f5a60"
@@ -61,6 +68,69 @@ describe("weekly rotation", () => {
 		expect(who(shift)).toBe("ana")
 		expect(span(shift)).toEqual({ start: "2026-10-19T07:00:00.000Z", end: "2026-10-26T08:00:00.000Z" })
 		expect(shift === null ? 0 : (shift.endMs - shift.startMs) / HOUR).toBe(169)
+	})
+})
+
+describe("people who can no longer be paged", () => {
+	const without =
+		(...gone: ReadonlyArray<string>) =>
+		(userId: string) =>
+			!Arr.contains(gone, userId)
+	// Ben's week: Monday 2026-03-09 09:00 Berlin onwards.
+	const bensWeek = at("2026-03-11T12:00:00Z")
+
+	it("passes a shift to the next person in rotation order, keeping its bounds", () => {
+		const shift = onCallAt(weekly, [], bensWeek, { isPresent: without("ben") })
+		expect(who(shift)).toBe("chen")
+		expect(span(shift)).toEqual({ start: "2026-03-09T08:00:00.000Z", end: "2026-03-16T08:00:00.000Z" })
+		// Nobody else's week moves.
+		expect(who(onCallAt(weekly, [], at("2026-03-04T12:00:00Z"), { isPresent: without("ben") }))).toBe(
+			"ana",
+		)
+	})
+
+	it("leaves a gap when nobody in the layer can be paged", () => {
+		expect(onCallAt(weekly, [], bensWeek, { isPresent: without("ana", "ben", "chen") })).toBeNull()
+	})
+
+	it("ignores an override for someone who left, so the rotation holds the shift", () => {
+		const overrides = decodeOverrides([
+			{
+				id: DAN_OVERRIDE,
+				userId: "dan",
+				startsAt: at("2026-03-10T08:00:00Z"),
+				endsAt: at("2026-03-12T08:00:00Z"),
+				createdAt: 1,
+			},
+		])
+		expect(who(onCallAt(weekly, overrides, bensWeek))).toBe("dan")
+		expect(who(onCallAt(weekly, overrides, bensWeek, { isPresent: without("dan") }))).toBe("ben")
+	})
+
+	it("names the participants who left, once each", () => {
+		const twoLayers = decodeConfig({
+			timeZone: "Europe/Berlin",
+			layers: [weeklyLayer, { ...weeklyLayer, name: "Secondary", participants: ["ben", "dan"] }],
+		})
+		expect(absentParticipants(twoLayers, without("ben", "dan"))).toEqual(["ben", "dan"])
+		expect(absentParticipants(twoLayers, without())).toEqual([])
+	})
+})
+
+describe("uncoveredIntervals", () => {
+	it("returns the stretches no shift covers, clipped to the range", () => {
+		const shifts = [
+			{ startMs: 10, endMs: 20 },
+			{ startMs: 15, endMs: 30 },
+			{ startMs: 50, endMs: 60 },
+		]
+		expect(uncoveredIntervals(shifts, 0, 70)).toEqual([
+			{ startMs: 0, endMs: 10 },
+			{ startMs: 30, endMs: 50 },
+			{ startMs: 60, endMs: 70 },
+		])
+		expect(uncoveredIntervals(shifts, 12, 28)).toEqual([])
+		expect(uncoveredIntervals([], 5, 5)).toEqual([])
 	})
 })
 

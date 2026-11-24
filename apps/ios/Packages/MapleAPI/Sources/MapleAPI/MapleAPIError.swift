@@ -18,6 +18,9 @@ public enum MapleAPIError: Error, Sendable {
 	case transport(any Error)
 	/// A 2xx response whose body did not match the schema.
 	case decoding(any Error)
+	/// The app does not know which region the organization lives in, so it cannot
+	/// tell which API host serves it. Never sent anywhere on a guess.
+	case unknownRegion(organizationId: String)
 }
 
 /// The `error` object inside a Maple error envelope.
@@ -97,7 +100,7 @@ extension MapleAPIError {
 		switch self {
 		case .api(_, let error): error.retryable
 		case .transport: true
-		case .notAuthenticated, .unexpectedStatus, .decoding: false
+		case .notAuthenticated, .unexpectedStatus, .decoding, .unknownRegion: false
 		}
 	}
 
@@ -114,6 +117,7 @@ extension MapleAPIError {
 		case .unexpectedStatus: "Something went wrong"
 		case .transport: "Can't reach Maple"
 		case .decoding: "Unexpected response"
+		case .unknownRegion: "Organization not available"
 		}
 	}
 
@@ -130,6 +134,8 @@ extension MapleAPIError {
 			"Check your connection and try again."
 		case .decoding:
 			"Maple returned data this version of the app can't read."
+		case .unknownRegion:
+			"Maple couldn't tell which region this organization's data lives in. Pull to refresh, or switch organizations and back."
 		}
 	}
 }
