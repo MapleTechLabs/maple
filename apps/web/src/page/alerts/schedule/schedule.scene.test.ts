@@ -685,6 +685,29 @@ describe("on-call schedule page, calendar feed", () => {
 			expectView(text(/^A calendar link was made on /u)).not.toExist(),
 		)
 	})
+	test("leaving the question sends nothing, and it cannot be left while the change runs", () => {
+		const on = withFeedOn()
+		const dialog = (message: Dialog.Message) => Message.GotCalendarFeedDialogMessage({ message })
+		const asked = pageUpdate(on, Message.ClickedReplaceCalendarFeed()).model
+		// Escape and Close both leave: the question closes, nothing is sent, the feed is as it was.
+		const escaped = pageUpdate(asked, dialog(Dialog.Message.PressedEscape()))
+		const closed = pageUpdate(asked, dialog(Dialog.Message.ClickedClose()))
+		expect([escaped.model.calendarFeedDialog.isOpen, closed.model.calendarFeedDialog.isOpen]).toEqual([
+			false,
+			false,
+		])
+		expect(names(escaped.commands)).not.toContain("CreateOnCallCalendarFeed")
+		expect(names(closed.commands)).not.toContain("CreateOnCallCalendarFeed")
+		expect(escaped.model.calendarFeed).toBeNull()
+		// A confirm after leaving has no question to answer.
+		expect(pageUpdate(escaped.model, Message.ClickedConfirmCalendarFeed()).commands ?? []).toHaveLength(0)
+
+		// While the replace runs the question stays, so its answer is seen.
+		const running = pageUpdate(asked, Message.ClickedConfirmCalendarFeed()).model
+		const held = pageUpdate(running, dialog(Dialog.Message.PressedEscape())).model
+		expect([held.calendarFeedDialog.isOpen, held.isChangingCalendarFeed]).toEqual([true, true])
+	})
+
 	test("a link someone else made since replaces what this page thought of the feed", () => {
 		const page = loaded(ONCALL_NOW)
 		const feed = checkoutCalendarFeed(ONCALL_NOW)
