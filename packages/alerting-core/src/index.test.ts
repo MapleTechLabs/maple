@@ -137,6 +137,39 @@ describe("planAlertLifecycle", () => {
 		})
 	})
 
+	it("pages a reopen above the severity the earlier notification was for", () => {
+		const tiered = { ...policy, severities: ["warning" as const, "critical" as const] }
+		const critical: AlertEvaluation = {
+			...breached,
+			levels: [
+				{ severity: "warning", status: "breach" },
+				{ severity: "critical", status: "breach" },
+			],
+		}
+		const reopen = (previousNotificationSeverity: "warning" | "critical") =>
+			planAlertLifecycle({
+				policy: tiered,
+				evaluation: critical,
+				state: { consecutiveBreaches: 1, consecutiveHealthy: 0 },
+				openIncident: null,
+				nowMs: 600_000,
+				previousNotificationAtMs: 300_000,
+				previousNotificationSeverity,
+			})
+
+		expect(reopen("warning")).toMatchObject({
+			transition: "opened",
+			severity: "critical",
+			eventType: "trigger",
+			notificationSuppression: null,
+		})
+		expect(reopen("critical")).toMatchObject({
+			transition: "opened",
+			eventType: null,
+			notificationSuppression: "flapping",
+		})
+	})
+
 	it("advances the notification anchor when renotify becomes due", () => {
 		const plan = planAlertLifecycle({
 			policy,

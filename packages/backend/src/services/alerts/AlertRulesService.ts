@@ -28,7 +28,7 @@ import {
 	AlertRuleStates,
 	EscalationChains,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -46,6 +46,7 @@ import {
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
+import { deletedRuleResolveRows } from "./delivery/deleted-rule-resolve"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import {
 	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
@@ -140,15 +141,21 @@ const findDefaultAnomalyRule = (db: MapleDb, orgId: OrgId) =>
 /**
  * Deletes a rule with its deliveries, incidents, states and claim. Run it inside a
  * transaction; the uptime monitor delete reuses it for the monitor's backing rule.
+ * Destinations an open incident paged are left one queued `resolve`, so no page outlives the rule.
  */
 export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =>
 	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const resolves = yield* deletedRuleResolveRows(db, orgId, ruleId, nowMs)
 		yield* db.run(
 			PG.deleteFrom(AlertDeliveryEvents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]),
 		)
 		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
+		if (Arr.isArrayNonEmpty(resolves)) {
+			yield* db.run(PG.insertInto(AlertDeliveryEvents).values(resolves))
+		}
 		return yield* db.run(
 			PG.deleteFrom(AlertRules)
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])

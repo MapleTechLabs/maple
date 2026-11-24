@@ -163,7 +163,7 @@ import {
 	selectEscalationWork,
 	startEscalationRun,
 } from "./alert-escalation-runs"
-import { queuedDeliveryEventRow } from "./alert-delivery-rows"
+import { acknowledgeDeliveryEventRow, queuedDeliveryEventRow } from "./alert-delivery-rows"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -313,6 +313,8 @@ const emptyRuleStateBuffer: RuleStateBuffer = { rows: HashMap.empty(), checks: C
 const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
+
+const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
 
 interface DeliveryAttemptFailure {
 	readonly message: string
@@ -2490,6 +2492,65 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 
 			/**
+			 * A page that reached the pager after someone acknowledged the incident (its first attempts
+			 * failed): the click queued no acknowledge for it, so one is queued now.
+			 */
+			const acknowledgeLatePage = Effect.fn("AlertsService.acknowledgeLatePage")(function* (
+				row: AlertDeliveryEventRow,
+				nowMs: number,
+			) {
+				const incidentId = row.incidentId
+				if (incidentId === null) return
+				const queued = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const acknowledged = yield* db.run(
+								PG.from(AlertIncidents)
+									.select()
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.id.eq(incidentId),
+										$.status.eq("open"),
+										$.acknowledgedAt.isNotNull(),
+									])
+									.limit(1),
+							)
+							const incident = Arr.head(acknowledged)
+							if (Option.isNone(incident)) return false
+							const acknowledgedAt = incident.value.acknowledgedAt ?? nowMs
+							const told = yield* db.run(
+								PG.from(AlertDeliveryEvents)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.incidentId.eq(incidentId),
+										$.destinationId.eq(row.destinationId),
+										$.eventType.eq("acknowledge"),
+										$.createdAt.gte(acknowledgedAt),
+									])
+									.limit(1),
+							)
+							if (told.length > 0) return false
+							yield* db.run(
+								PG.insertInto(AlertDeliveryEvents)
+									.values(
+										acknowledgeDeliveryEventRow(
+											incident.value,
+											row.destinationId,
+											nowMs,
+											makeUuid(),
+										),
+									)
+									.onConflictDoNothing(),
+							)
+							return true
+						}),
+					),
+				)
+				yield* Effect.annotateCurrentSpan("maple.alert.pagerduty_late_ack_queued", queued)
+			})
+
+			/**
 			 * The escalation steps among `rows` whose incident resolved or was acknowledged after the
 			 * step was queued, with why: read now, not from the claim batch, which can be a drain old.
 			 */
@@ -2806,6 +2867,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						})
 						return
 					}
+					// A retried page whose incident has resolved would open an alert the resolve, already
+					// sent, can no longer close. Read now: the claim batch can be a drain old.
+					const pageIncidentId = row.incidentId
+					const isStalePage =
+						(row.eventType === "trigger" || row.eventType === "renotify") &&
+						pageIncidentId !== null &&
+						(yield* dbExecute((db) =>
+							db.run(
+								PG.from(AlertIncidents)
+									.select("id")
+									.where(($) => [
+										$.orgId.eq(row.orgId),
+										$.id.eq(pageIncidentId),
+										$.status.neq("open"),
+									])
+									.limit(1),
+							),
+						)).length > 0
+					if (isStalePage) {
+						yield* recordDeliveryFailure(row, claimTime, {
+							message: STALE_PAGE_MESSAGE,
+							kind: "incident",
+							retryable: false,
+						})
+						return
+					}
 					// An escalation since the click cleared the ack and paged again: acking now would silence
 					// that page. Read now, not from the claim batch, so a just-committed escalation counts.
 					const ackIncidentId = row.incidentId
@@ -2933,6 +3020,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					})
 
 					yield* clearDestinationFailureStreak(row.destinationId, claimTime)
+
+					if (
+						destinationRow.type === "pagerduty" &&
+						(row.eventType === "trigger" || row.eventType === "renotify")
+					) {
+						yield* acknowledgeLatePage(row, claimTime)
+					}
 
 					// An acknowledgement is not a notification: it must not restart the reminder clock.
 					if (row.incidentId && row.eventType !== "acknowledge") {
@@ -3517,7 +3611,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							(yield* dbExecute((db) =>
 								db.run(
 									PG.from(AlertIncidents)
-										.select("lastNotifiedAt")
+										.select("lastNotifiedAt", "severity", "peakSeverity")
 										.where(($) => [
 											$.orgId.eq(row.orgId),
 											$.ruleId.eq(row.id),
@@ -3536,6 +3630,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
 							previousNotificationAtMs: priorNotified?.lastNotifiedAt ?? null,
+							previousNotificationSeverity:
+								priorNotified === null
+									? null
+									: decodeAlertSeveritySync(
+											priorNotified.peakSeverity ?? priorNotified.severity,
+										),
 						})
 					}
 
@@ -3922,7 +4022,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												: undefined),
 										})
 										.where(($) => [$.id.eq(openIncident.id), $.status.eq("open")])
-										.returning("id"),
+										.returning("id", "acknowledgedAt"),
 								)
 								// The catch-up is claimed in SQL: an ack that committed after the prefetch keeps
 								// the page owed and unsent, rather than racing it out.
@@ -3949,7 +4049,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										incidentId: openIncident.id,
 										atMs: timestamp,
 									})
-								const result = { updated, isCatchUpSent: caughtUp.length > 0 }
+								const result = {
+									updated,
+									isCatchUpSent: caughtUp.length > 0,
+									// As committed, not as prefetched: an ack may have landed during the check.
+									isAcknowledged: Arr.some(
+										updated,
+										(written) => written.acknowledgedAt !== null,
+									),
+								}
 								if (updated.length === 0) return result
 								// Back down a tier, the higher tier's chain stops paging its on-call.
 								if (lifecycle.transition === "deescalated") {
@@ -4021,6 +4129,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						if (catchUp && !refreshed.isCatchUpSent) {
 							yield* Effect.logInfo(
 								"Held-back page stays owed: the incident was acknowledged",
+							).pipe(
+								Effect.annotateLogs({
+									ruleId: row.id,
+									incidentId: openIncident.id,
+									groupKey,
+								}),
+							)
+						} else if (notifyEvent === "renotify" && !catchUp && refreshed.isAcknowledged) {
+							yield* Effect.logInfo(
+								"Reminder not sent: the incident was acknowledged during this check",
 							).pipe(
 								Effect.annotateLogs({
 									ruleId: row.id,

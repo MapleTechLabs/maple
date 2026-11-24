@@ -292,6 +292,8 @@ export interface AlertLifecycleInput {
 	readonly nowMs: number
 	/** Most recent notification for a resolved incident with the same rule and group. */
 	readonly previousNotificationAtMs?: number | null
+	/** The highest severity the incident behind that notification reached; null when unknown. */
+	readonly previousNotificationSeverity?: AlertSeverity | null
 	/** Set after the host's liveness gate permits recovery, including an expired hold ceiling. */
 	readonly allowNoDataResolution?: boolean
 }
@@ -429,7 +431,14 @@ export const planAlertLifecycle = (input: AlertLifecycleInput): Effect.Effect<Al
 		if (openIncident === null) {
 			if (next === null) return noTransition(state, null)
 			const previousNotificationAtMs = input.previousNotificationAtMs ?? null
+			const previousSeverity = input.previousNotificationSeverity ?? null
+			// A reopen above anything the earlier incident reached is news, not a flap.
+			const worsened =
+				previousSeverity !== null &&
+				next !== previousSeverity &&
+				maxSeverity(next, previousSeverity) === next
 			const flapSuppressed =
+				!worsened &&
 				previousNotificationAtMs != null &&
 				previousNotificationAtMs >= nowMs - policy.renotifyIntervalMinutes * 60_000
 			return {
