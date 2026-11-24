@@ -2610,6 +2610,20 @@ describe("VcsSyncService orchestrator", () => {
 				assert.deepStrictEqual(own.actions, ["push.forced"])
 				const noPullRequest = yield* run({ pullRequests: [] })
 				assert.deepStrictEqual(noPullRequest.actions, ["push.forced"])
+				// Merged before the worker asked, so it was open at the push.
+				const mergedSince = yield* run({
+					pullRequests: [
+						{ ...pullRequest("alice"), state: "merged", mergedAtMs: 1_700_000_060_000 },
+					],
+				})
+				assert.deepStrictEqual(mergedSince.actions, ["push.forced.non_author"])
+				// Closed a day before the push: not the branch's pull request any more.
+				const closedBefore = yield* run({
+					pullRequests: [
+						{ ...pullRequest("alice"), state: "closed", updatedAtMs: 1_699_913_600_000 },
+					],
+				})
+				assert.deepStrictEqual(closedBefore.actions, ["push.forced"])
 				const lookupFailed = yield* run({
 					pullRequestsError: new VcsRateLimitedError({
 						message: "rate limited",

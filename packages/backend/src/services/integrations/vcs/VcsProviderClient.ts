@@ -190,12 +190,13 @@ export interface VcsProviderClient {
 	 * The repository's most recently updated pull requests, newest first,
 	 * normalized. Bounded to `limit` and deliberately NOT paginated: this feeds a
 	 * picker, and the PR that fixes a live issue is recent by construction.
-	 * With `head` (`owner:branch`), only the open pull requests from that branch.
+	 * With `head` (`owner:branch`), only the pull requests from that branch: the open ones, or
+	 * every state with `state: "all"`.
 	 */
 	readonly fetchPullRequests: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly limit: number; readonly head?: string },
+		opts: { readonly limit: number; readonly head?: string; readonly state?: "open" | "all" },
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestSummary>,
 		| VcsProviderError
