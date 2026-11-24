@@ -33,6 +33,8 @@ import { clerkApiFor } from "@maple/auth"
 const FLAGS_TTL_MS = 60_000
 const FLAGS_SHARED_MAX_AGE_MS = 30_000
 const FLAGS_EDGE_BUCKET = "org-feature-flags"
+/** Waits past the cache's 40ms default: a miss costs a Clerk round trip, so a slow read is still cheaper. */
+const FLAGS_SHARED_READ_TIMEOUT_MS = 200
 /** Storage lifetime only; {@link FLAGS_SHARED_MAX_AGE_MS} decides whether an entry is served. */
 const FLAGS_EDGE_TTL_SECONDS = 30
 
@@ -139,6 +141,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 					bucket: FLAGS_EDGE_BUCKET,
 					key: orgId,
 					ttlSeconds: FLAGS_EDGE_TTL_SECONDS,
+					readTimeoutMs: FLAGS_SHARED_READ_TIMEOUT_MS,
 					schema: ObservedFlags,
 				},
 				observe(orgId),
