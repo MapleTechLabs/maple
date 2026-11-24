@@ -64,21 +64,27 @@ export const parseYamlText = (
 export const parseTomlText = (path: string, content: string): Effect.Effect<unknown, LockfileParseError> =>
 	Effect.try({ try: () => parseToml(content), catch: parseError(path, "invalid TOML") })
 
+/** YAML 1.2 caps implicit keys at 1024 chars; pnpm writes longer peer-suffixed keys and reads them back. */
+const TOLERATED_YAML_ERRORS: ReadonlySet<string> = new Set(["KEY_OVER_1024_CHARS"])
+
 /** Every document of a YAML stream, as plain values; a document with errors fails the whole read. */
 export const parseYamlDocuments = (
 	path: string,
 	content: string,
+	options?: Pick<ParseOptions, "uniqueKeys">,
 ): Effect.Effect<ReadonlyArray<unknown>, LockfileParseError> =>
 	Effect.try({
 		try: () => {
-			const parsed = parseAllDocuments(content)
+			const parsed = parseAllDocuments(content, options)
 			return Arr.isArray(parsed) ? parsed : []
 		},
 		catch: parseError(path, "invalid YAML"),
 	}).pipe(
 		Effect.flatMap((docs) => {
 			return Option.match(
-				Arr.findFirst(docs, (doc) => doc.errors.length > 0),
+				Arr.findFirst(docs, (doc) =>
+					Arr.some(doc.errors, (error) => !TOLERATED_YAML_ERRORS.has(error.code)),
+				),
 				{
 					onNone: () =>
 						Effect.try({
@@ -94,7 +100,17 @@ export const parseYamlDocuments = (
 							parseError(
 								path,
 								"invalid YAML",
-							)(broken.errors[0]?.message ?? "unreadable document"),
+							)(
+								Arr.findFirst(
+									broken.errors,
+									(error) => !TOLERATED_YAML_ERRORS.has(error.code),
+								).pipe(
+									Option.match({
+										onNone: () => "unreadable document",
+										onSome: (error) => error.message,
+									}),
+								),
+							),
 						),
 				},
 			)

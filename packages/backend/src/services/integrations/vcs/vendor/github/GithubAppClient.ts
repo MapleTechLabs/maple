@@ -2570,6 +2570,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							token,
 							`${url}?per_page=${PER_PAGE}&page=${page}`,
 						)
+						// A re-run or deleted job's check run is gone: it has no annotations, not a failure.
+						if (isGoneStatus(statusOf(response))) return [[], Option.none<number>()] as const
 						if (!isOk(response))
 							return yield* failure(response, "List check run annotations", "repository")
 						const checkRunAnnotationsJson = yield* parseJson(

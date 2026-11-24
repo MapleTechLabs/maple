@@ -60,7 +60,7 @@ import { RESCAN_AFTER_MS } from "./production"
 
 const PARSE_CACHE_BUCKET = "lockfile-packages"
 /** Part of the parse cache key: bump it when a parser fix should reach lockfiles already cached. */
-const PARSER_VERSION = 3
+const PARSER_VERSION = 4
 const PARSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
 const PLAN_CACHE_BUCKET = "dependency-scan-plan"
 /** Part of the plan cache key: bump it when lockfile or manifest selection changes. */

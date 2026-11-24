@@ -3,6 +3,7 @@ import { isRegistryVersion, pkg, splitNameAt } from "../internal/collect.ts"
 import { decodeJson, stripJsonc } from "../internal/decode.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 
 const Deps = Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
 
@@ -47,7 +48,7 @@ const namesOf = (workspaces: ReadonlyArray<Workspace>): DepNames => ({
 	dev: new Set(Arr.flatMap(workspaces, (w) => Rec.keys(w.devDependencies ?? {}))),
 })
 
-export const parseBunLock = Effect.fn("lockfiles.parseBunLock")(function* (input: LockfileInput) {
+export const parseBunLock = Effect.fn(function* (input: LockfileInput) {
 	const lock = yield* decodeJson(BunLock, input.path, stripJsonc(input.content))
 	const workspaces = Rec.values(lock.workspaces ?? {})
 	const all = namesOf(workspaces)
@@ -82,4 +83,4 @@ export const parseBunLock = Effect.fn("lockfiles.parseBunLock")(function* (input
 	const warnings = skipped > 0 ? [`skipped ${skipped} non-registry packages (git, tarball or local)`] : []
 	const output: ParserOutput = { kind: "bun-lock", packages, warnings }
 	return output
-})
+}, parseSpan("lockfiles.parseBunLock"))
