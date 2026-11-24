@@ -179,6 +179,7 @@ import {
 	queuedDeliveryEventRow,
 	SKIPPED_POST_PREFIX,
 } from "./alert-delivery-rows"
+import { relinkedToAlertsList } from "./delivery/deleted-rule-resolve"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -3128,13 +3129,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							// payload fields (including the CloudEvent) survive every retry.
 							Effect.orElseSucceed(() => ({})),
 						)
+						// An all-clear whose rule went while it was on its way out still carries links
+						// to what is gone; its retry points at the alerts list, as a kept one does.
+						const ruleStillThere =
+							row.eventType !== "resolve"
+								? null
+								: yield* dbExecute((db) =>
+										db.run(
+											PG.from(AlertRules)
+												.select("id")
+												.where(($) => [$.orgId.eq(row.orgId), $.id.eq(row.ruleId)])
+												.limit(1),
+										),
+									)
+						const outlivedRule = ruleStillThere !== null && ruleStillThere.length === 0
 						yield* insertDeliveryEvent(
 							row.orgId,
 							row.incidentId,
 							row.ruleId,
 							row.destinationId,
 							decodeAlertEventTypeSync(row.eventType),
-							retryPayload,
+							outlivedRule
+								? Option.getOrElse(relinkedToAlertsList(retryPayload), () => retryPayload)
+								: retryPayload,
 							failedAt + (yield* computeRetryDelayMs(row.attemptNumber)),
 							row.deliveryKey,
 							row.attemptNumber + 1,
