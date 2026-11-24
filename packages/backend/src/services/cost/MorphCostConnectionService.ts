@@ -8,13 +8,26 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Context, Duration, Effect, Layer, Redacted, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
 import * as MorphUsage from "./providers/morph/morph-usage-api"
+import { addDays, utcToday } from "./sync-plan"
 
 const VALIDATE_TIMEOUT = Duration.seconds(20)
-/** Morph names no account, only its kind: every key of one kind reads one account. */
+/** Closed days two keys must agree on to count as one account. */
+const FINGERPRINT_DAYS = 30
+/** Morph names no account, only its kind: a key's account is told apart by its usage. */
 const ACCOUNT_LABELS = { organization: "Organization", personal: "Personal account" } as const
 
 const refused = (message: string) => new CostConnectionValidationError({ message })
@@ -25,6 +38,20 @@ const toKeyError = (
 	error.kind === "unauthorized"
 		? refused("Morph rejected this key. Create one at morphllm.com/dashboard/api-keys.")
 		: new CostConnectionPersistenceError({ message: "Could not check this key with Morph. Try again." })
+
+const unreachable = () =>
+	Effect.fail(
+		new CostConnectionPersistenceError({
+			message: "Could not reach Morph to check this key. Try again.",
+		}),
+	)
+
+/** Each closed day's spend, in micro-dollars: what two keys of one account answer alike. */
+const fingerprint = (usage: MorphUsage.AccountUsage): string =>
+	Arr.join(
+		Arr.map(usage.days, (day) => `${day.date}=${Math.round(day.spend * 1_000_000)}`),
+		",",
+	)
 
 const toPersistenceError = (error: CostConnectionStoreError) =>
 	new CostConnectionPersistenceError({ message: error.message })
@@ -54,6 +81,55 @@ export class MorphCostConnectionService extends Context.Service<
 		const connections = yield* CostConnectionStore
 		const httpClient = yield* HttpClient.HttpClient
 
+		/**
+		 * A replacement of the same kind must read the account the saved key does: both keys' last
+		 * closed days must match. A saved key Morph no longer takes (revoked in a rotation) leaves
+		 * nothing to compare, so the replacement is taken on trust.
+		 */
+		const sameAccount = Effect.fnUntraced(function* (
+			orgId: OrgId,
+			secret: Redacted.Redacted,
+			account: MorphUsage.AccountUsage["account"],
+		) {
+			const saved = yield* connections.current(orgId, "morph").pipe(Effect.mapError(toPersistenceError))
+			if (
+				Option.isNone(saved) ||
+				saved.value.accountId !== account ||
+				Redacted.value(saved.value.secret) === Redacted.value(secret)
+			) {
+				return
+			}
+			const now = yield* Clock.currentTimeMillis
+			const yesterday = addDays(utcToday(now), -1)
+			const range = { start: addDays(yesterday, 1 - FINGERPRINT_DAYS), end: yesterday }
+			const read = (key: Redacted.Redacted) =>
+				MorphUsage.getUsage(httpClient, key, range).pipe(
+					Effect.timeoutOrElse({
+						duration: VALIDATE_TIMEOUT,
+						orElse: () =>
+							Effect.fail(
+								new MorphUsage.MorphUsageError({
+									message: "Morph timed out",
+									kind: "upstream",
+								}),
+							),
+					}),
+				)
+			const before = yield* read(saved.value.secret).pipe(
+				Effect.asSome,
+				Effect.catchTag("@maple/backend/cost/MorphUsageError", (error) =>
+					error.kind === "unauthorized" ? Effect.succeedNone : Effect.fail(toKeyError(error)),
+				),
+			)
+			if (Option.isNone(before)) return
+			const after = yield* read(secret).pipe(Effect.mapError(toKeyError))
+			if (fingerprint(before.value) !== fingerprint(after)) {
+				return yield* refused(
+					"This key reads another Morph account than the source does. Remove the source first to switch accounts.",
+				)
+			}
+		})
+
 		const set = Effect.fn("MorphCostConnectionService.set")(function* (
 			orgId: OrgId,
 			userId: UserId,
@@ -67,17 +143,10 @@ export class MorphCostConnectionService extends Context.Service<
 			const secret = Redacted.make(apiKey)
 			const usage = yield* MorphUsage.getUsage(httpClient, secret).pipe(
 				Effect.mapError(toKeyError),
-				Effect.timeoutOrElse({
-					duration: VALIDATE_TIMEOUT,
-					orElse: () =>
-						Effect.fail(
-							new CostConnectionPersistenceError({
-								message: "Could not reach Morph to check this key. Try again.",
-							}),
-						),
-				}),
+				Effect.timeoutOrElse({ duration: VALIDATE_TIMEOUT, orElse: unreachable }),
 			)
 			yield* Effect.annotateCurrentSpan("maple.cost.morph.account", usage.account)
+			yield* sameAccount(orgId, secret, usage.account)
 			const account = { accountId: usage.account, accountLabel: ACCOUNT_LABELS[usage.account] }
 			const saved = yield* connections
 				.save({ orgId, userId, provider: "morph", secret, ...account })

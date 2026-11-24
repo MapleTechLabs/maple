@@ -127,4 +127,35 @@ describe("MorphCostConnectionService", () => {
 			}),
 		)
 	})
+
+	it.effect("refuses a replacement that reads another account of the same kind", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeMorph({ days: { "2026-11-10": [{ model: "morph-v3-fast", spend: 4.2 }] } })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* set(KEY)
+				const first = yield* stored(testDb)
+
+				// Another organization: same kind, different spend on the closed days.
+				world.byKey = {
+					[OTHER_KEY]: { days: { "2026-11-10": [{ model: "morph-v3-fast", spend: 1 }] } },
+				}
+				const other = yield* set(OTHER_KEY).pipe(Effect.flip)
+				assert.strictEqual(other._tag, VALIDATION)
+				assert.include(other.message, "another Morph account")
+				assert.strictEqual((yield* stored(testDb))?.secret_ciphertext, first?.secret_ciphertext)
+				assert.include(world.urls, "/api/v1/account/usage?start=2026-10-22&end=2026-11-20")
+
+				// The saved key was revoked in a rotation: nothing to compare, the new key is taken.
+				world.byKey = {
+					[KEY]: { status: 401 },
+					[OTHER_KEY]: { days: { "2026-11-10": [{ model: "morph-v3-fast", spend: 1 }] } },
+				}
+				yield* set(OTHER_KEY)
+				assert.notStrictEqual((yield* stored(testDb))?.secret_ciphertext, first?.secret_ciphertext)
+			}),
+		)
+	})
 })

@@ -20,6 +20,8 @@ export interface FakeMorph {
 	today: string
 	/** Each day's spend per model; a day not listed is zeros. Raw text for a malformed answer. */
 	days: Readonly<Record<string, ReadonlyArray<FakeMorphModel>>> | string
+	/** Another account behind some keys: by key, what differs from the world. */
+	byKey: Readonly<Record<string, Partial<Pick<FakeMorph, "status" | "account" | "days">>>>
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
@@ -29,6 +31,7 @@ export const makeFakeMorph = (overrides: Partial<FakeMorph> = {}): FakeMorph => 
 	account: "organization",
 	today: "2026-11-21",
 	days: {},
+	byKey: {},
 	urls: [],
 	authorizations: [],
 	...overrides,
@@ -43,18 +46,26 @@ const fetchStub =
 		const href = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const url = new URL(href)
 		world.urls.push(`${url.pathname}${url.search}`)
-		world.authorizations.push(new Headers(init?.headers).get("authorization"))
-		if (world.status !== 200) {
-			return Response.json({ error: "Refused" }, { status: world.status })
+		const authorization = new Headers(init?.headers).get("authorization")
+		world.authorizations.push(authorization)
+		const seen = {
+			...world,
+			...Option.getOrElse(
+				Rec.get(world.byKey, Str.replace("Bearer ", "")(authorization ?? "")),
+				() => ({}),
+			),
 		}
-		const days = world.days
+		if (seen.status !== 200) {
+			return Response.json({ error: "Refused" }, { status: seen.status })
+		}
+		const days = seen.days
 		if (typeof days === "string") return new Response(days, { status: 200 })
 		const requestedEnd = url.searchParams.get("end") ?? world.today
 		const end = requestedEnd > world.today ? world.today : requestedEnd
 		const start = url.searchParams.get("start") ?? `${Str.slice(0, 7)(end)}-01`
 		const zeros = { requests: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
 		return Response.json({
-			account: world.account,
+			account: seen.account,
 			currency: "USD",
 			start,
 			end,

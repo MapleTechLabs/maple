@@ -584,7 +584,10 @@ real organization with spend, restated days, and how far back OpenAI serves.
   micro-dollar; usage the plan covers counts 0. Today refreshes about every 30 minutes.
 - Any key works: an organization key reads the organization, a personal key its owner. The answer
   names only the kind (`account`: `organization` or `personal`), which is the account id, so a key
-  of the other kind is refused as `other_account`. An unknown key answers 401.
+  of the other kind is refused as `other_account`. A replacement of the same kind must answer the
+  saved key's last 30 closed days alike, or it is refused as another account; a saved key Morph
+  no longer takes (revoked) leaves nothing to compare, so the replacement is trusted. An unknown key
+  answers 401.
 - Same sync profile as Anthropic and OpenAI: three months back, daily heads, today `estimated`.
 - Rows: `cloud_service` `morph`, the model as the usage type, tokens (input, cached included, plus
   output) as the consumed quantity. Models at $0 (plan-covered) are left out; a negative day is an
