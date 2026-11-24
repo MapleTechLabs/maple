@@ -45,7 +45,6 @@ import {
 	isValidRoleName,
 	memberCountLabel,
 	membersHref,
-	permissionCountLabel,
 	type RoleEntry,
 	rolesHref,
 } from "../roles/roles"
@@ -63,11 +62,7 @@ const backLink = (h: H): Html =>
 
 const metaLine = (role: RoleEntry): string =>
 	Arr.join(
-		[
-			role.isBuiltIn ? "Built-in role, read-only" : "Custom role",
-			memberCountLabel(role.memberCount),
-			`${permissionCountLabel(role.permissions.length)} permissions`,
-		],
+		[role.isBuiltIn ? "Built-in role, read-only" : "Custom role", memberCountLabel(role.memberCount)],
 		" · ",
 	)
 
@@ -123,29 +118,68 @@ const matchesFilter = (model: Model, permission: Policy.Permission): boolean => 
 const compareRole = (model: Model): Option.Option<RoleEntry> =>
 	findRole(entriesOf(model), model.compare.value)
 
+/** How this role differs from the compared one on a permission: only a difference is marked. */
+type CompareDiff = "added" | "removed" | "same"
+
+const diffOf = (model: Model, permission: Policy.Permission, compared: RoleEntry): CompareDiff => {
+	const here = model.permissions.includes(permission)
+	const there = compared.permissions.includes(permission)
+	return here === there ? "same" : here ? "added" : "removed"
+}
+
+const COMPARE_COLUMN = "w-24 shrink-0"
+
 const compareCell = (
 	h: H,
 	model: Model,
 	permission: Policy.Permission,
 	compared: Option.Option<RoleEntry>,
-): Html => {
-	const comparedHolds = Option.exists(compared, (role) => role.permissions.includes(permission))
-	const name = Option.match(compared, { onNone: () => "", onSome: (role) => role.name })
-	if (comparedHolds)
-		return hstack(h, { as: "span", justify: "center", className: "w-20 shrink-0" }, [
-			icon(h, "CheckIcon", { size: 14, className: "text-muted-foreground" }),
-			h.span([h.Class("sr-only")], [`${name} has it`]),
-		])
-	if (model.permissions.includes(permission))
-		return typography(
-			h,
-			{ size: "xs", tone: "primary", weight: "medium", className: "w-20 shrink-0 text-center" },
-			["+ added"],
-		)
-	return typography(h, { size: "xs", tone: "faint", className: "w-20 shrink-0 text-center" }, [
-		h.span([h.AriaHidden(true)], ["—"]),
-		h.span([h.Class("sr-only")], [`${name} doesn't have it`]),
-	])
+): Html =>
+	hstack(
+		h,
+		{ as: "span", justify: "center", className: COMPARE_COLUMN },
+		Option.match(compared, {
+			onNone: () => [],
+			onSome: (role) => {
+				const diff = diffOf(model, permission, role)
+				return diff === "same"
+					? [
+							h.span(
+								[h.Class("sr-only")],
+								[
+									model.permissions.includes(permission)
+										? `${role.name} has it too`
+										: `${role.name} doesn't have it either`,
+								],
+							),
+						]
+					: [
+							badge(h, { variant: diff === "added" ? "ok" : "crit", size: "xs" }, [
+								diff === "added" ? "Added" : "Removed",
+							]),
+							h.span(
+								[h.Class("sr-only")],
+								[
+									diff === "added"
+										? `, ${role.name} doesn't have it`
+										: `, ${role.name} has it`,
+								],
+							),
+						]
+			},
+		}),
+	)
+
+/** "+3 added, 1 removed" against the compared role, or that they match. */
+const compareSummary = (model: Model, role: RoleEntry, compared: RoleEntry): string => {
+	const diffs = Arr.map(listable(role), (permission) => diffOf(model, permission, compared))
+	const added = Arr.filter(diffs, (diff) => diff === "added").length
+	const removed = Arr.filter(diffs, (diff) => diff === "removed").length
+	if (added === 0 && removed === 0) return "Same permissions"
+	return Arr.join(
+		[...(added > 0 ? [`${added} added`] : []), ...(removed > 0 ? [`${removed} removed`] : [])],
+		", ",
+	)
 }
 
 /** "Required by Run raw SQL", or "… and 3 more" when several ticked permissions need it. */
@@ -163,17 +197,12 @@ const permissionRow = (
 	const spec = Policy.permissions[permission]
 	const isChecked = model.permissions.includes(permission)
 	const needers = isEditable(model) ? requiredBy(model.permissions, permission) : []
-	const isAdded = isChecked && !Option.exists(compared, (role) => role.permissions.includes(permission))
 	const inputId = `role-permission-${Str.replaceAll(":", "-")(permission)}`
 	return label(
 		h,
 		{
-			className: cn(
-				"flex items-start gap-3 px-3 py-2.5 font-normal",
-				isAdded
-					? "bg-primary-a1 shadow-accent-start"
-					: "hover:bg-surface-sunken active:bg-surface-sunken",
-			),
+			className:
+				"flex items-start gap-3 px-3 py-3 font-normal hover:bg-surface-sunken active:bg-surface-sunken",
 			attributes: [h.Key(permission), h.Id(Checkbox.labelId(inputId))],
 		},
 		[
@@ -186,17 +215,18 @@ const permissionRow = (
 				className: "mt-0.5",
 			}),
 			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+				// The requirement note sits on the title line, so ticking a permission never moves the rows below.
 				hstack(h, { gap: "2", wrap: true, as: "span" }, [
 					typography(h, { size: "sm", weight: "medium" }, [spec.label]),
-					typography(h, { size: "xs", tone: "subtle", mono: true }, [permission]),
+					typography(h, { size: "xs", tone: "faint", mono: true }, [permission]),
 					...(isSensitive(permission)
 						? [badge(h, { variant: "warn", size: "xs" }, ["Sensitive"])]
 						: []),
+					...(needers.length === 0
+						? []
+						: [badge(h, { variant: "meta", size: "xs" }, [requiredNote(needers)])]),
 				]),
 				typography(h, { size: "xs", tone: "muted" }, [spec.description]),
-				...(needers.length === 0
-					? []
-					: [typography(h, { size: "xs", tone: "subtle" }, [requiredNote(needers)])]),
 			]),
 			compareCell(h, model, permission, compared),
 		],
@@ -236,8 +266,13 @@ const groupPanel = (
 					]),
 					typography(
 						h,
-						{ size: "xs", tone: "muted", className: "w-20 shrink-0 text-center", truncate: true },
-						[Option.match(compared, { onNone: () => "", onSome: (entry) => entry.name })],
+						{
+							size: "xs",
+							tone: "muted",
+							className: cn(COMPARE_COLUMN, "text-center"),
+							truncate: true,
+						},
+						[Option.match(compared, { onNone: () => "", onSome: (entry) => `vs ${entry.name}` })],
 					),
 				],
 			},
@@ -260,6 +295,16 @@ const SHOW_OPTIONS = [
 
 const compareSelect = (h: H, model: Model, role: RoleEntry): Html =>
 	hstack(h, { gap: "2" }, [
+		...Option.match(compareRole(model), {
+			onNone: () => [],
+			onSome: (compared) => [
+				typography(
+					h,
+					{ size: "xs", tone: "muted", numeric: true, attributes: [h.AriaLive("polite")] },
+					[compareSummary(model, role, compared)],
+				),
+			],
+		}),
 		typography(h, { size: "xs", tone: "muted", as: "span", attributes: [h.Id("role-compare-label")] }, [
 			"Compare with",
 		]),

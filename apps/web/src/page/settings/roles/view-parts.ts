@@ -11,14 +11,14 @@ import { PERMISSION_TOTAL, permissionCountLabel } from "./roles"
 
 // Pieces the Roles tab, the role editor and the create dialog draw the same way.
 
-/** "Built-in" with a lock, or "Custom" in the primary tone. */
+/** "Built-in" with a lock, or "Custom": the same quiet chip, since neither is a status. */
 export const roleTypeBadge = <M>(h: HtmlBuilder<M>, isBuiltIn: boolean): Html =>
 	isBuiltIn
-		? badge(h, { variant: "muted", size: "sm" }, [icon(h, "LockIcon"), "Built-in"])
-		: badge(h, { variant: "live", size: "sm" }, ["Custom"])
+		? badge(h, { variant: "meta", size: "sm" }, [icon(h, "LockIcon"), "Built-in"])
+		: badge(h, { variant: "meta", size: "sm" }, ["Custom"])
 
-/** "All 49" or "16 of 49" over a thin meter: a custom role's in primary, a built-in one's muted. */
-export const permissionMeter = <M>(h: HtmlBuilder<M>, count: number, isBuiltIn: boolean): Html =>
+/** "All 49" or "16 of 49" over a thin meter, the same tone for every role. */
+export const permissionMeter = <M>(h: HtmlBuilder<M>, count: number): Html =>
 	hstack(h, { gap: "2.5" }, [
 		typography(h, { size: "xs", tone: "foreground", numeric: true, className: "w-14 shrink-0" }, [
 			permissionCountLabel(count),
@@ -26,7 +26,7 @@ export const permissionMeter = <M>(h: HtmlBuilder<M>, count: number, isBuiltIn: 
 		meter(h, {
 			value: count,
 			max: PERMISSION_TOTAL,
-			tone: isBuiltIn ? "neutral" : "live",
+			tone: "neutral",
 			className: "w-16",
 		}),
 	])

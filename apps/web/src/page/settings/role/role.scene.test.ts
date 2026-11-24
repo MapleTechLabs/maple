@@ -85,12 +85,14 @@ describe("custom role editor", () => {
 		)
 	})
 
-	test("compared with Member, what the role adds is marked", () => {
+	test("compared with Member, only what differs is marked, and the difference is summed up", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(opened(ON_CALL.id)),
 			tabsMounted,
-			expectView(text("+ added")).toExist(),
+			expectView(text("Added")).toExist(),
+			expectView(text(/^\d+ added/u)).toExist(),
+			expectView(text("Member has it too")).toExist(),
 		)
 	})
 

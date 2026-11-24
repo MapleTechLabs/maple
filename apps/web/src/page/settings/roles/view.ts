@@ -137,7 +137,7 @@ const roleRow = (h: H, model: Model, role: RoleEntry): Html => {
 			]),
 			tableCell(h, [roleTypeBadge(h, role.isBuiltIn)], COLUMN.type),
 			tableCell(h, [holdersCell(h, role)], COLUMN.members),
-			tableCell(h, [permissionMeter(h, role.permissions.length, role.isBuiltIn)], COLUMN.permissions),
+			tableCell(h, [permissionMeter(h, role.permissions.length)], COLUMN.permissions),
 			tableCell(h, [
 				h.span(
 					[h.Class(ROW_LINK_LIFT)],
