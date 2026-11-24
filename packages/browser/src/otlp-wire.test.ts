@@ -21,6 +21,9 @@ import { TracerProvider } from "./sdk/tracer"
 import { resourceAttributes } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
+/** A golden as sent by this release: the goldens hold `__SDK_VERSION__` where the version goes. */
+const stamped = (golden: unknown): string => JSON.stringify(golden).replaceAll("__SDK_VERSION__", SDK_VERSION)
+
 type Emit = Parameters<ReturnType<LoggerProvider["getLogger"]>["emit"]>[0]
 
 const resourceFromAttributes = (attributes: Record<string, string>) => ({ attributes })
@@ -124,7 +127,7 @@ function recordSpans(maple: Tracer, fetch: Tracer): void {
 describe("OTLP/JSON on the wire", () => {
 	it("serializes spans exactly as the OpenTelemetry JS SDK did", () => {
 		const body = wirePipeline.spans(RESOURCE, recordSpans)
-		expect(new TextDecoder().decode(body)).toBe(JSON.stringify(goldenTraces))
+		expect(new TextDecoder().decode(body)).toBe(stamped(goldenTraces))
 	})
 
 	it("serializes log records exactly as the OpenTelemetry JS SDK did", async () => {
@@ -149,6 +152,6 @@ describe("OTLP/JSON on the wire", () => {
 				context: ROOT_CONTEXT,
 			})
 		})
-		expect(new TextDecoder().decode(body)).toBe(JSON.stringify(goldenLogs))
+		expect(new TextDecoder().decode(body)).toBe(stamped(goldenLogs))
 	})
 })
