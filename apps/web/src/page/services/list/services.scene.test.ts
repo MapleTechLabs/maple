@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, Option } from "effect"
+import { Result, Schema, Array as Arr, Option, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
@@ -27,6 +27,7 @@ import { PageOutMessage, type PageContext } from "../../contract"
 import {
 	FetchAnomalies,
 	FetchBaseline,
+	FetchCommitSummaries,
 	FetchFacets,
 	FetchOverview,
 	FetchSparklines,
@@ -445,5 +446,98 @@ describe("services list keys", () => {
 				expectView(text(formatThroughput(7, "/s"))).toExist(),
 			)
 		})
+	})
+
+	test("the release facet names deploy commits by subject, newest first, from the table's lookup", () => {
+		const older = Str.repeat(40)("a")
+		const newer = Str.repeat(40)("b")
+		const unresolved = Str.repeat(40)("c")
+		const base = loaded([row("checkout")])
+		const withFacets = pageUpdate(
+			base,
+			Message.CompletedFetchFacets({
+				key: base.facets.key ?? "",
+				result: Result.succeed({
+					environments: [{ name: "production", count: 10 }],
+					namespaces: [],
+					commitShas: [
+						{ name: unresolved, count: 900 },
+						{ name: older, count: 500 },
+						{ name: newer, count: 100 },
+					],
+				}),
+			}),
+		).model
+		const painted = pageUpdate(withFacets, Message.PaintedTable())
+		const lookup = Arr.findFirst(painted.commands ?? [], ({ name }) => name === FetchCommitSummaries.name)
+		expect(Option.getOrUndefined(lookup)?.args).toMatchObject({ shas: `${unresolved},${older},${newer}` })
+		const resolved = pageUpdate(
+			painted.model,
+			Message.CompletedFetchCommitSummaries({
+				key: painted.model.commitSummaries.key ?? "",
+				result: Result.succeed({
+					[older]: { provider: "github", subject: "fix: retry checkout", committedAt: 1000 },
+					[newer]: { provider: "github", subject: "feat: express pay", committedAt: 2000 },
+				}),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(resolved),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			expectView(text("Release")).toExist(),
+			expectView(role("checkbox", { name: "feat: express pay" })).toExist(),
+			expectView(role("checkbox", { name: "fix: retry checkout" })).toExist(),
+			expectView(role("checkbox", { name: "ccccccc" })).toExist(),
+		)
+	})
+
+	test("a table that paints before the facets land waits for them, then sends one commit lookup", () => {
+		const deploySha = Str.repeat(40)("d")
+		const facetSha = Str.repeat(40)("e")
+		const base = windowed()
+		const deployedRow: ServiceRow = {
+			...row("checkout"),
+			commits: [
+				{
+					commitSha: deploySha,
+					spanCount: 100,
+					percentage: 100,
+					errorCount: 0,
+					firstSeen: "2026-10-01 08:00:00",
+				},
+			],
+		}
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchOverview({
+				key: base.overview.key ?? "",
+				result: Result.succeed([deployedRow]),
+			}),
+			Message.CompletedFetchSparklines({ key: base.sparklines.key ?? "", result: Result.succeed({}) }),
+			Message.CompletedFetchAnomalies({ key: base.anomalies.key ?? "", result: Result.succeed([]) }),
+			Message.UpdatedIncidents({ orgId, incidents: [] }),
+		]
+		const ready = Arr.reduce(steps, base, (model, message) => pageUpdate(model, message).model)
+		const painted = pageUpdate(ready, Message.PaintedTable())
+		expect(names(painted.commands)).not.toContain(FetchCommitSummaries.name)
+		const withFacets = pageUpdate(
+			painted.model,
+			Message.CompletedFetchFacets({
+				key: painted.model.facets.key ?? "",
+				result: Result.succeed({
+					environments: [],
+					namespaces: [],
+					commitShas: [{ name: facetSha, count: 5 }],
+				}),
+			}),
+		)
+		const lookups = Arr.filter(
+			withFacets.commands ?? [],
+			({ name }) => name === FetchCommitSummaries.name,
+		)
+		expect(Arr.map(lookups, (command) => command.args)).toMatchObject([
+			{ shas: `${deploySha},${facetSha}` },
+		])
 	})
 })
