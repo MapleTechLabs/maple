@@ -35,6 +35,7 @@ import {
 	ChatIdentities,
 	ChatWorkspaces,
 	EscalationChains,
+	MobileDevices,
 	OnCallOverrides,
 	OnCallSchedules,
 } from "@maple/db/tables"
@@ -288,9 +289,15 @@ export const enabledDestinationIds = (db: MapleDb, orgId: OrgId, ids: ReadonlyAr
 				)
 				.pipe(Effect.map((rows) => new Set(Arr.map(rows, (row) => row.id))))
 
-/** One channel a person is paged on: email, or a direct message to a linked chat account. */
+/** The channel of a page to a member's own phones. */
+export const PUSH_CHANNEL = "push"
+
+const pushRecipient = (userId: UserId): MemberRecipient => ({ userId, channel: PUSH_CHANNEL })
+
+/** One channel a person is paged on: email, their phones, or a direct message to a linked chat account. */
 export type MemberRecipient =
 	| { readonly userId: UserId; readonly channel: "email" }
+	| { readonly userId: UserId; readonly channel: typeof PUSH_CHANNEL }
 	| {
 			readonly userId: UserId
 			readonly channel: ChatConnectorId
@@ -391,7 +398,7 @@ export const loadStepRecipients = (
 			missingUserIds: [],
 		}
 		if (userIds.length === 0) return { ...base, recipients: [] } satisfies StepRecipients
-		const [identities, workspaces] = yield* Effect.all(
+		const [identities, workspaces, phones] = yield* Effect.all(
 			[
 				db.run(
 					PG.from(ChatIdentities)
@@ -403,6 +410,12 @@ export const loadStepRecipients = (
 					PG.from(ChatWorkspaces)
 						.select("connector")
 						.where(($) => [$.orgId.eq(orgId), $.directMessagesEnabled.eq(true)]),
+				),
+				// Who has a phone that can still be pushed: a page there is queued only for them.
+				db.run(
+					PG.from(MobileDevices)
+						.select("userId")
+						.where(($) => [$.orgId.eq(orgId), $.userId.in_(...userIds), $.disabledAt.isNull()]),
 				),
 			],
 			{ concurrency: "unbounded" },
@@ -421,8 +434,10 @@ export const loadStepRecipients = (
 					]
 				: [],
 		)
+		const withPhone = new Set(Arr.map(phones, (row) => row.userId))
 		const recipients = Arr.flatMap(userIds, (userId): ReadonlyArray<MemberRecipient> => [
 			{ userId, channel: "email" },
+			...(withPhone.has(userId) ? [pushRecipient(userId)] : []),
 			...Arr.filter(chatRecipients, (recipient) => recipient.userId === userId),
 		])
 		return { ...base, recipients } satisfies StepRecipients
@@ -464,7 +479,7 @@ export const memberNotificationDedupeKey = (
 ) =>
 	"identityId" in recipient
 		? `${runId}:${pass}:${step}:${recipient.userId}:${recipient.channel}:${recipient.identityId}`
-		: `${runId}:${pass}:${step}:${recipient.userId}:email`
+		: `${runId}:${pass}:${step}:${recipient.userId}:${recipient.channel}`
 
 export type EscalationApplyOutcome =
 	| "sent"

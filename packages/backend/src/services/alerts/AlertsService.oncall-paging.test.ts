@@ -50,6 +50,7 @@ import {
 	tracesRow,
 	alertServices,
 } from "./alerts-service-test-support"
+import type { MemberPagePush } from "@maple/backend/services/push/MobilePushService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -206,6 +207,9 @@ const layerFor = (
 		readonly directory?: Array<OrgMember>
 		readonly email?: (typeof EmailService)["Service"]
 		readonly deliveryTimeoutMs?: number
+		/** Records the pages pushed to members' phones; `memberPagesFail` lets none of them land. */
+		readonly memberPages?: Array<MemberPagePush>
+		readonly memberPagesFail?: boolean
 	} = {},
 ) => {
 	const directory = options.directory ?? [...MEMBERS]
@@ -218,6 +222,10 @@ const layerFor = (
 			{
 				fetch: okFetch,
 				...(timeoutMs === undefined ? undefined : { deliveryTimeoutMs: () => timeoutMs }),
+				...(options.memberPages === undefined ? undefined : { memberPages: options.memberPages }),
+				...(options.memberPagesFail === undefined
+					? undefined
+					: { memberPagesFail: options.memberPagesFail }),
 			},
 			options.email ?? stubEmailService(emails),
 			ChatAlertPoster.layer.pipe(
@@ -744,6 +752,83 @@ describe("escalation pages the on-call", () => {
 					{ type: "on_call_gap", detail: null },
 				])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { directory })))
+		})
+	})
+
+	/** A phone `userId` registered the Maple app on; `disabled` marks its token dead. */
+	const registerPhone = (testDb: TestDb, orgId: OrgId, userId: string, disabled = false) =>
+		Effect.promise(() =>
+			executeSql(
+				testDb,
+				`insert into mobile_devices
+				   (id, org_id, user_id, platform, token, environment, bundle_id, preferences,
+				    disabled_at, last_seen_at, created_at, updated_at)
+				 values (gen_random_uuid()::text, $1, $2, 'ios', md5(random()::text), 'production',
+				         'dev.maple.app', '{}'::jsonb, $3, now(), now(), now())`,
+				[orgId, userId, disabled ? new Date(NOW).toISOString() : null],
+			),
+		)
+
+	it.effect("pages the on-call person's phone as well, and only a phone that can still be pushed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const memberPages: Array<MemberPagePush> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Step 2 pages Ben (on call today) and Chen; Ben has the app, Chen's token is dead.
+				const { alerts, orgId } = yield* setup("org_page_phone", testDb, {
+					secondStep: [
+						{ type: "user", userId: ben },
+						{ type: "user", userId: chen },
+					],
+				})
+				yield* registerPhone(testDb, orgId, ben)
+				yield* registerPhone(testDb, orgId, chen, true)
+				yield* ticks(alerts, 10)
+
+				assert.deepStrictEqual(
+					Arr.map(memberPages, (page) => [page.userId, page.title]),
+					[[ben, "You are paged · Checkout error rate"]],
+				)
+				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
+				assert.deepStrictEqual(
+					Arr.map(pushRows, (row) => [row.user_id, row.status]),
+					[[ben, "sent"]],
+				)
+				// The email still goes to both: the phone is one more way in, not a replacement.
+				assert.sameMembers(
+					Arr.map(emails, (email) => email.to),
+					["ben@acme.test", "chen@acme.test"],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { memberPages })))
+		})
+	})
+
+	it.effect("settles a phone page nobody's phone took as skipped, with why", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const memberPages: Array<MemberPagePush> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_phone_gone", testDb, {
+					secondStep: [{ type: "user", userId: ben }],
+				})
+				yield* registerPhone(testDb, orgId, ben)
+				yield* ticks(alerts, 10)
+				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
+				assert.deepStrictEqual(
+					Arr.map(pushRows, (row) => [row.status, row.error_message]),
+					[["skipped", "No phone is registered for this member"]],
+				)
+			}).pipe(
+				Effect.provide(layerFor(testDb, state, emails, chat, { memberPages, memberPagesFail: true })),
+			)
 		})
 	})
 

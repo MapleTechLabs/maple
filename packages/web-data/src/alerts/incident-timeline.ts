@@ -288,11 +288,14 @@ export interface IncidentPage {
 	readonly errorMessage: string | null
 }
 
-/** "email", "Slack DM", "Discord DM". */
+/** "email", "phone", "Slack DM", "Discord DM". */
 export function pageChannelLabel(channel: string): string {
 	switch (channel) {
 		case "email":
 			return "email"
+		// A push to the member's own phones.
+		case "push":
+			return "phone"
 		case "slack":
 			return "Slack DM"
 		case "discord":

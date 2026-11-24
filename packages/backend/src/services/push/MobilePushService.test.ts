@@ -462,6 +462,111 @@ describe("MobilePushService.notifyIncident", () => {
 	})
 })
 
+describe("MobilePushService.pageMember", () => {
+	const OTHER = Schema.decodeSync(UserId)("user_push_other")
+	const page = {
+		orgId: ORG,
+		userId: USER,
+		incidentId: "00000000-0000-4000-8000-0000000000a1",
+		ruleId: "00000000-0000-4000-8000-0000000000b1",
+		title: "You are paged · Checkout error rate",
+		body: "Critical incident, unacknowledged. Open it to acknowledge.",
+		linkUrl: "https://app.maple.test/alerts/incidents/x",
+		collapseId: "page:x",
+	}
+	// Everything off: what the org's incidents tell this person is their choice, a page is not.
+	const muted = {
+		criticalIncidents: false,
+		warningIncidents: false,
+		resolvedIncidents: false,
+		newErrorIssues: false,
+		anomalies: false,
+	}
+
+	it.effect("reaches the member's own phones whatever their preferences, and nobody else's", () => {
+		const sent: Array<ApnsPush> = []
+		const deviceWrites: Array<string> = []
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			const summary = yield* push.pageMember(page)
+			assert.deepStrictEqual(summary, { sent: 1, failed: 0, unregistered: 0, skipped: 0 })
+			assert.deepStrictEqual(
+				Arr.map(sent, (one) => [one.deviceToken, one.interruptionLevel, one.alert?.title]),
+				[["token-1", "time-sensitive", page.title]],
+			)
+			// Opens the incident by its public id, as an incident push does.
+			assert.match(String(sent[0]?.data?.maple_incident_id), /^inc_/)
+			assert.deepStrictEqual(deviceWrites, [`pushed:${ORG}:${deviceId(1)}`])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[
+						device(1, { preferences: muted }),
+						device(2, { userId: OTHER }),
+						device(3, { enabled: false }),
+					],
+					() => ({ outcome: "sent", apnsId: null }),
+					sent,
+					deviceWrites,
+				),
+			),
+		)
+	})
+
+	it.effect("switches off a phone Apple says is gone, and reports that nothing landed", () => {
+		const deviceWrites: Array<string> = []
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			const summary = yield* push.pageMember(page)
+			assert.deepStrictEqual(summary, { sent: 0, failed: 0, unregistered: 1, skipped: 0 })
+			assert.deepStrictEqual(deviceWrites, [
+				`disable:${ORG}:${deviceId(1)}:Unregistered`,
+				`pushed:${ORG}:`,
+			])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[device(1)],
+					() => ({ outcome: "unregistered", reason: "Unregistered" }),
+					[],
+					deviceWrites,
+				),
+			),
+		)
+	})
+
+	it.effect("sends nothing for a member without a phone, or without APNs credentials", () => {
+		const sent: Array<ApnsPush> = []
+		const none = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
+		const withoutPhone = Effect.gen(function* () {
+			const push = yield* MobilePushService
+			assert.deepStrictEqual(yield* push.pageMember(page), none)
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					[device(2, { userId: OTHER })],
+					() => ({ outcome: "sent", apnsId: null }),
+					sent,
+					[],
+				),
+			),
+		)
+		const unconfigured = Effect.gen(function* () {
+			const push = yield* MobilePushService
+			assert.deepStrictEqual(yield* push.pageMember(page), none)
+		}).pipe(
+			Effect.provide(
+				makeLayer([device(1)], () => ({ outcome: "sent", apnsId: null }), sent, [], false),
+			),
+		)
+		return Effect.gen(function* () {
+			yield* withoutPhone
+			yield* unconfigured
+			assert.lengthOf(sent, 0)
+		})
+	})
+})
+
 describe("buildLiveActivitySeries", () => {
 	it("puts the checks oldest-first and appends the value that fired this push", () => {
 		// `listRuleChecks` returns newest first, and the check that just fired is
