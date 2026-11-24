@@ -22,6 +22,8 @@ struct TabRootHeader: View {
 				OrganizationSwitcherButton()
 				Spacer(minLength: 8)
 				EnvironmentPickerView()
+				AccountButton()
+					.padding(.trailing, -6)
 			}
 			.frame(height: 52)
 			VStack(alignment: .leading, spacing: 6) {
