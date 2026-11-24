@@ -4,6 +4,8 @@ import {
 	commitsKey,
 	healthSummary,
 	perSecondRates,
+	releaseDescription,
+	releaseIcon,
 	releaseLabeler,
 	releaseOptions,
 	serviceHealthRowKey,
@@ -118,8 +120,8 @@ describe("commitsKey", () => {
 
 describe("release facet", () => {
 	const summaries = {
-		[sha("a")]: { subject: "fix: older", committedAt: 1000 },
-		[sha("b")]: { subject: "feat: newer", committedAt: 2000 },
+		[sha("a")]: { provider: "github", subject: "fix: older", committedAt: 1000 },
+		[sha("b")]: { provider: "github", subject: "feat: newer", committedAt: 2000 },
 	}
 
 	it("lists resolved commits newest first, then the unresolved ones in span-count order", () => {
@@ -146,14 +148,36 @@ describe("release facet", () => {
 
 	it("adds the short sha when two commits share a subject", () => {
 		const label = releaseLabeler({
-			[sha("a")]: { subject: "chore: bump deps", committedAt: 1000 },
-			[sha("b")]: { subject: "chore: bump deps", committedAt: 2000 },
-			[sha("c")]: { subject: "feat: unique", committedAt: 3000 },
+			[sha("a")]: { provider: "github", subject: "chore: bump deps", committedAt: 1000 },
+			[sha("b")]: { provider: "github", subject: "chore: bump deps", committedAt: 2000 },
+			[sha("c")]: { provider: "github", subject: "feat: unique", committedAt: 3000 },
 		})
 		expect(Arr.map([sha("a"), sha("b"), sha("c")], label)).toEqual([
 			"chore: bump deps · aaaaaaa",
 			"chore: bump deps · bbbbbbb",
 			"feat: unique",
 		])
+	})
+})
+
+describe("release marks", () => {
+	const summaries = {
+		[sha("a")]: { provider: "github", subject: "feat: express pay", committedAt: 1000 },
+		[sha("b")]: { provider: "gitlab", subject: "fix: from elsewhere", committedAt: 2000 },
+	}
+
+	it("puts the GitHub logo on a matched commit and a plain commit mark on anything else", () => {
+		expect(
+			Arr.map([sha("a"), sha("b"), sha("c"), "v1.2.3"], (value) => releaseIcon(value, summaries)),
+		).toEqual(["GithubIcon", "CodeCommitIcon", "CodeCommitIcon", "CodeCommitIcon"])
+	})
+
+	it("says where a commit matched, and that a sha matched nothing only once the lookup settled", () => {
+		expect(releaseDescription(sha("a"), summaries, true)).toBe("aaaaaaa · feat: express pay (GitHub)")
+		expect(releaseDescription(sha("c"), summaries, false)).toBe(sha("c"))
+		expect(releaseDescription(sha("c"), summaries, true)).toBe(
+			`${sha("c")} · not found in a connected repository`,
+		)
+		expect(releaseDescription("v1.2.3", summaries, true)).toBe("v1.2.3")
 	})
 })

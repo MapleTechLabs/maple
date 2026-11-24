@@ -7,8 +7,11 @@ import {
 	type ServiceHealth,
 } from "../../kit/service-health-rollup"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Array as Arr, String as Str, Option, Order, Record as Rec } from "effect"
+import { Array as Arr, String as Str, Option, Order, Record as Rec, Schema } from "effect"
 import { AsyncData } from "foldkit"
+import type { IconName } from "@maple/views/ui/icon"
+import { VcsProviderId } from "@maple/domain/vcs"
+import { PROVIDERS } from "../../kit/providers"
 import type { ServicesSearch } from "../../../route/search"
 import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
 import { isResolvableSha } from "../../kit/commit-card"
@@ -224,6 +227,36 @@ export const commitsKey = (
 		isResolvableSha,
 	)
 	return Arr.join(wanted.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS), ",")
+}
+
+const isVcsProvider = Schema.is(VcsProviderId)
+
+/**
+ * A release row's mark: its repository provider's logo once matched, else a plain commit (a sha in
+ * no connected repository, or a version that is not a sha).
+ */
+export const releaseIcon = (value: string, summaries: Readonly<Record<string, CommitSummary>>): IconName => {
+	const provider = summaries[value]?.provider
+	return isVcsProvider(provider) ? PROVIDERS[provider].icon : "CodeCommitIcon"
+}
+
+/**
+ * A release row's hover text: `sha · subject (GitHub)` once matched; a full sha the settled lookup
+ * did not find says so, so it doesn't read as still loading.
+ */
+export const releaseDescription = (
+	value: string,
+	summaries: Readonly<Record<string, CommitSummary>>,
+	isLookupSettled: boolean,
+): string => {
+	const summary = summaries[value]
+	if (summary !== undefined) {
+		const provider = isVcsProvider(summary.provider) ? PROVIDERS[summary.provider].name : summary.provider
+		return `${Str.slice(0, 7)(value)} · ${summary.subject} (${provider})`
+	}
+	return isLookupSettled && isResolvableSha(value)
+		? `${value} · not found in a connected repository`
+		: value
 }
 
 /** The resolved commits by sha; empty until the lookup lands, and when it fails. */

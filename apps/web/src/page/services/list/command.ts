@@ -147,7 +147,11 @@ export const FetchCommitSummaries = Command.define("FetchCommitSummaries", {
 			return Rec.fromEntries(
 				Arr.map(response.commits, (commit) => [
 					commit.sha,
-					{ subject: firstLine(commit.message), committedAt: commit.committedAt },
+					{
+						provider: commit.provider,
+						subject: firstLine(commit.message),
+						committedAt: commit.committedAt,
+					},
 				]),
 			)
 		}).pipe(settleTo((result) => Message.CompletedFetchCommitSummaries({ key, result }))),

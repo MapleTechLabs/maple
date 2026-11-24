@@ -1,4 +1,4 @@
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -17,6 +17,8 @@ import {
 	hasActiveServiceFilters,
 	commitSummariesOf,
 	type HealthSummary,
+	releaseDescription,
+	releaseIcon,
 	releaseLabeler,
 	releaseOptions,
 } from "./derive"
@@ -33,7 +35,10 @@ const facetSection = (
 	options: ServicesFacets[Facet],
 	excluded: ReadonlyArray<string> | undefined,
 	isSearchable = false,
-	labels: Pick<FilterSectionConfig<Message>, "getOptionLabel" | "getOptionDescription"> = {},
+	labels: Pick<
+		FilterSectionConfig<Message>,
+		"getOptionLabel" | "getOptionDescription" | "getOptionIcon"
+	> = {},
 ) =>
 	filterSection(h, {
 		title,
@@ -52,6 +57,7 @@ const facetSection = (
 /** The deploy commits by subject, newest first once resolved; the full sha stays the filter value. */
 const releaseSection = (h: HtmlBuilder<Message>, model: Model, facets: ServicesFacets) => {
 	const summaries = commitSummariesOf(model)
+	const isLookupSettled = AsyncData.isSuccess(model.commitSummaries.data)
 	return facetSection(
 		h,
 		model,
@@ -62,10 +68,8 @@ const releaseSection = (h: HtmlBuilder<Message>, model: Model, facets: ServicesF
 		true,
 		{
 			getOptionLabel: releaseLabeler(summaries),
-			getOptionDescription: (sha) => {
-				const subject = summaries[sha]?.subject
-				return subject === undefined ? sha : `${Str.slice(0, 7)(sha)} · ${subject}`
-			},
+			getOptionIcon: (value) => releaseIcon(value, summaries),
+			getOptionDescription: (value) => releaseDescription(value, summaries, isLookupSettled),
 		},
 	)
 }

@@ -79,7 +79,12 @@ export const RELEASE_SUMMARIES: Readonly<Record<string, CommitSummary>> = Rec.fr
 	Arr.flatMap(RELEASES, (release) =>
 		release.subject === ""
 			? []
-			: [[release.sha, { subject: release.subject, committedAt: release.committedAt }]],
+			: [
+					[
+						release.sha,
+						{ provider: "github", subject: release.subject, committedAt: release.committedAt },
+					],
+				],
 	),
 )
 

@@ -476,8 +476,8 @@ describe("services list keys", () => {
 			Message.CompletedFetchCommitSummaries({
 				key: painted.model.commitSummaries.key ?? "",
 				result: Result.succeed({
-					[older]: { subject: "fix: retry checkout", committedAt: 1000 },
-					[newer]: { subject: "feat: express pay", committedAt: 2000 },
+					[older]: { provider: "github", subject: "fix: retry checkout", committedAt: 1000 },
+					[newer]: { provider: "github", subject: "feat: express pay", committedAt: 2000 },
 				}),
 			}),
 		).model

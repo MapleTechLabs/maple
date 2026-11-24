@@ -54,8 +54,12 @@ export const Sparklines = Schema.Record(
 )
 export type Sparklines = typeof Sparklines.Type
 
-/** A resolved commit: its subject and when it was committed (epoch ms). */
-export const CommitSummary = Schema.Struct({ subject: Schema.String, committedAt: Schema.Number })
+/** A resolved commit: its provider (`github`), subject and when it was committed (epoch ms). */
+export const CommitSummary = Schema.Struct({
+	provider: Schema.String,
+	subject: Schema.String,
+	committedAt: Schema.Number,
+})
 export type CommitSummary = typeof CommitSummary.Type
 
 const FacetCount = Schema.Struct({ name: Schema.String, count: Schema.Number })
