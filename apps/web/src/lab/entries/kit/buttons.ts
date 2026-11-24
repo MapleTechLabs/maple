@@ -19,6 +19,7 @@ import { textLink } from "@maple/views/ui/text-link"
 import { typography } from "@maple/views/ui/typography"
 import * as Toggle from "@maple/views/ui/toggle"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { saveBar } from "../../../page/kit/save-bar"
 import { defineLab } from "../../define"
 import { kitPage, kitRow, kitSection } from "../../kit/kit-layout"
 
@@ -403,17 +404,31 @@ const cardButtons = (h: HtmlBuilder<Message>): Html =>
 /** The kit action bar in its three uses; `static` so the lab shows them in place, not stuck. */
 const actionBars = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(h, "Unsaved changes (settings save bar)", [
-		actionBar(h, {
-			label: "Unsaved changes",
-			className: "static w-full",
-			leading: [
-				statusDot(h, { tone: "live" }),
-				typography(h, { size: "sm", tone: "foreground" }, ["Unsaved changes"]),
-			],
-			actions: [
-				button(h, { variant: "ghost", size: "sm" }, ["Discard"]),
-				button(h, { size: "sm" }, ["Save"]),
-			],
+		...saveBar(h, {
+			isDirty: true,
+			className: "static",
+			onDiscard: Message.ClickedRefresh(),
+			onSave: Message.ClickedRefresh(),
+		}),
+	]),
+	kitRow(h, "Save bar, with context", [
+		...saveBar(h, {
+			isDirty: true,
+			className: "static",
+			changeCount: 2,
+			context: "Applies to 3 members on their next request.",
+			saveLabel: "Save role",
+			onDiscard: Message.ClickedRefresh(),
+			onSave: Message.ClickedRefresh(),
+		}),
+	]),
+	kitRow(h, "Save bar, saving", [
+		...saveBar(h, {
+			isDirty: true,
+			isPending: true,
+			className: "static",
+			onDiscard: Message.ClickedRefresh(),
+			onSave: Message.ClickedRefresh(),
 		}),
 	]),
 	kitRow(h, "Editor, with a notice", [

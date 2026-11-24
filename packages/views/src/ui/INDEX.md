@@ -317,7 +317,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/row-warning.ts` `rowWarning`, `rowWarnings`: A list row's warning: a small glyph and a few words in the warning tone, under the row's name.
 - `apps/web/src/page/kit/ruled-section.ts` `ruledSection`: A section set off from the content above it by a full-width rule, its children stacked 12px apart.
-- `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
+- `apps/web/src/page/kit/save-bar.ts` `saveBar`: Floats while a settings tab has unsaved edits; Mod+S presses its Save (the shell's `globalShortcuts`).
 - `apps/web/src/page/kit/saved-views/index.ts` `loadCommand`, `pageStep`: Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`, `/metrics`), with its menu and its save, rename and delete dialogs.
 - `apps/web/src/page/kit/saved-views/model.ts` `activeViewOf`, `remembered`: The Views control an explorer embeds (`/logs`, `/traces`, `/metrics`): its menu, the views it lists, and the save, rename and delete dialogs.
 - `apps/web/src/page/kit/saved-views/state.ts` `searchParamsOf`, `readSearch`, `memoHref`: What a saved view stores and how it is read back: the explorer's URL search params, and nothing that is not in the URL.

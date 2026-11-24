@@ -27,6 +27,13 @@ describe("global shortcuts", () => {
 		expect(step(opened, Message.PressedPaletteShortcut()).model.palette).toBe(opened.palette)
 	})
 
+	test("Mod+S presses the page's save bar and changes nothing in the shell", () => {
+		const model = signedIn()
+		const pressed = step(model, Message.PressedSaveShortcut())
+		expect(commandNames(pressed)).toEqual(["PressSaveBar"])
+		expect(pressed.model).toBe(model)
+	})
+
 	test("Escape unmounts the palette and starts the services read's idle TTL", () => {
 		const opened = step(signedIn(), Message.ClickedSearch()).model
 		const closed = step(
