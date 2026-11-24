@@ -1,42 +1,41 @@
-// A fake Morph for tests: the member budgets endpoint answered from a mutable world, every call
-// recorded. Change `month` and `members` between pulls to move the month-to-date spend on.
-import { Array as Arr, Layer } from "effect"
+// A fake Morph for tests: the usage endpoint answered from a mutable world, every call recorded.
+import { Array as Arr, Layer, Option, Record as Rec, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
 import { CostConnectionStore } from "../../CostConnectionStore"
+import { addDays } from "../../sync-plan"
 import { fakeCostEnvConfig } from "../fake-cost-env"
 
-export interface FakeMorphMember {
-	readonly userId: string
-	/** Dollars as Morph writes them, `"12.34"`. */
-	readonly spent: string
-	readonly email?: string | null
+export interface FakeMorphModel {
+	readonly model: string
+	readonly spend: number
+	readonly includedInPlan?: boolean
 }
 
 export interface FakeMorph {
 	status: number
-	month: string
-	/** The organization's members, or raw text for a malformed answer. */
-	members: ReadonlyArray<FakeMorphMember> | string
-	/** The next answer waits for this, with the members as they were when it was asked. */
-	holdNext: Promise<void> | undefined
-	/** Called as each request arrives, before any hold. */
-	onRequest: (() => void) | undefined
+	account: "organization" | "personal"
+	/** Today, as Morph sees it: the default end, and the cap on any end. */
+	today: string
+	/** Each day's spend per model; a day not listed is zeros. Raw text for a malformed answer. */
+	days: Readonly<Record<string, ReadonlyArray<FakeMorphModel>>> | string
 	readonly urls: Array<string>
 	readonly authorizations: Array<string | null>
 }
 
 export const makeFakeMorph = (overrides: Partial<FakeMorph> = {}): FakeMorph => ({
 	status: 200,
-	month: "2026-11",
-	members: [],
-	holdNext: undefined,
-	onRequest: undefined,
+	account: "organization",
+	today: "2026-11-21",
+	days: {},
 	urls: [],
 	authorizations: [],
 	...overrides,
 })
+
+const datesFrom = (start: string, end: string): ReadonlyArray<string> =>
+	start > end ? [] : [start, ...datesFrom(addDays(start, 1), end)]
 
 const fetchStub =
 	(world: FakeMorph): typeof fetch =>
@@ -46,28 +45,38 @@ const fetchStub =
 		world.urls.push(`${url.pathname}${url.search}`)
 		world.authorizations.push(new Headers(init?.headers).get("authorization"))
 		if (world.status !== 200) {
-			return Response.json(
-				{ error: { message: "Refused", type: "authentication_error" } },
-				{ status: world.status },
-			)
+			return Response.json({ error: "Refused" }, { status: world.status })
 		}
-		world.onRequest?.()
-		const members = world.members
-		const month = world.month
-		const hold = world.holdNext
-		world.holdNext = undefined
-		if (hold !== undefined) await hold
-		if (typeof members === "string") return new Response(members, { status: 200 })
+		const days = world.days
+		if (typeof days === "string") return new Response(days, { status: 200 })
+		const requestedEnd = url.searchParams.get("end") ?? world.today
+		const end = requestedEnd > world.today ? world.today : requestedEnd
+		const start = url.searchParams.get("start") ?? `${Str.slice(0, 7)(end)}-01`
+		const zeros = { requests: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }
 		return Response.json({
-			month,
-			members: Arr.map(members, (member) => ({
-				userId: member.userId,
-				monthlyLimit: null,
-				spent: member.spent,
-				paused: false,
-				email: member.email ?? `${member.userId}@example.com`,
-				role: "member",
-			})),
+			account: world.account,
+			currency: "USD",
+			start,
+			end,
+			total: { spend: 0, ...zeros },
+			days: Arr.map(datesFrom(start, end), (date) => {
+				const models = Option.getOrElse(Rec.get(days, date), () => [])
+				return {
+					date,
+					spend: Arr.reduce(models, 0, (sum, model) => sum + model.spend),
+					...zeros,
+					models: Arr.map(models, (model) => ({
+						model: model.model,
+						includedInPlan: model.includedInPlan ?? false,
+						spend: model.spend,
+						requests: 3,
+						inputTokens: 1000,
+						cachedInputTokens: 400,
+						outputTokens: 50,
+					})),
+				}
+			}),
+			models: [],
 		})
 	}
 

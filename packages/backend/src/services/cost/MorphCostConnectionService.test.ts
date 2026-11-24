@@ -1,11 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { DateTime, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { DateTime, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { MorphCostConnectionService } from "./MorphCostConnectionService"
 import { type FakeMorph, fakeMorphDeps, makeFakeMorph } from "./providers/morph/fake-morph"
-import { MorphCostProvider } from "./providers/morph/MorphCostProvider"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -21,14 +20,13 @@ const PERSISTENCE = "@maple/http/cost-connections/CostConnectionPersistenceError
 const run = <A, E>(
 	testDb: TestDb,
 	world: FakeMorph,
-	effect: Effect.Effect<A, E, MorphCostConnectionService | MorphCostProvider>,
+	effect: Effect.Effect<A, E, MorphCostConnectionService>,
 ) =>
 	Effect.andThen(TestClock.setTime(NOW), effect).pipe(
 		Effect.provide(
-			Layer.mergeAll(
-				Layer.effect(MorphCostConnectionService, MorphCostConnectionService.make),
-				Layer.effect(MorphCostProvider, MorphCostProvider.make),
-			).pipe(Layer.provide(fakeMorphDeps(testDb, world))),
+			Layer.effect(MorphCostConnectionService, MorphCostConnectionService.make).pipe(
+				Layer.provide(fakeMorphDeps(testDb, world)),
+			),
 		),
 	)
 
@@ -45,14 +43,14 @@ const stored = (testDb: TestDb) =>
 describe("MorphCostConnectionService", () => {
 	it.effect("checks the key with Morph, seals it and makes the cost source", () => {
 		const testDb = createTestDb(trackedDbs)
-		const world = makeFakeMorph({ members: [{ userId: "user_dev", spent: "1.00" }] })
+		const world = makeFakeMorph()
 		return run(
 			testDb,
 			world,
 			Effect.gen(function* () {
 				const saved = yield* set(`  ${KEY}  `)
 				assert.deepStrictEqual(saved, { accountId: "organization", accountLabel: "Organization" })
-				assert.deepStrictEqual(world.urls, ["/api/v1/org/members/budgets"])
+				assert.deepStrictEqual(world.urls, ["/api/v1/account/usage"])
 				assert.deepStrictEqual(world.authorizations, [`Bearer ${KEY}`])
 				const row = yield* stored(testDb)
 				assert.isDefined(row)
@@ -68,45 +66,19 @@ describe("MorphCostConnectionService", () => {
 		)
 	})
 
-	it.effect(
-		"keeps the reading the key check took, so a month ending before the first sync is not lost",
-		() => {
-			const testDb = createTestDb(trackedDbs)
-			const world = makeFakeMorph({
-				month: "2026-11",
-				members: [{ userId: "user_dev", spent: "300.00" }],
-			})
-			return run(
-				testDb,
-				world,
-				Effect.gen(function* () {
-					yield* TestClock.setTime(
-						DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-30T23:58:00Z")),
-					)
-					yield* set(KEY)
-					const ref = (yield* stored(testDb))?.id ?? ""
-					// The first sync runs after Morph rolled over to December.
-					yield* TestClock.setTime(
-						DateTime.toEpochMillis(DateTime.makeUnsafe("2026-12-01T00:05:00Z")),
-					)
-					world.month = "2026-12"
-					world.members = [{ userId: "user_dev", spent: "0.00" }]
-					const pulled = yield* MorphCostProvider.use((provider) =>
-						provider.pull(
-							{ orgId: ORG, connectionRef: ref },
-							{ startDay: "2026-11-01", endDay: "2026-12-01" },
-						),
-					)
-					const november = Arr.reduce(
-						Arr.filter(pulled.rows, (row) => row.day < "2026-12-01"),
-						0,
-						(total, row) => total + row.billedCost,
-					)
-					assert.strictEqual(november, 300)
-				}),
-			)
-		},
-	)
+	it.effect("takes a personal key, as the personal account it reads", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeMorph({ account: "personal" })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const saved = yield* set(KEY)
+				assert.deepStrictEqual(saved, { accountId: "personal", accountLabel: "Personal account" })
+				assert.strictEqual((yield* stored(testDb))?.account_id, "personal")
+			}),
+		)
+	})
 
 	it.effect("refuses text that is not a key without calling Morph, and says why Morph refused one", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -124,11 +96,6 @@ describe("MorphCostConnectionService", () => {
 				assert.strictEqual(rejected._tag, VALIDATION)
 				assert.include(rejected.message, "Morph rejected this key")
 
-				world.status = 403
-				const personal = yield* set(KEY).pipe(Effect.flip)
-				assert.strictEqual(personal._tag, VALIDATION)
-				assert.include(personal.message, "owned by one of its admins")
-
 				// An answer Maple did not expect is no verdict on the key.
 				world.status = 400
 				const down = yield* set(KEY).pipe(Effect.flip)
@@ -138,46 +105,25 @@ describe("MorphCostConnectionService", () => {
 		)
 	})
 
-	it.effect("replaces the key of the same organization, and refuses another organization's", () => {
+	it.effect("replaces the key of the same account, and refuses a key of the other kind", () => {
 		const testDb = createTestDb(trackedDbs)
-		const world = makeFakeMorph({ members: [{ userId: "user_dev", spent: "1.00" }] })
+		const world = makeFakeMorph()
 		return run(
 			testDb,
 			world,
 			Effect.gen(function* () {
 				yield* set(KEY)
 				const first = yield* stored(testDb)
-				yield* MorphCostProvider.use((provider) =>
-					provider.pull(
-						{ orgId: ORG, connectionRef: first?.id ?? "" },
-						{ startDay: "2026-11-01", endDay: "2026-11-21" },
-					),
-				)
-
-				// The same organization, a member more.
-				world.members = [
-					{ userId: "user_dev", spent: "1.00" },
-					{ userId: "user_ops", spent: "0.00" },
-					{ userId: "user_qa", spent: "0.00" },
-				]
 				yield* set(OTHER_KEY)
-				assert.strictEqual((yield* stored(testDb))?.id, first?.id)
+				const replaced = yield* stored(testDb)
+				assert.strictEqual(replaced?.id, first?.id)
+				assert.notStrictEqual(replaced?.secret_ciphertext, first?.secret_ciphertext)
 
-				// The organization shrinks to one member, and a sync sees it: rotating its key still works.
-				world.members = [{ userId: "user_ops", spent: "0.50" }]
-				yield* TestClock.setTime(NOW + 60 * 60_000)
-				yield* MorphCostProvider.use((provider) =>
-					provider.pull(
-						{ orgId: ORG, connectionRef: first?.id ?? "" },
-						{ startDay: "2026-11-01", endDay: "2026-11-21" },
-					),
-				)
-				yield* set(KEY)
-
-				world.members = [{ userId: "user_stranger", spent: "9.00" }]
-				const other = yield* set(KEY).pipe(Effect.flip)
-				assert.strictEqual(other._tag, VALIDATION)
-				assert.include(other.message, "another Morph organization")
+				world.account = "personal"
+				const personal = yield* set(KEY).pipe(Effect.flip)
+				assert.strictEqual(personal._tag, VALIDATION)
+				assert.include(personal.message, "This is a personal key")
+				assert.strictEqual((yield* stored(testDb))?.account_id, "organization")
 			}),
 		)
 	})

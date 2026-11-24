@@ -6,7 +6,6 @@ import { CostConnections, CostSources } from "@maple/db/tables"
 import type { OrgId, UserId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { randomUUID } from "node:crypto"
-import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
@@ -45,8 +44,6 @@ export interface CostConnectionInput {
 	/** The vendor's account the credential reads, as the vendor answered when it was checked. */
 	readonly accountId: string
 	readonly accountLabel: string
-	/** Runs in the save's transaction with the id of the row it wrote, e.g. to keep what the check read. */
-	readonly afterSave?: (db: MapleDb, connectionId: string) => Effect.Effect<void, MapleDbError>
 }
 
 export interface CostConnectionCredential {
@@ -132,7 +129,6 @@ export class CostConnectionStore extends Context.Service<CostConnectionStore, Co
 									.returning(($) => ({ id: $.id })),
 							)
 							if (row === undefined) return false
-							if (input.afterSave !== undefined) yield* input.afterSave(db, row.id)
 							// The source shows on the Cost page at once, not at the next sync tick.
 							yield* reconcileCostConnectionSources(db, now, provider, orgId)
 							// A source held for its old credential's failure is due again with the new one. A

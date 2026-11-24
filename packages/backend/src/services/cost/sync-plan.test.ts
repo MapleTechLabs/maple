@@ -991,36 +991,3 @@ describe("warehouse and month formats", () => {
 		assert.strictEqual(utcMonth(now + 13), "2027-01")
 	})
 })
-
-describe("planCostSync for a provider read hourly from month-to-date readings", () => {
-	const MORPH_NEW: CostSyncState = { ...NEW, provider: "morph" }
-	const morphPulled = (now: number, headAgo: number): CostSyncState => ({
-		...pulled(now, "2026-10-01", { head: headAgo, settle: headAgo }),
-		provider: "morph",
-	})
-
-	it("starts at this month, and walks no history below it", () => {
-		const now = at("2026-11-21T14:00:00Z")
-		// The previous month has no readings: pulling it would only show zeros.
-		assert.deepStrictEqual(planCostSync(MORPH_NEW, now), {
-			mode: "settle",
-			startDay: "2026-11-01",
-			endDay: "2026-11-21",
-		})
-		// In a month's first days the previous one is kept, for its last readings.
-		assert.strictEqual(historyFloor("morph", "2026-12-02"), "2026-11-01")
-		assert.strictEqual(historyFloor("morph", "2026-12-04"), "2026-12-01")
-		assert.deepStrictEqual(planCostSync(morphPulled(now, 10 * 60_000), now), { mode: "idle" })
-	})
-
-	it("is due again an hour after its last head, where other providers wait a day", () => {
-		const now = at("2026-11-21T14:00:00Z")
-		assert.deepStrictEqual(planCostSync(morphPulled(now, HOUR_MS), now), {
-			mode: "head",
-			startDay: "2026-11-18",
-			endDay: "2026-11-21",
-		})
-		const aws = { ...morphPulled(now, HOUR_MS), provider: "aws" as const, backfillDate: "2025-10-01" }
-		assert.deepStrictEqual(planCostSync(aws, now), { mode: "idle" })
-	})
-})
