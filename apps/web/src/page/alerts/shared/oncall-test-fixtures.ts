@@ -407,7 +407,7 @@ export const checkoutSchedule = (
 
 /** `POST /{id}/calendar_feed` for the checkout schedule: the link, as it is shown once. */
 export const checkoutCalendarFeed = (nowMs: number = ONCALL_NOW): V2OnCallCalendarFeed =>
-	Schema.decodeUnknownSync(V2OnCallCalendarFeed)({
+	Schema.decodeSync(V2OnCallCalendarFeed)({
 		object: "oncall_calendar_feed",
 		schedule_id: encodePublicId("onc", scheduleUuid(1)),
 		url: "https://api.maple.dev/calendar/oncall/mcal_2f0cQ5c1mJk3vX8nH4yT7wRbZ6aL9dE0sUoPiKgNq1A.ics",
