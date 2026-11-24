@@ -1,6 +1,7 @@
 import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { selfIngestUrl } from "./ingest-url"
+import { WEB_SERVICE_NAME } from "./service-identity"
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { urlToAppRoute } from "../route"
@@ -19,7 +20,7 @@ const routeName = (pathname: string): string =>
  * `maple.web.app` names the frontend that sent it.
  */
 const maple = MapleFoldkit.make({
-	serviceName: "maple-web",
+	serviceName: WEB_SERVICE_NAME,
 	endpoint: selfIngestUrl,
 	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
 	// The stage's name (`production`, `pr-<n>`, `development`); a preview build's MODE is `production` too.

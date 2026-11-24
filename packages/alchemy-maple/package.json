@@ -41,6 +41,10 @@
 		"./local-sidecar": {
 			"types": "./dist/local-sidecar.d.mts",
 			"import": "./dist/local-sidecar.mjs"
+		},
+		"./vite": {
+			"types": "./dist/vite.d.mts",
+			"import": "./dist/vite.mjs"
 		}
 	},
 	"publishConfig": {
@@ -58,24 +62,36 @@
 	"devDependencies": {
 		"@alchemy.run/test": "catalog:alchemy",
 		"@effect/platform-bun": "catalog:effect",
+		"@effect/platform-node": "catalog:effect",
 		"@effect/vitest": "catalog:effect",
+		"@jridgewell/trace-mapping": "0.3.31",
 		"@maple/domain": "workspace:*",
 		"@maple/local-server": "workspace:*",
+		"@maple/sourcemaps": "workspace:*",
 		"@types/bun": "^1.4.5",
 		"@types/node": "catalog:tooling",
 		"alchemy": "catalog:alchemy",
 		"effect": "catalog:effect",
 		"tsdown": "^0.23.7",
 		"typescript": "catalog:tooling",
+		"vite": "catalog:",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
 		"@effect/platform-bun": "^4.0.0",
+		"@effect/platform-node": "^4.0.0",
 		"alchemy": ">=2.0.0-beta.80 <3",
-		"effect": "^4.0.0"
+		"effect": "^4.0.0",
+		"vite": ">=6.0.0"
 	},
 	"peerDependenciesMeta": {
 		"@effect/platform-bun": {
+			"optional": true
+		},
+		"@effect/platform-node": {
+			"optional": true
+		},
+		"vite": {
 			"optional": true
 		}
 	}

@@ -10,6 +10,7 @@ import { managedDbSecrets, type MapleStage, workersObservabilitySecrets } from "
 import { selfObservabilityEnv } from "@maple/infra/env"
 import type { SecretConsumer } from "@maple/infra/secret"
 import { resolveAs, resolveDerived } from "@maple/infra/secret-guard"
+import { webSourceMapsApiKey } from "@maple/infra/self-source-maps"
 import * as Catalog from "@maple/infra/secrets"
 import { aiConfiguredEnv } from "../../apps/ai/src/resources/env.ts"
 import { alertingConfiguredEnv } from "../../apps/alerting/src/resources/env.ts"
@@ -99,7 +100,8 @@ const DEPLOYABLES = {
 	sandbox: [sandboxSecrets],
 	status: onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
 	"audit-archive": onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
-	web: onEveryStage((stage) => selfObservabilityEnv(stage, "us")),
+	// Its Worker env, and the deploy's source map upload key (`@maple/infra/self-source-maps`).
+	web: [...onEveryStage((stage) => selfObservabilityEnv(stage, "us")), webSourceMapsApiKey],
 	landing: [landingBuildSecrets],
 	ingest: [ingestSecrets],
 	scraper: [scraperSecrets],

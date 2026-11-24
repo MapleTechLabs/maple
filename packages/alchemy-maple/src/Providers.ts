@@ -8,6 +8,7 @@ import { Dashboard, DashboardProvider } from "./Dashboard"
 import { IngestKeys, IngestKeysProvider } from "./IngestKeys"
 import { MapleApiFromHttpClient } from "./MapleApi"
 import * as MapleEnvironment from "./MapleEnvironment"
+import { SourceMaps, SourceMapsProvider } from "./SourceMaps"
 import { StatusPage, StatusPageProvider } from "./StatusPage"
 import { UptimeMonitor, UptimeMonitorProvider } from "./UptimeMonitor"
 
@@ -25,7 +26,8 @@ export class Providers extends Provider.ProviderCollection<Providers>()("Maple")
  *
  * Credentials come from `MAPLE_API_KEY` / `MAPLE_API_URL` and requests use the
  * runtime's global `fetch`. Use {@link providersWithDependencies} to supply a
- * different environment or HTTP client.
+ * different environment or HTTP client. `Maple.SourceMaps` reads files through the stack's
+ * `FileSystem` and `Path`, which Alchemy supplies.
  */
 export const providers = () =>
 	providersWithDependencies().pipe(
@@ -59,6 +61,7 @@ export const providersWithDependencies = () =>
 			IngestKeys,
 			UptimeMonitor,
 			StatusPage,
+			SourceMaps,
 		]),
 	).pipe(
 		Layer.provide(
@@ -70,6 +73,7 @@ export const providersWithDependencies = () =>
 				IngestKeysProvider(),
 				UptimeMonitorProvider(),
 				StatusPageProvider(),
+				SourceMapsProvider(),
 			),
 		),
 		Layer.provide(MapleApiFromHttpClient()),
