@@ -131,6 +131,7 @@ const symbolicator = (options: { readonly lookupFails?: boolean } = {}) => {
 		symbolicate: (request) => Effect.map(symbolicateWithOutcome(request), (outcome) => outcome.stack),
 		symbolicateWithOutcome,
 		hasSourceMaps: () => Effect.succeed(true),
+		sourceMapsKnown: () => Effect.succeedSome(true),
 	}
 	return { api, calls }
 }
@@ -449,7 +450,7 @@ describe("keys that wait for a source map", () => {
 							samples: () => Effect.succeed([]),
 							spans: () => Effect.succeed([]),
 							sourceMapped: (entries) => Effect.succeed(entries),
-							mapsInPlay: Effect.succeed(mapsInPlay),
+							mapsInPlay: Effect.succeedSome(mapsInPlay),
 						},
 						{
 							orgId: ORG,
@@ -478,11 +479,15 @@ describe("an org's first source map upload", () => {
 	const tick = (
 		database: (typeof Database)["Service"],
 		samples: ReadonlyArray<GroupingSampleRow>,
-		hasMaps: boolean,
+		hasMaps: Option.Option<boolean>,
 		debugIds: Readonly<Record<string, Record<string, string>>> = {},
 	) => {
 		const { api } = symbolicator()
-		const stacks: StackSymbolicatorApi = { ...api, hasSourceMaps: () => Effect.succeed(hasMaps) }
+		const stacks: StackSymbolicatorApi = {
+			...api,
+			hasSourceMaps: () => Effect.succeed(Option.getOrElse(hasMaps, () => true)),
+			sourceMapsKnown: () => Effect.succeed(hasMaps),
+		}
 		return resolveGroupingSiblings(
 			(run) => database.execute(run),
 			{
@@ -503,7 +508,7 @@ describe("an org's first source map upload", () => {
 					),
 				sourceMapped: (entries, rules) =>
 					withSourceMappedStacks(Option.some(stacks), ORG, entries, rules),
-				mapsInPlay: stacks.hasSourceMaps(ORG),
+				mapsInPlay: stacks.sourceMapsKnown(ORG),
 			},
 			{
 				orgId: ORG,
@@ -529,10 +534,10 @@ describe("an org's first source map upload", () => {
 		const result = await Effect.runPromise(
 			Effect.gen(function* () {
 				const database = yield* Database
-				yield* tick(database, [v1], false)
+				yield* tick(database, [v1], Option.some(false))
 				const before = yield* storedKeys(database)
 				// The org uploads its first maps; v1 recurs and the next release throws.
-				const siblings = yield* tick(database, [v1, v2], true)
+				const siblings = yield* tick(database, [v1, v2], Option.some(true))
 				return { before, after: yield* storedKeys(database), siblings }
 			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 		)
@@ -551,12 +556,28 @@ describe("an org's first source map upload", () => {
 		const keys = await Effect.runPromise(
 			Effect.gen(function* () {
 				const database = yield* Database
-				yield* tick(database, [v1], false)
-				yield* tick(database, [v1], false)
+				yield* tick(database, [v1], Option.some(false))
+				yield* tick(database, [v1], Option.some(false))
 				return yield* storedKeys(database)
 			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 		)
 		expect(Arr.map(keys, (row) => row.configDigest)).toEqual([""])
+	})
+
+	it("re-keys nothing when the has-maps lookup fails", async () => {
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const database = yield* Database
+				// f1 keyed before the org had maps, f2 after: neither moves on a failed lookup.
+				yield* tick(database, [v1], Option.some(false))
+				yield* tick(database, [v2], Option.some(true))
+				const before = yield* storedKeys(database)
+				yield* tick(database, [v1, v2], Option.none())
+				return { before, after: yield* storedKeys(database) }
+			}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
+		)
+		expect(Arr.map(result.before, (row) => row.configDigest)).toEqual(["", "+source-maps"])
+		expect(result.after).toEqual(result.before)
 	})
 
 	it("holds a young sample that registered debug ids before the org has any map", async () => {
@@ -580,7 +601,7 @@ describe("an org's first source map upload", () => {
 							}),
 						),
 					)
-					yield* tick(database, [v1, v2], false, ids)
+					yield* tick(database, [v1, v2], Option.some(false), ids)
 					return Arr.map(yield* storedKeys(database), (row) => row.fingerprintHash)
 				}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 			)

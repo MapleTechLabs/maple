@@ -54,6 +54,8 @@ export interface StackSymbolicatorApi {
 	readonly symbolicateWithOutcome: (request: SymbolicateRequest) => Effect.Effect<SymbolicationOutcome>
 	/** Whether the org has stored any source map, cached briefly per isolate; true when unknown. */
 	readonly hasSourceMaps: (orgId: OrgId) => Effect.Effect<boolean>
+	/** The same, `None` when the lookup failed, for callers that must not guess. */
+	readonly sourceMapsKnown: (orgId: OrgId) => Effect.Effect<Option.Option<boolean>>
 }
 
 interface CachedMap {
@@ -88,10 +90,10 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 			const inflight = new Map<SourceMapFileId, Deferred.Deferred<LoadedMap>>()
 			const hasMapsAt = new Map<OrgId, { readonly value: boolean; readonly until: number }>()
 
-			const hasSourceMaps = Effect.fn("StackSymbolicator.hasSourceMaps")(function* (orgId: OrgId) {
+			const sourceMapsKnown = Effect.fn("StackSymbolicator.sourceMapsKnown")(function* (orgId: OrgId) {
 				const now = yield* Clock.currentTimeMillis
 				const cached = hasMapsAt.get(orgId)
-				if (cached !== undefined && cached.until > now) return cached.value
+				if (cached !== undefined && cached.until > now) return Option.some(cached.value)
 				const value = yield* sourceMaps.hasAny(orgId).pipe(
 					Effect.tapError((error) =>
 						Effect.logWarning("Whether the org has source maps could not be read").pipe(
@@ -100,8 +102,7 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 					),
 					Effect.option,
 				)
-				// Unknown counts as yes: a failed check must not hide maps the lookup can still find.
-				if (Option.isNone(value)) return true
+				if (Option.isNone(value)) return Option.none<boolean>()
 				hasMapsAt.delete(orgId)
 				hasMapsAt.set(orgId, { value: value.value, until: now + Duration.toMillis(HAS_MAPS_TTL) })
 				if (hasMapsAt.size > HAS_MAPS_MAX_ENTRIES) {
@@ -110,8 +111,15 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 						(key) => hasMapsAt.delete(key),
 					)
 				}
-				return value.value
+				return Option.some(value.value)
 			})
+
+			// Unknown counts as yes: a failed check must not hide maps the lookup can still find.
+			const hasSourceMaps = (orgId: OrgId) =>
+				Effect.map(
+					sourceMapsKnown(orgId),
+					Option.getOrElse(() => true),
+				)
 
 			const cacheGet = (id: SourceMapFileId): CachedMap | undefined => {
 				const hit = maps.get(id)
@@ -392,7 +400,12 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 			const symbolicate = (request: SymbolicateRequest) =>
 				Effect.map(symbolicateWithOutcome(request), (outcome) => outcome.stack)
 
-			return { symbolicate, symbolicateWithOutcome, hasSourceMaps } satisfies StackSymbolicatorApi
+			return {
+				symbolicate,
+				symbolicateWithOutcome,
+				hasSourceMaps,
+				sourceMapsKnown,
+			} satisfies StackSymbolicatorApi
 		}),
 	},
 ) {
