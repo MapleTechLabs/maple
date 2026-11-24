@@ -13,6 +13,7 @@ import { MountDialog } from "@maple/views/ui/dialog"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import {
+	checkoutCalendarFeed,
 	checkoutOverrides,
 	checkoutSchedule,
 	checkoutShifts,
@@ -572,5 +573,114 @@ describe("on-call schedule page", () => {
 	test("a gap in the summary focuses its bar on the calendar", () => {
 		const focus = pageUpdate(loaded(ONCALL_NOW), Message.ClickedGap({ index: 0 }))
 		expect(names(focus.commands)).toEqual(["FocusCoverageGap"])
+	})
+})
+describe("on-call schedule page, calendar feed", () => {
+	const feedOnSince = msIso(ONCALL_NOW - 12 * 86_400_000)
+	/** The loaded page over a schedule whose calendar link was made twelve days ago. */
+	const withFeedOn = () => {
+		const page = loaded(ONCALL_NOW)
+		return run(page, [
+			Message.CompletedFetchSchedule({
+				key: page.schedule.key ?? "",
+				readAtMs: ONCALL_NOW,
+				result: Result.succeed(checkoutSchedule(ONCALL_NOW, [], feedOnSince)),
+			}),
+		])
+	}
+
+	test("a schedule without a feed offers one link to make, and a member sees it locked", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW)),
+			expectView(text("Calendar feed")).toExist(),
+			expectView(text(/anyone who has it can see who is on call/u)).toExist(),
+			expectView(role("button", { name: "Create calendar link" })).toExist(),
+			expectView(role("button", { name: "Replace link" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW, MEMBER)),
+			expectView(role("button", { name: "Create calendar link" })).toBeDisabled(),
+		)
+	})
+
+	test("making the link sends one request and shows the link once, with replace and turn off", () => {
+		const page = loaded(ONCALL_NOW)
+		const clicked = pageUpdate(page, Message.ClickedCreateCalendarFeed())
+		expect(names(clicked.commands)).toEqual(["CreateOnCallCalendarFeed"])
+		// A second click while the request runs sends nothing.
+		expect(pageUpdate(clicked.model, Message.ClickedCreateCalendarFeed()).commands ?? []).toHaveLength(0)
+
+		const feed = checkoutCalendarFeed(ONCALL_NOW)
+		const made = pageUpdate(
+			clicked.model,
+			Message.CompletedCreateCalendarFeed({ result: Result.succeed(feed) }),
+		)
+		expect(made.outMessage).toMatchObject({ _tag: "RequestedToast", type: "success" })
+		scene(
+			{ update: pageUpdate, view },
+			given(made.model),
+			expectView(role("textbox")).toHaveValue(feed.url),
+			expectView(text(/is not shown again/u)).toExist(),
+			expectView(role("button", { name: "Replace link" })).toExist(),
+			expectView(role("button", { name: "Turn off" })).toExist(),
+			expectView(role("button", { name: "Create calendar link" })).not.toExist(),
+		)
+
+		const failed = pageUpdate(
+			clicked.model,
+			Message.CompletedCreateCalendarFeed({
+				result: Result.fail({
+					_tag: "@maple/http/errors/AlertPersistenceError",
+					type: "api_error",
+					code: "persistence_error",
+					title: "Couldn't write",
+					message: "Couldn't write",
+					retryable: true,
+					recovery: "retry",
+				}),
+			}),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't create the calendar link",
+		})
+		expect(failed.model.isChangingCalendarFeed).toBe(false)
+		expect(failed.model.calendarFeed).toBeNull()
+	})
+
+	test("a feed that is on says since when, never the link, and asks before replacing or turning off", () => {
+		const on = withFeedOn()
+		scene(
+			{ update: pageUpdate, view },
+			given(on),
+			expectView(text(/^A calendar link was made on /u)).toExist(),
+			expectView(role("textbox")).not.toExist(),
+		)
+		// Replace opens the question; nothing is sent until it is confirmed.
+		const asked = pageUpdate(on, Message.ClickedReplaceCalendarFeed())
+		expect(asked.model.calendarFeedDialog.isOpen).toBe(true)
+		expect(names(asked.commands)).not.toContain("CreateOnCallCalendarFeed")
+		expect(names(pageUpdate(asked.model, Message.ClickedConfirmCalendarFeed()).commands)).toEqual([
+			"CreateOnCallCalendarFeed",
+		])
+
+		const turningOff = pageUpdate(on, Message.ClickedTurnOffCalendarFeed())
+		const confirmed = pageUpdate(turningOff.model, Message.ClickedConfirmCalendarFeed())
+		expect(names(confirmed.commands)).toEqual(["DeleteOnCallCalendarFeed"])
+		const off = pageUpdate(
+			confirmed.model,
+			Message.CompletedDeleteCalendarFeed({ result: Result.succeed(undefined) }),
+		)
+		expect(off.model.calendarFeedDialog.isOpen).toBe(false)
+		scene(
+			{ update: pageUpdate, view },
+			given(off.model),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			// Shown as off before the schedule is read again.
+			expectView(role("button", { name: "Create calendar link" })).toExist(),
+			expectView(text(/^A calendar link was made on /u)).not.toExist(),
+		)
 	})
 })

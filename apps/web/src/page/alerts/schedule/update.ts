@@ -4,6 +4,7 @@ import { Option, Result, Schema } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import type { AppRoute } from "../../../route"
@@ -12,7 +13,9 @@ import { DEFAULT_RANGE_DAYS, FocusGap } from "../shared/coverage-preview"
 import { scheduleIdFromUrl } from "../shared/oncall-schedules"
 import { localInputMs, localInputOf } from "../schedule-form/form"
 import {
+	CreateCalendarFeed,
 	CreateOverride,
+	DeleteCalendarFeed,
 	DeleteOverride,
 	FetchOverrides,
 	FetchSchedule,
@@ -33,6 +36,7 @@ type ScheduleRoute = Extract<AppRoute, { readonly _tag: "AlertsSchedule" }>
 
 export const OVERRIDE_DIALOG_ID = "schedule-override"
 export const DELETE_OVERRIDE_DIALOG_ID = "schedule-delete-override"
+export const CALENDAR_FEED_DIALOG_ID = "schedule-calendar-feed"
 
 /** The calendar steps a week of the schedule zone's days at a time. */
 export const CALENDAR_DAYS = 7
@@ -95,6 +99,11 @@ export const init = (route: ScheduleRoute, context: PageContext): Return => {
 		deletingOverrideId: null,
 		confirmDeleteOverrideId: null,
 		deleteOverrideDialog: Dialog.init(DELETE_OVERRIDE_DIALOG_ID, "alert-dialog"),
+		calendarFeed: null,
+		calendarCopy: CopyButton.init(),
+		isChangingCalendarFeed: false,
+		calendarFeedAction: null,
+		calendarFeedDialog: Dialog.init(CALENDAR_FEED_DIALOG_ID, "alert-dialog"),
 	}
 	const common = [
 		ReadScheduleClock(),
@@ -315,6 +324,30 @@ const updateDeleteDialog = (model: Model, step: ReturnType<typeof Dialog.update>
 	),
 })
 
+const updateCalendarDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+	model: {
+		...model,
+		calendarFeedDialog: step.model,
+		calendarFeedAction: step.outMessage?._tag === "Closed" ? null : model.calendarFeedAction,
+	},
+	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
+		Message.GotCalendarFeedDialogMessage({ message }),
+	),
+})
+
+/** Sends the change the feed section or its dialog asked for, once. */
+const changeCalendarFeed = (model: Model, action: "create" | "off"): Return =>
+	model.isChangingCalendarFeed || model.scheduleId === null
+		? { model }
+		: {
+				model: { ...model, isChangingCalendarFeed: true },
+				commands: [
+					action === "off"
+						? DeleteCalendarFeed({ scheduleId: model.scheduleId })
+						: CreateCalendarFeed({ scheduleId: model.scheduleId }),
+				],
+			}
+
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
@@ -424,6 +457,71 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model.deletingOverrideId !== null
 				? { model }
 				: updateDeleteDialog(model, Dialog.update(model.deleteOverrideDialog, child)),
+		ClickedCreateCalendarFeed: () => changeCalendarFeed(model, "create"),
+		ClickedReplaceCalendarFeed: () =>
+			updateCalendarDialog(
+				{ ...model, calendarFeedAction: "replace" },
+				Dialog.open(model.calendarFeedDialog),
+			),
+		ClickedTurnOffCalendarFeed: () =>
+			updateCalendarDialog(
+				{ ...model, calendarFeedAction: "off" },
+				Dialog.open(model.calendarFeedDialog),
+			),
+		// Escape and Cancel are ignored while the change runs.
+		GotCalendarFeedDialogMessage: ({ message: child }) =>
+			model.isChangingCalendarFeed
+				? { model }
+				: updateCalendarDialog(model, Dialog.update(model.calendarFeedDialog, child)),
+		ClickedConfirmCalendarFeed: () =>
+			model.calendarFeedAction === null
+				? { model }
+				: changeCalendarFeed(model, model.calendarFeedAction === "off" ? "off" : "create"),
+		CompletedCreateCalendarFeed: ({ result }) => {
+			const settled = { ...model, isChangingCalendarFeed: false }
+			return Result.match(result, {
+				onSuccess: (feed): Return => {
+					const closed = updateCalendarDialog(
+						{
+							...settled,
+							calendarFeed: { url: feed.url, createdAt: feed.created_at },
+							calendarCopy: CopyButton.init(),
+						},
+						Dialog.close(settled.calendarFeedDialog),
+					)
+					return { ...closed, outMessage: toast("success", "Calendar link created") }
+				},
+				onFailure: (failure): Return => ({
+					model: settled,
+					outMessage: toast("error", "Couldn't create the calendar link", failure.message),
+				}),
+			})
+		},
+		CompletedDeleteCalendarFeed: ({ result }) => {
+			const settled = { ...model, isChangingCalendarFeed: false }
+			return Result.match(result, {
+				onSuccess: (): Return => {
+					const closed = updateCalendarDialog(
+						{ ...settled, calendarFeed: { url: null, createdAt: null } },
+						Dialog.close(settled.calendarFeedDialog),
+					)
+					return { ...closed, outMessage: toast("success", "Calendar link turned off") }
+				},
+				onFailure: (failure): Return => ({
+					model: settled,
+					outMessage: toast("error", "Couldn't turn off the calendar link", failure.message),
+				}),
+			})
+		},
+		GotCalendarCopyMessage: ({ message: child }) => {
+			const step = CopyButton.update(model.calendarCopy, child)
+			return {
+				model: { ...model, calendarCopy: step.model },
+				commands: FoldkitCommand.mapMessages(step.commands ?? [], (inner) =>
+					Message.GotCalendarCopyMessage({ message: inner }),
+				),
+			}
+		},
 		CompletedDeleteOverride: ({ result }) => {
 			const settled = { ...model, deletingOverrideId: null }
 			const closed = updateDeleteDialog(settled, Dialog.close(settled.deleteOverrideDialog))

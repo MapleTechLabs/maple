@@ -4,7 +4,9 @@ import { V2OnCallOverrideCreateParams } from "@maple/domain/http/v2"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import {
+	createCalendarFeed,
 	createOverride,
+	deleteCalendarFeed,
 	deleteOverride,
 	listOverrides,
 	listShifts,
@@ -74,5 +76,25 @@ export const DeleteOverride = Command.define("DeleteOnCallOverride", {
 		deleteOverride(scheduleId, overrideId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedDeleteOverride({ overrideId, result })),
+		),
+})
+
+export const CreateCalendarFeed = Command.define("CreateOnCallCalendarFeed", {
+	args: { scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedCreateCalendarFeed],
+	execute: ({ scheduleId }) =>
+		createCalendarFeed(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedCreateCalendarFeed({ result })),
+		),
+})
+
+export const DeleteCalendarFeed = Command.define("DeleteOnCallCalendarFeed", {
+	args: { scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedDeleteCalendarFeed],
+	execute: ({ scheduleId }) =>
+		deleteCalendarFeed(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteCalendarFeed({ result })),
 		),
 })

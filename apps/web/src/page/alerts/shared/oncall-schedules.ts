@@ -107,6 +107,19 @@ export const listOverrides = (id: OnCallScheduleId) =>
 		return yield* pages(undefined, [])
 	})
 
+/** Turns the schedule's calendar feed on, or replaces its link; the link comes back only here. */
+export const createCalendarFeed = (id: OnCallScheduleId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.oncallSchedules.createCalendarFeed({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const deleteCalendarFeed = (id: OnCallScheduleId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		yield* client.oncallSchedules.deleteCalendarFeed({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const createOverride = (id: OnCallScheduleId, payload: V2OnCallOverrideCreateParams) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
