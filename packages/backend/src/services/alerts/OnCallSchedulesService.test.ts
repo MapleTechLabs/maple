@@ -431,3 +431,106 @@ describe("OnCallSchedulesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })
+describe("OnCallSchedulesService calendar feed", () => {
+	const summaries = (calendar: string) =>
+		Arr.filter(Str.split("\r\n")(calendar), (line) => Str.startsWith("SUMMARY:")(line))
+
+	it.effect("serves the schedule's shifts to whoever holds the link, and to nobody else", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.isNull(schedule.calendarFeedCreatedAt)
+
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			assert.strictEqual((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt, feed.createdAt)
+
+			const calendar = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
+			// A week back to 60 days on: Ana's week, then Ben's, then Chen, whom the directory cannot name.
+			assert.deepStrictEqual(Arr.take(summaries(calendar), 3), [
+				"SUMMARY:On call: Ana Alves (Checkout primary)",
+				"SUMMARY:On call: Ben Brook (Checkout primary)",
+				"SUMMARY:On call: unknown (Checkout primary)",
+			])
+
+			// A guess, a truncated link and a link of the wrong shape open nothing.
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(`${feed.token}x`)))
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(Str.slice(0, -1)(feed.token))))
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed("")))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("stores only a hash of the link", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const stored = yield* Effect.promise(() =>
+				testDb.pglite.query<{ row: string }>(
+					"select row_to_json(s)::text as row from oncall_schedules s where id = $1",
+					[schedule.id],
+				),
+			)
+			const row = stored.rows[0]?.row ?? ""
+			assert.isAbove(row.length, 0)
+			assert.notInclude(row, feed.token)
+			assert.notInclude(row, Str.replace("mcal_", "")(feed.token))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a new link replaces the old one, and turning the feed off ends both", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const first = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const second = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			assert.notStrictEqual(first.token, second.token)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(first.token)))
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(second.token)))
+
+			yield* schedules.deleteCalendarFeed(ORG, ADMIN, schedule.id)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(second.token)))
+			assert.isNull((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("only someone who manages alerts in the schedule's own org can make or end a link", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.createCalendarFeed(ORG, MEMBER, schedule.id))),
+				"@maple/http/errors/AlertForbiddenError",
+			)
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.createCalendarFeed(OTHER_ORG, ADMIN, schedule.id))),
+				"@maple/http/errors/OnCallScheduleNotFoundError",
+			)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			assert.strictEqual(
+				errorTag(yield* Effect.exit(schedules.deleteCalendarFeed(OTHER_ORG, ADMIN, schedule.id))),
+				"@maple/http/errors/OnCallScheduleNotFoundError",
+			)
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(feed.token)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a deleted schedule's link opens nothing", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			yield* schedules.delete(ORG, ADMIN, schedule.id)
+			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(feed.token)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+})

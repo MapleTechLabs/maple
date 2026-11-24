@@ -95,6 +95,8 @@ export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>
 	departedUserIds: Schema.Array(UserId),
 	/** Escalation chains that page this schedule. */
 	chainIds: Schema.Array(EscalationChainId),
+	/** When the calendar feed's current link was made; null while the feed is off. */
+	calendarFeedCreatedAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
 }) {}

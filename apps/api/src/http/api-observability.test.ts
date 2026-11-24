@@ -23,6 +23,14 @@ describe("ApiObservabilityLive", () => {
 		expect(tracedFor("/hb/abc123secret/fail", "PUT")).toBe(false)
 	})
 
+	// The feed's link is its only credential, and a calendar app polls it for months.
+	it("records no server span for an on-call calendar feed, whatever follows the prefix", () => {
+		expect(tracedFor("/calendar/oncall/mcal_abc123secret.ics")).toBe(false)
+		expect(tracedFor("/calendar/oncall/mcal_abc123secret.ics?x=1")).toBe(false)
+		expect(tracedFor("/calendar/oncall/mcal_abc123secret/typo", "POST")).toBe(false)
+		expect(tracedFor("/calendar/oncallers")).toBe(true)
+	})
+
 	// The audit log is filtered by a member's email. The span of that request is kept for weeks
 	// and read by people who cannot open the audit log.
 	it("keeps an audit actor filter out of the URL a server span records", () => {

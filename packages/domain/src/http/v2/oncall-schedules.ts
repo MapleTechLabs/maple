@@ -238,6 +238,7 @@ const scheduleExample = {
 	coverage_gaps: [],
 	departed_user_ids: [],
 	chain_ids: [],
+	calendar_feed_created_at: null,
 	created_at: "2026-11-06T09:00:00.000Z",
 	updated_at: "2026-11-06T09:00:00.000Z",
 } as const
@@ -265,6 +266,10 @@ export const V2OnCallSchedule = Schema.Struct({
 	}),
 	chain_ids: Schema.Array(EscalationChainPublicId).annotate({
 		description: "Escalation chains (`esc_…`) that page this schedule.",
+	}),
+	calendar_feed_created_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When the calendar feed's current link was made, or `null` while the feed is off. The link itself is only returned when it is created.",
 	}),
 	created_at: Timestamp,
 	updated_at: Timestamp,
@@ -326,6 +331,48 @@ export const V2OnCallScheduleDeleteResponse = Schema.Struct({
 	examples: [wireExample({ id: scheduleExample.id, object: "oncall_schedule", deleted: true })],
 })
 export type V2OnCallScheduleDeleteResponse = Schema.Schema.Type<typeof V2OnCallScheduleDeleteResponse>
+
+const calendarFeedExample = {
+	object: "oncall_calendar_feed",
+	schedule_id: scheduleExample.id,
+	url: "https://api.maple.dev/calendar/oncall/mcal_2f0cQ5c1mJk3vX8nH4yT7wRbZ6aL9dE0sUoPiKgNq1A.ics",
+	created_at: "2026-11-06T09:00:00.000Z",
+} as const
+
+export const V2OnCallCalendarFeed = Schema.Struct({
+	object: Schema.Literal("oncall_calendar_feed").annotate({
+		description: 'The object type, always `"oncall_calendar_feed"`.',
+	}),
+	schedule_id: OnCallSchedulePublicId,
+	url: Schema.String.annotate({
+		description:
+			"The iCalendar feed to subscribe a calendar app to. Anyone holding it can read who is on call, and it is shown only in this response: Maple stores a hash of it.",
+	}),
+	created_at: Timestamp,
+}).annotate({
+	identifier: "OnCallCalendarFeed",
+	title: "On-call calendar feed",
+	description:
+		"A private iCalendar link for one schedule: its shifts from a week back to 60 days ahead, one event per shift.",
+	examples: [wireExample(calendarFeedExample)],
+})
+export type V2OnCallCalendarFeed = Schema.Schema.Type<typeof V2OnCallCalendarFeed>
+
+export const V2OnCallCalendarFeedDeleteResponse = Schema.Struct({
+	object: Schema.Literal("oncall_calendar_feed").annotate({
+		description: 'The object type, always `"oncall_calendar_feed"`.',
+	}),
+	schedule_id: OnCallSchedulePublicId,
+	deleted: Schema.Literal(true).annotate({ description: "Always `true`: the link no longer works." }),
+}).annotate({
+	identifier: "OnCallCalendarFeedDeleteResponse",
+	title: "On-call calendar feed delete response",
+	description: "Confirmation that a schedule's calendar feed was turned off.",
+	examples: [
+		wireExample({ object: "oncall_calendar_feed", schedule_id: scheduleExample.id, deleted: true }),
+	],
+})
+export type V2OnCallCalendarFeedDeleteResponse = Schema.Schema.Type<typeof V2OnCallCalendarFeedDeleteResponse>
 
 export const V2OnCallShift = Schema.Struct({
 	user_id: UserId,
@@ -607,6 +654,33 @@ export class V2OnCallSchedulesApiGroup extends HttpApiGroup.make("oncallSchedule
 				summary: "Delete an on-call schedule",
 				description:
 					"Deletes a schedule and its overrides. Fails with a `conflict_error` while an escalation chain pages it. Requires the `alerts:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("createCalendarFeed", "/:id/calendar_feed", {
+			params: scheduleId,
+			success: V2OnCallCalendarFeed,
+			error: [alertForbidden, alertPersistence, scheduleNotFound],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "createOnCallCalendarFeed",
+				summary: "Create or replace a schedule's calendar feed",
+				description:
+					"Turns on the schedule's private iCalendar feed and returns its link. Calling it again replaces the link: the old one stops working at once. Requires the `alerts:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.delete("deleteCalendarFeed", "/:id/calendar_feed", {
+			params: scheduleId,
+			success: V2OnCallCalendarFeedDeleteResponse,
+			error: [alertForbidden, alertPersistence, scheduleNotFound],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "deleteOnCallCalendarFeed",
+				summary: "Turn off a schedule's calendar feed",
+				description: "The feed's link stops working at once. Requires the `alerts:write` scope.",
 			}),
 		),
 	)

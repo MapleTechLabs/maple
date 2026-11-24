@@ -11,6 +11,8 @@ import {
 	type OnCallShiftDocument,
 } from "@maple/domain/http"
 import type {
+	V2OnCallCalendarFeed,
+	V2OnCallCalendarFeedDeleteResponse,
 	V2OnCallOverride,
 	V2OnCallOverrideDeleteResponse,
 	V2OnCallSchedule,
@@ -26,7 +28,9 @@ import {
 	toV2OnCallLayer,
 	v2TimestampMs,
 } from "@maple/domain/http/v2"
-import { Array as Arr, Clock, Effect, Schema } from "effect"
+import { Array as Arr, Clock, Effect, Schema, String as Str } from "effect"
+import { Env } from "@maple/backend/platform/Env"
+import { onCallCalendarFeedUrl } from "@/routes/oncall-calendar.http"
 import { auditDiff } from "@/routes/v2/audit-changes"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
@@ -58,6 +62,8 @@ export const toV2OnCallSchedule = (doc: OnCallScheduleDocument): V2OnCallSchedul
 	})),
 	departed_user_ids: doc.departedUserIds,
 	chain_ids: doc.chainIds,
+	calendar_feed_created_at:
+		doc.calendarFeedCreatedAt === null ? null : timestamp(doc.calendarFeedCreatedAt),
 	created_at: timestamp(doc.createdAt),
 	updated_at: timestamp(doc.updatedAt),
 })
@@ -105,6 +111,8 @@ const decodeOverrideCreate = decodeRequest(OnCallOverrideCreateRequest)
 export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncallSchedules", (handlers) =>
 	Effect.gen(function* () {
 		const schedules = yield* OnCallSchedulesService
+		const env = yield* Env
+		const apiOrigin = Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)
 
 		return handlers
 			.handle("list", ({ query }) =>
@@ -188,6 +196,34 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					const deleted: V2OnCallScheduleDeleteResponse = {
 						id: params.id,
 						object: "oncall_schedule",
+						deleted: true,
+					}
+					return deleted
+				}),
+			)
+			.handle("createCalendarFeed", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const feed = yield* schedules.createCalendarFeed(tenant.orgId, tenant.roles, params.id)
+					// The link is a credential: the audit entry names the schedule, never the token.
+					yield* recordHttpAudit("oncall_schedule.calendar_feed_created", { resourceId: params.id })
+					const created: V2OnCallCalendarFeed = {
+						object: "oncall_calendar_feed",
+						schedule_id: params.id,
+						url: onCallCalendarFeedUrl(apiOrigin, feed.token),
+						created_at: timestamp(feed.createdAt),
+					}
+					return created
+				}),
+			)
+			.handle("deleteCalendarFeed", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* schedules.deleteCalendarFeed(tenant.orgId, tenant.roles, params.id)
+					yield* recordHttpAudit("oncall_schedule.calendar_feed_deleted", { resourceId: params.id })
+					const deleted: V2OnCallCalendarFeedDeleteResponse = {
+						object: "oncall_calendar_feed",
+						schedule_id: params.id,
 						deleted: true,
 					}
 					return deleted

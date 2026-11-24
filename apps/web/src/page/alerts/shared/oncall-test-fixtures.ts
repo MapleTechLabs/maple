@@ -219,6 +219,8 @@ type Spec = Readonly<{
 	overrides: (nowMs: number) => ReadonlyArray<Segment & Readonly<{ id: string }>>
 	/** Participants who left the org; `segments` already hands their shifts to the next person. */
 	departed?: ReadonlyArray<string>
+	/** When the calendar link was made; absent while the feed is off. */
+	calendarFeedCreatedAt?: string
 }>
 
 const m = (index: number) => memberId(index)
@@ -372,6 +374,7 @@ const scheduleOf = (spec: Spec, nowMs: number): V2OnCallSchedule => {
 			ends_at: iso(gap.endMs),
 		})),
 		departed_user_ids: spec.departed ?? [],
+		calendar_feed_created_at: spec.calendarFeedCreatedAt ?? null,
 		chain_ids: spec.n === 1 ? [encodePublicId("esc", "0199a00e-0000-7000-8000-000000000001")] : [],
 		created_at: iso(nowMs - 30 * 86_400_000),
 		updated_at: iso(nowMs - 86_400_000),

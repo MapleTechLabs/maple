@@ -57,7 +57,20 @@ import {
 	type OnCallOptions,
 	type OnCallShift,
 } from "@maple/alerting-core"
-import { Array as Arr, Cache, Context, DateTime, Duration, Effect, Layer, Schema } from "effect"
+import {
+	Array as Arr,
+	Cache,
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+} from "effect"
+import { createHash, randomBytes } from "node:crypto"
+import { renderOnCallCalendar } from "@maple/alerting-core/oncall-ics"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -131,9 +144,43 @@ export interface OnCallSchedulesServiceApi {
 	) => Effect.Effect<OnCallShiftsResponse, ScheduleReadError | AlertValidationError>
 	/** Display names by user id; empty when the member directory cannot be read. */
 	readonly memberNames: (orgId: OrgId) => Effect.Effect<ReadonlyMap<string, string>>
+	/** Turns the calendar feed on or replaces its link. The token is returned once and never stored. */
+	readonly createCalendarFeed: (
+		orgId: OrgId,
+		roles: ReadonlyArray<RoleName>,
+		scheduleId: OnCallScheduleId,
+	) => Effect.Effect<
+		{ readonly token: string; readonly createdAt: string },
+		AlertForbiddenError | ScheduleReadError
+	>
+	readonly deleteCalendarFeed: (
+		orgId: OrgId,
+		roles: ReadonlyArray<RoleName>,
+		scheduleId: OnCallScheduleId,
+	) => Effect.Effect<void, AlertForbiddenError | ScheduleReadError>
+	/** The feed a token opens, as an iCalendar body; none when no schedule holds the token. */
+	readonly calendarFeed: (token: string) => Effect.Effect<Option.Option<string>, AlertPersistenceError>
 }
 
 const validationError = (message: string) => new AlertValidationError({ message, details: [message] })
+
+const scheduleNotFound = (scheduleId: OnCallScheduleId) =>
+	new OnCallScheduleNotFoundError({ message: "On-call schedule not found", scheduleId })
+
+/** What a calendar feed shows: a week back, so a past shift does not vanish, and two months on. */
+export const ONCALL_CALENDAR_PAST_MS = 7 * 24 * 60 * 60_000
+export const ONCALL_CALENDAR_AHEAD_MS = 60 * 24 * 60 * 60_000
+
+export const CALENDAR_FEED_TOKEN_PREFIX = "mcal_"
+/** 32 random bytes: the link is the only credential, so it must not be guessable. */
+const newCalendarFeedToken = (): string =>
+	`${CALENDAR_FEED_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`
+/** Only the hash is stored, so a database read does not hand out working links. */
+const calendarFeedTokenHash = (token: string): string =>
+	createHash("sha256").update(token, "utf8").digest("hex")
+/** A cheap shape check before any database read. */
+const isCalendarFeedToken = (token: string): boolean =>
+	Str.startsWith(CALENDAR_FEED_TOKEN_PREFIX)(token) && token.length <= 128
 
 const decodeScheduleIdSync = Schema.decodeUnknownSync(OnCallScheduleIdSchema)
 const decodeOverrideIdSync = Schema.decodeUnknownSync(OnCallOverrideIdSchema)
@@ -234,6 +281,7 @@ const toDocument = (
 			now === null
 				? null
 				: new OnCallNow({ userId: now.userId, startsAt: iso(now.startMs), endsAt: iso(now.endMs) }),
+		calendarFeedCreatedAt: row.calendarFeedCreatedAt === null ? null : iso(row.calendarFeedCreatedAt),
 		coverageGaps: Arr.map(
 			Arr.take(gaps, MAX_ONCALL_REPORTED_GAPS),
 			(gap) => new OnCallGap({ startsAt: iso(gap.startMs), endsAt: iso(gap.endMs) }),
@@ -777,6 +825,94 @@ export class OnCallSchedulesService extends Context.Service<
 			})
 		})
 
+		/** Turns the feed on, or replaces its link: the old one stops working at once. */
+		const createCalendarFeed = Effect.fn("OnCallSchedulesService.createCalendarFeed")(function* (
+			orgId: OrgId,
+			roles: ReadonlyArray<RoleName>,
+			scheduleId: OnCallScheduleId,
+		) {
+			yield* annotate(scheduleId)
+			yield* requireManage(roles)
+			const nowMs = yield* runtime.now
+			const token = newCalendarFeedToken()
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(OnCallSchedules)
+						.set({
+							calendarFeedTokenHash: calendarFeedTokenHash(token),
+							calendarFeedCreatedAt: nowMs,
+						})
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+						.returning("id"),
+				),
+			)
+			if (updated.length === 0) return yield* scheduleNotFound(scheduleId)
+			return { token, createdAt: iso(nowMs) }
+		})
+
+		const deleteCalendarFeed = Effect.fn("OnCallSchedulesService.deleteCalendarFeed")(function* (
+			orgId: OrgId,
+			roles: ReadonlyArray<RoleName>,
+			scheduleId: OnCallScheduleId,
+		) {
+			yield* annotate(scheduleId)
+			yield* requireManage(roles)
+			const updated = yield* dbExecute((db) =>
+				db.run(
+					PG.update(OnCallSchedules)
+						.set({ calendarFeedTokenHash: null, calendarFeedCreatedAt: null })
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)])
+						.returning("id"),
+				),
+			)
+			if (updated.length === 0) return yield* scheduleNotFound(scheduleId)
+		})
+
+		/**
+		 * The feed a token opens, as an iCalendar body; none for a token no schedule holds. The token
+		 * is the only credential: the request carries no org, so the row names it.
+		 */
+		const calendarFeed = Effect.fn("OnCallSchedulesService.calendarFeed")(function* (token: string) {
+			if (!isCalendarFeedToken(token)) return Option.none<string>()
+			const rows = yield* dbExecute((db) =>
+				db.run(
+					PG.from(OnCallSchedules)
+						.select()
+						.where(($) => [$.calendarFeedTokenHash.eq(calendarFeedTokenHash(token))])
+						.limit(1)
+						.crossTenant(),
+				),
+			)
+			const schedule = rows[0]
+			if (schedule === undefined) return Option.none<string>()
+			yield* Effect.annotateCurrentSpan({ orgId: schedule.orgId })
+			yield* annotate(schedule.id)
+			const nowMs = yield* runtime.now
+			const fromMs = nowMs - ONCALL_CALENDAR_PAST_MS
+			const toMs = nowMs + ONCALL_CALENDAR_AHEAD_MS
+			const overrides = yield* dbExecute((db) =>
+				overlappingOverrides(db, schedule.orgId, fromMs, toMs, schedule.id),
+			)
+			const members = yield* memberIdsOf(schedule.orgId)
+			const names = yield* memberNames(schedule.orgId)
+			const render = renderOnCall(
+				configOf(schedule),
+				Arr.map(overrides, toOverride),
+				fromMs,
+				toMs,
+				presenceOf(members),
+			)
+			return Option.some(
+				renderOnCallCalendar({
+					scheduleId: schedule.id,
+					scheduleName: schedule.name,
+					shifts: render.final,
+					nameOf: (userId) => names.get(userId) ?? null,
+					nowMs,
+				}),
+			)
+		})
+
 		const memberNames = Effect.fn("OnCallSchedulesService.memberNames")(function* (orgId: OrgId) {
 			const members = yield* orgMembers.listMembers(orgId).pipe(Effect.orElseSucceed(() => []))
 			// Names only: an email is never a display name, and an unnamed member shows as their id.
@@ -787,6 +923,9 @@ export class OnCallSchedulesService extends Context.Service<
 
 		return {
 			memberNames,
+			createCalendarFeed,
+			deleteCalendarFeed,
+			calendarFeed,
 			list,
 			get,
 			create,
