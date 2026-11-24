@@ -258,9 +258,14 @@ const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html
 			vstack(h, { gap: "2" }, [
 				fieldGroupLabel(h, { attributes: [h.Id(`${model.template.id}-label`)] }, "Start from"),
 				templateSelect(h, model, entries),
+				// Two lines held whatever the pick, so the dialog never resizes under the picker.
 				h.div(
-					[h.Id(`${model.template.id}-detail`)],
-					[typography(h, { size: "xs", tone: "muted" }, [templateDetail(model, entries)])],
+					[h.Id(`${model.template.id}-detail`), h.Class("min-h-8")],
+					[
+						typography(h, { size: "xs", tone: "muted", className: "line-clamp-2" }, [
+							templateDetail(model, entries),
+						]),
+					],
 				),
 			]),
 			...(model.error === null

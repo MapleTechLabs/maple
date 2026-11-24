@@ -60,19 +60,13 @@ type H = HtmlBuilder<Message>
 const backLink = (h: H): Html =>
 	textLink(h, { href: rolesHref(), tone: "muted" }, [icon(h, "ArrowLeftIcon", { size: 12 }), "All roles"])
 
-const metaLine = (role: RoleEntry): string =>
-	Arr.join(
-		[role.isBuiltIn ? "Built-in role, read-only" : "Custom role", memberCountLabel(role.memberCount)],
-		" · ",
-	)
-
 const titleBlock = (h: H, role: RoleEntry): Html =>
 	vstack(h, { gap: "2", shrink: true }, [
 		backLink(h),
 		detailTitle(h, {
 			title: [role.name],
 			adornment: roleTypeBadge(h, role.isBuiltIn),
-			meta: [typography(h, { size: "xs", tone: "muted" }, [metaLine(role)])],
+			meta: [typography(h, { size: "xs", tone: "muted" }, [memberCountLabel(role.memberCount)])],
 		}),
 	])
 
@@ -81,7 +75,6 @@ const duplicateAction = (h: H, model: Model): Html =>
 		button(
 			h,
 			{
-				variant: "outline",
 				size: "sm",
 				isDisabled,
 				attributes: isDisabled ? [] : [h.OnClick(Message.ClickedDuplicate())],
@@ -188,21 +181,60 @@ const requiredNote = (needers: ReadonlyArray<Policy.Permission>): string => {
 	return rest.length === 0 ? `Required by ${first}` : `Required by ${first} and ${rest.length} more`
 }
 
+/** The row's text: label, code and badges on one line, the description under it. */
+const permissionText = (
+	h: H,
+	permission: Policy.Permission,
+	needers: ReadonlyArray<Policy.Permission>,
+): Html => {
+	const spec = Policy.permissions[permission]
+	return vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
+		// The requirement note sits on the title line, so ticking a permission never moves the rows below.
+		hstack(h, { gap: "2", wrap: true, as: "span" }, [
+			typography(h, { size: "sm", weight: "medium" }, [spec.label]),
+			typography(h, { size: "xs", tone: "faint", mono: true }, [permission]),
+			...(isSensitive(permission) ? [badge(h, { variant: "warn", size: "xs" }, ["Sensitive"])] : []),
+			...(needers.length === 0
+				? []
+				: [badge(h, { variant: "meta", size: "xs" }, [requiredNote(needers)])]),
+		]),
+		typography(h, { size: "xs", tone: "muted" }, [spec.description]),
+	])
+}
+
+/** A read-only row's mark: a plain check or a dash, so nothing reads as a control. */
+const grantMark = (h: H, isGranted: boolean): Html =>
+	hstack(h, { as: "span", justify: "center", className: "mt-0.5 size-4 shrink-0" }, [
+		isGranted
+			? icon(h, "CheckIcon", { size: 14, className: "text-foreground" })
+			: icon(h, "MinusIcon", { size: 14, className: "text-foreground-faint" }),
+		h.span([h.Class("sr-only")], [isGranted ? "Granted" : "Not granted"]),
+	])
+
+const ROW = "flex items-start gap-3 px-3 py-3"
+
 const permissionRow = (
 	h: H,
 	model: Model,
 	permission: Policy.Permission,
 	compared: Option.Option<RoleEntry>,
 ): Html => {
-	const spec = Policy.permissions[permission]
 	const isChecked = model.permissions.includes(permission)
-	const needers = isEditable(model) ? requiredBy(model.permissions, permission) : []
+	if (!isEditable(model))
+		return h.div(
+			[h.Key(permission), h.Class(ROW)],
+			[
+				grantMark(h, isChecked),
+				permissionText(h, permission, []),
+				compareCell(h, model, permission, compared),
+			],
+		)
+	const needers = requiredBy(model.permissions, permission)
 	const inputId = `role-permission-${Str.replaceAll(":", "-")(permission)}`
 	return label(
 		h,
 		{
-			className:
-				"flex items-start gap-3 px-3 py-3 font-normal hover:bg-surface-sunken active:bg-surface-sunken",
+			className: cn(ROW, "font-normal hover:bg-surface-sunken active:bg-surface-sunken"),
 			attributes: [h.Key(permission), h.Id(Checkbox.labelId(inputId))],
 		},
 		[
@@ -211,23 +243,10 @@ const permissionRow = (
 				toParentMessage: () => Message.ToggledPermission({ permission }),
 				id: `${inputId}-root`,
 				inputId,
-				isDisabled: !isEditable(model) || needers.length > 0,
+				isDisabled: needers.length > 0,
 				className: "mt-0.5",
 			}),
-			vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
-				// The requirement note sits on the title line, so ticking a permission never moves the rows below.
-				hstack(h, { gap: "2", wrap: true, as: "span" }, [
-					typography(h, { size: "sm", weight: "medium" }, [spec.label]),
-					typography(h, { size: "xs", tone: "faint", mono: true }, [permission]),
-					...(isSensitive(permission)
-						? [badge(h, { variant: "warn", size: "xs" }, ["Sensitive"])]
-						: []),
-					...(needers.length === 0
-						? []
-						: [badge(h, { variant: "meta", size: "xs" }, [requiredNote(needers)])]),
-				]),
-				typography(h, { size: "xs", tone: "muted" }, [spec.description]),
-			]),
+			permissionText(h, permission, needers),
 			compareCell(h, model, permission, compared),
 		],
 	)
@@ -257,9 +276,12 @@ const groupPanel = (
 				panelId: `role-group-${group.id}`,
 				attributes: [h.Key(group.id), h.Class("overflow-hidden rounded-lg border")],
 				triggerClassName:
-					"flex w-full items-center gap-2 bg-surface-faint px-3 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken",
+					"flex w-full items-center gap-3 bg-surface-faint px-3 py-2 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 				trigger: [
-					expandChevron(h, isOpen),
+					// A 16px slot, the checkbox's width, so the group name lines up with the permission names.
+					hstack(h, { as: "span", justify: "center", className: "size-4 shrink-0" }, [
+						expandChevron(h, isOpen),
+					]),
 					typography(h, { size: "sm", weight: "medium", className: "grow" }, [group.label]),
 					typography(h, { size: "xs", tone: "muted", numeric: true }, [
 						`${granted} of ${inGroup.length}`,
@@ -279,7 +301,7 @@ const groupPanel = (
 			[
 				dividedList(
 					h,
-					{ as: "div", className: "border-t" },
+					{ as: "div", bordered: false, className: "border-t" },
 					Arr.map(shown, (permission) => permissionRow(h, model, permission, compared)),
 				),
 			],

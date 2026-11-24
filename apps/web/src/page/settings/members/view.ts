@@ -291,7 +291,7 @@ const memberRows = (h: H, model: Model, member: MemberRow, inputs: Inputs): Read
 									],
 									[
 										icon(h, "CircleInfoIcon", {
-											className: "mt-0.5 size-3.5 shrink-0 text-primary",
+											className: "mt-0.5 size-3.5 shrink-0 text-muted-foreground",
 										}),
 										prompt.question,
 									],

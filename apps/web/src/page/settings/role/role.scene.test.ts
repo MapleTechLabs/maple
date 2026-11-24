@@ -165,8 +165,20 @@ describe("built-in role", () => {
 			tabsMounted,
 			expectView(text(/Duplicate it to make a custom role you can edit/u)).toExist(),
 			expectView(role("button", { name: "Duplicate to customize" })).toExist(),
-			expectView(role("checkbox", { name: /Manage alerts/u })).toBeDisabled(),
+			expectView(text("Manage alerts")).toExist(),
+			expectView(role("checkbox", { name: /Manage alerts/u })).toBeAbsent(),
 			expectView(role("button", { name: "Save role" })).toBeAbsent(),
+		)
+	})
+
+	test("marks what it grants and what it doesn't, without controls", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(opened("analyst")),
+			tabsMounted,
+			expectView(text("Granted")).toExist(),
+			expectView(text("Not granted")).toExist(),
+			expectView(role("checkbox")).toBeAbsent(),
 		)
 	})
 

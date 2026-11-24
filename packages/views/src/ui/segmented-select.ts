@@ -137,6 +137,18 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 
 const XS_ITEM = "text-2xs sm:text-2xs"
 
+/** The label, as wide as its selected (medium) weight, so picking an option never moves the others. */
+const segmentLabel = <M>(h: HtmlBuilder<M>, label: string): Html =>
+	h.span(
+		[
+			h.DataAttribute("label", label),
+			h.Class(
+				"inline-flex flex-col after:invisible after:h-0 after:overflow-hidden after:font-medium after:content-[attr(data-label)]",
+			),
+		],
+		[label],
+	)
+
 export const segmentedSelect = <T extends string, M>(
 	h: HtmlBuilder<M>,
 	config: SegmentedSelectConfig<T, M>,
@@ -206,7 +218,7 @@ export const segmentedSelect = <T extends string, M>(
 							]
 						: []),
 					...(option.icon === undefined ? [] : [option.icon]),
-					...(option.label === "" ? [] : [option.label]),
+					...(option.label === "" ? [] : [segmentLabel(h, option.label)]),
 				],
 			)
 			return option.lockedReason === undefined ? toggle : lockedControl(h, option.lockedReason, toggle)
