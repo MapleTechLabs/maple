@@ -637,6 +637,7 @@ describe("V2 alerts wire format", () => {
 			acknowledged_at: null,
 			acknowledged_by: null,
 			acknowledged_via: null,
+			first_acknowledged_at: null,
 			error_issue_id: null,
 			escalation: {
 				chain_id: encodePublicId("esc", INCIDENT_CHAIN_UUID),
