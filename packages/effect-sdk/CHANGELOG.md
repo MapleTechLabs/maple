@@ -1,5 +1,16 @@
 # @maple-dev/effect-sdk
 
+## 0.16.0
+
+### Minor Changes
+
+- a49f40c: New `privacy.persistence: "cookieless"` mode. Like `"memory"`, the SDK stores nothing on the device (no cookies, Web Storage or IndexedDB). Unlike `"memory"`, unique visitors are still counted: the ingest gateway derives a visitor id that changes every UTC day, from a salt it deletes after two days. Unique visitors are counted within a day, not across days, and new vs returning is unavailable. Consent under `requireConsent`, Global Privacy Control, `respectDoNotTrack` with Do Not Track, and `persistVisitorId: false` still turn the visitor id off. If two SDKs on a page set different modes, `"memory"` wins.
+- 7601363: `MapleEvents` writes user and account properties. Any `track()` call takes `set`, `setOnce` and `unset` for the user and `groupSet`, `groupSetOnce` and `groupUnset` for the account, and two new calls send them on their own: `identify(userId, { set, setOnce, unset, visitorId })` and `groupIdentify(groupId, properties)`. Passing `visitorId` to `identify` links the device to the user, so their events before sign-in count as theirs.
+
+### Patch Changes
+
+- 0aec646: The SDK no longer depends on `std-env`: runtime and hosting provider detection for the `cloud.*`, `faas.*`, `process.runtime.*` and `os.type` resource attributes is built in, with the same rules and results. Environment variables are read only as detection needs them, and one that cannot be read (for example denied by Deno's `--deny-env`) counts as unset instead of failing telemetry startup. The package now has no runtime dependencies besides its `effect` peer.
+
 ## 0.15.0
 
 ### Minor Changes
