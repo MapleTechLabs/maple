@@ -125,6 +125,8 @@ describe("buildIncidentTimeline", () => {
 				threshold: 1,
 				lastObservedValue: 1.35,
 				groupKey: "__slo_budget__",
+				// What the scheduler stores on every budget incident.
+				groupLabel: "Error budget",
 				...overrides,
 			})
 		// The rule reminds every 30m; a spent budget reminds once a day whatever the rule says.
