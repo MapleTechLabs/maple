@@ -158,7 +158,7 @@
     },
     "apps/cli": {
       "name": "@maple/cli",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "bin": {
         "maple": "./src/bin.ts",
       },
@@ -609,7 +609,7 @@
     },
     "packages/alchemy-maple": {
       "name": "@maple-dev/alchemy",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "dependencies": {
         "@maple-dev/effect-sdk": "workspace:*",
       },
@@ -727,7 +727,7 @@
     },
     "packages/browser": {
       "name": "@maple-dev/browser",
-      "version": "0.16.0",
+      "version": "0.17.0",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "rrweb": "^2.2.2",
