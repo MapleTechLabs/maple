@@ -186,6 +186,12 @@ describe("Maple.SourceMaps", () => {
 			join(root, "big/huge.js.map"),
 			`${Str.slice(0, -1)(map("src/huge.ts"))},"pad":"${Str.repeat(10 * 1024 * 1024)("x")}"}`,
 		)
+		// A prebuilt worker's map that lists no sources: the server refuses it, so it stays behind.
+		writeFileSync(join(root, "worker.js"), "w()\n")
+		writeFileSync(
+			join(root, "worker.js.map"),
+			JSON.stringify({ version: 3, sources: [], names: [], mappings: "" }),
+		)
 		return h.run(
 			Effect.gen(function* () {
 				// No release and no debug id: nothing can match the map, so nothing goes up.
