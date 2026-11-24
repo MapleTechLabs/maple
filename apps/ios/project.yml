@@ -109,7 +109,7 @@ targets:
             path: Maple/Resources/Info.plist
             properties:
                 CFBundleDisplayName: Maple
-                CFBundleShortVersionString: "0.1.0"
+                CFBundleShortVersionString: "1.0.0"
                 # These must live in the plist itself: `INFOPLIST_KEY_*` build settings
                 # are only honoured when Xcode generates the plist, and this one is
                 # written by XcodeGen. Without `UILaunchScreen` iOS assumes a legacy
@@ -229,7 +229,7 @@ targets:
             path: Widgets/Info.plist
             properties:
                 CFBundleDisplayName: Ongoing issues
-                CFBundleShortVersionString: "0.1.0"
+                CFBundleShortVersionString: "1.0.0"
                 # Must match the app's, or the extension is rejected at install
                 # with a version-mismatch error that names neither target.
                 CFBundleVersion: "100"

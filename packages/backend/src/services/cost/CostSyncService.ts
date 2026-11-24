@@ -51,7 +51,7 @@ import {
 	COST_DATASOURCE,
 	type CostSyncPlan,
 	type CostSyncStep,
-	headIntervalMs,
+	HEAD_INTERVAL_MS,
 	historyFloor,
 	nextMonthStartMs,
 	oversizedDay,
@@ -303,13 +303,8 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								PG.or(
 									$.watermarkDate.isNull(),
 									$.lastSyncedAt.isNull(),
-									// A head due, at each provider's own interval.
-									...Arr.map(CostProvider.literals, (provider) =>
-										PG.and(
-											$.provider.eq(provider),
-											$.lastSyncedAt.lte(now - headIntervalMs(provider)),
-										),
-									),
+									// A head due.
+									$.lastSyncedAt.lte(now - HEAD_INTERVAL_MS),
 									// History left to walk, down to each provider's own floor.
 									...Arr.map(CostProvider.literals, (provider) =>
 										PG.and(
@@ -634,7 +629,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 								now + BACKFILL_BUDGET_HOLD_MS,
 								source.lastSyncedAt === null
 									? now + BACKFILL_BUDGET_HOLD_MS
-									: source.lastSyncedAt + headIntervalMs(source.provider),
+									: source.lastSyncedAt + HEAD_INTERVAL_MS,
 							)
 						: null
 				if (!stepped) {

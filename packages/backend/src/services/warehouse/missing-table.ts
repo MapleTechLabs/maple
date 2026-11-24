@@ -111,6 +111,12 @@ export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|E
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
 
+/** `service_platforms_hourly` predates its service-identity columns (migration 0074): schema drift
+ * quoting one of them (the message also echoes the query). The map then draws platforms without identities. */
+export const isMissingServiceIdentityColumns = namesDriftedColumn(
+	/[`'](?:service_platforms_hourly\.)?(?:ScopeNames|TelemetrySdkName|TelemetrySdkLanguage|OsName|ClassifiedSpanCount|ServerSpanCount|ConsumerSpanCount|RootSpanCount)[`']/,
+)
+
 /** `service_usage` predates its profile columns (migration 0068): schema drift naming one of them.
  * The billing chart then reads no profile usage. */
 export const isMissingServiceUsageProfiles = namesDriftedColumn(/\bProfile(?:RowCount|SizeBytes)\b/)

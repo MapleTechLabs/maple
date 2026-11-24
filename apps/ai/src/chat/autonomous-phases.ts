@@ -133,13 +133,14 @@ export const runAutonomousPhases = <E, R>(input: AutonomousPhasesInput<E, R>): E
 			}
 			if (!outcome.submitted() && outcome.failure() === undefined) outcome.fail("answered_in_prose")
 		}
-		// A provider error mid-response (an upstream 500 after reasoning had streamed) is past the
-		// engine's own retry. The pass, or its continuation, resumes once from its transcript.
+		// A provider error mid-response (an upstream 500 after reasoning had streamed) or a malformed
+		// response is past the engine's own retry. The pass resumes once from its transcript.
 		const resumePrompt = completion.resumePrompt
+		const failure = outcome.failure()
 		if (
 			resumePrompt !== undefined &&
 			!outcome.submitted() &&
-			outcome.failure() === "provider_unavailable" &&
+			(failure === "provider_unavailable" || failure === "model_error") &&
 			holdsTurn()
 		) {
 			const remaining = yield* remainingAgent

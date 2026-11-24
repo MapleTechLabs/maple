@@ -11,7 +11,7 @@ import { CommitCardMessages } from "../../kit/commit-card"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { HealthMessages } from "../../kit/service-health"
-import { LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
+import { CommitSummary, LatencyBaseline, ServiceRow, ServicesFacets, Sparklines } from "./model"
 
 /** The URL's facet filters, by their include param. */
 export const Facet = Schema.Literals(["environments", "namespaces", "commitShas"])
@@ -43,7 +43,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSparklines: result(Sparklines),
 	CompletedFetchFacets: result(ServicesFacets),
 	CompletedFetchBaseline: result(Schema.Array(LatencyBaseline)),
-	CompletedFetchCommitMessages: result(Schema.Record(Schema.String, Schema.String)),
+	CompletedFetchCommitSummaries: result(Schema.Record(Schema.String, CommitSummary)),
 	PaintedTable: {},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	...HealthMessages,

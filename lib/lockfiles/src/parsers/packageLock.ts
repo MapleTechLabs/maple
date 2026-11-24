@@ -4,6 +4,7 @@ import { decodeJson } from "../internal/decode.ts"
 import { readPackageJsons } from "../internal/manifests.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 
 const Deps = Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
 
@@ -93,7 +94,7 @@ const fromDependencyTree = (
 		return [pkg("npm", realName, version, relation), ...nested]
 	})
 
-export const parsePackageLock = Effect.fn("lockfiles.parsePackageLock")(function* (input: LockfileInput) {
+export const parsePackageLock = Effect.fn(function* (input: LockfileInput) {
 	const lock = yield* decodeJson(PackageLock, input.path, input.content)
 	if (lock.packages !== undefined && Rec.keys(lock.packages).length > 0) {
 		const output: ParserOutput = {
@@ -114,4 +115,4 @@ export const parsePackageLock = Effect.fn("lockfiles.parsePackageLock")(function
 		warnings,
 	}
 	return output
-})
+}, parseSpan("lockfiles.parsePackageLock"))

@@ -32,5 +32,13 @@
 	     `active`, which is the right fallback. -->
 	<key>com.apple.developer.usernotifications.time-sensitive</key>
 	<true/>
+	<!-- Sign in with Apple, required by App Review 4.8 because sign-in also
+	     offers Google and GitHub. Clerk's AuthView shows the native button once
+	     Apple is enabled on the Clerk instance. Enable the capability on App ID
+	     com.maple.mobile first: Xcode Cloud signing cannot add it. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 </dict>
 </plist>

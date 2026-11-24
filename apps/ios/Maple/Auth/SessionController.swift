@@ -320,4 +320,23 @@ final class SessionController {
 		membershipsLoaded = false
 		await signOutLocally()
 	}
+
+	/// Whether this account may delete itself here. Mirrors the web settings
+	/// page, which reads the same Clerk instance setting.
+	var canDeleteAccount: Bool {
+		!isFixture && Clerk.shared.user?.deleteSelfEnabled == true
+	}
+
+	/// Permanently deletes the signed-in Clerk user (App Review 5.1.1(v)).
+	/// Device rows are unregistered first, while the token still works.
+	func deleteAccount() async throws {
+		guard let user = Clerk.shared.user else { return }
+		await PushRegistrar.shared.unregisterAll(api: api)
+		await LiveActivityController.shared.stop()
+		try await user.delete()
+		try? await Clerk.shared.auth.signOut()
+		memberships = []
+		membershipsLoaded = false
+		await signOutLocally()
+	}
 }

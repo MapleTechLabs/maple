@@ -27,6 +27,15 @@ class CliAuthError extends Schema.TaggedError<CliAuthError>()("@maple/cli/CliAut
 	message: Schema.String,
 }) {}
 
+/**
+ * A login the person has to redo or fix: bad input, a denied, expired or spent code, or
+ * credentials the API refused. Expected, so the root span stays `Ok`.
+ */
+class CliLoginRefusedError extends Schema.TaggedError<CliLoginRefusedError>()(
+	"@maple/cli/LoginRefusedError",
+	{ message: Schema.String },
+) {}
+
 type Session = { readonly orgId: string; readonly userId: string; readonly roles?: ReadonlyArray<string> }
 type DeviceStart = {
 	readonly deviceCode: string
@@ -65,7 +74,7 @@ const normalizeApiUrl = (value: string) =>
 			if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("unsupported protocol")
 			return url.origin
 		},
-		catch: () => new CliAuthError({ message: `Invalid Maple API URL: ${value}` }),
+		catch: () => new CliLoginRefusedError({ message: `Invalid Maple API URL: ${value}` }),
 	})
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])
@@ -85,7 +94,7 @@ interface JsonRequestInit {
 const requestJson = <A>(
 	url: string,
 	init?: JsonRequestInit,
-): Effect.Effect<A, CliAuthError, HttpClient.HttpClient> =>
+): Effect.Effect<A, CliAuthError | CliLoginRefusedError, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		let request = HttpClientRequest.make(init?.method ?? "GET")(url)
@@ -108,12 +117,14 @@ const requestJson = <A>(
 			| ({ message?: unknown } & A)
 			| null
 		if (response.status < 200 || response.status >= 300) {
-			return yield* new CliAuthError({
-				message:
-					typeof body?.message === "string"
-						? body.message
-						: `Maple API returned HTTP ${response.status}`,
-			})
+			const message =
+				typeof body?.message === "string"
+					? body.message
+					: `Maple API returned HTTP ${response.status}`
+			// A 4xx refuses the token or code the person gave; a 5xx is ours.
+			return yield* response.status < 500
+				? new CliLoginRefusedError({ message })
+				: new CliAuthError({ message })
 		}
 		if (body === null) {
 			return yield* new CliAuthError({ message: "Maple API returned an empty response" })
@@ -124,7 +135,7 @@ const requestJson = <A>(
 const validateToken = (
 	apiUrl: string,
 	token: string,
-): Effect.Effect<Session, CliAuthError, HttpClient.HttpClient> =>
+): Effect.Effect<Session, CliAuthError | CliLoginRefusedError, HttpClient.HttpClient> =>
 	requestJson<Session>(`${apiUrl}/api/auth/session`, {
 		headers: { authorization: `Bearer ${token}` },
 	}).pipe(
@@ -200,7 +211,7 @@ export const ONBOARDING_NEXT_STEP =
 export const handoffLogin = Effect.fnUntraced(function* (apiUrl: string, code: string) {
 	// The code is a credential: it never crosses the network in clear, only to a local API.
 	if (!isHttpsOrLoopback(apiUrl)) {
-		return yield* new CliAuthError({
+		return yield* new CliLoginRefusedError({
 			message: `Refusing to send a handoff code over plain HTTP to ${apiUrl}; use the https:// API URL`,
 		})
 	}
@@ -218,7 +229,8 @@ export const handoffLogin = Effect.fnUntraced(function* (apiUrl: string, code: s
 			),
 		),
 	)
-	if (answer.status !== "complete") return yield* new CliAuthError({ message: HANDOFF_SPENT_MESSAGE })
+	if (answer.status !== "complete")
+		return yield* new CliLoginRefusedError({ message: HANDOFF_SPENT_MESSAGE })
 	const session = yield* validateToken(apiUrl, answer.token)
 	const store = yield* saveCredential(apiUrl, answer.token, session, true)
 	yield* Console.log(`✓ Logged in to ${apiUrl} as ${session.userId} (${session.orgId}) via ${store}.`)
@@ -254,7 +266,7 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 }) {
 	const config = yield* MapleConfig
 	if (config.envTokenOverride) {
-		return yield* new CliAuthError({
+		return yield* new CliLoginRefusedError({
 			message:
 				"MAPLE_API_TOKEN is set and overrides stored credentials. Unset it before running maple auth login.",
 		})
@@ -265,7 +277,7 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 	const handoff = Option.map(envHandoff, Str.trim)
 	if (Option.isSome(handoff)) {
 		if (a.withToken) {
-			return yield* new CliAuthError({
+			return yield* new CliLoginRefusedError({
 				message: "Pass either a handoff code or --with-token, not both",
 			})
 		}
@@ -274,7 +286,8 @@ const loginHandler = Effect.fnUntraced(function* (a: {
 
 	if (a.withToken) {
 		const token = yield* Effect.map(readStdinLine, Str.trim)
-		if (!token) return yield* new CliAuthError({ message: "No token was provided on standard input" })
+		if (!token)
+			return yield* new CliLoginRefusedError({ message: "No token was provided on standard input" })
 		const session = yield* validateToken(apiUrl, token)
 		const store = yield* saveCredential(apiUrl, token, session, false)
 		yield* Console.log(`✓ Logged in to ${apiUrl} as ${session.userId} (${session.orgId}) via ${store}.`)
@@ -334,14 +347,16 @@ const pollDeviceToken = Effect.fnUntraced(function* (apiUrl: string, started: De
 			continue
 		}
 		if (result.value.status === "denied") {
-			return yield* new CliAuthError({ message: "CLI login was denied in the browser" })
+			return yield* new CliLoginRefusedError({ message: "CLI login was denied in the browser" })
 		}
 		if (result.value.status === "expired") {
-			return yield* new CliAuthError({ message: "CLI login code expired; run maple auth login again" })
+			return yield* new CliLoginRefusedError({
+				message: "CLI login code expired; run maple auth login again",
+			})
 		}
 		return result.value.token
 	}
-	return yield* new CliAuthError({ message: "CLI login code expired; run maple auth login again" })
+	return yield* new CliLoginRefusedError({ message: "CLI login code expired; run maple auth login again" })
 })
 
 const makeLogin = (name: string) =>
@@ -380,7 +395,7 @@ const makeStatus = (name: string) =>
 const logoutHandler = Effect.fnUntraced(function* () {
 	const config = yield* MapleConfig
 	if (config.envTokenOverride) {
-		return yield* new CliAuthError({
+		return yield* new CliLoginRefusedError({
 			message: "MAPLE_API_TOKEN is set and cannot be removed by Maple. Unset it to log out.",
 		})
 	}
@@ -388,9 +403,12 @@ const logoutHandler = Effect.fnUntraced(function* () {
 	const token = Option.map(config.token, Redacted.value).pipe(Option.getOrUndefined)
 	if (apiUrl && token && config.credentialManaged) {
 		yield* revokeManagedToken(apiUrl, token).pipe(
-			Effect.catchTag("@maple/cli/CliAuthError", (error) =>
-				Console.error(`Warning: could not revoke the remote credential: ${error.message}`),
-			),
+			Effect.catchTags({
+				"@maple/cli/CliAuthError": (error) =>
+					Console.error(`Warning: could not revoke the remote credential: ${error.message}`),
+				"@maple/cli/LoginRefusedError": (error) =>
+					Console.error(`Warning: could not revoke the remote credential: ${error.message}`),
+			}),
 		)
 	}
 	yield* config.clearRemoteCredential

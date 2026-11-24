@@ -1,7 +1,6 @@
 // The Morph API key an org's Morph spend is read with: checked with Morph, then kept in the shared
-// cost connection store. Only an organization key owned by an organization admin reads spend.
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { MorphSpendReadings } from "@maple/db/tables"
+// cost connection store. Any key reads usage: an organization key the organization's, a personal
+// key its owner's.
 import {
 	CostConnectionPersistenceError,
 	CostConnectionValidationError,
@@ -9,37 +8,50 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Clock, Context, Duration, Effect, Layer, Redacted, Array as Arr, String as Str } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { CostConnectionStore, type CostConnectionStoreError } from "./CostConnectionStore"
-import * as MorphBudgets from "./providers/morph/morph-budgets-api"
-import { toMemberReadings, writeReadings } from "./providers/morph/MorphCostProvider"
+import * as MorphUsage from "./providers/morph/morph-usage-api"
+import { addDays, utcToday } from "./sync-plan"
 
 const VALIDATE_TIMEOUT = Duration.seconds(20)
-/**
- * Morph names no organization, so every Morph key of an org reads one account. A replacement
- * from another Morph organization is caught by its members instead (see `set`).
- */
-const ACCOUNT_ID = "organization"
-const ACCOUNT_LABEL = "Organization"
+/** Closed days two keys must agree on to count as one account. */
+const FINGERPRINT_DAYS = 30
+/** Morph names no account, only its kind: a key's account is told apart by its usage. */
+const ACCOUNT_LABELS = { organization: "Organization", personal: "Personal account" } as const
 
 const refused = (message: string) => new CostConnectionValidationError({ message })
 
 const toKeyError = (
-	error: MorphBudgets.MorphBudgetsError,
-): CostConnectionValidationError | CostConnectionPersistenceError => {
-	if (error.kind === "unauthorized") {
-		return refused("Morph rejected this key. Create one at morphllm.com/dashboard/api-keys.")
-	}
-	if (error.kind === "forbidden") {
-		return refused(
-			"This key cannot read the organization's spend. Use a key of a Morph organization, owned by one of its admins. Keys of personal accounts cannot read spend.",
-		)
-	}
-	return new CostConnectionPersistenceError({ message: "Could not check this key with Morph. Try again." })
-}
+	error: MorphUsage.MorphUsageError,
+): CostConnectionValidationError | CostConnectionPersistenceError =>
+	error.kind === "unauthorized"
+		? refused("Morph rejected this key. Create one at morphllm.com/dashboard/api-keys.")
+		: new CostConnectionPersistenceError({ message: "Could not check this key with Morph. Try again." })
+
+const unreachable = () =>
+	Effect.fail(
+		new CostConnectionPersistenceError({
+			message: "Could not reach Morph to check this key. Try again.",
+		}),
+	)
+
+/** Each closed day's spend, in micro-dollars: what two keys of one account answer alike. */
+const fingerprint = (usage: MorphUsage.AccountUsage): string =>
+	Arr.join(
+		Arr.map(usage.days, (day) => `${day.date}=${Math.round(day.spend * 1_000_000)}`),
+		",",
+	)
 
 const toPersistenceError = (error: CostConnectionStoreError) =>
 	new CostConnectionPersistenceError({ message: error.message })
@@ -68,31 +80,54 @@ export class MorphCostConnectionService extends Context.Service<
 	make: Effect.gen(function* () {
 		const connections = yield* CostConnectionStore
 		const httpClient = yield* HttpClient.HttpClient
-		const database = yield* Database
-		const dbExecute = makeDbExecute(
-			database,
-			"MorphCostConnectionService",
-			(error) => new CostConnectionPersistenceError({ message: error.message }),
-		)
 
 		/**
-		 * The members of the newest reading the org's saved key took: one reading writes every member
-		 * at the same instant. Readings go with their connection, so these are its.
+		 * A replacement of the same kind must read the account the saved key does: both keys' last
+		 * closed days must match. A saved key Morph no longer takes (revoked in a rotation) leaves
+		 * nothing to compare, so the replacement is taken on trust.
 		 */
-		const knownMembers = Effect.fnUntraced(function* (orgId: OrgId) {
-			// One statement, so the newest reading's time and all its members come from one snapshot.
-			const rows = yield* dbExecute((db) =>
-				db.run(
-					PG.from(MorphSpendReadings)
-						.select(($) => ({ memberId: $.memberId }))
-						.where(($) => [
-							$.orgId.eq(orgId),
-							PG.sql
-								.cond`${$.lastReadAt} = (select max(last_read_at) from morph_spend_readings where org_id = ${orgId})`,
-						]),
+		const sameAccount = Effect.fnUntraced(function* (
+			orgId: OrgId,
+			secret: Redacted.Redacted,
+			account: MorphUsage.AccountUsage["account"],
+		) {
+			const saved = yield* connections.current(orgId, "morph").pipe(Effect.mapError(toPersistenceError))
+			if (
+				Option.isNone(saved) ||
+				saved.value.accountId !== account ||
+				Redacted.value(saved.value.secret) === Redacted.value(secret)
+			) {
+				return
+			}
+			const now = yield* Clock.currentTimeMillis
+			const yesterday = addDays(utcToday(now), -1)
+			const range = { start: addDays(yesterday, 1 - FINGERPRINT_DAYS), end: yesterday }
+			const read = (key: Redacted.Redacted) =>
+				MorphUsage.getUsage(httpClient, key, range).pipe(
+					Effect.timeoutOrElse({
+						duration: VALIDATE_TIMEOUT,
+						orElse: () =>
+							Effect.fail(
+								new MorphUsage.MorphUsageError({
+									message: "Morph timed out",
+									kind: "upstream",
+								}),
+							),
+					}),
+				)
+			const before = yield* read(saved.value.secret).pipe(
+				Effect.asSome,
+				Effect.catchTag("@maple/backend/cost/MorphUsageError", (error) =>
+					error.kind === "unauthorized" ? Effect.succeedNone : Effect.fail(toKeyError(error)),
 				),
 			)
-			return Arr.dedupe(Arr.map(rows, (row) => row.memberId))
+			if (Option.isNone(before)) return
+			const after = yield* read(secret).pipe(Effect.mapError(toKeyError))
+			if (fingerprint(before.value) !== fingerprint(after)) {
+				return yield* refused(
+					"This key reads another Morph account than the source does. Remove the source first to switch accounts.",
+				)
+			}
 		})
 
 		const set = Effect.fn("MorphCostConnectionService.set")(function* (
@@ -106,57 +141,23 @@ export class MorphCostConnectionService extends Context.Service<
 				return yield* refused("That is not a Morph API key. They start with sk-.")
 			}
 			const secret = Redacted.make(apiKey)
-			const readAt = yield* Clock.currentTimeMillis
-			const list = yield* MorphBudgets.listMemberSpend(httpClient, secret).pipe(
+			const usage = yield* MorphUsage.getUsage(httpClient, secret).pipe(
 				Effect.mapError(toKeyError),
-				Effect.timeoutOrElse({
-					duration: VALIDATE_TIMEOUT,
-					orElse: () =>
-						Effect.fail(
-							new CostConnectionPersistenceError({
-								message: "Could not reach Morph to check this key. Try again.",
-							}),
-						),
-				}),
+				Effect.timeoutOrElse({ duration: VALIDATE_TIMEOUT, orElse: unreachable }),
 			)
-			yield* Effect.annotateCurrentSpan("maple.cost.morph.members", list.members.length)
-			// Best effort: members are the only trace of which Morph organization a key reads. A
-			// replacement missing most of the source's members is taken for another organization's,
-			// whose spend would show as jumps in this one's.
-			const known = yield* knownMembers(orgId)
-			const fresh = new Set(Arr.map(list.members, (member) => member.userId))
-			const kept = Arr.filter(known, (member) => fresh.has(member)).length
-			if (Arr.isReadonlyArrayNonEmpty(known) && kept * 2 < known.length) {
+			yield* Effect.annotateCurrentSpan("maple.cost.morph.account", usage.account)
+			yield* sameAccount(orgId, secret, usage.account)
+			const account = { accountId: usage.account, accountLabel: ACCOUNT_LABELS[usage.account] }
+			const saved = yield* connections
+				.save({ orgId, userId, provider: "morph", secret, ...account })
+				.pipe(Effect.mapError(toPersistenceError))
+			if (saved === "other_account") {
 				return yield* refused(
-					"This key belongs to another Morph organization than the source does. Remove the source first to switch organizations.",
+					usage.account === "personal"
+						? "This is a personal key, and the source reads a Morph organization. Use one of the organization's keys, or remove the source first."
+						: "This is an organization key, and the source reads a personal Morph account. Use a key of that account, or remove the source first.",
 				)
 			}
-			const readings = yield* Effect.fromOption(toMemberReadings(list)).pipe(
-				Effect.mapError(() => refused("Morph reported a spend Maple cannot read.")),
-			)
-			const account = { accountId: ACCOUNT_ID, accountLabel: ACCOUNT_LABEL }
-			// The check's reading is kept with the row the save wrote, in its transaction: Morph never
-			// serves it again once its month has ended. The account id is the same for every Morph key,
-			// so `other_account` cannot come back.
-			yield* connections
-				.save({
-					orgId,
-					userId,
-					provider: "morph",
-					secret,
-					...account,
-					afterSave: (db, connectionId) =>
-						Effect.asVoid(
-							writeReadings(
-								db,
-								{ orgId, connectionRef: connectionId },
-								list.month,
-								readings,
-								readAt,
-							),
-						),
-				})
-				.pipe(Effect.mapError(toPersistenceError))
 			return account
 		})
 
