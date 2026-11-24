@@ -234,7 +234,8 @@ describe("github card", () => {
 			given(model),
 			expectView(role("switch", { name: "Force pushes" })).toHaveAttr("aria-checked", "true"),
 			expectView(role("switch", { name: "Security alerts" })).toHaveAttr("aria-checked", "false"),
-			expectView(text("7 of 13 categories")).toExist(),
+			expectView(role("switch", { name: "Refused pushes" })).toHaveAttr("aria-checked", "true"),
+			expectView(text("8 of 14 categories")).toExist(),
 		)
 		const toggled = pageUpdate(model, Message.ToggledAuditCategory({ id: "securityAlerts" }))
 		expect(Arr.map(toggled.commands ?? [], ({ name, args }) => [name, args])).toEqual([

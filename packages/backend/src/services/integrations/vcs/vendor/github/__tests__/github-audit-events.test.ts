@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import { Option, String as Str } from "effect"
-import { deliveryTimeMs, githubAuditEvent, githubForcedBranch } from "../github-audit-events"
+import {
+	deliveryTimeMs,
+	githubAuditEvent,
+	githubForcedBranch,
+	githubRuleSuiteAuditEvent,
+} from "../github-audit-events"
 
 const RECEIVED_AT = 1_763_000_000_000
 
@@ -398,5 +403,29 @@ describe("githubAuditEvent", () => {
 		expect(
 			Option.isNone(map("organization", { action: "member_added", organization, sender }, undefined)),
 		).toBe(true)
+	})
+})
+
+describe("githubRuleSuiteAuditEvent", () => {
+	const refused = (pushedAt: string, ref: string) =>
+		githubRuleSuiteAuditEvent({
+			account: "acme",
+			repositoryFullName: "acme/api",
+			suite: { id: 5, actorName: "mallory", ref, pushedAt },
+			failedRules: [],
+		})
+
+	it("names the refused ref as a branch or a tag, and is keyed by the suite", () => {
+		const branch = refused("2026-11-24T11:50:00Z", "refs/heads/main")
+		expect(Option.map(branch, (event) => [event.providerEventId, event.target])).toEqual(
+			Option.some(["rule-suite-5", { type: "branch", name: "acme/api: main" }]),
+		)
+		expect(Option.map(refused("2026-11-24T11:50:00Z", "refs/tags/v1"), (event) => event.target)).toEqual(
+			Option.some({ type: "tag", name: "acme/api: v1" }),
+		)
+	})
+
+	it("leaves out a suite whose push time does not read", () => {
+		expect(Option.isNone(refused("yesterday", "refs/heads/main"))).toBe(true)
 	})
 })

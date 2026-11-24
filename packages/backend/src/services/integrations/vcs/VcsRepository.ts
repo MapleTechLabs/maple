@@ -648,6 +648,51 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				},
 			)
 
+			// The repositories a refused-push scan reads next: active and unarchived, in id order after
+			// `afterId`, with how far each was read.
+			const listRuleSuiteScanTargets = Effect.fn("VcsRepository.listRuleSuiteScanTargets")(function* (
+				installationId: VcsInstallationId,
+				afterId: VcsRepositoryId | undefined,
+				limit: number,
+			) {
+				return yield* dbRead("vcs_repositories")((db) =>
+					db.run(
+						PG.from(VcsRepositories)
+							.select(($) => ({
+								id: $.id,
+								externalRepoId: $.externalRepoId,
+								owner: $.owner,
+								name: $.name,
+								ruleSuitesReadUntil: $.ruleSuitesReadUntil,
+							}))
+							.where(($) => [
+								$.installationId.eq(installationId),
+								$.status.eq("active"),
+								$.isArchived.eq(false),
+								afterId === undefined ? undefined : $.id.gt(afterId),
+							])
+							.orderBy(["id", "asc"])
+							.limit(limit),
+					),
+				)
+			})
+
+			// Moves a repository's refused-push cursor forward, never back.
+			const advanceRuleSuitesReadUntil = Effect.fn("VcsRepository.advanceRuleSuitesReadUntil")(
+				function* (repositoryId: VcsRepositoryId, readUntilMs: number) {
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(VcsRepositories)
+								.set({ ruleSuitesReadUntil: readUntilMs })
+								.where(($) => [
+									$.id.eq(repositoryId),
+									$.ruleSuitesReadUntil.isNull().or($.ruleSuitesReadUntil.lt(readUntilMs)),
+								]),
+						),
+					)
+				},
+			)
+
 			// The org's active repositories in one read, whatever installation owns them.
 			const listActiveRepositoriesByOrg = Effect.fn("VcsRepository.listActiveRepositoriesByOrg")(
 				function* (orgId: OrgId) {
@@ -1464,6 +1509,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				setAuditLogEnabled,
 				setAuditCategories,
 				listRepositoriesByInstallation,
+				listRuleSuiteScanTargets,
+				advanceRuleSuitesReadUntil,
 				listActiveRepositoriesByOrg,
 				resolveRepository,
 				getRepositoryById,

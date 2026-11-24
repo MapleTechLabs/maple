@@ -13,6 +13,7 @@ type DetectionTemplateId =
 	| "sign_in"
 	| "force_push_default_branch"
 	| "force_push_non_author"
+	| "refused_push"
 
 export type DetectionTemplate = Readonly<{
 	id: DetectionTemplateId
@@ -89,6 +90,16 @@ export const DETECTION_TEMPLATES: ReadonlyArray<DetectionTemplate> = [
 		threshold: 1,
 		windowMinutes: 5,
 		severity: "warning",
+	},
+	{
+		id: "refused_push",
+		title: "Push refused by a ruleset",
+		summary:
+			"Fires when a GitHub ruleset refuses a push, such as a force push or an unsigned commit to a protected branch.",
+		filters: { provider: "github", action: "rule_suite.failed" },
+		threshold: 1,
+		windowMinutes: 30,
+		severity: "critical",
 	},
 ]
 

@@ -2069,6 +2069,10 @@ describe("VcsSyncService orchestrator", () => {
 		readonly pullRequestsError?: VcsRateLimitedError
 		/** The `head` of every pull request listing the stubbed provider was asked for. */
 		readonly pullRequestHeads?: Array<string | undefined>
+		/** What the stubbed provider answers for a repository's refused pushes; none by default. */
+		readonly refusedPushes?: (repoName: string) => ReturnType<VcsProviderClient["fetchRefusedPushes"]>
+		/** Each refused-push read the stubbed provider served: the repository and its cursor. */
+		readonly refusedPushReads?: Array<{ repo: string; sinceMs: number }>
 		/** CI job logs the sync service forwarded, read to the end. */
 		readonly forwardedLogs?: Array<{ orgId: string; jobId: string; lines: ReadonlyArray<string> }>
 		/** The lines the stubbed provider serves as any job's log. */
@@ -2159,6 +2163,15 @@ describe("VcsSyncService orchestrator", () => {
 					: opts.workflowAnnotationsError
 						? Effect.fail(opts.workflowAnnotationsError)
 						: Effect.succeed(opts.workflowAnnotations ?? []),
+			fetchRefusedPushes: (_installation, repo, request) =>
+				Effect.sync(() =>
+					opts.refusedPushReads?.push({ repo: repo.name, sinceMs: request.sinceMs }),
+				).pipe(
+					Effect.andThen(
+						opts.refusedPushes?.(repo.name) ??
+							Effect.succeed({ events: [], newestMs: undefined }),
+					),
+				),
 			fetchPullRequests: (_installation, _repo, request) =>
 				Effect.sync(() => opts.pullRequestHeads?.push(request.head)).pipe(
 					Effect.andThen(
@@ -2607,6 +2620,120 @@ describe("VcsSyncService orchestrator", () => {
 			})
 		},
 	)
+
+	describe("rule suite scan", () => {
+		const scanJob: VcsSyncJob = {
+			kind: "rule-suite-scan",
+			provider: "github",
+			externalInstallationId: "42",
+		}
+		const repoNamed = (name: string, externalRepoId: string) => ({
+			...oneRepo[0],
+			externalRepoId,
+			name,
+			fullName: `octo/${name}`,
+			htmlUrl: `https://github.com/octo/${name}`,
+		})
+		const REFUSED_AT = 1_700_000_000_000
+		const refusal = {
+			provider: "github" as const,
+			providerEventId: "rule-suite-11",
+			account: "octo",
+			occurredAtMs: REFUSED_AT,
+			actor: { type: "user" as const, id: "9", name: "mallory" },
+			action: "rule_suite.failed",
+			category: "permission" as const,
+			outcome: "denied" as const,
+		}
+		const refusedPushes = (name: string) =>
+			name === "locked"
+				? Effect.fail(new VcsRepoUnavailableError({ message: "rule insights: 404" }))
+				: name === "api"
+					? Effect.succeed({ events: [refusal], newestMs: REFUSED_AT })
+					: Effect.succeed({ events: [], newestMs: undefined })
+
+		it.effect("writes each repository's refused pushes and reads on from where it stopped", () => {
+			const testDb = createTestDb(trackedDbs)
+			const forwardedAudit: Array<{ orgId: string; action: string }> = []
+			const refusedPushReads: Array<{ repo: string; sinceMs: number }> = []
+			return Effect.gen(function* () {
+				const svc = yield* VcsSyncService
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_rule_suites")
+				const installation = yield* seedInstallation(repo, orgId)
+				yield* repo.upsertRepositories(installation, [
+					repoNamed("api", "7"),
+					repoNamed("locked", "8"),
+					{ ...repoNamed("old", "9"), isArchived: true },
+				])
+				const scan = svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+				yield* scan
+				yield* scan
+				assert.deepStrictEqual(forwardedAudit, [
+					{ orgId, action: "rule_suite.failed" },
+					{ orgId, action: "rule_suite.failed" },
+				])
+				const firstRead = -60 * 60 * 1000
+				// The archived repository is never read; the one GitHub refused keeps its first window.
+				assert.deepStrictEqual(
+					Arr.sort(
+						Arr.map(refusedPushReads, (read) => `${read.repo}@${read.sinceMs}`),
+						Str.Order,
+					),
+					Arr.sort(
+						[
+							`api@${firstRead}`,
+							`api@${REFUSED_AT}`,
+							`locked@${firstRead}`,
+							`locked@${firstRead}`,
+						],
+						Str.Order,
+					),
+				)
+
+				// An org that stops collecting refused pushes is not read at all.
+				yield* repo.setAuditCategories(orgId, installation.id, { refusedPushes: false })
+				yield* scan
+				assert.strictEqual(refusedPushReads.length, 4)
+			}).pipe(
+				Effect.provide(
+					orchestratorLayer(testDb, { sent: [], forwardedAudit, refusedPushes, refusedPushReads }),
+				),
+			)
+		})
+
+		it.effect(
+			"hands the repositories past one batch to a follow-up scan, after the last one read",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const sent: Array<VcsSyncJob> = []
+				return Effect.gen(function* () {
+					const svc = yield* VcsSyncService
+					const repo = yield* VcsRepository
+					const installation = yield* seedInstallation(repo, asOrgId("org_rule_suites_batch"))
+					yield* repo.upsertRepositories(
+						installation,
+						Arr.makeBy(51, (i) => repoNamed(`r${i}`, String(100 + i))),
+					)
+					yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(scanJob))
+					const follow = sent[0]
+					if (follow?.kind !== "rule-suite-scan") return assert.fail("no follow-up scan")
+					const read = yield* repo.listRuleSuiteScanTargets(installation.id, undefined, 50)
+					assert.strictEqual(
+						follow.afterRepositoryId,
+						Arr.last(read).pipe(
+							Option.map((r) => r.id),
+							Option.getOrUndefined,
+						),
+					)
+
+					// The follow-up reads the one repository left and stops.
+					yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(follow))
+					assert.strictEqual(sent.length, 1)
+				}).pipe(Effect.provide(orchestratorLayer(testDb, { sent, forwardedAudit: [] })))
+			},
+		)
+	})
 
 	it.effect("holds an audit event for an installation a connect has not stored yet, then gives up", () => {
 		const testDb = createTestDb(trackedDbs)

@@ -1,6 +1,7 @@
 /**
  * The api Worker's schedules. Dispatched by `Cloudflare.Workers.cron`:
  *   every 12h — VCS sync backstop, enqueues a refresh per installation
+ *   every 15m — reads the pushes GitHub rulesets refused into the audit log
  *   hourly    — scrape_target_checks retention (was inline on the
  *               scrape-results write path; a busy target writes ~75k
  *               rows/day, so the 10k cap binds within hours)
@@ -14,8 +15,9 @@ import { vcsSyncModule } from "./modules"
 
 const VCS_SYNC_CRON = "0 */12 * * *"
 const SCRAPE_RETENTION_CRON = "0 * * * *"
+const RULE_SUITE_SCAN_CRON = "*/15 * * * *"
 
-/** Attaches the two schedules at plan time and their listeners at runtime. Needs `CronEventSourceLive`. */
+/** Attaches the schedules at plan time and their listeners at runtime. Needs `CronEventSourceLive`. */
 export const registerCrons = (ports: ApiPortsLayer) =>
 	Effect.gen(function* () {
 		yield* Cloudflare.Workers.cron(VCS_SYNC_CRON, () =>
@@ -25,6 +27,14 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 					VcsScheduledLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
 				),
 			).pipe(settleFire(VCS_SYNC_CRON)),
+		)
+		yield* Cloudflare.Workers.cron(RULE_SUITE_SCAN_CRON, () =>
+			Effect.flatMap(vcsSyncModule, ({ VcsScheduledLive, runRuleSuiteScan, vcsSyncTelemetry }) =>
+				runEvent(
+					runRuleSuiteScan,
+					VcsScheduledLive.pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provideMerge(ports)),
+				),
+			).pipe(settleFire(RULE_SUITE_SCAN_CRON)),
 		)
 		yield* Cloudflare.Workers.cron(SCRAPE_RETENTION_CRON, () =>
 			Effect.gen(function* () {

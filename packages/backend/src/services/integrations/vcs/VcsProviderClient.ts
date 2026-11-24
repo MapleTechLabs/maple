@@ -1,3 +1,4 @@
+import type { AuditTrailEvent } from "@maple/domain/audit-trail"
 import type { Effect, Option, Stream } from "effect"
 import type {
 	BranchUpsertInput,
@@ -197,6 +198,23 @@ export interface VcsProviderClient {
 		opts: { readonly limit: number; readonly head?: string },
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestSummary>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Pushes the repository's rulesets refused after `sinceMs`, as audit events, oldest first.
+	 * Reads at most a few pages; `newestMs` is the newest refusal read, the cursor's next value.
+	 */
+	readonly fetchRefusedPushes: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef & { readonly fullName: string },
+		opts: { readonly sinceMs: number; readonly nowMs: number },
+	) => Effect.Effect<
+		{ readonly events: ReadonlyArray<AuditTrailEvent>; readonly newestMs: number | undefined },
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

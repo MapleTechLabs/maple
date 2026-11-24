@@ -8,6 +8,7 @@ import type {
 import type { GithubAuditWebhookEvent } from "@maple/domain/github-audit"
 import type { VcsRepositoryRef } from "@maple/domain/http"
 import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
+import { timestampMs } from "@maple/backend/platform/time"
 
 // A GitHub webhook as an audit trail event: who changed the organization's people, access,
 // repositories, protections and code, grouped into the categories in `@maple/domain/github-audit`.
@@ -547,5 +548,57 @@ export const githubAuditEvent = (input: {
 		outcome: webhook.outcome?.(action) ?? "success",
 		target: webhook.target(payload, action),
 		raw: rawOf(webhook.redact?.(payload) ?? payload),
+	})
+}
+
+/** A failed rule suite as GitHub's rule insights list it: a push a repository's rulesets refused. */
+export interface GithubRefusedRuleSuite {
+	readonly id: number
+	readonly actorId?: number | null
+	readonly actorName?: string | null
+	readonly ref: string
+	readonly pushedAt: string
+	readonly beforeSha?: string
+	readonly afterSha?: string
+}
+
+/**
+ * A refused push as an audit event: `rule_suite.failed`, outcome `denied`, its reason the rules
+ * that failed (`non_fast_forward`, `required_signatures`) when GitHub said. The suite id is the
+ * key and its push time the event time, so reading the same suite again writes the same row.
+ */
+export const githubRuleSuiteAuditEvent = (input: {
+	readonly account: string
+	readonly repositoryFullName: string
+	readonly suite: GithubRefusedRuleSuite
+	readonly failedRules: ReadonlyArray<string>
+}): Option.Option<AuditTrailEvent> => {
+	const occurredAtMs = timestampMs(input.suite.pushedAt)
+	if (!Number.isFinite(occurredAtMs)) return Option.none()
+	const { suite } = input
+	const actorName = suite.actorName ?? undefined
+	const target = refTarget({ ref: suite.ref, repository: { full_name: input.repositoryFullName } })
+	return Option.some({
+		provider: "github",
+		providerEventId: `rule-suite-${suite.id}`,
+		account: input.account,
+		occurredAtMs,
+		actor: {
+			type: actorName === undefined ? "unknown" : "user",
+			id: suite.actorId === undefined || suite.actorId === null ? undefined : String(suite.actorId),
+			name: actorName,
+		},
+		action: "rule_suite.failed",
+		category: "permission",
+		outcome: "denied",
+		outcomeReason: input.failedRules.length === 0 ? undefined : Arr.join(input.failedRules, ", "),
+		target,
+		raw: {
+			rule_suite_id: suite.id,
+			ref: suite.ref,
+			before: suite.beforeSha,
+			after: suite.afterSha,
+			failed_rules: input.failedRules,
+		},
 	})
 }

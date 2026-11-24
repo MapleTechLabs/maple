@@ -10,6 +10,8 @@ export interface GithubAuditCategorySpec<Id extends string = string, Event exten
 	readonly defaultEnabled: boolean
 	/** GitHub webhook event names (`x-github-event`) whose audit events land in this category. */
 	readonly events: ReadonlyArray<Event>
+	/** Event names of audit events Maple polls GitHub for rather than receiving by webhook. */
+	readonly polledEvents?: ReadonlyArray<string>
 	/** A GitHub App permission an installation must accept before these events arrive. */
 	readonly needsPermission?: string
 }
@@ -66,6 +68,16 @@ export const GITHUB_AUDIT_CATEGORIES = [
 		summary: "A push that rewrote a branch's or tag's history, with the commits before and after.",
 		defaultEnabled: true,
 		events: ["push"],
+	}),
+	category({
+		id: "refusedPushes",
+		title: "Refused pushes",
+		summary:
+			"Pushes a ruleset refused, such as a force push or an unsigned commit to a protected branch. Read from rule insights every 15 minutes.",
+		defaultEnabled: true,
+		events: [],
+		polledEvents: ["rule_suite"],
+		needsPermission: "Administration: read",
 	}),
 	category({
 		id: "refDeletions",
@@ -148,8 +160,8 @@ export const GithubAuditCategoryStates = Schema.Record(GithubAuditCategoryId, Sc
 export type GithubAuditCategoryStates = typeof GithubAuditCategoryStates.Type
 
 const BY_EVENT: Readonly<Record<string, GithubAuditCategoryId>> = Rec.fromEntries(
-	Arr.flatMap(GITHUB_AUDIT_CATEGORIES, (spec) =>
-		Arr.map(spec.events, (event): readonly [string, GithubAuditCategoryId] => [event, spec.id]),
+	Arr.flatMap(GITHUB_AUDIT_CATEGORIES, (spec): ReadonlyArray<readonly [string, GithubAuditCategoryId]> =>
+		Arr.map([...spec.events, ...(spec.polledEvents ?? [])], (event) => [event, spec.id] as const),
 	),
 )
 
