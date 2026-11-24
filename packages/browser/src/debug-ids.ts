@@ -12,13 +12,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 function debugIdsByUrl(): Map<string, string> {
 	const owner: Record<string, unknown> = globalThis
 	// Maple's registry last, so it wins over Sentry's for the same script.
-	const entries = [owner._sentryDebugIds, owner._mapleDebugIds].flatMap((registry) =>
-		isRecord(registry) ? Object.entries(registry) : [],
-	)
-	if (entries.length !== registered) {
-		registered = entries.length
+	const registries = [owner._sentryDebugIds, owner._mapleDebugIds].filter(isRecord)
+	// Counting keys allocates no entry pairs, so an unchanged registry costs little per exception.
+	const count = registries.reduce((total, registry) => total + Object.keys(registry).length, 0)
+	if (count !== registered) {
+		registered = count
 		byUrl = new Map()
-		for (const [stack, id] of entries) {
+		for (const [stack, id] of registries.flatMap((registry) => Object.entries(registry))) {
 			const url = frameUrls(stack)[0]
 			if (url !== undefined && typeof id === "string") byUrl.set(url, id)
 		}
