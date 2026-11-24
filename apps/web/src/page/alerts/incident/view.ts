@@ -23,8 +23,10 @@ import {
 	incidentGroup,
 	type IncidentTimelineEntry,
 	signalTitle,
+	timeToAcknowledge,
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -54,7 +56,7 @@ import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
 import { msIso } from "../../kit/alert-time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { type Model, RESOLVE_DIALOG_ID } from "./model"
 import { type EscalationData, incidentRail } from "./view-rail"
 import { activeSilenceFor } from "../shared/silences"
 import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
@@ -96,12 +98,27 @@ const statusLine = <M>(
 			"Resolved ",
 			...(incident.resolvedAt ? [at(incident.resolvedAt)] : []),
 			` · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`,
+			...Option.match(Option.fromNullishOr(timeToAcknowledge(incident)), {
+				onNone: () => [],
+				onSome: (waited) => [` · acknowledged after ${waited}`],
+			}),
 		]
 	const acked = acknowledgedLine(incident)
+	const waited = timeToAcknowledge(incident)
 	const ackSuffix: ReadonlyArray<Html | string> =
 		acked === null || incident.acknowledgedAt === null
 			? []
-			: [` · ${acked} at `, at(incident.acknowledgedAt)]
+			: [
+					` · ${acked} at `,
+					at(incident.acknowledgedAt),
+					...(waited === null
+						? []
+						: [
+								incident.acknowledgedAt === incident.firstAcknowledgedAt
+									? `, ${waited} after it opened`
+									: `, first acknowledged after ${waited}`,
+							]),
+				]
 	if (incident.holdReason != null)
 		return [`Waiting on data · ${holdReasonLabel[incident.holdReason]}`, ...ackSuffix]
 	return [
@@ -232,6 +249,36 @@ export const acknowledgeAction = <M>(
 		),
 	]
 }
+
+/** The incident header's Resolve button, which asks first; nothing once the incident resolved. */
+export const resolveAction = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		incident: AlertIncidentDocument
+		isLoading: boolean
+		isDisabled?: boolean
+		onResolve: M
+	}>,
+): ReadonlyArray<Html> =>
+	options.incident.status !== "open"
+		? []
+		: [
+				button(
+					h,
+					{
+						variant: "outline",
+						size: "sm",
+						isLoading: options.isLoading,
+						isDisabled: options.isDisabled,
+						attributes: [h.OnClick(options.onResolve)],
+					},
+					["Resolve"],
+				),
+			]
+
+/** What a resolve by hand does, said before it is done: the all-clear cannot be taken back. */
+export const RESOLVE_DIALOG_DESCRIPTION =
+	"Everyone this incident notified gets the all-clear, and its escalation stops. If the rule still breaches, no new incident opens for it until a check reads healthy or reads no data, and for a day at most."
 
 /** A link to the incident's investigation, or the button that starts one for who may run one. */
 const investigateAction = (
@@ -582,6 +629,18 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 									? control
 									: lockedControl(h, denialReason("incidents:respond"), control),
 						),
+						...Arr.map(
+							resolveAction(h, {
+								incident: view.incident,
+								isLoading: model.isResolving,
+								isDisabled: !canRespondToIncidents(model),
+								onResolve: Message.ClickedResolve(),
+							}),
+							(control) =>
+								canRespondToIncidents(model)
+									? control
+									: lockedControl(h, denialReason("incidents:respond"), control),
+						),
 						...(isOpenIncident(model)
 							? [
 									gatedControl(h, model, "alerts:manage", (isLocked) =>
@@ -614,6 +673,17 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				view: SilenceDialogView.view,
 				viewInputs: { id: "alert-incident-silence" },
 				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+			confirmDialog(h, {
+				slotId: RESOLVE_DIALOG_ID,
+				model: model.resolveDialog,
+				toParentMessage: (message) => Message.GotResolveDialogMessage({ message }),
+				title: "Resolve this incident?",
+				description: RESOLVE_DIALOG_DESCRIPTION,
+				confirmLabel: "Resolve incident",
+				tone: "default",
+				isPending: model.isResolving,
+				onConfirm: Message.ClickedConfirmResolve(),
 			}),
 		],
 	)

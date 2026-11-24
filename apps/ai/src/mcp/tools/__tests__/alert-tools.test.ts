@@ -8,6 +8,7 @@ import {
 	AlertChecksListResponse,
 	AlertDestinationsListResponse,
 	AlertIncidentNotFoundError,
+	AlertIncidentResolvedError,
 	AlertIncidentsListResponse,
 	AlertRuleDocument,
 	AlertRuleNotFoundError,
@@ -32,6 +33,7 @@ import {
 	ListAlertChecksOutput,
 	ListAlertDestinationsOutput,
 	ListAlertIncidentsOutput,
+	ResolveAlertIncidentOutput,
 	ListAlertRulesOutput,
 	PreviewAlertRuleOutput,
 	UpdateAlertRuleOutput,
@@ -55,6 +57,7 @@ import type { McpToolResult } from "../types"
 const RULE_ID = "7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
 const DEST_ID = "0e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b"
 const INCIDENT_ID = "11111111-2222-4333-8444-555555555555"
+const RESOLVED_INCIDENT_ID = "33333333-2222-4333-8444-555555555555"
 const NOW = "2026-09-24T10:00:00.000Z"
 
 const rule = Schema.decodeSync(AlertRuleDocument)({
@@ -155,6 +158,7 @@ const incident = (overrides: Record<string, unknown>) => ({
 	acknowledgedByUserId: null,
 	acknowledgedByName: null,
 	acknowledgedVia: null,
+	firstAcknowledgedAt: null,
 	errorIssueId: null,
 	silenceId: null,
 	silencedAt: null,
@@ -166,6 +170,8 @@ interface Seen {
 	updated?: AlertRuleUpsertRequest
 	previewed?: AlertRulePreviewRequest
 	incidentOptions?: unknown
+	/** The actor `resolve_alert_incident` resolved as. */
+	resolvedBy?: unknown
 	checkOptions?: unknown
 	extraIncidents?: ReadonlyArray<Record<string, unknown>>
 	updatedIds?: Array<string>
@@ -292,6 +298,28 @@ const layer = (seen: Seen) =>
 								),
 							}),
 				)
+			},
+			resolveIncident: (_org: unknown, incidentId: string, actor: unknown) => {
+				seen.resolvedBy = actor
+				const resolvedId = Schema.decodeSync(AlertIncidentId)(incidentId)
+				if (incidentId === RESOLVED_INCIDENT_ID)
+					return Effect.fail(
+						new AlertIncidentResolvedError({
+							message: "This incident is already resolved.",
+							incidentId: resolvedId,
+						}),
+					)
+				if (incidentId !== INCIDENT_ID)
+					return Effect.fail(
+						new AlertIncidentNotFoundError({
+							message: "Alert incident not found",
+							incidentId: resolvedId,
+						}),
+					)
+				const resolved = Schema.decodeUnknownSync(AlertIncidentsListResponse)({
+					incidents: [incident({ status: "resolved", resolvedAt: NOW })],
+				}).incidents
+				return Effect.fromNullishOr(resolved[0]).pipe(Effect.orDie)
 			},
 		} as never),
 		Layer.succeed(AlertDestinationsService, {
@@ -1373,6 +1401,29 @@ describe("alert tools", () => {
 			Effect.flip(buildUpdatedRequest(rule, { escalation_chain_id: "not-a-chain" })),
 		)
 		expect(malformed.parameter).toBe("escalation_chain_id")
+	})
+
+	it("resolve_alert_incident resolves by REST id as the caller and points at the timeline", async () => {
+		const seen: Seen = {}
+		const result = await ok(
+			"resolve_alert_incident",
+			{ incident_id: encodePublicId("inc", INCIDENT_ID) },
+			seen,
+		)
+		const output = Schema.decodeUnknownSync(ResolveAlertIncidentOutput)(result.structuredContent)
+		expect(output).toMatchObject({ id: INCIDENT_ID, status: "resolved", resolvedAt: NOW })
+		expect(seen.resolvedBy).toMatchObject({ userId: "user_tools", source: "mcp" })
+		expect(text(result)).toContain("## Incident Resolved")
+		expect(text(result)).toContain(`\`get_incident_timeline rule_id="${RULE_ID}"\``)
+	})
+
+	it("resolve_alert_incident names an already resolved or unknown incident on incident_id", async () => {
+		const resolved = await run("resolve_alert_incident", { incident_id: RESOLVED_INCIDENT_ID })
+		expect(resolved._tag === "Failure" ? invalidParameter(resolved.failure) : "").toBe("incident_id")
+		expect(resolved._tag === "Failure" ? resolved.failure.message : "").toContain("already resolved")
+		const unknown = await run("resolve_alert_incident", { incident_id: RULE_ID })
+		expect(unknown._tag === "Failure" ? invalidParameter(unknown.failure) : "").toBe("incident_id")
+		expect(unknown._tag === "Failure" ? unknown.failure.message : "").toContain("list_alert_incidents")
 	})
 
 	it("get_alert_rule names the escalation chain a tier starts", async () => {

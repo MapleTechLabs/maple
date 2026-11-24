@@ -54,6 +54,7 @@ const alertIncidentExample = {
 	acknowledged_at: "2026-07-15T09:14:02.000Z",
 	acknowledged_by: { user_id: "user_2Nk8mXqPfR3yZ1aB4cD5eF6g", name: "Dana Kim" },
 	acknowledged_via: "slack",
+	first_acknowledged_at: "2026-07-15T09:14:02.000Z",
 	error_issue_id: null,
 	escalation: {
 		chain_id: "esc_gQtGH2s65G6a7sJmuayXL6",
@@ -147,7 +148,7 @@ export const V2AlertIncident = Schema.Struct({
 	}),
 	status: AlertIncidentStatus.annotate({
 		description:
-			"`open` while the breach persists; `resolved` once enough consecutive healthy checks are observed. Incident resolution is scheduler-driven — incidents cannot be closed via the API.",
+			"`open` while the breach persists; `resolved` once enough consecutive healthy checks are observed, or when someone resolves it by hand.",
 		examples: ["open"],
 	}),
 	comparator: AlertComparator,
@@ -197,6 +198,10 @@ export const V2AlertIncident = Schema.Struct({
 		description:
 			"Where the acknowledgement came from (`web`, `api`, `mcp`, `slack`, `discord`), or `null` when not acknowledged.",
 		examples: ["slack"],
+	}),
+	first_acknowledged_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"When the incident was first acknowledged, or `null` if it never was. Unlike `acknowledged_at` it is kept after an unacknowledge, an escalation or the resolve, so `first_acknowledged_at - first_triggered_at` is the time to acknowledge.",
 	}),
 	error_issue_id: Schema.NullOr(ErrorIssuePublicId).annotate({
 		description: "The linked error issue (`iss_…`) when the incident was correlated to one, or `null`.",
@@ -264,7 +269,7 @@ export const V2AlertIncidentEvent = Schema.Struct({
 	incident_id: AlertIncidentPublicId,
 	type: AlertIncidentEventType.annotate({
 		description:
-			"`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, `paged` when an escalation step paged a person (see `page`), or `on_call_gap` when a step's on-call schedule had nobody on call (see `detail`) or the step reached nobody at all.",
+			"`acknowledged` or `unacknowledged` by a person, `ack_cleared` when the scheduler cleared an acknowledgement because the incident escalated to a higher severity, `paged` when an escalation step paged a person (see `page`), or `on_call_gap` when a step's on-call schedule had nobody on call (see `detail`) or the step reached nobody at all, or `resolved` when a person resolved the incident by hand.",
 		examples: ["acknowledged"],
 	}),
 	actor: Schema.NullOr(V2AlertIncidentActor).annotate({
@@ -411,6 +416,20 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 		),
 	)
 	.add(
+		HttpApiEndpoint.post("resolve", "/:id/resolve", {
+			params: { id: AlertIncidentPublicId },
+			success: V2AlertIncident,
+			error: [alertIncidentNotFound, alertIncidentResolved, alertPersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "resolveAlertIncident",
+				summary: "Resolve an alert incident",
+				description:
+					"Resolves an open incident by hand and sends the all-clear to every destination it notified. If the rule still breaches, it opens no new incident for this group until a check reads healthy or reads no data, and for a day at most, so a resolve is not undone a minute later. Fails with 409 on an incident that is already resolved. Requires the `alerts:write` scope.",
+			}),
+		),
+	)
+	.add(
 		HttpApiEndpoint.get("listEvents", "/:id/events", {
 			params: { id: AlertIncidentPublicId },
 			success: AlertIncidentEventList,
@@ -430,6 +449,6 @@ export class V2AlertIncidentsApiGroup extends HttpApiGroup.make("alertIncidents"
 		OpenApi.annotations({
 			title: "Alert Incidents",
 			description:
-				"The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
+				"The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders, or resolved by hand.",
 		}),
 	) {}

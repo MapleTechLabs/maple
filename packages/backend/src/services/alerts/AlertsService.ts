@@ -38,6 +38,8 @@ import {
 	AlertIncidentEventId,
 	AlertEscalationRunId,
 	AlertIncidentHoldReason,
+	AlertIncidentNotFoundError,
+	AlertIncidentResolvedError,
 	AlertIncidentStatus,
 	type AlertDestinationNotFoundError,
 	type AlertRuleDestinationNotFoundError,
@@ -180,6 +182,9 @@ import {
 	SKIPPED_POST_PREFIX,
 } from "./alert-delivery-rows"
 import { relinkedToAlertsList } from "./delivery/deleted-rule-resolve"
+import { manualResolveNote } from "./delivery/resolution-notes"
+import type { AlertIncidentActor } from "./AlertIncidentAckService"
+import { rowToIncidentDocument } from "./AlertReadModelsService"
 import { buildChatDigestBlocks, CHAT_DIGEST_THRESHOLD, type ChatDigestItem } from "./delivery/chat-digest"
 import { makeIncidentPushBudget, type IncidentPushBudget } from "./alert-push-budget"
 import { EmailService } from "@maple/backend/platform/EmailService"
@@ -264,12 +269,35 @@ export type { AlertSchedulerLane } from "./AlertRuleModel"
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly anomaly?: AnomalyAlertObservation
 	readonly groupLabel?: string
+	/** Why it resolved when no check said so; notifications show it for every signal. */
+	readonly resolutionNote?: string
 	/**
 	 * What each severity of this check was judged against, when that is not the rule's stored
 	 * tier: an SLO's firing tier has its own factor, and its budget group breaches at the whole budget.
 	 */
 	readonly tierThresholds?: Partial<Record<AlertSeverity, number>>
 }
+
+/** A flap that opened without a page told nobody, so its resolve tells nobody either. */
+const toldNobody = (incident: Pick<AlertIncidentRow, "lastDeliveredEventType" | "lastNotifiedAt">): boolean =>
+	incident.lastDeliveredEventType == null && incident.lastNotifiedAt != null
+
+/** A check that says the group is well: nothing breaching, and nothing held either. */
+const isCleanHealthy = (evaluation: EvaluatedRule): boolean =>
+	evaluation.status === "healthy" && Arr.every(evaluation.levels, (level) => level.status === "clear")
+
+/**
+ * A check that ends the quiet after a resolve by hand: the group is well, or there is nothing left
+ * to measure (a rule that counts errors reads no data once they stop).
+ */
+const endsQuiet = (evaluation: EvaluatedRule): boolean =>
+	isCleanHealthy(evaluation) || (evaluation.status === "skipped" && evaluation.skipReason === "no_data")
+
+/**
+ * The longest a resolve by hand keeps its group quiet. A group that never reads well again (it
+ * left the rule's results, its check keeps failing) would otherwise be muted for good.
+ */
+export const QUIET_AFTER_RESOLVE_CEILING_MS = 24 * 60 * 60_000
 
 /** The service and environment an anomaly is about; null when it names neither. */
 const anomalyIncidentLabels = (anomaly: AnomalyAlertObservation): AlertIncidentLabels | null => {
@@ -647,6 +675,18 @@ export interface AlertsServiceApi {
 		| QueryEngineValidationError
 		| QueryEngineTimeoutError
 		| WarehouseQueryPathError
+	>
+	/**
+	 * Resolves an open incident by hand: the all-clear goes to everyone it notified, and its rule
+	 * and group open nothing until one clean healthy check.
+	 */
+	readonly resolveIncident: (
+		orgId: OrgId,
+		incidentId: AlertIncidentId,
+		actor: AlertIncidentActor,
+	) => Effect.Effect<
+		AlertIncidentDocument,
+		AlertIncidentNotFoundError | AlertIncidentResolvedError | AlertPersistenceError
 	>
 	readonly runSchedulerTick: (lane?: AlertSchedulerLane) => Effect.Effect<
 		{
@@ -1575,6 +1615,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									? null
 									: Math.max(0, incident.lastNotifiedAt - incident.firstTriggeredAt),
 							resolvedAfterHold,
+							resolutionNote: evaluation.resolutionNote ?? null,
 							linkUrl,
 							// Unevaluated: the Lock Screen sparkline is the only
 							// consumer, so this warehouse read happens for a critical
@@ -1760,7 +1801,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							value: evaluation.value,
 							sampleCount: evaluation.sampleCount,
 							// The evaluator puts the check's error in the reason of an uptime rule.
-							detail: signalCarriesDetail(rule.signalType) ? evaluation.reason : null,
+							detail:
+								evaluation.resolutionNote ??
+								(signalCarriesDetail(rule.signalType) ? evaluation.reason : null),
 							sparkline: series?.sparkline ?? null,
 							chartUrl,
 							template: rule.notificationTemplate,
@@ -2002,15 +2045,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const newNormalized = yield* normalizeRule(orgId, request)
 				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
 
-				if (oldNormalized.enabled && !newNormalized.enabled) {
+				const startsFresh =
+					(oldNormalized.enabled && !newNormalized.enabled) ||
+					ruleStructureChanged(oldNormalized, newNormalized)
+				if (startsFresh) {
+					// Switched off, or the evaluation mode changed: resolve all and let the scheduler
+					// re-evaluate fresh, which also ends a quiet a resolve by hand left behind.
 					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, {
 						resolveAll: true,
 					})
-				} else if (ruleStructureChanged(oldNormalized, newNormalized)) {
-					// Evaluation mode changed — resolve all and let scheduler re-evaluate fresh
-					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, {
-						resolveAll: true,
-					})
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(AlertIncidents)
+								.set({ quietSince: null })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.ruleId.eq(ruleId),
+									$.quietSince.isNotNull(),
+								]),
+						),
+					)
 				} else {
 					const staleGroupKeys = computeStaleGroupKeys(oldNormalized, newNormalized)
 					if (HashSet.size(staleGroupKeys) > 0) {
@@ -3707,6 +3761,32 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						lifecycle.transition === "none" && lifecycle.hold === null,
 					)
 
+					// Someone resolved this group's incident by hand while it still breached: it opens
+					// nothing until a check that is well, or reads nothing, lifts that.
+					const quietIds =
+						openIncident == null ? prefetch.quietFor(row.orgId, row.id, groupKey) : []
+					if (Arr.isReadonlyArrayNonEmpty(quietIds)) {
+						if (endsQuiet(evaluation)) {
+							yield* writeUnderClaim(claim, (db) =>
+								db.run(
+									PG.update(AlertIncidents)
+										.set({ quietSince: null })
+										.where(($) => [$.orgId.eq(row.orgId), $.id.in_(...quietIds)]),
+								),
+							)
+						} else if (lifecycle.transition === "opened") {
+							yield* Effect.annotateCurrentSpan("maple.alert.quiet_after_manual_resolve", true)
+							return {
+								transition: "none" as const,
+								incidentId: null,
+								openedIncidentId: null,
+								consecutiveBreaches: lifecycle.state.consecutiveBreaches,
+								consecutiveHealthy: lifecycle.state.consecutiveHealthy,
+								severity: lifecycle.severity,
+							}
+						}
+					}
+
 					// Ask the persistence adapter for flap history only when the pure core
 					// has decided that a new incident is otherwise ready to open.
 					if (lifecycle.transition === "opened") {
@@ -3875,6 +3955,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							holdReason: null,
 							heldSince: null,
 							...clearedAcknowledgement,
+							firstAcknowledgedAt: null,
+							quietSince: null,
 							errorIssueId: anomalyLink?.errorIssueId ?? null,
 							anomalyIncidentId: anomalyLink?.anomalyIncidentId ?? null,
 							groupLabel: anomalyLink?.groupLabel ?? evaluation.groupLabel ?? null,
@@ -4721,6 +4803,204 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				derivedFromNoData: false,
 			})
 
+			/**
+			 * What follows an incident resolved outside a check, once its row says so: its status
+			 * page, its hold metric and the all-clear. A flap-suppressed incident announces nothing.
+			 */
+			const announceResolved = Effect.fn("AlertsService.announceResolved")(function* (
+				orgId: OrgId,
+				normalized: NormalizedRule,
+				incident: AlertIncidentRow,
+				evaluation: EvaluatedRule,
+				timestamp: number,
+				pushBudget: IncidentPushBudget | null,
+				/** The all-clear rows, when the caller already wrote them with the resolve. */
+				queued?: ReadonlyArray<PreparedIncidentDelivery>,
+			) {
+				yield* syncStatusPages(normalized.signalType, { orgId, alertIncidentId: incident.id }, (db) =>
+					resolveForAlertIncident(db, { orgId, alertIncidentId: incident.id, at: timestamp }),
+				)
+				if (incident.holdReason !== null) {
+					yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
+				}
+				if (toldNobody(incident)) {
+					yield* Effect.logInfo("Skipping resolve notification for flapping incident").pipe(
+						Effect.annotateLogs({ ruleId: normalized.id, incidentId: incident.id }),
+					)
+					return
+				}
+				// A held incident still tells the phone it was waiting on data, not that a value recovered.
+				const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
+				const resolveRule = ruleForResolve(normalized, incident)
+				const silence = yield* findActiveSilence(
+					orgId,
+					resolveRule,
+					incident.groupKey,
+					incident.labelsJson,
+					timestamp,
+				)
+				yield* queueIncidentNotifications(
+					orgId,
+					resolveRule,
+					{
+						...incident,
+						status: "resolved",
+						resolvedAt: timestamp,
+						holdReason: null,
+						heldSince: null,
+						...clearedAcknowledgement,
+						updatedAt: timestamp,
+					},
+					evaluation,
+					"resolve",
+					timestamp,
+					pushBudget,
+					silence,
+					afterHold(incident, heldForMs),
+					// Already written: nothing more to insert, the phone still hears it.
+					queued === undefined ? undefined : [],
+				)
+			})
+
+			const resolveIncident = Effect.fn("AlertsService.resolveIncident")(function* (
+				orgId: OrgId,
+				incidentId: AlertIncidentId,
+				actor: AlertIncidentActor,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.alert.incident_id": incidentId,
+					"maple.alert.resolve_source": actor.source,
+				})
+				const found = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select()
+							.where(($) => [$.orgId.eq(orgId), $.id.eq(incidentId)])
+							.limit(1),
+					),
+				)
+				const incident = found[0]
+				if (incident === undefined) {
+					return yield* new AlertIncidentNotFoundError({
+						message: `No such alert incident: '${incidentId}'`,
+						incidentId,
+					})
+				}
+				const alreadyResolved = new AlertIncidentResolvedError({
+					message: "The incident is already resolved",
+					incidentId,
+				})
+				if (incident.status !== "open") return yield* alreadyResolved
+				const timestamp = yield* now
+				const note = manualResolveNote(actor.name)
+				// The all-clear is prepared before anything changes and written with the resolve, so an
+				// incident is never left resolved here and still firing in a pager.
+				const allClear = yield* Effect.gen(function* () {
+					const ruleRow = yield* requireRuleRow(orgId, incident.ruleId)
+					const normalized = yield* normalizeRuleRow(ruleRow)
+					const evaluation: EvaluatedRule = {
+						...makeSyntheticResolveEvaluation(normalized, note),
+						resolutionNote: note,
+					}
+					if (toldNobody(incident)) return { normalized, evaluation, deliveries: [] }
+					const resolveRule = ruleForResolve(normalized, incident)
+					const silence = yield* findActiveSilence(
+						orgId,
+						resolveRule,
+						incident.groupKey,
+						incident.labelsJson,
+						timestamp,
+					)
+					const deliveries = yield* prepareIncidentDeliveries(
+						orgId,
+						resolveRule,
+						{
+							...incident,
+							status: "resolved",
+							resolvedAt: timestamp,
+							holdReason: null,
+							heldSince: null,
+							...clearedAcknowledgement,
+							updatedAt: timestamp,
+						},
+						evaluation,
+						"resolve",
+						timestamp,
+						silence?.id ?? (incident.silencedAt !== null ? incident.silenceId : null),
+					)
+					return { normalized, evaluation, deliveries }
+				}).pipe(
+					Effect.mapError((error) =>
+						Schema.is(AlertPersistenceError)(error)
+							? error
+							: new AlertPersistenceError({
+									message:
+										"The all-clear could not be prepared, so the incident was left open",
+									cause: error.message,
+								}),
+					),
+				)
+				const resolved = yield* dbExecute((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							const rows = yield* db.run(
+								PG.update(AlertIncidents)
+									.set({
+										status: "resolved",
+										resolvedAt: timestamp,
+										holdReason: null,
+										heldSince: null,
+										silencedAt: null,
+										// The rule may still breach: nothing reopens until it has been well once.
+										quietSince: timestamp,
+										...clearedAcknowledgement,
+										updatedAt: timestamp,
+									})
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(incidentId),
+										$.status.eq("open"),
+									])
+									.returning(),
+							)
+							if (rows.length > 0) {
+								yield* db.run(
+									PG.insertInto(AlertIncidentEvents).values({
+										id: decodeAlertIncidentEventIdSync(makeUuid()),
+										orgId,
+										incidentId,
+										type: "resolved",
+										actorUserId: actor.userId,
+										actorName: actor.name,
+										source: actor.source,
+										detail: null,
+										createdAt: timestamp,
+									}),
+								)
+								if (allClear.deliveries.length > 0)
+									yield* insertIncidentDeliveries(db, allClear.deliveries)
+							}
+							return rows
+						}),
+					),
+				)
+				const resolvedRow = resolved[0]
+				if (resolvedRow === undefined) return yield* alreadyResolved
+				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+				// What is left tells status pages and phones: best effort, logged when it fails.
+				yield* announceResolved(
+					orgId,
+					allClear.normalized,
+					incident,
+					allClear.evaluation,
+					timestamp,
+					null,
+					allClear.deliveries,
+				).pipe(isolate("A hand-resolved incident could not be announced", { incidentId }))
+				return rowToIncidentDocument(resolvedRow)
+			})
+
 			const resolveStaleIncidents = Effect.fn("AlertsService.resolveStaleIncidents")(function* (
 				orgId: OrgId,
 				ruleId: AlertRuleId,
@@ -4782,55 +5062,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							),
 						)
 						if (resolved.length === 0) return false
-						yield* syncStatusPages(
-							normalized.signalType,
-							{ orgId, alertIncidentId: incident.id },
-							(db) =>
-								resolveForAlertIncident(db, {
-									orgId,
-									alertIncidentId: incident.id,
-									at: timestamp,
-								}),
-						)
-						if (incident.holdReason !== null) {
-							yield* Metric.update(AlertingMetrics.incidentsResolvedAfterHoldTotal, 1)
-						}
-
-						if (incident.lastDeliveredEventType == null && incident.lastNotifiedAt != null) {
-							yield* Effect.logInfo("Skipping resolve notification for flapping incident").pipe(
-								Effect.annotateLogs({ ruleId, incidentId: incident.id }),
-							)
-							return true
-						}
-						// A held incident resolved by a rule edit still tells the phone it
-						// was waiting on data, not that a value recovered.
-						const heldForMs = incident.heldSince === null ? 0 : timestamp - incident.heldSince
-						const resolveRule = ruleForResolve(normalized, incident)
-						const silence = yield* findActiveSilence(
+						yield* announceResolved(
 							orgId,
-							resolveRule,
-							incident.groupKey,
-							incident.labelsJson,
-							timestamp,
-						)
-						yield* queueIncidentNotifications(
-							orgId,
-							resolveRule,
-							{
-								...incident,
-								status: "resolved",
-								resolvedAt: timestamp,
-								holdReason: null,
-								heldSince: null,
-								...clearedAcknowledgement,
-								updatedAt: timestamp,
-							},
+							normalized,
+							incident,
 							syntheticEvaluation,
-							"resolve",
 							timestamp,
 							opts.pushBudget ?? null,
-							silence,
-							afterHold(incident, heldForMs),
 						)
 						return true
 					}),
@@ -5274,6 +5512,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				) => ReadonlyArray<AlertIncidentRow>
 				/** The group keys the rule had state rows for when the tick began. */
 				readonly stateKeysForRule: (orgId: OrgId, ruleId: AlertRuleId) => ReadonlyArray<string>
+				/** The incidents someone resolved by hand in this group that it has not been well since. */
+				readonly quietFor: (
+					orgId: OrgId,
+					ruleId: AlertRuleId,
+					groupKey: string,
+				) => ReadonlyArray<AlertIncidentRow["id"]>
+				/** Every group of the rule that is quiet after a resolve by hand, with those incidents. */
+				readonly quietGroupsForRule: (
+					orgId: OrgId,
+					ruleId: AlertRuleId,
+				) => ReadonlyArray<{ readonly id: AlertIncidentRow["id"]; readonly groupKey: string }>
 			}
 
 			const EMPTY_INCIDENTS: ReadonlyArray<AlertIncidentRow> = []
@@ -5298,13 +5547,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						openIncidentFor: () => null,
 						openIncidentsForRule: () => EMPTY_INCIDENTS,
 						stateKeysForRule: () => [],
+						quietFor: () => [],
+						quietGroupsForRule: () => [],
 					} satisfies TickPrefetch
 				}
 
 				const ruleIds = Arr.map(rows, (row) => row.id)
 				const orgIds = Arr.dedupe(Arr.map(rows, (row) => row.orgId))
 
-				const { stateRows, incidentRows } = yield* dbExecute((db) =>
+				const { stateRows, incidentRows, quietRows } = yield* dbExecute((db) =>
 					Effect.all(
 						{
 							stateRows: db.run(
@@ -5319,6 +5570,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										$.orgId.in_(...orgIds),
 										$.ruleId.in_(...ruleIds),
 										$.status.eq("open"),
+									]),
+							),
+							// Almost always empty, and read off its own partial index.
+							quietRows: db.run(
+								PG.from(AlertIncidents)
+									.select("id", "orgId", "ruleId", "groupKey", "quietSince")
+									.where(($) => [
+										$.orgId.in_(...orgIds),
+										$.ruleId.in_(...ruleIds),
+										$.quietSince.isNotNull(),
 									]),
 							),
 						},
@@ -5349,6 +5610,26 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					),
 				)
 
+				// A quiet past its ceiling is over, whatever the group has read since.
+				const nowMs = yield* now
+				const isLapsed = (row: (typeof quietRows)[number]) =>
+					row.quietSince !== null && nowMs - row.quietSince >= QUIET_AFTER_RESOLVE_CEILING_MS
+				const lapsed = Arr.filter(quietRows, isLapsed)
+				const quiet = Arr.filter(quietRows, (row) => !isLapsed(row))
+				if (Arr.isReadonlyArrayNonEmpty(lapsed)) {
+					const lapsedIds = Arr.map(lapsed, (row) => row.id)
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(AlertIncidents)
+								.set({ quietSince: null })
+								.where(($) => [$.orgId.in_(...orgIds), $.id.in_(...lapsedIds)]),
+						),
+					)
+				}
+				const quietByGroup = Arr.groupBy(quiet, (row) =>
+					groupCacheKey(row.orgId, row.ruleId, row.groupKey ?? UNGROUPED_GROUP_KEY),
+				)
+				const quietByRule = Arr.groupBy(quiet, (row) => ruleCacheKey(row.orgId, row.ruleId))
 				const incidentsByRule = Arr.groupBy(incidentRows, (incident) =>
 					ruleCacheKey(incident.orgId, incident.ruleId),
 				)
@@ -5375,6 +5656,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								onNone: () => [],
 								onSome: (states) => Arr.map(states, (state) => state.groupKey),
 							}),
+						),
+					quietFor: (orgId, ruleId, groupKey) =>
+						Arr.map(
+							Record.get(quietByGroup, groupCacheKey(orgId, ruleId, groupKey)).pipe(
+								Option.getOrElse((): typeof quiet => []),
+							),
+							(row) => row.id,
+						),
+					quietGroupsForRule: (orgId, ruleId) =>
+						Arr.map(
+							Record.get(quietByRule, ruleCacheKey(orgId, ruleId)).pipe(
+								Option.getOrElse((): typeof quiet => []),
+							),
+							(row) => ({ id: row.id, groupKey: row.groupKey ?? UNGROUPED_GROUP_KEY }),
 						),
 				} satisfies TickPrefetch
 			})
@@ -6103,6 +6398,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						).pipe(flushingStates)
 
 						const evaluatedGroups = HashSet.fromIterable(Arr.map(eligible, (r) => r.groupKey))
+						// A group resolved by hand that left the results has nothing left to measure,
+						// which ends its quiet as a check that read no data does. Back, it opens again.
+						const departedQuietIds = Arr.filterMap(
+							prefetch.quietGroupsForRule(row.orgId, row.id),
+							(quiet) =>
+								HashSet.has(evaluatedGroups, quiet.groupKey)
+									? Result.failVoid
+									: Result.succeed(quiet.id),
+						)
+						if (Arr.isReadonlyArrayNonEmpty(departedQuietIds)) {
+							yield* writeUnderClaim(
+								{ ruleId: row.id, claimedAt: timestamp, ruleUpdatedAt: row.updatedAt },
+								(db) =>
+									db.run(
+										PG.update(AlertIncidents)
+											.set({ quietSince: null })
+											.where(($) => [
+												$.orgId.eq(row.orgId),
+												$.id.in_(...departedQuietIds),
+											]),
+									),
+							)
+						}
 						// An anomaly rule's source reports every open incident it still owns, so a missing
 						// group was closed elsewhere; never probe the warehouse for it.
 						if (normalized.signalType !== "anomaly") {
@@ -6804,7 +7122,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			// `AlertsService.of(...)` can't be used here — referencing the class inside
 			// its own `make` is a TS2506 circular base-expression error.
-			return { updateRule, testRule, previewRule, runSchedulerTick } satisfies AlertsServiceApi
+			return {
+				updateRule,
+				testRule,
+				previewRule,
+				resolveIncident,
+				runSchedulerTick,
+			} satisfies AlertsServiceApi
 		}),
 	},
 ) {

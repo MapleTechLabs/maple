@@ -167,6 +167,7 @@ export const AlertIncidentEventType = Schema.Literals([
 	"ack_cleared",
 	"paged",
 	"on_call_gap",
+	"resolved",
 ]).annotate({
 	identifier: "@maple/AlertIncidentEventType",
 	title: "Alert Incident Event Type",
@@ -1067,6 +1068,8 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Display name of whoever acknowledged, as the source reported it. */
 	acknowledgedByName: Schema.NullOr(Schema.String),
 	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
+	/** When the incident was first acknowledged; kept after it is unacknowledged or resolves. */
+	firstAcknowledgedAt: Schema.NullOr(IsoDateTimeString),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
 	anomalyIncidentId: Schema.optionalKey(Schema.NullOr(AnomalyIncidentId)),

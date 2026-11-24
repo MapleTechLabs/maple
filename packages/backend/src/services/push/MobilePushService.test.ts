@@ -221,6 +221,18 @@ describe("renderIncidentPush", () => {
 		expect(resolved.sound).toBe(null)
 	})
 
+	it("says who resolved an incident by hand, not that its value came back", () => {
+		const resolved = renderIncidentPush(
+			event({
+				eventType: "resolve",
+				value: null,
+				openForMs: 2 * 3_600_000,
+				resolutionNote: "Resolved by Dana Kim",
+			}),
+		)
+		expect(resolved.alert.body).toBe("Resolved by Dana Kim after 2h.")
+	})
+
 	it("says what the telemetry did when a resolve ends a hold, not 'back to'", () => {
 		// No recovered value was ever measured: the breach stopped showing up
 		// while traffic was thin, and the hold ceiling elapsed. "Back to 0%"
@@ -258,6 +270,30 @@ describe("renderIncidentPush", () => {
 				"Certificate for checkout.example.com expires in 9 days (2026-11-24).",
 				"active",
 				"Certificate renewed · Checkout health",
+			],
+		)
+	})
+
+	it("does not say a monitor passed or a certificate renewed when someone resolved it by hand", () => {
+		const byHand = { eventType: "resolve", value: null, resolutionNote: "Resolved by Dana Kim" } as const
+		const monitor = renderIncidentPush(
+			event({ ...byHand, signalType: "uptime", ruleName: "Checkout health", openForMs: 2 * 3_600_000 }),
+		)
+		const certificate = renderIncidentPush(
+			event({
+				...byHand,
+				signalType: "uptime",
+				ruleName: "Checkout health",
+				groupKey: "__tls_certificate__",
+			}),
+		)
+		assert.deepStrictEqual(
+			[monitor.alert.title, monitor.alert.body, certificate.alert.title, certificate.alert.body],
+			[
+				"Resolved · Checkout health",
+				"Resolved by Dana Kim after 2h.",
+				"Resolved · Checkout health",
+				"Resolved by Dana Kim.",
 			],
 		)
 	})

@@ -18,12 +18,15 @@ import {
 import { Schema } from "effect"
 import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
+import * as Dialog from "@maple/views/ui/dialog"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
 import * as SilenceDialog from "../silence-dialog/dialog"
 import { LiveRows } from "../../kit/load-schemas"
+
+export const RESOLVE_DIALOG_ID = "alert-incident-resolve"
 
 export const Model = Schema.Struct({
 	incidentId: Schema.String,
@@ -42,6 +45,9 @@ export const Model = Schema.Struct({
 	/** Acknowledgement history, refetched whenever the incident's acknowledgement changes. */
 	activity: KeyedSchema(Schema.Array(V2AlertIncidentEvent), LoadFailure),
 	isUpdatingAcknowledgement: Schema.Boolean,
+	/** Asks before a resolve by hand: it sends the all-clear to everyone the incident notified. */
+	resolveDialog: Dialog.Model,
+	isResolving: Schema.Boolean,
 	/** An SLO incident's link to its SLO: `slos.list`, read only for one. */
 	slos: KeyedSchema(Schema.Array(V2Slo), LoadFailure),
 	/** An uptime incident's link to its monitor: `uptimeMonitors.list`, read only for one. */

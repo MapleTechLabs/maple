@@ -83,6 +83,8 @@ export interface IncidentPushEvent {
 	readonly value: number | null
 	/** Uptime rules only: the failing check's error. */
 	readonly detail?: string | null
+	/** A resolve no check asked for (by hand, rule deleted): said in place of a recovery. */
+	readonly resolutionNote?: string | null
 	readonly groupKey: string | null
 	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
 	readonly groupLabel?: string | null
@@ -292,12 +294,15 @@ export const renderIncidentPush = (
 	const rule = truncate(event.ruleName, 60)
 	const openFor = event.openForMs === null ? null : humanDuration(event.openForMs)
 
+	// Resolved by hand: no check passed and no certificate was renewed, so the note is the body.
+	const handResolved = event.eventType === "resolve" ? (event.resolutionNote ?? null) : null
+
 	// A certificate nearing expiry: a heads-up, not a page.
 	if (event.signalType === "uptime" && event.groupKey === UPTIME_CERTIFICATE_GROUP_KEY) {
-		const body = uptimeSummaryLine(event)
+		const body = handResolved === null ? uptimeSummaryLine(event) : `${handResolved}.`
 		return {
 			alert: {
-				title: `${event.eventType === "resolve" ? "Certificate renewed" : "Certificate expiring"} · ${rule}`,
+				title: `${event.eventType !== "resolve" ? "Certificate expiring" : handResolved === null ? "Certificate renewed" : "Resolved"} · ${rule}`,
 				subtitle: service ?? undefined,
 				body,
 			},
@@ -311,11 +316,17 @@ export const renderIncidentPush = (
 	if (event.signalType === "uptime") {
 		const body = uptimeSummaryLine(event)
 		if (event.eventType === "resolve") {
+			const resolvedBody =
+				handResolved !== null
+					? `${handResolved}${openFor === null ? "" : ` after ${openFor}`}.`
+					: openFor === null
+						? body
+						: `${body} Down for ${openFor}.`
 			return {
 				alert: {
 					title: `Resolved · ${rule}`,
 					subtitle: service ?? undefined,
-					body: openFor === null ? body : `${body} Down for ${openFor}.`,
+					body: resolvedBody,
 				},
 				interruptionLevel: "passive",
 				priority: 5,
@@ -356,15 +367,18 @@ export const renderIncidentPush = (
 			const now = formatSignalMetric(event.value, event.signalDisplay)
 			const after = openFor === null ? "" : ` after ${openFor}`
 			const held = event.resolvedAfterHold ?? null
+			const note = event.resolutionNote ?? null
 			const body =
-				held === null
-					? event.signalType === "anomaly"
-						? `The anomaly ended${after}.`
-						: // A budget's value is a bare percent: its check's sentence carries the money.
-							event.signalType === "cost_budget" && event.detail != null
-							? `${event.detail}${after}.`
-							: `${label} back to ${now}${after}.`
-					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
+				note !== null
+					? `${note}${after}.`
+					: held === null
+						? event.signalType === "anomaly"
+							? `The anomaly ended${after}.`
+							: // A budget's value is a bare percent: its check's sentence carries the money.
+								event.signalType === "cost_budget" && event.detail != null
+								? `${event.detail}${after}.`
+								: `${label} back to ${now}${after}.`
+						: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
 			return {
 				alert: {
 					title: `Resolved · ${rule}`,

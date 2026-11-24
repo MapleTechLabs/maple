@@ -2,7 +2,7 @@ import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain
 import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { buildIncidentTimeline } from "./incident-timeline"
+import { acknowledgedSummary, buildIncidentTimeline, timeToAcknowledge } from "./incident-timeline"
 
 const decodeIncident = Schema.decodeUnknownSync(AlertIncidentDocument)
 const decodeDelivery = Schema.decodeUnknownSync(AlertDeliveryEventDocument)
@@ -37,6 +37,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		acknowledgedByUserId: null,
 		acknowledgedByName: null,
 		acknowledgedVia: null,
+		firstAcknowledgedAt: null,
 		errorIssueId: null,
 		silenceId: null,
 		silencedAt: null,
@@ -147,6 +148,7 @@ describe("buildIncidentTimeline", () => {
 						acknowledgedAt: "2026-10-15T14:20:00.000Z",
 						acknowledgedByName: "Dana Kim",
 						acknowledgedVia: "web",
+						firstAcknowledgedAt: null,
 					}),
 				),
 				(entry) => entry.detail,
@@ -243,6 +245,7 @@ describe("buildIncidentTimeline", () => {
 				acknowledgedAt: "2026-10-15T14:26:00.000Z",
 				acknowledgedByName: "Dana Kim",
 				acknowledgedVia: "web",
+				firstAcknowledgedAt: null,
 			}),
 			[makeDelivery()],
 			[
@@ -442,5 +445,39 @@ describe("paged events", () => {
 		expect(Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))).toMatchObject([
 			{ title: "Paged a member", detail: null, tone: "neutral" },
 		])
+	})
+})
+
+describe("time to acknowledge", () => {
+	const opened = "2026-11-10T08:00:00.000Z"
+	const incident = (
+		firstAcknowledgedAt: string | null,
+		acknowledgedAt: string | null = firstAcknowledgedAt,
+	) =>
+		makeIncident({
+			firstTriggeredAt: opened,
+			firstAcknowledgedAt,
+			acknowledgedAt,
+			acknowledgedByName: acknowledgedAt === null ? null : "Dana Kim",
+			acknowledgedVia: acknowledgedAt === null ? null : "web",
+		})
+
+	it("reads the wait before the first acknowledgement, and nothing when there was none", () => {
+		expect(timeToAcknowledge(incident("2026-11-10T08:04:30.000Z"))).toBe("4m")
+		expect(timeToAcknowledge(incident("2026-11-10T09:05:00.000Z"))).toBe("1h 5m")
+		expect(timeToAcknowledge(incident("2026-11-10T08:00:20.000Z"))).toBe("under 1m")
+		expect(timeToAcknowledge(incident(null))).toBeNull()
+	})
+
+	it("says how long the acknowledgement took, and when a later one was not the first", () => {
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z"))).toBe(
+			"Acknowledged by Dana Kim, 4m after it opened",
+		)
+		// Acknowledged, taken back, then acknowledged again half an hour in.
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z", "2026-11-10T08:30:00.000Z"))).toBe(
+			"Acknowledged by Dana Kim · first acknowledged after 4m",
+		)
+		// Unacknowledged now: nobody holds it, whatever the first wait was.
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z", null))).toBeNull()
 	})
 })

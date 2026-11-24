@@ -10,9 +10,8 @@ import { AlertDeliveryEvents, AlertIncidents, type AlertDeliveryEventRow } from 
 import { Array as Arr, DateTime, Effect, Option, Result, Schema, Struct } from "effect"
 import { randomUUID } from "node:crypto"
 import { queuedDeliveryEventRow, SKIPPED_POST_PREFIX } from "../alert-delivery-rows"
+import { DELETED_RULE_RESOLVE_DETAIL } from "./resolution-notes"
 import { StoredDeliveryPayloadSchema } from "./stored-payload"
-
-export const DELETED_RULE_RESOLVE_DETAIL = "Resolved: the alert was deleted"
 
 /**
  * How long the all-clear waits for a page still on its way out: sent first, a pager keyed by

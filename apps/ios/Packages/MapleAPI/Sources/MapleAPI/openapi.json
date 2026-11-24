@@ -324,6 +324,7 @@
               "step_count": 3,
               "steps_sent": 1
             },
+            "first_acknowledged_at": "2026-07-15T09:14:02.000Z",
             "first_triggered_at": "2026-07-15T09:10:00.000Z",
             "group_key": null,
             "held_since": null,
@@ -382,6 +383,10 @@
           "escalation": {
             "$ref": "#/components/schemas/AlertIncidentEscalation",
             "description": "The incident's latest escalation chain run, or `null` when its severity tier names no chain."
+          },
+          "first_acknowledged_at": {
+            "description": "When the incident was first acknowledged, or `null` if it never was. Unlike `acknowledged_at` it is kept after an unacknowledge, an escalation or the resolve, so `first_acknowledged_at - first_triggered_at` is the time to acknowledge.",
+            "type": "string"
           },
           "first_triggered_at": {
             "type": "string"
@@ -14177,7 +14182,7 @@
       "name": "Alert Destinations"
     },
     {
-      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders.",
+      "description": "The incident history produced by your alert rules. Incidents open when a rule breaches for enough consecutive checks and resolve automatically once the signal recovers. An open incident can be acknowledged to pause its reminders, or resolved by hand.",
       "name": "Alert Incidents"
     },
     {

@@ -58,6 +58,40 @@ export function acknowledgedLine(
 		: `Acknowledged by ${ackActorLabel(incident.acknowledgedByName, incident.acknowledgedVia)}`
 }
 
+/** "4m", "1h 5m", "under 1m": how long the incident stood before anyone first acknowledged it. */
+export function timeToAcknowledge(
+	incident: Pick<AlertIncidentDocument, "firstTriggeredAt" | "firstAcknowledgedAt">,
+): string | null {
+	if (incident.firstAcknowledgedAt == null) return null
+	const waitedMs = Date.parse(incident.firstAcknowledgedAt) - Date.parse(incident.firstTriggeredAt)
+	if (!(waitedMs >= 0)) return null
+	return waitedMs < 60_000
+		? "under 1m"
+		: formatAlertDuration(incident.firstTriggeredAt, incident.firstAcknowledgedAt)
+}
+
+/**
+ * "Acknowledged by Dana Kim, 4m after it opened", or null while nobody holds the acknowledgement.
+ * A second acknowledgement names its own person and says when the first one came.
+ */
+export function acknowledgedSummary(
+	incident: Pick<
+		AlertIncidentDocument,
+		| "acknowledgedAt"
+		| "acknowledgedByName"
+		| "acknowledgedVia"
+		| "firstTriggeredAt"
+		| "firstAcknowledgedAt"
+	>,
+): string | null {
+	const line = acknowledgedLine(incident)
+	const waited = timeToAcknowledge(incident)
+	if (line === null || waited === null) return line
+	return incident.acknowledgedAt === incident.firstAcknowledgedAt
+		? `${line}, ${waited} after it opened`
+		: `${line} · first acknowledged after ${waited}`
+}
+
 function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 	const who = ackActorLabel(event.actor?.name ?? null, event.source)
 	const from = event.source != null ? `From ${ackSourceLabel[event.source]}` : null
@@ -94,6 +128,19 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				tone: "warn",
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
+			}
+		case "resolved":
+			return {
+				...base,
+				tone: "ok",
+				title: `Resolved by ${who}`,
+				detail: Arr.join(
+					Arr.filter(
+						[from, "nothing reopens until the rule has been healthy once"],
+						(p) => p != null,
+					),
+					" · ",
+				),
 			}
 		case "on_call_gap":
 			return {
