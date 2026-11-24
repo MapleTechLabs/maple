@@ -67,8 +67,10 @@ const framePathRe = /(\(|@|^[ \t]*at |^[ \t]*File ")(?:[^ ()"]*\/)?([^/ ()"]+\/[
  * - `type-message`: a specific error type with a message; the two are the identity.
  * - `type-function`: a specific error type with no message; the first named function.
  * - `frames`: a generic type; frames (install roots trimmed) and message, as the hash.
- * - `source-mapped`: `frames` or `type-function` read through source maps: original files and
- *   functions, so a deploy's renamed bundle keeps its key.
+ * - `source-mapped`: `frames` read through source maps: original files and functions, so a
+ *   deploy's renamed bundle keeps its key.
+ * - `source-mapped-function`: `type-function` read through source maps: the type and the first
+ *   mapped function. Keyed as `source-mapped` (see `keyOfParts`), so the name changes no key.
  */
 export const GroupingRule = Schema.Literals([
 	"custom",
@@ -79,6 +81,7 @@ export const GroupingRule = Schema.Literals([
 	"type-function",
 	"frames",
 	"source-mapped",
+	"source-mapped-function",
 ]).annotate({ identifier: "@maple/GroupingRule", title: "Grouping Rule" })
 export type GroupingRule = Schema.Schema.Type<typeof GroupingRule>
 
@@ -274,7 +277,7 @@ export const explainGrouping = (
 		if (mappedNamed._tag === "None") return byFrames()
 		return explained(
 			extend({
-				rule: "source-mapped",
+				rule: "source-mapped-function",
 				parts: [sample.exceptionType, frameFunction(mappedNamed.value) ?? ""],
 			}),
 			[mappedNamed.value],
@@ -300,7 +303,14 @@ export const groupingParts = (
 
 /** The stored key for a service and its parts, as `groupingKey` computes it. */
 export const keyOfParts = (serviceName: string, { rule, parts }: GroupingParts): string =>
-	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, rule, ...parts], "\u0000"))
+	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, keyedRule(rule), ...parts], "\u0000"))
+
+/**
+ * The rule as the key hashes it. `source-mapped-function` was keyed as `source-mapped` before it had
+ * its own name, so it still is: a stored key never changes for a rename.
+ */
+const keyedRule = (rule: GroupingRule): GroupingRule =>
+	rule === "source-mapped-function" ? "source-mapped" : rule
 
 /** The key two hashes must share to join one issue. Scoped to the service, as the hash is. */
 export const groupingKey = (sample: GroupingSample, rules: CompiledGroupingRules = NO_RULES): string =>
