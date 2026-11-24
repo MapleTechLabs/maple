@@ -209,6 +209,7 @@ enum Screen {
 	static let dashboardDetail = "Dashboard"
 	static let notificationSettings = "Notification Settings"
 	static let organizationPicker = "Organization Picker"
+	static let account = "Account"
 	static let search = "Search"
 }
 
