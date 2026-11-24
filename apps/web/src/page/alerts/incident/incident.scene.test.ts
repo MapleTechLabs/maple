@@ -38,7 +38,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { AppRoute, hrefOf } from "../../../route"
 import { sloHref, slosTabHref } from "../shared/slo-commands"
-import { checkoutSlo } from "../shared/slo-test-fixtures"
+import { budgetIncidentRow, checkoutSlo } from "../shared/slo-test-fixtures"
 import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
 import { httpMonitor, MONITOR_RULE, monitorId } from "../../kit/uptime/test-monitors"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow, stateRow } from "../../kit/alert-test-rows"
@@ -287,6 +287,39 @@ describe("alert incident", () => {
 			expectView(text("SLO burning its error budget at 14.4x or more")).toExist(),
 			expectView(text(/0\.3x/u)).not.toExist(),
 			expectView(text(/now /u)).not.toExist(),
+		)
+	})
+
+	test("an SLO's budget incident says the error budget is spent, with no burn factor", () => {
+		const budget = budgetIncidentRow({ id: INCIDENT_ID, rule_id: ruleRow(2).id })
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [budget] }),
+				Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2, { signal_type: "slo_burn_rate" })] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withDeliveries = step(
+			loaded,
+			Message.CompletedFetchDeliveries({
+				key: loaded.deliveries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(withDeliveries),
+			themeResolved(),
+			expectView(role("heading", { name: "Checkout API has spent its error budget" })).toExist(),
+			expectView(text("SLO error budget · 135% of the error budget used")).toExist(),
+			expectView(text("The SLO's error budget is spent")).toExist(),
+			expectView(text(/it opened when the SLO's window had used the whole budget/u)).toExist(),
+			// Its observed value is a share of the budget and its threshold is 1: neither is a burn.
+			expectView(text(/1\.4x|1\.0x/u)).not.toExist(),
+			expectView(text(/burning its error budget/u)).not.toExist(),
+			expectView(text(/__slo_budget__/u)).not.toExist(),
 		)
 	})
 

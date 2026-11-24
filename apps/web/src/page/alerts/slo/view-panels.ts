@@ -2,7 +2,8 @@ import type { AlertSeverity } from "@maple/domain/http"
 import { SLO_BURN_WINDOWS_MINUTES, windowLabel } from "@maple/domain/slo"
 import type { AlertIncidentRow } from "@maple/web-data/collections/alerts"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
-import { Option, Array as Arr } from "effect"
+import type { Tone } from "@maple/ui/lib/tone"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"
@@ -27,7 +28,7 @@ import { incidentHref } from "../../kit/alert-links"
 import {
 	burnOf,
 	burnTone,
-	budgetTone,
+	budgetToneOf,
 	formatBudget,
 	formatBurn,
 	formatEventCount,
@@ -38,8 +39,17 @@ import {
 	type Slo,
 	type SloStatus,
 	sliTone,
+	factorOf,
+	formatFactor,
+	hasNoData,
+	holdReason,
 	holdingLine,
+	isBudgetIncidentRow,
 	isBudgetSpent,
+	isCapped,
+	isSpent,
+	maxBurnLine,
+	NO_DATA_HINT,
 	sloIncidents,
 	type TierReading,
 	tierStates,
@@ -60,6 +70,26 @@ export const CHART_TOKENS = AreaChart.AREA_CHART_TOKENS
 export type ChartContext = Readonly<{ theme: ThemeColors; timeZone: string; nowMs: number }>
 
 const INCIDENT_ROWS = 5
+
+/** The budget tile: "No data" with no events, and no verdict on a handful of them. */
+const budgetFigure = (
+	slo: Slo,
+	status: SloStatus,
+): Readonly<{ value: string; tone: Tone; subline: string; eyebrowTooltip?: string }> => {
+	if (hasNoData(status))
+		return {
+			value: "No data",
+			tone: "neutral",
+			subline: "No events to measure it against",
+			eyebrowTooltip: NO_DATA_HINT,
+		}
+	const budget = status.budget_remaining
+	const figure = { value: formatBudget(budget), tone: budgetToneOf(slo, status) }
+	if (!isBudgetSpent(budget)) return { ...figure, subline: `Of the ${slo.window_days}-day budget` }
+	// One failure in a handful of requests overspends any budget: the evaluator does not call it spent.
+	if (!isSpent(slo, status)) return { ...figure, subline: "Too few events to judge" }
+	return { ...figure, subline: budget < 0 ? `Spent: ${overspentText(budget)}` : "Fully spent" }
+}
 
 /** Current SLI against the target, the budget left and the events the window counted. */
 export const figures = (h: H, model: Model, slo: Slo): Html => {
@@ -86,14 +116,8 @@ export const figures = (h: H, model: Model, slo: Slo): Html => {
 				}),
 				statRailItem(h, {
 					eyebrow: "Error budget left",
-					value: formatBudget(status.budget_remaining),
-					tone: budgetTone(status.budget_remaining),
 					compact: true,
-					subline: isBudgetSpent(status.budget_remaining)
-						? status.budget_remaining < 0
-							? `Spent: ${overspentText(status.budget_remaining)}`
-							: "Fully spent"
-						: `Of the ${slo.window_days}-day budget`,
+					...budgetFigure(slo, status),
 				}),
 				statRailItem(h, {
 					eyebrow: "Events counted",
@@ -256,7 +280,7 @@ const TIER_ROLE = { critical: "pages", warning: "opens a ticket" } as const sati
 	string
 >
 
-const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
+const burnWindowRow = (h: H, slo: Slo, status: SloStatus, minutes: number): Html => {
 	const rate = burnOf(status, minutes)
 	const window = Arr.findFirst(status.burn_windows, (entry) => entry.window_minutes === minutes)
 	return h.div(
@@ -265,7 +289,7 @@ const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
 			hstack(h, { gap: "3", justify: "between" }, [
 				typography(h, { size: "sm" }, [`Last ${windowLabel(minutes)}`]),
 				hstack(h, { gap: "3" }, [
-					typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+					typography(h, { size: "xs", tone: "muted", numeric: true }, [
 						Option.match(window, {
 							onNone: () => "–",
 							onSome: (entry) => formatEventCount(entry.total_events),
@@ -275,10 +299,9 @@ const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
 						h,
 						{
 							size: "sm",
-							mono: true,
 							numeric: true,
 							weight: "medium",
-							tone: toneText(burnTone(rate)),
+							tone: toneText(burnTone(slo, rate)),
 						},
 						[formatBurn(rate)],
 					),
@@ -288,7 +311,7 @@ const burnWindowRow = (h: H, status: SloStatus, minutes: number): Html => {
 	)
 }
 
-/** "Would fire" while both windows burn, "Holding" while the short window saw nothing, else "Quiet". */
+/** "Would fire" while both windows burn, "Holding" on nothing or too little to judge, else "Quiet". */
 const tierVerdict = (h: H, reading: TierReading): Html => {
 	const { tier, state } = reading
 	if (state === "clear") return typography(h, { size: "xs", tone: "muted" }, ["Quiet"])
@@ -307,34 +330,40 @@ const tierVerdict = (h: H, reading: TierReading): Html => {
 	])
 }
 
-const tierRow = (h: H, status: SloStatus, reading: TierReading): Html => {
+/** What a tier reads now and when it fires; a capped factor says what lowered it. */
+const tierLine = (slo: Slo, status: SloStatus, reading: TierReading): string => {
 	const { tier, state } = reading
-	const long = burnOf(status, tier.longWindowMinutes)
-	const short = burnOf(status, tier.shortWindowMinutes)
+	if (state === "hold") return `${holdingLine(tier, holdReason(status, tier))}.`
+	const long = `${windowLabel(tier.longWindowMinutes)} at ${formatBurn(burnOf(status, tier.longWindowMinutes))}`
+	const short = `${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(burnOf(status, tier.shortWindowMinutes))}`
+	const fires = `${ALERT_SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${formatFactor(factorOf(slo, tier))}`
+	return isCapped(slo, tier)
+		? `${long}, ${short}. ${fires}, not ${formatFactor(tier.factor)}: ${Str.uncapitalize(maxBurnLine(slo))}.`
+		: `${long}, ${short}. ${fires}.`
+}
+
+const tierRow = (h: H, slo: Slo, status: SloStatus, reading: TierReading): Html => {
+	const { tier } = reading
 	return h.div(
-		[h.Key(tier.severity), h.Class(stripClass("row"))],
+		[h.Key(`${tier.severity}-${tier.longWindowMinutes}`), h.Class(stripClass("row"))],
 		[
 			vstack(h, { gap: "1.5" }, [
 				hstack(h, { gap: "2", justify: "between" }, [
 					hstack(h, { gap: "2" }, [
 						severityBadge(h, tier.severity),
 						typography(h, { size: "xs", tone: "muted" }, [
-							`${tier.factor}x over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}`,
+							`${formatFactor(factorOf(slo, tier))} over ${windowLabel(tier.longWindowMinutes)} and ${windowLabel(tier.shortWindowMinutes)}`,
 						]),
 					]),
 					tierVerdict(h, reading),
 				]),
-				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true, as: "p" }, [
-					state === "hold"
-						? `${holdingLine(tier)}.`
-						: `${windowLabel(tier.longWindowMinutes)} at ${formatBurn(long)}, ${windowLabel(tier.shortWindowMinutes)} at ${formatBurn(short)}. ${ALERT_SEVERITY_LABEL[tier.severity]} ${TIER_ROLE[tier.severity]} when both reach ${tier.factor}x.`,
-				]),
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [tierLine(slo, status, reading)]),
 			]),
 		],
 	)
 }
 
-/** Each window's burn rate, then the two tiers against their factors and whether they would fire. */
+/** Each window's burn rate, then each tier against its factor for this target and whether it would fire. */
 export const burnPanel = (h: H, model: Model, slo: Slo): Html =>
 	panel(h, { attributes: [h.AriaLabel("Burn rate")] }, [
 		panelHeader(h, { title: "Burn rate" }),
@@ -347,8 +376,10 @@ export const burnPanel = (h: H, model: Model, slo: Slo): Html =>
 				h.div(
 					[],
 					[
-						...Arr.map(SLO_BURN_WINDOWS_MINUTES, (minutes) => burnWindowRow(h, status, minutes)),
-						...Arr.map(tierStates(slo, status), (state) => tierRow(h, status, state)),
+						...Arr.map(SLO_BURN_WINDOWS_MINUTES, (minutes) =>
+							burnWindowRow(h, slo, status, minutes),
+						),
+						...Arr.map(tierStates(slo, status), (state) => tierRow(h, slo, status, state)),
 					],
 				),
 		}),
@@ -424,13 +455,16 @@ export const alertingPanel = (h: H, model: Model, slo: Slo): Html =>
 				]),
 	])
 
-const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: string): Html =>
-	listRow(h, {
+/** A burn incident reads "Open" in red; the spent-budget one names itself and stays amber. */
+const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: string): Html => {
+	const isOpen = row.status === "open"
+	const isBudget = isBudgetIncidentRow(row)
+	return listRow(h, {
 		href: incidentHref(row.id),
 		divided: true,
 		density: "compact",
-		leading: statusDot(h, { tone: row.status === "open" ? "crit" : "neutral" }),
-		title: row.status === "open" ? "Open" : "Resolved",
+		leading: statusDot(h, { tone: isOpen ? (isBudget ? "warn" : "crit") : "neutral" }),
+		title: isBudget ? (isOpen ? "Budget spent" : "Budget spent, resolved") : isOpen ? "Open" : "Resolved",
 		meta: relativeTime(h, {
 			value: toEpochMs(row.first_triggered_at),
 			nowMs,
@@ -439,6 +473,7 @@ const incidentRow = (h: H, row: AlertIncidentRow, nowMs: number, timeZone: strin
 		}),
 		trailing: severityBadge(h, row.severity === "critical" ? "critical" : "warning"),
 	})
+}
 
 /** `SyncUnavailable`: the incidents stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({

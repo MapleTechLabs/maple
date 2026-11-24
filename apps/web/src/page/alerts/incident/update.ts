@@ -6,7 +6,8 @@ import {
 	formatSignalValue as formatAnomalyValue,
 	SIGNAL_LABEL as ANOMALY_SIGNAL_LABEL,
 } from "@maple/web-data/anomalies/format"
-import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
+import { isSloBudgetIncident } from "@maple/domain/slo"
+import { budgetUsedLabel, incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import {
 	AlertIncidentRowSchema,
 	AlertRuleRowSchema,
@@ -375,6 +376,12 @@ const followData = (model: Model, context: PageContext): Return =>
 		},
 	})
 
+/** A spent budget observes the share of the budget used: no burn rate and no factor to send. */
+const budgetFacts = (incident: AlertIncidentDocument) => [
+	{ label: "Signal", value: "SLO error budget" },
+	{ label: "Observed", value: budgetUsedLabel(incident.lastObservedValue) },
+]
+
 const thresholdFacts = (incident: AlertIncidentDocument) => [
 	{ label: "Signal", value: signalLabels[incident.signalType] },
 	{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
@@ -412,7 +419,12 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			scope: incidentGroup(incident) ?? "all",
 			status: incident.status,
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
-			facts: incident.signalType === "anomaly" ? anomalyFacts(model) : thresholdFacts(incident),
+			facts:
+				incident.signalType === "anomaly"
+					? anomalyFacts(model)
+					: isSloBudgetIncident(incident)
+						? budgetFacts(incident)
+						: thresholdFacts(incident),
 			references: incident.errorIssueId
 				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
 				: [],
