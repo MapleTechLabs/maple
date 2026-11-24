@@ -60,13 +60,53 @@ describe("planEscalationAdvance", () => {
 		})
 	})
 
-	it("counts the wait from when a late step was actually sent", () => {
+	it("counts the wait from the step's due time when the scheduler was only a tick late", () => {
 		const plan = planEscalationAdvance(
 			run({ stepIndex: 1, nextStepAt: minutes(10) }),
 			firing,
 			minutes(11),
 		)
-		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(26) } })
+		// Due at :10, sent at :11, 15 minute wait: the next step is still due at :25.
+		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(25) } })
+	})
+
+	it("leaves at least half the wait to acknowledge a step that went out late", () => {
+		// A 2 minute wait, sent 119 seconds late: from the due time the next step would be a second away.
+		const quick = run({
+			steps: [
+				{ targets: [destination("slack")], waitMinutes: 2 },
+				{ targets: [destination("pagerduty")], waitMinutes: 15 },
+			],
+			nextStepAt: minutes(10),
+		})
+		const sentAt = minutes(10) + 119_000
+		expect(planEscalationAdvance(quick, firing, sentAt)).toMatchObject({
+			kind: "send",
+			next: { nextStepAt: sentAt + 60_000 },
+		})
+	})
+
+	it("stops counting from the due time just past the tolerance", () => {
+		const late = (latenessMs: number) =>
+			planEscalationAdvance(
+				run({ stepIndex: 1, nextStepAt: minutes(10) }),
+				firing,
+				minutes(10) + latenessMs,
+			)
+		expect(late(120_000)).toMatchObject({ kind: "send", next: { nextStepAt: minutes(25) } })
+		expect(late(120_001)).toMatchObject({
+			kind: "send",
+			next: { nextStepAt: minutes(10) + 120_001 + 15 * 60_000 },
+		})
+	})
+
+	it("counts the wait from now when the step went out long after it was due", () => {
+		const plan = planEscalationAdvance(
+			run({ stepIndex: 1, nextStepAt: minutes(10) }),
+			firing,
+			minutes(40),
+		)
+		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(55) } })
 	})
 
 	it("walks the email example: page at 14:10, stop at the 14:12 ack, never send step 3", () => {

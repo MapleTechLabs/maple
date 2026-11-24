@@ -10,7 +10,9 @@
 			"@maple/widgets": ["./packages/widgets/src/index.ts"],
 			"@maple/widgets/*": ["./packages/widgets/src/*"],
 			"@maple/query-model": ["./packages/query-model/src/index.ts"],
-			"@maple/primitives": ["./packages/primitives/src/index.ts"]
+			"@maple/primitives": ["./packages/primitives/src/index.ts"],
+			"@maple/sourcemaps": ["./packages/sourcemaps/src/index.ts"],
+			"@maple/sourcemaps/*": ["./packages/sourcemaps/src/*"]
 		}
 	}
 }

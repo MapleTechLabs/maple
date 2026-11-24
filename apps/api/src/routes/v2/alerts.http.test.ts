@@ -42,6 +42,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertIncidentResolver } from "@maple/backend/services/alerts/AlertIncidentResolver"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
@@ -182,17 +183,17 @@ const makeHarness = (
 	const alertRulesLive = AlertRulesService.layer.pipe(
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
+	// Incident pushes and the pages a chain step sends to a person's phone.
+	const mobilePushLive = Layer.effect(MobilePushService, MobilePushService.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
+		),
+	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
 		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
-		Layer.provide(
-			Layer.effect(MobilePushService, MobilePushService.make).pipe(
-				Layer.provide(
-					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
-				),
-			),
-		),
+		Layer.provide(mobilePushLive),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
@@ -211,6 +212,7 @@ const makeHarness = (
 				alertRulesLive,
 				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
 					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(mobilePushLive),
 					Layer.provide(
 						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
 					),
@@ -261,6 +263,7 @@ const makeHarness = (
 					Layer.provide(
 						Layer.mergeAll(
 							Layer.effect(AlertIncidentAckService, AlertIncidentAckService.make),
+							Layer.effect(AlertIncidentResolver, AlertIncidentResolver.make),
 							Layer.effect(AlertIncidentPagesService, AlertIncidentPagesService.make),
 						),
 					),
@@ -1567,6 +1570,57 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("resolves an open incident by hand, records who, and refuses a second resolve", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		await createWebhookAndRule(harness, key.secret)
+		await executeSql(
+			harness.testDb,
+			`insert into alert_incidents (
+				id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
+				comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
+				created_at, updated_at
+			)
+			select '00000000-0000-4000-8000-0000000000d1', rules.org_id, rules.id, 'manual-resolve',
+				'Checkout error rate', '__total__', 'error_rate', 'critical', 'open', 'gt', 0.05, now(), now(),
+				null, 'manual-resolve', now(), now()
+			from alert_rules as rules where rules.org_id = 'org_alerts_e2e' limit 1`,
+		)
+		const list = await harness.request("GET", "/v2/alerts/incidents?status=open", key.secret)
+		const openId: string = list.body.data[0]?.id ?? ""
+
+		const refused = await harness.request(
+			"POST",
+			`/v2/alerts/incidents/${openId}/resolve`,
+			readOnly.secret,
+		)
+		expect(refused.status).toBe(403)
+
+		const resolved = await harness.request("POST", `/v2/alerts/incidents/${openId}/resolve`, key.secret)
+		expect(resolved.status).toBe(200)
+		expect(resolved.body).toMatchObject({ id: openId, status: "resolved" })
+		expect(resolved.body.resolved_at).toEqual(expect.any(String))
+
+		const events = await harness.request("GET", `/v2/alerts/incidents/${openId}/events`, readOnly.secret)
+		expect(events.body.data).toMatchObject([
+			{ type: "resolved", actor: { user_id: null, name: "alerts-test" }, source: "api" },
+		])
+
+		const again = await harness.request("POST", `/v2/alerts/incidents/${openId}/resolve`, key.secret)
+		expect(again.status).toBe(409)
+		expect(again.body.error).toMatchObject({ code: "alert_incident_resolved" })
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/incidents/inc_tC4d9V79DCDzgbGKhAnff9/resolve",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
 	it("reads an incident's latest escalation run on retrieve and list, and null without one", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])
@@ -1888,6 +1942,55 @@ describe("v2 alerts over HTTP", () => {
 			},
 		],
 	}
+
+	it("makes, replaces and turns off a schedule's calendar link", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		expect(created.body.calendar_feed_created_at).toBeNull()
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+
+		const refused = await harness.request("POST", `${base}/calendar_feed`, readOnly.secret)
+		expect(refused.status).toBe(403)
+
+		const feed = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		expect(feed.status, JSON.stringify(feed.body)).toBe(200)
+		expect(feed.body).toMatchObject({ object: "oncall_calendar_feed", schedule_id: created.body.id })
+		expect(feed.body.url).toMatch(/\/calendar\/oncall\/mcal_[A-Za-z0-9_-]{43}\.ics$/)
+		const read = await harness.request("GET", base, readOnly.secret)
+		// The schedule says the feed is on and since when, never the link.
+		expect(read.body.calendar_feed_created_at).toBe(feed.body.created_at)
+		expect(JSON.stringify(read.body)).not.toContain("mcal_")
+
+		// A second create is refused, so a link calendars use is not ended by accident.
+		const again = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		expect([again.status, again.body.error.code]).toEqual([409, "oncall_calendar_feed_exists"])
+		const replaced = await harness.request("POST", `${base}/calendar_feed?replace=true`, key.secret)
+		expect(replaced.body.url).not.toBe(feed.body.url)
+
+		const off = await harness.request("DELETE", `${base}/calendar_feed`, key.secret)
+		expect(off.body).toEqual({
+			object: "oncall_calendar_feed",
+			schedule_id: created.body.id,
+			deleted: true,
+		})
+		expect((await harness.request("GET", base, key.secret)).body.calendar_feed_created_at).toBeNull()
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules/onc_tC4d9V79DCDzgbGKhAnff9/calendar_feed",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
 
 	it("runs on-call schedule CRUD, answers who is on call and renders shifts around an override", async () => {
 		const harness = makeHarness()

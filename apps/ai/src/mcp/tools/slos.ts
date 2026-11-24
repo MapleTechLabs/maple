@@ -152,7 +152,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		name: "list_slos",
 		title: "List SLOs",
 		description:
-			"Every SLO with its current SLI, error budget left and the worst burn rate over the 5m, 30m, 1h and 6h windows. SLOs whose burn-rate alert tier is breaching come first (critical, then warning), then the least budget left. inspect_slo shows one SLO's windows and alerting.",
+			"Every SLO with its current SLI, error budget left and the worst burn rate over the 5m, 30m, 1h, 2h, 6h and 24h windows. SLOs whose burn-rate alert tier is breaching come first (critical, then warning), then the least budget left. inspect_slo shows one SLO's windows and alerting.",
 		parameters: Schema.Struct({
 			service: P.service("Only SLOs on this service (exact `service.name`)"),
 		}),
@@ -203,8 +203,8 @@ export function registerSloTools(server: McpToolRegistrar) {
 					budgetRemaining: status.budgetRemaining,
 					worstBurnRate: worst?.burnRate ?? null,
 					worstBurnWindow: worst === undefined ? null : windowLabel(worst.windowMinutes),
-					burning: burningTier(status.burnWindows),
-					holding: anyTierHolding(status.burnWindows),
+					burning: burningTier(status.burnWindows, slo.targetPercent),
+					holding: anyTierHolding(status.burnWindows, slo.targetPercent),
 					statusError: null,
 				}
 			})
@@ -259,7 +259,8 @@ export function registerSloTools(server: McpToolRegistrar) {
 									row.worstBurnWindow === null
 										? "-"
 										: `${burn(row.worstBurnRate)} (${row.worstBurnWindow})`,
-									row.burning ?? (row.holding ? "holding (no recent events)" : "-"),
+									row.burning ??
+										(row.holding ? "holding (no events, or too few to judge)" : "-"),
 								]),
 							),
 						],
@@ -274,7 +275,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 		name: "inspect_slo",
 		title: "Inspect SLO",
 		description:
-			"One SLO in full: its config (service, environments, SLI, target, window), where it stands now (total and good events, SLI, error budget left, the burn rate of each 5m, 30m, 1h and 6h window and which alert tier breaches) and its burn-rate alerting (on or off, destinations per tier, alert rule id).",
+			"One SLO in full: its config (service, environments, SLI, target, window), where it stands now (total and good events, SLI, error budget left, the burn rate of each window from 5m to 24h and which alert tier breaches) and its burn-rate alerting (on or off, destinations per tier, alert rule id).",
 		parameters: Schema.Struct({
 			slo: P.text("The SLO's name or id (list_slos lists them)"),
 		}),
@@ -295,7 +296,7 @@ export function registerSloTools(server: McpToolRegistrar) {
 				}),
 				Effect.catchTags(warehouseReadToMcpHandlers("inspect_slo")),
 			)
-			return { slo: toSloConfigRow(slo), status: toSloStatusRow(status) }
+			return { slo: toSloConfigRow(slo), status: toSloStatusRow(status, slo.targetPercent) }
 		}),
 		render: (output) => {
 			const breached = Arr.filter(output.status.tiers, (tier) => tier.breached)

@@ -355,6 +355,7 @@ const errorIssueDetailFixture = new ErrorIssueDetailResponse({
 	incidents: [errorIncidentFixture],
 	environments: [new ErrorIssueEnvironment({ name: "production", count: 12 })],
 	latestStacktrace: null,
+	latestStack: null,
 })
 
 const die = () => Effect.die(new Error("not exercised in this test harness"))

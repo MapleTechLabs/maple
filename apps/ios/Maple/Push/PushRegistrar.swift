@@ -197,10 +197,10 @@ final class PushRegistrar: NSObject {
 		}
 	}
 
-	/// Sign-out: remove this phone from every org it registered with. Best
-	/// effort — the token is dead to the server once the user is gone anyway,
-	/// but leaving rows behind means stray pushes until APNs reports it.
-	func unregisterAll(api: any MapleAPI) async {
+	/// Sign-out: remove this phone from every org the user belongs to, each in its
+	/// own region. Best effort: a row left behind means stray pushes until APNs
+	/// reports the token dead.
+	func unregisterAll(api: any MapleAPI, organizationIds: Set<String>) async {
 		// Supersede any sync, and let a registration already sent land first:
 		// arriving after the unregister, it would re-register a signed-out phone.
 		generation += 1
@@ -210,11 +210,15 @@ final class PushRegistrar: NSObject {
 		lastError = nil
 		await pending?.value
 		guard let deviceToken else { return }
-		// The token is what matters; the org travels in the session, so a
-		// sign-out can only unregister the org whose token we still hold.
-		// Other orgs' rows are removed the next time this token registers
-		// there and the user signs out from it, or when APNs reports it dead.
-		try? await api.unregisterDevice(token: deviceToken)
+		// Rows are kept per organization, and organizations live in different
+		// regions, so each is unregistered by name. Unscoped covers the active one
+		// when the membership list never loaded.
+		await withTaskGroup(of: Void.self) { group in
+			group.addTask { try? await api.unregisterDevice(token: deviceToken) }
+			for organizationId in organizationIds {
+				group.addTask { try? await api.scoped(to: organizationId).unregisterDevice(token: deviceToken) }
+			}
+		}
 	}
 }
 

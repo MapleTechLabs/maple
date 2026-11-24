@@ -279,6 +279,21 @@ loop in verification without a human ever seeing it.
   two weeks of production errors from 32 orgs, blind-labelled: issues fell 9.7% and 8.9%, and 91%
   of the merges it adds are one bug. Keying on a cause chain's root type and keeping the first named
   caller for every error were measured too and lowered F1, so they are not in it.
+  A minified browser bundle renames functions and content-hashed files every deploy, so where the
+  host binds the source map bucket, a key that reads frames (`frames`, `type-function`) is computed
+  from the stack mapped through the org's source maps instead: the in-app frames' original file and
+  function, never a line or column (rule `source-mapped`). A frame with no recovered function name
+  reads as its file plus its original source line's text (ends trimmed, inner text verbatim, so a
+  formatting-only edit of the throw line can split the issue); one with neither keeps the raw key, so two
+  throw sites in one file never share a key on the file alone. A stack that maps nothing keys exactly
+  as before, and every rule above frames (custom keys, org rules, chunk loads, type and message)
+  keeps its priority. Whether the org has any map is part of `config_digest`, so its first upload
+  re-keys its keys once; a sample whose build registered debug ids waits for its map (one hour from
+  first sighting) even before the org has any. Known limit: in an org that already has maps, a hash
+  whose map arrives after that hour keeps the raw key it was given; uploads do not re-key it, so
+  it joins its release's mapped issue only if that key matches. Upload maps in the deploy step.
+  A stored key is never replaced while its map is pending, its lookup failed, or the mapped stack
+  gives no identity (no name, no source text); an unmapped throw site never keys on its callers.
 - **Org grouping rules and detaching.** An org can add rules without a deploy
   (`packages/domain/src/tinybird/grouping-rules.ts`, `PUT /grouping-rules`, needs
   `error_policy:manage`): `merge` joins every error matching its globs into one issue per service,

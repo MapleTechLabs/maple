@@ -243,8 +243,11 @@ describe("iOS OpenAPI spec", () => {
 		}
 	})
 
-	it("declares production as the only server and bearer as the only scheme", () => {
-		expect(spec.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
+	it("declares each production region as a server and bearer as the only scheme", () => {
+		expect(spec.servers).toEqual([
+			{ url: "https://api.maple.dev", description: "Production" },
+			{ url: "https://api.eu.maple.dev", description: "Production, EU region" },
+		])
 		expect(Rec.keys(spec.components.securitySchemes)).toEqual(["bearer"])
 		for (const operation of operations()) {
 			const id = operation.operationId as string

@@ -5,7 +5,12 @@ import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from "../shared/commands"
+import {
+	listDeliveries,
+	listIncidentActivity,
+	resolveIncident,
+	setIncidentAcknowledged,
+} from "../shared/commands"
 import { listSlos } from "../shared/slo-commands"
 import { listMonitors } from "../../kit/uptime/commands"
 import { retrieveIncidentEscalation } from "../shared/escalation-chains"
@@ -64,6 +69,16 @@ export const SetIncidentAcknowledged = Command.define("SetAlertIncidentAcknowled
 		setIncidentAcknowledged(incidentId, acknowledged).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedSetAcknowledged({ acknowledged, result })),
+		),
+})
+
+export const ResolveIncident = Command.define("ResolveAlertIncident", {
+	args: { incidentId: AlertIncidentId },
+	messages: [Message.CompletedResolve],
+	execute: ({ incidentId }) =>
+		resolveIncident(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedResolve({ result })),
 		),
 })
 

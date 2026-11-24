@@ -97,6 +97,7 @@ extension MapleClient {
 	/// same transaction, so a roll cannot leave a live key behind on a phone.
 	public func mintWidgetCredential(installationId: String) async throws -> WidgetCredential {
 		try await mapping {
+			let host = try await self.serverURL()
 			let output = try await client.mintWidgetCredential(
 				.init(path: .init(installationId: installationId))
 			)
@@ -114,10 +115,10 @@ extension MapleClient {
 				organizationId: credential.organizationId,
 				secret: credential.secret,
 				// The host this client is pointed at, carried with the credential
-				// it just issued. A credential minted against a local API is
-				// worthless to production and vice versa; storing them apart makes
+				// it just issued. A credential minted against a local API or the
+				// other region is worthless to this one; storing them apart makes
 				// that mismatch look like an expiry to the widget.
-				apiBaseURL: serverURL,
+				apiBaseURL: host,
 				expiresAt: expiresAt,
 				mintedAt: mintedAt
 			)

@@ -7,10 +7,16 @@ import type { OrgErasureKind } from "@maple/domain/org-erasure"
 import { WAREHOUSE_ERASURE_TARGETS, warehouseErasureRank } from "@maple/domain/tinybird/org-erasure-plan"
 import type { OrgId } from "@maple/primitives"
 import { Array as Arr, Clock, Duration, Effect, Option, Schema } from "effect"
-import { ChatSessions, ReplayBlobEraser } from "@maple/backend/platform/bindings"
+import {
+	ChatSessions,
+	type ObjectPrefixEraser,
+	ReplayBlobEraser,
+	SourceMapEraser,
+} from "@maple/backend/platform/bindings"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { describeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseDeleteClient } from "@maple/backend/services/warehouse/WarehouseDeleteClient"
+import { sourceMapOrgPrefix } from "@maple/backend/services/sourcemaps/source-map-files"
 
 /**
  * Erasing what a deleted organization left outside Postgres: its agent conversations (one
@@ -52,11 +58,12 @@ const insertErasures = (
 		{ discard: true },
 	)
 
-/** Queue the erasures that need no rows read: replay prefix and warehouse datasources. Re-queuing is a no-op. */
+/** Queue the erasures that need no rows read: object prefixes and warehouse datasources. Re-queuing is a no-op. */
 export const queueOrgErasures = (db: MapleDb, orgId: OrgId, now: number) =>
 	Effect.gen(function* () {
 		const targets: ReadonlyArray<readonly [OrgErasureKind, string]> = [
 			["replay_blobs", replayPrefix(orgId)],
+			["source_maps", sourceMapOrgPrefix(orgId)],
 			...Arr.map(WAREHOUSE_ERASURE_TARGETS, (target) => ["warehouse", target.datasource] as const),
 		]
 		yield* insertErasures(db, orgId, now, targets)
@@ -166,23 +173,30 @@ const eraseChatSession = (row: OrgErasureRow): Effect.Effect<Outcome, OrgErasure
 		return DONE
 	})
 
-const eraseReplayBlobs = (row: OrgErasureRow): Effect.Effect<Outcome, OrgErasureError> =>
-	Effect.gen(function* () {
-		const eraser = yield* Effect.serviceOption(ReplayBlobEraser)
-		if (Option.isNone(eraser)) return DONE
-		const deletePage = eraser.value.deletePage
-		const loop = (pagesLeft: number): Effect.Effect<Outcome, OrgErasureError> =>
-			deletePage(row.target).pipe(
-				Effect.mapError(
-					(error) => new OrgErasureError({ message: error.message, cause: error.cause }),
-				),
-				Effect.flatMap((deleted) => {
-					if (deleted === 0) return Effect.succeed<Outcome>("done")
-					return pagesLeft <= 1 ? Effect.succeed<Outcome>("more") : loop(pagesLeft - 1)
-				}),
-			)
-		return yield* loop(REPLAY_PAGES_PER_TICK)
-	})
+/** Deletes the objects under the row's prefix, a bounded number of listing pages per tick. */
+const erasePrefix = (
+	row: OrgErasureRow,
+	eraser: Option.Option<ObjectPrefixEraser>,
+): Effect.Effect<Outcome, OrgErasureError> => {
+	// No binding means this host never stored such objects, so there is nothing to erase.
+	if (Option.isNone(eraser)) return Effect.succeed(DONE)
+	const deletePage = eraser.value.deletePage
+	const loop = (pagesLeft: number): Effect.Effect<Outcome, OrgErasureError> =>
+		deletePage(row.target).pipe(
+			Effect.mapError((error) => new OrgErasureError({ message: error.message, cause: error.cause })),
+			Effect.flatMap((deleted) => {
+				if (deleted === 0) return Effect.succeed<Outcome>("done")
+				return pagesLeft <= 1 ? Effect.succeed<Outcome>("more") : loop(pagesLeft - 1)
+			}),
+		)
+	return loop(REPLAY_PAGES_PER_TICK)
+}
+
+const eraseReplayBlobs = (row: OrgErasureRow) =>
+	Effect.flatMap(Effect.serviceOption(ReplayBlobEraser), (eraser) => erasePrefix(row, eraser))
+
+const eraseSourceMaps = (row: OrgErasureRow) =>
+	Effect.flatMap(Effect.serviceOption(SourceMapEraser), (eraser) => erasePrefix(row, eraser))
 
 const setJob = (database: DatabaseApi, id: string, jobId: string | null) =>
 	database.execute((db) =>
@@ -224,6 +238,8 @@ const eraseTarget = (row: OrgErasureRow, database: DatabaseApi) => {
 			return eraseChatSession(row)
 		case "replay_blobs":
 			return eraseReplayBlobs(row)
+		case "source_maps":
+			return eraseSourceMaps(row)
 		case "warehouse":
 			return eraseWarehouseRows(row, database)
 	}

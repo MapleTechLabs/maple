@@ -113,6 +113,7 @@ seam when constructing the API client without the Alchemy provider collection.
 | `Maple.UptimeMonitor`    | Create / update / delete. Props are the `POST /v2/uptime_monitors` body; the kind is `config.type`, and changing it replaces the monitor. Outputs `monitorId`, `heartbeatUrl`.                                                                                                                                        |
 | `Maple.StatusPage`       | Create / update / delete through the page's config document, plus `password` and `custom_domain`. Components keep their IDs by name; an unset `manual_status` leaves a responder's override alone. Outputs `statusPageId`, `components`, `customDomain.dnsRecords`.                                                   |
 | `Maple.IngestKeys`       | Read-only per-org singleton. Surfaces `publicKey` / `privateKey` as `Redacted` outputs; delete only stops tracking it.                                                                                                                                                                                                |
+| `Maple.SourceMaps`       | Uploads a build's JavaScript source maps (see below). Re-uploads only when the maps, service, release or prefix changed. Deleting it deletes nothing: older releases still need their maps, and Maple removes maps unused for 90 days. Needs `source_maps:write`.                                                     |
 
 ## Typed dashboard data
 
@@ -202,6 +203,46 @@ options (`anticipatedErrorIdentifiers`, `dropSpanNames`, `serviceNamespace`, …
 Cloudflare options, forwarded unchanged.
 
 Full docs: [maple.dev/docs/iac/alchemy](https://maple.dev/docs/iac/alchemy).
+
+## Source maps
+
+`@maple-dev/alchemy/vite` gives each built JS file a debug id and moves its source maps out of the
+deployed output (`.maple/sourcemaps/<outDir>` by default), so they are never served. `Maple.SourceMaps`
+uploads them after the build, so error stacks in Maple show your original source.
+
+```typescript
+// vite.config.ts
+import { mapleSourceMaps } from "@maple-dev/alchemy/vite"
+
+export default defineConfig({ plugins: [mapleSourceMaps()] })
+```
+
+```typescript
+// alchemy.run.ts
+Effect.gen(function* () {
+	const web = yield* Cloudflare.Website.Vite("web")
+	yield* Maple.SourceMaps("web-sourcemaps", {
+		dir: ".maple/sourcemaps/client",
+		service: "web", // the service.name the app reports
+		release: process.env.GITHUB_SHA, // its service.version: matches maps without a debug id
+		after: web.hash, // upload after the build, and re-check when it changes
+		matchBy: "release", // telemetry without debug ids: see below
+	})
+})
+```
+
+Set `matchBy: "release"` when your telemetry reports no debug ids (Maple's SDKs other than
+`@maple-dev/browser`): maps then upload without them, matched by `service`, `release` and path, so
+a chunk two releases share keeps a map under each. The default, `"debugId"`, suits `@maple-dev/browser`.
+
+The first upload happens on the first deploy that runs the build after you add the plugin; a
+redeploy that skips an unchanged build finds no maps and logs a warning. On that first deploy, a
+chunk whose hashed name is unchanged gets new contents (the snippet goes in after Rollup names it),
+so a browser or CDN that cached it may serve the old copy for that one release; later builds are
+deterministic.
+
+The plugin runs in Node and needs `@effect/platform-node`. `dir` can also be any build output where
+each JS file has its map beside it, as `maple sourcemaps upload` reads it.
 
 ## Local development
 

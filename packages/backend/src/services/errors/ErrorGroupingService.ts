@@ -25,13 +25,14 @@ import {
 	type WarehouseReadError,
 } from "@maple/domain/http"
 import { computeFingerprintInputs } from "@maple/domain/tinybird/fingerprint"
-import { explainGrouping, keyOfParts } from "@maple/domain/tinybird/grouping"
+import { explainGrouping, type GroupingSample, keyOfParts } from "@maple/domain/tinybird/grouping"
 import { GroupingConfig, groupingRuleProblem } from "@maple/domain/tinybird/grouping-rules"
 import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Order, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { timestampMs } from "@maple/backend/platform/time"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { ACTIONABLE_WORKFLOW_STATES } from "./ErrorIssueReadModelsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
@@ -39,6 +40,8 @@ import { computeSampleInputs, loadOrgGrouping, warehouseGroupingReads } from "./
 
 /** Fingerprints one "why grouped" response explains; the rest are counted, not read. */
 const MAX_EXPLAINED_FINGERPRINTS = 50
+
+const withoutStack = ({ symbolicatedStack: _stack, ...sample }: GroupingSample): GroupingSample => sample
 /** Open issues a similar-issues read compares against, newest first. */
 const SIMILAR_CANDIDATES = 500
 const SIMILAR_LIMIT = 5
@@ -101,6 +104,8 @@ const make: Effect.Effect<
 	const database = yield* Database
 	const workflow = yield* ErrorIssueWorkflowService
 	const warehouse = yield* WarehouseQueryService
+	// Explains a source-mapped key with its mapped frames where the source map bucket is bound.
+	const symbolicator = yield* Effect.serviceOption(StackSymbolicator)
 	const dbExecute = makeErrorDatabaseExecute(database, "ErrorGroupingService")
 
 	const document = (rules: GroupingConfig["rules"], updatedAt: number | null) =>
@@ -224,20 +229,34 @@ const make: Effect.Effect<
 			orgId,
 			{ startMs: issue.firstSeenAt, endMs: issue.lastSeenAt + 60_000 },
 			"errorGroupingExplain",
+			symbolicator,
 		)
 		const samples = yield* reads.samples(hashes)
 		const spans = samples.length === 0 ? [] : yield* reads.spans(samples)
-		const inputs = new Map(
-			Arr.map(computeSampleInputs(samples, spans), (entry) => [entry.fingerprintHash, entry] as const),
-		)
+		const entries = computeSampleInputs(samples, spans)
+		const mapped =
+			reads.sourceMapped === undefined || entries.length === 0
+				? entries
+				: yield* reads.sourceMapped(entries, grouping.rules)
+		const inputs = new Map(Arr.map(mapped, (entry) => [entry.fingerprintHash, entry] as const))
 		const sampleOf = new Map(Arr.map(samples, (sample) => [sample.fingerprintHash, sample] as const))
 		const fingerprints = Arr.map(explained, ({ fingerprintHash, source }) => {
 			const entry = inputs.get(fingerprintHash)
 			const sample = sampleOf.get(fingerprintHash)
 			const key = storedOf.get(fingerprintHash)
-			const why = entry === undefined ? undefined : explainGrouping(entry.input, grouping.rules)
 			// The stored rule is the one that grouped the hash; a pin-only row keyed nothing.
 			const keyed = key !== undefined && !Str.startsWith("pinned:")(key.groupingKey)
+			const mappedWhy = entry === undefined ? undefined : explainGrouping(entry.input, grouping.rules)
+			// Mapped frames explain a stored key only when they produce it (a key stored before the
+			// maps came is still the raw one); otherwise the raw stack is the evidence.
+			const why =
+				entry === undefined ||
+				mappedWhy === undefined ||
+				!keyed ||
+				entry.input.symbolicatedStack === undefined ||
+				keyOfParts(entry.input.serviceName, mappedWhy) === key.groupingKey
+					? mappedWhy
+					: explainGrouping(withoutStack(entry.input), grouping.rules)
 			return new ErrorIssueFingerprintGrouping({
 				fingerprintHash,
 				source,

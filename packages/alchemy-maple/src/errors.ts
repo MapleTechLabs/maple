@@ -128,6 +128,12 @@ export class MapleDashboardIdentityError extends Schema.TaggedError<MapleDashboa
 	{ message: Schema.String, dashboardId: Schema.String, requestedId: Schema.String },
 ) {}
 
+/** A source map directory or its manifest could not be read before an upload. */
+export class MapleSourceMapsReadError extends Schema.TaggedError<MapleSourceMapsReadError>()(
+	"@maple/alchemy/errors/SourceMapsReadError",
+	{ message: Schema.String, path: Schema.String, cause: Schema.Defect() },
+) {}
+
 export type MapleClientError =
 	| MapleApiRequestEncodingError
 	| MapleApiTransportError

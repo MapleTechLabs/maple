@@ -3,7 +3,7 @@
  * replaces. Set BENCH_ORG and BENCH_SERVICE to a busy service; windows end at BENCH_END
  * (`YYYY-MM-DD HH:MM:SS`, default now) so the splice edges are partial minutes and hours.
  */
-import { Effect, Array as Arr } from "effect"
+import { Effect, Array as Arr, String as Str } from "effect"
 import * as CH from "@maple/query-engine/ch"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import * as E from "@maple-dev/effect-orm/expr"
@@ -14,6 +14,8 @@ import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-en
 
 const ORG = OrgId.make(process.env.BENCH_ORG ?? "org_sql_catalog")
 const SERVICE = process.env.BENCH_SERVICE ?? "api"
+/** The services the batched alert reads cover: BENCH_SERVICES, comma separated, else the one service. */
+const SERVICES = Arr.filter(Str.split(",")(process.env.BENCH_SERVICES ?? SERVICE), Str.isNonEmpty)
 const DAY_MS = 86_400_000
 const HOUR_MS = 3_600_000
 
@@ -48,6 +50,26 @@ const buckets = (id: string, grain: "hour" | "minute", bucketSeconds: number, sp
 		results: "ordered",
 	})
 
+/** The alert tick's read: every burn window of the org's SLO services in one minute-grain query. */
+const burnBatch = (id: string, spanMs: number) =>
+	Bench.query({
+		id,
+		inputs: window(spanMs),
+		compile: (inputs) =>
+			CH.compile(CH.sloBurnByServiceQuery({ serviceNames: SERVICES, sli: AVAILABILITY }), inputs),
+		results: "unordered",
+	})
+
+/** Every SLO window's totals of those services, read on every fifth tick. */
+const totalsBatch = (id: string) =>
+	Bench.query({
+		id,
+		inputs: window(30 * DAY_MS),
+		compile: (inputs) =>
+			CH.compile(CH.sloTotalsByServiceQuery({ serviceNames: SERVICES, sli: AVAILABILITY }), inputs),
+		results: "unordered",
+	})
+
 /** What the splice replaces: one scan of every entry-point span in the window. */
 const flatScan = Bench.query({
 	id: "baseline/30d/flat-scan-availability",
@@ -79,6 +101,11 @@ export default Bench.defineSuite({
 			totals("totals/30d/availability", AVAILABILITY),
 			totals("totals/30d/latency-500ms", LATENCY_500),
 			buckets("burn/6h/minute-60s", "minute", 60, 6 * HOUR_MS),
+			buckets("burn/24h/minute-60s", "minute", 60, 24 * HOUR_MS),
+			// The lookback before the slow tier, for comparison with the one that runs now.
+			burnBatch("alert-tick/burn-batch/6h", 6 * HOUR_MS),
+			burnBatch("alert-tick/burn-batch/24h", 24 * HOUR_MS),
+			totalsBatch("alert-tick/totals-batch/30d"),
 			buckets("history/60d/hour-3600s", "hour", 3600, 60 * DAY_MS),
 			flatScan,
 		],

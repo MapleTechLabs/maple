@@ -8,10 +8,10 @@
  */
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { StatusSnapshotsBucket, StatusSnapshotsKv } from "@maple/infra/cloudflare"
-import { AuditIntakeQueue, MapleDb, ReplayBlobs } from "@maple/infra/cloudflare"
+import { AuditIntakeQueue, MapleDb, ReplayBlobs, SourceMapsBucket } from "@maple/infra/cloudflare"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { dischargeRuntimeContext } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option } from "effect"
+import { Array as Arr, Effect, Layer, Option } from "effect"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
@@ -36,6 +36,8 @@ import {
 	VcsSyncQueueProducer,
 	WorkflowStartError,
 	type WorkflowStarter,
+	sourceMapBucketLayer,
+	type WritableObjectStore,
 } from "@maple/backend/platform/bindings"
 import { bindChatSessions, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
@@ -87,6 +89,8 @@ export const bindApiClients = Effect.gen(function* () {
 		// Published status pages: the publish endpoint writes snapshots, page deletes clear them.
 		statusKv: yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv),
 		statusBucket: yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket),
+		// Uploaded source maps: the v2 upload writes them, symbolication reads them.
+		sourceMaps: yield* Cloudflare.R2.ReadWriteBucket(SourceMapsBucket),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
 			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
@@ -173,6 +177,41 @@ const objectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
 		),
 })
 
+const objectStoreError = (error: { readonly message: string; readonly cause: unknown }) =>
+	new ObjectStoreError({ message: error.message, cause: error.cause })
+
+const writableObjectStore = (client: Cloudflare.R2.ReadWriteBucketClient): WritableObjectStore => ({
+	...objectStore(client),
+	list: ({ prefix, startAfter, limit }) =>
+		dischargeRuntimeContext(
+			client.list({ prefix, limit, ...(startAfter === undefined ? undefined : { startAfter }) }),
+		).pipe(
+			Effect.mapBoth({
+				onSuccess: (page) => ({
+					objects: Arr.map(page.objects, (object) => ({
+						key: object.key,
+						uploadedAt: object.uploaded.getTime(),
+					})),
+					truncated: page.truncated,
+				}),
+				onFailure: objectStoreError,
+			}),
+		),
+	put: (key, bytes, contentType) =>
+		dischargeRuntimeContext(client.put(key, bytes, { httpMetadata: { contentType } })).pipe(
+			Effect.asVoid,
+			Effect.mapError((error) => new ObjectStoreError({ message: error.message, cause: error.cause })),
+		),
+	delete: (keys) =>
+		keys.length === 0
+			? Effect.void
+			: dischargeRuntimeContext(client.delete([...keys])).pipe(
+					Effect.mapError(
+						(error) => new ObjectStoreError({ message: error.message, cause: error.cause }),
+					),
+				),
+})
+
 /**
  * Alchemy's `create` dies when the binding rejects; recovered here into the
  * port's typed channel, so the caller can release the run it claimed.
@@ -220,6 +259,7 @@ export const apiPorts = (
 		Layer.succeed(DataSourceDevelopmentCallLimit, limiter(clients.dataSourceDevelopmentCallLimit)),
 		Layer.succeed(DataSourceSqlQueryLimit, limiter(clients.dataSourceSqlQueryLimit)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
+		sourceMapBucketLayer(writableObjectStore(clients.sourceMaps)),
 		Layer.unwrap(
 			dischargeRuntimeContext(Effect.all([clients.statusKv.raw, clients.statusBucket.raw])).pipe(
 				Effect.map(([kv, bucket]) => StatusPageStore.fromBindings(kv, bucket)),

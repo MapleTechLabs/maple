@@ -42,6 +42,8 @@ export const AuditResources = {
 		verbs: ["created", "updated", "deleted"],
 	},
 	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
+	/** An uploaded JavaScript source map; its path and release are in `metadata`. */
+	source_map: { prefix: PublicIdPrefixes.sourceMap, verbs: ["uploaded", "deleted"] },
 	/** External data sources; `metadata` says whether a secret changed, never its value. */
 	data_source: {
 		prefix: PublicIdPrefixes.dataSource,
@@ -108,7 +110,7 @@ export const AuditResources = {
 	},
 	oncall_schedule: {
 		prefix: PublicIdPrefixes.oncallSchedule,
-		verbs: ["created", "updated", "deleted"],
+		verbs: ["created", "updated", "deleted", "calendar_feed_created", "calendar_feed_deleted"],
 	},
 	oncall_override: {
 		prefix: PublicIdPrefixes.oncallOverride,
@@ -288,6 +290,7 @@ export const AuditResourceLabels = {
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
 	ingest_rule: "Ingest rule",
+	source_map: "Source map",
 	data_source: "Data source",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
@@ -366,6 +369,8 @@ export const AuditActionLabels = {
 	"oncall_schedule.deleted": "Deleted on-call schedule",
 	"oncall_override.created": "Created on-call override",
 	"oncall_override.deleted": "Deleted on-call override",
+	"oncall_schedule.calendar_feed_created": "Created on-call calendar link",
+	"oncall_schedule.calendar_feed_deleted": "Turned off on-call calendar link",
 	"alert_silence.created": "Silenced alerts",
 	"alert_silence.updated": "Updated alert silence",
 	"alert_silence.ended": "Ended alert silence",
@@ -382,6 +387,8 @@ export const AuditActionLabels = {
 	"attribute_mapping.updated": "Updated attribute mapping",
 	"attribute_mapping.deleted": "Deleted attribute mapping",
 	"ingest_rule.created": "Created ingest rule",
+	"source_map.uploaded": "Uploaded source map",
+	"source_map.deleted": "Deleted source map",
 	"ingest_rule.updated": "Updated ingest rule",
 	"ingest_rule.deleted": "Deleted ingest rule",
 	"data_source.created": "Connected data source",

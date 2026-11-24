@@ -62,7 +62,16 @@ import {
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
+import {
+	EmailSender,
+	type EmailSenderClient,
+	type ObjectStore,
+	SourceMapReadBucket,
+} from "@maple/backend/platform/bindings"
+import {
+	StackSymbolicator,
+	type StackSymbolicatorApi,
+} from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Cause, Clock, Effect, Layer, Option, Array as Arr, Record as Rec } from "effect"
@@ -84,6 +93,33 @@ const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
 				),
 				StatusPageCustomDomainsService.layer,
 			),
+	})
+
+/**
+ * The symbolicator over the read-only source map bucket, built once per isolate by the shell
+ * (`worker.ts`) so its caches outlive a tick. Its database holds only the connection string;
+ * each execute uses the running lane's connection scope.
+ */
+export const makeStackSymbolicator = (
+	env: AlertingWorkerEnv,
+	bucket: ObjectStore,
+): Effect.Effect<StackSymbolicatorApi> =>
+	Effect.service(StackSymbolicator).pipe(
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(
+			StackSymbolicator.layer.pipe(
+				Layer.provide(Layer.succeed(SourceMapReadBucket, bucket)),
+				Layer.provide(DatabasePgLive),
+				Layer.provide(layerMapleDbConnection(env)),
+			),
+		),
+	)
+
+/** Source-mapped grouping keys, only where the shell bound the source map bucket. */
+const stackSymbolicatorIfBound = (symbolicator: Option.Option<StackSymbolicatorApi>) =>
+	Option.match(symbolicator, {
+		onNone: () => Layer.empty,
+		onSome: (api) => Layer.succeed(StackSymbolicator, api),
 	})
 
 /** The secrets the ticks' services read. Unbound here, a secret reads as absent (`resources/env.ts`). */
@@ -114,6 +150,7 @@ export const layerTick = (
 	email: Option.Option<EmailSenderClient> = Option.none(),
 	chatSessions?: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings> = Option.none(),
+	symbolicator: Option.Option<StackSymbolicatorApi> = Option.none(),
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
@@ -139,7 +176,7 @@ export const layerTick = (
 		DigestService.layer,
 		WebAnalyticsDigestService.layer,
 		FirstDataSweepService.layer,
-		ErrorsService.layer,
+		ErrorsService.layer.pipe(Layer.provide(stackSymbolicatorIfBound(symbolicator))),
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
@@ -807,10 +844,11 @@ export const runScheduled = (
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
+	symbolicator: Option.Option<StackSymbolicatorApi> = Option.none(),
 ) =>
 	withPgConnectionScope(selectLaneProgram<ScheduledServices>(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(layerTick(env, email, chatSessions, statusPages)),
+		Effect.provide(layerTick(env, email, chatSessions, statusPages, symbolicator)),
 	)

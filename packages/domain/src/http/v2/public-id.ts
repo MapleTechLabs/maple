@@ -68,6 +68,7 @@ export const PublicIdPrefixes = {
 	mcpConnection: "mcpc",
 	deviceCredential: "dcred",
 	dataSource: "dsrc",
+	sourceMap: "smap",
 	/** Synthetic identity for logs, which have no native OTel record id. */
 	log: "log",
 	/** Reserved for the future events/webhooks system. */

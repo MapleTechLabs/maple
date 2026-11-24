@@ -61,16 +61,14 @@ struct MapleApp: App {
 		_clerk = State(initialValue: clerk)
 
 		// The client is constructed once: it holds no per-org state, because the
-		// organization travels in the token rather than in a header.
-		let api: any MapleAPI
-		do {
-			api = try Telemetry.Launch.step(Telemetry.Name.apiClientInit) {
-				try MapleClient(tokens: tokens, baseURL: AppConfig.apiBaseURL)
-			}
-		} catch {
-			fatalError("Invalid API base URL: \(error)")
+		// organization travels in the token rather than in a header, and each
+		// request goes to that organization's region.
+		let regions = OrganizationRegions()
+		regions.recordRestoredSession()
+		let api: any MapleAPI = Telemetry.Launch.step(Telemetry.Name.apiClientInit) {
+			MapleClient(tokens: tokens, servers: AppConfig.apiServers, regions: regions)
 		}
-		let session = SessionController(api: api, tokens: tokens)
+		let session = SessionController(api: api, tokens: tokens, regions: regions)
 		_session = State(initialValue: session)
 		// After `Clerk.configure` above, which is what restores the session this
 		// reads. A launch into the background for a `BGAppRefreshTask` or a
@@ -102,9 +100,8 @@ struct MapleApp: App {
 		var options = MapleOptions()
 		// Only our own API carries `traceparent`. Clerk is a third party and has
 		// no use for our trace ids; the default would send the header everywhere.
-		// The configured API's host joins them, so EU and preview builds trace end to end too.
-		options.tracing.tracePropagationTargets =
-			["api.maple.dev", "api-staging.maple.dev", "localhost"] + [AppConfig.apiBaseURL?.host].compactMap { $0 }
+		// Every region's API host is ours, and so is a configured local or preview one.
+		options.tracing.tracePropagationTargets = ["api-staging.maple.dev", "localhost"] + AppConfig.apiServers.hosts
 		// Masking off: a fully masked replay of this app is a screen of grey
 		// rectangles and tells us nothing about how the dashboard is used.
 		// Set explicitly rather than inherited so the trade-off stays visible —

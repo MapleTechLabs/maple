@@ -169,6 +169,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `packages/views/src/ui/spinner.ts` `spinner`: The loader glyph, spinning, as a status.
 - `packages/views/src/ui/split-button.ts` `splitButtonClass`: `SplitButton`'s two halves: the classes that join an action button and its chevron menu trigger into one control.
 - `packages/views/src/ui/sql-editor.ts` `sqlEditor`: `SqlEditor`: a SQL textarea whose text is drawn, syntax-highlighted, by a `<pre>` laid under it.
+- `packages/views/src/ui/stack-frames.ts` `stackFrameRows`, `defaultOpenFrameKey`, `isStackRowOpen`, `stackFrameList`: A symbolicated stack trace as a frame list: library runs fold, in-app frames open on their code.
 - `packages/views/src/ui/stack.ts` `hstackClass`, `vstackClass`, `hstack`, `vstack`: `HStack` and `VStack`: a flex row (items centred by default) or column with its gap on the spacing scale, instead of a hand-written `flex items-center gap-2` string.
 - `packages/views/src/ui/stat-figure.ts` `statFigure`: A headline number with a muted unit.
 - `packages/views/src/ui/status-dot.ts` `statusDot`: A static, decorative status dot.
@@ -236,7 +237,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/day-label.ts` `dayKey`, `dayLabel`, `dayEyebrow`: Calendar days in a time zone, for lists grouped by day ("Today", "Yesterday", "Mon 2 Nov").
 - `apps/web/src/page/kit/destination-picker.ts` `destinationPicker`, `pickedDestination`: The alert destinations a form notifies, each removable, then an "Add destination" menu of the rest; the owner keeps the menu's Model and the chosen ids.
 - `apps/web/src/page/kit/detail-header.ts` `detailEyebrow`, `detailTitle`, `detailTitleSkeleton`, `detailActions`: A detail page's title block and its loading skeleton.
-- `apps/web/src/page/kit/disclosure-strip.ts` `disclosureStrip`: A panel's last band that opens on a long block of monospace text.
+- `apps/web/src/page/kit/disclosure-strip.ts` `disclosureStrip`, `monospaceBlock`: A panel's last band that opens on a long block of monospace text.
 - `apps/web/src/page/kit/docs.ts` `docsUrl`: Every docs page the app links to from an empty state, as a path under maple.dev.
 - `apps/web/src/page/kit/environment-switcher.ts` `environmentEntries`, `entryLabel`, `stepEnvironmentSelect`, `environmentSwitcher`: The environment switcher the overview, the service map and a service's page share.
 - `apps/web/src/page/kit/error-chip.ts` `errorChip`: Tool failures read amber: the chip class for a tool error that is not a count.
@@ -314,6 +315,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/relative-time.ts` `relativeTime`, `listRelativeTime`: A timestamp as relative text.
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
+- `apps/web/src/page/kit/row-warning.ts` `rowWarning`, `rowWarnings`: A list row's warning: a small glyph and a few words in the warning tone, under the row's name.
 - `apps/web/src/page/kit/ruled-section.ts` `ruledSection`: A section set off from the content above it by a full-width rule, its children stacked 12px apart.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
 - `apps/web/src/page/kit/saved-views/index.ts` `loadCommand`, `pageStep`: Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`, `/metrics`), with its menu and its save, rename and delete dialogs.

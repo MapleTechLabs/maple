@@ -30,8 +30,9 @@ import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
 import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Option, String as Str } from "effect"
+import { timeToAcknowledge } from "@maple/web-data/alerts/incident-timeline"
 import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
@@ -251,17 +252,30 @@ const incidentRow = (
 		]),
 		tableCell(h, [formatAlertDateTimeFull(incident.firstTriggeredAt, timeZone)], "text-xs"),
 		tableCell(h, [
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({ size: "xs", numeric: true }),
-							isOpen && "text-severity-error font-medium",
+			vstack(h, { gap: "0.5" }, [
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ size: "xs", numeric: true }),
+								isOpen && "text-severity-error font-medium",
+							),
 						),
-					),
-				],
-				[formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt ?? msIso(nowMs))],
-			),
+					],
+					[formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt ?? msIso(nowMs))],
+				),
+				// How long it stood before anyone first acknowledged it; nothing when nobody did.
+				...Option.match(Option.fromNullishOr(timeToAcknowledge(incident)), {
+					onNone: () => [],
+					onSome: (waited) => [
+						typography(
+							h,
+							{ size: "xs", tone: "muted", numeric: true, className: "whitespace-nowrap" },
+							[`acked in ${waited}`],
+						),
+					],
+				}),
+			]),
 		]),
 		tableCell(h, [
 			incident.errorIssueId != null

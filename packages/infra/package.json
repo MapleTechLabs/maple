@@ -20,6 +20,7 @@
 		"./secret-slot-keys": "./src/secret-slot-keys.ts",
 		"./secrets": "./src/secrets.ts",
 		"./security-baseline": "./src/aws/security-baseline.ts",
+		"./self-source-maps": "./src/cloudflare/self-source-maps.ts",
 		"./worker-build": "./src/cloudflare/worker-build.ts",
 		"./worker-runtime": "./src/cloudflare/worker-runtime.ts",
 		"./worker-telemetry": "./src/cloudflare/worker-telemetry.ts",

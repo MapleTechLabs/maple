@@ -29,6 +29,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertIncidentAckService } from "@maple/backend/services/alerts/AlertIncidentAckService"
+import { AlertIncidentResolver } from "@maple/backend/services/alerts/AlertIncidentResolver"
 import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { EscalationChainsService } from "@maple/backend/services/alerts/EscalationChainsService"
@@ -119,6 +120,8 @@ import { GithubConnectService } from "@maple/backend/services/integrations/vcs/v
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { DemoService } from "@maple/backend/services/org/DemoService"
 import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { SourceMapService } from "@maple/backend/services/sourcemaps/SourceMapService"
+import { StackSymbolicator } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { IngestRulePreviewService } from "@maple/backend/services/org/IngestRulePreviewService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
@@ -238,6 +241,8 @@ export const HttpServicesLive = Layer.mergeAll(
 	PlanetScaleService.layer,
 	PlanetScaleWebhookService.layer,
 	IngestAttributeMappingService.layer,
+	// Needs the `SourceMapBucket` port, which only the deployed Worker binds.
+	SourceMapService.layer,
 	IngestRuleService.layer,
 	IngestRulePreviewService.layer,
 	AutumnClient.layer,
@@ -292,6 +297,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,
 	AlertIncidentAckService.layer,
+	AlertIncidentResolver.layer,
 	AlertIncidentPagesService.layer,
 	AlertRulesService.layer,
 	AlertSilencesService.layer,
@@ -305,9 +311,11 @@ export const HttpServicesLive = Layer.mergeAll(
 	ErrorActorsService.layer,
 	ErrorIssueWorkflowService.layer,
 	ErrorIssueMergeService.layer,
-	ErrorGroupingService.layer,
+	// "Why grouped" shows the frames the key was computed from, source-mapped like the tick's.
+	ErrorGroupingService.layer.pipe(Layer.provide(StackSymbolicator.layer)),
 	ErrorPolicyService.layer,
-	ErrorIssueReadModelsService.layer,
+	// Symbolicates the detail's latest stack through the org's source maps (needs `SourceMapReadBucket`).
+	ErrorIssueReadModelsService.layer.pipe(Layer.provide(StackSymbolicator.layer)),
 	ErrorsService.layer,
 	// The investigation gate's classifier, for the alert path that opens
 	// incidents from a request. Read optionally by `maybeEnqueueTriage`.

@@ -76,6 +76,10 @@ export const ruleLabel = (fingerprint: Fingerprint): string => {
 		}
 		case "frames":
 			return "Generic type, keyed on frames"
+		case "source-mapped":
+			return "Same source-mapped frames"
+		case "source-mapped-function":
+			return "Same type, first source-mapped function"
 	}
 }
 

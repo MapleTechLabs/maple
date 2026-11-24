@@ -92,7 +92,7 @@ struct IssueDetailView: View {
 		}
 		.toolbar {
 			ToolbarItemGroup(placement: .topBarTrailing) {
-				OpenOnWebButton(url: MapleWeb.issue(issueID))
+				OpenOnWebButton(url: session.web.issue(issueID))
 				if let model, let issue = model.state.value {
 					IssueMoreMenu(issue: issue) { action in
 						Task { await model.perform(action) }

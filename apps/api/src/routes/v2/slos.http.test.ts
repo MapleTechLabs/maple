@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Layer,
+	ManagedRuntime,
+	Schema,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
@@ -291,9 +300,10 @@ describe("v2 slos", () => {
 			bucket: formatWarehouseDateTime(nowMinute - (index - 1) * 60_000),
 			total: 100,
 			good: 98,
+			samples: 100,
 		}))
 		const warehouse = sloWarehouse({
-			sloWindowTotals: [{ total: 10_000, good: 9_995 }],
+			sloWindowTotals: [{ total: 10_000, good: 9_995, samples: 10_000 }],
 			sloBurnWindows: minutes,
 		})
 		return withHarness(async (harness) => {
@@ -314,7 +324,9 @@ describe("v2 slos", () => {
 				[5, 20],
 				[30, 20],
 				[60, 20],
+				[120, 20],
 				[360, 20],
+				[1440, 20],
 			])
 
 			// An SLO that is gone, or another org's, is a 404 on both reads.
@@ -337,22 +349,36 @@ describe("v2 slos", () => {
 	})
 
 	it("reads every SLO's status in one batch, counting only each SLO's service and environments", () => {
-		const burn = (total: number, good: number) => ({
-			total5: total,
-			good5: good,
-			total30: total * 6,
-			good30: good * 6,
-			total60: total * 12,
-			good60: good * 12,
-			total360: total * 72,
-			good360: good * 72,
-		})
+		// Unsampled traffic: every window records as many spans as it counts.
+		const burn = (total: number, good: number) =>
+			Rec.fromEntries(
+				Arr.flatMap(
+					[5, 30, 60, 120, 360, 1440],
+					(minutes): ReadonlyArray<readonly [string, number]> => [
+						[`total${minutes}`, (total * minutes) / 5],
+						[`good${minutes}`, (good * minutes) / 5],
+						[`samples${minutes}`, (total * minutes) / 5],
+					],
+				),
+			)
 		const warehouse = sloWarehouse({
 			sloStatusTotals: [
-				{ serviceName: "checkout", environment: "production", total: 10_000, good: 9_995 },
+				{
+					serviceName: "checkout",
+					environment: "production",
+					total: 10_000,
+					good: 9_995,
+					samples: 10_000,
+				},
 				// Outside the checkout SLO's environments: counting it would spend the whole budget.
-				{ serviceName: "checkout", environment: "staging", total: 500, good: 0 },
-				{ serviceName: "search", environment: "production", total: 2_000, good: 2_000 },
+				{ serviceName: "checkout", environment: "staging", total: 500, good: 0, samples: 500 },
+				{
+					serviceName: "search",
+					environment: "production",
+					total: 2_000,
+					good: 2_000,
+					samples: 2_000,
+				},
 			],
 			sloStatusBurn: [
 				{ serviceName: "checkout", environment: "production", ...burn(100, 98) },

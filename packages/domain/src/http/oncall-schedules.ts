@@ -71,6 +71,16 @@ export class OnCallNow extends Schema.Class<OnCallNow>("OnCallNow")({
 	endsAt: IsoDateTimeString,
 }) {}
 
+/** A stretch when nobody is on call. */
+export class OnCallGap extends Schema.Class<OnCallGap>("OnCallGap")({
+	startsAt: IsoDateTimeString,
+	endsAt: IsoDateTimeString,
+}) {}
+
+/** How far ahead a schedule's coverage gaps are reported, and how many at most. */
+export const ONCALL_GAP_LOOKAHEAD_MS = 14 * 86_400_000
+export const MAX_ONCALL_REPORTED_GAPS = 20
+
 export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>("OnCallScheduleDocument")({
 	id: OnCallScheduleId,
 	name: Schema.String,
@@ -79,8 +89,14 @@ export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>
 	layers: OnCallLayers,
 	/** Null when nobody is on call right now. */
 	onCallNow: Schema.NullOr(OnCallNow),
+	/** Stretches of the next 14 days when nobody is on call, earliest first. */
+	coverageGaps: Schema.Array(OnCallGap),
+	/** Participants who have left the org; their shifts pass to the next person in the rotation. */
+	departedUserIds: Schema.Array(UserId),
 	/** Escalation chains that page this schedule. */
 	chainIds: Schema.Array(EscalationChainId),
+	/** When the calendar feed's current link was made; null while the feed is off. */
+	calendarFeedCreatedAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
 }) {}
@@ -206,6 +222,23 @@ export class OnCallScheduleInUseError extends HttpTaggedError<OnCallScheduleInUs
 		code: "oncall_schedule_in_use",
 		title: "On-call schedule is in use",
 		message: "The on-call schedule is paged by one or more escalation chains.",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "redacted",
+	},
+) {}
+
+export class OnCallCalendarFeedExistsError extends HttpTaggedError<OnCallCalendarFeedExistsError>()(
+	"@maple/http/errors/OnCallCalendarFeedExistsError",
+	{
+		message: Schema.String,
+		scheduleId: OnCallScheduleId,
+	},
+	{
+		status: 409,
+		code: "oncall_calendar_feed_exists",
+		title: "Calendar feed already has a link",
+		message: "The schedule's calendar feed already has a link. Replacing it ends the old one.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",

@@ -486,6 +486,9 @@ export const IngestAttributeMappingId = MapleUuidId(
 )
 export type IngestAttributeMappingId = Schema.Schema.Type<typeof IngestAttributeMappingId>
 
+export const SourceMapFileId = MapleUuidId("@maple/SourceMapFileId", "Source Map File ID")
+export type SourceMapFileId = Schema.Schema.Type<typeof SourceMapFileId>
+
 export const IngestMappingSourceContext = Schema.Literals(["span", "resource"]).annotate({
 	identifier: "@maple/IngestMappingSourceContext",
 	title: "Ingest Mapping Source Context",

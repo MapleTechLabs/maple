@@ -25,6 +25,7 @@ const CATEGORY_BY_RESOURCE = {
 	api_key: "credential",
 	attribute_mapping: "configuration",
 	ingest_rule: "configuration",
+	source_map: "configuration",
 	data_source: "configuration",
 	dashboard: "resource",
 	chat_integration: "configuration",

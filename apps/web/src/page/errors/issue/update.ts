@@ -2,7 +2,7 @@ import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { RequestMode } from "@maple/views/data/keyed"
 import { type ErrorIssueId, ErrorIssuePullRequestId } from "@maple/domain/http"
-import { Option, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { SETUP_CARD_ID } from "./model"
 import { AsyncData, Command } from "foldkit"
@@ -256,6 +256,8 @@ export const init = (
 		grouping: Keyed.idle(),
 		similar: Keyed.idle(),
 		openSkippedFrames: [],
+		stackToggles: [],
+		isShowingRawStack: false,
 		splittingHash: null,
 		mergingIssueId: null,
 		groupingError: null,
@@ -420,6 +422,33 @@ const navigateSearch = (model: Model, search: Search): Return => ({
 	}),
 })
 
+/** The stack as sent and as mapped: a map uploaded since the last load changes the second alone. */
+const stackIdentityOf = (model: Model): string | null =>
+	Option.match(detailOf(model), {
+		onNone: () => null,
+		onSome: (detail) =>
+			Arr.join(
+				[
+					detail.latestStacktrace ?? "",
+					detail.latestStack?.status ?? "",
+					...Arr.map(
+						detail.latestStack?.frames ?? [],
+						(frame) =>
+							`${frame.function ?? ""}@${frame.file ?? ""}:${frame.line ?? ""}:${frame.column ?? ""}`,
+					),
+				],
+				"\n",
+			),
+	})
+
+/** The new detail; rows flipped open or closed belong to the old stack, so a different one resets them. */
+const withDetail = (model: Model, detail: Model["detail"]): Model => {
+	const next = { ...model, detail }
+	return stackIdentityOf(next) === stackIdentityOf(model)
+		? next
+		: { ...next, stackToggles: [], isShowingRawStack: false }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
@@ -429,7 +458,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			]),
 		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchDetail: ({ key, result }) =>
-			runSteps(syncSelects({ ...model, detail: Keyed.accept(model.detail, key, result) }), [
+			runSteps(syncSelects(withDetail(model, Keyed.accept(model.detail, key, result))), [
 				loadedReads(context),
 				vcsStep(context),
 				groupingReads(context, "Load"),
@@ -476,6 +505,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryGrouping: () => retryGrouping(model, context, "grouping"),
 		ClickedRetrySimilar: () => retryGrouping(model, context, "similar"),
 		ToggledSkippedFrames: ({ fingerprintHash }) => toggledSkippedFrames(model, fingerprintHash),
+		ToggledStackRow: ({ key }) => ({
+			model: {
+				...model,
+				stackToggles: model.stackToggles.includes(key)
+					? Arr.filter(model.stackToggles, (toggled) => toggled !== key)
+					: [...model.stackToggles, key],
+			},
+		}),
+		ToggledRawStack: () => ({ model: { ...model, isShowingRawStack: !model.isShowingRawStack } }),
 		ClickedSplitOut: ({ fingerprintHash }) => clickedSplitOut(model, fingerprintHash),
 		CompletedSplitOut: ({ fingerprintHash, result }) =>
 			completedGroupingWrite(

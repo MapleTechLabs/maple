@@ -3,8 +3,10 @@ import { OrgId } from "@maple/domain"
 import { SloPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
 import {
+	all,
 	click,
 	expect as expectView,
+	expectAll,
 	given,
 	role,
 	scene,
@@ -195,6 +197,49 @@ describe("SLO form", () => {
 			expectView(text("Pages when the budget burns at 14.4x over 1h and 5m.")).toExist(),
 			click(role("switch")),
 			expectView(text("Pages when the budget burns at 14.4x over 1h and 5m.")).not.toExist(),
+			expectView(text(/A tier needs at least 10 events to fire/u)).not.toExist(),
+		)
+	})
+
+	test("destinations are picked per severity, and the warning line lists both of its tiers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(named()),
+			expectView(
+				text(
+					"Opens a ticket when the budget burns at 6x over 6h and 30m, or at 3x over 24h and 2h. A critical incident notifies these too.",
+				),
+			).toExist(),
+			// One picker per severity: the slow tier shares the warning one.
+			expectAll(all.role("button", { name: "Add destination" })).toHaveCount(2),
+			expectView(
+				text(
+					"A tier needs at least 10 events to fire. A spent error budget opens a warning of its own.",
+				),
+			).toExist(),
+			expectView(text(/can burn at most/u)).not.toExist(),
+		)
+	})
+
+	test("a low target reads the burn its tiers really fire at, and says what capped them", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(named()),
+			click(role("button", { name: "Custom" })),
+			type(role("textbox", { name: "Custom target" }), "90"),
+			expectView(text("Pages when the budget burns at 8x over 1h and 5m.")).toExist(),
+			expectView(text(/14\.4x over 1h and 5m/u)).not.toExist(),
+			expectView(
+				text(
+					/^A target of 90% can burn at most 10x, so the critical tier fires at 8x, not 14\.4x\./u,
+				),
+			).toExist(),
+			// At 50% a total outage burns 2x: every tier is capped at 1.6x.
+			type(role("textbox", { name: "Custom target" }), "50"),
+			expectView(text("Pages when the budget burns at 1.6x over 1h and 5m.")).toExist(),
+			expectView(
+				text(/^A target of 50% can burn at most 2x, so no tier fires above 1\.6x\./u),
+			).toExist(),
 		)
 	})
 

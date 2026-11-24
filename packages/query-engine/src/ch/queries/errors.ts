@@ -1464,6 +1464,12 @@ export function errorIssueLatestStacktraceQuery(opts: IssueFingerprintsOpts) {
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			stacktrace: $.ExceptionStacktrace,
+			// The span behind it, read for the exception event's debug ids, and the release a map can match.
+			serviceName: $.ServiceName,
+			serviceVersion: $.ServiceVersion,
+			// Plain strings: an occurrence can carry no trace or span, and ClickHouse returns ''.
+			traceId: CH.toString_($.TraceId),
+			spanId: CH.toString_($.SpanId),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1813,6 +1819,8 @@ export function errorGroupingSamplesQuery(opts: { readonly fingerprintHashes: re
 			return {
 				fingerprintHash: CH.toString_($.FingerprintHash),
 				serviceName: CH.argMax($.ServiceName, latest),
+				// Matches source maps uploaded by service and version, for a stack's frames.
+				serviceVersion: CH.argMax($.ServiceVersion, latest),
 				timestamp: CH.max_($.Timestamp),
 				traceId: CH.argMax($.TraceId, latest),
 				spanId: CH.argMax($.SpanId, latest),

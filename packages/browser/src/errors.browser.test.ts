@@ -268,3 +268,29 @@ describe("filters and linked errors", () => {
 		assert.include(String(stacktrace), "Caused by: TypeError: network down")
 	})
 })
+
+describe("debug ids", () => {
+	it("records the debug id of a registered script the error was thrown from", async () => {
+		const url = new URL("./__fixtures__/debug-id-chunk.js", import.meta.url).href
+		const script = document.createElement("script")
+		script.src = url
+		await new Promise((resolve, reject) => {
+			script.addEventListener("load", resolve)
+			script.addEventListener("error", reject)
+			document.head.append(script)
+		})
+		const owner: Record<string, unknown> = globalThis
+		const error: unknown = await owner.__chunkError
+
+		captureException(error)
+
+		const event = exceptionEventOf(exporter.getFinishedSpans()[0])
+		assert.include(String(event?.attributes?.["exception.stacktrace"]), url)
+		assert.deepEqual(JSON.parse(String(event?.attributes?.["maple.exception.debug_ids"])), {
+			[url]: "0b6c7a1e-58a4-4c1e-9d0b-2f3c4d5e6f70",
+		})
+		script.remove()
+		delete owner._mapleDebugIds
+		delete owner.__chunkError
+	})
+})
