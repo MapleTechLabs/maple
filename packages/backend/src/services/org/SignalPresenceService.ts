@@ -16,6 +16,7 @@
 //   to help — and this runs on views that are, by definition, already not working
 //   for the user.
 
+import { ONBOARDING_TEST_TRACE_SERVICE } from "@maple/domain/onboarding-checklist"
 import { Clock, Context, Effect, Layer, Option, Array as Arr, String as Str } from "effect"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -58,8 +59,19 @@ export interface SignalPresenceReport {
 	readonly signals: ReadonlyArray<SignalPresence>
 }
 
+export interface SignalPresenceReadOptions {
+	/**
+	 * Leave out Quick Start's test trace, for "has this org wired an app" (first data, the reward).
+	 * Quick Start's own live step keeps it, to show the pipeline works.
+	 */
+	readonly excludeTestTrace?: boolean
+}
+
 export interface SignalPresenceServiceApi {
-	readonly read: (tenant: TenantContext) => Effect.Effect<SignalPresenceReport>
+	readonly read: (
+		tenant: TenantContext,
+		options?: SignalPresenceReadOptions,
+	) => Effect.Effect<SignalPresenceReport>
 }
 
 /**
@@ -93,11 +105,17 @@ const absent = (signal: CH.TelemetrySignal): SignalPresence => ({
 const make: Effect.Effect<SignalPresenceServiceApi, never, WarehouseQueryService> = Effect.gen(function* () {
 	const warehouse = yield* WarehouseQueryService
 
-	const read = Effect.fn("SignalPresenceService.read")(function* (tenant: TenantContext) {
+	const read = Effect.fn("SignalPresenceService.read")(function* (
+		tenant: TenantContext,
+		options: SignalPresenceReadOptions = {},
+	) {
 		const now = yield* Clock.currentTimeMillis
 		const windowStart = now - WINDOW_DAYS * 24 * 60 * 60 * 1000
 
-		const compiled = CH.compileUnion(CH.signalPresenceQuery(), {
+		const query = CH.signalPresenceQuery(
+			options.excludeTestTrace === true ? { excludeServiceNames: [ONBOARDING_TEST_TRACE_SERVICE] } : {},
+		)
+		const compiled = CH.compileUnion(query, {
 			orgId: tenant.orgId,
 			startTime: formatWarehouseDateTime(windowStart),
 			endTime: formatWarehouseDateTime(now),
