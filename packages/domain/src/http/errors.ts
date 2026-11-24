@@ -44,6 +44,7 @@ import {
 	WorkflowState,
 } from "../error-issues"
 import { AnalystAccess } from "./analyst-access"
+import { SymbolicatedStack } from "../errors/js-stack"
 import { GroupingRule } from "../tinybird/grouping"
 import { GroupingConfig, OrgGroupingRule } from "../tinybird/grouping-rules"
 export {
@@ -338,6 +339,8 @@ export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailRespo
 	environments: Schema.Array(ErrorIssueEnvironment),
 	// The newest stack trace in the window; null when no occurrence there carried one.
 	latestStacktrace: Schema.NullOr(Schema.String),
+	// That stack mapped through the org's source maps; null when there is no stack.
+	latestStack: Schema.NullOr(SymbolicatedStack),
 }) {}
 
 export class ErrorIncidentsListResponse extends Schema.Class<ErrorIncidentsListResponse>(

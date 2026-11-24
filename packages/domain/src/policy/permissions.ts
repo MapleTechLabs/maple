@@ -36,6 +36,7 @@ export const permissions = {
 	"ai_triage:configure": { min: "engineer", action: "manage AI triage settings" },
 	"security:manage": { min: "engineer", action: "open the Security Center and triage its findings" },
 	"ingest_keys:roll": { min: "engineer", action: "roll ingest keys" },
+	"source_maps:upload": { min: "engineer", action: "upload and delete source maps" },
 	"status_pages:access": { min: "engineer", action: "change who can view status pages" },
 	"data_sources:manage": { min: "engineer", action: "connect and manage data sources" },
 	// A query runs on the org's own database, so it takes the role that may connect one.

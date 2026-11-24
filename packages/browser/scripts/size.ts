@@ -91,8 +91,10 @@ const BUDGET = {
 	 * `errors.ignoreNetworkFailuresFor`, sampled-out sessions included (~0.55 kB).
 	 * 26.5 since 2026-11: `persistence: "cookieless"` (the row visitor rule, memory-wins
 	 * guard against older copies) measured 26.07 kB.
+	 * 35.5 since 2026-11: main measured 34.97 kB; `maple.exception.debug_ids` (source map debug
+	 * ids on every exception event, on the capture path) adds ~0.2 kB.
 	 */
-	firstParty: 35,
+	firstParty: 35.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */

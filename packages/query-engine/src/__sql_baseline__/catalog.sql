@@ -1617,10 +1617,11 @@ SELECT
           AND error_events.Timestamp <= '2026-01-03 14:15:00'
         FORMAT JSON
 
--- builder:errors:errorGroupingSamplesQuery:default  [025309cc]
+-- builder:errors:errorGroupingSamplesQuery:default  [90be06ec]
 SELECT
           toString(error_events.FingerprintHash) AS fingerprintHash,
           argMax(error_events.ServiceName, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS serviceName,
+          argMax(error_events.ServiceVersion, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS serviceVersion,
           max(error_events.Timestamp) AS timestamp,
           argMax(error_events.TraceId, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS traceId,
           argMax(error_events.SpanId, concat(toString(error_events.Timestamp), ' ', error_events.TraceId, ' ', error_events.SpanId)) AS spanId,
@@ -1668,10 +1669,14 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
--- builder:errors:errorIssueLatestStacktraceQuery:default  [5489bb6f]
+-- builder:errors:errorIssueLatestStacktraceQuery:default  [6cb41cd5]
 SELECT
           error_events.Timestamp AS timestamp,
-          error_events.ExceptionStacktrace AS stacktrace
+          error_events.ExceptionStacktrace AS stacktrace,
+          error_events.ServiceName AS serviceName,
+          error_events.ServiceVersion AS serviceVersion,
+          toString(error_events.TraceId) AS traceId,
+          toString(error_events.SpanId) AS spanId
         FROM error_events
         WHERE error_events.OrgId = 'org_sql_catalog'
           AND error_events.FingerprintHash IN (toUInt64('11640393269246331608'))

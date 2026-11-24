@@ -10,6 +10,7 @@ import {
 	mapleDbEnv,
 	MapleStack,
 	mapleWorkerProps,
+	SourceMapsBucket,
 	StatusSnapshotsBucket,
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
@@ -20,6 +21,8 @@ import { dischargeRuntimeContext, workerEnvLayer } from "@maple/infra/worker-run
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
+import { type ObjectStore, ObjectStoreError } from "@maple/backend/platform/bindings"
+import type { StackSymbolicatorApi } from "@maple/backend/services/sourcemaps/StackSymbolicator"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Config, Effect, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
@@ -91,6 +94,17 @@ const cronGateFor = (env: Record<string, unknown>) =>
 		Effect.provide(workerEnvLayer(env)),
 	)
 
+/** The read side of an R2 bucket as the backend's `ObjectStore` port. */
+const readOnlyObjectStore = (client: Cloudflare.R2.ReadBucketClient): ObjectStore => ({
+	getBytes: (key) =>
+		dischargeRuntimeContext(client.get(key)).pipe(
+			Effect.flatMap((object) =>
+				object === null ? Effect.succeed(Option.none<Uint8Array>()) : Effect.asSome(object.bytes()),
+			),
+			Effect.mapError((error) => new ObjectStoreError({ message: error.message, cause: error.cause })),
+		),
+})
+
 export default class Alerting extends Cloudflare.Worker<Alerting>()(
 	"alerting",
 	props,
@@ -106,6 +120,12 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// Where published status pages live; ticks publish snapshots and import break-glass posts.
 		const statusKv = yield* Cloudflare.KV.ReadWriteNamespace(StatusSnapshotsKv)
 		const statusBucket = yield* Cloudflare.R2.ReadWriteBucket(StatusSnapshotsBucket)
+		// Uploaded source maps, read-only: the errors tick keys minified stacks on their mapped frames.
+		const sourceMapsClient = yield* Cloudflare.R2.ReadBucket(SourceMapsBucket)
+		const sourceMaps = readOnlyObjectStore(sourceMapsClient)
+		// The symbolicator, built on the first fire (it needs the env) and kept for the isolate, so
+		// its parsed-map and lookup caches outlive one tick.
+		const symbolicator = yield* Ref.make(Option.none<StackSymbolicatorApi>())
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 		// Once per isolate too: an isolate never changes data center.
@@ -116,11 +136,25 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 
 		const runTick = (cron: string, lane: string, env: Record<string, unknown>) =>
 			Effect.gen(function* () {
-				const { runScheduled } = yield* scheduled
+				const { runScheduled, makeStackSymbolicator } = yield* scheduled
+				const built = yield* Ref.get(symbolicator)
+				const stacks = Option.isSome(built)
+					? built.value
+					: yield* makeStackSymbolicator(env, sourceMaps).pipe(
+							Effect.tap((made) => Ref.set(symbolicator, Option.some(made))),
+						)
 				const [kv, bucket] = yield* dischargeRuntimeContext(
 					Effect.all([statusKv.raw, statusBucket.raw]),
 				)
-				yield* runScheduled(cron, lane, env, email, chatSessions, Option.some({ kv, bucket }))
+				yield* runScheduled(
+					cron,
+					lane,
+					env,
+					email,
+					chatSessions,
+					Option.some({ kv, bucket }),
+					Option.some(stacks),
+				)
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run.
 				Effect.catchCause((cause) =>
@@ -237,6 +271,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 			Cloudflare.Email.SendBinding,
 			Cloudflare.KV.ReadWriteNamespaceBinding,
 			Cloudflare.R2.ReadWriteBucketBinding,
+			Cloudflare.R2.ReadBucketBinding,
 			Cloudflare.Workers.CronEventSourceLive,
 			FetchHttpClient.layer,
 			WorkerTelemetry({

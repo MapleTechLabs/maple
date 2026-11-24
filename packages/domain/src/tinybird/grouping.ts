@@ -3,14 +3,16 @@
  * from one sample. Keys only merge hashes, never split one; why and how it was measured is
  * in `docs/error-issue-lifecycle.md` ("The grouping key").
  */
-import { Array as Arr, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
+import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
 import {
 	computeFingerprintInputs,
 	currentFrameCandidates,
 	CUSTOM_FINGERPRINT_ATTRIBUTE,
 	type FingerprintInputs,
 	isLibraryFrame,
+	MAX_FINGERPRINT_FRAMES,
 	SPAN_SIGNATURE_PREFIX,
 } from "./fingerprint"
 import {
@@ -65,6 +67,10 @@ const framePathRe = /(\(|@|^[ \t]*at |^[ \t]*File ")(?:[^ ()"]*\/)?([^/ ()"]+\/[
  * - `type-message`: a specific error type with a message; the two are the identity.
  * - `type-function`: a specific error type with no message; the first named function.
  * - `frames`: a generic type; frames (install roots trimmed) and message, as the hash.
+ * - `source-mapped`: `frames` read through source maps: original files and functions, so a
+ *   deploy's renamed bundle keeps its key.
+ * - `source-mapped-function`: `type-function` read through source maps: the type and the first
+ *   mapped function. Keyed as `source-mapped` (see `keyOfParts`), so the name changes no key.
  */
 export const GroupingRule = Schema.Literals([
 	"custom",
@@ -74,6 +80,8 @@ export const GroupingRule = Schema.Literals([
 	"type-message",
 	"type-function",
 	"frames",
+	"source-mapped",
+	"source-mapped-function",
 ]).annotate({ identifier: "@maple/GroupingRule", title: "Grouping Rule" })
 export type GroupingRule = Schema.Schema.Type<typeof GroupingRule>
 
@@ -90,6 +98,8 @@ export interface GroupingSample {
 	readonly statusMessage: string
 	readonly customFingerprint?: string
 	readonly span?: { readonly kind: string; readonly name: string }
+	/** The stack mapped through the org's source maps, when the tick could look it up. */
+	readonly symbolicatedStack?: SymbolicatedStack
 }
 
 /** A frame's file, cut to its last two path segments: install roots and worktrees vary. */
@@ -104,6 +114,66 @@ const trimFramePath = (frame: string): string => {
 export const frameFunction = (frame: string): string | undefined => {
 	const name = namedFrameRe.exec(frame)?.[1]
 	return name === undefined || plumbingRe.test(name) ? undefined : name
+}
+
+/** A mapped frame's function when the source map supplied it, unless it is plumbing. */
+const mappedFunction = (frame: StackFrame): string | undefined => {
+	const name = frame.function
+	return frame.function_from_map !== true || name === null || plumbingRe.test(name) ? undefined : name
+}
+
+/**
+ * A mapped frame as the key reads it, never a line or column: its original file and function, or,
+ * with no function name, the file and its source line's text. `undefined` when it has neither.
+ */
+const mappedFrameLine = (frame: StackFrame, file: string): string | undefined => {
+	const name = mappedFunction(frame)
+	if (name !== undefined) return `at ${name} (${file})`
+	// Only the ends are trimmed: inner whitespace can be code (a string or regex literal).
+	const text = frame.context === null ? "" : Str.trim(frame.context.line)
+	return text === "" ? undefined : `at ${file} | ${text}`
+}
+
+/**
+ * The app's source-mapped frames, top first, when the stack resolved at least one. Unmapped
+ * frames are left out: their names and hashed files change with every deploy. `undefined` also
+ * when a frame the key reads has no identity beyond its file: the raw key keeps it apart.
+ */
+const sourceMappedFrames = (
+	sample: GroupingSample,
+	rules: CompiledGroupingRules,
+): { readonly frames: ReadonlyArray<string>; readonly skipped: ReadonlyArray<string> } | undefined => {
+	const stack = sample.symbolicatedStack
+	if (stack === undefined || (stack.status !== "resolved" && stack.status !== "partial")) return undefined
+	// Rules read both the generated frame and its mapped location, as they did before the map
+	// came: a frame either side marks a library stays out of the key, one marked app is in.
+	const isApp = (frame: StackFrame, shown: string) => {
+		const kinds = [rules.frameKind(shown, sample), rules.frameKind(frame.raw, sample)]
+		return Arr.contains(kinds, "library") ? false : Arr.contains(kinds, "app") ? true : frame.in_app
+	}
+	// An unmapped throw site leaves only its callers: two throw sites could share them, so raw key.
+	const throwSite = Arr.findFirst(stack.frames, (frame) => isApp(frame, frame.raw))
+	if (Option.isSome(throwSite) && !throwSite.value.resolved) return undefined
+	const mapped = Arr.dedupeAdjacentWith(
+		Arr.flatMap(stack.frames, (frame) => {
+			if (!frame.resolved || frame.file === null) return []
+			const line = mappedFrameLine(frame, frame.file)
+			const shown = line ?? `at ${frame.file}`
+			return [{ line, shown, app: isApp(frame, shown) }]
+		}),
+		(a, b) => a.line !== undefined && a.line === b.line,
+	)
+	const read = Arr.filter(mapped, (frame) => frame.app).slice(0, MAX_FINGERPRINT_FRAMES)
+	if (read.length === 0) return undefined
+	const lines = Arr.getSomes(Arr.map(read, (frame) => Option.fromUndefinedOr(frame.line)))
+	if (lines.length < read.length) return undefined
+	return {
+		frames: lines,
+		skipped: Arr.map(
+			Arr.filter(mapped, (frame) => !frame.app),
+			(frame) => frame.shown,
+		),
+	}
 }
 
 /** A key's inputs, and what the "why grouped" view shows of them. */
@@ -150,10 +220,15 @@ export const explainGrouping = (
 		sample.customFingerprint === undefined || Str.trim(sample.customFingerprint) === ""
 			? undefined
 			: Str.trim(sample.customFingerprint)
-	const explained = (parts: GroupingParts, read: ReadonlyArray<string>, orgRule?: OrgGroupingRule) => ({
+	const explained = (
+		parts: GroupingParts,
+		read: ReadonlyArray<string>,
+		orgRule?: OrgGroupingRule,
+		passedOver: ReadonlyArray<string> = skipped,
+	) => ({
 		...parts,
 		frames: read,
-		skippedFrames: read.length === 0 ? [] : skipped,
+		skippedFrames: read.length === 0 ? [] : passedOver,
 		messageSignature: inputs.msgSignature,
 		customKey,
 		orgRule,
@@ -180,11 +255,36 @@ export const explainGrouping = (
 	}
 	const message = inputs.msgSignature
 	const trimmed = Arr.join(Arr.map(frames, trimFramePath), "\n")
+	// Only the frame parts read source maps; every rule above keeps its priority.
+	const mapped = sourceMappedFrames(sample, rules)
 	const byFrames = () =>
-		explained(extend({ rule: "frames", parts: [sample.exceptionType, trimmed, message] }), frames)
+		mapped === undefined
+			? explained(extend({ rule: "frames", parts: [sample.exceptionType, trimmed, message] }), frames)
+			: explained(
+					extend({
+						rule: "source-mapped",
+						parts: [sample.exceptionType, Arr.join(mapped.frames, "\n"), message],
+					}),
+					mapped.frames,
+					undefined,
+					mapped.skipped,
+				)
 	if (genericTypeRe.test(sample.exceptionType)) return byFrames()
 	if (message !== "")
 		return explained(extend({ rule: "type-message", parts: [sample.exceptionType, message] }), [])
+	if (mapped !== undefined) {
+		const mappedNamed = Arr.findFirst(mapped.frames, (frame) => frameFunction(frame) !== undefined)
+		if (mappedNamed._tag === "None") return byFrames()
+		return explained(
+			extend({
+				rule: "source-mapped-function",
+				parts: [sample.exceptionType, frameFunction(mappedNamed.value) ?? ""],
+			}),
+			[mappedNamed.value],
+			undefined,
+			mapped.skipped,
+		)
+	}
 	const named = Arr.findFirst(frames, (frame) => frameFunction(frame) !== undefined)
 	if (named._tag === "None") return byFrames()
 	return explained(
@@ -203,7 +303,14 @@ export const groupingParts = (
 
 /** The stored key for a service and its parts, as `groupingKey` computes it. */
 export const keyOfParts = (serviceName: string, { rule, parts }: GroupingParts): string =>
-	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, rule, ...parts], "\u0000"))
+	stableHash(Arr.join([`g${GROUPING_KEY_VERSION}`, serviceName, keyedRule(rule), ...parts], "\u0000"))
+
+/**
+ * The rule as the key hashes it. `source-mapped-function` was keyed as `source-mapped` before it had
+ * its own name, so it still is: a stored key never changes for a rename.
+ */
+const keyedRule = (rule: GroupingRule): GroupingRule =>
+	rule === "source-mapped-function" ? "source-mapped" : rule
 
 /** The key two hashes must share to join one issue. Scoped to the service, as the hash is. */
 export const groupingKey = (sample: GroupingSample, rules: CompiledGroupingRules = NO_RULES): string =>

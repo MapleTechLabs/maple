@@ -4,7 +4,14 @@
  * fetch refused), because it alone holds the warehouse delete token and a delete-capable binding
  * to the replay bucket.
  */
-import { MapleDb, mapleDbEnv, MapleStack, mapleWorkerProps, ReplayBlobs } from "@maple/infra/cloudflare"
+import {
+	MapleDb,
+	mapleDbEnv,
+	MapleStack,
+	mapleWorkerProps,
+	ReplayBlobs,
+	SourceMapsBucket,
+} from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
@@ -58,13 +65,14 @@ export default class OrgEraser extends Cloudflare.Worker<OrgEraser>()(
 		// maple-ai's chat Durable Object, whose conversations are erased.
 		const chatSessions = yield* bindChatSessions
 		const replayBlobs = yield* Cloudflare.R2.ReadWriteBucket(ReplayBlobs)
+		const sourceMaps = yield* Cloudflare.R2.ReadWriteBucket(SourceMapsBucket)
 
 		const onFire = () =>
 			Effect.gen(function* () {
 				const env = yield* Cloudflare.WorkerEnvironment
 				if (!(yield* isProduction(env))) return
 				const { runTick } = yield* tick
-				yield* runTick(env, chatSessions, replayBlobs)
+				yield* runTick(env, chatSessions, replayBlobs, sourceMaps)
 			}).pipe(
 				// Interrupts are isolate teardown, not a failed run; the next fire picks up the rest.
 				Effect.catchCause((cause) =>

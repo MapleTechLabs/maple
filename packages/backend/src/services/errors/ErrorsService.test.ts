@@ -5438,6 +5438,7 @@ describe("ErrorsService.runTick grouping keys", () => {
 	const sample = (fingerprintHash: string, chunk: string) => ({
 		fingerprintHash,
 		serviceName: "checkout-api",
+		serviceVersion: "",
 		timestamp: formatWarehouseDateTime(TICK_MS - 90_000),
 		traceId: `trace-${fingerprintHash}`,
 		spanId: `span-${fingerprintHash}`,

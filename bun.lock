@@ -170,6 +170,7 @@
         "@maple/local-server": "workspace:*",
         "@maple/promql": "workspace:*",
         "@maple/query-engine": "workspace:*",
+        "@maple/sourcemaps": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -615,24 +616,32 @@
       "devDependencies": {
         "@alchemy.run/test": "catalog:alchemy",
         "@effect/platform-bun": "catalog:effect",
+        "@effect/platform-node": "catalog:effect",
         "@effect/vitest": "catalog:effect",
+        "@jridgewell/trace-mapping": "0.3.31",
         "@maple/domain": "workspace:*",
         "@maple/local-server": "workspace:*",
+        "@maple/sourcemaps": "workspace:*",
         "@types/bun": "^1.4.5",
         "@types/node": "catalog:tooling",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",
         "tsdown": "^0.23.7",
         "typescript": "catalog:tooling",
+        "vite": "catalog:",
         "vitest": "catalog:",
       },
       "peerDependencies": {
         "@effect/platform-bun": "^4.0.0",
+        "@effect/platform-node": "^4.0.0",
         "alchemy": ">=2.0.0-beta.80 <3",
         "effect": "^4.0.0",
+        "vite": ">=6.0.0",
       },
       "optionalPeers": [
         "@effect/platform-bun",
+        "@effect/platform-node",
+        "vite",
       ],
     },
     "packages/alerting-core": {
@@ -679,6 +688,7 @@
         "@distilled.cloud/planetscale": "1.0.0-rc.20",
         "@distilled.cloud/supabase": "1.0.0-rc.20",
         "@distilled.cloud/vercel": "1.0.0-rc.20",
+        "@jridgewell/trace-mapping": "0.3.31",
         "@maple-dev/effect-clickhouse-http": "workspace:*",
         "@maple-dev/effect-orm": "0.10.0",
         "@maple/alerting-core": "workspace:*",
@@ -833,6 +843,7 @@
         "@maple/primitives": "workspace:*",
         "@maple/query-model": "workspace:*",
         "@maple/security-audit": "workspace:*",
+        "@maple/sourcemaps": "workspace:*",
         "@maple/strings": "workspace:*",
         "@maple/widgets": "workspace:*",
         "effect": "catalog:effect",
@@ -1031,6 +1042,16 @@
         "@types/node": "catalog:tooling",
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
+      },
+    },
+    "packages/sourcemaps": {
+      "name": "@maple/sourcemaps",
+      "dependencies": {
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
       },
     },
     "packages/status-page": {
@@ -1635,6 +1656,8 @@
     "@maple/sdk-core": ["@maple/sdk-core@workspace:packages/sdk-core"],
 
     "@maple/security-audit": ["@maple/security-audit@workspace:packages/security-audit"],
+
+    "@maple/sourcemaps": ["@maple/sourcemaps@workspace:packages/sourcemaps"],
 
     "@maple/status": ["@maple/status@workspace:apps/status"],
 

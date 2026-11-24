@@ -3,7 +3,7 @@
  * stays off the Worker's startup.
  */
 import type * as Cloudflare from "@alchemy.run/cloudflare"
-import { ReplayBlobEraser } from "@maple/backend/platform/bindings"
+import { ReplayBlobEraser, SourceMapEraser } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, layerChatSessions } from "@maple/backend/platform/chat-sessions"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -20,6 +20,7 @@ export const runTick = (
 	env: Record<string, unknown>,
 	chatSessions: ChatSessionNamespace,
 	replayBlobs: Cloudflare.R2.ReadWriteBucketClient,
+	sourceMaps: Cloudflare.R2.ReadWriteBucketClient,
 ) => {
 	const config = workerEnvLayer(env)
 	const connection = layerMapleDbConnection(env)
@@ -28,6 +29,7 @@ export const runTick = (
 		connection,
 		layerChatSessions(chatSessions, env),
 		Layer.succeed(ReplayBlobEraser, prefixEraser(replayBlobs)),
+		Layer.succeed(SourceMapEraser, prefixEraser(sourceMaps)),
 		WarehouseDeleteClient.layer.pipe(
 			Layer.provide([WarehouseDeleteToken.layer, FetchHttpClient.layer]),
 			Layer.provide(config),

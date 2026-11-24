@@ -9,7 +9,7 @@
  */
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Context, type Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 
 export class QueueSendError extends Schema.TaggedError<QueueSendError>()(
 	"@maple/backend/platform/QueueSendError",
@@ -139,6 +139,82 @@ export interface ObjectPrefixEraser {
 /** The replay bucket's delete side, for erasing a deleted organization's recordings. */
 export class ReplayBlobEraser extends Context.Service<ReplayBlobEraser, ObjectPrefixEraser>()(
 	"@maple/backend/platform/ReplayBlobEraser",
+) {}
+
+/** One listed object: its key and when it was written (epoch ms). */
+export interface StoredObject {
+	readonly key: string
+	readonly uploadedAt: number
+}
+
+/** A bucket the host may also write to, list and delete from. */
+export interface WritableObjectStore extends ObjectStore {
+	readonly put: (
+		key: string,
+		bytes: Uint8Array,
+		contentType: string,
+	) => Effect.Effect<void, ObjectStoreError>
+	/** Deleting a key that holds no object is not an error. */
+	readonly delete: (keys: ReadonlyArray<string>) => Effect.Effect<void, ObjectStoreError>
+	/** One page of objects under `prefix` in key order, after `startAfter` when given. */
+	readonly list: (options: {
+		readonly prefix: string
+		readonly startAfter?: string | undefined
+		readonly limit: number
+	}) => Effect.Effect<
+		{ readonly objects: ReadonlyArray<StoredObject>; readonly truncated: boolean },
+		ObjectStoreError
+	>
+}
+
+/** A {@link WritableObjectStore} over `objects`, which the caller may inspect. */
+export const inMemoryObjectStore = (objects: Map<string, Uint8Array>): WritableObjectStore => {
+	const uploadedAt = new Map<string, number>()
+	return {
+		getBytes: (key) => Effect.sync(() => Option.fromNullishOr(objects.get(key))),
+		put: (key, bytes) =>
+			Effect.map(Clock.currentTimeMillis, (now) => {
+				objects.set(key, bytes)
+				uploadedAt.set(key, now)
+			}),
+		delete: (keys) =>
+			Effect.sync(() => {
+				Arr.forEach(keys, (key) => objects.delete(key))
+			}),
+		list: ({ prefix, startAfter, limit }) =>
+			Effect.sync(() => {
+				const keys = Arr.filter(
+					Arr.sort(Array.from(objects.keys()), Order.String),
+					(key) => Str.startsWith(prefix)(key) && (startAfter === undefined || key > startAfter),
+				)
+				return {
+					objects: Arr.map(Arr.take(keys, limit), (key) => ({
+						key,
+						uploadedAt: uploadedAt.get(key) ?? 0,
+					})),
+					truncated: keys.length > limit,
+				}
+			}),
+	}
+}
+
+/** Read side of the source map bucket: symbolication on hosts that never upload (the alerting tick). */
+export class SourceMapReadBucket extends Context.Service<SourceMapReadBucket, ObjectStore>()(
+	"@maple/backend/platform/SourceMapReadBucket",
+) {}
+
+/** Uploaded JavaScript source maps, read and written by the api. */
+export class SourceMapBucket extends Context.Service<SourceMapBucket, WritableObjectStore>()(
+	"@maple/backend/platform/SourceMapBucket",
+) {}
+
+/** Both sides of the source map bucket over one store, for the api and tests. */
+export const sourceMapBucketLayer = (store: WritableObjectStore) =>
+	Layer.mergeAll(Layer.succeed(SourceMapBucket, store), Layer.succeed(SourceMapReadBucket, store))
+
+/** The source map bucket's delete side, for erasing a deleted organization's uploads. */
+export class SourceMapEraser extends Context.Service<SourceMapEraser, ObjectPrefixEraser>()(
+	"@maple/backend/platform/SourceMapEraser",
 ) {}
 
 /** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */

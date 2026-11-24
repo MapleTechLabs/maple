@@ -59,6 +59,10 @@ export const Model = Schema.Struct({
 	similar: keyed(ErrorIssueSimilarResponse),
 	/** Fingerprints whose skipped frames are shown. */
 	openSkippedFrames: Schema.Array(Schema.String),
+	/** The stack trace's rows flipped from their default (the top app frame open, the rest closed). */
+	stackToggles: Schema.Array(Schema.String),
+	/** The symbolicated stack is swapped for the raw text as the SDK sent it. */
+	isShowingRawStack: Schema.Boolean,
 	/** The fingerprint being split out, while its detach is in flight. */
 	splittingHash: Schema.NullOr(Schema.String),
 	/** The similar issue being merged into this one, while the merge is in flight. */
