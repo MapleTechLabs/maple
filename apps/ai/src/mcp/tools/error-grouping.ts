@@ -39,6 +39,8 @@ export const describeRule = (fingerprint: ErrorIssueFingerprintGrouping): string
 			return "frames: generic error type, keyed on these frames and the message"
 		case "source-mapped":
 			return "source-mapped: keyed on the original files and functions its source maps name, so a new release keeps the key"
+		case "source-mapped-function":
+			return `source-mapped-function: same type, first function its source maps name ${Option.getOrElse(Arr.head(fingerprint.frames), () => "(unknown)")}, so a new release keeps the key`
 	}
 }
 

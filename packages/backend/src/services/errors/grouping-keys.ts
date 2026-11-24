@@ -548,7 +548,7 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 			const row = storedOf.get(entry.fingerprintHash)
 			if (row === undefined) return false
 			const unsure = entry.lookupFailed === true || entry.mapPending === true
-			return row.rule === "source-mapped"
+			return row.rule === "source-mapped" || row.rule === "source-mapped-function"
 				? unsure || mappedUnusable(entry)
 				: unsure && !rulesChanged(row)
 		}
