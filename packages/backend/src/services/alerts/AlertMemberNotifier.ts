@@ -293,7 +293,9 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					if (!email.isConfigured) return failure(FailureMessages.emailNotConfigured, false)
 					const content = yield* buildAlertEmailContent(input.context, input.linkUrl)
 					// An admin did not sign up for this page, so the subject says why it reached them.
-					const subject = lastResort ? `${LAST_RESORT_SUBJECT_PREFIX}${content.subject}` : content.subject
+					const subject = lastResort
+						? `${LAST_RESORT_SUBJECT_PREFIX}${content.subject}`
+						: content.subject
 					return yield* email.send(member.value.email, subject, content.html).pipe(
 						Effect.as<Attempt>({ status: "sent" }),
 						Effect.orElseSucceed(() => failure(FailureMessages.emailFailed, true)),
