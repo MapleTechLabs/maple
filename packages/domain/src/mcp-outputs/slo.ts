@@ -36,7 +36,7 @@ export const SloListRow = Schema.Struct({
 	sli: Schema.NullOr(Schema.Number),
 	/** Share of the window's error budget left: 1 untouched, negative when overspent. */
 	budgetRemaining: Schema.NullOr(Schema.Number),
-	/** The highest burn rate across the 5m, 30m, 1h and 6h windows. */
+	/** The highest burn rate across the 5m to 24h windows. */
 	worstBurnRate: Schema.NullOr(Schema.Number),
 	worstBurnWindow: Schema.NullOr(Schema.String),
 	/** The highest alert tier whose long and short windows both burn past its factor. */

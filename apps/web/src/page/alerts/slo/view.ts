@@ -93,7 +93,7 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 			]),
 		],
 	})
-	const firing = Option.map(firingTier(status), (tier) =>
+	const firing = Option.map(firingTier(slo, status), (tier) =>
 		alert(h, { variant: tier.severity === "critical" ? "crit" : "warn" }, [
 			icon(h, "FireIcon"),
 			alertTitle(h, [
@@ -106,7 +106,7 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 		]),
 	)
 	// An outage empties the short window: the tier holds, so the open incident leads the page.
-	const holding = Option.flatMap(holdingTier(status), (tier) =>
+	const holding = Option.flatMap(holdingTier(slo, status), (tier) =>
 		Option.map(incident, (row) =>
 			alert(h, { variant: row.severity === "critical" ? "crit" : "warn" }, [
 				icon(h, "FireIcon"),
@@ -142,9 +142,9 @@ const callout = (h: H, model: Model, slo: Slo, status: SloStatus): Html | null =
 const headerSeverity = (model: Model, slo: Slo): Option.Option<AlertSeverity> =>
 	Option.flatMap(statusOf(model), (status) =>
 		Option.orElse(
-			Option.map(firingTier(status), (tier) => tier.severity),
+			Option.map(firingTier(slo, status), (tier) => tier.severity),
 			() =>
-				Option.flatMap(holdingTier(status), () =>
+				Option.flatMap(holdingTier(slo, status), () =>
 					Option.map(openIncident(slo, model.incidents ?? []), (row) =>
 						row.severity === "critical" ? "critical" : "warning",
 					),
@@ -176,7 +176,7 @@ const body = (h: H, model: Model, slo: Slo, timeZone: string): ReadonlyArray<Htm
 					sliPanel(h, model, slo, context),
 				]),
 				vstack(h, { gap: "4", shrink: true }, [
-					burnPanel(h, model),
+					burnPanel(h, model, slo),
 					alertingPanel(h, model, slo),
 					incidentsPanel(h, model, slo, timeZone),
 				]),

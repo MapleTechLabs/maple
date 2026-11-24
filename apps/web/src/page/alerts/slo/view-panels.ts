@@ -335,7 +335,7 @@ const tierRow = (h: H, status: SloStatus, reading: TierReading): Html => {
 }
 
 /** Each window's burn rate, then the two tiers against their factors and whether they would fire. */
-export const burnPanel = (h: H, model: Model): Html =>
+export const burnPanel = (h: H, model: Model, slo: Slo): Html =>
 	panel(h, { attributes: [h.AriaLabel("Burn rate")] }, [
 		panelHeader(h, { title: "Burn rate" }),
 		Option.match(AsyncData.getData(model.status.data), {
@@ -348,7 +348,7 @@ export const burnPanel = (h: H, model: Model): Html =>
 					[],
 					[
 						...Arr.map(SLO_BURN_WINDOWS_MINUTES, (minutes) => burnWindowRow(h, status, minutes)),
-						...Arr.map(tierStates(status), (state) => tierRow(h, status, state)),
+						...Arr.map(tierStates(slo, status), (state) => tierRow(h, status, state)),
 					],
 				),
 		}),

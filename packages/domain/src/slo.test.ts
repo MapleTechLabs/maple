@@ -5,15 +5,19 @@ import {
 	budgetRemaining,
 	burnRate,
 	burnWindows,
+	budgetSpent,
+	severityState,
 	SLO_BURN_TIERS,
 	sliRatio,
 	tierBreached,
+	tierFactor,
+	tierState,
 	type SloBucket,
 } from "./slo"
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
-const [critical, warning] = SLO_BURN_TIERS
+const [critical, warning, slow] = SLO_BURN_TIERS
 
 describe("SLO math", () => {
 	it("reads a 99.9% target's budget from the bad share", () => {
@@ -54,10 +58,12 @@ describe("burn windows and tiers", () => {
 			[5, 20],
 			[30, 20],
 			[60, 20],
+			[120, 10],
 			[360, 3.3],
+			[1440, 3.3],
 		])
-		expect(tierBreached(critical, windows)).toBe(true)
-		expect(tierBreached(warning, windows)).toBe(false)
+		expect(tierBreached(critical, windows, 99.9)).toBe(true)
+		expect(tierBreached(warning, windows, 99.9)).toBe(false)
 	})
 
 	it("stops paging once the short window recovers, though the hour still burns", () => {
@@ -66,7 +72,7 @@ describe("burn windows and tiers", () => {
 			endMs,
 			99.9,
 		)
-		expect(tierBreached(critical, windows)).toBe(false)
+		expect(tierBreached(critical, windows, 99.9)).toBe(false)
 	})
 
 	it("tickets a slow burn over 6h and 30m", () => {
@@ -76,10 +82,79 @@ describe("burn windows and tiers", () => {
 			endMs,
 			99.9,
 		)
-		expect(tierBreached(critical, windows)).toBe(false)
-		expect(tierBreached(warning, windows)).toBe(true)
+		expect(tierBreached(critical, windows, 99.9)).toBe(false)
+		expect(tierBreached(warning, windows, 99.9)).toBe(true)
 	})
 
+	it("tickets a 4x burn that lasts a day, which the faster tiers never see", () => {
+		const windows = burnWindows(
+			minuteBuckets(endMs, 1440, () => 4),
+			endMs,
+			99.9,
+		)
+		expect(tierBreached(critical, windows, 99.9)).toBe(false)
+		expect(tierBreached(warning, windows, 99.9)).toBe(false)
+		expect(tierBreached(slow, windows, 99.9)).toBe(true)
+		expect(severityState("warning", windows, 99.9)).toBe("breach")
+		expect(severityState("critical", windows, 99.9)).toBe("clear")
+	})
+
+	it("does not fire on a handful of requests, and holds instead of clearing", () => {
+		// One failed request out of three in the hour: a 333x burn that says nothing.
+		const few = burnWindows(
+			[
+				{ startMs: endMs - 2 * MINUTE, total: 1, good: 0 },
+				{ startMs: endMs - 20 * MINUTE, total: 2, good: 2 },
+			],
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, few, 99.9)).toBe("hold")
+		// Nor on a single failure among enough requests to count.
+		const oneBad = burnWindows(
+			[
+				{ startMs: endMs - 2 * MINUTE, total: 6, good: 5 },
+				{ startMs: endMs - 20 * MINUTE, total: 6, good: 6 },
+			],
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, oneBad, 99.9)).toBe("hold")
+		// The same share of failures on real traffic fires.
+		const many = burnWindows(
+			minuteBuckets(endMs, 60, () => 333),
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, many, 99.9)).toBe("breach")
+	})
+
+	it("caps a tier's factor under the highest burn a low target can reach", () => {
+		expect(tierFactor(critical, 99.9)).toBe(14.4)
+		// 90% tops out at a burn of 10, so it pages at 8.
+		expect(tierFactor(critical, 90)).toBeCloseTo(8)
+		expect(tierFactor(warning, 90)).toBe(6)
+		// A total outage at a 90% target: 10x everywhere.
+		const outage = burnWindows(
+			minuteBuckets(endMs, 360, (ago) => (ago <= 60 ? 1000 : 0)),
+			endMs,
+			90,
+		)
+		expect(tierState(critical, outage, 90)).toBe("breach")
+	})
+
+	it("holds a tier whose short window saw no events", () => {
+		const silent = burnWindows(
+			Arr.filter(
+				minuteBuckets(endMs, 360, () => 0),
+				(bucket) => bucket.startMs < endMs - 10 * MINUTE,
+			),
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, silent, 99.9)).toBe("hold")
+		expect(tierState(warning, silent, 99.9)).toBe("clear")
+	})
 	it("ignores buckets outside the windows", () => {
 		const windows = burnWindows(
 			[...minuteBuckets(endMs, 360, () => 0), { startMs: endMs, total: 1000, good: 0 }],
@@ -116,5 +191,16 @@ describe("budgetHistory", () => {
 		expect(Option.map(badPoint, (point) => [Math.round(point.burnRate * 100) / 100, point.sli])).toEqual(
 			Option.some([5, 0.95]),
 		)
+	})
+})
+
+describe("budgetSpent", () => {
+	it("is spent at or past the whole budget, on enough events to judge", () => {
+		expect(budgetSpent({ total: 10_000, good: 9_990 }, 99.9)).toBe(true)
+		expect(budgetSpent({ total: 10_000, good: 9_995 }, 99.9)).toBe(false)
+		// One failure overspends any small window's budget and proves nothing.
+		expect(budgetSpent({ total: 5, good: 4 }, 99.9)).toBe(false)
+		expect(budgetSpent({ total: 500, good: 499 }, 99.9)).toBe(false)
+		expect(budgetSpent({ total: 0, good: 0 }, 99.9)).toBe(false)
 	})
 })

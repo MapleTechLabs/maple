@@ -334,6 +334,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 					name,
 					serviceName,
 					environments,
+					targetPercent,
 					enabled: input.alerting?.enabled ?? true,
 					criticalDestinationIds: Arr.dedupe(input.alerting?.criticalDestinationIds ?? []),
 					warningDestinationIds: Arr.dedupe(input.alerting?.warningDestinationIds ?? []),
@@ -433,6 +434,7 @@ export class SlosService extends Context.Service<SlosService, SlosServiceApi>()(
 								name: name ?? locked.name,
 								serviceName: serviceName ?? locked.serviceName,
 								environments: environments ?? locked.environments,
+								targetPercent: targetPercent ?? locked.targetPercent,
 								// A missing rule comes back switched on.
 								enabled: input.alerting?.enabled ?? (ruleMissing || locked.alerting.enabled),
 								criticalDestinationIds:

@@ -65,7 +65,7 @@ export const readWindowTotals = Effect.fn("SloReads.windowTotals")(function* (
 	return { total: row?.total ?? 0, good: row?.good ?? 0 } satisfies SloCounts
 })
 
-/** The burn of each alert window (5m to 6h) ending at `endMs`, from one minute-grain read. */
+/** The burn of each alert window (5m to 24h) ending at `endMs`, from one minute-grain read. */
 export const readBurnWindows = Effect.fn("SloReads.burnWindows")(function* (
 	tenant: TenantContext,
 	slo: SloTarget,
@@ -136,27 +136,25 @@ const counted = <Row extends { readonly serviceName: string; readonly environmen
 			(slo.environments.length === 0 || Arr.contains(slo.environments, row.environment)),
 	)
 
+const servicesOf = (group: ReadonlyArray<SloBatchTarget>) =>
+	Arr.dedupe(Arr.map(group, (slo) => slo.serviceName))
+
 /**
- * Every SLO's window totals and burn windows ending at `endMs`, in one read per (SLI, window)
- * and one per SLI, each broken down by service and environment and summed per SLO here.
+ * Every SLO's window totals ending at `endMs`, in one read per (SLI, window), each broken down
+ * by service and environment and summed per SLO here.
  */
-export const readStatuses = Effect.fn("SloReads.statuses")(function* (
+export const readTotalsBatch = Effect.fn("SloReads.totalsBatch")(function* (
 	tenant: TenantContext,
 	slos: ReadonlyArray<SloBatchTarget>,
 	endMs: number,
 ) {
 	const warehouse = yield* WarehouseQueryService
-	const orgId = tenant.orgId
-	const services = (group: ReadonlyArray<SloBatchTarget>) =>
-		Arr.dedupe(Arr.map(group, (slo) => slo.serviceName))
-	const bySli = Arr.groupBy(slos, (slo) => sliKey(slo.sli))
 	const byWindow = Arr.groupBy(slos, (slo) => `${sliKey(slo.sli)}|${slo.windowDays}`)
 	yield* Effect.annotateCurrentSpan({
 		"maple.slo.count": slos.length,
-		"maple.slo.reads": Rec.keys(bySli).length + Rec.keys(byWindow).length,
+		"maple.slo.reads": Rec.keys(byWindow).length,
 	})
-
-	const totalsReads = Effect.forEach(
+	const totals = yield* Effect.forEach(
 		Rec.values(byWindow),
 		(group) => {
 			const first = Arr.headNonEmpty(group)
@@ -164,9 +162,9 @@ export const readStatuses = Effect.fn("SloReads.statuses")(function* (
 				.compiledQuery(
 					tenant,
 					CH.compile(
-						CH.sloTotalsByServiceQuery({ serviceNames: services(group), sli: first.sli }),
+						CH.sloTotalsByServiceQuery({ serviceNames: servicesOf(group), sli: first.sli }),
 						{
-							orgId,
+							orgId: tenant.orgId,
 							startTime: formatWarehouseDateTime(endMs - first.windowDays * DAY_MS),
 							endTime: formatWarehouseDateTime(endMs),
 						},
@@ -181,18 +179,36 @@ export const readStatuses = Effect.fn("SloReads.statuses")(function* (
 		},
 		{ concurrency: 4 },
 	)
-	const burnReads = Effect.forEach(
+	return new Map<string, SloCounts>(Arr.flatten(totals))
+})
+
+/** Every SLO's burn windows ending at `endMs`, in one minute-grain read per SLI. */
+export const readBurnBatch = Effect.fn("SloReads.burnBatch")(function* (
+	tenant: TenantContext,
+	slos: ReadonlyArray<SloBatchTarget>,
+	endMs: number,
+) {
+	const warehouse = yield* WarehouseQueryService
+	const bySli = Arr.groupBy(slos, (slo) => sliKey(slo.sli))
+	yield* Effect.annotateCurrentSpan({
+		"maple.slo.count": slos.length,
+		"maple.slo.reads": Rec.keys(bySli).length,
+	})
+	const burns = yield* Effect.forEach(
 		Rec.values(bySli),
 		(group) => {
 			const first = Arr.headNonEmpty(group)
 			return warehouse
 				.compiledQuery(
 					tenant,
-					CH.compile(CH.sloBurnByServiceQuery({ serviceNames: services(group), sli: first.sli }), {
-						orgId,
-						startTime: formatWarehouseDateTime(endMs - SLO_BURN_LOOKBACK_MINUTES * MINUTE_MS),
-						endTime: formatWarehouseDateTime(endMs),
-					}),
+					CH.compile(
+						CH.sloBurnByServiceQuery({ serviceNames: servicesOf(group), sli: first.sli }),
+						{
+							orgId: tenant.orgId,
+							startTime: formatWarehouseDateTime(endMs - SLO_BURN_LOOKBACK_MINUTES * MINUTE_MS),
+							endTime: formatWarehouseDateTime(endMs),
+						},
+					),
 					{ profile: "aggregation", context: "sloStatusBurn" },
 				)
 				.pipe(
@@ -206,15 +222,32 @@ export const readStatuses = Effect.fn("SloReads.statuses")(function* (
 		},
 		{ concurrency: 4 },
 	)
-	const [totals, burns] = yield* Effect.all([totalsReads, burnReads], { concurrency: 2 })
-	const totalsById = new Map<string, SloCounts>(Arr.flatten(totals))
-	const burnsById = new Map<string, ReadonlyArray<SloBurnWindow>>(Arr.flatten(burns))
+	const byId = new Map<string, ReadonlyArray<SloBurnWindow>>(Arr.flatten(burns))
+	// An SLO with no rows still reads every window, each empty.
+	return new Map(
+		Arr.map(slos, (slo): readonly [string, ReadonlyArray<SloBurnWindow>] => [
+			slo.id,
+			byId.get(slo.id) ?? burnWindowsOf([], slo.targetPercent),
+		]),
+	)
+})
+
+/** Every SLO's window totals and burn windows ending at `endMs`: the two batch reads together. */
+export const readStatuses = Effect.fn("SloReads.statuses")(function* (
+	tenant: TenantContext,
+	slos: ReadonlyArray<SloBatchTarget>,
+	endMs: number,
+) {
+	const [totals, burns] = yield* Effect.all(
+		[readTotalsBatch(tenant, slos, endMs), readBurnBatch(tenant, slos, endMs)],
+		{ concurrency: 2 },
+	)
 	return new Map(
 		Arr.map(slos, (slo): readonly [string, SloBatchStatus] => [
 			slo.id,
 			{
-				totals: totalsById.get(slo.id) ?? { total: 0, good: 0 },
-				windows: burnsById.get(slo.id) ?? burnWindowsOf([], slo.targetPercent),
+				totals: totals.get(slo.id) ?? { total: 0, good: 0 },
+				windows: burns.get(slo.id) ?? burnWindowsOf([], slo.targetPercent),
 			},
 		]),
 	)
@@ -226,7 +259,7 @@ const sumCounts = (rows: ReadonlyArray<SloCounts>): SloCounts =>
 		good: acc.good + row.good,
 	}))
 
-/** One SLO's four burn windows from its breakdown rows. */
+/** One SLO's burn windows from its breakdown rows. */
 const burnWindowsOf = (
 	rows: ReadonlyArray<CH.SloBurnByServiceOutput>,
 	targetPercent: number,

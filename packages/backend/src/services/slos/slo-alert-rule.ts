@@ -4,22 +4,38 @@ import type { AlertDestinationId, AlertThresholds } from "@maple/domain/http"
 import {
 	SLO_BURN_TIERS,
 	SLO_BURN_LOOKBACK_MINUTES,
+	budgetRemaining,
+	budgetSpent,
 	burnWindowOf,
+	firingTier,
+	severityState,
 	sloRuleName,
-	tierState,
+	tierFactor,
+	tierObserved,
 	windowLabel,
 	type SloBurnTier,
 	type SloBurnWindow,
+	type SloCounts,
+	type SloSeverity,
+	type SloTierState,
 } from "@maple/domain/slo"
 import { Array as Arr, Option } from "effect"
 import { MANAGED_RULE_PLAN } from "@maple/backend/services/alerts/AlertRuleModel"
 
-const [CRITICAL_TIER, WARNING_TIER] = SLO_BURN_TIERS
+/** The burn a severity fires at for this target: its most sensitive tier's. */
+const severityFactor = (severity: SloSeverity, targetPercent: number): number =>
+	Math.min(
+		...Arr.map(
+			Arr.filter(SLO_BURN_TIERS, (tier) => tier.severity === severity),
+			(tier) => tierFactor(tier, targetPercent),
+		),
+	)
 
 export interface SloRuleInput {
 	readonly name: string
 	readonly serviceName: string
 	readonly environments: ReadonlyArray<string>
+	readonly targetPercent: number
 	readonly enabled: boolean
 	readonly criticalDestinationIds: ReadonlyArray<AlertDestinationId>
 	readonly warningDestinationIds: ReadonlyArray<AlertDestinationId>
@@ -27,21 +43,21 @@ export interface SloRuleInput {
 
 /**
  * The `alert_rules` columns of an SLO's burn-rate rule: a warning tier (ticket) and a critical
- * tier (page) at their burn factors, checked every minute. One breached check opens and one
- * healthy check resolves: the short windows already keep it from flapping.
+ * tier (page) at the burn factors its target can reach, checked every minute. One breached check
+ * opens and one healthy check resolves: the short windows already keep it from flapping.
  */
 export const sloRuleFields = (slo: SloRuleInput) => {
 	const thresholds: AlertThresholds = [
 		{
 			severity: "warning",
-			value: WARNING_TIER.factor,
+			value: severityFactor("warning", slo.targetPercent),
 			upper: null,
 			recoveryValue: null,
 			destinationIds: [...slo.warningDestinationIds],
 		},
 		{
 			severity: "critical",
-			value: CRITICAL_TIER.factor,
+			value: severityFactor("critical", slo.targetPercent),
 			upper: null,
 			recoveryValue: null,
 			destinationIds: [...slo.criticalDestinationIds],
@@ -60,7 +76,7 @@ export const sloRuleFields = (slo: SloRuleInput) => {
 		groupBy: null,
 		signalType: "slo_burn_rate",
 		comparator: "gte",
-		threshold: WARNING_TIER.factor,
+		threshold: severityFactor("warning", slo.targetPercent),
 		thresholdUpper: null,
 		thresholdsJson: thresholds,
 		windowMinutes: SLO_BURN_LOOKBACK_MINUTES,
@@ -85,40 +101,43 @@ export const sloRuleFields = (slo: SloRuleInput) => {
 
 const formatRate = (rate: number) => `${rate >= 100 ? Math.round(rate) : Math.round(rate * 10) / 10}x`
 
-const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>) => {
+const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>, targetPercent: number) => {
 	const rate = (minutes: number) =>
 		Option.match(burnWindowOf(windows, minutes), { onNone: () => 0, onSome: (window) => window.burnRate })
 	const long = rate(tier.longWindowMinutes)
 	const short = rate(tier.shortWindowMinutes)
+	const at = `${tier.severity} at ${formatRate(tierFactor(tier, targetPercent))}`
 	const rates = `${formatRate(long)} over ${windowLabel(tier.longWindowMinutes)} and ${formatRate(short)} over ${windowLabel(tier.shortWindowMinutes)}`
-	return {
-		long,
-		text: `burning the error budget at ${rates} (${tier.severity} at ${tier.factor}x)`,
-		rates: `${rates} (${tier.severity} at ${tier.factor}x)`,
-	}
+	return { long, text: `burning the error budget at ${rates} (${at})`, rates: `${rates} (${at})` }
 }
+
+/** What one check of an SLO's burn-rate rule reads: its burn windows and, when known, its budget. */
+export interface SloBurnInput {
+	readonly windows: ReadonlyArray<SloBurnWindow>
+	readonly targetPercent: number
+	readonly windowDays: number
+	/** The SLO window's events; null when they could not be read, which judges no budget. */
+	readonly totals: SloCounts | null
+}
+
+const warningFactor = (targetPercent: number) => severityFactor("warning", targetPercent)
 
 /**
  * One check of an SLO's burn-rate rule. Each tier is judged on its own pair of windows, so the
- * levels are set here rather than by comparing one value to every tier. A tier whose short
- * window saw no events holds its state; with every tier held the check is skipped as no data.
- * The value is the long-window burn of the highest tier that fires, else the 1h burn.
+ * levels are set here rather than by comparing one value to every tier. With no events in any
+ * short window the check is skipped as no data.
  */
-export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEvaluation => {
-	const tiers = [WARNING_TIER, CRITICAL_TIER]
-	const levels = Arr.map(tiers, (tier) => ({
-		severity: tier.severity,
-		status: tierState(tier, windows),
-	}))
-	const hour = Option.getOrUndefined(burnWindowOf(windows, CRITICAL_TIER.longWindowMinutes))
+export const evaluateSloBurn = (input: SloBurnInput): AlertEvaluation => {
+	const { windows, targetPercent } = input
+	const hour = Option.getOrUndefined(burnWindowOf(windows, 60))
 	const base = {
 		sampleCount: Math.round(hour?.total ?? 0),
-		threshold: WARNING_TIER.factor,
+		threshold: warningFactor(targetPercent),
 		thresholdUpper: null,
 		comparator: "gte" as const,
 		derivedFromNoData: false,
 	}
-	if (Arr.every(levels, (level) => level.status === "hold")) {
+	if (!Arr.some(SLO_BURN_TIERS, (tier) => tierObserved(tier, windows))) {
 		return {
 			...base,
 			status: "skipped",
@@ -128,24 +147,68 @@ export const evaluateSloBurn = (windows: ReadonlyArray<SloBurnWindow>): AlertEva
 			levels: [],
 		}
 	}
-	const firing = Arr.findFirst([CRITICAL_TIER, WARNING_TIER], (tier) =>
-		Arr.some(levels, (level) => level.severity === tier.severity && level.status === "breach"),
-	)
-	const headline = describeTier(
-		Option.getOrElse(firing, () => CRITICAL_TIER),
-		windows,
+	const burning = Option.orElse(firingTier("critical", windows, targetPercent), () =>
+		firingTier("warning", windows, targetPercent),
 	)
 	return {
 		...base,
-		status: Option.isSome(firing) ? "breached" : "healthy",
-		levels,
-		value: headline.long,
+		status: Option.isSome(burning) ? "breached" : "healthy",
+		levels: [
+			{ severity: "warning", status: severityState("warning", windows, targetPercent) },
+			{ severity: "critical", status: severityState("critical", windows, targetPercent) },
+		],
+		value: Option.match(burning, {
+			onNone: () => hour?.burnRate ?? 0,
+			onSome: (tier) => describeTier(tier, windows, targetPercent).long,
+		}),
 		// A recovery names every tier, so a resolved warning reports the windows it fired on.
-		reason: Option.isSome(firing)
-			? `SLO ${headline.text}`
-			: `SLO within budget: ${Arr.join(
-					Arr.map([CRITICAL_TIER, WARNING_TIER], (tier) => describeTier(tier, windows).rates),
+		reason: Option.match(burning, {
+			onSome: (tier) => `SLO ${describeTier(tier, windows, targetPercent).text}`,
+			onNone: () =>
+				`SLO within budget: ${Arr.join(
+					Arr.map(SLO_BURN_TIERS, (tier) => describeTier(tier, windows, targetPercent).rates),
 					"; ",
 				)}`,
+		}),
+	}
+}
+
+/**
+ * One check of an SLO's error budget, its own alert group: a warning while the window's budget
+ * is spent. The value is the share of the budget used. Unread totals judge nothing either way.
+ */
+export const evaluateSloBudget = (input: SloBurnInput): AlertEvaluation => {
+	const { targetPercent, totals } = input
+	const base = {
+		sampleCount: Math.round(totals?.total ?? 0),
+		threshold: 1,
+		thresholdUpper: null,
+		comparator: "gte" as const,
+		derivedFromNoData: false,
+	}
+	if (totals === null) {
+		return {
+			...base,
+			status: "skipped",
+			value: null,
+			reason: "The SLO window's events could not be read",
+			skipReason: "no_value",
+			levels: [],
+		}
+	}
+	const spent = budgetSpent(totals, targetPercent)
+	const used = 1 - budgetRemaining(totals, targetPercent)
+	const state: SloTierState = spent ? "breach" : "clear"
+	return {
+		...base,
+		status: spent ? "breached" : "healthy",
+		levels: [
+			{ severity: "warning", status: state },
+			{ severity: "critical", status: "clear" },
+		],
+		value: used,
+		reason: spent
+			? `SLO error budget is spent: ${Math.round(used * 100)}% of the ${input.windowDays}-day budget used`
+			: `SLO error budget is back: ${Math.round(used * 100)}% of the ${input.windowDays}-day budget used`,
 	}
 }

@@ -241,8 +241,12 @@ export const sloBurnByServiceRowSchema = Schema.Struct({
 	good30: CHNumber,
 	total60: CHNumber,
 	good60: CHNumber,
+	total120: CHNumber,
+	good120: CHNumber,
 	total360: CHNumber,
 	good360: CHNumber,
+	total1440: CHNumber,
+	good1440: CHNumber,
 })
 
 export type SloBurnByServiceOutput = typeof sloBurnByServiceRowSchema.Type
@@ -254,8 +258,8 @@ const inLastMinutes = (minutes: number) =>
 	)
 
 /**
- * The 5m, 30m, 1h and 6h burn windows ending at `endTime` for many services in one minute-grain
- * read over `[startTime, endTime]` (the 6h lookback), one row per (service, environment).
+ * The 5m to 24h burn windows ending at `endTime` for many services in one minute-grain read
+ * over `[startTime, endTime]` (the 24h lookback), one row per (service, environment).
  */
 export function sloBurnByServiceQuery(opts: SloGroupQueryOpts) {
 	return sloBuckets({ serviceNames: opts.serviceNames, environments: [], sli: opts.sli }, "minute")
@@ -268,8 +272,12 @@ export function sloBurnByServiceQuery(opts: SloGroupQueryOpts) {
 			good30: CH.sumIf($.bGood, inLastMinutes(30)),
 			total60: CH.sumIf($.bTotal, inLastMinutes(60)),
 			good60: CH.sumIf($.bGood, inLastMinutes(60)),
+			total120: CH.sumIf($.bTotal, inLastMinutes(120)),
+			good120: CH.sumIf($.bGood, inLastMinutes(120)),
 			total360: CH.sumIf($.bTotal, inLastMinutes(360)),
 			good360: CH.sumIf($.bGood, inLastMinutes(360)),
+			total1440: CH.sumIf($.bTotal, inLastMinutes(1440)),
+			good1440: CH.sumIf($.bGood, inLastMinutes(1440)),
 		}))
 		.groupBy("serviceName", "environment")
 		.format("JSON")

@@ -314,7 +314,9 @@ describe("v2 slos", () => {
 				[5, 20],
 				[30, 20],
 				[60, 20],
+				[120, 20],
 				[360, 20],
+				[1440, 20],
 			])
 
 			// An SLO that is gone, or another org's, is a 404 on both reads.
@@ -344,8 +346,12 @@ describe("v2 slos", () => {
 			good30: good * 6,
 			total60: total * 12,
 			good60: good * 12,
+			total120: total * 24,
+			good120: good * 24,
 			total360: total * 72,
 			good360: good * 72,
+			total1440: total * 288,
+			good1440: good * 288,
 		})
 		const warehouse = sloWarehouse({
 			sloStatusTotals: [

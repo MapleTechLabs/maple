@@ -86,25 +86,31 @@ const domainWindows = (status: SloStatus) =>
 
 export type TierReading = Readonly<{ tier: SloTier; state: SloTierState }>
 
+/** What a tier reading needs of the SLO: the target sets the burn each tier fires at. */
+export type SloTarget = Pick<Slo, "target_percent">
+
 /** Each tier as the evaluator reads it: breaching, holding (no events in its short window), or clear. */
-export const tierStates = (status: SloStatus): ReadonlyArray<TierReading> => {
+export const tierStates = (slo: SloTarget, status: SloStatus): ReadonlyArray<TierReading> => {
 	const windows = domainWindows(status)
-	return Arr.map(SLO_BURN_TIERS, (tier) => ({ tier, state: tierState(tier, windows) }))
+	return Arr.map(SLO_BURN_TIERS, (tier) => ({
+		tier,
+		state: tierState(tier, windows, slo.target_percent),
+	}))
 }
 
 /** The most severe tier whose windows burn at its factor: critical before warning. */
-export const firingTier = (status: SloStatus): Option.Option<SloTier> =>
+export const firingTier = (slo: SloTarget, status: SloStatus): Option.Option<SloTier> =>
 	Option.map(
-		Arr.findFirst(tierStates(status), (reading) => reading.state === "breach"),
+		Arr.findFirst(tierStates(slo, status), (reading) => reading.state === "breach"),
 		(reading) => reading.tier,
 	)
 
 /** The most severe tier holding its state, when none breaches: an open incident stays open. */
-export const holdingTier = (status: SloStatus): Option.Option<SloTier> =>
-	Option.isSome(firingTier(status))
+export const holdingTier = (slo: SloTarget, status: SloStatus): Option.Option<SloTier> =>
+	Option.isSome(firingTier(slo, status))
 		? Option.none()
 		: Option.map(
-				Arr.findFirst(tierStates(status), (reading) => reading.state === "hold"),
+				Arr.findFirst(tierStates(slo, status), (reading) => reading.state === "hold"),
 				(reading) => reading.tier,
 			)
 
@@ -136,12 +142,12 @@ export const openIncident = (
 
 /** Burning: a tier fires, or a tier holds (no events) while the SLO's incident stays open. */
 export const isBurning = (
-	row: Readonly<{ slo: Pick<Slo, "alert_rule_id">; status: SloStatus | null }>,
+	row: Readonly<{ slo: Pick<Slo, "alert_rule_id" | "target_percent">; status: SloStatus | null }>,
 	incidents: ReadonlyArray<AlertIncidentRow>,
 ): boolean =>
 	row.status !== null &&
-	(Option.isSome(firingTier(row.status)) ||
-		(Option.isSome(holdingTier(row.status)) && Option.isSome(openIncident(row.slo, incidents))))
+	(Option.isSome(firingTier(row.slo, row.status)) ||
+		(Option.isSome(holdingTier(row.slo, row.status)) && Option.isSome(openIncident(row.slo, incidents))))
 
 /** "checkout · production, staging", or the service alone when every environment counts. */
 export const scopeLine = (slo: Pick<Slo, "service_name" | "environments">): string =>
