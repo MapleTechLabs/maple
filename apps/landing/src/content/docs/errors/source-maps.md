@@ -167,4 +167,4 @@ The API returns when each map last resolved a stack, to the day, as `last_used_a
 
 - [Errors and issues](/docs/errors/overview): how issues are grouped and worked.
 - [Frontend](/docs/frontend): set up `@maple-dev/browser`.
-- [CLI reference](/docs/reference/cli#maple-sourcemaps-inject): every `maple sourcemaps` flag.
+- [CLI reference](/docs/reference/cli#maple-sourcemaps-inject-dir): every `maple sourcemaps` flag.
