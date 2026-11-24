@@ -6,6 +6,7 @@ import { v2WorkerUnavailableDefinition } from "@maple/domain/http/v2-worker-unav
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { McpOAuthProtocolError } from "@maple/backend/services/auth/McpOAuthService"
 import { TransitionConflictError } from "@maple/backend/platform/transition-row"
+import { PromqlBadQueryError, PromqlExecutionError } from "@maple/backend/services/promql/PromqlQueryService"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import {
@@ -184,7 +185,9 @@ const renderedServerErrorApp: Effect.Effect<HttpEffect> = Effect.succeed(
 )
 
 /** A handler whose inner span fails with `error`, which the route answers as a 4xx. */
-const answeredAs4xx = (error: McpOAuthProtocolError | TransitionConflictError): Effect.Effect<HttpEffect> =>
+const answeredAs4xx = (
+	error: McpOAuthProtocolError | TransitionConflictError | PromqlBadQueryError | PromqlExecutionError,
+): Effect.Effect<HttpEffect> =>
 	Effect.succeed(
 		Effect.fail(error).pipe(
 			Effect.withSpan("Probe.inner"),
@@ -591,6 +594,8 @@ describe("the api Worker through alchemy's bridge", () => {
 					expected: ["diagnosed"],
 					target: "investigating",
 				}),
+				new PromqlBadQueryError({ message: "empty query" }),
+				new PromqlExecutionError({ message: "too many series" }),
 			],
 			(error) =>
 				Effect.gen(function* () {
