@@ -1147,9 +1147,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						(pr) =>
 							pr.authorLogin !== null &&
 							Str.toLowerCase(pr.authorLogin) !== pusher &&
-							// Open at the push: still open, or merged or last changed after it.
+							// Open at the push: still open, or merged since. A closed one has no reliable close time.
 							(pr.state === "open" ||
-								(pr.mergedAtMs ?? pr.updatedAtMs) >= job.event.occurredAtMs),
+								(pr.mergedAtMs !== null && pr.mergedAtMs >= job.event.occurredAtMs)),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({

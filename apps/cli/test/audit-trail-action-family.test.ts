@@ -8,13 +8,15 @@ import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
+import { OrgId } from "@maple/domain"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import { describeWithChdb } from "./libchdb-test-support"
 
 const ORG = "org_audit_action_family"
+const ORG_ID = Schema.decodeSync(OrgId)(ORG)
 /** An hour ago on the minute: recent, so the table's TTL keeps it. */
 const AT_MS = Math.floor(Date.now() / 60_000) * 60_000 - 3_600_000
 
@@ -53,7 +55,7 @@ describeWithChdb("audit trail action family", () => {
 
 	const count = (action: string) => {
 		const { sql } = compileUnsafe(CH.auditTrailCountQuery({ action: true }), {
-			orgId: ORG,
+			orgId: ORG_ID,
 			...CH.auditTrailActionParams(action),
 			start: seconds(AT_MS - 60_000),
 			end: seconds(AT_MS + 60_000),
@@ -73,7 +75,7 @@ describeWithChdb("audit trail action family", () => {
 
 	test("lists an action with its sub-actions", () => {
 		const { sql } = compileUnsafe(CH.auditTrailEventsQuery({ action: true, limit: 10 }), {
-			orgId: ORG,
+			orgId: ORG_ID,
 			...CH.auditTrailActionParams("push.forced"),
 		})
 		const rows = db.query(normalizeSqlForClickHouseClient(sql))
