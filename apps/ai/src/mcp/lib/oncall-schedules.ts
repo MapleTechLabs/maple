@@ -1,6 +1,6 @@
 /** Pieces the on-call schedule MCP tools share: rows, rotation text, schedule lookup and error mapping. */
 import { Array as Arr, DateTime, Effect, Option, Schema, String as Str } from "effect"
-import { MAX_ONCALL_REPORTED_GAPS } from "@maple/domain/http"
+import { MAX_ONCALL_REPORTED_GAPS, ONCALL_GAP_LOOKAHEAD_MS } from "@maple/domain/http"
 import type {
 	AlertForbiddenError,
 	AlertMemberDirectoryNotConfiguredError,
@@ -144,6 +144,9 @@ export const formatOnCallNow = (schedule: ScheduleRow): string =>
  * What is wrong with the schedule's coverage, or null: e.g. `3 gaps in the next 14 days, next
  * 2026-11-14T16:00:00.000Z to 2026-11-16T08:00:00.000Z; left the org: Ben Brook (user_ben)`.
  */
+/** How far ahead the server reports gaps, in days: the text names the window it was given. */
+const GAP_LOOKAHEAD_DAYS = Math.round(ONCALL_GAP_LOOKAHEAD_MS / 86_400_000)
+
 /** "1 gap", "3 gaps", or "20 or more gaps" when the list was cut at its cap. */
 const gapCount = (count: number): string =>
 	count >= MAX_ONCALL_REPORTED_GAPS
@@ -155,7 +158,7 @@ export const formatCoverageWarning = (schedule: ScheduleRow): string | null => {
 	const gaps =
 		next === undefined
 			? null
-			: `${gapCount(schedule.coverageGaps.length)} with nobody on call in the next 14 days, next ${next.startsAt} to ${next.endsAt}`
+			: `${gapCount(schedule.coverageGaps.length)} with nobody on call in the next ${GAP_LOOKAHEAD_DAYS} days, next ${next.startsAt} to ${next.endsAt}`
 	const departed =
 		schedule.departed.length === 0
 			? null
