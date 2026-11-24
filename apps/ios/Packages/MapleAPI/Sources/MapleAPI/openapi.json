@@ -14154,6 +14154,10 @@
     {
       "description": "Production",
       "url": "https://api.maple.dev"
+    },
+    {
+      "description": "Production, EU region",
+      "url": "https://api.eu.maple.dev"
     }
   ],
   "tags": [
