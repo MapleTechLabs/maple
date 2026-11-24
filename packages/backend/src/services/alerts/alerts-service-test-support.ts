@@ -209,7 +209,7 @@ export interface TestOverrides extends Partial<AlertRuntimeApi> {
 	readonly chatSessions?: ChatSessionsApi
 	/** Records every incident push instead of sending it through the real push service. */
 	readonly pushes?: Array<IncidentPushEvent>
-	/** Records every page pushed to a member's phones; `memberPagesFail` makes none of them land. */
+	/** Records every page pushed to a member's phones; `memberPagesFail`: Apple calls their token dead. */
 	readonly memberPages?: Array<MemberPagePush>
 	readonly memberPagesFail?: boolean
 	/** The deployment has no push credentials: a page reports that nothing was tried. */
@@ -299,6 +299,8 @@ export const makeLayer = (
 							Effect.as({
 								...noPushes,
 								sent: memberPagesFail === true ? 0 : 1,
+								unregistered:
+									memberPagesFail === true && memberPagesUnconfigured !== true ? 1 : 0,
 								configured: memberPagesUnconfigured !== true,
 							}),
 						),

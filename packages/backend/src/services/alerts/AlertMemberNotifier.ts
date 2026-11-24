@@ -61,6 +61,7 @@ const FailureMessages = {
 	pushFailed: "The push could not be sent",
 	noPhone: "No phone is registered for this member",
 	pushNotConfigured: "Push is not set up on this deployment",
+	phoneGone: "The member's phone no longer accepts pushes",
 	noChatAccount: "The page names no chat account",
 	noWorkspaceKnowsUser: "No linked chat workspace could reach this member",
 	chatAuth: "The chat workspace refused Maple's credentials",
@@ -346,7 +347,14 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 							? { status: "sent" }
 							: summary.failed > 0
 								? failure(FailureMessages.pushFailed, true)
-								: { status: "skipped", message: FailureMessages.noPhone }
+								: {
+										status: "skipped",
+										// A token Apple called dead was just switched off: that is not "no phone".
+										message:
+											summary.unregistered > 0
+												? FailureMessages.phoneGone
+												: FailureMessages.noPhone,
+									}
 					return attempt
 				})
 

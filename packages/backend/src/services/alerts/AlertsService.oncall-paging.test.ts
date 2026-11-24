@@ -828,7 +828,7 @@ describe("escalation pages the on-call", () => {
 				const pushRows = Arr.filter(yield* pageRows(testDb, orgId), (row) => row.channel === "push")
 				assert.deepStrictEqual(
 					Arr.map(pushRows, (row) => [row.status, row.error_message]),
-					[["skipped", "No phone is registered for this member"]],
+					[["skipped", "The member's phone no longer accepts pushes"]],
 				)
 			}).pipe(
 				Effect.provide(layerFor(testDb, state, emails, chat, { memberPages, memberPagesFail: true })),
