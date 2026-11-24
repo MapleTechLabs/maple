@@ -182,6 +182,16 @@ describe("classifyServiceIdentity", () => {
 		).toBeNull()
 	})
 
+	it("never shows a nonzero span share as 0%", () => {
+		const identity = classifyServiceIdentity(signals({ serverSpans: 3, classifiedSpans: 100_000 }))
+		expect(identity.kind).toBe("api")
+		expect(identity.evidence).toContainEqual({
+			signal: "span kinds",
+			value: "<1% Server",
+			supports: "kind",
+		})
+	})
+
 	it("lists the other frameworks it found", () => {
 		const identity = classifyServiceIdentity(
 			signals({

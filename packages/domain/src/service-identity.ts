@@ -186,7 +186,11 @@ const matchFramework = (
 	return Option.none()
 }
 
-const share = (part: number, whole: number) => `${Math.round((part / Math.max(whole, 1)) * 100)}%`
+/** A share of the service's spans; a nonzero share never rounds to "0%", since it is the evidence. */
+const share = (part: number, whole: number) => {
+	const percent = Math.round((part / Math.max(whole, 1)) * 100)
+	return part > 0 && percent === 0 ? "<1%" : `${percent}%`
+}
 
 export function classifyServiceIdentity(signals: ServiceIdentitySignals): ServiceIdentity {
 	const scopes = Arr.map(
