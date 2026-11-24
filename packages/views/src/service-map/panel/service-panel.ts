@@ -28,7 +28,7 @@ import { hstack, vstack, vstackClass } from "../../ui/stack"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { grid } from "../../ui/grid"
 import * as ServiceMap from "../map/service-map"
-import { FRAMEWORK_ICON, identityText } from "../map/node-card"
+import { frameworkIcon, identityText } from "../map/node-card"
 import { keyValue, keyValueList } from "../../ui/key-value"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./kit"
 import { Array as Arr, Option } from "effect"
@@ -82,7 +82,6 @@ const identityOf = <M>(inputs: ServicePanelInputs<M>) =>
 /** What kind of service this is, its framework, and the signals each came from. */
 const identitySection = <M>(h: HtmlBuilder<M>, identity: ServiceIdentity): Html => {
 	const text = identityText(identity) ?? SERVICE_KINDS.unknown
-	const frameworkIcon = identity.framework === null ? null : FRAMEWORK_ICON[identity.framework]
 	const inferred = identity.kindSource === "spans"
 	return h.div(
 		[h.Class("space-y-3")],
@@ -90,9 +89,7 @@ const identitySection = <M>(h: HtmlBuilder<M>, identity: ServiceIdentity): Html 
 			separator(h, "horizontal", undefined),
 			eyebrow(h, { as: "h4" }, ["Identity"]),
 			hstack(h, { gap: "1.5" }, [
-				...(frameworkIcon === null
-					? []
-					: [icon(h, frameworkIcon, { size: 14, className: "shrink-0 text-foreground-subtle" })]),
+				...frameworkIcon(h, identity, 14),
 				typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [text]),
 				...(inferred
 					? [typography(h, { size: "3xs", tone: "muted" }, ["kind inferred from spans"])]

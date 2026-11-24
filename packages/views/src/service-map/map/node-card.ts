@@ -13,7 +13,7 @@ import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { type UtilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { IconName } from "../../ui/icon"
+import { icon, type IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/eyebrow"
 import { pressable } from "../../ui/pressable"
 import { vstack } from "../../ui/stack"
@@ -70,6 +70,17 @@ export const FRAMEWORK_ICON = {
 	gohttp: null,
 	rack: null,
 } as const satisfies Record<ServiceFramework, IconName | null>
+
+/** The framework's brand mark, when the kit has one; empty otherwise. */
+export const frameworkIcon = <M>(
+	h: HtmlBuilder<M>,
+	identity: ServiceIdentity | undefined,
+	size: number,
+): ReadonlyArray<Html> => {
+	const name =
+		identity === undefined || identity.framework === null ? null : FRAMEWORK_ICON[identity.framework]
+	return name === null ? [] : [icon(h, name, { size, className: "shrink-0 text-foreground-subtle" })]
+}
 
 /** "API · Effect", "Web app · Next.js", or null when nothing was identified. */
 export const identityText = (identity: ServiceIdentity | undefined): string | null => {

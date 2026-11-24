@@ -749,7 +749,6 @@ describe("servicePlatformsSQL", () => {
 					classifiedSpanCount: "120",
 					serverSpanCount: "80",
 					consumerSpanCount: "0",
-					clientSpanCount: "40",
 					rootSpanCount: "80",
 				},
 			])

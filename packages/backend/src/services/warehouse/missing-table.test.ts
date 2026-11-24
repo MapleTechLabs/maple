@@ -5,6 +5,7 @@ import {
 	isMissingServiceApiColumns,
 	isMissingAwsMetricsHourly,
 	isMissingServiceEndpointDetails,
+	isMissingServiceIdentityColumns,
 	isMissingServiceMapDbEdgesMinutely,
 	isMissingUserActivityHourly,
 } from "./missing-table"
@@ -15,6 +16,25 @@ const drift = (message: string) =>
 		pipeName: "serviceApiTotals",
 		clickhouseType: "UNKNOWN_IDENTIFIER",
 	})
+
+describe("migration 0074 degrade detector", () => {
+	it("lets the map read platforms without identities on a cluster before the identity columns", () => {
+		expect(
+			isMissingServiceIdentityColumns(
+				drift("Unknown expression identifier `ScopeNames` in scope SELECT ..."),
+			),
+		).toBe(true)
+		expect(isMissingServiceIdentityColumns(drift("Unknown expression identifier `RootSpanCount`"))).toBe(
+			true,
+		)
+	})
+
+	it("surfaces every other drift", () => {
+		expect(isMissingServiceIdentityColumns(drift("Unknown expression identifier `K8sCluster`"))).toBe(
+			false,
+		)
+	})
+})
 
 describe("migration 0048 degrade detectors", () => {
 	it("falls back when a cluster's rollups predate the HTTP columns", () => {

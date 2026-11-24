@@ -977,7 +977,7 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
           max(ResourceAttributes['maple.sdk.type']) AS MapleSdkType,
           max(ResourceAttributes['process.runtime.name']) AS ProcessRuntimeName,
           count() AS SpanCount,
-          -- Scope names are code-defined, not data; 32 per service-hour bounds a pathological one.
+          -- Scope names are code-defined, not data; 32 per insert bounds a pathological one (the read caps again).
           groupUniqArray(32)(ScopeName) AS ScopeNames,
           max(ResourceAttributes['telemetry.sdk.name']) AS TelemetrySdkName,
           max(ResourceAttributes['telemetry.sdk.language']) AS TelemetrySdkLanguage,
@@ -985,7 +985,6 @@ export const servicePlatformsHourlyMv = defineMaterializedView("service_platform
           count() AS ClassifiedSpanCount,
           countIf(SpanKind = 'Server') AS ServerSpanCount,
           countIf(SpanKind = 'Consumer') AS ConsumerSpanCount,
-          countIf(SpanKind IN ('Client', 'Producer')) AS ClientSpanCount,
           countIf(ParentSpanId = '') AS RootSpanCount
         FROM traces
         WHERE ServiceName != ''

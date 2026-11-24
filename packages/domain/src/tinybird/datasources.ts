@@ -812,7 +812,6 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		ClassifiedSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ServerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		ConsumerSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
-		ClientSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		RootSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
 	engine: engine.aggregatingMergeTree({

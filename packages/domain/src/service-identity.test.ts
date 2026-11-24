@@ -1,20 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { classifyServiceIdentity, type ServiceIdentitySignals } from "./service-identity"
+import {
+	classifyServiceIdentity,
+	EMPTY_SERVICE_IDENTITY_SIGNALS,
+	type ServiceIdentitySignals,
+} from "./service-identity"
 
 // Fingerprints copied from real services (scopes, SDK attributes, span-kind mix), names removed.
 
 const signals = (overrides: Partial<ServiceIdentitySignals>): ServiceIdentitySignals => ({
-	scopeNames: [],
-	sdkName: "",
-	sdkLanguage: "",
-	mapleSdkType: "",
-	runtimeName: "",
-	osName: "",
-	serverSpans: 0,
-	consumerSpans: 0,
-	clientSpans: 0,
-	rootSpans: 0,
-	classifiedSpans: 0,
+	...EMPTY_SERVICE_IDENTITY_SIGNALS,
 	...overrides,
 })
 
@@ -54,7 +48,6 @@ describe("classifyServiceIdentity", () => {
 				sdkName: "effect",
 				sdkLanguage: "nodejs",
 				serverSpans: 900,
-				clientSpans: 200,
 				classifiedSpans: 1200,
 			}),
 		).toEqual({ kind: "api", framework: "effect", source: "spans" })
@@ -118,7 +111,6 @@ describe("classifyServiceIdentity", () => {
 				sdkName: "@maple-dev/browser",
 				sdkLanguage: "webjs",
 				mapleSdkType: "browser",
-				clientSpans: 50,
 				classifiedSpans: 50,
 			}).kind,
 		).toBe("web-frontend")
@@ -140,7 +132,6 @@ describe("classifyServiceIdentity", () => {
 				scopeNames: ["maple-vcs-sync"],
 				consumerSpans: 300,
 				serverSpans: 20,
-				clientSpans: 900,
 				classifiedSpans: 2000,
 			}),
 		).toEqual({ kind: "worker", framework: null, source: "spans" })
@@ -169,9 +160,26 @@ describe("classifyServiceIdentity", () => {
 		expect(classify({ scopeNames: ["@maple/ci-traces"], serverSpans: 3, classifiedSpans: 3 }).kind).toBe(
 			"ci",
 		)
-		expect(classify({ scopeNames: ["maple-uptime"], clientSpans: 3, classifiedSpans: 3 }).kind).toBe(
-			"synthetic",
-		)
+		expect(classify({ scopeNames: ["maple-uptime"], classifiedSpans: 3 }).kind).toBe("synthetic")
+	})
+
+	it("never calls a service that serves requests a frontend or an app, whatever max() picked", () => {
+		// Browser and server telemetry under one service.name: max("nodejs", "webjs") is "webjs".
+		expect(
+			classify({ scopeNames: ["next.js"], sdkLanguage: "webjs", serverSpans: 10, classifiedSpans: 20 })
+				.kind,
+		).toBe("web-app")
+		expect(classify({ osName: "iOS", serverSpans: 10, classifiedSpans: 20 }).kind).toBe("api")
+	})
+
+	it("does not call a Ruby service Rails for ActiveRecord alone", () => {
+		expect(
+			classify({
+				scopeNames: ["OpenTelemetry::Instrumentation::ActiveRecord"],
+				serverSpans: 1,
+				classifiedSpans: 1,
+			}).framework,
+		).toBeNull()
 	})
 
 	it("lists the other frameworks it found", () => {

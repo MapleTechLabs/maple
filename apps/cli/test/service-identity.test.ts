@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as CH from "@maple/query-engine/ch"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { Effect, Option, Record as Rec, Array as Arr, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
@@ -11,8 +13,6 @@ import { describeWithChdb } from "./libchdb-test-support"
 
 // Spans through `service_platforms_hourly_mv` into the rollup, read back by `servicePlatformsSQL` and
 // classified: the whole service-identity path on the real engine.
-
-const iso = (ms: number) => Str.replace("Z", "")(Str.replace("T", " ")(new Date(ms).toISOString()))
 
 interface SpanSeed {
 	readonly service: string
@@ -85,7 +85,7 @@ describeWithChdb("service identity", () => {
 		const rows = Arr.map(
 			seeds,
 			(seed, i) =>
-				`('local', '${iso(atMs + i)}', 't${i}', 's${i}', '${seed.parent}', 'op', '${seed.kind}', '${seed.service}', '${seed.scope}', 1000000, 'Ok', ${mapLiteral(seed.resource)})`,
+				`('local', '${formatWarehouseDateTime(atMs + i * 1000)}', 't${i}', 's${i}', '${seed.parent}', 'op', '${seed.kind}', '${seed.service}', '${seed.scope}', 1000000, 'Ok', ${mapLiteral(seed.resource)})`,
 		)
 		db.exec(
 			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, ScopeName, Duration, StatusCode, ResourceAttributes) VALUES ${Arr.join(rows, ", ")}`,
@@ -103,13 +103,20 @@ describeWithChdb("service identity", () => {
 				{},
 				{
 					orgId: LOCAL_ORG_ID,
-					startTime: Str.slice(0, 19)(iso(nowMs - 2 * 3_600_000)),
-					endTime: Str.slice(0, 19)(iso(nowMs)),
+					startTime: formatWarehouseDateTime(nowMs - 2 * 3_600_000),
+					endTime: formatWarehouseDateTime(nowMs),
 				},
 			),
 		)
-		const raw = db.query(Str.replace(/\s+FORMAT\s+\w+\s*$/, "\nFORMAT JSON")(compiled.sql))
-		const rows = await Effect.runPromise(compiled.decodeRows(JSON.parse(raw).data))
+		const lines = Str.split("\n")(db.query(normalizeSqlForClickHouseClient(compiled.sql)))
+		const rows = await Effect.runPromise(
+			compiled.decodeRows(
+				Arr.map(
+					Arr.filter(lines, (line) => line !== ""),
+					(line) => JSON.parse(line),
+				),
+			),
+		)
 		const rowOf = (service: string) =>
 			Option.getOrThrow(Arr.findFirst(rows, (row) => row.serviceName === service))
 		const identityOf = (service: string) => {
@@ -132,7 +139,6 @@ describeWithChdb("service identity", () => {
 		expect(rowOf("billing-worker")).toMatchObject({
 			classifiedSpanCount: 3,
 			consumerSpanCount: 2,
-			clientSpanCount: 1,
 			serverSpanCount: 0,
 			rootSpanCount: 0,
 			telemetrySdkLanguage: "python",

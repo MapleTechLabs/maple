@@ -45,7 +45,8 @@ export const FRAMEWORKS = {
 	rails: {
 		label: "Rails",
 		tier: "app",
-		scopes: [/^opentelemetry::instrumentation::(rails|actionpack|actionview|activerecord|activejob)$/],
+		// ActiveRecord and ActiveJob run outside Rails too, so only the web layer names it.
+		scopes: [/^opentelemetry::instrumentation::(rails|actionpack|actionview)$/],
 	},
 	django: { label: "Django", tier: "app", scopes: [/^opentelemetry\.instrumentation\.django$/] },
 	spring: { label: "Spring", tier: "app", scopes: [/^io\.opentelemetry\.spring/] },
@@ -82,10 +83,23 @@ export interface ServiceIdentitySignals {
 	readonly osName: string
 	readonly serverSpans: number
 	readonly consumerSpans: number
-	readonly clientSpans: number
 	readonly rootSpans: number
 	/** Spans counted by the span-kind columns; 0 means the window predates them, so the mix is unknown. */
 	readonly classifiedSpans: number
+}
+
+/** Signals with nothing in them; fixtures and tests override what they need. */
+export const EMPTY_SERVICE_IDENTITY_SIGNALS: ServiceIdentitySignals = {
+	scopeNames: [],
+	sdkName: "",
+	sdkLanguage: "",
+	mapleSdkType: "",
+	runtimeName: "",
+	osName: "",
+	serverSpans: 0,
+	consumerSpans: 0,
+	rootSpans: 0,
+	classifiedSpans: 0,
 }
 
 const ServiceKindSchema = Schema.Literals(Rec.keys(SERVICE_KINDS))
@@ -128,6 +142,12 @@ const MAPLE_EFFECT_SDK_TYPES = new Set(["server", "cloudflare", "client"])
 const JS_RUNTIMES = new Set(["nodejs", "node", "bun", "deno", "workerd", "edge", "edge-light"])
 const JS_LANGUAGES = new Set(["nodejs", "webjs", "js", "javascript", "typescript"])
 
+/** A scope name as reported (for evidence) and lowercased once (for matching). */
+interface Scope {
+	readonly raw: string
+	readonly lower: string
+}
+
 interface FrameworkMatch {
 	readonly framework: ServiceFramework
 	readonly evidence: ServiceIdentityEvidence
@@ -135,17 +155,17 @@ interface FrameworkMatch {
 
 const matchFramework = (
 	id: ServiceFramework,
-	scopes: ReadonlyArray<string>,
+	scopes: ReadonlyArray<Scope>,
 	signals: ServiceIdentitySignals,
 ): Option.Option<FrameworkMatch> => {
 	const info: FrameworkInfo = FRAMEWORKS[id]
 	const scope = Arr.findFirst(scopes, (name) =>
-		Arr.some(info.scopes, (pattern) => pattern.test(lower(name))),
+		Arr.some(info.scopes, (pattern) => pattern.test(name.lower)),
 	)
 	if (Option.isSome(scope)) {
 		return Option.some({
 			framework: id,
-			evidence: { signal: "instrumentation scope", value: scope.value, supports: "framework" },
+			evidence: { signal: "instrumentation scope", value: scope.value.raw, supports: "framework" },
 		})
 	}
 	const sdkName = lower(signals.sdkName)
@@ -169,7 +189,10 @@ const matchFramework = (
 const share = (part: number, whole: number) => `${Math.round((part / Math.max(whole, 1)) * 100)}%`
 
 export function classifyServiceIdentity(signals: ServiceIdentitySignals): ServiceIdentity {
-	const scopes = Arr.filter(signals.scopeNames, (name) => name !== "")
+	const scopes = Arr.map(
+		Arr.filter(signals.scopeNames, (name) => name !== ""),
+		(raw): Scope => ({ raw, lower: lower(raw) }),
+	)
 	const matches = Arr.getSomes(Arr.map(Rec.keys(FRAMEWORKS), (id) => matchFramework(id, scopes, signals)))
 	const ranked = Arr.sort(
 		matches,
@@ -196,31 +219,36 @@ export function classifyServiceIdentity(signals: ServiceIdentitySignals): Servic
 		{ signal, value, supports: "kind" },
 	]
 
-	const lowerScopes = Arr.map(scopes, lower)
-	if (lowerScopes.includes("@maple/ci-traces"))
+	const hasScope = (name: string) => Arr.some(scopes, (scope) => scope.lower === name)
+	if (hasScope("@maple/ci-traces"))
 		return result("ci", "sdk", kindBy("instrumentation scope", "@maple/ci-traces"))
-	if (lowerScopes.includes("maple-uptime"))
+	if (hasScope("maple-uptime"))
 		return result("synthetic", "sdk", kindBy("instrumentation scope", "maple-uptime"))
 
-	const osName = lower(signals.osName)
-	if (MOBILE_OS.has(osName)) return result("mobile-app", "sdk", kindBy("os.name", signals.osName))
-	const mapleSdkType = lower(signals.mapleSdkType)
-	if (MOBILE_SDK_TYPES.has(mapleSdkType))
-		return result("mobile-app", "sdk", kindBy("maple.sdk.type", signals.mapleSdkType))
-	if (MOBILE_LANGUAGES.has(lower(signals.sdkLanguage)))
-		return result("mobile-app", "sdk", kindBy("telemetry.sdk.language", signals.sdkLanguage))
-
-	if (BROWSER_SDK_TYPES.has(mapleSdkType))
-		return result("web-frontend", "sdk", kindBy("maple.sdk.type", signals.mapleSdkType))
-	if (lower(signals.sdkLanguage) === "webjs")
-		return result("web-frontend", "sdk", kindBy("telemetry.sdk.language", signals.sdkLanguage))
-	const browserScope = Arr.findFirst(scopes, (name) =>
-		Arr.some(BROWSER_SCOPES, (pattern) => pattern.test(lower(name))),
-	)
-	if (Option.isSome(browserScope))
-		return result("web-frontend", "sdk", kindBy("instrumentation scope", browserScope.value))
-
+	// The SDK columns are `max()` over the window, so one browser or iOS span can win them; a
+	// service that serves requests is never a frontend or an app.
 	const { serverSpans, consumerSpans, rootSpans, classifiedSpans } = signals
+	const servesRequests = serverSpans > 0 || consumerSpans > 0
+	if (!servesRequests) {
+		const osName = lower(signals.osName)
+		if (MOBILE_OS.has(osName)) return result("mobile-app", "sdk", kindBy("os.name", signals.osName))
+		const mapleSdkType = lower(signals.mapleSdkType)
+		if (MOBILE_SDK_TYPES.has(mapleSdkType))
+			return result("mobile-app", "sdk", kindBy("maple.sdk.type", signals.mapleSdkType))
+		if (MOBILE_LANGUAGES.has(lower(signals.sdkLanguage)))
+			return result("mobile-app", "sdk", kindBy("telemetry.sdk.language", signals.sdkLanguage))
+
+		if (BROWSER_SDK_TYPES.has(mapleSdkType))
+			return result("web-frontend", "sdk", kindBy("maple.sdk.type", signals.mapleSdkType))
+		if (lower(signals.sdkLanguage) === "webjs")
+			return result("web-frontend", "sdk", kindBy("telemetry.sdk.language", signals.sdkLanguage))
+		const browserScope = Arr.findFirst(scopes, (name) =>
+			Arr.some(BROWSER_SCOPES, (pattern) => pattern.test(name.lower)),
+		)
+		if (Option.isSome(browserScope))
+			return result("web-frontend", "sdk", kindBy("instrumentation scope", browserScope.value.raw))
+	}
+
 	if (tier === "meta") return result("web-app", "framework", [])
 	if (classifiedSpans === 0)
 		return tier === "jobs" ? result("worker", "framework", []) : result("unknown", "none", [])

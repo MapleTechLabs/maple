@@ -1336,7 +1336,16 @@ export function serviceExternalEdgesSQL(
 
 export interface ServicePlatformsOpts {
 	deploymentEnv?: string
+	/** False for a cluster without migration 0074: the identity inputs read as empty. */
+	identity?: boolean
 }
+
+const _arraySlice = defineFn<
+	[CH.Expr<ReadonlyArray<string>>, CH.Expr<number>, CH.Expr<number>],
+	ReadonlyArray<string>
+>("arraySlice", T.array(T.string))
+/** Scope names are capped per insert, not after merges; the read caps what one service can bring. */
+const MAX_SCOPE_NAMES = 64
 
 const ServicePlatformsOutputSchema = Schema.Struct({
 	serviceName: Schema.String,
@@ -1355,7 +1364,6 @@ const ServicePlatformsOutputSchema = Schema.Struct({
 	classifiedSpanCount: CHNumber,
 	serverSpanCount: CHNumber,
 	consumerSpanCount: CHNumber,
-	clientSpanCount: CHNumber,
 	rootSpanCount: CHNumber,
 })
 
@@ -1381,15 +1389,31 @@ export function servicePlatformsSQL(
 			mapleSdkType: CH.max_($.MapleSdkType),
 			processRuntimeName: CH.max_($.ProcessRuntimeName),
 			// Service identity inputs (see `classifyServiceIdentity`).
-			scopeNames: CH.groupUniqArrayArray($.ScopeNames),
-			telemetrySdkName: CH.max_($.TelemetrySdkName),
-			telemetrySdkLanguage: CH.max_($.TelemetrySdkLanguage),
-			osName: CH.max_($.OsName),
-			classifiedSpanCount: CH.sum($.ClassifiedSpanCount),
-			serverSpanCount: CH.sum($.ServerSpanCount),
-			consumerSpanCount: CH.sum($.ConsumerSpanCount),
-			clientSpanCount: CH.sum($.ClientSpanCount),
-			rootSpanCount: CH.sum($.RootSpanCount),
+			...(opts.identity === false
+				? {
+						scopeNames: CH.rawExpr("emptyArrayString()", T.array(T.string)),
+						telemetrySdkName: CH.lit(""),
+						telemetrySdkLanguage: CH.lit(""),
+						osName: CH.lit(""),
+						classifiedSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						serverSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						consumerSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						rootSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+					}
+				: {
+						scopeNames: _arraySlice(
+							CH.groupUniqArrayArray($.ScopeNames),
+							CH.lit(1),
+							CH.lit(MAX_SCOPE_NAMES),
+						),
+						telemetrySdkName: CH.max_($.TelemetrySdkName),
+						telemetrySdkLanguage: CH.max_($.TelemetrySdkLanguage),
+						osName: CH.max_($.OsName),
+						classifiedSpanCount: CH.sum($.ClassifiedSpanCount),
+						serverSpanCount: CH.sum($.ServerSpanCount),
+						consumerSpanCount: CH.sum($.ConsumerSpanCount),
+						rootSpanCount: CH.sum($.RootSpanCount),
+					}),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1420,7 +1444,6 @@ export const servicePlatformIdentity = (row: ServicePlatformsOutput): ServiceIde
 		osName: row.osName,
 		serverSpans: row.serverSpanCount,
 		consumerSpans: row.consumerSpanCount,
-		clientSpans: row.clientSpanCount,
 		rootSpans: row.rootSpanCount,
 		classifiedSpans: row.classifiedSpanCount,
 	})

@@ -111,7 +111,11 @@ export const sourceGraphOf = (model: Model, rows: ScopedRows, window: TimeWindow
 	const runtimes = new Map(
 		Arr.flatMap(rows.platforms, (row) => (row.runtime ? [[row.serviceName, row.runtime] as const] : [])),
 	)
-	const identities = new Map(Arr.map(rows.platforms, (row) => [row.serviceName, row.identity]))
+	const identities = new Map(
+		Arr.flatMap(rows.platforms, (row) =>
+			row.identity === undefined ? [] : [[row.serviceName, row.identity] as const],
+		),
+	)
 	const faasNames = new Map(
 		Arr.flatMap(rows.platforms, (row) =>
 			row.faasName ? [[row.serviceName, row.faasName] as const] : [],

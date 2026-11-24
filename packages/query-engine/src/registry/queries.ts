@@ -704,6 +704,18 @@ export const servicePlatforms = defineQuery({
 		CH.servicePlatformsSQL({ deploymentEnv: payload.deploymentEnv }, windowParams(payload, orgId)),
 })
 
+/** `servicePlatforms` for a cluster without migration 0074: platforms without identity inputs. */
+export const servicePlatformsWithoutIdentity = defineQuery({
+	id: "servicePlatformsWithoutIdentity",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ServicePlatformsRequest, orgId: OrgId) =>
+		CH.servicePlatformsSQL(
+			{ deploymentEnv: payload.deploymentEnv, identity: false },
+			windowParams(payload, orgId),
+		),
+})
+
 const dbQueryParams = (payload: ServiceDbQuerySummaryRequest, orgId: OrgId) => ({
 	orgId,
 	dbSystem: payload.dbSystem,

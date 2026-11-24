@@ -1842,7 +1842,8 @@ const ServicePlatformRow = Schema.Struct({
 	faasName: Schema.String,
 	mapleSdkType: Schema.String,
 	processRuntimeName: Schema.String,
-	identity: ServiceIdentity,
+	/** Absent from an API older than service identities. */
+	identity: Schema.optionalKey(ServiceIdentity),
 })
 
 export class ServicePlatformsResponse extends Schema.Class<ServicePlatformsResponse>(

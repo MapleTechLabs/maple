@@ -1,4 +1,8 @@
-import { classifyServiceIdentity, type ServiceIdentitySignals } from "@maple/domain/service-identity"
+import {
+	classifyServiceIdentity,
+	EMPTY_SERVICE_IDENTITY_SIGNALS,
+	type ServiceIdentitySignals,
+} from "@maple/domain/service-identity"
 import { ServiceName } from "@maple/domain"
 import { Schema } from "effect"
 import type { MapBundle } from "../page/service-map/model"
@@ -60,22 +64,9 @@ const platform = (
 	faasName: row.faasName,
 	mapleSdkType: "",
 	runtime: row.runtime,
-	identity: classifyServiceIdentity({ ...NO_SIGNALS, ...row.identity }),
+	identity: classifyServiceIdentity({ ...EMPTY_SERVICE_IDENTITY_SIGNALS, ...row.identity }),
 })
 
-const NO_SIGNALS: ServiceIdentitySignals = {
-	scopeNames: [],
-	sdkName: "",
-	sdkLanguage: "",
-	mapleSdkType: "",
-	runtimeName: "",
-	osName: "",
-	serverSpans: 0,
-	consumerSpans: 0,
-	clientSpans: 0,
-	rootSpans: 0,
-	classifiedSpans: 0,
-}
 
 export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 	edges: [
@@ -107,7 +98,6 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			identity: {
 				scopeNames: ["go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"],
 				serverSpans: 98_000,
-				clientSpans: 40_000,
 				classifiedSpans: 151_480,
 			},
 		}),
@@ -117,7 +107,7 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			cloudProvider: "gcp",
 			faasName: "fleet-worker",
 			runtime: "go",
-			identity: { consumerSpans: 42_000, clientSpans: 19_900, classifiedSpans: 61_900 },
+			identity: { consumerSpans: 42_000, classifiedSpans: 61_900 },
 		}),
 		platform("fleet-web", {
 			platform: "web",

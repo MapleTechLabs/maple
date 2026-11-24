@@ -2252,7 +2252,6 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				["ClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
 				["ServerSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
 				["ConsumerSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
-				["ClientSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
 				["RootSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
 			]),
 			dropViews("service_platforms_hourly_mv"),
@@ -2279,7 +2278,7 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				classification: "derived",
 				disposition: "preserve-exact",
 				guarantee:
-					"Nine columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and every existing row reads back empty or zero, which ClassifiedSpanCount marks as unclassified.",
+					"Eight columns are added as metadata-only defaults; no part is rewritten, the row count is verified unchanged, and every existing row reads back empty or zero, which ClassifiedSpanCount marks as unclassified.",
 			},
 			TRACES_UNDER_REPLACED_VIEWS,
 		],
