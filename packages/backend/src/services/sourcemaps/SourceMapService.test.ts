@@ -268,22 +268,39 @@ describe("SourceMapService.upload", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("accepts an index map whose sections are usable maps", () => {
-		const { layer } = makeHarness()
+	it.effect("refuses an index map, keeping the stored one", () => {
+		const { objects, layer } = makeHarness()
 		return Effect.gen(function* () {
 			const service = yield* SourceMapService
-			const section = { version: 3, sources: ["src/a.ts"], names: [], mappings: "AAAA" }
-			const row = yield* service.upload(ORG, {
-				bytes: new TextEncoder().encode(
-					JSON.stringify({
-						version: 3,
-						sections: [{ offset: { line: 0, column: 0 }, map: section }],
-					}),
-				),
+			const stored = yield* service.upload(ORG, {
+				bytes: mapBytes(),
 				minifiedPath: "assets/a.js",
 				debugId: DEBUG_ID,
 			})
-			expect(row.debugId).toBe(DEBUG_ID)
+			const section = { version: 3, sources: ["src/a.ts"], names: [], mappings: "AAAA" }
+			const indexMaps = [
+				{ version: 3, sections: [{ offset: { line: 0, column: 0 }, map: section }] },
+				// A plain map with a stray `sections` field is still not a plain map.
+				{ ...section, sections: null },
+			]
+			const errors = yield* Effect.forEach(indexMaps, (map) =>
+				service
+					.upload(ORG, {
+						bytes: new TextEncoder().encode(JSON.stringify(map)),
+						minifiedPath: "assets/a.js",
+						debugId: DEBUG_ID,
+					})
+					.pipe(
+						Effect.flip,
+						Effect.map((error) => [error._tag, error.message]),
+					),
+			)
+			expect(Arr.dedupe(Arr.map(errors, (e) => Arr.join(e, " ")))).toEqual([
+				"@maple/http/sourcemaps/SourceMapInvalidError Index source maps are not supported; emit a regular map.",
+			])
+			const rows = yield* service.list(ORG, { limit: 10, offset: 0 })
+			expect(Arr.map(rows, (row) => row.id)).toEqual([stored.id])
+			expect([...objects.keys()]).toEqual([stored.objectKey])
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -476,6 +493,77 @@ describe("SourceMapReader.findForFrames", () => {
 				urls: [url],
 			})
 			expect(matches.get(url)?.id).toBe(target.id)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("picks a release path's id-less map over thousands of newer debug-id builds", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const reader = yield* SourceMapReader
+			const database = yield* Database
+			const release = { serviceName: "web", version: "9.1.0" }
+			const releaseOnly = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				...release,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(SourceMapFiles).values(
+						Arr.makeBy(2100, (i) => ({
+							id: Schema.decodeSync(SourceMapFileId)(
+								`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(i))}`,
+							),
+							orgId: ORG,
+							debugId: `10000000-0000-4000-8000-${Str.padStart(12, "0")(String(i))}`,
+							serviceName: "web",
+							version: "9.1.0",
+							minifiedPath: "assets/main.js",
+							sizeBytes: 1,
+							hasSourcesContent: false,
+							objectKey: `v1/${ORG}/build-${i}`,
+							createdAt: Duration.toMillis(Duration.days(1)),
+							lastUsedAt: null,
+						})),
+					),
+				),
+			)
+			const url = "https://cdn.test/assets/main.js"
+			const matches = yield* reader.findForFrames({
+				orgId: ORG,
+				debugIds: new Map(),
+				...release,
+				urls: [url],
+			})
+			expect(matches.get(url)?.id).toBe(releaseOnly.id)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("ranks stored paths by what they match, a query in one never lengthening it", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const service = yield* SourceMapService
+			const reader = yield* SourceMapReader
+			const release = { serviceName: "web", version: "1.2.0" }
+			const exact = yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/main.js",
+				...release,
+			})
+			yield* service.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "main.js?cache=123456",
+				...release,
+			})
+			const url = "https://cdn.test/assets/main.js"
+			const matches = yield* reader.findForFrames({
+				orgId: ORG,
+				debugIds: new Map(),
+				...release,
+				urls: [url],
+			})
+			expect(matches.get(url)?.id).toBe(exact.id)
 		}).pipe(Effect.provide(layer))
 	})
 

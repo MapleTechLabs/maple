@@ -103,27 +103,33 @@ export class SourceMapReader extends Context.Service<SourceMapReader, SourceMapR
 							)
 				// Only the stored paths a frame URL can match: its path and each suffix after a `/`.
 				const candidatePaths = Arr.dedupe(Arr.flatMap(lookup.urls, pathSuffixes))
-				const releaseFiles =
-					serviceName == null ||
-					version == null ||
-					serviceName === "" ||
-					version === "" ||
-					candidatePaths.length === 0
-						? []
-						: yield* dbExecute((db) =>
-								db.run(
-									PG.from(SourceMapFiles)
-										.select()
-										.where(($) => [
-											$.orgId.eq(orgId),
-											$.serviceName.eq(serviceName),
-											$.version.eq(version),
-											$.minifiedPath.in_(...candidatePaths),
-										])
-										.orderBy(($) => [[$.createdAt, "desc"]])
-										.limit(RELEASE_FILES_LIMIT),
-								),
-							)
+				const hasRelease =
+					serviceName != null &&
+					version != null &&
+					serviceName !== "" &&
+					version !== "" &&
+					candidatePaths.length > 0
+				const releaseQuery = (withDebugId: boolean) =>
+					dbExecute((db) =>
+						db.run(
+							PG.from(SourceMapFiles)
+								.select()
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.serviceName.eq(serviceName ?? ""),
+									$.version.eq(version ?? ""),
+									$.minifiedPath.in_(...candidatePaths),
+									withDebugId ? $.debugId.isNotNull() : $.debugId.isNull(),
+								])
+								.orderBy(($) => [[$.createdAt, "desc"]])
+								.limit(RELEASE_FILES_LIMIT),
+						),
+					)
+				// The id-less maps (one per path, by the unique index) win a path, so they are read
+				// apart from the debug-id builds, which can be many and only fill in paths they lack.
+				const releaseFiles = hasRelease
+					? [...(yield* releaseQuery(false)), ...(yield* releaseQuery(true))]
+					: []
 				const matches = matchFrames(lookup.urls, lookup.debugIds, byDebugId, releaseFiles)
 				yield* Effect.annotateCurrentSpan({ "maple.source_map.matched": matches.size })
 				return matches

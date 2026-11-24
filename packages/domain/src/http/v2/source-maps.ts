@@ -149,7 +149,7 @@ export class V2SourceMapsApiGroup extends HttpApiGroup.make("sourceMaps")
 				identifier: "uploadSourceMap",
 				summary: "Upload a source map",
 				description:
-					"Stores one source map (the raw JSON as the request body, at most 10 MiB, the largest map Maple can symbolicate with; larger is a 413). With a `debug_id`, only the map with that `debug_id` is replaced, so builds sharing a release path keep their own maps. Without one, the map without a debug id at the same `service`, `version` and `minified_path` is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
+					"Stores one source map (the raw JSON as the request body, at most 10 MiB, the largest map Maple can symbolicate with; larger is a 413). Index maps (with `sections`) are refused with a 400; emit a regular map. With a `debug_id`, only the map with that `debug_id` is replaced, so builds sharing a release path keep their own maps. Without one, the map without a debug id at the same `service`, `version` and `minified_path` is replaced. Requires an engineer or admin role and the `source_maps:write` scope.",
 			}),
 		),
 	)

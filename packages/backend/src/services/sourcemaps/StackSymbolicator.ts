@@ -1,4 +1,4 @@
-import { FlattenMap, type TraceMap } from "@jridgewell/trace-mapping"
+import { TraceMap } from "@jridgewell/trace-mapping"
 import type { SourceMapFileRow } from "@maple/db/tables"
 import { SOURCE_MAP_MAX_BYTES } from "@maple/domain/http"
 import { isSourceMappableUrl, parseJsStack, type SymbolicatedStack } from "@maple/domain/errors/js-stack"
@@ -74,8 +74,7 @@ interface CachedMap {
 	readonly bytes: number
 }
 
-/** Plain and index (`sections`) maps both parse to one flat map. */
-const parseTraceMap = Option.liftThrowable((json: string) => FlattenMap(json))
+const parseTraceMap = Option.liftThrowable((json: string) => new TraceMap(json))
 
 /** The stack with every frame unresolved, for when nothing could be looked up. */
 const unresolvedStack = (stacktrace: string): SymbolicatedStack =>
