@@ -20,7 +20,10 @@ import {
 	StatusDomainsApiToken,
 	SupabaseOAuthClientSecret,
 } from "@maple/infra/secrets"
-import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import {
+	OrganizationFeatureFlagsService,
+	type OrganizationFeatureFlagsRequirements,
+} from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { DataSourcePersistenceError } from "@maple/domain/data-sources"
 import {
@@ -54,7 +57,7 @@ export const McpToolPlatformLive = ProductEventsService.layerFor("maple-ai").pip
  * answer and fake drivers.
  */
 export const mcpServicesWithFeatureFlags = (
-	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, Env>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService, never, OrganizationFeatureFlagsRequirements>,
 	dataSources: Layer.Layer<
 		ExternalDataSourceService,
 		DataSourcePersistenceError,

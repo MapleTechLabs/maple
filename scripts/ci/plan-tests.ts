@@ -10,10 +10,12 @@ const ROOT = path.resolve(import.meta.dir, "../..")
 // Backend was 1.6 then, 2.0 on run 42756486011; by run 43639788554 its six shards took
 // 146-257s for ~65 files each against the 240s lane budget, about 2.6s/file. Run 45301225632
 // had nine shards of 50 files and one at 250s (PGlite alert suites), so 2.9 makes it ten.
+// AI was 1.1; its two shards ran 245-250s on runs 45368410048 and 45369187703 (63% of it
+// module imports), so 1.5 makes it three.
 const SECONDS_PER_FILE = new Map([
 	["@maple/api", 2.3],
 	["@maple/backend", 2.9],
-	["@maple/ai", 1.1],
+	["@maple/ai", 1.5],
 	["@maple/query-engine", 0.45],
 	["@maple/ui", 0.45],
 	["@maple/domain", 0.4],
