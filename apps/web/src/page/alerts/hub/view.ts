@@ -3,7 +3,8 @@ import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
+import { stableValue } from "../../kit/stable-slice"
 import { button, linkButton } from "@maple/views/ui/button"
 import { splitButtonClass } from "@maple/views/ui/split-button"
 import { cn } from "@maple/ui/lib/utils"
@@ -350,6 +351,51 @@ const deleteDialog = (h: H, model: Model): Html => {
 	})
 }
 
+// The dialogs render closed on every hub message; each keeps its tree until its own model or
+// inputs change.
+const destinationDialog = (h: H, dialog: Model["destinationDialog"]): Html =>
+	h.submodel({
+		slotId: "alerts-destination",
+		model: dialog,
+		view: DestinationDialogView.view,
+		viewInputs: { id: "alerts-destination" },
+		toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
+	})
+
+const silenceDialog = (
+	h: H,
+	dialog: Model["silenceDialog"],
+	suggestions: ReturnType<typeof silenceSuggestionsOf>,
+): Html =>
+	h.submodel({
+		slotId: "alerts-silence",
+		model: dialog,
+		view: SilenceDialogView.view,
+		viewInputs: { id: "alerts-silence", suggestions },
+		toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+	})
+
+const windowRulesOf = stableValue((model: Model) =>
+	model.rules === null ? null : Arr.map(model.rules, ({ id, name }) => ({ id, name })),
+)
+
+const windowDialog = (
+	h: H,
+	dialog: Model["windowDialog"],
+	rules: ReturnType<typeof windowRulesOf>,
+): Html =>
+	h.submodel({
+		slotId: WINDOW_DIALOG_ID,
+		model: dialog,
+		view: WindowDialogView.view,
+		viewInputs: { id: WINDOW_DIALOG_ID, rules },
+		toParentMessage: (message) => Message.GotWindowDialogMessage({ message }),
+	})
+
+const destinationDialogSlot = createLazy()
+const silenceDialogSlot = createLazy()
+const windowDialogSlot = createLazy()
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const tab = model.tab
 	const overview = overviewOf(model)
@@ -387,31 +433,9 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			deleteChainDialog(h, model),
 			deleteScheduleDialog(h, model),
 			deleteWindowDialog(h, model),
-			h.submodel({
-				slotId: "alerts-destination",
-				model: model.destinationDialog,
-				view: DestinationDialogView.view,
-				viewInputs: { id: "alerts-destination" },
-				toParentMessage: (message) => Message.GotDestinationDialogMessage({ message }),
-			}),
-			h.submodel({
-				slotId: "alerts-silence",
-				model: model.silenceDialog,
-				view: SilenceDialogView.view,
-				viewInputs: { id: "alerts-silence", suggestions: silenceSuggestionsOf(model) },
-				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
-			}),
-			h.submodel({
-				slotId: WINDOW_DIALOG_ID,
-				model: model.windowDialog,
-				view: WindowDialogView.view,
-				viewInputs: {
-					id: WINDOW_DIALOG_ID,
-					rules:
-						model.rules === null ? null : Arr.map(model.rules, ({ id, name }) => ({ id, name })),
-				},
-				toParentMessage: (message) => Message.GotWindowDialogMessage({ message }),
-			}),
+			destinationDialogSlot(destinationDialog, [h, model.destinationDialog]),
+			silenceDialogSlot(silenceDialog, [h, model.silenceDialog, silenceSuggestionsOf(model)]),
+			windowDialogSlot(windowDialog, [h, model.windowDialog, windowRulesOf(model)]),
 		],
 	)
 })
