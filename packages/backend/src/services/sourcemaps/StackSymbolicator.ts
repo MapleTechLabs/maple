@@ -40,6 +40,11 @@ export interface SymbolicateRequest {
 	readonly serviceVersion: string | null
 	/** Frame URL to debug id, from the exception event's `maple.exception.debug_ids`. */
 	readonly debugIds: ReadonlyMap<string, string>
+	/**
+	 * Shared by the stacks of one batch (an errors tick): a URL's match is looked up once for all of
+	 * them. Absent, every stack looks up its own.
+	 */
+	readonly lookupMemo?: Map<string, SourceMapFileRow>
 }
 
 export interface SymbolicationOutcome {
@@ -141,7 +146,14 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 			}
 
 			const cachePut = (id: SourceMapFileId, entry: CachedMap) => {
-				if (entry.bytes > MAP_CACHE_MAX_ESTIMATED_BYTES) return
+				// A map over the budget is kept only alone, so it parses once per isolate, not per stack;
+				// the next map put evicts it, oldest first.
+				if (entry.bytes > MAP_CACHE_MAX_ESTIMATED_BYTES) {
+					maps.clear()
+					maps.set(id, entry)
+					cachedBytes = entry.bytes
+					return
+				}
 				const previous = maps.get(id)
 				if (previous !== undefined) {
 					maps.delete(id)
@@ -321,7 +333,19 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				}
 
 				const now = yield* Clock.currentTimeMillis
-				const pending = Arr.filter(urls, (url) => !knownMissing(negativeKey(request, url), now))
+				// Matches an earlier stack of the same batch found; never kept past the batch, so a map
+				// replaced since is looked up afresh by the next one.
+				const memo = request.lookupMemo
+				const remembered = new Map(
+					Arr.flatMap(urls, (url) => {
+						const row = memo?.get(negativeKey(request, url))
+						return row === undefined ? [] : [[url, row] as const]
+					}),
+				)
+				const pending = Arr.filter(
+					urls,
+					(url) => !remembered.has(url) && !knownMissing(negativeKey(request, url), now),
+				)
 				const found =
 					pending.length === 0
 						? Option.some(new Map<string, SourceMapFileRow>())
@@ -345,9 +369,11 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 									),
 									Effect.option,
 								)
-				const rowsByUrl = Option.getOrElse(found, () => new Map<string, SourceMapFileRow>())
+				const looked = Option.getOrElse(found, () => new Map<string, SourceMapFileRow>())
+				const rowsByUrl = new Map([...remembered, ...looked])
 				// Only a lookup that answered can say a URL has no map.
 				if (Option.isSome(found)) {
+					Arr.forEach(Array.from(looked), ([url, row]) => memo?.set(negativeKey(request, url), row))
 					markNoMap(
 						Arr.map(
 							Arr.filter(pending, (url) => !rowsByUrl.has(url)),
@@ -391,6 +417,18 @@ export class StackSymbolicator extends Context.Service<StackSymbolicator, StackS
 				const loaded = yield* Effect.forEach(withinBudget, (row) =>
 					Effect.map(mapOf(row), (result) => ({ row, ...result })),
 				)
+				// A map that could not be read is looked up again by the next stack, not reused.
+				if (memo !== undefined) {
+					const failed = new Set(
+						Arr.map(
+							Arr.filter(loaded, (entry) => entry.failed),
+							(entry) => entry.row.id,
+						),
+					)
+					Arr.forEach(Array.from(memo), ([key, row]) => {
+						if (failed.has(row.id)) memo.delete(key)
+					})
+				}
 				const mapByFile = new Map(
 					Arr.getSomes(
 						Arr.map(loaded, ({ row, map }) =>

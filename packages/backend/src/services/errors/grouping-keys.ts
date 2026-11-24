@@ -11,6 +11,7 @@ import type { OrgId, TenantContext, WarehouseReadError } from "@maple/domain/htt
 import { CH } from "@maple/query-engine"
 import type { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import type { StackSymbolicatorApi } from "@maple/backend/services/sourcemaps/StackSymbolicator"
+import type { SourceMapFileRow } from "@maple/db/tables"
 import { isLookupUrl } from "@maple/backend/services/sourcemaps/source-map-files"
 import { DEBUG_IDS_ATTRIBUTE, decodeDebugIds, isInAppPath, parseJsStack } from "@maple/domain/errors/js-stack"
 import { resolveCustomFingerprint } from "@maple/domain/tinybird/fingerprint"
@@ -153,77 +154,91 @@ export const withSourceMappedStacks = (
 	Option.match(symbolicator, {
 		onNone: () => Effect.succeed(entries),
 		onSome: (stacks) =>
-			Effect.flatMap(stacks.hasSourceMaps(orgId), (hasMaps) =>
-				!hasMaps
-					? Effect.succeed(Arr.map(entries, (entry) => withFirstMapPending(entry, rules)))
-					: Effect.forEach(
-							entries,
-							(entry) => {
-								const rule = groupingParts(entry.input, rules).rule
-								const readsFrames = rule === "frames" || rule === "type-function"
-								const frames = parseJsStack(entry.input.exceptionStacktrace).frames
-								if (
-									!readsFrames ||
-									!Arr.some(
-										frames,
-										(frame) =>
-											frame.url !== null && isLookupUrl(frame.url, entry.debugIds),
-									)
-								) {
-									return Effect.succeed(entry)
-								}
-								return stacks
-									.symbolicateWithOutcome({
-										orgId,
-										stacktrace: entry.input.exceptionStacktrace,
-										serviceName:
-											entry.input.serviceName === "" ? null : entry.input.serviceName,
-										serviceVersion:
-											entry.serviceVersion === "" ? null : entry.serviceVersion,
-										debugIds: entry.debugIds,
-									})
-									.pipe(
-										Effect.map(({ stack, lookupFailed }) => {
-											// Decided on the raw frames: a vendor chunk whose frames map into
-											// `node_modules` is mapped, not waiting.
-											const candidate = (frame: (typeof frames)[number]) =>
-												frame.url !== null &&
-												isInAppPath(frame.url) &&
-												isLookupUrl(frame.url, entry.debugIds)
-											const unmapped = (i: number) => stack.frames[i]?.resolved !== true
-											// The throw site waits for its map even when a caller below it mapped:
-											// keyed on that caller alone, two throw sites would share a key.
-											const throwSiteWaits = Option.match(
-												Arr.findFirstIndex(frames, candidate),
-												{
-													onNone: () => false,
-													onSome: unmapped,
-												},
-											)
-											const mapPending =
-												throwSiteWaits ||
-												// A dependency frame that mapped says nothing about the app's own map.
-												(!Arr.some(
-													stack.frames,
-													(frame) => frame.resolved && frame.in_app,
-												) &&
-													Arr.some(
-														frames,
-														(frame, i) => candidate(frame) && unmapped(i),
-													))
-											return stack.status === "resolved" || stack.status === "partial"
-												? {
-														...entry,
-														input: { ...entry.input, symbolicatedStack: stack },
-														mapPending,
-														lookupFailed,
-													}
-												: { ...entry, mapPending, lookupFailed }
-										}),
-									)
-							},
-							{ concurrency: SYMBOLICATE_CONCURRENCY },
-						),
+			Effect.flatMap(
+				Effect.all([
+					stacks.hasSourceMaps(orgId),
+					Effect.sync(() => new Map<string, SourceMapFileRow>()),
+				]),
+				// One lookup per frame URL for the whole tick, shared by its samples.
+				([hasMaps, lookupMemo]) =>
+					!hasMaps
+						? Effect.succeed(Arr.map(entries, (entry) => withFirstMapPending(entry, rules)))
+						: Effect.forEach(
+								entries,
+								(entry) => {
+									const rule = groupingParts(entry.input, rules).rule
+									const readsFrames = rule === "frames" || rule === "type-function"
+									const frames = parseJsStack(entry.input.exceptionStacktrace).frames
+									if (
+										!readsFrames ||
+										!Arr.some(
+											frames,
+											(frame) =>
+												frame.url !== null && isLookupUrl(frame.url, entry.debugIds),
+										)
+									) {
+										return Effect.succeed(entry)
+									}
+									return stacks
+										.symbolicateWithOutcome({
+											orgId,
+											stacktrace: entry.input.exceptionStacktrace,
+											serviceName:
+												entry.input.serviceName === ""
+													? null
+													: entry.input.serviceName,
+											serviceVersion:
+												entry.serviceVersion === "" ? null : entry.serviceVersion,
+											debugIds: entry.debugIds,
+											lookupMemo,
+										})
+										.pipe(
+											Effect.map(({ stack, lookupFailed }) => {
+												// Decided on the raw frames: a vendor chunk whose frames map into
+												// `node_modules` is mapped, not waiting.
+												const candidate = (frame: (typeof frames)[number]) =>
+													frame.url !== null &&
+													isInAppPath(frame.url) &&
+													isLookupUrl(frame.url, entry.debugIds)
+												const unmapped = (i: number) =>
+													stack.frames[i]?.resolved !== true
+												// The throw site waits for its map even when a caller below it mapped:
+												// keyed on that caller alone, two throw sites would share a key.
+												const throwSiteWaits = Option.match(
+													Arr.findFirstIndex(frames, candidate),
+													{
+														onNone: () => false,
+														onSome: unmapped,
+													},
+												)
+												const mapPending =
+													throwSiteWaits ||
+													// A dependency frame that mapped says nothing about the app's own map.
+													(!Arr.some(
+														stack.frames,
+														(frame) => frame.resolved && frame.in_app,
+													) &&
+														Arr.some(
+															frames,
+															(frame, i) => candidate(frame) && unmapped(i),
+														))
+												return stack.status === "resolved" ||
+													stack.status === "partial"
+													? {
+															...entry,
+															input: {
+																...entry.input,
+																symbolicatedStack: stack,
+															},
+															mapPending,
+															lookupFailed,
+														}
+													: { ...entry, mapPending, lookupFailed }
+											}),
+										)
+								},
+								{ concurrency: SYMBOLICATE_CONCURRENCY },
+							),
 			),
 	})
 
