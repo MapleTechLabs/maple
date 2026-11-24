@@ -5,7 +5,7 @@ import {
 	SLO_BURN_TIERS,
 	SLO_BURN_LOOKBACK_MINUTES,
 	budgetRemaining,
-	budgetSpent,
+	budgetState,
 	burnWindowOf,
 	firingTier,
 	severityState,
@@ -17,7 +17,6 @@ import {
 	type SloBurnWindow,
 	type SloCounts,
 	type SloSeverity,
-	type SloTierState,
 } from "@maple/domain/slo"
 import { Array as Arr, Option } from "effect"
 import { MANAGED_RULE_PLAN } from "@maple/backend/services/alerts/AlertRuleModel"
@@ -40,6 +39,16 @@ export interface SloRuleInput {
 	readonly criticalDestinationIds: ReadonlyArray<AlertDestinationId>
 	readonly warningDestinationIds: ReadonlyArray<AlertDestinationId>
 }
+
+/**
+ * The stored thresholds and window of an SLO's rule for a target. Evaluation never reads them
+ * (each tier is judged on its own windows); they are what an incident displays.
+ */
+export const sloRuleThresholds = (targetPercent: number) => ({
+	valueOf: (severity: SloSeverity) => severityFactor(severity, targetPercent),
+	threshold: severityFactor("warning", targetPercent),
+	windowMinutes: SLO_BURN_LOOKBACK_MINUTES,
+})
 
 /**
  * The `alert_rules` columns of an SLO's burn-rate rule: a warning tier (ticket) and a critical
@@ -111,13 +120,10 @@ const describeTier = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>, 
 	return { long, text: `burning the error budget at ${rates} (${at})`, rates: `${rates} (${at})` }
 }
 
-/** What one check of an SLO's burn-rate rule reads: its burn windows and, when known, its budget. */
+/** What one check of an SLO's burn reads. */
 export interface SloBurnInput {
 	readonly windows: ReadonlyArray<SloBurnWindow>
 	readonly targetPercent: number
-	readonly windowDays: number
-	/** The SLO window's events; null when they could not be read, which judges no budget. */
-	readonly totals: SloCounts | null
 }
 
 const warningFactor = (targetPercent: number) => severityFactor("warning", targetPercent)
@@ -173,42 +179,59 @@ export const evaluateSloBurn = (input: SloBurnInput): AlertEvaluation => {
 	}
 }
 
+/** What the budget group's check knows of the SLO window, as the alert source read it. */
+export type SloBudgetInput =
+	| { readonly _tag: "read"; readonly totals: SloCounts }
+	| { readonly _tag: "notDue" }
+	| { readonly _tag: "unread" }
+
 /**
  * One check of an SLO's error budget, its own alert group: a warning while the window's budget
- * is spent. The value is the share of the budget used. Unread totals judge nothing either way.
+ * is spent, cleared once it is back by a margin. The value is the share of the budget used. A
+ * check with no read of the window judges nothing either way.
  */
-export const evaluateSloBudget = (input: SloBurnInput): AlertEvaluation => {
-	const { targetPercent, totals } = input
+export const evaluateSloBudget = (input: {
+	readonly targetPercent: number
+	readonly windowDays: number
+	readonly budget: SloBudgetInput
+}): AlertEvaluation => {
+	const { targetPercent, budget } = input
 	const base = {
-		sampleCount: Math.round(totals?.total ?? 0),
 		threshold: 1,
 		thresholdUpper: null,
 		comparator: "gte" as const,
 		derivedFromNoData: false,
 	}
-	if (totals === null) {
+	if (budget._tag !== "read") {
 		return {
 			...base,
+			sampleCount: 0,
 			status: "skipped",
 			value: null,
-			reason: "The SLO window's events could not be read",
+			reason:
+				budget._tag === "notDue"
+					? "The error budget is read every few minutes, not on this check"
+					: "The SLO window's events could not be read",
 			skipReason: "no_value",
 			levels: [],
 		}
 	}
-	const spent = budgetSpent(totals, targetPercent)
-	const used = 1 - budgetRemaining(totals, targetPercent)
-	const state: SloTierState = spent ? "breach" : "clear"
+	const state = budgetState(budget.totals, targetPercent)
+	const used = 1 - budgetRemaining(budget.totals, targetPercent)
+	const share = `${Math.round(used * 100)}% of the ${input.windowDays}-day budget used`
 	return {
 		...base,
-		status: spent ? "breached" : "healthy",
+		sampleCount: Math.round(budget.totals.total),
+		status: state === "breach" ? "breached" : "healthy",
 		levels: [
 			{ severity: "warning", status: state },
 			{ severity: "critical", status: "clear" },
 		],
 		value: used,
-		reason: spent
-			? `SLO error budget is spent: ${Math.round(used * 100)}% of the ${input.windowDays}-day budget used`
-			: `SLO error budget is back: ${Math.round(used * 100)}% of the ${input.windowDays}-day budget used`,
+		reason:
+			state === "breach" ? `SLO error budget is spent: ${share}` : `SLO error budget is back: ${share}`,
 	}
 }
+
+/** What an SLO's budget incident is called in place of its group key. */
+export const SLO_BUDGET_GROUP_LABEL = "Error budget"

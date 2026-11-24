@@ -6,6 +6,7 @@ import {
 	burnRate,
 	burnWindows,
 	budgetSpent,
+	budgetState,
 	severityState,
 	SLO_BURN_TIERS,
 	sliRatio,
@@ -191,6 +192,42 @@ describe("budgetHistory", () => {
 		expect(Option.map(badPoint, (point) => [Math.round(point.burnRate * 100) / 100, point.sli])).toEqual(
 			Option.some([5, 0.95]),
 		)
+	})
+})
+
+describe("sampled traffic", () => {
+	const endMs = Date.UTC(2026, 10, 6, 12, 0)
+
+	it("judges a tier on the spans recorded, not on what sampling weighs them as", () => {
+		// One recorded failure standing for ten: 10 bad of 120 weighted, 1 bad of 12 recorded.
+		const sampled = burnWindows(
+			[
+				{ startMs: endMs - 2 * MINUTE, total: 10, good: 0, samples: 1 },
+				{ startMs: endMs - 20 * MINUTE, total: 110, good: 110, samples: 11 },
+			],
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, sampled, 99.9)).toBe("hold")
+		// Two recorded failures of twelve is evidence.
+		const twice = burnWindows(
+			[
+				{ startMs: endMs - 2 * MINUTE, total: 20, good: 0, samples: 2 },
+				{ startMs: endMs - 20 * MINUTE, total: 100, good: 100, samples: 10 },
+			],
+			endMs,
+			99.9,
+		)
+		expect(tierState(critical, twice, 99.9)).toBe("breach")
+	})
+})
+
+describe("budgetState", () => {
+	it("holds a spent budget's warning until the budget is back by a margin", () => {
+		expect(budgetState({ total: 1_000_000, good: 998_000 }, 99.9)).toBe("breach")
+		// 99.5% used: back above zero, not yet by 2%.
+		expect(budgetState({ total: 1_000_000, good: 999_005 }, 99.9)).toBe("hold")
+		expect(budgetState({ total: 1_000_000, good: 999_500 }, 99.9)).toBe("clear")
 	})
 })
 

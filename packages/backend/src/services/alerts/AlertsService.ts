@@ -218,7 +218,12 @@ import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
 import { costBudgetPeriodWindow } from "@maple/domain/cost-budget"
 import { closeLastPeriod, evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
-import { evaluateSloBudget, evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
+import {
+	SLO_BUDGET_GROUP_LABEL,
+	evaluateSloBudget,
+	evaluateSloBurn,
+	sloRuleThresholds,
+} from "@maple/backend/services/slos/slo-alert-rule"
 import { SLO_BUDGET_GROUP_KEY, SLO_LIVENESS_WINDOW_MINUTES } from "@maple/domain/slo"
 import {
 	openForAlertIncident,
@@ -683,6 +688,18 @@ const STANDING_WARNING_RENOTIFY_MINUTES = 24 * 60
 const isStandingWarning = (rule: Pick<NormalizedRule, "signalType">, groupKey: string): boolean =>
 	(rule.signalType === "uptime" && groupKey === UPTIME_CERTIFICATE_GROUP_KEY) ||
 	(rule.signalType === "slo_burn_rate" && groupKey === SLO_BUDGET_GROUP_KEY)
+
+/** Whether an SLO rule's stored thresholds or window differ from what its target gives. */
+const sloRuleIsStale = (
+	rule: Pick<NormalizedRule, "thresholds" | "windowMinutes">,
+	targetPercent: number,
+): boolean => {
+	const expected = sloRuleThresholds(targetPercent)
+	return (
+		rule.windowMinutes !== expected.windowMinutes ||
+		Arr.some(rule.thresholds, (tier) => Math.abs(tier.value - expected.valueOf(tier.severity)) > 1e-9)
+	)
+}
 
 const reminderMinutesFor = (
 	rule: Pick<NormalizedRule, "signalType" | "renotifyIntervalMinutes">,
@@ -1252,12 +1269,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Effect.fail(makePersistenceError(error)),
 							),
 						)
+					// A rule saved before the tiers changed still stores the old factors, which incidents show.
+					if (Option.isSome(observation) && sloRuleIsStale(rule, observation.value.targetPercent)) {
+						yield* sloAlerts
+							.resyncRule(orgId, rule.id, observation.value.targetPercent)
+							.pipe(
+								isolate("An SLO rule's stored thresholds could not be resynced", {
+									ruleId: rule.id,
+								}),
+							)
+					}
 					return Option.match(observation, {
 						onNone: () => [],
 						// Its burn, and its budget as a group of its own: a spent budget outlasts any burn.
-						onSome: (observed) => [
+						onSome: (
+							observed,
+						): ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }> => [
 							{ evaluation: evaluateSloBurn(observed), groupKey: UNGROUPED_GROUP_KEY },
-							{ evaluation: evaluateSloBudget(observed), groupKey: SLO_BUDGET_GROUP_KEY },
+							{
+								evaluation: {
+									...evaluateSloBudget(observed),
+									groupLabel: SLO_BUDGET_GROUP_LABEL,
+								},
+								groupKey: SLO_BUDGET_GROUP_KEY,
+							},
 						],
 					})
 				}
@@ -1629,6 +1664,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const series =
 						rule.signalType === "uptime" ||
 						rule.signalType === "anomaly" ||
+						// A standing warning's chart would draw another group's series against its threshold.
+						isStandingWarning(rule, incident.groupKey ?? UNGROUPED_GROUP_KEY) ||
 						(!anySent && !withPayload)
 							? null
 							: yield* loadChartSeries(

@@ -25,6 +25,23 @@ export const errorBudgetRatio = (targetPercent: number): number => 1 - targetPer
 export interface SloCounts {
 	readonly total: number
 	readonly good: number
+	/**
+	 * Spans actually recorded, before sampling weights: how much was really seen. Absent reads
+	 * as unsampled, where it equals `total`.
+	 */
+	readonly samples?: number
+}
+
+/** The requests really seen in a window, and how many of them were bad. */
+const evidenceOf = (counts: SloCounts) => {
+	const samples = counts.samples ?? counts.total
+	return { samples, bad: Math.round(badRatio(counts) * samples) }
+}
+
+/** Enough was seen to judge: one failed request, however sampling weighs it, proves nothing. */
+const isEnoughEvidence = (counts: SloCounts): boolean => {
+	const evidence = evidenceOf(counts)
+	return evidence.samples >= SLO_MIN_TIER_EVENTS && evidence.bad >= SLO_MIN_TIER_BAD_EVENTS
 }
 
 const badRatio = (counts: SloCounts): number =>
@@ -64,8 +81,8 @@ export const SLO_BURN_WINDOWS_MINUTES = [5, 30, 60, 120, 360, 1440] as const
 export type SloBurnWindowMinutes = (typeof SLO_BURN_WINDOWS_MINUTES)[number]
 
 /**
- * Fewest events, and fewest bad ones, a tier's long window must hold before the tier can fire.
- * On a quiet service one failed request is a burn of hundreds, which says nothing about it.
+ * Fewest recorded events, and fewest bad ones, a tier's long window must hold before the tier
+ * can fire. On a quiet service one failed request is a burn of hundreds, which says nothing.
  */
 export const SLO_MIN_TIER_EVENTS = 10
 export const SLO_MIN_TIER_BAD_EVENTS = 2
@@ -78,7 +95,8 @@ const REACHABLE_BURN_SHARE = 0.8
  * never gets to 14.4 (90% tops out at 10), so the factor is capped under that ceiling.
  */
 export const tierFactor = (tier: SloBurnTier, targetPercent: number): number =>
-	Math.min(tier.factor, REACHABLE_BURN_SHARE / errorBudgetRatio(targetPercent))
+	// Two decimals: it is shown to people, and `0.8 / 0.1` is not quite 8.
+	Math.min(tier.factor, Math.round((REACHABLE_BURN_SHARE / errorBudgetRatio(targetPercent)) * 100) / 100)
 
 /** The longest burn window: the span one burn-rate read covers. */
 export const SLO_BURN_LOOKBACK_MINUTES = Math.max(...SLO_BURN_WINDOWS_MINUTES)
@@ -112,8 +130,7 @@ const burnsAtFactor = (
 const hasEnoughEvents = (tier: SloBurnTier, windows: ReadonlyArray<SloBurnWindow>): boolean =>
 	Option.match(burnWindowOf(windows, tier.longWindowMinutes), {
 		onNone: () => false,
-		onSome: (window) =>
-			window.total >= SLO_MIN_TIER_EVENTS && window.total - window.good >= SLO_MIN_TIER_BAD_EVENTS,
+		onSome: isEnoughEvidence,
 	})
 
 /** Whether a tier fires on the given window burns. */
@@ -179,9 +196,18 @@ export const firingTier = (
  * failure in a handful of requests overspends any budget.
  */
 export const budgetSpent = (counts: SloCounts, targetPercent: number): boolean =>
-	counts.total >= SLO_MIN_TIER_EVENTS &&
-	counts.total - counts.good >= SLO_MIN_TIER_BAD_EVENTS &&
-	budgetRemaining(counts, targetPercent) <= 0
+	isEnoughEvidence(counts) && budgetRemaining(counts, targetPercent) <= 0
+
+/** Budget a spent SLO must win back before its warning clears, so it does not flap at zero. */
+export const SLO_BUDGET_RECOVERY = 0.02
+
+/** How the budget reads: spent, just back and holding its state, or clear. */
+export const budgetState = (counts: SloCounts, targetPercent: number): SloTierState =>
+	budgetSpent(counts, targetPercent)
+		? "breach"
+		: isEnoughEvidence(counts) && budgetRemaining(counts, targetPercent) < SLO_BUDGET_RECOVERY
+			? "hold"
+			: "clear"
 
 /** `5m`, `30m`, `1h`, `6h`, `24h`. */
 export const windowLabel = (minutes: number): string => (minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`)
@@ -203,10 +229,11 @@ export interface SloBucket extends SloCounts {
 	readonly startMs: number
 }
 
-const sumCounts = (buckets: ReadonlyArray<SloCounts>): SloCounts =>
-	Arr.reduce(buckets, { total: 0, good: 0 }, (acc, bucket) => ({
+const sumCounts = (buckets: ReadonlyArray<SloCounts>) =>
+	Arr.reduce(buckets, { total: 0, good: 0, samples: 0 }, (acc, bucket) => ({
 		total: acc.total + bucket.total,
 		good: acc.good + bucket.good,
+		samples: acc.samples + (bucket.samples ?? bucket.total),
 	}))
 
 /** Each burn window ending at `endMs`, summed from minute buckets. */

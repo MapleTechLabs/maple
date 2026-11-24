@@ -43,6 +43,7 @@ const toBuckets = (rows: ReadonlyArray<CH.SloBucketsOutput>): ReadonlyArray<SloB
 		startMs: DateTime.toEpochMillis(row.bucket),
 		total: row.total,
 		good: row.good,
+		samples: row.samples,
 	}))
 
 /** Good and total events over the SLO window ending at `endMs`. */
@@ -62,7 +63,11 @@ export const readWindowTotals = Effect.fn("SloReads.windowTotals")(function* (
 		{ profile: "aggregation", context: "sloWindowTotals" },
 	)
 	const row = rows[0]
-	return { total: row?.total ?? 0, good: row?.good ?? 0 } satisfies SloCounts
+	return {
+		total: row?.total ?? 0,
+		good: row?.good ?? 0,
+		samples: row?.samples ?? 0,
+	} satisfies SloCounts
 })
 
 /** The burn of each alert window (5m to 24h) ending at `endMs`, from one minute-grain read. */
@@ -254,9 +259,10 @@ export const readStatuses = Effect.fn("SloReads.statuses")(function* (
 })
 
 const sumCounts = (rows: ReadonlyArray<SloCounts>): SloCounts =>
-	Arr.reduce(rows, { total: 0, good: 0 }, (acc, row) => ({
+	Arr.reduce(rows, { total: 0, good: 0, samples: 0 }, (acc, row) => ({
 		total: acc.total + row.total,
 		good: acc.good + row.good,
+		samples: acc.samples + (row.samples ?? row.total),
 	}))
 
 /** One SLO's burn windows from its breakdown rows. */
@@ -269,6 +275,7 @@ const burnWindowsOf = (
 			Arr.map(rows, (row) => ({
 				total: row[`total${windowMinutes}`],
 				good: row[`good${windowMinutes}`],
+				samples: row[`samples${windowMinutes}`],
 			})),
 		)
 		return { windowMinutes, ...counts, burnRate: burnRate(counts, targetPercent) }
