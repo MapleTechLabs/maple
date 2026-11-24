@@ -476,6 +476,12 @@ describe("AlertsService rule deletion with pages in other states", () => {
 				Arr.map(sent, (request) => request.event),
 				["trigger", "resolve"],
 			)
+			// Its incident and rule are gone by now: it links to the alerts list, like a rebuilt one.
+			const links: { readonly linkUrl?: string; readonly chatUrl?: string } = JSON.parse(
+				sent[1]?.body ?? "{}",
+			)
+			assert.match(links.linkUrl ?? "", /\/alerts$/)
+			assert.strictEqual(links.chatUrl, links.linkUrl)
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub(state), { fetch: capturingFetch(sent, failing) }),
@@ -520,9 +526,14 @@ describe("AlertsService pages that outlive their incident", () => {
 	}) => {
 		const testDb = createTestDb(trackedDbs)
 		const actions: Array<string> = []
+		/** The PagerDuty alert each request addressed, in the order `actions` holds them. */
+		const dedupKeys: Array<string> = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-			const body: { readonly event_action?: string } = JSON.parse(requestBodyText(init?.body))
+			const body: { readonly event_action?: string; readonly dedup_key?: string } = JSON.parse(
+				requestBodyText(init?.body),
+			)
 			actions.push(body.event_action ?? "unknown")
+			dedupKeys.push(body.dedup_key ?? "")
 			return new Response("{}", { status: 202 })
 		}) as typeof fetch
 		return Effect.gen(function* () {
@@ -612,6 +623,7 @@ describe("AlertsService pages that outlive their incident", () => {
 			}
 			// Creating the destination pinged the pager; only what follows is under test.
 			actions.length = 0
+			dedupKeys.length = 0
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
 			const page = yield* Effect.promise(() =>
@@ -621,7 +633,7 @@ describe("AlertsService pages that outlive their incident", () => {
 					[],
 				),
 			)
-			return { actions, page }
+			return { actions, dedupKeys, page }
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -658,19 +670,23 @@ describe("AlertsService pages that outlive their incident", () => {
 
 	it.effect("tells the pager about an acknowledgement that came before its page landed", () =>
 		Effect.gen(function* () {
-			const { actions } = yield* run({ status: "open", acknowledged: true })
+			const { actions, dedupKeys } = yield* run({ status: "open", acknowledged: true })
 			assert.deepStrictEqual(actions, ["trigger", "acknowledge"])
+			// The acknowledgement is for the alert the page just opened, not some other one.
+			assert.isAbove(dedupKeys[0]?.length ?? 0, 0)
+			assert.strictEqual(dedupKeys[1], dedupKeys[0])
 		}),
 	)
 
 	it.effect("acknowledges the late page even when an earlier page was already acknowledged", () =>
 		Effect.gen(function* () {
-			const { actions } = yield* run({
+			const { actions, dedupKeys } = yield* run({
 				status: "open",
 				acknowledged: true,
 				acknowledgeAlreadySent: true,
 			})
 			assert.deepStrictEqual(actions, ["trigger", "acknowledge"])
+			assert.strictEqual(dedupKeys[1], dedupKeys[0])
 		}),
 	)
 })

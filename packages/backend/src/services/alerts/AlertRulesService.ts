@@ -46,7 +46,11 @@ import {
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
-import { DELETED_RULE_RESOLVE_INSERT_CHUNK, deletedRuleResolveRows } from "./delivery/deleted-rule-resolve"
+import {
+	DELETED_RULE_RESOLVE_INSERT_CHUNK,
+	deletedRuleResolveRows,
+	relinkedToAlertsList,
+} from "./delivery/deleted-rule-resolve"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import {
 	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
@@ -164,6 +168,34 @@ export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =
 				$.ruleId.eq(ruleId),
 				PG.or($.eventType.neq("resolve"), $.status.in_("success", "failed", "silenced")),
 			]),
+		)
+		// A kept all-clear still waiting was written for an incident and a rule that now go: its
+		// links move to the alerts list, as the rebuilt ones' do.
+		const kept = yield* db.run(
+			PG.from(AlertDeliveryEvents)
+				.select("id", "payloadJson")
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.ruleId.eq(ruleId),
+					$.eventType.eq("resolve"),
+					$.status.eq("queued"),
+				]),
+		)
+		yield* Effect.forEach(
+			kept,
+			(row) =>
+				Option.match(relinkedToAlertsList(row.payloadJson), {
+					onNone: () => Effect.void,
+					onSome: (payloadJson) =>
+						db
+							.run(
+								PG.update(AlertDeliveryEvents)
+									.set({ payloadJson })
+									.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+							)
+							.pipe(Effect.asVoid),
+				}),
+			{ discard: true },
 		)
 		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
