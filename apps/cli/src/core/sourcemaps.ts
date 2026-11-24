@@ -2,13 +2,14 @@
 // map to `POST /v2/source_maps` so the backend can symbolicate stack frames from those files.
 
 import { Array as Arr, Effect, Option, Order, Predicate, Result, Schema, String as Str } from "effect"
+import { SOURCE_MAP_MAX_BYTES } from "@maple/domain/http"
 import { FileSystem } from "effect/FileSystem"
 import { Path } from "effect/Path"
 
 export const JS_EXTENSIONS: ReadonlyArray<string> = [".js", ".mjs", ".cjs"]
 
 /** Maps above this are refused by the server (the largest it can symbolicate with), so they are skipped before the upload. */
-export const MAX_MAP_BYTES = 10 * 1024 * 1024
+export const MAX_MAP_BYTES = SOURCE_MAP_MAX_BYTES
 
 /** Reading or writing the build output failed. */
 export class SourceMapsFileError extends Schema.TaggedError<SourceMapsFileError>()(
@@ -33,7 +34,7 @@ const decodeMap = Schema.decodeUnknownResult(MapObject)
 const canonicalMap = (mapText: string): string =>
 	Result.match(decodeMap(mapText), {
 		onFailure: () => mapText,
-		onSuccess: ({ debugId: _a, debug_id: _b, ...rest }) => JSON.stringify(rest),
+		onSuccess: ({ debugId: _a, debug_id: _b, x_maple_shifted: _c, ...rest }) => JSON.stringify(rest),
 	})
 
 /**
@@ -292,14 +293,31 @@ export interface InjectResult {
 	readonly mapPath: Option.Option<string>
 }
 
-/** The map carrying `id`, its mappings one line lower when `shift`. */
-const taggedMap = (map: { readonly [key: string]: unknown }, id: string, shift: boolean): string => {
+/** The map carrying `id`, its mappings one line lower when `shift`, marked as moved when `moved`. */
+const taggedMap = (
+	map: { readonly [key: string]: unknown },
+	id: string,
+	shift: boolean,
+	moved: boolean,
+): string => {
 	const mappings = map["mappings"]
-	const tagged = { ...map, debugId: id, debug_id: id }
+	const tagged = { ...map, debugId: id, debug_id: id, ...(moved ? { [SHIFTED_FIELD]: id } : undefined) }
 	return JSON.stringify(
 		shift && Predicate.isString(mappings) ? { ...tagged, mappings: shiftMappings(mappings) } : tagged,
 	)
 }
+
+/** Marks a map whose mappings were moved one line down for `id`'s snippet, so they never move twice. */
+const SHIFTED_FIELD = "x_maple_shifted"
+
+/** Replaces `path` whole: a failed write leaves the old file, never a half-written one. */
+const writeAtomically = (path: string, content: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem
+		const temporary = `${path}.maple-tmp`
+		yield* fs.writeFileString(temporary, content)
+		yield* fs.rename(temporary, path)
+	}).pipe(Effect.mapError(fileError(path, "write")))
 
 const injectOne = (js: JsWithMap, shared: boolean, dryRun: boolean) =>
 	Effect.gen(function* () {
@@ -318,30 +336,35 @@ const injectOne = (js: JsWithMap, shared: boolean, dryRun: boolean) =>
 		const map = decodeV3Map(mapText)
 		if (Option.isNone(map)) return skip("invalid_map", js.mapPath)
 
-		const previous = existingDebugId(js.code)
+		// A map already moved for an id keeps it: its JS write failed after the map was written.
+		const shiftedFor = Option.filter(
+			Option.liftPredicate(map.value[SHIFTED_FIELD], Predicate.isString),
+			(id) => UUID.test(id),
+		)
+		const previous = Option.firstSomeOf([existingDebugId(js.code), shiftedFor])
 		const id = Option.getOrElse(previous, () => debugIdFor(js.bytes, mapText))
 		// Rollup/Vite `sourcemapDebugIds` write the comment but nothing that reports the id at runtime.
-		const codeUpdated = Option.isNone(previous) || !hasRuntimeRegistration(js.code, id)
+		const codeUpdated = !hasRuntimeRegistration(js.code, id)
 		const mappings = map.value["mappings"]
-		// The snippet goes first unless the lines cannot move: a shared or index map, a shebang, a directive.
-		const prepend =
-			codeUpdated &&
-			!shared &&
-			Predicate.isString(mappings) &&
-			map.value["sections"] === undefined &&
-			canPrepend(js.code)
+		const movable = !shared && Predicate.isString(mappings) && map.value["sections"] === undefined
 		const hasId = map.value["debugId"] === id && map.value["debug_id"] === id
+		// Whether the snippet is (or goes) on the first line: lines below it are one lower.
+		const prepended = codeUpdated
+			? movable && canPrepend(js.code)
+			: Str.startsWith(`${debugIdSnippet(id)}\n`)(js.code)
+		// Moved once only: marked by this CLI, or a registered file whose map already carries its id.
+		const alreadyShifted = Option.contains(shiftedFor, id) || (!codeUpdated && hasId)
+		const shift = prepended && movable && !alreadyShifted
 		// A shared map keeps no id: each file sharing it is uploaded with its own.
-		const mapUpdated = !shared && (prepend || !hasId)
+		const mapUpdated = !shared && (shift || !hasId)
 		if (!dryRun) {
+			// The map first: a JS file pointing at a map not yet moved would map one line off.
+			if (mapUpdated)
+				yield* writeAtomically(mapPath, taggedMap(map.value, id, shift, prepended && movable))
 			if (codeUpdated)
 				yield* fs
-					.writeFileString(js.jsPath, injectCode(js.code, id, prepend ? "prepend" : "append"))
+					.writeFileString(js.jsPath, injectCode(js.code, id, prepended ? "prepend" : "append"))
 					.pipe(Effect.mapError(fileError(js.jsPath, "write")))
-			if (mapUpdated)
-				yield* fs
-					.writeFileString(mapPath, taggedMap(map.value, id, prepend))
-					.pipe(Effect.mapError(fileError(mapPath, "write")))
 		}
 		return {
 			file: js.file,

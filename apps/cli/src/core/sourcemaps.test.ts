@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Array as Arr, Effect, Layer, Option, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Option, Result, String as Str } from "effect"
+import { FileSystem } from "effect/FileSystem"
+import * as PlatformError from "effect/PlatformError"
 import { FetchHttpClient } from "effect/http"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -106,6 +108,7 @@ describe("injectDirectory", () => {
 			mappings: ";AAAA;AACA",
 			debugId: idA,
 			debug_id: idA,
+			x_maple_shifted: idA,
 		})
 		// `function a` was generated line 1 (original line 0) and is line 2 now; the next line follows.
 		expect([originalLineAt("AAAA;AACA", 1), originalLineAt("AAAA;AACA", 2)]).toEqual([0, 1])
@@ -163,6 +166,83 @@ describe("injectDirectory", () => {
 		canPrepend(Str.repeat(100_000)("/*"))
 		canPrepend(`${Str.repeat(100_000)(" ")}x`)
 		expect(performance.now() - started).toBeLessThan(50)
+	})
+
+	test("converges after a failed JS write or a failed map write, moving the map once", async () => {
+		const code = "boom()\n"
+		const original = map("a.js", { mappings: "AAAA;AACA" })
+		const failing = (failsOn: (path: string) => boolean) =>
+			Layer.effect(
+				FileSystem,
+				Effect.gen(function* () {
+					const fs = yield* FileSystem
+					return {
+						...fs,
+						writeFileString: (
+							path: string,
+							data: string,
+							options?: Parameters<typeof fs.writeFileString>[2],
+						) =>
+							failsOn(path)
+								? Effect.fail(
+										PlatformError.systemError({
+											_tag: "Unknown",
+											module: "FileSystem",
+											method: "writeFileString",
+										}),
+									)
+								: fs.writeFileString(path, data, options),
+					}
+				}),
+			).pipe(Layer.provideMerge(BunServices.layer))
+		const injectWith = (failsOn: (path: string) => boolean) =>
+			Effect.runPromise(
+				Effect.provide(Effect.result(injectDirectory(dir, { dryRun: false })), failing(failsOn)),
+			)
+		const mappings = () => JSON.parse(read(join(dir, "a.js.map"))).mappings
+
+		// The JS write fails after the map was moved: the next run must not move it again.
+		writeFileSync(join(dir, "a.js"), code)
+		writeFileSync(join(dir, "a.js.map"), original)
+		expect(Result.isFailure(await injectWith((path) => path.endsWith("a.js")))).toBe(true)
+		expect(read(join(dir, "a.js"))).toBe(code)
+		expect(mappings()).toBe(";AAAA;AACA")
+		const [repaired] = await run(injectDirectory(dir, { dryRun: false }))
+		const id = Option.getOrNull(repaired?.debugId ?? Option.none())
+		expect(read(join(dir, "a.js"))).toBe(`${debugIdSnippet(id ?? "")}\nboom()\n//# debugId=${id}\n`)
+		expect(mappings()).toBe(";AAAA;AACA")
+		expect(JSON.parse(read(join(dir, "a.js.map"))).debugId).toBe(id)
+		const [again] = await run(injectDirectory(dir, { dryRun: false }))
+		expect([again?.status, again?.mapUpdated, mappings()]).toEqual([
+			"already_injected",
+			false,
+			";AAAA;AACA",
+		])
+
+		// The map write fails: nothing changes, and the next run injects as if the first never ran.
+		writeFileSync(join(dir, "a.js"), code)
+		writeFileSync(join(dir, "a.js.map"), original)
+		expect(Result.isFailure(await injectWith((path) => path.includes("a.js.map")))).toBe(true)
+		expect([read(join(dir, "a.js")), read(join(dir, "a.js.map"))]).toEqual([code, original])
+		await run(injectDirectory(dir, { dryRun: false }))
+		expect(mappings()).toBe(";AAAA;AACA")
+	})
+
+	test("repairs a registered file whose map lacks its id, moving the map once", async () => {
+		const id = "0b1c2d3e-4f50-4617-8899-aabbccddeeff"
+		writeFileSync(join(dir, "r.js"), `${debugIdSnippet(id)}\nr()\n//# debugId=${id}\n`)
+		writeFileSync(join(dir, "r.js.map"), map("r.js", { mappings: "AAAA" }))
+
+		const [result] = await run(injectDirectory(dir, { dryRun: false }))
+		const repaired = JSON.parse(read(join(dir, "r.js.map")))
+		expect([result?.status, result?.mapUpdated, repaired.mappings, repaired.debugId]).toEqual([
+			"already_injected",
+			true,
+			";AAAA",
+			id,
+		])
+		await run(injectDirectory(dir, { dryRun: false }))
+		expect(JSON.parse(read(join(dir, "r.js.map"))).mappings).toBe(";AAAA")
 	})
 
 	test("gives identical JS with different maps different ids", async () => {
