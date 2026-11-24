@@ -65,15 +65,14 @@ type PageRow = Pick<
 	"incidentId" | "destinationId" | "status" | "eventType" | "payloadJson" | "createdAt"
 >
 
-// A page that left, or may have left, for the destination: not held by a silence, not still waiting.
-const mayHavePaged = (row: PageRow): boolean =>
-	(row.eventType === "trigger" || row.eventType === "renotify") &&
-	row.status !== "silenced" &&
-	row.status !== "queued"
+const MAX_PAGES_READ = 2_000
+/** Resolve rows per insert, well inside the statement's bind limit. */
+export const DELETED_RULE_RESOLVE_INSERT_CHUNK = 200
 
 /**
- * One queued `resolve` per destination each open incident of `ruleId` paged. Read before the
- * rule's rows are deleted; insert the result after, so the delete does not take it too.
+ * One queued `resolve` per destination each open incident of `ruleId` paged: a page that left,
+ * or may have left (not held by a silence, not still waiting). Read before the rule's rows are
+ * deleted; insert the result after, so the delete does not take it too.
  */
 export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId, nowMs: number) =>
 	Effect.gen(function* () {
@@ -84,15 +83,23 @@ export const deletedRuleResolveRows = (db: MapleDb, orgId: OrgId, ruleId: AlertR
 		)
 		const incidentIds = Arr.map(open, (incident) => incident.id)
 		if (!Arr.isArrayNonEmpty(incidentIds)) return []
+		// Only rows that may have paged, newest first and capped: a long-open grouped rule can hold
+		// thousands of reminders, and this runs under the org's rules lock.
 		const pages: ReadonlyArray<PageRow> = yield* db.run(
 			PG.from(AlertDeliveryEvents)
 				.select("incidentId", "destinationId", "status", "eventType", "payloadJson", "createdAt")
-				.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
-				.orderBy(["createdAt", "desc"]),
+				.where(($) => [
+					$.orgId.eq(orgId),
+					$.incidentId.in_(...incidentIds),
+					$.eventType.in_("trigger", "renotify"),
+					$.status.in_("success", "failed", "processing"),
+				])
+				.orderBy(["createdAt", "desc"])
+				.limit(MAX_PAGES_READ),
 		)
-		// Newest first, so the first page seen for a pair is the one the all-clear answers.
+		// The first page seen for a pair is the one the all-clear answers.
 		const latest = Arr.dedupeWith(
-			Arr.filter(pages, mayHavePaged),
+			pages,
 			(a: PageRow, b: PageRow) => a.incidentId === b.incidentId && a.destinationId === b.destinationId,
 		)
 		return Arr.flatMap(latest, (page) => {

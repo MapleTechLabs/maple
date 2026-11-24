@@ -150,6 +150,47 @@ describe("AlertsService flap suppression", () => {
 	})
 })
 
+describe("AlertsService flap suppression after a page that never arrived", () => {
+	it.effect("pages a reopen when the earlier incident's own page never got through", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const delivered: Array<string> = []
+		const outage = { triggers: true }
+		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const event = new Headers(init?.headers).get("x-maple-event-type")
+			if (event === "trigger" && outage.triggers) return new Response("down", { status: 503 })
+			const url = String(input instanceof Request ? input.url : input)
+			delivered.push(`${event} ${Str.replace("https://example.com/", "")(url)}`)
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_flap_unpaged")
+			const userId = asUserId("user_flap_unpaged")
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				tieredRule([tier("critical", 5, [team.id])], 60),
+			)
+
+			// The page fails while the incident is open, and the incident resolves on its own.
+			yield* ticks(alerts, 2)
+			state.tracesAggregateRows = errorRateRows(0.5)
+			yield* ticks(alerts, 2)
+			assert.notInclude(delivered, "trigger team")
+
+			// It comes back minutes later: nobody has heard of it yet, so this one pages.
+			outage.triggers = false
+			state.tracesAggregateRows = errorRateRows(10)
+			yield* ticks(alerts, 2)
+			assert.include(delivered, "trigger team")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
+	})
+})
+
 describe("AlertsService rule deletion", () => {
 	it.effect("sends the all-clear to a destination the open incident paged", () => {
 		const testDb = createTestDb(trackedDbs)
@@ -214,8 +255,13 @@ describe("AlertsService pages that outlive their incident", () => {
 	const fixedTime = 1_710_000_400_000
 	const incidentId = "00000000-0000-4000-8000-000000000501"
 
-	/** A PagerDuty rule with one seeded incident and one queued retry of its page. */
-	const run = (incident: { readonly status: "open" | "resolved"; readonly acknowledged: boolean }) => {
+	/** A PagerDuty rule with one seeded incident (or none) and one queued retry of its page. */
+	const run = (incident: {
+		readonly status: "open" | "resolved" | "missing"
+		readonly acknowledged: boolean
+		/** The pager was already told of the ack, for an earlier page. */
+		readonly acknowledgeAlreadySent?: boolean
+	}) => {
 		const testDb = createTestDb(trackedDbs)
 		const actions: Array<string> = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -248,26 +294,28 @@ describe("AlertsService pages that outlive their incident", () => {
 				]),
 			)
 			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`INSERT INTO alert_incidents
+				incident.status === "missing"
+					? Promise.resolve()
+					: executeSql(
+							testDb,
+							`INSERT INTO alert_incidents
 					   (id, org_id, rule_id, incident_key, rule_name, group_key, signal_type, severity, status,
 					    comparator, threshold, first_triggered_at, last_triggered_at, resolved_at, dedupe_key,
 					    acknowledged_at, acknowledged_by_name, acknowledged_via, created_at, updated_at)
 					 VALUES ($1, $2, $3, 'k', 'Checkout error rate', '__total__', 'error_rate', 'warning', $4,
 					    'gt', 5, $5, $5, $6, 'dedupe-stale', $7, $8, $9, $5, $5)`,
-					[
-						incidentId,
-						orgId,
-						rule.id,
-						incident.status,
-						new Date(fixedTime - 120_000),
-						incident.status === "resolved" ? new Date(fixedTime - 30_000) : null,
-						incident.acknowledged ? new Date(fixedTime - 20_000) : null,
-						incident.acknowledged ? "sam" : null,
-						incident.acknowledged ? "web" : null,
-					],
-				),
+							[
+								incidentId,
+								orgId,
+								rule.id,
+								incident.status,
+								new Date(fixedTime - 120_000),
+								incident.status === "resolved" ? new Date(fixedTime - 30_000) : null,
+								incident.acknowledged ? new Date(fixedTime - 20_000) : null,
+								incident.acknowledged ? "sam" : null,
+								incident.acknowledged ? "web" : null,
+							],
+						),
 			)
 			yield* Effect.promise(() =>
 				insertDeliveryEventRow(testDb, {
@@ -289,6 +337,23 @@ describe("AlertsService pages that outlive their incident", () => {
 					}),
 				}),
 			)
+			if (incident.acknowledgeAlreadySent === true) {
+				yield* Effect.promise(() =>
+					insertDeliveryEventRow(testDb, {
+						id: "00000000-0000-4000-8000-000000000503",
+						orgId,
+						incidentId,
+						ruleId: rule.id,
+						destinationId: destination.id,
+						deliveryKey: "ack-earlier",
+						eventType: "acknowledge",
+						attemptNumber: 1,
+						status: "success",
+						scheduledAt: fixedTime - 10_000,
+						payloadJson: JSON.stringify({ eventType: "acknowledge", incidentId }),
+					}),
+				)
+			}
 			// Creating the destination pinged the pager; only what follows is under test.
 			actions.length = 0
 			yield* alerts.runSchedulerTick()
@@ -319,6 +384,14 @@ describe("AlertsService pages that outlive their incident", () => {
 		}),
 	)
 
+	it.effect("does not send a retried page whose incident went with its rule", () =>
+		Effect.gen(function* () {
+			const { actions, page } = yield* run({ status: "missing", acknowledged: false })
+			assert.deepStrictEqual(actions, [])
+			assert.strictEqual(page?.status, "failed")
+		}),
+	)
+
 	it.effect("still sends a retried page while the incident is open", () =>
 		Effect.gen(function* () {
 			const { actions, page } = yield* run({ status: "open", acknowledged: false })
@@ -330,6 +403,17 @@ describe("AlertsService pages that outlive their incident", () => {
 	it.effect("tells the pager about an acknowledgement that came before its page landed", () =>
 		Effect.gen(function* () {
 			const { actions } = yield* run({ status: "open", acknowledged: true })
+			assert.deepStrictEqual(actions, ["trigger", "acknowledge"])
+		}),
+	)
+
+	it.effect("acknowledges the late page even when an earlier page was already acknowledged", () =>
+		Effect.gen(function* () {
+			const { actions } = yield* run({
+				status: "open",
+				acknowledged: true,
+				acknowledgeAlreadySent: true,
+			})
 			assert.deepStrictEqual(actions, ["trigger", "acknowledge"])
 		}),
 	)
@@ -391,7 +475,19 @@ describe("AlertsService reminders and acknowledgements", () => {
 				}),
 			)
 			const reminderTick = Arr.findFirstIndex(sentAfterTick, (sent) => sent >= 2)
-			return { requests, hook, reminderTick }
+			const incident = yield* Effect.promise(() =>
+				queryFirstRow<{ lastNotifiedAt: Date | null }>(
+					testDb,
+					`select last_notified_at as "lastNotifiedAt" from alert_incidents where status = 'open'`,
+					[],
+				),
+			)
+			return {
+				requests,
+				hook,
+				reminderTick,
+				lastNotifiedAt: incident?.lastNotifiedAt?.getTime() ?? null,
+			}
 		}).pipe(Effect.provide(makeLayer(testDb, warehouse, { fetch: recordingFetch(requests) })))
 	}
 
@@ -401,9 +497,15 @@ describe("AlertsService reminders and acknowledgements", () => {
 			assert.deepStrictEqual(unacknowledged.requests, ["trigger team", "renotify team"])
 			const reminderTick = Option.getOrThrow(unacknowledged.reminderTick) + 1
 
-			const { requests, hook } = yield* run(reminderTick)
+			const { requests, hook, lastNotifiedAt } = yield* run(reminderTick)
 			assert.isTrue(hook.ran)
 			assert.deepStrictEqual(requests, ["trigger team"])
+			// The reminder clock still reads the page that went out, so an unacknowledge
+			// finds the reminder overdue instead of a full interval away.
+			assert.isBelow(
+				lastNotifiedAt ?? Number.POSITIVE_INFINITY,
+				DEFAULT_CLOCK_EPOCH_MS + Duration.toMillis(Duration.minutes(reminderTick)),
+			)
 		}),
 	)
 })

@@ -326,6 +326,9 @@ const FenceResultRow = Schema.Struct({ fenced: Schema.Number })
 type AlertDestinationStorageError = AlertDestinationDecryptionError | AlertDestinationStoredConfigInvalidError
 
 const STALE_PAGE_MESSAGE = "Not sent: the incident resolved before this page went out"
+const STALE_STEP_RESOLVED_MESSAGE = "Not sent: the incident resolved before this escalation step went out"
+const STALE_STEP_ACKNOWLEDGED_MESSAGE =
+	"Not sent: the incident was acknowledged before this escalation step went out"
 
 /** Who can still be paged in an org, and who is told when a chain reaches nobody. */
 interface MemberDirectory {
@@ -2513,7 +2516,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			/**
 			 * A page that reached the pager after someone acknowledged the incident (its first attempts
-			 * failed): the click queued no acknowledge for it, so one is queued now.
+			 * failed). An acknowledge sent before it landed did not cover it, so one is queued now.
 			 */
 			const acknowledgeLatePage = Effect.fn("AlertsService.acknowledgeLatePage")(function* (
 				row: AlertDeliveryEventRow,
@@ -2537,20 +2540,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							)
 							const incident = Arr.head(acknowledged)
 							if (Option.isNone(incident)) return false
-							const acknowledgedAt = incident.value.acknowledgedAt ?? nowMs
-							const told = yield* db.run(
-								PG.from(AlertDeliveryEvents)
-									.select("id")
-									.where(($) => [
-										$.orgId.eq(row.orgId),
-										$.incidentId.eq(incidentId),
-										$.destinationId.eq(row.destinationId),
-										$.eventType.eq("acknowledge"),
-										$.createdAt.gte(acknowledgedAt),
-									])
-									.limit(1),
-							)
-							if (told.length > 0) return false
 							yield* db.run(
 								PG.insertInto(AlertDeliveryEvents)
 									.values(
@@ -2571,25 +2560,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			})
 
 			/**
-			 * The escalation steps among `rows` whose incident resolved or was acknowledged after the
-			 * step was queued, with why: read now, not from the claim batch, which can be a drain old.
+			 * The pages among `rows` that must no longer go out, with why: a trigger or reminder whose
+			 * incident resolved (or is gone), and an escalation step whose incident was acknowledged.
+			 * Read now, not from the claim batch, which can be a drain old.
 			 */
-			const staleEscalationSteps = Effect.fn("AlertsService.staleEscalationSteps")(function* (
+			const stalePages = Effect.fn("AlertsService.stalePages")(function* (
 				rows: ReadonlyArray<AlertDeliveryEventRow>,
 			) {
-				const steps = Arr.filter(
+				const pages = Arr.filter(
 					rows,
 					(row) =>
-						row.eventType === "trigger" &&
-						row.incidentId !== null &&
-						Predicate.hasProperty(row.payloadJson, "escalation"),
+						(row.eventType === "trigger" || row.eventType === "renotify") &&
+						row.incidentId !== null,
 				)
 				const incidentIds = Arr.dedupe(
-					Arr.filterMap(steps, (row) =>
+					Arr.filterMap(pages, (row) =>
 						row.incidentId === null ? Result.failVoid : Result.succeed(row.incidentId),
 					),
 				)
-				const orgIds = Arr.dedupe(Arr.map(steps, (row) => row.orgId))
+				const orgIds = Arr.dedupe(Arr.map(pages, (row) => row.orgId))
 				if (!Arr.isReadonlyArrayNonEmpty(incidentIds) || !Arr.isReadonlyArrayNonEmpty(orgIds)) {
 					return new Map<string, string>()
 				}
@@ -2605,22 +2594,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				)
 				const reasonOf = (row: AlertDeliveryEventRow): ReadonlyArray<readonly [string, string]> => {
 					const incident = byKey.get(`${row.orgId}:${row.incidentId}`)
-					if (incident === undefined) return []
-					if (incident.status !== "open") {
-						return [
-							[row.id, "Not sent: the incident resolved before this escalation step went out"],
-						]
+					const isStep = Predicate.hasProperty(row.payloadJson, "escalation")
+					// A missing incident went with its rule, which queued the all-clear already.
+					if (incident === undefined || incident.status !== "open") {
+						return [[row.id, isStep ? STALE_STEP_RESOLVED_MESSAGE : STALE_PAGE_MESSAGE]]
 					}
-					return incident.acknowledgedAt === null
-						? []
-						: [
-								[
-									row.id,
-									"Not sent: the incident was acknowledged before this escalation step went out",
-								],
-							]
+					return isStep && incident.acknowledgedAt !== null
+						? [[row.id, STALE_STEP_ACKNOWLEDGED_MESSAGE]]
+						: []
 				}
-				return new Map<string, string>(Arr.flatMap(steps, reasonOf))
+				return new Map<string, string>(Arr.flatMap(pages, reasonOf))
 			})
 
 			const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
@@ -2877,37 +2860,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const payload = yield* parseDeliveryPayload(row.payloadJson)
 					const hydrated = yield* hydrateDestination(destinationRow)
 					const incidentRow: AlertIncidentRow | null = incidentFor(row) ?? null
-					// A queued escalation step goes out only to an incident still open and unacknowledged.
-					const staleStep = (yield* staleEscalationSteps([row])).get(row.id)
-					if (staleStep !== undefined) {
+					// A page whose incident has resolved would open an alert the resolve, already sent, can
+					// no longer close; an escalation step also stops for an ack. A ticket is still worth
+					// filing late, and its transport marks it resolved.
+					const stale = yield* stalePages([row])
+					const staleReason = stale.get(row.id)
+					const filesLateTickets =
+						destinationRow.type === "linear" &&
+						!Predicate.hasProperty(row.payloadJson, "escalation")
+					if (staleReason !== undefined && !filesLateTickets) {
 						yield* recordDeliveryFailure(row, claimTime, {
-							message: staleStep,
-							kind: "escalation",
-							retryable: false,
-						})
-						return
-					}
-					// A retried page whose incident has resolved would open an alert the resolve, already
-					// sent, can no longer close. Read now: the claim batch can be a drain old.
-					const pageIncidentId = row.incidentId
-					const isStalePage =
-						(row.eventType === "trigger" || row.eventType === "renotify") &&
-						pageIncidentId !== null &&
-						(yield* dbExecute((db) =>
-							db.run(
-								PG.from(AlertIncidents)
-									.select("id")
-									.where(($) => [
-										$.orgId.eq(row.orgId),
-										$.id.eq(pageIncidentId),
-										$.status.neq("open"),
-									])
-									.limit(1),
-							),
-						)).length > 0
-					if (isStalePage) {
-						yield* recordDeliveryFailure(row, claimTime, {
-							message: STALE_PAGE_MESSAGE,
+							message: staleReason,
 							kind: "incident",
 							retryable: false,
 						})
@@ -3017,7 +2980,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 									groupBy: storedRule?.groupBy ?? null,
 								},
 								groupKey,
-								row.incidentId,
+								incidentRow === null ? null : row.incidentId,
 							),
 							sentAtMs: deliveryStart,
 						},
@@ -3233,14 +3196,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						),
 					)).flat()
 					if (claimed.length === 0) return
-					// Escalation steps in the digest go out only for incidents still open and unacknowledged.
-					const staleSteps = yield* staleEscalationSteps(claimed)
+					// Pages in the digest go out only for incidents still open, and steps only while unacknowledged.
+					const staleSteps = yield* stalePages(claimed)
 					yield* Effect.forEach(
 						Arr.filter(claimed, (row) => staleSteps.has(row.id)),
 						(row) =>
 							recordDeliveryFailure(row, claimTime, {
 								message: staleSteps.get(row.id) ?? "Not sent",
-								kind: "escalation",
+								kind: "incident",
 								retryable: false,
 							}),
 						{ discard: true },
@@ -3631,7 +3594,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							(yield* dbExecute((db) =>
 								db.run(
 									PG.from(AlertIncidents)
-										.select("lastNotifiedAt", "severity", "peakSeverity")
+										.select("id", "lastNotifiedAt", "severity", "peakSeverity")
 										.where(($) => [
 											$.orgId.eq(row.orgId),
 											$.ruleId.eq(row.id),
@@ -3647,9 +3610,30 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.limit(1),
 								),
 							))[0] ?? null
+						// An earlier incident whose every page failed or was dropped told nobody: its
+						// all-clear is no reason to open this one quietly.
+						const priorPages =
+							priorNotified === null
+								? []
+								: yield* dbExecute((db) =>
+										db.run(
+											PG.from(AlertDeliveryEvents)
+												.select("status")
+												.where(($) => [
+													$.orgId.eq(row.orgId),
+													$.incidentId.eq(priorNotified.id),
+													$.eventType.in_("trigger", "renotify"),
+												]),
+										),
+									)
+						const neverPaged =
+							priorPages.length > 0 &&
+							!Arr.some(priorPages, (page) => page.status === "success")
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
-							previousNotificationAtMs: priorNotified?.lastNotifiedAt ?? null,
+							previousNotificationAtMs: neverPaged
+								? null
+								: (priorNotified?.lastNotifiedAt ?? null),
 							previousNotificationSeverity:
 								priorNotified === null
 									? null
@@ -4154,6 +4138,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								}),
 							)
 						} else if (notifyEvent === "renotify" && !catchUp && refreshed.isAcknowledged) {
+							// The refresh moved the reminder clock for a reminder that is not going out: put it back,
+							// so an unacknowledge finds the reminder as overdue as it was.
+							yield* dbExecute((db) =>
+								db.run(
+									PG.update(AlertIncidents)
+										.set({ lastNotifiedAt: openIncident.lastNotifiedAt })
+										.where(($) => [
+											$.id.eq(openIncident.id),
+											$.orgId.eq(row.orgId),
+											$.lastNotifiedAt.eq(timestamp),
+										]),
+								),
+							)
 							yield* Effect.logInfo(
 								"Reminder not sent: the incident was acknowledged during this check",
 							).pipe(

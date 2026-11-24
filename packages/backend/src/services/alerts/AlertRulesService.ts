@@ -46,7 +46,7 @@ import {
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
 import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
-import { deletedRuleResolveRows } from "./delivery/deleted-rule-resolve"
+import { DELETED_RULE_RESOLVE_INSERT_CHUNK, deletedRuleResolveRows } from "./delivery/deleted-rule-resolve"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
 import {
 	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
@@ -153,9 +153,11 @@ export const deleteRuleRows = (db: MapleDb, orgId: OrgId, ruleId: AlertRuleId) =
 		yield* db.run(PG.deleteFrom(AlertIncidents).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleStates).where(($) => [$.orgId.eq(orgId), $.ruleId.eq(ruleId)]))
 		yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(ruleId)]))
-		if (Arr.isArrayNonEmpty(resolves)) {
-			yield* db.run(PG.insertInto(AlertDeliveryEvents).values(resolves))
-		}
+		yield* Effect.forEach(
+			Arr.chunksOf(resolves, DELETED_RULE_RESOLVE_INSERT_CHUNK),
+			(chunk) => db.run(PG.insertInto(AlertDeliveryEvents).values(chunk)),
+			{ discard: true },
+		)
 		return yield* db.run(
 			PG.deleteFrom(AlertRules)
 				.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
