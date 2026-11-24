@@ -1,3 +1,9 @@
+import {
+	FRAMEWORKS,
+	SERVICE_KINDS,
+	type ServiceFramework,
+	type ServiceIdentity,
+} from "@maple/domain/service-identity"
 import type { DbIconKey } from "../graph/service-map-db-style"
 import type { ServicePlatform } from "../graph/service-map-types"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "@maple/ui/lib/error-rate"
@@ -7,7 +13,7 @@ import { TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 import { type UtilizationLevel } from "@maple/ui/lib/utilization"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import type { IconName } from "../../ui/icon"
+import { icon, type IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/eyebrow"
 import { pressable } from "../../ui/pressable"
 import { vstack } from "../../ui/stack"
@@ -32,6 +38,58 @@ export const PLATFORM_ICON = {
 	unknown: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
 	none: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
 } satisfies Record<ServicePlatform | "none", PlatformGlyph>
+
+/** Brand marks the kit has; every other framework is named in text only. */
+export const FRAMEWORK_ICON = {
+	nextjs: "FrameworkNextjsIcon",
+	effect: "FrameworkEffectIcon",
+	spring: "SpringIcon",
+	astro: null,
+	sveltekit: null,
+	nuxt: null,
+	remix: null,
+	nestjs: null,
+	rails: null,
+	django: null,
+	hono: null,
+	express: null,
+	fastify: null,
+	koa: null,
+	elysia: null,
+	fastapi: null,
+	flask: null,
+	gin: null,
+	echo: null,
+	fiber: null,
+	aspnetcore: null,
+	celery: null,
+	sidekiq: null,
+	inngest: null,
+	bullmq: null,
+	pgboss: null,
+	gohttp: null,
+	rack: null,
+} as const satisfies Record<ServiceFramework, IconName | null>
+
+/** The framework's brand mark, when the kit has one; empty otherwise. */
+export const frameworkIcon = <M>(
+	h: HtmlBuilder<M>,
+	identity: ServiceIdentity | undefined,
+	size: number,
+): ReadonlyArray<Html> => {
+	const name =
+		identity === undefined || identity.framework === null ? null : FRAMEWORK_ICON[identity.framework]
+	return name === null ? [] : [icon(h, name, { size, className: "shrink-0 text-foreground-subtle" })]
+}
+
+/** "API · Effect", "Web app · Next.js", or null when nothing was identified. */
+export const identityText = (identity: ServiceIdentity | undefined): string | null => {
+	if (identity === undefined) return null
+	const framework = identity.framework === null ? null : FRAMEWORKS[identity.framework].label
+	if (identity.kind === "unknown") return framework
+	const kind = SERVICE_KINDS[identity.kind]
+	return framework === null ? kind : `${kind} · ${framework}`
+}
 
 export const DB_ICON = {
 	postgres: "PostgresIcon",

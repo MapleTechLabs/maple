@@ -78,7 +78,9 @@ export class FirstDataSweepService extends Context.Service<FirstDataSweepService
 
 			const probe = Effect.fn("FirstDataSweepService.probe")(function* (candidate: Candidate) {
 				yield* Effect.annotateCurrentSpan({ orgId: candidate.orgId })
-				const report = yield* signals.read(systemTenant(candidate.orgId, ALERTING_SYSTEM_USER_ID))
+				const report = yield* signals.read(systemTenant(candidate.orgId, ALERTING_SYSTEM_USER_ID), {
+					excludeTestTrace: true,
+				})
 				const firstData = firstDataSeen(report)
 				if (firstData === undefined) return false
 				// The org's real creation time dates a row created here and lifts the event's time.

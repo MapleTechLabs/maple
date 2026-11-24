@@ -26,6 +26,7 @@
 		"./runtime-advisories": "./src/runtime-advisories.ts",
 		"./package-advisories": "./src/package-advisories.ts",
 		"./runtime-posture": "./src/runtime-posture.ts",
+		"./service-identity": "./src/service-identity.ts",
 		"./security-telemetry": "./src/security-telemetry.ts",
 		"./service-runtimes": "./src/service-runtimes.ts",
 		"./aws-infra": "./src/aws-infra.ts",

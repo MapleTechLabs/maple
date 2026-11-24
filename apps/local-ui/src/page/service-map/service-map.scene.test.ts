@@ -48,6 +48,7 @@ const mapData = (edges: LocalServiceMapData["edges"]): LocalServiceMapData => ({
 	dbEdges: [],
 	overviews: [],
 	platforms: new Map(),
+	identities: new Map(),
 	runtimes: new Map(),
 })
 const twoServices = mapData([edge("storefront", "checkout-api")])

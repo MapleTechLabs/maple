@@ -1,3 +1,4 @@
+import { FRAMEWORKS, SERVICE_KINDS, type ServiceIdentity } from "@maple/domain/service-identity"
 import { resolveDbNodeStyle } from "../graph/service-map-db-style"
 import {
 	aggregateServiceOverviews,
@@ -27,6 +28,8 @@ import { hstack, vstack, vstackClass } from "../../ui/stack"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { grid } from "../../ui/grid"
 import * as ServiceMap from "../map/service-map"
+import { frameworkIcon, identityText } from "../map/node-card"
+import { keyValue, keyValueList } from "../../ui/key-value"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./kit"
 import { Array as Arr, Option } from "effect"
 import { typography } from "../../ui/typography"
@@ -67,6 +70,63 @@ const cloudflareOf = <M>(inputs: ServicePanelInputs<M>) =>
 			(node) => node.data.cloudflare,
 		),
 	)
+
+const identityOf = <M>(inputs: ServicePanelInputs<M>) =>
+	Option.getOrUndefined(
+		Option.flatMapNullishOr(
+			Arr.findFirst(inputs.map.source.rawNodes, (node) => node.id === inputs.serviceId),
+			(node) => node.data.identity,
+		),
+	)
+
+/** What kind of service this is, its framework, and the signals each came from. */
+const identitySection = <M>(h: HtmlBuilder<M>, identity: ServiceIdentity): Html => {
+	const text = identityText(identity) ?? SERVICE_KINDS.unknown
+	const inferred = identity.kindSource === "spans"
+	return h.div(
+		[h.Class("space-y-3")],
+		[
+			separator(h, "horizontal", undefined),
+			eyebrow(h, { as: "h4" }, ["Identity"]),
+			hstack(h, { gap: "1.5" }, [
+				...frameworkIcon(h, identity, 14),
+				typography(h, { size: "xs", tone: "foreground", weight: "medium" }, [text]),
+				...(inferred
+					? [typography(h, { size: "3xs", tone: "muted" }, ["kind inferred from spans"])]
+					: []),
+			]),
+			...(identity.alsoUses.length === 0
+				? []
+				: [
+						typography(h, { size: "3xs", tone: "muted" }, [
+							`Also uses ${Arr.join(
+								Arr.map(identity.alsoUses, (framework) => FRAMEWORKS[framework].label),
+								", ",
+							)}`,
+						]),
+					]),
+			identity.evidence.length === 0
+				? typography(h, { size: "3xs", tone: "muted" }, [
+						"Nothing in its telemetry names a framework. An OpenTelemetry instrumentation library for it, or a Maple SDK, would.",
+					])
+				: keyValueList(
+						h,
+						{ layout: "stacked" },
+						Arr.map(identity.evidence, (evidence) =>
+							keyValue(
+								h,
+								{
+									label: `${evidence.supports === "framework" ? "Framework" : "Kind"} · ${evidence.signal}`,
+									mono: true,
+									wrap: true,
+								},
+								[evidence.value],
+							),
+						),
+					),
+		],
+	)
+}
 
 const header = <M>(
 	h: HtmlBuilder<M>,
@@ -241,6 +301,7 @@ const serviceTab = <M>(
 ): ReadonlyArray<Html> => {
 	const { serviceId, edges, durationSeconds, serviceHref } = inputs
 	const cloudflare = cloudflareOf(inputs)
+	const identity = identityOf(inputs)
 	const dependencies = Arr.filter(edges, (edge) => edge.sourceService === serviceId)
 	const calledBy = Arr.filter(edges, (edge) => edge.targetService === serviceId)
 	const databases = Arr.filter(inputs.dbEdges, (edge) => edge.sourceService === serviceId)
@@ -250,6 +311,7 @@ const serviceTab = <M>(
 				[h.Class("p-4 space-y-5")],
 				[
 					metrics(h, overview),
+					...(identity === undefined ? [] : [identitySection(h, identity)]),
 					...(cloudflare === undefined ? [] : [cloudflareSection(h, cloudflare)]),
 					...edgeSection(
 						h,

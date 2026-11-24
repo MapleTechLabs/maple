@@ -1188,7 +1188,8 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			AttrFingerprint: $.AttrFingerprint,
 			ResourceFingerprint: $.ResourceFingerprint,
 			StartTimeUnix: $.StartTimeUnix,
-			Value: CH.argMaxMerge($.LastValue),
+			// The merged state is a Float64 (`argMax, Float64`); the column type does not say so.
+			Value: CH.rawExpr("argMaxMerge(span_metrics_calls_hourly.LastValue)", T.float64),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1208,21 +1209,9 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 			"StartTimeUnix",
 		)
 
-	const hourlyValues = table("hourly_values", {
-		external: true,
-		columns: {
-			Hour: T.dateTime,
-			ServiceName: T.string,
-			MetricName: T.string,
-			SpanKind: T.string,
-			AttrFingerprint: T.uint64,
-			ResourceFingerprint: T.uint64,
-			StartTimeUnix: T.dateTime64,
-			Value: T.float64,
-		},
-	})
-
-	const deltasQuery = from(hourlyValues)
+	// A subquery, not a CTE: a row-filtered warehouse token cannot resolve a CTE read
+	// from another CTE ("Unable to resolve resources in query").
+	const deltasQuery = fromQuery(hourlyQuery, "hourly_values")
 		.select(($) => {
 			const onePrecedingFrame = CH.windowSpec({
 				partitionBy: [
@@ -1259,10 +1248,8 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	})
 
 	const q = from(deltas)
-		// Passed as queries, not compiled SQL: `compile` then derives each CTE's
-		// scope (and `with_deltas` inherits `hourly_values`'s, which is what
-		// confines the outer query) instead of taking a caller's word for it.
-		.withCTE("hourly_values", hourlyQuery)
+		// Passed as a query, not compiled SQL: `compile` then derives the CTE's scope
+		// (which confines the outer query) instead of taking a caller's word for it.
 		.withCTE("with_deltas", deltasQuery)
 		.select(($) => {
 			const parts: CH.Expr<string>[] = []

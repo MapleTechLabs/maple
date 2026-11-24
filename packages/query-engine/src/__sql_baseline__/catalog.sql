@@ -9333,7 +9333,7 @@ SELECT
         GROUP BY OrgId, Hour, SourceService, TargetService, DeploymentEnv
         FORMAT JSON
 
--- builder:service-map:servicePlatformsSQL:envFiltered  [6f40b287]
+-- builder:service-map:servicePlatformsSQL:envFiltered  [f85b13b7]
 SELECT
           service_platforms_hourly.ServiceName AS serviceName,
           max(service_platforms_hourly.K8sCluster) AS k8sCluster,
@@ -9343,7 +9343,15 @@ SELECT
           max(service_platforms_hourly.CloudProvider) AS cloudProvider,
           max(service_platforms_hourly.FaasName) AS faasName,
           max(service_platforms_hourly.MapleSdkType) AS mapleSdkType,
-          max(service_platforms_hourly.ProcessRuntimeName) AS processRuntimeName
+          max(service_platforms_hourly.ProcessRuntimeName) AS processRuntimeName,
+          arraySlice(groupUniqArrayArray(service_platforms_hourly.ScopeNames), 1, 64) AS scopeNames,
+          max(service_platforms_hourly.TelemetrySdkName) AS telemetrySdkName,
+          max(service_platforms_hourly.TelemetrySdkLanguage) AS telemetrySdkLanguage,
+          max(service_platforms_hourly.OsName) AS osName,
+          sum(service_platforms_hourly.ClassifiedSpanCount) AS classifiedSpanCount,
+          sum(service_platforms_hourly.ServerSpanCount) AS serverSpanCount,
+          sum(service_platforms_hourly.ConsumerSpanCount) AS consumerSpanCount,
+          sum(service_platforms_hourly.RootSpanCount) AS rootSpanCount
         FROM service_platforms_hourly
         WHERE service_platforms_hourly.OrgId = 'org_sql_catalog'
           AND service_platforms_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))

@@ -1,5 +1,6 @@
 /** Pieces the on-call schedule MCP tools share: rows, rotation text, schedule lookup and error mapping. */
 import { Array as Arr, DateTime, Effect, Option, Schema, String as Str } from "effect"
+import { MAX_ONCALL_REPORTED_GAPS } from "@maple/domain/http"
 import type {
 	AlertForbiddenError,
 	AlertMemberDirectoryNotConfiguredError,
@@ -143,12 +144,18 @@ export const formatOnCallNow = (schedule: ScheduleRow): string =>
  * What is wrong with the schedule's coverage, or null: e.g. `3 gaps in the next 14 days, next
  * 2026-11-14T16:00:00.000Z to 2026-11-16T08:00:00.000Z; left the org: Ben Brook (user_ben)`.
  */
+/** "1 gap", "3 gaps", or "20 or more gaps" when the list was cut at its cap. */
+const gapCount = (count: number): string =>
+	count >= MAX_ONCALL_REPORTED_GAPS
+		? `${MAX_ONCALL_REPORTED_GAPS} or more gaps`
+		: `${count} ${count === 1 ? "gap" : "gaps"}`
+
 export const formatCoverageWarning = (schedule: ScheduleRow): string | null => {
 	const [next] = schedule.coverageGaps
 	const gaps =
 		next === undefined
 			? null
-			: `${schedule.coverageGaps.length} ${schedule.coverageGaps.length === 1 ? "gap" : "gaps"} with nobody on call in the next 14 days, next ${next.startsAt} to ${next.endsAt}`
+			: `${gapCount(schedule.coverageGaps.length)} with nobody on call in the next 14 days, next ${next.startsAt} to ${next.endsAt}`
 	const departed =
 		schedule.departed.length === 0
 			? null

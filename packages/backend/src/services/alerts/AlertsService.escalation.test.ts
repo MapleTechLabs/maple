@@ -173,6 +173,15 @@ const runRows = (testDb: TestDb, orgId: OrgId) =>
 		),
 	).pipe(Effect.map((result) => result.rows))
 
+/** The severity each run's next step will page with. */
+const runPayloadSeverities = (testDb: TestDb, orgId: OrgId) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ severity: string | null }>(
+			"select payload_json->'rule'->>'severity' as severity from alert_escalation_runs where org_id = $1 order by created_at",
+			[orgId],
+		),
+	).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.severity)))
+
 const setAck = (testDb: TestDb, orgId: OrgId, acknowledged: boolean) =>
 	Effect.promise(() =>
 		executeSql(
@@ -495,6 +504,8 @@ describe("escalation chains", () => {
 					Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
 					["active"],
 				)
+				// Its next step pages about the warning breach that is left, not the critical one that ended.
+				assert.deepStrictEqual(yield* runPayloadSeverities(testDb, orgId), ["warning"])
 				yield* ticks(alerts, 8)
 				assert.include(requests, "trigger pager")
 			}).pipe(Effect.provide(layerFor(testDb, state, requests)))

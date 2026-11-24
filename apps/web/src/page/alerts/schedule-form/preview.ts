@@ -3,6 +3,7 @@ import { OnCallOverride, OnCallTimeZone } from "@maple/domain/http"
 import type { V2OnCallOverride } from "@maple/domain/http/v2"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
+import type { UserId } from "@maple/primitives"
 import { Array as Arr, Option, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
@@ -12,7 +13,7 @@ import {
 	type PreviewShift,
 	type RangeDays,
 } from "../shared/coverage-preview"
-import { memberName, type OrgMember } from "../shared/org-members"
+import { MAX_MEMBERS, memberName, type OrgMember } from "../shared/org-members"
 import { draftCoverage, layerOnCallAt, previewLayerOf, previewRange } from "../shared/schedule-coverage"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { layerStartMs, type LayerDraft } from "./form"
@@ -101,6 +102,15 @@ const asPreview = (shift: OnCallShift): PreviewShift => ({
 	isOverride: shift.source.kind === "override",
 })
 
+/**
+ * Who the loaded member list still names. Unknown is everyone, as the saved schedule reads it:
+ * not loaded, listing nobody, or cut off at the list's cap.
+ */
+const presenceOf = (members: ReadonlyArray<OrgMember> | null) =>
+	members === null || members.length === 0 || members.length >= MAX_MEMBERS
+		? undefined
+		: (userId: UserId) => Arr.some(members, (member) => member.userId === userId)
+
 const render = (
 	h: HtmlBuilder<Message>,
 	zone: string,
@@ -122,6 +132,7 @@ const render = (
 		range.startMs,
 		range.endMs,
 		nowMs,
+		presenceOf(members),
 	)
 	const overridesNote: ReadonlyArray<PreviewNote<Message>> =
 		overridesState === "failed" || overridesState === "retrying"

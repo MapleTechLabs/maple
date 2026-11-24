@@ -83,6 +83,7 @@ import {
 	type AlertDestinationRow,
 	AlertIncidentEvents,
 	AlertIncidents,
+	AlertMemberNotifications,
 	type AlertIncidentRow,
 	AlertRuleClaims,
 	AlertRules,
@@ -3037,6 +3038,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								groupKey,
 								incidentRow === null ? null : row.incidentId,
 							),
+							isRuleDeleted: ruleRow === null,
 							sentAtMs: deliveryStart,
 						},
 						payloadJson,
@@ -3063,7 +3065,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						destinationRow.type === "pagerduty" &&
 						(row.eventType === "trigger" || row.eventType === "renotify")
 					) {
-						yield* acknowledgeLatePage(row, claimTime)
+						// The page is recorded as sent and nothing queues this again, so a transient
+						// failure is retried here. The insert is keyed: a repeat adds nothing.
+						yield* acknowledgeLatePage(row, claimTime).pipe(Effect.retry({ times: 2 }))
 					}
 
 					// An acknowledgement is not a notification: it must not restart the reminder clock.
@@ -3234,7 +3238,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								groupBy: storedRule?.groupBy ?? null,
 							},
 							groupKey,
-							row.incidentId,
+							incident === null ? null : row.incidentId,
 						),
 					} satisfies ChatDigestItem
 				})
@@ -3660,8 +3664,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										.limit(1),
 								),
 							))[0] ?? null
-						// An earlier incident whose every page failed or was dropped told nobody: its
-						// all-clear is no reason to open this one quietly.
+						// An earlier incident that reached nobody (every page failed or was dropped, or it
+						// queued none) told nobody: its all-clear is no reason to open this one quietly.
 						const priorPages =
 							priorNotified === null
 								? []
@@ -3676,9 +3680,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												]),
 										),
 									)
-						const neverPaged =
-							priorPages.length > 0 &&
-							!Arr.some(priorPages, (page) => page.status === "success")
+						const isUnheard = !Arr.some(priorPages, (page) => page.status === "success")
+						// A chain that pages people leaves no delivery row: its pages are read too.
+						const priorPeoplePaged =
+							priorNotified === null || !isUnheard
+								? []
+								: yield* dbExecute((db) =>
+										db.run(
+											PG.from(AlertMemberNotifications)
+												.select("id")
+												.where(($) => [
+													$.orgId.eq(row.orgId),
+													$.incidentId.eq(priorNotified.id),
+													$.status.eq("sent"),
+												])
+												.limit(1),
+										),
+									)
+						const neverPaged = isUnheard && priorPeoplePaged.length === 0
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
 							previousNotificationAtMs: neverPaged
@@ -3998,6 +4017,21 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										true,
 									)
 								: null
+						// Back down a tier, a chain that keeps running tells its next step of the breach as it
+						// stands now, not of the higher one that ended.
+						const deescalatedPayload =
+							lifecycle.transition === "deescalated"
+								? (yield* prepareIncidentNotification(
+										row.orgId,
+										tierRule,
+										refreshedIncident,
+										evaluation,
+										"trigger",
+										timestamp,
+										null,
+										true,
+									)).payload
+								: null
 						const escalation =
 							escalatedNotification !== null
 								? yield* prepareEscalationStart(
@@ -4115,6 +4149,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 										severity,
 										nowMs: timestamp,
 									})
+									if (deescalatedPayload !== null) {
+										yield* refreshEscalationRunPayload(db, {
+											orgId: row.orgId,
+											incidentId: openIncident.id,
+											payload: deescalatedPayload,
+											nowMs: timestamp,
+										})
+									}
 								}
 								if (lifecycle.transition !== "escalated") return result
 								const inherited = escalation !== null && escalation.severity !== severity
@@ -6439,6 +6481,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				row: EscalationWorkRow,
 				nowMs: number,
 				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
+				/** Every earlier step of this pass was skipped just now: the pass has reached nobody. */
+				isPassUnreached: boolean,
 			) {
 				yield* Effect.annotateCurrentSpan({
 					orgId: row.orgId,
@@ -6482,8 +6526,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const enabled = yield* dbExecute((db) =>
 					enabledDestinationIds(db, row.orgId, stepDestinationIds(step)),
 				)
-				// A pass ending with nothing sent so far: if this step reaches nobody either, admins are paged.
-				const isLastChance = row.stepsSent === 0 && !continuesPass(plan)
+				// A pass ending having reached nobody, on this run or on this pass of it: if this step
+				// reaches nobody either, admins are paged.
+				const isLastChance =
+					(row.stepsSent === 0 || row.stepIndex === 0 || isPassUnreached) && !continuesPass(plan)
 				const pagesPeople = Arr.some(step.targets, (target) => target.type !== "destination")
 				const directory =
 					pagesPeople || (isLastChance && enabled.size === 0) ? yield* directoryOf(row.orgId) : null
@@ -6573,15 +6619,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				row: EscalationWorkRow,
 				nowMs: number,
 				directoryOf: (orgId: OrgId) => Effect.Effect<MemberDirectory | null>,
+				isPassUnreached = false,
 			): Effect.Effect<
 				EscalationApplyOutcome,
 				Effect.Error<ReturnType<typeof advanceEscalationStep>>
 			> =>
-				Effect.flatMap(advanceEscalationStep(row, nowMs, directoryOf), ({ outcome, next }) =>
-					Option.match(next, {
-						onNone: () => Effect.succeed(outcome),
-						onSome: (nextRow) => advanceEscalationRun(nextRow, nowMs, directoryOf),
-					}),
+				Effect.flatMap(
+					advanceEscalationStep(row, nowMs, directoryOf, isPassUnreached),
+					({ outcome, next }) =>
+						Option.match(next, {
+							onNone: () => Effect.succeed(outcome),
+							// Only a skip leads here, so the pass stays unreached if it was from its first step.
+							onSome: (nextRow) =>
+								advanceEscalationRun(
+									nextRow,
+									nowMs,
+									directoryOf,
+									row.stepIndex === 0 || isPassUnreached,
+								),
+						}),
 				)
 
 			/** Sends every due escalation step, so the drain that follows delivers it this tick. */

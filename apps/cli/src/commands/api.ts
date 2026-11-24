@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { Stdio } from "effect/Stdio"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpTraceContext } from "effect/http"
 import { MapleConfig } from "../core/config"
 import {
 	API_METHODS,
@@ -47,6 +47,34 @@ export class ApiTransportError extends Schema.TaggedError<ApiTransportError>()(
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
+
+/**
+ * Send under our own client span. The built-in one closes `Error` on every 4xx, but here a 4xx
+ * answers the person's own request; the root span already tells a 4xx from a 5xx.
+ */
+export const sendTraced = (
+	client: HttpClient.HttpClient,
+	request: HttpClientRequest.HttpClientRequest,
+	url: URL,
+) =>
+	Effect.useSpan(
+		request.method,
+		{
+			kind: "client",
+			attributes: {
+				"http.request.method": request.method,
+				"server.address": url.hostname,
+				"url.path": url.pathname,
+			},
+		},
+		(span) =>
+			client.execute(HttpClientRequest.setHeaders(request, HttpTraceContext.toHeaders(span))).pipe(
+				Effect.tap((response) =>
+					Effect.sync(() => span.attribute("http.response.status_code", response.status)),
+				),
+				Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+			),
+	)
 
 const pathArg = Argument.String("path").pipe(
 	Argument.withDescription("API path on the logged-in workspace, e.g. /v2/services or /api/dashboards"),
@@ -163,7 +191,7 @@ const runRequest = Effect.fnUntraced(function* (method: ApiMethod, a: RequestInp
 
 	const client = yield* HttpClient.HttpClient
 	// A redirect is the endpoint's answer: report it, never follow it to another page.
-	const response = yield* client.execute(request).pipe(
+	const response = yield* sendTraced(client, request, url).pipe(
 		Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
 		Effect.mapError(
 			(cause) => new ApiTransportError({ message: `could not reach ${url.origin}`, cause }),

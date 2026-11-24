@@ -563,7 +563,8 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 				// On the incident's timeline: a schedule with nobody on call, or a step that reached nobody
 				// at all (its destinations are off, its people have left).
 				const gapScheduleNames = input.gapScheduleNames ?? []
-				if (nobody || Arr.isReadonlyArrayNonEmpty(gapScheduleNames)) {
+				// Also when admins stood in: the step's own people were still not reached.
+				if (nobody || input.lastResort === true || Arr.isReadonlyArrayNonEmpty(gapScheduleNames)) {
 					yield* db.run(
 						PG.insertInto(AlertIncidentEvents).values({
 							id: decodeIncidentEventId(input.makeDeliveryId()),
