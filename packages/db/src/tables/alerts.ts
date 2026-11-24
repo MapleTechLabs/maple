@@ -243,6 +243,13 @@ const alertIncidentsColumns = {
 	}),
 	acknowledgedByName: PG.column(PG.nullable(PG.text), { name: "acknowledged_by_name" }),
 	acknowledgedVia: PG.column(PG.nullable(PG.text), { name: "acknowledged_via" }),
+	/** When the incident was first acknowledged; kept through an unacknowledge, an escalation and its resolve. */
+	firstAcknowledgedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "first_acknowledged_at" }),
+	/**
+	 * Set when a person resolved the incident while it still breached: its rule and group open
+	 * nothing until one clean healthy check, which clears this.
+	 */
+	quietSince: PG.column(PG.nullable(PG.timestamptzMillis), { name: "quiet_since" }),
 	// Issue-hub link: the error_issues row (kind="alert") this incident
 	// feeds, mirroring anomalyIncidents.errorIssueId.
 	errorIssueId: PG.column(PG.nullable(PG.brand(PG.text, ErrorIssueId)), { name: "error_issue_id" }),
@@ -276,6 +283,10 @@ export const AlertIncidents = PG.table("alert_incidents", {
 		PG.index("alert_incidents_org_rule_idx", ["orgId", "ruleId"]),
 		PG.index("alert_incidents_org_issue_idx", ["orgId", "errorIssueId"]),
 		PG.uniqueIndex("alert_incidents_incident_key_idx", ["incidentKey"]),
+		// The scheduler reads the few groups a person resolved by hand at each tick's head.
+		PG.index<AlertIncidentsColumns>("alert_incidents_quiet_idx", ["orgId", "ruleId"], {
+			where: ($) => $.quietSince.isNotNull(),
+		}),
 		// One open incident per (rule, group): the scheduler's claim serializes
 		// rule evaluation in the common case, and this makes duplicate opens from
 		// an expired claim impossible instead of merely unlikely. NULL groupKey

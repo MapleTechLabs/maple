@@ -11,6 +11,7 @@ import type { V2AlertIncident, V2AlertIncidentEscalation, V2AlertIncidentEvent }
 import { MapleApiV2, paginateOffsetQuery, timestampOrNull } from "@maple/domain/http/v2"
 import { Duration, Effect, Option, Array as Arr } from "effect"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import {
 	AlertIncidentAckService,
 	type AlertIncidentActor,
@@ -76,6 +77,7 @@ const toV2Incident = (
 	hold_reason: doc.holdReason,
 	held_since: doc.heldSince,
 	acknowledged_at: doc.acknowledgedAt,
+	first_acknowledged_at: doc.firstAcknowledgedAt,
 	acknowledged_by:
 		doc.acknowledgedAt === null
 			? null
@@ -119,6 +121,7 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 	Effect.gen(function* () {
 		const readModels = yield* AlertReadModelsService
 		const acks = yield* AlertIncidentAckService
+		const alerts = yield* AlertsService
 		const pagesService = yield* AlertIncidentPagesService
 		const members = yield* OrgMembersService
 
@@ -209,6 +212,13 @@ export const HttpV2AlertIncidentsLive = HttpApiBuilder.group(MapleApiV2, "alertI
 					const result = yield* acks.unacknowledge(orgId, params.id, actor)
 					return yield* withEscalation(orgId, result.incident)
 				}).pipe(Effect.withSpan("HttpV2AlertIncidents.unacknowledge")),
+			)
+			.handle("resolve", ({ params }) =>
+				Effect.gen(function* () {
+					const { orgId, actor } = yield* callerActor
+					const incident = yield* alerts.resolveIncident(orgId, params.id, actor)
+					return yield* withEscalation(orgId, incident)
+				}).pipe(Effect.withSpan("HttpV2AlertIncidents.resolve")),
 			)
 			.handle("listEvents", ({ params }) =>
 				Effect.gen(function* () {

@@ -94,6 +94,16 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
 			}
+		case "resolved":
+			return {
+				...base,
+				tone: "ok",
+				title: `Resolved by ${who}`,
+				detail: Arr.join(
+					Arr.filter([from, "nothing reopens until the rule has been healthy once"], (p) => p != null),
+					" · ",
+				),
+			}
 		case "on_call_gap":
 			return {
 				...base,

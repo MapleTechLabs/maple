@@ -174,7 +174,7 @@ export class AlertIncidentAckService extends Context.Service<
 				const updated = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const rows = yield* db.run(
+							const changed = yield* db.run(
 								PG.update(AlertIncidents)
 									.set(
 										acknowledged
@@ -203,6 +203,21 @@ export class AlertIncidentAckService extends Context.Service<
 									])
 									.returning(),
 							)
+							// The first acknowledgement is kept for good: time to acknowledge reads it.
+							const stamped =
+								acknowledged && changed.length > 0
+									? yield* db.run(
+											PG.update(AlertIncidents)
+												.set({ firstAcknowledgedAt: now })
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.id.eq(incidentId),
+													$.firstAcknowledgedAt.isNull(),
+												])
+												.returning(),
+										)
+									: []
+							const rows = stamped.length > 0 ? stamped : changed
 							const changedRow = Arr.head(rows)
 							if (acknowledged && Option.isSome(changedRow)) {
 								const queued = yield* queuePagerDutyAcknowledge(

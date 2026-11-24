@@ -149,6 +149,7 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	hold_reason: Schema.NullOr(Schema.String),
 	held_since: Schema.NullOr(Schema.String),
 	acknowledged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	first_acknowledged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_by_user_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_by_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	acknowledged_via: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -312,6 +313,7 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): Option.Option
 		holdReason: row.hold_reason,
 		heldSince: row.held_since,
 		acknowledgedAt: row.acknowledged_at ?? null,
+		firstAcknowledgedAt: row.first_acknowledged_at ?? null,
 		acknowledgedByUserId:
 			row.acknowledged_by_user_id != null
 				? Option.getOrNull(decodeUserId(row.acknowledged_by_user_id))

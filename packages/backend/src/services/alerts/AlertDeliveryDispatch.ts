@@ -11,7 +11,7 @@ import { Option, pipe, Array as Arr, String as Str } from "effect"
 import { replaceWith } from "@maple/strings"
 import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
-import { DELETED_RULE_RESOLVE_DETAIL } from "./delivery/deleted-rule-resolve"
+import { isResolutionNote } from "./delivery/resolution-notes"
 import {
 	comparatorBreachPhrase,
 	discordEmbedColor,
@@ -100,7 +100,7 @@ export const buildSummaryLine = (context: SummaryLineContext, em: (value: string
 		return `This is a test notification. Live alerts fire when ${em(signal)} is ${comparatorBreachPhrase(context)} over a ${window} window.`
 	}
 	if (context.eventType === "resolve") {
-		if (context.detail === DELETED_RULE_RESOLVE_DETAIL) return em(context.detail)
+		if (isResolutionNote(context.detail)) return em(context.detail)
 		const now = context.value != null ? ` — now ${em(observed)}` : ""
 		return `${em(signal)} is back within its threshold (${formatThresholdSummary(context)})${now}.`
 	}

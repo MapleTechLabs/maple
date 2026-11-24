@@ -257,6 +257,7 @@ describe("alerts hub", () => {
 		acknowledged_at: null,
 		acknowledged_by: null,
 		acknowledged_via: null,
+		first_acknowledged_at: null,
 		error_issue_id: null,
 		escalation: null,
 		silence_id: null,

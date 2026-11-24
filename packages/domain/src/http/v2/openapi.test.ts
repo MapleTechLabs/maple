@@ -269,6 +269,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/alerts/destinations/{id}/test",
 			"POST /v2/alerts/escalation_chains",
 			"POST /v2/alerts/incidents/{id}/acknowledge",
+			"POST /v2/alerts/incidents/{id}/resolve",
 			"POST /v2/alerts/incidents/{id}/unacknowledge",
 			"POST /v2/alerts/maintenance_windows",
 			"POST /v2/alerts/oncall_schedules",

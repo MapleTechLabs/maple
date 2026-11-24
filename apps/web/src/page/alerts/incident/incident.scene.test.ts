@@ -603,6 +603,7 @@ describe("alert incident", () => {
 			acknowledged_at: acknowledgedAt,
 			acknowledged_by: acknowledgedAt === null ? null : { user_id: "user_dana", name: "Dana Kim" },
 			acknowledged_via: acknowledgedAt === null ? null : "web",
+			first_acknowledged_at: acknowledgedAt,
 			error_issue_id: null,
 			escalation: null,
 			silence_id: null,
