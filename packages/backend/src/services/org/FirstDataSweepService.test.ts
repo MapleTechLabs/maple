@@ -37,6 +37,8 @@ const OLD_WITH_DATA = org("org_sweep_old_with_data")
 const STAMPED = org("org_sweep_stamped")
 /** Sent data from Quick Start before anything wrote its onboarding row. */
 const KEY_ONLY = org("org_sweep_key_only")
+/** Only ever clicked Quick Start's "Send test trace": the warehouse has that one trace. */
+const TEST_TRACE_ONLY = org("org_sweep_test_trace_only")
 const KEY_ONLY_CREATED_AT = NOW - 2 * 3_600_000
 
 const present = (signal: SignalPresence["signal"], firstSeen: number): SignalPresence => ({
@@ -47,9 +49,9 @@ const present = (signal: SignalPresence["signal"], firstSeen: number): SignalPre
 	lastSeen: NOW,
 })
 
-/** Every org but NO_DATA has traces and logs; logs landed first. */
+/** Every org but NO_DATA has traces and logs; logs landed first. TEST_TRACE_ONLY has its test trace. */
 const signals = Layer.succeed(SignalPresenceService, {
-	read: (tenant) =>
+	read: (tenant, options) =>
 		Effect.succeed({
 			generatedAt: NOW,
 			windowStart: NOW - 30 * DAY,
@@ -58,7 +60,11 @@ const signals = Layer.succeed(SignalPresenceService, {
 			signals:
 				tenant.orgId === NO_DATA
 					? []
-					: [present("traces", TRACES_FIRST_SEEN), present("logs", LOGS_FIRST_SEEN)],
+					: tenant.orgId === TEST_TRACE_ONLY
+						? options?.excludeTestTrace === true
+							? []
+							: [present("traces", TRACES_FIRST_SEEN)]
+						: [present("traces", TRACES_FIRST_SEEN), present("logs", LOGS_FIRST_SEEN)],
 		}),
 })
 
@@ -186,6 +192,19 @@ describe("FirstDataSweepService", () => {
 					},
 				],
 			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("does not count onboarding's test trace as an org's first data", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			yield* seed(testDb, TEST_TRACE_ONLY, NOW - 2 * DAY, null)
+
+			const sweep = yield* FirstDataSweepService
+			assert.deepStrictEqual(yield* sweep.runTick(), { candidates: 1, stamped: 0, failures: 0 })
+			assert.isNull(yield* stampOf(testDb, TEST_TRACE_ONLY))
+			assert.deepStrictEqual(emitted, [])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

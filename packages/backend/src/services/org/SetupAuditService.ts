@@ -952,7 +952,7 @@ const make: Effect.Effect<SetupAuditServiceApi, never, SetupAuditServiceRequirem
 			recorded: ConfigAuditInputs["telemetry"],
 		) {
 			if (recorded === "present") return recorded
-			const report = yield* signals.read(tenant)
+			const report = yield* signals.read(tenant, { excludeTestTrace: true })
 			const firstData = firstDataSeen(report)
 			const probe: ConfigAuditInputs["telemetry"] = report.warehouseAvailable
 				? firstData !== undefined

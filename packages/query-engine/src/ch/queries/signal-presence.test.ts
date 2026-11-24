@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Effect, String as Str } from "effect"
+import { Array as Arr, Effect, String as Str } from "effect"
 import { compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { signalPresenceQuery } from "./signal-presence"
 import { OrgId } from "@maple/domain"
@@ -42,6 +42,19 @@ describe("signalPresenceQuery", () => {
 		expect(sql).toContain("LogCount > 0")
 		expect(sql).toContain("FROM session_replays")
 		expect(sql).toContain("FROM product_events")
+	})
+
+	it("leaves excluded services out of the traces, logs and metrics branches only", () => {
+		const { sql } = compileUnionUnsafe(
+			signalPresenceQuery({ excludeServiceNames: ["maple-test"] }),
+			params,
+		)
+		const branches = Str.split("UNION ALL")(sql)
+
+		const excluding = Arr.filter(branches, Str.includes("ServiceName != 'maple-test'"))
+		expect(excluding).toHaveLength(3)
+		for (const branch of excluding) expect(branch).toContain("FROM service_usage")
+		expect(compileUnionUnsafe(signalPresenceQuery(), params).sql).not.toContain("ServiceName")
 	})
 
 	it("counts all four metric shapes as metrics", () => {
