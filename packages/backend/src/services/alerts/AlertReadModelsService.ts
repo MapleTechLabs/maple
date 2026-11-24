@@ -205,6 +205,7 @@ export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		holdReason: row.holdReason != null ? decodeAlertIncidentHoldReasonSync(row.holdReason) : null,
 		heldSince: toIso(row.heldSince),
 		acknowledgedAt: toIso(row.acknowledgedAt),
+		firstAcknowledgedAt: toIso(row.firstAcknowledgedAt),
 		acknowledgedByUserId: row.acknowledgedByUserId,
 		acknowledgedByName: row.acknowledgedByName,
 		acknowledgedVia:

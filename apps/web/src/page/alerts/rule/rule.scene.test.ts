@@ -336,6 +336,29 @@ describe("alert rule", () => {
 		expect(pageUpdate(second, Message.ClickedClearBucket()).model.selectedBucket).toBeNull()
 	})
 
+	test("History says how long an incident stood before it was acknowledged, and nothing when it never was", () => {
+		const opened = incidentRow().first_triggered_at
+		const acknowledged = (minutes: number) =>
+			new Date(Date.parse(opened) + minutes * 60_000).toISOString()
+		const history = (first_acknowledged_at: string | null) =>
+			pageUpdate(
+				loaded({ tab: "history" }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [incidentRow({ first_acknowledged_at })] }),
+			).model
+		scene(
+			{ update: pageUpdate, view },
+			given(history(acknowledged(4))),
+			themeResolved(),
+			expectView(text("acked in 4m")).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(history(null)),
+			themeResolved(),
+			expectView(text(/acked in/)).not.toExist(),
+		)
+	})
+
 	test("the History filter and the incident menu", () => {
 		const withIncident = pageUpdate(
 			loaded({ tab: "history" }),

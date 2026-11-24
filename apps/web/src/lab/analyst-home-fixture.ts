@@ -16,7 +16,7 @@ import { buildErrorsLabFixture } from "./errors-fixture"
 
 // The analyst Overview's fixtures, shared by `/lab/analyst-home` and its scene tests.
 
-export const STATES = ["clear", "attention", "empty", "loading", "failed"] as const
+export const STATES = ["clear", "attention", "no-data", "empty", "loading", "failed"] as const
 export type AnalystHomeState = (typeof STATES)[number]
 
 export const ANALYST_CONTEXT: PageContext = {
@@ -61,6 +61,15 @@ const HEALTHY_SLOS: ReadonlyArray<SloRow> = [
 const TROUBLED_SLOS: ReadonlyArray<SloRow> = [
 	{ slo: checkoutSlo(), status: sloStatus("burning") },
 	{ slo: searchSlo(), status: sloStatus("exhausted", { sloId: sloUuid(2), targetPercent: 99.5 }) },
+]
+
+/** One SLO counts nothing: its environment is a typo for `production`. */
+const SILENT_SLOS: ReadonlyArray<SloRow> = [
+	{ slo: checkoutSlo(), status: sloStatus("healthy") },
+	{
+		slo: searchSlo({ environments: ["prod"] }),
+		status: sloStatus("no-data", { sloId: sloUuid(2), targetPercent: 99.5 }),
+	},
 ]
 
 const errorsFixture = buildErrorsLabFixture(NOW)
@@ -112,6 +121,7 @@ const DATA = {
 		monitors: [...UP_MONITORS, DOWN_MONITOR],
 		slos: TROUBLED_SLOS,
 	},
+	"no-data": { ...CLEAR, slos: SILENT_SLOS },
 	empty: { rules: 0, incidents: [], monitors: [], slos: [], errors: [], traces: "absent" },
 	failed: { ...CLEAR, monitors: null },
 } as const satisfies Record<Exclude<AnalystHomeState, "loading">, Data>

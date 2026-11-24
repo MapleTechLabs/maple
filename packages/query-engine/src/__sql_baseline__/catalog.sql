@@ -11525,16 +11525,18 @@ SELECT
           AND product_events.Timestamp <= '2026-01-03 14:15:00'
 FORMAT JSON
 
--- builder:slos:sloBucketsQuery:hour  [7c98183a]
+-- builder:slos:sloBucketsQuery:hour  [4c418652]
 SELECT
           toStartOfInterval(slo_buckets.bBucket, INTERVAL 3600 SECOND) AS bucket,
           sum(slo_buckets.bTotal) AS total,
-          sum(slo_buckets.bGood) AS good
+          sum(slo_buckets.bGood) AS good,
+          sum(slo_buckets.bSamples) AS samples
         FROM (
 SELECT
           toStartOfHour(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
         FROM service_overview_spans
@@ -11549,6 +11551,7 @@ SELECT
           service_overview_hourly.Hour AS bBucket,
           service_overview_hourly.ServiceName AS bService,
           service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.SpanCount) AS bSamples,
           sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
           sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
         FROM service_overview_hourly
@@ -11562,16 +11565,18 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:slos:sloBucketsQuery:minute  [25d44e08]
+-- builder:slos:sloBucketsQuery:minute  [c672d906]
 SELECT
           toStartOfInterval(slo_buckets.bBucket, INTERVAL 60 SECOND) AS bucket,
           sum(slo_buckets.bTotal) AS total,
-          sum(slo_buckets.bGood) AS good
+          sum(slo_buckets.bGood) AS good,
+          sum(slo_buckets.bSamples) AS samples
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
         FROM service_overview_spans
@@ -11586,6 +11591,7 @@ SELECT
           service_overview_minutely.Minute AS bBucket,
           service_overview_minutely.ServiceName AS bService,
           service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.SpanCount) AS bSamples,
           sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
           sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
         FROM service_overview_minutely
@@ -11599,23 +11605,34 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- builder:slos:sloBurnByServiceQuery:default  [a665111c]
+-- builder:slos:sloBurnByServiceQuery:default  [f4dcda6b]
 SELECT
           slo_buckets.bService AS serviceName,
           slo_buckets.bEnv AS environment,
           sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 5 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total5,
           sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 5 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good5,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 5 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples5,
           sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 30 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total30,
           sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 30 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good30,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 30 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples30,
           sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 60 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total60,
           sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 60 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good60,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 60 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples60,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 120 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total120,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 120 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good120,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 120 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples120,
           sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total360,
-          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good360
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good360,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 360 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples360,
+          sumIf(slo_buckets.bTotal, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 1440 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS total1440,
+          sumIf(slo_buckets.bGood, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 1440 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS good1440,
+          sumIf(slo_buckets.bSamples, (bBucket >= toDateTime('2026-01-03 14:15:00') - INTERVAL 1440 MINUTE AND bBucket < toDateTime('2026-01-03 14:15:00'))) AS samples1440
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.Duration < 500000000) AS bGood
         FROM service_overview_spans
@@ -11630,6 +11647,7 @@ SELECT
           service_overview_minutely.Minute AS bBucket,
           service_overview_minutely.ServiceName AS bService,
           service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.SpanCount) AS bSamples,
           sum(service_overview_minutely.EstimatedLadderSpanCount) AS bTotal,
           sum(service_overview_minutely.EstimatedUnder500Ms) AS bGood
         FROM service_overview_minutely
@@ -11642,17 +11660,19 @@ SELECT
         GROUP BY serviceName, environment
         FORMAT JSON
 
--- builder:slos:sloTotalsByServiceQuery:default  [602abdae]
+-- builder:slos:sloTotalsByServiceQuery:default  [538d470b]
 SELECT
           slo_buckets.bService AS serviceName,
           slo_buckets.bEnv AS environment,
           sum(slo_buckets.bTotal) AS total,
-          sum(slo_buckets.bGood) AS good
+          sum(slo_buckets.bGood) AS good,
+          sum(slo_buckets.bSamples) AS samples
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
         FROM service_overview_spans
@@ -11667,6 +11687,7 @@ SELECT
           service_overview_minutely.Minute AS bBucket,
           service_overview_minutely.ServiceName AS bService,
           service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.SpanCount) AS bSamples,
           sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
           sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
         FROM service_overview_minutely
@@ -11681,6 +11702,7 @@ SELECT
           service_overview_hourly.Hour AS bBucket,
           service_overview_hourly.ServiceName AS bService,
           service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.SpanCount) AS bSamples,
           sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
           sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
         FROM service_overview_hourly
@@ -11693,15 +11715,17 @@ SELECT
         GROUP BY serviceName, environment
         FORMAT JSON
 
--- builder:slos:sloTotalsQuery:availability  [66cc1667]
+-- builder:slos:sloTotalsQuery:availability  [2d825cee]
 SELECT
           sum(slo_buckets.bTotal) AS total,
-          sum(slo_buckets.bGood) AS good
+          sum(slo_buckets.bGood) AS good,
+          sum(slo_buckets.bSamples) AS samples
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.StatusCode != 'Error') AS bGood
         FROM service_overview_spans
@@ -11717,6 +11741,7 @@ SELECT
           service_overview_minutely.Minute AS bBucket,
           service_overview_minutely.ServiceName AS bService,
           service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.SpanCount) AS bSamples,
           sum(service_overview_minutely.EstimatedSpanCount) AS bTotal,
           sum(service_overview_minutely.EstimatedSpanCount) - sum(service_overview_minutely.EstimatedErrorCount) AS bGood
         FROM service_overview_minutely
@@ -11732,6 +11757,7 @@ SELECT
           service_overview_hourly.Hour AS bBucket,
           service_overview_hourly.ServiceName AS bService,
           service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.SpanCount) AS bSamples,
           sum(service_overview_hourly.EstimatedSpanCount) AS bTotal,
           sum(service_overview_hourly.EstimatedSpanCount) - sum(service_overview_hourly.EstimatedErrorCount) AS bGood
         FROM service_overview_hourly
@@ -11744,15 +11770,17 @@ SELECT
 ) AS slo_buckets
         FORMAT JSON
 
--- builder:slos:sloTotalsQuery:latency  [6487f581]
+-- builder:slos:sloTotalsQuery:latency  [d61a920c]
 SELECT
           sum(slo_buckets.bTotal) AS total,
-          sum(slo_buckets.bGood) AS good
+          sum(slo_buckets.bGood) AS good,
+          sum(slo_buckets.bSamples) AS samples
         FROM (
 SELECT
           toStartOfMinute(service_overview_spans.Timestamp) AS bBucket,
           service_overview_spans.ServiceName AS bService,
           service_overview_spans.DeploymentEnv AS bEnv,
+          count() AS bSamples,
           sum(service_overview_spans.SampleRate) AS bTotal,
           sumIf(service_overview_spans.SampleRate, service_overview_spans.Duration < 500000000) AS bGood
         FROM service_overview_spans
@@ -11767,6 +11795,7 @@ SELECT
           service_overview_minutely.Minute AS bBucket,
           service_overview_minutely.ServiceName AS bService,
           service_overview_minutely.DeploymentEnv AS bEnv,
+          sum(service_overview_minutely.SpanCount) AS bSamples,
           sum(service_overview_minutely.EstimatedLadderSpanCount) AS bTotal,
           sum(service_overview_minutely.EstimatedUnder500Ms) AS bGood
         FROM service_overview_minutely
@@ -11781,6 +11810,7 @@ SELECT
           service_overview_hourly.Hour AS bBucket,
           service_overview_hourly.ServiceName AS bService,
           service_overview_hourly.DeploymentEnv AS bEnv,
+          sum(service_overview_hourly.SpanCount) AS bSamples,
           sum(service_overview_hourly.EstimatedLadderSpanCount) AS bTotal,
           sum(service_overview_hourly.EstimatedUnder500Ms) AS bGood
         FROM service_overview_hourly

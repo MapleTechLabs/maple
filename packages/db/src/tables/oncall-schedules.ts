@@ -11,13 +11,25 @@ export const OnCallSchedules = PG.table("oncall_schedules", {
 		description: PG.nullable(PG.text),
 		timeZone: PG.column(PG.text, { name: "time_zone" }),
 		layersJson: PG.column(PG.jsonb(OnCallLayers), { name: "layers_json" }),
+		/**
+		 * SHA-256 of the calendar feed's token, hex. The token itself is shown once and never
+		 * stored; null while the schedule has no feed.
+		 */
+		calendarFeedTokenHash: PG.column(PG.nullable(PG.text), { name: "calendar_feed_token_hash" }),
+		calendarFeedCreatedAt: PG.column(PG.nullable(PG.timestamptzMillis), {
+			name: "calendar_feed_created_at",
+		}),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 		createdBy: PG.column(PG.text, { name: "created_by" }),
 		updatedBy: PG.column(PG.text, { name: "updated_by" }),
 	},
 	primaryKey: ["id"],
-	indexes: [PG.index("oncall_schedules_org_idx", ["orgId"])],
+	indexes: [
+		PG.index("oncall_schedules_org_idx", ["orgId"]),
+		// The feed is fetched by token alone, before any org is known.
+		PG.uniqueIndex("oncall_schedules_calendar_feed_idx", ["calendarFeedTokenHash"]),
+	],
 	tenantColumn: "orgId",
 })
 

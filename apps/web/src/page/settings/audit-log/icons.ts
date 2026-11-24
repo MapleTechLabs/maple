@@ -135,6 +135,8 @@ const VERB_ICONS = {
 	granted: "KeyIcon",
 	approved: "CircleCheckIcon",
 	impersonation: "UserIcon",
+	calendar_feed_created: "CalendarIcon",
+	calendar_feed_deleted: "TrashIcon",
 } as const satisfies { readonly [Verb in AuditVerb]: IconName }
 
 const hasVerbIcon = (verb: string): verb is keyof typeof VERB_ICONS =>

@@ -22,6 +22,8 @@ import { typography } from "@maple/views/ui/typography"
 import { sectionHeading } from "../../kit/section-heading"
 import { formatShiftEdge, formatUntil, newScheduleHref, scheduleHref } from "../shared/oncall-schedules"
 import { memberName, memberOf } from "../shared/org-members"
+import { coverageGapsText, departedText } from "../shared/schedule-health"
+import { rowWarning, rowWarnings } from "../../kit/row-warning"
 import { Message } from "./message"
 import { type Model } from "./model"
 import { DELETE_SCHEDULE_DIALOG_ID, scheduleMenuId } from "./update"
@@ -57,6 +59,21 @@ const onCallPerson = (h: H, model: Model, schedule: V2OnCallSchedule, withZone: 
 
 const layerCount = (schedule: V2OnCallSchedule) =>
 	`${schedule.layers.length} ${pluralize(schedule.layers.length, "layer")}`
+
+/** Under the row's name: the gaps ahead and the participants who left; nothing for a healthy schedule. */
+const scheduleWarnings = (h: H, model: Model, schedule: V2OnCallSchedule): ReadonlyArray<Html> => {
+	const warnings = [
+		...Option.match(coverageGapsText(schedule), {
+			onNone: () => [],
+			onSome: (text) => [rowWarning(h, { icon: "AlertWarningIcon", text })],
+		}),
+		...Option.match(departedText(model.members, schedule), {
+			onNone: () => [],
+			onSome: (text) => [rowWarning(h, { icon: "UserIcon", text })],
+		}),
+	]
+	return warnings.length === 0 ? [] : [rowWarnings(h, warnings)]
+}
 
 const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: number): Html => {
 	const menuId = scheduleMenuId(schedule.id)
@@ -99,6 +116,7 @@ const scheduleRow = (h: H, model: Model, schedule: V2OnCallSchedule, nowMs: numb
 						typography(h, { size: "xs", tone: "muted", truncate: true }, [
 							`${schedule.time_zone} · ${layerCount(schedule)}`,
 						]),
+						...scheduleWarnings(h, model, schedule),
 					]),
 				]),
 				hstack(h, { gap: "4", className: "w-full pl-7 sm:w-auto sm:pl-0" }, [

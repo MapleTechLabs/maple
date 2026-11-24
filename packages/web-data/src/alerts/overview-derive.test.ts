@@ -101,6 +101,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		acknowledgedByUserId: null,
 		acknowledgedByName: null,
 		acknowledgedVia: null,
+		firstAcknowledgedAt: null,
 		errorIssueId: null,
 		silenceId: null,
 		silencedAt: null,
@@ -178,6 +179,29 @@ describe("incident lines", () => {
 		)
 		expect(incidentScope(slo())).toBeNull()
 		expect(incidentValues(slo())).toEqual({ now: "16.1x", threshold: "6.0x" })
+	})
+
+	it("names an SLO's budget incident as a spent budget, never a burn, a factor or its group key", () => {
+		const budget = (overrides: Record<string, unknown> = {}) =>
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				severity: "warning",
+				comparator: "gte",
+				threshold: 1,
+				lastObservedValue: 1.35,
+				status: "open",
+				resolvedAt: null,
+				groupKey: "__slo_budget__",
+				...overrides,
+			})
+		expect(incidentTitle(budget())).toBe("Checkout API has spent its error budget")
+		expect(incidentValues(budget())).toEqual({ now: "Spent", threshold: "–" })
+		expect(incidentScope(budget())).toBeNull()
+		expect(incidentSubline(budget())).toBe("SLO burn: Checkout API")
+		const resolved = budget({ status: "resolved", resolvedAt: iso(HOUR), lastObservedValue: 0.9 })
+		expect(incidentTitle(resolved)).toBe("Checkout API has error budget left again")
+		expect(incidentValues(resolved).now).toBe("Recovered")
 	})
 
 	it("keeps a telemetry incident's signal, value, group and threshold", () => {

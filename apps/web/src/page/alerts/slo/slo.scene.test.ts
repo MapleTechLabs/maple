@@ -19,7 +19,10 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { slosTabHref } from "../shared/slo-commands"
 import {
+	budgetIncidentRow,
+	burnIncidentRow,
 	checkoutSlo,
+	lowTargetSlo,
 	SLO_RULE_UUID,
 	searchSlo,
 	sloHistory,
@@ -70,7 +73,7 @@ const withStatus = (scenario: SloScenario, slo = checkoutSlo()) =>
 	opened(slo, (model) => [
 		Message.CompletedFetchStatus({
 			key: model.status.key ?? "",
-			result: Result.succeed(sloStatus(scenario)),
+			result: Result.succeed(sloStatus(scenario, { sloId: slo.id, targetPercent: slo.target_percent })),
 		}),
 		Message.CompletedFetchHistory({
 			key: model.history.key ?? "",
@@ -152,7 +155,7 @@ describe("SLO page", () => {
 		)
 	})
 
-	test("an outage holds both tiers: the open incident still leads, its severity stays, nothing reads quiet", () => {
+	test("an outage holds the two fast tiers: the open incident still leads, its severity stays, only the slow tier reads quiet", () => {
 		const incident = incidentRow({ rule_id: SLO_RULE_UUID, signal_type: "slo_burn_rate", status: "open" })
 		const model = pageUpdate(
 			withStatus("holding"),
@@ -173,8 +176,113 @@ describe("SLO page", () => {
 			expectView(
 				within(burnPanel, text("Holding: no events in 30m, an open incident stays open.")),
 			).toExist(),
-			expectView(within(burnPanel, text("Quiet"))).not.toExist(),
+			// The slow tier's 2h window still holds events, and 24h at 2.4x is under its 3x.
+			expectView(
+				within(burnPanel, text("24h at 2.4x, 2h at 12x. Warning opens a ticket when both reach 3x.")),
+			).toExist(),
 			expectView(within(burnPanel, text("Would fire"))).not.toExist(),
+		)
+	})
+
+	test("the burn panel lists all six windows and the three tiers", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("healthy")),
+			themeResolved(),
+			expectView(within(burnPanel, text("Last 2h"))).toExist(),
+			expectView(within(burnPanel, text("Last 24h"))).toExist(),
+			expectView(within(burnPanel, text("14.4x over 1h and 5m"))).toExist(),
+			expectView(within(burnPanel, text("6x over 6h and 30m"))).toExist(),
+			expectView(within(burnPanel, text("3x over 24h and 2h"))).toExist(),
+		)
+	})
+
+	test("a burn only the slow tier sees fires it as a warning", () => {
+		const incident = burnIncidentRow({ severity: "warning" })
+		const model = pageUpdate(
+			withStatus("slow"),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [incident] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(within(callout, text("Burning the error budget at 3.2x over 24h"))).toExist(),
+			expectView(within(role("heading", { name: /Checkout API/u }), text("Warning"))).toExist(),
+			expectView(
+				within(
+					burnPanel,
+					text("24h at 3.2x, 2h at 3.5x. Warning opens a ticket when both reach 3x."),
+				),
+			).toExist(),
+			// 1h at 3.8x is far under the page tier's 14.4x, and 6h at 3.9x under the ticket tier's 6x.
+			expectView(
+				within(burnPanel, text("1h at 3.8x, 5m at 3.4x. Critical pages when both reach 14.4x.")),
+			).toExist(),
+		)
+	})
+
+	test("a low target fires at the burn it can reach, and says what capped it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("capped", lowTargetSlo())),
+			themeResolved(),
+			// 1h at 8.3x and 5m at 8.6x: under 14.4x, over the 8x a 90% target is capped at.
+			expectView(within(callout, text("Burning the error budget at 8.3x over 1h"))).toExist(),
+			expectView(
+				within(callout, text(/The critical tier fires at 8x over both 1h and 5m\./u)),
+			).toExist(),
+			expectView(within(burnPanel, text("8x over 1h and 5m"))).toExist(),
+			expectView(within(burnPanel, text("14.4x over 1h and 5m"))).not.toExist(),
+			expectView(
+				within(
+					burnPanel,
+					text(
+						"1h at 8.3x, 5m at 8.6x. Critical pages when both reach 8x, not 14.4x: a target of 90% can burn at most 10x.",
+					),
+				),
+			).toExist(),
+			// 6x and 3x are within reach of a 90% target, so those tiers keep their factors.
+			expectView(within(burnPanel, text("6x over 6h and 30m"))).toExist(),
+			expectView(within(burnPanel, text("3x over 24h and 2h"))).toExist(),
+		)
+	})
+
+	test("a tier burning on a handful of events holds as too few to judge, not as no events", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("sparse")),
+			themeResolved(),
+			expectView(callout).not.toExist(),
+			expectView(
+				within(
+					burnPanel,
+					text("Holding: too few events or failures in 1h to judge, an open incident stays open."),
+				),
+			).toExist(),
+			expectView(within(burnPanel, text(/no events in/u))).not.toExist(),
+			expectView(within(burnPanel, text("Would fire"))).not.toExist(),
+			// One failure in 300 requests overspends the budget on paper: no verdict on that.
+			expectView(text("Too few events to judge")).toExist(),
+			expectView(text("Error budget spent")).not.toExist(),
+		)
+		const incident = burnIncidentRow()
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				pageUpdate(withStatus("sparse"), Message.UpdatedIncidents({ orgId: ORG, rows: [incident] }))
+					.model,
+			),
+			themeResolved(),
+			expectView(
+				within(
+					callout,
+					text("Holding: too few events or failures in 1h to judge, an open incident stays open"),
+				),
+			).toExist(),
+			expectView(
+				within(callout, text(/needs 10 events and 2 bad ones in 1h to judge the burn/u)),
+			).toExist(),
 		)
 	})
 
@@ -198,6 +306,74 @@ describe("SLO page", () => {
 			expectView(text("-35%")).toExist(),
 			expectView(within(callout, text("Error budget spent"))).toExist(),
 			expectView(text("Spent: 35% over budget")).toExist(),
+		)
+	})
+
+	test("an open budget incident gets its own calm callout, and is not a burn", () => {
+		const budget = budgetIncidentRow()
+		const model = pageUpdate(
+			withStatus("exhausted"),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [budget] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(within(callout, text("Error budget spent"))).toExist(),
+			expectView(within(callout, role("link", { name: "Open budget incident" }))).toHaveAttr(
+				"href",
+				`/alerts/incidents/${budget.id}`,
+			),
+			// Nothing burns: no burn callout, and the header carries no severity.
+			expectView(text(/Burning the error budget/u)).not.toExist(),
+			expectView(role("link", { name: "Open incident" })).not.toExist(),
+			expectView(within(role("heading", { name: /Checkout API/u }), text("Warning"))).not.toExist(),
+			expectView(within(incidentsPanel, role("link", { name: /Budget spent/u }))).toHaveAttr(
+				"href",
+				`/alerts/incidents/${budget.id}`,
+			),
+		)
+	})
+
+	test("a burn and a spent budget open at once each lead with their own incident", () => {
+		const burn = burnIncidentRow()
+		const budget = budgetIncidentRow()
+		const model = pageUpdate(
+			withStatus("spent-burning"),
+			// The budget incident synced first: the burn callout must still link the burn incident.
+			Message.UpdatedIncidents({ orgId: ORG, rows: [budget, burn] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			themeResolved(),
+			expectView(text("Burning the error budget at 16x over 1h")).toExist(),
+			expectView(role("link", { name: "Open incident" })).toHaveAttr(
+				"href",
+				`/alerts/incidents/${burn.id}`,
+			),
+			expectView(text("Error budget spent")).toExist(),
+			expectView(role("link", { name: "Open budget incident" })).toHaveAttr(
+				"href",
+				`/alerts/incidents/${budget.id}`,
+			),
+			// The header's severity is the burn's, not the budget warning's.
+			expectView(within(role("heading", { name: /Checkout API/u }), text("Critical"))).toExist(),
+		)
+	})
+
+	test("an SLO that counted no events reads No data, never a full budget", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus("no-data", checkoutSlo({ environments: ["prod"] }))),
+			themeResolved(),
+			expectView(text("No data")).toExist(),
+			expectView(text("100%")).not.toExist(),
+			expectView(text("Of the 30-day budget")).not.toExist(),
+			expectView(within(callout, text("No events in the last 30 days"))).toExist(),
+			expectView(
+				within(callout, text(/environments are free text, so prod does not match production/u)),
+			).toExist(),
 		)
 	})
 

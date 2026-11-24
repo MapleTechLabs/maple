@@ -4,7 +4,6 @@
  * carries the history, which the timeline shows and on-call escalation reads.
  */
 import {
-	AlertDeliveryEventId,
 	AlertIncidentAckSource,
 	AlertIncidentEventDocument,
 	AlertIncidentEventId,
@@ -25,12 +24,12 @@ import {
 	AlertIncidents,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
-import { makeAlertDeliveryKey } from "@maple/alerting-core"
 import type { MapleDb } from "@maple/db/client"
 import { Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
+import { acknowledgeDeliveryEventRow } from "./alert-delivery-rows"
 import { AlertRuntime } from "./AlertRuntime"
 import { rowToIncidentDocument } from "./AlertReadModelsService"
 
@@ -71,7 +70,6 @@ export interface AlertIncidentAckServiceApi {
 }
 
 const decodeEventId = Schema.decodeUnknownSync(AlertIncidentEventId)
-const decodeDeliveryId = Schema.decodeUnknownSync(AlertDeliveryEventId)
 const decodeEventType = Schema.decodeUnknownOption(AlertIncidentEventType)
 const decodeSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
 const decodeIso = Schema.decodeUnknownSync(AlertIncidentEventDocument.fields.createdAt)
@@ -145,47 +143,9 @@ export class AlertIncidentAckService extends Context.Service<
 					(destination) =>
 						db.run(
 							PG.insertInto(AlertDeliveryEvents)
-								.values({
-									id: decodeDeliveryId(makeUuid()),
-									orgId: incident.orgId,
-									incidentId: incident.id,
-									ruleId: incident.ruleId,
-									destinationId: destination.id,
-									deliveryKey: makeAlertDeliveryKey(
-										incident.id,
-										destination.id,
-										"acknowledge",
-										now,
-									),
-									eventType: "acknowledge",
-									attemptNumber: 1,
-									status: "queued",
-									scheduledAt: now,
-									claimedAt: null,
-									claimExpiresAt: null,
-									claimedBy: null,
-									attemptedAt: null,
-									providerMessage: null,
-									providerReference: null,
-									responseCode: null,
-									errorMessage: null,
-									payloadJson: {
-										eventType: "acknowledge",
-										incidentId: incident.id,
-										incidentStatus: incident.status,
-										dedupeKey: incident.dedupeKey,
-										peakSeverity: incident.peakSeverity,
-										rule: {
-											id: incident.ruleId,
-											name: incident.ruleName,
-											severity: incident.severity,
-											groupKey: incident.groupKey,
-											signalType: incident.signalType,
-										},
-									},
-									createdAt: now,
-									updatedAt: now,
-								})
+								.values(
+									acknowledgeDeliveryEventRow(incident, destination.id, now, makeUuid()),
+								)
 								.onConflictDoNothing(),
 						),
 					{ discard: true },
@@ -214,7 +174,7 @@ export class AlertIncidentAckService extends Context.Service<
 				const updated = yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
-							const rows = yield* db.run(
+							const changed = yield* db.run(
 								PG.update(AlertIncidents)
 									.set(
 										acknowledged
@@ -243,6 +203,21 @@ export class AlertIncidentAckService extends Context.Service<
 									])
 									.returning(),
 							)
+							// The first acknowledgement is kept for good: time to acknowledge reads it.
+							const stamped =
+								acknowledged && changed.length > 0
+									? yield* db.run(
+											PG.update(AlertIncidents)
+												.set({ firstAcknowledgedAt: now })
+												.where(($) => [
+													$.orgId.eq(orgId),
+													$.id.eq(incidentId),
+													$.firstAcknowledgedAt.isNull(),
+												])
+												.returning(),
+										)
+									: []
+							const rows = stamped.length > 0 ? stamped : changed
 							const changedRow = Arr.head(rows)
 							if (acknowledged && Option.isSome(changedRow)) {
 								const queued = yield* queuePagerDutyAcknowledge(
@@ -317,6 +292,7 @@ export class AlertIncidentAckService extends Context.Service<
 								actorName: row.actorName,
 								source:
 									row.source === null ? null : Option.getOrNull(decodeSource(row.source)),
+								...(row.detail === null ? undefined : { detail: row.detail }),
 								createdAt: decodeIso(new Date(row.createdAt).toISOString()),
 							}),
 					),

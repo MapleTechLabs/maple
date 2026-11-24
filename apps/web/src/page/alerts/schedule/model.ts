@@ -4,6 +4,7 @@ import { V2OnCallOverride, V2OnCallSchedule, V2OnCallShifts } from "@maple/domai
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { RangeDays } from "../shared/coverage-preview"
 import { OrgMember } from "../shared/org-members"
@@ -48,5 +49,26 @@ export const Model = Schema.Struct({
 	deletingOverrideId: Schema.NullOr(OnCallOverrideId),
 	confirmDeleteOverrideId: Schema.NullOr(OnCallOverrideId),
 	deleteOverrideDialog: Dialog.Model,
+	/**
+	 * What this page did to the calendar feed since the schedule was read: the link just made
+	 * (shown once, never read back) and when, or `createdAt: null` once turned off. `ended` is
+	 * when the link that change ended was made, so a read that still shows it is known to be old.
+	 * `isConfirmed`: a read has shown this link, so a later read without it means it was turned off.
+	 */
+	calendarFeed: Schema.NullOr(
+		Schema.Struct({
+			url: Schema.NullOr(Schema.String),
+			createdAt: Schema.NullOr(Schema.String),
+			ended: Schema.NullOr(Schema.String),
+			isConfirmed: Schema.Boolean,
+		}),
+	),
+	calendarCopy: CopyButton.Model,
+	isChangingCalendarFeed: Schema.Boolean,
+	/** What the open dialog confirms: both end the link calendar apps already hold. */
+	calendarFeedAction: Schema.NullOr(Schema.Literals(["replace", "off"])),
+	/** The change in flight, kept so its answer is read as a create or a replace. */
+	calendarFeedChange: Schema.NullOr(Schema.Literals(["create", "replace", "off"])),
+	calendarFeedDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type

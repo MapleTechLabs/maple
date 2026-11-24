@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "1963fa5b72cf38fce9eda4e23b26820d777031307dc95fdfa20f2e58d36a8800",
+	"id": "72ee25f4c58da443bfd76d1f3add40fc1da0dc97711ce10921d192f34939fd1a",
 	"prevIds": [
-		"a04247ff6a31fba67a5e9f41673eff1319e3aec62983ecaa18cae379e675535d"
+		"0414cc322a270cce1720ac939d908e37d98c377f6a419a1b58d3c56feb7e8ed3"
 	],
 	"entities": [
 		{
@@ -1321,16 +1321,6 @@
 		},
 		{
 			"kind": "table",
-			"name": "source_map_files",
-			"primaryKey": {
-				"name": "source_map_files_pkey",
-				"columns": [
-					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
 			"name": "sources",
 			"primaryKey": {
 				"name": "sources_pkey",
@@ -2514,8 +2504,18 @@
 		{
 			"kind": "column",
 			"table": "alert_incident_events",
-			"name": "created_at",
+			"name": "detail",
 			"position": 7,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incident_events",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2804,9 +2804,9 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "error_issue_id",
+			"name": "first_acknowledged_at",
 			"position": 28,
-			"type": "text",
+			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -2814,9 +2814,9 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "anomaly_incident_id",
+			"name": "quiet_since",
 			"position": 29,
-			"type": "text",
+			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -2824,7 +2824,7 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "group_label",
+			"name": "error_issue_id",
 			"position": 30,
 			"type": "text",
 			"notNull": false,
@@ -2834,9 +2834,9 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "labels_json",
+			"name": "anomaly_incident_id",
 			"position": 31,
-			"type": "jsonb",
+			"type": "text",
 			"notNull": false,
 			"default": null,
 			"identity": null
@@ -2844,7 +2844,7 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silence_id",
+			"name": "group_label",
 			"position": 32,
 			"type": "text",
 			"notNull": false,
@@ -2854,8 +2854,28 @@
 		{
 			"kind": "column",
 			"table": "alert_incidents",
-			"name": "silenced_at",
+			"name": "labels_json",
 			"position": 33,
+			"type": "jsonb",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silence_id",
+			"position": 34,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "alert_incidents",
+			"name": "silenced_at",
+			"position": 35,
 			"type": "timestamp with time zone",
 			"notNull": false,
 			"default": null,
@@ -2865,7 +2885,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "created_at",
-			"position": 34,
+			"position": 36,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -2875,7 +2895,7 @@
 			"kind": "column",
 			"table": "alert_incidents",
 			"name": "updated_at",
-			"position": 35,
+			"position": 37,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -13024,8 +13044,28 @@
 		{
 			"kind": "column",
 			"table": "oncall_schedules",
-			"name": "created_at",
+			"name": "calendar_feed_token_hash",
 			"position": 6,
+			"type": "text",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "oncall_schedules",
+			"name": "calendar_feed_created_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": false,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "oncall_schedules",
+			"name": "created_at",
+			"position": 8,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -13035,7 +13075,7 @@
 			"kind": "column",
 			"table": "oncall_schedules",
 			"name": "updated_at",
-			"position": 7,
+			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -13045,7 +13085,7 @@
 			"kind": "column",
 			"table": "oncall_schedules",
 			"name": "created_by",
-			"position": 8,
+			"position": 10,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -13055,7 +13095,7 @@
 			"kind": "column",
 			"table": "oncall_schedules",
 			"name": "updated_by",
-			"position": 9,
+			"position": 11,
 			"type": "text",
 			"notNull": true,
 			"default": null,
@@ -18483,116 +18523,6 @@
 		},
 		{
 			"kind": "column",
-			"table": "source_map_files",
-			"name": "id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "org_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "debug_id",
-			"position": 2,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "service_name",
-			"position": 3,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "version",
-			"position": 4,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "minified_path",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "size_bytes",
-			"position": 6,
-			"type": "integer",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "has_sources_content",
-			"position": 7,
-			"type": "boolean",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "object_key",
-			"position": 8,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "created_at",
-			"position": 9,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": "now()",
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "source_map_files",
-			"name": "last_used_at",
-			"position": 10,
-			"type": "timestamp with time zone",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
 			"table": "sources",
 			"name": "id",
 			"position": 0,
@@ -22227,6 +22157,18 @@
 		},
 		{
 			"kind": "index",
+			"table": "alert_incidents",
+			"name": "alert_incidents_quiet_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"rule_id\""
+			],
+			"where": "\"quiet_since\" IS NOT NULL"
+		},
+		{
+			"kind": "index",
 			"table": "alert_linear_issues",
 			"name": "alert_linear_issues_org_idx",
 			"unique": false,
@@ -23820,6 +23762,17 @@
 		{
 			"kind": "index",
 			"table": "oncall_schedules",
+			"name": "oncall_schedules_calendar_feed_idx",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"calendar_feed_token_hash\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "oncall_schedules",
 			"name": "oncall_schedules_org_idx",
 			"unique": false,
 			"method": "btree",
@@ -24534,44 +24487,6 @@
 				"\"name\""
 			],
 			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_created_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"created_at\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_debug_id_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"debug_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
-			"table": "source_map_files",
-			"name": "source_map_files_org_release_path_idx",
-			"unique": true,
-			"method": "btree",
-			"columns": [
-				"\"org_id\"",
-				"\"service_name\"",
-				"\"version\"",
-				"\"minified_path\""
-			],
-			"where": "\"debug_id\" IS NULL"
 		},
 		{
 			"kind": "index",

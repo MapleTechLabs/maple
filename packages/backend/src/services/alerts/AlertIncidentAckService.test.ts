@@ -43,6 +43,27 @@ const seed = (testDb: TestDb) =>
 	)
 
 describe("AlertIncidentAckService", () => {
+	it.effect("keeps the first acknowledgement's time through an unacknowledge and a later one", () => {
+		const testDb = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			yield* seed(testDb)
+			const acks = yield* AlertIncidentAckService
+			yield* TestClock.setTime(1_780_000_000_000)
+			const first = yield* acks.acknowledge(ORG, OPEN, dana)
+			assert.strictEqual(first.incident.firstAcknowledgedAt, first.incident.acknowledgedAt)
+
+			yield* TestClock.adjust(Duration.minutes(5))
+			const cleared = yield* acks.unacknowledge(ORG, OPEN, dana)
+			assert.isNull(cleared.incident.acknowledgedAt)
+			assert.strictEqual(cleared.incident.firstAcknowledgedAt, first.incident.firstAcknowledgedAt)
+
+			yield* TestClock.adjust(Duration.minutes(5))
+			const second = yield* acks.acknowledge(ORG, OPEN, slackClick)
+			assert.notStrictEqual(second.incident.acknowledgedAt, first.incident.acknowledgedAt)
+			assert.strictEqual(second.incident.firstAcknowledgedAt, first.incident.firstAcknowledgedAt)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("acknowledges, records who and where, and unacknowledges", () => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {

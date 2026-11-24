@@ -9,6 +9,7 @@ import { Match, Option, String as Str } from "effect"
 import { resolveSignalDisplay, type SignalDisplay } from "./alert-signal-display"
 import type { NotificationTemplateConfig } from "./alert-templating/renderer"
 import { UPTIME_CERTIFICATE_GROUP_KEY } from "@maple/domain/uptime"
+import { SLO_BUDGET_GROUP_KEY, sloNameFromRuleName } from "@maple/domain/slo"
 
 export interface TemplateRenderContext {
 	readonly ruleId: string
@@ -277,6 +278,13 @@ export const formatAlertHeadline = (
 		if (context.eventType === "trigger") return `${context.ruleName}: certificate expires soon`
 		if (context.eventType === "renotify") return `${context.ruleName}: certificate still expiring`
 		if (context.eventType === "resolve") return `${context.ruleName}: certificate renewed`
+	}
+	// An SLO's budget group is a standing warning of its own, never a burn.
+	if (context.signalType === "slo_burn_rate" && context.groupKey === SLO_BUDGET_GROUP_KEY) {
+		const slo = sloNameFromRuleName(context.ruleName) ?? context.ruleName
+		if (context.eventType === "trigger") return `SLO ${slo}: error budget spent`
+		if (context.eventType === "renotify") return `SLO ${slo}: error budget still spent`
+		if (context.eventType === "resolve") return `SLO ${slo}: error budget is back`
 	}
 	if (context.signalType === "uptime") {
 		if (context.eventType === "trigger") return `${context.ruleName} is down`

@@ -7,10 +7,14 @@ import type {
 	OrgId,
 } from "@maple/domain/http"
 import { AlertDeliveryEventDocument } from "@maple/domain/http"
-import type { AlertDeliveryEventRow } from "@maple/db/tables"
+import type { AlertDeliveryEventRow, AlertIncidentRow } from "@maple/db/tables"
+import { makeAlertDeliveryKey } from "@maple/alerting-core"
 import { Schema } from "effect"
 
 const decodeDeliveryEventId = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
+
+/** How a chat post that was deliberately not made reads in a delivery's provider message. */
+export const SKIPPED_POST_PREFIX = "Skipped:"
 
 export interface QueuedDeliveryEvent {
 	readonly id: string
@@ -53,3 +57,36 @@ export const queuedDeliveryEventRow = (event: QueuedDeliveryEvent): AlertDeliver
 	createdAt: event.scheduledAt,
 	updatedAt: event.scheduledAt,
 })
+
+/** The `acknowledge` a pager that was paged about `incident` is sent once someone is on it. */
+export const acknowledgeDeliveryEventRow = (
+	incident: AlertIncidentRow,
+	destinationId: AlertDestinationId,
+	nowMs: number,
+	id: string,
+): AlertDeliveryEventRow =>
+	queuedDeliveryEventRow({
+		id,
+		orgId: incident.orgId,
+		incidentId: incident.id,
+		ruleId: incident.ruleId,
+		destinationId,
+		eventType: "acknowledge",
+		payload: {
+			eventType: "acknowledge",
+			incidentId: incident.id,
+			incidentStatus: incident.status,
+			dedupeKey: incident.dedupeKey,
+			peakSeverity: incident.peakSeverity,
+			rule: {
+				id: incident.ruleId,
+				name: incident.ruleName,
+				severity: incident.severity,
+				groupKey: incident.groupKey,
+				signalType: incident.signalType,
+			},
+		},
+		scheduledAt: nowMs,
+		deliveryKey: makeAlertDeliveryKey(incident.id, destinationId, "acknowledge", nowMs),
+		attemptNumber: 1,
+	})

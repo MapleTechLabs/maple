@@ -142,6 +142,7 @@ describe("quietForMs", () => {
 			acknowledgedByUserId: null,
 			acknowledgedByName: null,
 			acknowledgedVia: null,
+			firstAcknowledgedAt: null,
 			errorIssueId: null,
 			silenceId: null,
 			silencedAt: null,

@@ -215,6 +215,26 @@ struct WidgetOrganizationIndexTests {
 
 	/// An organization the index has never heard of has no name and no
 	/// snapshot; adding one here would put a bare `org_…` id in the picker.
+	/// A background wake routes by these, so they must survive every writer.
+	@Test("Memberships record each organization's region; later writes keep it")
+	func keepsRegions() {
+		let index = makeIndex()
+		index.record(memberships: [WidgetOrganization(id: "org_eu", name: "Acme EU", region: "eu")])
+		index.record(organization("org_eu"), isActive: true)
+		index.record(memberships: [WidgetOrganization(id: "org_eu", name: "Acme EU")])
+		index.record(environments: ["prod"], activeEnvironment: nil, for: "org_eu")
+
+		#expect(index.load().first?.region == "eu")
+	}
+
+	@Test("Learning a region is saved but asks for no widget reload")
+	func regionCostsNoReload() {
+		let index = makeIndex()
+		#expect(index.record(memberships: [WidgetOrganization(id: "org_eu", name: "Acme EU")]))
+		#expect(!index.record(memberships: [WidgetOrganization(id: "org_eu", name: "Acme EU", region: "eu")]))
+		#expect(index.load().first?.region == "eu")
+	}
+
 	@Test("Environments for an unknown organization are ignored")
 	func ignoresUnknownOrganizations() {
 		let index = makeIndex()

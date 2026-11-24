@@ -1,7 +1,13 @@
 import { OnCallOverrideId } from "@maple/domain/http"
-import { V2OnCallOverride, V2OnCallSchedule, V2OnCallShifts } from "@maple/domain/http/v2"
+import {
+	V2OnCallCalendarFeed,
+	V2OnCallOverride,
+	V2OnCallSchedule,
+	V2OnCallShifts,
+} from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
+import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import { RangeDays } from "../shared/coverage-preview"
 import { OrgMember } from "../shared/org-members"
@@ -42,5 +48,14 @@ export const Message = defineMessageUnion({
 	ClickedConfirmDeleteOverride: {},
 	GotDeleteOverrideDialogMessage: { message: Dialog.Message },
 	CompletedDeleteOverride: { overrideId: OnCallOverrideId, result: LoadOutcome(Schema.Void) },
+	/** Make the calendar link; with one already made, the dialog asks first. */
+	ClickedCreateCalendarFeed: {},
+	ClickedReplaceCalendarFeed: {},
+	ClickedTurnOffCalendarFeed: {},
+	GotCalendarFeedDialogMessage: { message: Dialog.Message },
+	ClickedConfirmCalendarFeed: {},
+	CompletedCreateCalendarFeed: { result: LoadOutcome(V2OnCallCalendarFeed) },
+	CompletedDeleteCalendarFeed: { result: LoadOutcome(Schema.Void) },
+	GotCalendarCopyMessage: { message: CopyButton.Message },
 })
 export type Message = typeof Message.Type

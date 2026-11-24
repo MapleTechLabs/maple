@@ -93,6 +93,26 @@ describe("overview, analyst", () => {
 		)
 	})
 
+	test("an SLO that counts no events is listed as No data, not as within budget or as a problem", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(at("no-data")),
+			mounted,
+			expectView(verdict("Everything is working.")).toExist(),
+			expectView(
+				text(
+					"No open incidents · 5 of 5 uptime checks passing · 1 of 2 SLOs within budget, 1 without data",
+				),
+			).toExist(),
+			expectView(
+				role("link", { name: /Search latency.*No traffic matches.*search · prod.*No data/ }),
+			).toHaveAttr("href", sloHref(searchSlo().id)),
+			expectView(text("100%")).not.toExist(),
+			expectView(role("meter")).not.toExist(),
+			expectView(text("All 2 SLOs are within budget")).not.toExist(),
+		)
+	})
+
 	test("open incidents, a failing check and troubled SLOs are named, and each row links to its page", () => {
 		const topError = Arr.getUnsafe(TOP_ERRORS, 0)
 		scene(

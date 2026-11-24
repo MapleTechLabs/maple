@@ -2,7 +2,7 @@ import { AlertDeliveryEventDocument, AlertIncidentDocument } from "@maple/domain
 import { V2AlertIncidentEvent } from "@maple/domain/http/v2"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { buildIncidentTimeline } from "./incident-timeline"
+import { acknowledgedSummary, buildIncidentTimeline, timeToAcknowledge } from "./incident-timeline"
 
 const decodeIncident = Schema.decodeUnknownSync(AlertIncidentDocument)
 const decodeDelivery = Schema.decodeUnknownSync(AlertDeliveryEventDocument)
@@ -37,6 +37,7 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		acknowledgedByUserId: null,
 		acknowledgedByName: null,
 		acknowledgedVia: null,
+		firstAcknowledgedAt: null,
 		errorIssueId: null,
 		silenceId: null,
 		silencedAt: null,
@@ -114,6 +115,74 @@ describe("buildIncidentTimeline", () => {
 		)
 	})
 
+	it("opens an SLO's budget incident on the spent budget, with no burn factor or group", () => {
+		const budget = (overrides: Record<string, unknown> = {}) =>
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				severity: "warning",
+				comparator: "gte",
+				threshold: 1,
+				lastObservedValue: 1.35,
+				groupKey: "__slo_budget__",
+				// What the scheduler stores on every budget incident.
+				groupLabel: "Error budget",
+				...overrides,
+			})
+		// The rule reminds every 30m; a spent budget reminds once a day whatever the rule says.
+		expect(
+			Arr.map(build(budget()), (entry) => [entry.title, entry.detail, entry.tone, entry.pending]),
+		).toEqual([
+			["Incident opened", "The SLO's error budget is spent", "warn", false],
+			[
+				"Budget still spent",
+				"135% of the error budget used · one reminder a day while open",
+				"warn",
+				true,
+			],
+		])
+		expect(
+			Arr.map(
+				build(
+					budget({
+						acknowledgedAt: "2026-10-15T14:20:00.000Z",
+						acknowledgedByName: "Dana Kim",
+						acknowledgedVia: "web",
+						firstAcknowledgedAt: null,
+					}),
+				),
+				(entry) => entry.detail,
+			),
+		).toEqual([
+			"The SLO's error budget is spent",
+			"135% of the error budget used · reminders paused while acknowledged",
+		])
+		const resolved = build(
+			budget({ status: "resolved", resolvedAt: "2026-10-15T15:00:00.000Z", lastObservedValue: 0.9 }),
+		)
+		expect(Arr.map(resolved, (entry) => [entry.title, entry.detail])).toEqual([
+			["Incident opened", "The SLO's error budget is spent"],
+			["Resolved", "After 46m"],
+		])
+	})
+
+	it("keeps a burn incident of the same rule on its factor and its reminders", () => {
+		const entries = build(
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				comparator: "gte",
+				threshold: 6,
+				lastObservedValue: 7.3,
+				groupKey: "__total__",
+			}),
+		)
+		expect(Arr.map(entries, (entry) => [entry.title, entry.detail, entry.tone])).toEqual([
+			["Incident opened", "SLO burning its error budget at 6.0x or more", "crit"],
+			["Still breaching", "Last value 7.3x · reminders every 30m while open", "crit"],
+		])
+	})
+
 	it("orders the open, deliveries and current state chronologically", () => {
 		const entries = build(makeIncident(), [
 			makeDelivery({
@@ -176,6 +245,7 @@ describe("buildIncidentTimeline", () => {
 				acknowledgedAt: "2026-10-15T14:26:00.000Z",
 				acknowledgedByName: "Dana Kim",
 				acknowledgedVia: "web",
+				firstAcknowledgedAt: null,
 			}),
 			[makeDelivery()],
 			[
@@ -375,5 +445,39 @@ describe("paged events", () => {
 		expect(Arr.filter(entries, (entry) => Str.startsWith("page:")(entry.key))).toMatchObject([
 			{ title: "Paged a member", detail: null, tone: "neutral" },
 		])
+	})
+})
+
+describe("time to acknowledge", () => {
+	const opened = "2026-11-10T08:00:00.000Z"
+	const incident = (
+		firstAcknowledgedAt: string | null,
+		acknowledgedAt: string | null = firstAcknowledgedAt,
+	) =>
+		makeIncident({
+			firstTriggeredAt: opened,
+			firstAcknowledgedAt,
+			acknowledgedAt,
+			acknowledgedByName: acknowledgedAt === null ? null : "Dana Kim",
+			acknowledgedVia: acknowledgedAt === null ? null : "web",
+		})
+
+	it("reads the wait before the first acknowledgement, and nothing when there was none", () => {
+		expect(timeToAcknowledge(incident("2026-11-10T08:04:30.000Z"))).toBe("4m")
+		expect(timeToAcknowledge(incident("2026-11-10T09:05:00.000Z"))).toBe("1h 5m")
+		expect(timeToAcknowledge(incident("2026-11-10T08:00:20.000Z"))).toBe("under 1m")
+		expect(timeToAcknowledge(incident(null))).toBeNull()
+	})
+
+	it("says how long the acknowledgement took, and when a later one was not the first", () => {
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z"))).toBe(
+			"Acknowledged by Dana Kim, 4m after it opened",
+		)
+		// Acknowledged, taken back, then acknowledged again half an hour in.
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z", "2026-11-10T08:30:00.000Z"))).toBe(
+			"Acknowledged by Dana Kim · first acknowledged after 4m",
+		)
+		// Unacknowledged now: nobody holds it, whatever the first wait was.
+		expect(acknowledgedSummary(incident("2026-11-10T08:04:30.000Z", null))).toBeNull()
 	})
 })

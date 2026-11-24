@@ -3,7 +3,13 @@ import { Array as Arr, Effect, Schema } from "effect"
 import { OnCallSchedulesService } from "@maple/backend/services/alerts/OnCallSchedulesService"
 import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { formatLayers, formatOnCallNow, memberNames, toScheduleRow } from "../lib/oncall-schedules"
+import {
+	formatCoverageWarning,
+	formatLayers,
+	formatOnCallNow,
+	memberNames,
+	toScheduleRow,
+} from "../lib/oncall-schedules"
 import { doc } from "../lib/tool-doc"
 
 export function registerListOnCallSchedulesTool(server: McpToolRegistrar) {
@@ -45,7 +51,19 @@ export function registerListOnCallSchedulesTool(server: McpToolRegistrar) {
 				: undefined),
 			blocks: Arr.flatMap(output.schedules, (schedule) => [
 				doc.heading(`${schedule.name} (${schedule.id})`),
-				doc.text(`${schedule.timeZone}: ${formatOnCallNow(schedule)}\n${formatLayers(schedule)}`),
+				doc.text(
+					Arr.join(
+						Arr.filter(
+							[
+								`${schedule.timeZone}: ${formatOnCallNow(schedule)}`,
+								formatLayers(schedule),
+								formatCoverageWarning(schedule),
+							],
+							(line) => line !== null,
+						),
+						"\n",
+					),
+				),
 			]),
 			next: Arr.take(
 				Arr.map(output.schedules, (schedule) =>

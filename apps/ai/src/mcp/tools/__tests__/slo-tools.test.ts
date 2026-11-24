@@ -36,9 +36,10 @@ const fixtures: FixtureRule[] = [
 		rows: () =>
 			perService((service) =>
 				Rec.fromEntries(
-					Arr.flatMap([5, 30, 60, 360], (minutes) => [
+					Arr.flatMap([5, 30, 60, 120, 360, 1440], (minutes) => [
 						[`total${minutes}`, minutes * 1000],
 						[`good${minutes}`, minutes * (1000 - BAD_PER_MILLE[service])],
+						[`samples${minutes}`, minutes * 1000],
 					]),
 				),
 			),
@@ -50,25 +51,27 @@ const fixtures: FixtureRule[] = [
 			perService((service) => ({
 				total: 1_000_000,
 				good: BAD_PER_MILLE[service] > 0 ? 999_500 : 1_000_000,
+				samples: 1_000_000,
 			})),
 	},
-	// The burn read: 400 minute buckets of uniform traffic ending just before now.
+	// The burn read: 1500 minute buckets of uniform traffic ending just before now.
 	{
 		match: (sql) =>
 			Str.includes("FROM service_overview_spans")(sql) && Str.includes("INTERVAL 60 SECOND")(sql),
 		rows: (sql) => {
 			const minute = Math.floor(Date.now() / 60_000) * 60_000
-			return Arr.makeBy(400, (index) => ({
+			return Arr.makeBy(1500, (index) => ({
 				bucket: formatWarehouseDateTime(minute - (index + 1) * 60_000),
 				total: 1000,
 				good: 1000 - badOf(sql),
+				samples: 1000,
 			}))
 		},
 	},
 	// The window totals: half of a 99.9% budget spent on checkout, none on search.
 	{
 		match: (sql) => Str.includes("FROM service_overview_spans")(sql),
-		rows: (sql) => [{ total: 1_000_000, good: badOf(sql) > 0 ? 999_500 : 1_000_000 }],
+		rows: (sql) => [{ total: 1_000_000, good: badOf(sql) > 0 ? 999_500 : 1_000_000, samples: 1_000_000 }],
 	},
 ]
 
@@ -243,7 +246,9 @@ describe("inspect_slo", () => {
 			"5m",
 			"30m",
 			"1h",
+			"2h",
 			"6h",
+			"24h",
 		])
 		for (const window of output.status.burnWindows) {
 			expect(window.total).toBe(window.windowMinutes * 1000)
@@ -252,6 +257,7 @@ describe("inspect_slo", () => {
 		expect(output.status.tiers).toMatchObject([
 			{ severity: "critical", factor: 14.4, longWindow: "1h", shortWindow: "5m", breached: true },
 			{ severity: "warning", factor: 6, longWindow: "6h", shortWindow: "30m", breached: true },
+			{ severity: "warning", factor: 3, longWindow: "24h", shortWindow: "2h", breached: true },
 		])
 		expect(output.status).toMatchObject({ total: 1_000_000, good: 999_500 })
 		expect(markdown(result)).toContain("The critical tier is breaching")

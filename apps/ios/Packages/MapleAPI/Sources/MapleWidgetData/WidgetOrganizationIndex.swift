@@ -26,23 +26,28 @@ public struct WidgetOrganization: Codable, Hashable, Sendable, Identifiable {
 	/// question. Nil is the whole organization, and a real answer — not a
 	/// missing one.
 	public var activeEnvironment: String?
+	/// The data region (`us`, `eu`) from the organization's Clerk metadata, so a
+	/// background wake can reach its API without Clerk. Nil when never learned.
+	public var region: String?
 
 	public init(
 		id: String,
 		name: String?,
 		lastPublishedAt: Date? = nil,
 		environments: [String] = [],
-		activeEnvironment: String? = nil
+		activeEnvironment: String? = nil,
+		region: String? = nil
 	) {
 		self.id = id
 		self.name = name
 		self.lastPublishedAt = lastPublishedAt
 		self.environments = environments
 		self.activeEnvironment = activeEnvironment
+		self.region = region
 	}
 
 	private enum CodingKeys: String, CodingKey {
-		case id, name, lastPublishedAt, environments, activeEnvironment
+		case id, name, lastPublishedAt, environments, activeEnvironment, region
 	}
 
 	/// Hand-written so an entry written by a build before the environment
@@ -56,6 +61,7 @@ public struct WidgetOrganization: Codable, Hashable, Sendable, Identifiable {
 		self.lastPublishedAt = try container.decodeIfPresent(Date.self, forKey: .lastPublishedAt)
 		self.environments = try container.decodeIfPresent([String].self, forKey: .environments) ?? []
 		self.activeEnvironment = try container.decodeIfPresent(String.self, forKey: .activeEnvironment)
+		self.region = try container.decodeIfPresent(String.self, forKey: .region)
 	}
 }
 
@@ -131,6 +137,7 @@ public struct WidgetOrganizationIndex: Sendable {
 		// the widget's environment picker on the next background fetch.
 		if updated.environments.isEmpty { updated.environments = previous?.environments ?? [] }
 		if updated.activeEnvironment == nil { updated.activeEnvironment = previous?.activeEnvironment }
+		if updated.region == nil { updated.region = previous?.region }
 		write(existing.filter { $0.id != organization.id } + [updated], to: defaults)
 		if isActive { defaults.set(organization.id, forKey: Key.active) }
 	}
@@ -164,17 +171,21 @@ public struct WidgetOrganizationIndex: Sendable {
 				// Same rule as the timestamp: the membership list is authoritative
 				// for the name and silent about everything else.
 				environments: byId[membership.id]?.environments ?? [],
-				activeEnvironment: byId[membership.id]?.activeEnvironment
+				activeEnvironment: byId[membership.id]?.activeEnvironment,
+				region: membership.region ?? byId[membership.id]?.region
 			)
 		}
 
 		let updated = Array(byId.values)
 		let before = Dictionary(existing.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
 		let after = Dictionary(updated.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-		guard before != after else { return false }
+		let regionsBefore = Dictionary(existing.map { ($0.id, $0.region) }, uniquingKeysWith: { first, _ in first })
+		let regionsAfter = Dictionary(updated.map { ($0.id, $0.region) }, uniquingKeysWith: { first, _ in first })
+		guard before != after || regionsBefore != regionsAfter else { return false }
 
 		write(updated, to: defaults)
-		return true
+		// A region is for routing only; no widget shows it, so it costs no reload.
+		return before != after
 	}
 
 	/// Record what the app has learned about one organization's environments:
