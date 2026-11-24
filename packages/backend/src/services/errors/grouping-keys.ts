@@ -272,8 +272,8 @@ export const warehouseGroupingReads = (
 ): GroupingKeyReads<WarehouseReadError> => ({
 	sourceMapped: (entries, rules) => withSourceMappedStacks(symbolicator, orgId, entries, rules),
 	mapsInPlay: Option.match(symbolicator, {
-		onNone: () => Effect.succeed(false),
-		onSome: (stacks) => stacks.hasSourceMaps(orgId),
+		onNone: () => Effect.succeedSome(false),
+		onSome: (stacks) => stacks.sourceMapsKnown(orgId),
 	}),
 	samples: (hashes) =>
 		warehouse.compiledQuery(
@@ -338,8 +338,8 @@ export interface GroupingKeyReads<E> {
 		entries: ReadonlyArray<SampleInput>,
 		rules: CompiledGroupingRules,
 	) => Effect.Effect<ReadonlyArray<SampleInput>>
-	/** Whether the org has source maps; absent, it has none. */
-	readonly mapsInPlay?: Effect.Effect<boolean>
+	/** Whether the org has source maps, `None` when the lookup failed; absent, it has none. */
+	readonly mapsInPlay?: Effect.Effect<Option.Option<boolean>>
 }
 
 const storedKeys = (db: MapleDb, orgId: OrgId, hashes: ReadonlyArray<string>) =>
@@ -413,12 +413,16 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		const { orgId, nowMs } = input
 		const hashes = Arr.dedupe(input.hashes)
 		if (hashes.length === 0) return new Map()
-		const mapsInPlay = reads.mapsInPlay === undefined ? false : yield* reads.mapsInPlay
+		const mapsKnown = reads.mapsInPlay === undefined ? Option.some(false) : yield* reads.mapsInPlay
+		const mapsInPlay = Option.getOrElse(mapsKnown, () => false)
 		// Whether the org has maps is part of the digest, so a first upload re-keys its keys once.
 		// An org without maps keeps the rules digest as it was.
-		const configDigest = mapsInPlay ? `${input.grouping.digest}+source-maps` : input.grouping.digest
+		const withMaps = `${input.grouping.digest}+source-maps`
+		const configDigest = mapsInPlay ? withMaps : input.grouping.digest
+		// A failed lookup decides nothing: a key under either maps bit stays current this tick.
+		const currentDigests = Option.isSome(mapsKnown) ? [configDigest] : [input.grouping.digest, withMaps]
 		const isCurrent = (row: { readonly keyVersion: number; readonly configDigest: string }) =>
-			row.keyVersion === GROUPING_KEY_VERSION && row.configDigest === configDigest
+			row.keyVersion === GROUPING_KEY_VERSION && Arr.contains(currentDigests, row.configDigest)
 		const stored = yield* dbRun((tx) => storedKeys(tx, orgId, hashes))
 		const current = new Set(Arr.map(Arr.filter(stored, isCurrent), (row) => row.fingerprintHash))
 		// Hashes never keyed first (likely new issues), then stale keys after a rules change.
@@ -563,7 +567,7 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 							$.orgId.eq(orgId),
 							$.groupingKey.in_(...chunk),
 							$.keyVersion.eq(GROUPING_KEY_VERSION),
-							$.configDigest.eq(configDigest),
+							$.configDigest.in_(...currentDigests),
 							$.pinned.eq(false),
 						])
 						.groupBy("groupingKey"),
