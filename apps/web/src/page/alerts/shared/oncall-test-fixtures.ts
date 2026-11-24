@@ -3,6 +3,7 @@ import {
 	V2AlertIncidentEvent,
 	V2EscalationChain,
 	V2OnCallOverride,
+	V2OnCallCalendarFeed,
 	V2OnCallSchedule,
 	V2OnCallShifts,
 } from "@maple/domain/http/v2"
@@ -219,6 +220,8 @@ type Spec = Readonly<{
 	overrides: (nowMs: number) => ReadonlyArray<Segment & Readonly<{ id: string }>>
 	/** Participants who left the org; `segments` already hands their shifts to the next person. */
 	departed?: ReadonlyArray<string>
+	/** When the calendar link was made; absent while the feed is off. */
+	calendarFeedCreatedAt?: string
 }>
 
 const m = (index: number) => memberId(index)
@@ -372,6 +375,7 @@ const scheduleOf = (spec: Spec, nowMs: number): V2OnCallSchedule => {
 			ends_at: iso(gap.endMs),
 		})),
 		departed_user_ids: spec.departed ?? [],
+		calendar_feed_created_at: spec.calendarFeedCreatedAt ?? null,
 		chain_ids: spec.n === 1 ? [encodePublicId("esc", "0199a00e-0000-7000-8000-000000000001")] : [],
 		created_at: iso(nowMs - 30 * 86_400_000),
 		updated_at: iso(nowMs - 86_400_000),
@@ -389,7 +393,26 @@ export const populatedSchedules = (nowMs: number = ONCALL_NOW): ReadonlyArray<V2
 export const checkoutSchedule = (
 	nowMs: number = ONCALL_NOW,
 	departed: ReadonlyArray<string> = [],
-): V2OnCallSchedule => scheduleOf({ ...checkout, departed }, nowMs)
+	/** When its calendar link was made; absent while the feed is off. */
+	calendarFeedCreatedAt?: string,
+): V2OnCallSchedule =>
+	scheduleOf(
+		{
+			...checkout,
+			departed,
+			...(calendarFeedCreatedAt === undefined ? undefined : { calendarFeedCreatedAt }),
+		},
+		nowMs,
+	)
+
+/** `POST /{id}/calendar_feed` for the checkout schedule: the link, as it is shown once. */
+export const checkoutCalendarFeed = (nowMs: number = ONCALL_NOW): V2OnCallCalendarFeed =>
+	Schema.decodeSync(V2OnCallCalendarFeed)({
+		object: "oncall_calendar_feed",
+		schedule_id: encodePublicId("onc", scheduleUuid(1)),
+		url: "https://api.maple.dev/calendar/oncall/mcal_2f0cQ5c1mJk3vX8nH4yT7wRbZ6aL9dE0sUoPiKgNq1A.ics",
+		created_at: iso(nowMs),
+	})
 
 /** `GET /{id}/shifts` for the checkout schedule over `[fromMs, toMs)`. */
 export const checkoutShifts = (nowMs: number, fromMs: number, toMs: number): V2OnCallShifts => {

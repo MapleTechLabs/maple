@@ -56,6 +56,7 @@ const scheduleDoc = (overrides: Partial<typeof OnCallScheduleDocument.Encoded> =
 		},
 		coverageGaps: [],
 		departedUserIds: [],
+		calendarFeedCreatedAt: null,
 		chainIds: [],
 		createdAt: NOW,
 		updatedAt: NOW,

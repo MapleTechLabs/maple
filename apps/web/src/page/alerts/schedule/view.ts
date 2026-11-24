@@ -6,6 +6,7 @@ import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { borderedBox } from "@maple/views/ui/bordered-box"
 import { button, linkButton } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { copyableField } from "@maple/views/ui/copyable-field"
 import { errorState } from "@maple/views/ui/error-state"
 import { fieldErrorText } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
@@ -33,6 +34,7 @@ import { Message } from "./message"
 import { type Model } from "./model"
 import {
 	CALENDAR_SCOPE,
+	CALENDAR_FEED_DIALOG_ID,
 	DELETE_OVERRIDE_DIALOG_ID,
 	OVERRIDE_DIALOG_ID,
 	overrideIssue,
@@ -254,6 +256,96 @@ const overridesSection = (h: H, model: Model, schedule: V2OnCallSchedule): Html 
 	)
 }
 
+/** When the feed's link was made as this page knows it: its own change wins over the read. */
+const calendarFeedSince = (model: Model, schedule: V2OnCallSchedule): string | null =>
+	model.calendarFeed === null ? schedule.calendar_feed_created_at : model.calendarFeed.createdAt
+
+/**
+ * The calendar feed: off, on (the link is not shown again), or just made, with the link to copy.
+ * Replacing and turning off ask first, since both end the link calendar apps already hold.
+ */
+const calendarFeedSection = (h: H, model: Model, schedule: V2OnCallSchedule): Html => {
+	const since = calendarFeedSince(model, schedule)
+	const link = model.calendarFeed?.url ?? null
+	const act = (label: string, message: Message, variant: "default" | "outline") =>
+		gatedControl(h, model, "alerts:manage", (isDisabled) =>
+			button(
+				h,
+				{
+					size: "sm",
+					variant,
+					isDisabled: isDisabled || model.isChangingCalendarFeed,
+					attributes: [h.OnClick(message)],
+				},
+				[label],
+			),
+		)
+	return h.section(
+		[h.Class("space-y-3")],
+		[
+			sectionHeading(h, { title: "Calendar feed" }),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				since === null
+					? "Subscribe a calendar app to this schedule's shifts. The link works without signing in, so anyone who has it can see who is on call."
+					: link === null
+						? `A calendar link was made on ${formatShiftEdge(toEpochMs(since), schedule.time_zone)}. It is shown only when it is made: replace it to get a new one.`
+						: "Add this link to a calendar app as a subscription. It works without signing in and is not shown again.",
+			]),
+			...(link === null
+				? []
+				: [
+						copyableField(h, {
+							id: "schedule-calendar-link",
+							value: link,
+							copyLabel: "calendar link",
+							copy: model.calendarCopy,
+							toCopyMessage: (message) => Message.GotCalendarCopyMessage({ message }),
+						}),
+					]),
+			hstack(
+				h,
+				{ gap: "2", wrap: true },
+				since === null
+					? [
+							gatedControl(h, model, "alerts:manage", (isDisabled) =>
+								button(
+									h,
+									{
+										size: "sm",
+										variant: "outline",
+										isDisabled,
+										isLoading: model.isChangingCalendarFeed,
+										attributes: [h.OnClick(Message.ClickedCreateCalendarFeed())],
+									},
+									[icon(h, "CalendarIcon"), "Create calendar link"],
+								),
+							),
+						]
+					: [
+							act("Replace link", Message.ClickedReplaceCalendarFeed(), "outline"),
+							act("Turn off", Message.ClickedTurnOffCalendarFeed(), "outline"),
+						],
+			),
+		],
+	)
+}
+
+const calendarFeedDialog = (h: H, model: Model): Html =>
+	confirmDialog(h, {
+		slotId: CALENDAR_FEED_DIALOG_ID,
+		model: model.calendarFeedDialog,
+		toParentMessage: (message) => Message.GotCalendarFeedDialogMessage({ message }),
+		title:
+			model.calendarFeedAction === "off" ? "Turn off the calendar link?" : "Replace the calendar link?",
+		description:
+			model.calendarFeedAction === "off"
+				? "Calendar apps subscribed to it stop updating. You can make a new link later."
+				: "The current link stops working at once, so calendar apps subscribed to it stop updating. The new link is shown once.",
+		confirmLabel: model.calendarFeedAction === "off" ? "Turn off" : "Replace link",
+		isPending: model.isChangingCalendarFeed,
+		onConfirm: Message.ClickedConfirmCalendarFeed(),
+	})
+
 const dialogField = (h: H, id: string, text: string, control: Html): Html =>
 	vstack(h, { gap: "1.5" }, [
 		label(h, { className: typographyClass({ size: "xs", tone: "muted" }), attributes: [h.For(id)] }, [
@@ -461,10 +553,12 @@ const page = (h: H, model: Model, viewerZone: string): Html => {
 							...departedNotice(h, model, schedule),
 							calendarSection(h, model, schedule, viewerZone),
 							overridesSection(h, model, schedule),
+							calendarFeedSection(h, model, schedule),
 						],
 					),
 					overrideDialog(h, model, schedule),
 					deleteOverrideDialog(h, model, schedule),
+					calendarFeedDialog(h, model),
 				],
 			),
 	})

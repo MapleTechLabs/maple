@@ -27,6 +27,7 @@ import * as ScheduleUpdate from "../page/alerts/schedule/update"
 import { breadcrumbsOf as scheduleBreadcrumbs, view as scheduleView } from "../page/alerts/schedule/view"
 import { chainDestinations, chainUuid } from "../page/alerts/shared/escalation-test-fixtures"
 import {
+	checkoutCalendarFeed,
 	checkoutOverrides,
 	checkoutSchedule,
 	checkoutShifts,
@@ -67,6 +68,9 @@ export const LabState = Schema.Literals([
 	"calendar",
 	"calendar-dst",
 	"calendar-departed",
+	"calendar-feed-on",
+	"calendar-feed-new",
+	"calendar-feed-replace",
 	"override-dialog",
 	"override-delete",
 	"chain-dialog",
@@ -310,7 +314,12 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 		{ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} },
 		CONTEXT,
 	)
-	const schedule = checkoutSchedule(nowMs, state === "calendar-departed" ? [formerMemberId] : [])
+	const isFeedOn = state === "calendar-feed-on" || state === "calendar-feed-replace"
+	const schedule = checkoutSchedule(
+		nowMs,
+		state === "calendar-departed" ? [formerMemberId] : [],
+		isFeedOn ? new Date(nowMs - 12 * 86_400_000).toISOString() : undefined,
+	)
 	const loaded = fold(
 		start,
 		[
@@ -363,7 +372,19 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 					],
 					scheduleStep,
 				)
-			: withShifts
+			: state === "calendar-feed-new"
+				? fold(
+						withShifts,
+						[
+							ScheduleMessage.Message.CompletedCreateCalendarFeed({
+								result: Result.succeed(checkoutCalendarFeed(nowMs)),
+							}),
+						],
+						scheduleStep,
+					)
+				: state === "calendar-feed-replace"
+					? fold(withShifts, [ScheduleMessage.Message.ClickedReplaceCalendarFeed()], scheduleStep)
+					: withShifts
 }
 
 const incidentStep = (model: IncidentModel.Model, message: IncidentMessage.Message) =>

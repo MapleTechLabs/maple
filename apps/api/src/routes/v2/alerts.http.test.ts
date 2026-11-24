@@ -1942,6 +1942,55 @@ describe("v2 alerts over HTTP", () => {
 		],
 	}
 
+	it("makes, replaces and turns off a schedule's calendar link", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["alerts:write"])
+		const readOnly = await harness.bootstrapKey(["alerts:read"])
+		const created = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules",
+			key.secret,
+			weeklySchedule,
+		)
+		expect(created.body.calendar_feed_created_at).toBeNull()
+		const base = `/v2/alerts/oncall_schedules/${created.body.id}`
+
+		const refused = await harness.request("POST", `${base}/calendar_feed`, readOnly.secret)
+		expect(refused.status).toBe(403)
+
+		const feed = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		expect(feed.status, JSON.stringify(feed.body)).toBe(200)
+		expect(feed.body).toMatchObject({ object: "oncall_calendar_feed", schedule_id: created.body.id })
+		expect(feed.body.url).toMatch(/\/calendar\/oncall\/mcal_[A-Za-z0-9_-]{43}\.ics$/)
+		const read = await harness.request("GET", base, readOnly.secret)
+		// The schedule says the feed is on and since when, never the link.
+		expect(read.body.calendar_feed_created_at).toBe(feed.body.created_at)
+		expect(JSON.stringify(read.body)).not.toContain("mcal_")
+
+		// A second create is refused, so a link calendars use is not ended by accident.
+		const again = await harness.request("POST", `${base}/calendar_feed`, key.secret)
+		expect([again.status, again.body.error.code]).toEqual([409, "oncall_calendar_feed_exists"])
+		const replaced = await harness.request("POST", `${base}/calendar_feed?replace=true`, key.secret)
+		expect(replaced.body.url).not.toBe(feed.body.url)
+
+		const off = await harness.request("DELETE", `${base}/calendar_feed`, key.secret)
+		expect(off.body).toEqual({
+			object: "oncall_calendar_feed",
+			schedule_id: created.body.id,
+			deleted: true,
+		})
+		expect((await harness.request("GET", base, key.secret)).body.calendar_feed_created_at).toBeNull()
+
+		const missing = await harness.request(
+			"POST",
+			"/v2/alerts/oncall_schedules/onc_tC4d9V79DCDzgbGKhAnff9/calendar_feed",
+			key.secret,
+		)
+		expect(missing.status).toBe(404)
+
+		await harness.dispose()
+	})
+
 	it("runs on-call schedule CRUD, answers who is on call and renders shifts around an override", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["alerts:write"])

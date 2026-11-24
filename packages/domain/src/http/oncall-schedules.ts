@@ -95,6 +95,8 @@ export class OnCallScheduleDocument extends Schema.Class<OnCallScheduleDocument>
 	departedUserIds: Schema.Array(UserId),
 	/** Escalation chains that page this schedule. */
 	chainIds: Schema.Array(EscalationChainId),
+	/** When the calendar feed's current link was made; null while the feed is off. */
+	calendarFeedCreatedAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
 }) {}
@@ -220,6 +222,23 @@ export class OnCallScheduleInUseError extends HttpTaggedError<OnCallScheduleInUs
 		code: "oncall_schedule_in_use",
 		title: "On-call schedule is in use",
 		message: "The on-call schedule is paged by one or more escalation chains.",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "redacted",
+	},
+) {}
+
+export class OnCallCalendarFeedExistsError extends HttpTaggedError<OnCallCalendarFeedExistsError>()(
+	"@maple/http/errors/OnCallCalendarFeedExistsError",
+	{
+		message: Schema.String,
+		scheduleId: OnCallScheduleId,
+	},
+	{
+		status: 409,
+		code: "oncall_calendar_feed_exists",
+		title: "Calendar feed already has a link",
+		message: "The schedule's calendar feed already has a link. Replacing it ends the old one.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",
