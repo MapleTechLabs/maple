@@ -219,7 +219,14 @@ import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
 import { costBudgetPeriodWindow } from "@maple/domain/cost-budget"
 import { closeLastPeriod, evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
-import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
+import {
+	SLO_BUDGET_GROUP_LABEL,
+	evaluateSloBudget,
+	evaluateSloBurn,
+	sloBurnTierThresholds,
+	sloRuleThresholds,
+} from "@maple/backend/services/slos/slo-alert-rule"
+import { SLO_BUDGET_GROUP_KEY, SLO_LIVENESS_WINDOW_MINUTES } from "@maple/domain/slo"
 import {
 	openForAlertIncident,
 	resolveForAlertIncident,
@@ -257,6 +264,11 @@ export type { AlertSchedulerLane } from "./AlertRuleModel"
 type EvaluatedRule = import("@maple/alerting-core").AlertEvaluation & {
 	readonly anomaly?: AnomalyAlertObservation
 	readonly groupLabel?: string
+	/**
+	 * What each severity of this check was judged against, when that is not the rule's stored
+	 * tier: an SLO's firing tier has its own factor, and its budget group breaches at the whole budget.
+	 */
+	readonly tierThresholds?: Partial<Record<AlertSeverity, number>>
 }
 
 /** The service and environment an anomaly is about; null when it names neither. */
@@ -659,7 +671,59 @@ export interface AlertsServiceApi {
 }
 
 /** How often an open certificate warning re-notifies: once a day. */
-const CERTIFICATE_RENOTIFY_MINUTES = 24 * 60
+const STANDING_WARNING_RENOTIFY_MINUTES = 24 * 60
+
+/** A certificate to renew or a spent error budget stays open for days: one reminder a day. */
+const isStandingWarning = (rule: Pick<NormalizedRule, "signalType">, groupKey: string): boolean =>
+	(rule.signalType === "uptime" && groupKey === UPTIME_CERTIFICATE_GROUP_KEY) ||
+	(rule.signalType === "slo_burn_rate" && groupKey === SLO_BUDGET_GROUP_KEY)
+
+/** Whether an SLO rule's stored thresholds or window differ from what its target gives. */
+const sloRuleIsStale = (
+	rule: Pick<NormalizedRule, "thresholds" | "windowMinutes">,
+	targetPercent: number,
+): boolean => {
+	const expected = sloRuleThresholds(targetPercent)
+	return (
+		rule.windowMinutes !== expected.windowMinutes ||
+		Arr.some(rule.thresholds, (tier) => Math.abs(tier.value - expected.valueOf(tier.severity)) > 1e-9)
+	)
+}
+
+const reminderMinutesFor = (
+	rule: Pick<NormalizedRule, "signalType" | "renotifyIntervalMinutes">,
+	groupKey: string,
+): number =>
+	isStandingWarning(rule, groupKey) ? STANDING_WARNING_RENOTIFY_MINUTES : rule.renotifyIntervalMinutes
+
+/**
+ * How recent an earlier incident's notification must be for a reopen to be a flap. A spent budget
+ * is reminded once a day, but a budget that came back and is spent again within that day is news:
+ * the last thing anyone read was that it was back.
+ */
+const flapWindowMinutesFor = (
+	rule: Pick<NormalizedRule, "signalType" | "renotifyIntervalMinutes">,
+	groupKey: string,
+): number =>
+	rule.signalType === "slo_burn_rate" && groupKey === SLO_BUDGET_GROUP_KEY
+		? rule.renotifyIntervalMinutes
+		: reminderMinutesFor(rule, groupKey)
+
+/** `rule` with the given severities' thresholds replaced; the rule itself when there are none. */
+const withTierThresholds = (
+	rule: NormalizedRule,
+	tierThresholds: Partial<Record<AlertSeverity, number>> | undefined,
+): NormalizedRule =>
+	tierThresholds === undefined
+		? rule
+		: {
+				...rule,
+				threshold: tierThresholds[rule.severity] ?? rule.threshold,
+				thresholds: Arr.map(rule.thresholds, (tier) => ({
+					...tier,
+					value: tierThresholds[tier.severity] ?? tier.value,
+				})),
+			}
 
 /** Longest an uptime incident's status-page write may delay the alert tick. */
 const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
@@ -992,6 +1056,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					? [groupKey]
 					: livenessServicesFor(rule)
 
+			// An SLO rule's window is its longest burn window (a day): a service that died two hours ago
+			// still looks alive over it. What went quiet is its short windows, so those are probed.
+			const livenessWindowMinutes = (rule: NormalizedRule): number =>
+				rule.signalType === "slo_burn_rate" ? SLO_LIVENESS_WINDOW_MINUTES : rule.windowMinutes
+
 			const telemetryStillFlowing = Effect.fn("AlertsService.telemetryStillFlowing")(function* (
 				orgId: OrgId,
 				normalized: NormalizedRule,
@@ -1000,7 +1069,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				serviceNames: ReadonlyArray<string> = livenessServicesFor(normalized),
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
-				const windowMs = Math.max(normalized.windowMinutes, 1) * 60_000
+				const windowMs = Math.max(livenessWindowMinutes(normalized), 1) * 60_000
 				const dayMs = 24 * 60 * 60_000
 				return yield* probeLiveness({
 					warehouse,
@@ -1218,10 +1287,36 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								Effect.fail(makePersistenceError(error)),
 							),
 						)
+					// A rule saved before the tiers changed still stores the old factors, which incidents show.
+					if (Option.isSome(observation) && sloRuleIsStale(rule, observation.value.targetPercent)) {
+						yield* sloAlerts.resyncRule(orgId, rule.id, observation.value.targetPercent).pipe(
+							isolate("An SLO rule's stored thresholds could not be resynced", {
+								ruleId: rule.id,
+							}),
+						)
+					}
 					return Option.match(observation, {
 						onNone: () => [],
-						onSome: (windows) => [
-							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
+						// Its burn, and its budget as a group of its own: a spent budget outlasts any burn.
+						onSome: (
+							observed,
+						): ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }> => [
+							{
+								evaluation: {
+									...evaluateSloBurn(observed),
+									tierThresholds: sloBurnTierThresholds(observed),
+								},
+								groupKey: UNGROUPED_GROUP_KEY,
+							},
+							{
+								evaluation: {
+									...evaluateSloBudget(observed),
+									groupLabel: SLO_BUDGET_GROUP_LABEL,
+									// The budget group observes the share of the budget used: all of it is the line.
+									tierThresholds: { warning: 1, critical: 1 },
+								},
+								groupKey: SLO_BUDGET_GROUP_KEY,
+							},
 						],
 					})
 				}
@@ -1593,6 +1688,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const series =
 						rule.signalType === "uptime" ||
 						rule.signalType === "anomaly" ||
+						// A standing warning's chart would draw another group's series against its threshold.
+						isStandingWarning(rule, incident.groupKey ?? UNGROUPED_GROUP_KEY) ||
 						(!anySent && !withPayload)
 							? null
 							: yield* loadChartSeries(
@@ -3449,7 +3546,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
 				row: StoredAlertRuleRow,
-				normalized: NormalizedRule,
+				storedRule: NormalizedRule,
 				evaluation: EvaluatedRule,
 				groupKey: string,
 				timestamp: number,
@@ -3461,6 +3558,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				stateWrites: RuleStateWrites,
 				windowEndMs: number,
 			) {
+				// The incident and its notifications name the threshold this check was judged against.
+				const normalized = withTierThresholds(storedRule, evaluation.tierThresholds)
 				// `timestamp` is the tick's claim on the rule. The claim can expire while
 				// this runs (slow notification enrichment, a late warehouse result), so
 				// every state and incident write goes through `writeUnderClaim`: once a
@@ -3559,12 +3658,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 							breachWindow: normalized.breachesOutOf ?? normalized.consecutiveBreachesRequired,
 							consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
-							// A certificate warning stays open until renewal: a daily reminder is enough.
-							renotifyIntervalMinutes:
-								normalized.signalType === "uptime" &&
-								groupKey === UPTIME_CERTIFICATE_GROUP_KEY
-									? CERTIFICATE_RENOTIFY_MINUTES
-									: normalized.renotifyIntervalMinutes,
+							renotifyIntervalMinutes: reminderMinutesFor(normalized, groupKey),
 							severities: Arr.map(normalized.thresholds, (tier) => tier.severity),
 						},
 						evaluation,
@@ -3635,7 +3729,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.firstTriggeredAt.gte(flapsSince),
 											$.lastNotifiedAt.isNotNull(),
 											$.lastNotifiedAt.gte(
-												timestamp - normalized.renotifyIntervalMinutes * 60_000,
+												timestamp -
+													flapWindowMinutesFor(normalized, groupKey) * 60_000,
 											),
 										])
 										.orderBy(["lastNotifiedAt", "desc"])
@@ -3685,6 +3780,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const neverPaged = isUnheard && priorPeoplePaged.length === 0
 						lifecycle = yield* planAlertLifecycle({
 							...lifecycleInput,
+							flapWindowMinutes: flapWindowMinutesFor(normalized, groupKey),
 							previousNotificationAtMs: neverPaged
 								? null
 								: (priorNotified?.lastNotifiedAt ?? null),
@@ -3713,7 +3809,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const gate = decideLivenessGate(
 							openIncident,
 							liveness,
-							normalized.windowMinutes,
+							livenessWindowMinutes(normalized),
 							timestamp,
 						)
 						if (gate.kind === "hold") {
@@ -4441,7 +4537,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					normalized.signalType !== "anomaly" &&
 					normalized.signalType !== "audit" &&
 					normalized.signalType !== "cost_budget" &&
-					!(normalized.signalType === "uptime" && groupKey === UPTIME_CERTIFICATE_GROUP_KEY)
+					!isStandingWarning(normalized, groupKey)
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
@@ -4847,7 +4943,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							const gate = decideLivenessGate(
 								incident,
 								liveness,
-								normalized.windowMinutes,
+								livenessWindowMinutes(normalized),
 								timestamp,
 							)
 							if (gate.kind === "hold") {
@@ -6034,10 +6130,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// here.
 						// An anomaly rule keeps its heartbeat and the groups reported this tick; `observe`
 						// reports a group while its incident is open, so the rest are anomalies long gone.
-						// An uptime rule owns its monitor's row beside its certificate's, of both key shapes,
-						// so it too drops only the groups it stopped reporting.
+						// An uptime rule owns its monitor's row beside its certificate's, and an SLO rule its
+						// burn's beside its budget's: both key shapes, so they too drop only the groups they
+						// stopped reporting.
 						const staleGroupKeys =
-							normalized.signalType === "anomaly" || normalized.signalType === "uptime"
+							normalized.signalType === "anomaly" ||
+							normalized.signalType === "uptime" ||
+							normalized.signalType === "slo_burn_rate"
 								? Arr.filter(
 										prefetch.stateKeysForRule(row.orgId, row.id),
 										(key) => !HashSet.has(evaluatedGroups, key),

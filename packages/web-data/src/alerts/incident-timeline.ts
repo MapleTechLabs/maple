@@ -8,6 +8,7 @@ import type {
 	AlertSignalType,
 	InvestigationId,
 } from "@maple/domain/http"
+import { isSloBudgetIncident } from "@maple/domain/slo"
 import { isUptimeCertificateIncident } from "@maple/domain/uptime"
 import type { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
@@ -153,10 +154,19 @@ export function incidentGroup(
 	incident: Pick<AlertIncidentDocument, "groupKey"> &
 		Partial<Pick<AlertIncidentDocument, "groupLabel" | "signalType">>,
 ): string | null {
+	// An SLO's budget key says which of its incidents this is, not a group to name: checked
+	// first, since the incident is stored with a label ("Error budget") all the same.
+	if (isSloBudgetIncident({ signalType: incident.signalType ?? "", groupKey: incident.groupKey }))
+		return null
 	// An anomaly's key is the anomaly incident id: its stored label is what people read.
 	if (incident.groupLabel != null) return incident.groupLabel
 	if (incident.signalType === "anomaly") return null
 	return incident.groupKey == null || incident.groupKey === UNGROUPED_GROUP_KEY ? null : incident.groupKey
+}
+
+/** "135% of the error budget used": what an SLO's budget incident observes, a share of the budget. */
+export function budgetUsedLabel(used: number | null): string {
+	return used === null ? "Error budget spent" : `${Math.round(used * 100)}% of the error budget used`
 }
 
 export function signalTitle(signalType: AlertSignalType): string {
@@ -339,16 +349,20 @@ export function buildIncidentTimeline(input: {
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
+	const isBudget = isSloBudgetIncident(incident)
 	// An uptime rule has no threshold to read out; an SLO's reads its tier factor, not today's burn.
+	// A spent budget is no burn at all: it says the budget is gone, with no factor to compare.
 	const condition = isUptimeCertificateIncident(incident)
 		? `${incident.ruleName}'s certificate entered its expiry window`
 		: incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
-			: incident.signalType === "slo_burn_rate"
-				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
-				: incident.signalType === "anomaly"
-					? "Maple detected an anomaly"
-					: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+			: isBudget
+				? "The SLO's error budget is spent"
+				: incident.signalType === "slo_burn_rate"
+					? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
+					: incident.signalType === "anomaly"
+						? "Maple detected an anomaly"
+						: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",
@@ -389,22 +403,27 @@ export function buildIncidentTimeline(input: {
 			investigation: null,
 		})
 	} else if (incident.status === "open") {
+		// A spent budget reminds once a day whatever the rule's interval, and has no value to breach.
 		const reminder =
 			incident.acknowledgedAt != null
 				? "reminders paused while acknowledged"
-				: input.renotifyIntervalMinutes != null
-					? `reminders every ${input.renotifyIntervalMinutes}m while open`
-					: null
+				: isBudget
+					? "one reminder a day while open"
+					: input.renotifyIntervalMinutes != null
+						? `reminders every ${input.renotifyIntervalMinutes}m while open`
+						: null
 		events.push({
 			key: "breaching",
 			at: Date.parse(incident.lastTriggeredAt),
-			tone: "crit",
+			tone: isBudget ? "warn" : "crit",
 			pending: true,
-			title: "Still breaching",
+			title: isBudget ? "Budget still spent" : "Still breaching",
 			detail: Arr.join(
 				Arr.filter(
 					[
-						`Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+						isBudget
+							? budgetUsedLabel(incident.lastObservedValue)
+							: `Last value ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
 						reminder,
 					],
 					(part) => part != null,

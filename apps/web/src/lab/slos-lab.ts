@@ -12,15 +12,17 @@ import * as HubModel from "../page/alerts/hub/model"
 import * as HubUpdate from "../page/alerts/hub/update"
 import { breadcrumbs as hubBreadcrumbs, view as hubView } from "../page/alerts/hub/view"
 import {
+	budgetIncidentRow,
+	burnIncidentRow,
 	checkoutSlo,
-	SLO_RULE_UUID,
+	lowTargetSlo,
 	searchSlo,
 	sloHistory,
 	sloStatus,
 	sloUuid,
 	type SloScenario,
 } from "../page/alerts/shared/slo-test-fixtures"
-import { destinationRow, hubAt, incidentRow, NOW, ORG } from "../page/kit/alert-test-rows"
+import { destinationRow, hubAt, NOW, ORG } from "../page/kit/alert-test-rows"
 import * as SloMessage from "../page/alerts/slo/message"
 import * as SloModel from "../page/alerts/slo/model"
 import * as SloUpdate from "../page/alerts/slo/update"
@@ -33,8 +35,10 @@ import type { PageContext } from "../page/contract"
 import type { Resources } from "../platform/resources"
 
 // `/lab/slos`: the SLOs tab, the SLO page and the SLO form over fixtures. `?state=` picks one:
-// tab-empty, tab, loading, healthy, burning, holding, exhausted, status-error, incidents-unavailable,
-// form-new, form-invalid, form-edit.
+// tab-empty, tab, loading, healthy, burning, slow (only the slow tier fires), low-target (a 90%
+// target, capped factors), holding, sparse (too few events to judge), no-data, exhausted,
+// budget-spent (its incident open), burning-spent (both incidents open), status-error,
+// incidents-unavailable, form-new, form-low-target, form-invalid, form-edit.
 
 export const LabState = Schema.Literals([
 	"tab-empty",
@@ -42,11 +46,18 @@ export const LabState = Schema.Literals([
 	"loading",
 	"healthy",
 	"burning",
+	"slow",
+	"low-target",
 	"holding",
+	"sparse",
+	"no-data",
 	"exhausted",
+	"budget-spent",
+	"burning-spent",
 	"status-error",
 	"incidents-unavailable",
 	"form-new",
+	"form-low-target",
 	"form-invalid",
 	"form-edit",
 ])
@@ -97,13 +108,41 @@ const fold = <PM, PS>(
 	step: (model: PM, message: PS) => { readonly model: PM },
 ): PM => Arr.reduce(messages, model, (current, message) => step(current, message).model)
 
-const INCIDENT = incidentRow({
-	rule_id: SLO_RULE_UUID,
-	rule_name: sloRuleName("Checkout API"),
-	signal_type: "slo_burn_rate",
-	status: "open",
-	severity: "critical",
+const INCIDENT = burnIncidentRow()
+
+const PAYMENTS_RULE = "0199a002-0000-7000-8000-00000000000a"
+const PAYMENTS = checkoutSlo({
+	id: sloUuid(3),
+	name: "Payments webhooks",
+	alert_rule_id: PAYMENTS_RULE,
+	service_name: "payments",
+	environments: ["production", "eu-production"],
+	sli: { type: "latency", threshold_ms: 1000 },
+	target_percent: 99,
+	window_days: 7,
 })
+const LOW_TARGET = lowTargetSlo()
+/** Its environment is a typo for `production`, so it counts nothing. */
+const SIGNUP = checkoutSlo({
+	id: sloUuid(5),
+	name: "Signup flow",
+	alert_rule_id: "0199a002-0000-7000-8000-00000000000b",
+	service_name: "signup",
+	environments: ["prod"],
+})
+
+/** The tab's open incidents: a burn on two SLOs, and the payments SLO's spent budget alone. */
+const HUB_INCIDENTS = [
+	INCIDENT,
+	budgetIncidentRow({ rule_id: PAYMENTS_RULE, rule_name: sloRuleName(PAYMENTS.name) }),
+	burnIncidentRow({
+		id: "0199a003-0000-7000-8000-000000000003",
+		rule_id: LOW_TARGET.alert_rule_id ?? "",
+		rule_name: sloRuleName(LOW_TARGET.name),
+		threshold: 8,
+		last_observed_value: 8.3,
+	}),
+]
 
 const hubFor = (state: LabState) => {
 	const entered = HubUpdate.init(hubAt({ tab: "slos" }), CONTEXT).model
@@ -117,25 +156,21 @@ const hubFor = (state: LabState) => {
 						status: sloStatus("healthy", { sloId: sloUuid(2), targetPercent: 99.5 }),
 					},
 					{
-						slo: checkoutSlo({
-							id: sloUuid(3),
-							name: "Payments webhooks",
-							alert_rule_id: "0199a002-0000-7000-8000-00000000000a",
-							service_name: "payments",
-							environments: ["production", "eu-production"],
-							sli: { type: "latency", threshold_ms: 1000 },
-							target_percent: 99,
-							window_days: 7,
-						}),
+						slo: PAYMENTS,
 						status: sloStatus("exhausted", { sloId: sloUuid(3), targetPercent: 99 }),
 					},
+					{
+						slo: LOW_TARGET,
+						status: sloStatus("capped", { sloId: LOW_TARGET.id, targetPercent: 90 }),
+					},
+					{ slo: SIGNUP, status: sloStatus("no-data", { sloId: SIGNUP.id }) },
 				]
 	return fold(
 		entered,
 		[
 			HubMessage.Message.ReadClock({ nowMs: NOW }),
 			HubMessage.Message.CompletedFetchSession({ orgId: ORG, grants: GRANTS }),
-			HubMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [INCIDENT] }),
+			HubMessage.Message.UpdatedIncidents({ orgId: ORG, rows: HUB_INCIDENTS }),
 			HubMessage.Message.CompletedFetchSlos({
 				key: entered.slos.key ?? "",
 				result: Result.succeed(rows),
@@ -145,11 +180,52 @@ const hubFor = (state: LabState) => {
 	)
 }
 
-const scenarioOf = (state: LabState): SloScenario =>
-	state === "burning" || state === "holding" || state === "exhausted" ? state : "healthy"
+const RESOLVED = {
+	...INCIDENT,
+	status: "resolved",
+	severity: "warning",
+	resolved_at: INCIDENT.last_triggered_at,
+}
+
+type SloPageFixture = Readonly<{
+	slo: ReturnType<typeof checkoutSlo>
+	scenario: SloScenario
+	incidents: ReadonlyArray<typeof INCIDENT>
+}>
+
+/** The SLO, its figures and its incidents for a state of the SLO page. */
+const pageFixture = (state: LabState): SloPageFixture => {
+	const checkout = { slo: checkoutSlo(), incidents: [RESOLVED] }
+	switch (state) {
+		case "burning":
+		case "holding":
+			return { ...checkout, scenario: state, incidents: [INCIDENT] }
+		case "slow":
+			return {
+				...checkout,
+				scenario: "slow",
+				incidents: [burnIncidentRow({ severity: "warning", threshold: 3, last_observed_value: 3.2 })],
+			}
+		case "low-target":
+			return { slo: LOW_TARGET, scenario: "capped", incidents: HUB_INCIDENTS }
+		case "sparse":
+			return { ...checkout, scenario: "sparse", incidents: [] }
+		case "no-data":
+			return { slo: SIGNUP, scenario: "no-data", incidents: [] }
+		case "exhausted":
+			return { ...checkout, scenario: "exhausted" }
+		case "budget-spent":
+			return { ...checkout, scenario: "exhausted", incidents: [budgetIncidentRow(), RESOLVED] }
+		case "burning-spent":
+			return { ...checkout, scenario: "spent-burning", incidents: [INCIDENT, budgetIncidentRow()] }
+		default:
+			return { ...checkout, scenario: "healthy" }
+	}
+}
 
 const sloFor = (state: LabState) => {
-	const slo = checkoutSlo()
+	const { slo, scenario, incidents } = pageFixture(state)
+	const figures = { sloId: slo.id, targetPercent: slo.target_percent }
 	const entered = SloUpdate.init({ _tag: "AlertsSlo", sloId: publicId(slo.id), search: {} }, CONTEXT).model
 	const base = [
 		SloMessage.Message.ReadClock({ nowMs: NOW }),
@@ -157,7 +233,6 @@ const sloFor = (state: LabState) => {
 	]
 	if (state === "loading")
 		return fold(entered, base, (model, message) => SloUpdate.update(model, message, CONTEXT))
-	const scenario = scenarioOf(state)
 	return fold(
 		entered,
 		[
@@ -168,29 +243,16 @@ const sloFor = (state: LabState) => {
 				result:
 					state === "status-error"
 						? Result.fail(toLoadFailure(new Error("The warehouse query timed out.")))
-						: Result.succeed(sloStatus(scenario)),
+						: Result.succeed(sloStatus(scenario, figures)),
 			}),
 			SloMessage.Message.CompletedFetchHistory({
 				key: entered.history.key ?? "",
-				result: Result.succeed(sloHistory(scenario)),
+				result: Result.succeed(sloHistory(scenario, { ...figures, days: slo.window_days })),
 			}),
 			SloMessage.Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
 			state === "incidents-unavailable"
 				? SloMessage.Message.FailedLoadIncidents({ orgId: ORG })
-				: SloMessage.Message.UpdatedIncidents({
-						orgId: ORG,
-						rows:
-							state === "burning" || state === "holding"
-								? [INCIDENT]
-								: [
-										{
-											...INCIDENT,
-											status: "resolved",
-											severity: "warning",
-											resolved_at: INCIDENT.last_triggered_at,
-										},
-									],
-					}),
+				: SloMessage.Message.UpdatedIncidents({ orgId: ORG, rows: [...incidents] }),
 		],
 		(model, message) => SloUpdate.update(model, message, CONTEXT),
 	)
@@ -225,6 +287,13 @@ const formFor = (state: LabState) => {
 						FormMessage.Message.ChangedText({ field: "name", value: "Checkout API" }),
 						FormMessage.Message.ChangedText({ field: "serviceName", value: "checkout" }),
 						FormMessage.Message.ChangedText({ field: "environments", value: "production" }),
+						// A 90% target tops out at 10x, so the alerting lines read the capped factors.
+						...(state === "form-low-target"
+							? [
+									FormMessage.Message.PickedTarget({ target: "custom" }),
+									FormMessage.Message.ChangedText({ field: "customTarget", value: "90" }),
+								]
+							: []),
 					]
 	return fold(entered, [...common, ...extra], (model, message) =>
 		FormUpdate.update(model, message, CONTEXT),
@@ -279,7 +348,8 @@ export const update = (model: Model, message: Message): Return =>
 	})
 
 const isTab = (state: LabState) => state === "tab" || state === "tab-empty"
-const isForm = (state: LabState) => state === "form-new" || state === "form-invalid" || state === "form-edit"
+const isForm = (state: LabState) =>
+	state === "form-new" || state === "form-low-target" || state === "form-invalid" || state === "form-edit"
 
 export const breadcrumbs = (model: Model) =>
 	isTab(model.state)

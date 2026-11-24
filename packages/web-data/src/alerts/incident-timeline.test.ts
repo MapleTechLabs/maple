@@ -114,6 +114,73 @@ describe("buildIncidentTimeline", () => {
 		)
 	})
 
+	it("opens an SLO's budget incident on the spent budget, with no burn factor or group", () => {
+		const budget = (overrides: Record<string, unknown> = {}) =>
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				severity: "warning",
+				comparator: "gte",
+				threshold: 1,
+				lastObservedValue: 1.35,
+				groupKey: "__slo_budget__",
+				// What the scheduler stores on every budget incident.
+				groupLabel: "Error budget",
+				...overrides,
+			})
+		// The rule reminds every 30m; a spent budget reminds once a day whatever the rule says.
+		expect(
+			Arr.map(build(budget()), (entry) => [entry.title, entry.detail, entry.tone, entry.pending]),
+		).toEqual([
+			["Incident opened", "The SLO's error budget is spent", "warn", false],
+			[
+				"Budget still spent",
+				"135% of the error budget used · one reminder a day while open",
+				"warn",
+				true,
+			],
+		])
+		expect(
+			Arr.map(
+				build(
+					budget({
+						acknowledgedAt: "2026-10-15T14:20:00.000Z",
+						acknowledgedByName: "Dana Kim",
+						acknowledgedVia: "web",
+					}),
+				),
+				(entry) => entry.detail,
+			),
+		).toEqual([
+			"The SLO's error budget is spent",
+			"135% of the error budget used · reminders paused while acknowledged",
+		])
+		const resolved = build(
+			budget({ status: "resolved", resolvedAt: "2026-10-15T15:00:00.000Z", lastObservedValue: 0.9 }),
+		)
+		expect(Arr.map(resolved, (entry) => [entry.title, entry.detail])).toEqual([
+			["Incident opened", "The SLO's error budget is spent"],
+			["Resolved", "After 46m"],
+		])
+	})
+
+	it("keeps a burn incident of the same rule on its factor and its reminders", () => {
+		const entries = build(
+			makeIncident({
+				ruleName: "SLO burn: Checkout API",
+				signalType: "slo_burn_rate",
+				comparator: "gte",
+				threshold: 6,
+				lastObservedValue: 7.3,
+				groupKey: "__total__",
+			}),
+		)
+		expect(Arr.map(entries, (entry) => [entry.title, entry.detail, entry.tone])).toEqual([
+			["Incident opened", "SLO burning its error budget at 6.0x or more", "crit"],
+			["Still breaching", "Last value 7.3x · reminders every 30m while open", "crit"],
+		])
+	})
+
 	it("orders the open, deliveries and current state chronologically", () => {
 		const entries = build(makeIncident(), [
 			makeDelivery({
