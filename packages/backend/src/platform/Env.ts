@@ -1,16 +1,12 @@
-import {
-	chatConnectorConfig,
-	chatConnectorOutboundConfig,
-	type ChatConnectorConfig,
-	type ConnectorConfig,
-} from "@maple/chat-platform"
+import type { ChatConnectorConfig, ConnectorConfig } from "@maple/chat-platform"
+import { chatConnectorConfig, chatConnectorOutboundConfig } from "@maple/chat-platform/config"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Result, Schema, String as Str } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 import { type SecretKeyring, secretKeyringFrom } from "./SecretBox"
 import { DEFAULT_AUTUMN_API_URL } from "@maple/backend/services/billing/autumn-api"
 import { ingestKeyLookupHmacKeyFrom } from "./credential-tokens"
-import { rootPasswordProblem } from "@maple/auth"
+import { rootPasswordProblem } from "@maple/auth/root-password"
 
 /** Fatal misconfiguration discovered at startup: fails the layer build, so the worker refuses to boot. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(

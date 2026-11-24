@@ -28,6 +28,7 @@ import * as SilenceDialog from "../silence-dialog/dialog"
 import { isCancelledSilence } from "../shared/silences"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { alertsHref, createHref, incidentHref, ruleHref } from "../../kit/alert-links"
+import { reuseUnchangedRows } from "../../kit/stable-slice"
 import { CHAIN_IN_USE_CODE, CHAIN_LIST_LIMIT, chainHref } from "../shared/escalation-chains"
 import {
 	editScheduleHref,
@@ -1112,12 +1113,34 @@ const statusToggled = (model: Model, bucket: RuleBucket): Return => ({
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => clockRead(model, context, nowMs),
+		// A resend can carry fresh copies of unchanged rows (the live collection rebuilds them):
+		// unchanged rows keep their objects, so derivations and row views keyed on them are reused.
 		UpdatedRules: ({ orgId, rows }) =>
-			orgId === context.orgId ? { model: { ...model, rules: rows } } : { model },
+			orgId === context.orgId
+				? { model: { ...model, rules: reuseUnchangedRows(model.rules, rows, (row) => row.id) } }
+				: { model },
 		UpdatedRuleStates: ({ orgId, rows }) =>
-			orgId === context.orgId ? { model: { ...model, states: rows } } : { model },
+			orgId === context.orgId
+				? {
+						model: {
+							...model,
+							states: reuseUnchangedRows(
+								model.states,
+								rows,
+								(row) => `${row.rule_id}\u0000${row.group_key}`,
+							),
+						},
+					}
+				: { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
-			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
+			orgId === context.orgId
+				? {
+						model: {
+							...model,
+							incidents: reuseUnchangedRows(model.incidents, rows, (row) => row.id),
+						},
+					}
+				: { model },
 		FailedLoadAlerts: ({ orgId }) =>
 			orgId === context.orgId && (model.rules === null || model.incidents === null)
 				? { model: { ...model, isLoadFailed: true } }

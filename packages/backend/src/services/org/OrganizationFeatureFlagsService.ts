@@ -13,19 +13,43 @@ import * as Clerk from "@distilled.cloud/clerk"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
-	type OrganizationFeatureFlags,
+	OrganizationFeatureFlags,
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, type Duration, Effect, Layer, Option, String as Str } from "effect"
+import { EdgeCacheService } from "@maple/cache"
+import { Clock, Context, type Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
 
 /**
- * How long one organization's flags are reused within an isolate. Short enough that withdrawing a
- * flag takes effect within a minute; long enough that a burst of pushes is one Clerk call.
+ * Every reuse of an organization's flags is timed from when Clerk answered, not from when a copy
+ * was stored, so withdrawing a flag takes effect within {@link FLAGS_TTL_MS} however slow a cache
+ * write was. Two tiers: the colo's shared cache serves an answer for its first
+ * {@link FLAGS_SHARED_MAX_AGE_MS}, and an isolate's memo keeps it up to the full minute. The shared
+ * tier is what makes a cold isolate cheap: isolates live well under a minute, so a memo alone sent
+ * most `initialize` requests to Clerk (p50 88 ms, p95 237 ms in prod).
  */
 const FLAGS_TTL_MS = 60_000
+const FLAGS_SHARED_MAX_AGE_MS = 30_000
+const FLAGS_EDGE_BUCKET = "org-feature-flags"
+/** Waits past the cache's 40ms default: a miss costs a Clerk round trip, so a slow read is still cheaper. */
+const FLAGS_SHARED_READ_TIMEOUT_MS = 200
+/** Storage lifetime only; {@link FLAGS_SHARED_MAX_AGE_MS} decides whether an entry is served. */
+const FLAGS_EDGE_TTL_SECONDS = 30
+
+/** One Clerk answer, with when it was given. */
+const ObservedFlags = Schema.Struct({ flags: OrganizationFeatureFlags, observedAtMs: Schema.Number })
+type ObservedFlags = typeof ObservedFlags.Type
+
+/** Clerk could not answer. Kept out of the shared cache: one failed read must not turn rollouts off colo-wide. */
+class FeatureFlagsUnreadableError extends Schema.TaggedError<FeatureFlagsUnreadableError>()(
+	"@maple/backend/services/org/FeatureFlagsUnreadableError",
+	{ message: Schema.String },
+) {}
+
+/** What `OrganizationFeatureFlagsService.layer` needs from the app root. */
+export type OrganizationFeatureFlagsRequirements = Env | EdgeCacheService
 
 export interface OrganizationFeatureFlagsServiceApi {
 	/** Never fails: an unreadable organization is an organization with every rollout off. */
@@ -71,12 +95,13 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationFeatureFlagsService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
+		const edgeCache = yield* EdgeCacheService
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = clerkApiFor(env)
 
 		const cache = new Map<
 			OrgId,
-			{ readonly flags: Option.Option<OrganizationFeatureFlags>; readonly atMs: number }
+			{ readonly flags: Option.Option<OrganizationFeatureFlags>; readonly observedAtMs: number }
 		>()
 
 		const read = Effect.fn("OrganizationFeatureFlagsService.read")(function* (orgId: OrgId) {
@@ -99,18 +124,69 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			)
 		})
 
+		// Clerk's answer, stamped when it arrived; a failed read fails so it is never shared.
+		const observe = (orgId: OrgId) =>
+			Effect.gen(function* () {
+				const flags = yield* read(orgId)
+				if (Option.isNone(flags)) {
+					return yield* new FeatureFlagsUnreadableError({ message: "Clerk did not answer" })
+				}
+				const observedAtMs = yield* Clock.currentTimeMillis
+				return { flags: flags.value, observedAtMs } satisfies ObservedFlags
+			})
+
+		const shared = (orgId: OrgId) =>
+			edgeCache.getOrCompute(
+				{
+					bucket: FLAGS_EDGE_BUCKET,
+					key: orgId,
+					ttlSeconds: FLAGS_EDGE_TTL_SECONDS,
+					readTimeoutMs: FLAGS_SHARED_READ_TIMEOUT_MS,
+					schema: ObservedFlags,
+				},
+				observe(orgId),
+			)
+
+		// The colo's copy first; only a miss, or a copy older than its serving age, reaches Clerk.
+		const readShared = Effect.fnUntraced(function* (orgId: OrgId) {
+			const first = yield* shared(orgId)
+			const nowMs = yield* Clock.currentTimeMillis
+			if (!first.hit) return first.value
+			if (nowMs - first.value.observedAtMs < FLAGS_SHARED_MAX_AGE_MS) {
+				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "edge_cache")
+				return first.value
+			}
+			// Stored late, so still in storage past its serving age: replace it with a fresh answer.
+			yield* edgeCache.invalidate({ bucket: FLAGS_EDGE_BUCKET, key: orgId })
+			const retry = yield* shared(orgId)
+			const retryNowMs = yield* Clock.currentTimeMillis
+			if (!retry.hit || retryNowMs - retry.value.observedAtMs < FLAGS_SHARED_MAX_AGE_MS)
+				return retry.value
+			// The delete did not take: answer from Clerk without the shared tier.
+			return yield* observe(orgId)
+		})
+
 		const cachedOrRead = Effect.fn("OrganizationFeatureFlagsService.flags")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			if (!clerkMode) return Option.some(ENABLED_ORGANIZATION_FEATURE_FLAGS)
 			const nowMs = yield* Clock.currentTimeMillis
 			const cached = cache.get(orgId)
-			if (cached !== undefined && nowMs - cached.atMs < FLAGS_TTL_MS) {
+			if (cached !== undefined && nowMs - cached.observedAtMs < FLAGS_TTL_MS) {
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "cache")
 				return cached.flags
 			}
-			const fresh = yield* read(orgId)
-			cache.set(orgId, { flags: fresh, atMs: nowMs })
-			return fresh
+			const fresh = yield* readShared(orgId).pipe(
+				Effect.map((observed) => ({
+					flags: Option.some(observed.flags),
+					observedAtMs: observed.observedAtMs,
+				})),
+				// Fails closed for this isolate's minute, as before the shared tier.
+				Effect.catchTag("@maple/backend/services/org/FeatureFlagsUnreadableError", () =>
+					Effect.succeed({ flags: Option.none<OrganizationFeatureFlags>(), observedAtMs: nowMs }),
+				),
+			)
+			cache.set(orgId, fresh)
+			return fresh.flags
 		})
 
 		const inTime = answeringWithin<OrgId, OrganizationFeatureFlags>(FLAGS_TTL_MS)

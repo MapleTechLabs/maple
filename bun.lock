@@ -1135,6 +1135,7 @@
     },
   },
   "patchedDependencies": {
+    "foldkit@0.171.0": "patches/foldkit@0.171.0.patch",
     "@effect/ai-openrouter@4.1.5": "patches/@effect%2Fai-openrouter@4.1.5.patch",
     "@alchemy.run/cloudflare@2.0.0-beta.87": "patches/@alchemy.run%2Fcloudflare@2.0.0-beta.87.patch",
     "@alchemy.run/aws@2.0.0-beta.87": "patches/@alchemy.run%2Faws@2.0.0-beta.87.patch",

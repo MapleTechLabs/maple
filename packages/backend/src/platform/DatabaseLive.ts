@@ -1,5 +1,10 @@
 import { isMapleDbError, type MapleDb, type MapleDbError, MapleStatementCollector } from "@maple/db/client"
-import { fingerprintSql, SQL_TRACE_MAX, summarizeSql, truncateSql } from "@maple/query-engine/execution"
+import {
+	fingerprintSql,
+	SQL_TRACE_MAX,
+	summarizeSql,
+	truncateSql,
+} from "@maple/query-engine/execution/fingerprint"
 import * as Orm from "@maple-dev/effect-orm/database"
 import { Cause, Clock, Context, Effect, Result, Schema, Array as Arr, String as Str } from "effect"
 import { SqlError } from "effect/sql/SqlError"

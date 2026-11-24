@@ -22,16 +22,7 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import {
-	clickHouseSchemaVersion,
-	computeSchemaDiff,
-	migrations as clickHouseMigrations,
-	parseEmittedStatement,
-	performanceOnlySearchColumns,
-	type ActualTable,
-	type DesiredTable,
-	type TableDiffEntry,
-} from "@maple/domain/clickhouse"
+import type { ActualTable, DesiredTable, TableDiffEntry } from "@maple/domain/clickhouse"
 import { EdgeCacheService } from "@maple/cache"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
@@ -635,7 +626,20 @@ const decodeStatus = (raw: string | null | undefined): "connected" | "error" | n
 	return null
 }
 
-const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
+/**
+ * The bundled ClickHouse migrations, DDL parser and schema version: about 1 MB of source that only
+ * an org with its own ClickHouse, or the schema admin endpoints, ever reads. Imported on first use
+ * so a managed org's cold request never compiles it.
+ */
+export const loadClickHouseSchema = Effect.promise(() => import("@maple/domain/clickhouse"))
+
+type ClickHouseSchemaModule = Effect.Success<typeof loadClickHouseSchema>
+
+const parseDesiredTables = ({
+	migrations: clickHouseMigrations,
+	parseEmittedStatement,
+	performanceOnlySearchColumns,
+}: ClickHouseSchemaModule): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
 	for (const stmt of clickHouseMigrations[0]?.statements ?? []) {
 		// The snapshot (migration 0001) is pure DDL strings; backfill specs (only
@@ -930,7 +934,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const getDesiredTables = Effect.gen(function* () {
 			const cached = yield* Ref.get(desiredTablesCache)
 			if (cached) return cached
-			const parsed = parseDesiredTables()
+			const schema = yield* loadClickHouseSchema
+			const parsed = parseDesiredTables(schema)
 			yield* Ref.set(desiredTablesCache, parsed)
 			return parsed
 		})
@@ -1210,6 +1215,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const row = yield* requireActiveRow(orgId)
 			const config = yield* loadConfigForRow(row)
 			const actual = yield* fetchActualSchema(httpClient, config)
+			const { computeSchemaDiff, clickHouseSchemaVersion } = yield* loadClickHouseSchema
 			const entries = computeSchemaDiff({ tables: yield* getDesiredTables }, actual)
 
 			// Self-heal the recorded schema version. The ingest gateway only routes an
@@ -1751,6 +1757,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// in Tinybird while we read CH. Surface that split as a span attribute for
 				// alerting; the schemaDiff path self-heals the value when the live schema is
 				// in sync.
+				const { clickHouseSchemaVersion } = yield* loadClickHouseSchema
 				yield* Effect.annotateCurrentSpan(
 					"maple.clickhouse.schema_drift",
 					cached.schemaVersion !== clickHouseSchemaVersion,
@@ -1802,11 +1809,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			function* (orgId: OrgId) {
 				if (ignoreOrgClickHouse) return false
 				const row = yield* selectCachedRow(orgId)
-				return (
-					Option.isSome(row) &&
-					row.value.syncStatus === "connected" &&
-					row.value.schemaVersion === clickHouseSchemaVersion
-				)
+				if (Option.isNone(row) || row.value.syncStatus !== "connected") return false
+				const { clickHouseSchemaVersion } = yield* loadClickHouseSchema
+				return row.value.schemaVersion === clickHouseSchemaVersion
 			},
 		)
 

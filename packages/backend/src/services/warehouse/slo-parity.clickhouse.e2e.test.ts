@@ -212,7 +212,8 @@ const flatSql = (orgId: string, window: Window, c: Case, bucketSeconds: number |
 	SELECT
 		${bucketSeconds === undefined ? "'all'" : `toString(toStartOfInterval(toDateTime(Timestamp), INTERVAL ${bucketSeconds} SECOND))`} AS bucket,
 		toFloat64(sum(SampleRate)) AS total,
-		toFloat64(sumIf(SampleRate, ${goodPredicate(c.sli)})) AS good
+		toFloat64(sumIf(SampleRate, ${goodPredicate(c.sli)})) AS good,
+		toFloat64(count()) AS samples
 	FROM service_overview_spans
 	WHERE OrgId = ${quote(orgId)}
 		AND ServiceName = 'api'
@@ -244,17 +245,28 @@ const splicedTotals = async (orgId: string, window: Window, c: Case) => {
 
 const flatTotals = async (orgId: string, window: Window, c: Case) => {
 	const rows = await runJson(flatSql(orgId, window, c, undefined))
-	return { total: num(rows[0]?.total), good: num(rows[0]?.good) }
+	return { total: num(rows[0]?.total), good: num(rows[0]?.good), samples: num(rows[0]?.samples) }
 }
+
+/** The weighted counts alone, where the recorded span count is not part of what is compared. */
+const weighted = (counts: { readonly total: number; readonly good: number }) => ({
+	total: counts.total,
+	good: counts.good,
+})
 
 /** Buckets keyed by their start; empty buckets carry no information on either side. */
 const byBucket = (rows: ReadonlyArray<Record<string, unknown>>) =>
 	Rec.fromEntries(
 		Arr.map(
 			Arr.filter(rows, (row) => num(row.total) !== 0 || num(row.good) !== 0),
-			(row): readonly [string, { readonly total: number; readonly good: number }] => [
+			(
+				row,
+			): readonly [
+				string,
+				{ readonly total: number; readonly good: number; readonly samples: number },
+			] => [
 				Str.slice(0, 19)(String(row.bucket)),
-				{ total: num(row.total), good: num(row.good) },
+				{ total: num(row.total), good: num(row.good), samples: num(row.samples) },
 			],
 		),
 	)
@@ -344,9 +356,10 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 							(environments.length === 0 ||
 								Arr.contains(environments, String(row.environment))),
 					)
-					const summed = Arr.reduce(counted, { total: 0, good: 0 }, (sum, row) => ({
+					const summed = Arr.reduce(counted, { total: 0, good: 0, samples: 0 }, (sum, row) => ({
 						total: sum.total + num(row.total),
 						good: sum.good + num(row.good),
+						samples: sum.samples + num(row.samples),
 					}))
 					assert.deepStrictEqual(
 						summed,
@@ -363,9 +376,10 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 					).sql,
 				)
 				const api = Arr.filter(rows, (row) => row.serviceName === "api")
-				for (const minutes of [5, 30, 60, 360]) {
+				for (const minutes of [5, 30, 60, 120, 360, 1440]) {
 					const truth = await runJson(`
-						SELECT toFloat64(sum(SampleRate)) AS total, toFloat64(sumIf(SampleRate, ${goodPredicate(sli)})) AS good
+						SELECT toFloat64(sum(SampleRate)) AS total, toFloat64(sumIf(SampleRate, ${goodPredicate(sli)})) AS good,
+							toFloat64(count()) AS samples
 						FROM service_overview_spans
 						WHERE OrgId = ${quote(ORG_ID)} AND ServiceName = 'api'
 							AND Timestamp >= ${quote(chDateTime(window.startMs))}
@@ -373,13 +387,18 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 							AND toStartOfMinute(Timestamp) >= toDateTime(${quote(chDateTime(window.endMs))}) - INTERVAL ${minutes} MINUTE
 							AND toStartOfMinute(Timestamp) < toDateTime(${quote(chDateTime(window.endMs))})
 					`)
-					const summed = Arr.reduce(api, { total: 0, good: 0 }, (sum, row) => ({
+					const summed = Arr.reduce(api, { total: 0, good: 0, samples: 0 }, (sum, row) => ({
 						total: sum.total + num(row[`total${minutes}`]),
 						good: sum.good + num(row[`good${minutes}`]),
+						samples: sum.samples + num(row[`samples${minutes}`]),
 					}))
 					assert.deepStrictEqual(
 						summed,
-						{ total: num(truth[0]?.total), good: num(truth[0]?.good) },
+						{
+							total: num(truth[0]?.total),
+							good: num(truth[0]?.good),
+							samples: num(truth[0]?.samples),
+						},
 						`${minutes}m window`,
 					)
 				}
@@ -409,9 +428,10 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 						assert.isAbove(truth.length, 0)
 						assert.deepStrictEqual(byBucket(spliced), byBucket(truth))
 						assert.deepStrictEqual(
-							Arr.reduce(spliced, { total: 0, good: 0 }, (sum, row) => ({
+							Arr.reduce(spliced, { total: 0, good: 0, samples: 0 }, (sum, row) => ({
 								total: sum.total + num(row.total),
 								good: sum.good + num(row.good),
+								samples: sum.samples + num(row.samples),
 							})),
 							totals,
 						)
@@ -437,10 +457,10 @@ describe.skipIf(!clickhouseE2eEnabled)("SLO raw-vs-rollup parity", () => {
 		])
 		assert.isAbove(latencyFlat.total, 0)
 		// Legacy rows have zero coverage: the latency read is exactly the real spans.
-		assert.deepStrictEqual(latencySpliced, latencyFlat)
+		assert.deepStrictEqual(weighted(latencySpliced), weighted(latencyFlat))
 		// The whole-window read takes the 12:00 hour row and the 10:40 minute row; the 12:10
 		// minute row sits inside the hourly interior, where the minutely tier does not read.
-		assert.deepStrictEqual(availabilitySpliced, {
+		assert.deepStrictEqual(weighted(availabilitySpliced), {
 			total: availabilityFlat.total + 50 + 30,
 			good: availabilityFlat.good + (50 - 5) + (30 - 3),
 		})
