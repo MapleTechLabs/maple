@@ -35,14 +35,14 @@ const APP_SOURCE = Arr.join(
 )
 
 // One segment: generated 1:0 -> src/app.ts 7:0, named handleClick (`AAMAA` is [0, 0, +6, 0, 0]).
-const mapBytes = () =>
+const mapBytes = (mappings = "AAMAA") =>
 	new TextEncoder().encode(
 		JSON.stringify({
 			version: 3,
 			sources: ["webpack://shop/./src/app.ts"],
 			sourcesContent: [APP_SOURCE],
 			names: ["handleClick"],
-			mappings: "AAMAA",
+			mappings,
 		}),
 	)
 
@@ -393,6 +393,65 @@ describe("StackSymbolicator", () => {
 			state.failReads = false
 			const ok = yield* symbolicator.symbolicateWithOutcome(withDebugId)
 			assert.deepStrictEqual([ok.lookupFailed, ok.stack.status], [false, "resolved"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("keeps two builds with their own debug ids on one release path apart", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const OTHER_DEBUG_ID = "7d6f3c2b-2a3f-4e4d-9c8b-123456789abc"
+			const release = {
+				serviceName: "shop-web",
+				version: "2.4.0",
+				minifiedPath: "assets/index-Bx81.js",
+			}
+			yield* sourceMaps.upload(ORG, { bytes: mapBytes(), debugId: DEBUG_ID, ...release })
+			// The second build maps the same position to line 11 (`AAUAA` is [0, 0, +10, 0, 0]).
+			yield* sourceMaps.upload(ORG, { bytes: mapBytes("AAUAA"), debugId: OTHER_DEBUG_ID, ...release })
+			assert.strictEqual((yield* sourceMaps.list(ORG, { limit: 10, offset: 0 })).length, 2)
+
+			const lineFor = (debugId: string) =>
+				Effect.map(
+					symbolicator.symbolicate(
+						request({
+							serviceName: "shop-web",
+							serviceVersion: "2.4.0",
+							debugIds: new Map([[BUNDLE_URL, debugId]]),
+						}),
+					),
+					(stack) => stack.frames[0]?.line,
+				)
+			assert.strictEqual(yield* lineFor(DEBUG_ID), 7)
+			assert.strictEqual(yield* lineFor(OTHER_DEBUG_ID), 11)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("records use only for a map that resolved a frame", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			yield* sourceMaps.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/index-Bx81.js",
+				debugId: DEBUG_ID,
+			})
+			// Line 5 has no mapping: the map loads but resolves nothing.
+			const unmapped = yield* symbolicator.symbolicate(
+				request({
+					stacktrace: `TypeError: boom\n    at a (${BUNDLE_URL}:5:1)`,
+					debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]),
+				}),
+			)
+			assert.strictEqual(unmapped.status, "missing_map")
+			const [untouched] = yield* sourceMaps.list(ORG, { limit: 1, offset: 0 })
+			assert.isNull(untouched?.lastUsedAt ?? null)
+
+			yield* symbolicator.symbolicate(request({ debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]) }))
+			const [touched] = yield* sourceMaps.list(ORG, { limit: 1, offset: 0 })
+			assert.isNotNull(touched?.lastUsedAt ?? null)
 		}).pipe(Effect.provide(layer))
 	})
 })

@@ -282,9 +282,13 @@ loop in verification without a human ever seeing it.
   A minified browser bundle renames functions and content-hashed files every deploy, so where the
   host binds the source map bucket, a key that reads frames (`frames`, `type-function`) is computed
   from the stack mapped through the org's source maps instead: the in-app frames' original file and
-  function, never a line or column (rule `source-mapped`). A stack that maps nothing keys exactly as
-  before, and every rule above frames (custom keys, org rules, chunk loads, type and message) keeps
-  its priority.
+  function, never a line or column (rule `source-mapped`). A frame with no recovered function name
+  reads as its file plus its original source line's text; one with neither keeps the raw key, so two
+  throw sites in one file never share a key on the file alone. A stack that maps nothing keys exactly
+  as before, and every rule above frames (custom keys, org rules, chunk loads, type and message)
+  keeps its priority. Whether the org has any map is part of `config_digest`, so its first upload
+  re-keys its keys once; a sample whose build registered debug ids waits for its map (one hour from
+  first sighting) even before the org has any.
 - **Org grouping rules and detaching.** An org can add rules without a deploy
   (`packages/domain/src/tinybird/grouping-rules.ts`, `PUT /grouping-rules`, needs
   `error_policy:manage`): `merge` joins every error matching its globs into one issue per service,

@@ -37,7 +37,7 @@ export interface SourceMapListFilter {
 }
 
 export interface SourceMapServiceApi {
-	/** Stores the map, replacing a file with the same debug id or the same release path. */
+	/** Stores the map, replacing the file with its debug id, else the id-less file at its release path. */
 	readonly upload: (
 		orgId: OrgId,
 		upload: SourceMapUpload,
@@ -75,16 +75,49 @@ const deleteObjects = (bucket: WritableObjectStore, rows: ReadonlyArray<SourceMa
 		? Effect.void
 		: bucket.delete(Arr.map(rows, (row) => row.objectKey)).pipe(Effect.mapError(toStorageError))
 
-/** One sweep over every org: objects first, so a row never outlives a delete that failed. */
+/**
+ * Deletes the rows among `ids` still unused since before `cutoff`, returning their object keys.
+ * The predicate is checked in the delete itself, so a use recorded after selection keeps its row.
+ */
+export const claimExpired = (
+	database: DatabaseApi,
+	ids: ReadonlyArray<SourceMapFileId>,
+	cutoff: number,
+): Effect.Effect<ReadonlyArray<string>, SourceMapStorageError> =>
+	ids.length === 0
+		? Effect.succeed([])
+		: makeDbExecute(
+				database,
+				"SourceMapService",
+				toStorageError,
+			)((db) =>
+				db.run(
+					PG.deleteFrom(SourceMapFiles)
+						.where(($) => [
+							PG.inList($.id, ids),
+							PG.or(
+								$.lastUsedAt.lt(cutoff),
+								PG.and($.lastUsedAt.isNull(), $.createdAt.lt(cutoff)),
+							),
+						])
+						.crossTenant()
+						.returning("objectKey"),
+				),
+			).pipe(Effect.map((rows) => Arr.map(rows, (row) => row.objectKey)))
+
+/**
+ * One sweep over every org: rows are claimed first, then their objects deleted. An object whose
+ * delete fails has no row left, so the orphan sweep removes it a day later.
+ */
 const sweep = (database: DatabaseApi, bucket: WritableObjectStore, now: number) => {
 	const dbExecute = makeDbExecute(database, "SourceMapService", toStorageError)
 	const cutoff = now - Duration.toMillis(SOURCE_MAP_RETENTION)
 	const batch = (left: number, deleted: number): Effect.Effect<number, SourceMapStorageError> =>
 		Effect.gen(function* () {
-			const expired = yield* dbExecute((db) =>
+			const candidates = yield* dbExecute((db) =>
 				db.run(
 					PG.from(SourceMapFiles)
-						.select()
+						.select("id")
 						.where(($) => [
 							PG.or(
 								$.lastUsedAt.lt(cutoff),
@@ -96,18 +129,24 @@ const sweep = (database: DatabaseApi, bucket: WritableObjectStore, now: number) 
 						.crossTenant(),
 				),
 			)
-			if (expired.length === 0) return deleted
-			yield* deleteObjects(bucket, expired)
-			const ids = Arr.map(expired, (row) => row.id)
-			yield* dbExecute((db) =>
-				db.run(
-					PG.deleteFrom(SourceMapFiles)
-						.where(($) => [PG.inList($.id, ids)])
-						.crossTenant(),
-				),
+			if (candidates.length === 0) return deleted
+			const claimed = yield* claimExpired(
+				database,
+				Arr.map(candidates, (row) => row.id),
+				cutoff,
 			)
-			const total = deleted + expired.length
-			return expired.length < SWEEP_BATCH || left <= 1 ? total : yield* batch(left - 1, total)
+			if (claimed.length > 0) {
+				yield* bucket.delete(claimed).pipe(
+					Effect.tapError((error) =>
+						Effect.logWarning(
+							"Expired source map objects were not deleted; the orphan sweep will",
+						).pipe(Effect.annotateLogs({ count: claimed.length, message: error.message })),
+					),
+					Effect.ignore,
+				)
+			}
+			const total = deleted + claimed.length
+			return candidates.length < SWEEP_BATCH || left <= 1 ? total : yield* batch(left - 1, total)
 		})
 	return batch(SWEEP_BATCHES_PER_TICK, 0)
 }
@@ -224,16 +263,16 @@ export class SourceMapService extends Context.Service<SourceMapService, SourceMa
 									.select()
 									.where(($) => [
 										$.orgId.eq(orgId),
-										PG.or(
-											debugId === null ? undefined : $.debugId.eq(debugId),
-											serviceName === null || version === null
-												? undefined
-												: PG.and(
-														$.serviceName.eq(serviceName),
-														$.version.eq(version),
-														$.minifiedPath.eq(minifiedPath),
-													),
-										),
+										// A debug id is the whole identity of its build; only a map without
+										// one replaces by release path, and only another map without one.
+										debugId !== null
+											? $.debugId.eq(debugId)
+											: PG.and(
+													$.debugId.isNull(),
+													$.serviceName.eq(serviceName ?? ""),
+													$.version.eq(version ?? ""),
+													$.minifiedPath.eq(minifiedPath),
+												),
 									]),
 							)
 							if (previous.length > 0) {
