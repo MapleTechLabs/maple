@@ -156,7 +156,9 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			// Stored late, so still in storage past its serving age: replace it with a fresh answer.
 			yield* edgeCache.invalidate({ bucket: FLAGS_EDGE_BUCKET, key: orgId })
 			const retry = yield* shared(orgId)
-			if (!retry.hit || nowMs - retry.value.observedAtMs < FLAGS_SHARED_MAX_AGE_MS) return retry.value
+			const retryNowMs = yield* Clock.currentTimeMillis
+			if (!retry.hit || retryNowMs - retry.value.observedAtMs < FLAGS_SHARED_MAX_AGE_MS)
+				return retry.value
 			// The delete did not take: answer from Clerk without the shared tier.
 			return yield* observe(orgId)
 		})
