@@ -13,7 +13,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import { DEFAULT_PRESET, summaryOf } from "./update"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
-import { displayedServices, singleRowServices } from "./derive"
+import { commitSummariesOf, displayedServices, releaseLabeler, singleRowServices } from "./derive"
 import { filtersRail } from "./view-filters"
 import { loadingState, servicesTable, THROUGHPUT_COLOR } from "./view-table"
 import { Array as Arr } from "effect"
@@ -24,18 +24,31 @@ const THEME_TOKENS = [TONE_COLOR.crit, THROUGHPUT_COLOR]
 const FACETS = [
 	{ label: "Environment", include: "environments", exclude: "excludedEnvironments" },
 	{ label: "Namespace", include: "namespaces", exclude: "excludedNamespaces" },
-	{ label: "Commit SHA", include: "commitShas", exclude: "excludedCommitShas" },
+	{ label: "Release", include: "commitShas", exclude: "excludedCommitShas" },
 ] as const
 
 type ChipParam = (typeof FACETS)[number]["include" | "exclude"]
 
 /** Exclusions first; URL namespace chips hide while the org pin is on. */
 const filterChips = (model: Model, pinnedNamespace: string | null) => {
+	const releaseLabel = releaseLabeler(commitSummariesOf(model))
 	const chipOf = (param: ChipParam, label: string, isNegated: boolean) => {
 		const values = model.search[param]
 		return values === undefined || values.length === 0
 			? []
-			: [{ id: param, label, values, isNegated, onRemove: Message.RemovedFilterChip({ param }) }]
+			: [
+					{
+						id: param,
+						label,
+						values,
+						isNegated,
+						onRemove: Message.RemovedFilterChip({ param }),
+						valueLabel: (value: string) =>
+							param === "commitShas" || param === "excludedCommitShas"
+								? releaseLabel(value)
+								: value,
+					},
+				]
 	}
 	return Arr.filter(
 		[

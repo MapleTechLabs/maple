@@ -3,7 +3,7 @@ import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
 import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { reloadSpin } from "@maple/views/data/timing"
 import type { RequestMode } from "@maple/views/data/keyed"
-import { Option } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Chart from "@maple/views/charts/chart"
@@ -22,7 +22,7 @@ import {
 	type BaselineInput,
 	FetchAnomalies,
 	FetchBaseline,
-	FetchCommitMessages,
+	FetchCommitSummaries,
 	FetchFacets,
 	FetchOverview,
 	FetchSparklines,
@@ -155,24 +155,40 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 	])
 }
 
-/** Requests that follow the loaded data: the commit messages of the deploys on screen. */
+/** Requests that follow the loaded data: the commits of the deploys on screen and of the release facet. */
 const followData =
 	(context: PageContext) =>
 	(result: Return): Return => {
 		const { model } = result
 		const overview = AsyncData.getData(model.overview.data)
-		if (Option.isNone(overview) || !model.hasPaintedTable) return result
+		// Waits out an overview or facets load so one lookup covers the settled rows and facet; a failed
+		// facets read goes ahead without them.
+		if (
+			Option.isNone(overview) ||
+			!model.hasPaintedTable ||
+			AsyncData.isPending(model.overview.data) ||
+			AsyncData.isPending(model.facets.data)
+		)
+			return result
 		const summary = summaryOf(model)
 		const services = displayedServices(overview.value, summary, model.search)
-		const shas = commitsKey(services)
+		const facetShas = Option.match(AsyncData.getData(model.facets.data), {
+			onNone: () => [],
+			onSome: (facets) => Arr.map(facets.commitShas, (option) => option.name),
+		})
+		const chosenShas = Arr.sort(
+			[...(model.search.commitShas ?? []), ...(model.search.excludedCommitShas ?? [])],
+			Order.String,
+		)
+		const shas = commitsKey(services, [...chosenShas, ...facetShas])
 		const commits =
 			shas === ""
 				? Option.none()
 				: Option.map(
-						Keyed.request(model.commitMessages, commitDetailsKey(context.orgId, shas), "Load"),
-						(commitMessages) => ({
-							patch: { commitMessages },
-							command: FetchCommitMessages({
+						Keyed.request(model.commitSummaries, commitDetailsKey(context.orgId, shas), "Load"),
+						(commitSummaries) => ({
+							patch: { commitSummaries },
+							command: FetchCommitSummaries({
 								key: commitDetailsKey(context.orgId, shas),
 								shas,
 							}),
@@ -308,7 +324,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		anomalies: Keyed.idle(),
 		incidents: IncidentsData.Loading(),
 		hasPaintedTable: false,
-		commitMessages: Keyed.idle(),
+		commitSummaries: Keyed.idle(),
 		presence: SignalPresenceData.Loading(),
 		...initOverlays(),
 		filterSections: FilterSections.init(),
@@ -350,7 +366,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		facets: Keyed.forgetFailure(model.facets),
 		baseline: Keyed.forgetFailure(model.baseline),
 		anomalies: Option.getOrElse(anomalies, () => model.anomalies),
-		commitMessages: Keyed.forgetFailure(model.commitMessages),
+		commitSummaries: Keyed.forgetFailure(model.commitSummaries),
 		// A runtime that failed before parking is asked for again, as entry does.
 		chartRuntime:
 			model.chartRuntime._tag === "Failed" ? { _tag: "Loading" as const } : model.chartRuntime,
@@ -431,9 +447,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model: { ...model, sparklines, rowRevision: bumped(model, model.sparklines, sparklines) },
 			}
 		},
-		CompletedFetchFacets: ({ key, result }) => ({
-			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
-		}),
+		CompletedFetchFacets: ({ key, result }) =>
+			followData(context)({
+				model: { ...model, facets: Keyed.accept(model.facets, key, result) },
+			}),
 		CompletedFetchBaseline: ({ key, result }) => {
 			const baseline = Keyed.accept(model.baseline, key, result)
 			return { model: { ...model, baseline, rowRevision: bumped(model, model.baseline, baseline) } }
@@ -442,8 +459,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			followData(context)({
 				model: { ...model, anomalies: Keyed.accept(model.anomalies, key, result) },
 			}),
-		CompletedFetchCommitMessages: ({ key, result }) => ({
-			model: { ...model, commitMessages: Keyed.accept(model.commitMessages, key, result) },
+		CompletedFetchCommitSummaries: ({ key, result }) => ({
+			model: { ...model, commitSummaries: Keyed.accept(model.commitSummaries, key, result) },
 		}),
 		PaintedTable: () =>
 			model.hasPaintedTable

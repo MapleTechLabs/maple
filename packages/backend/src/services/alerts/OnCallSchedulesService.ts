@@ -483,7 +483,12 @@ export class OnCallSchedulesService extends Context.Service<
 		) {
 			yield* annotate(scheduleId)
 			yield* requireManage(roles)
-			if (request.layers !== undefined) yield* requireMembers(orgId, participantsOf(request.layers))
+			if (request.layers !== undefined) {
+				yield* requireMembers(orgId, participantsOf(request.layers))
+				// The check above read the directory fresh; the answer must not come from an older read
+				// that predates someone it just accepted.
+				yield* Cache.invalidate(memberIdsByOrg, orgId)
+			}
 			const nowMs = yield* runtime.now
 			const members = yield* memberIdsOf(orgId)
 			return yield* dbExecute((db) =>

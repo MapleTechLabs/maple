@@ -317,6 +317,48 @@ describe("escalation chains", () => {
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})
 
+	it.effect("keeps a skipped step's due time for the step that stands in for it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			// One repeat: after the pager step, the chain is back on its first step with one to follow.
+			const { alerts, orgId } = yield* setup("org_esc_skip_key", { repeatCount: 1 })
+			const database = yield* Database
+			yield* alerts.runSchedulerTick()
+			yield* ticks(alerts, 24)
+			yield* TestClock.adjust(Duration.minutes(2))
+			const dueMs = DEFAULT_CLOCK_EPOCH_MS + 26 * 60_000
+			const [row] = yield* database.execute((db) => selectEscalationWork(db, dueMs))
+			if (row === undefined) return assert.fail("expected a due run")
+			// The scheduler gets to it a few seconds after it is due, and the step reaches nobody.
+			const nowMs = row.nextStepAt + 5_000
+			const outcome = yield* database.execute((db) =>
+				db.transaction(
+					applyEscalationPlan(db, {
+						row,
+						plan: planEscalationWork(row, false, nowMs),
+						nowMs,
+						enabled: new Set(),
+						makeDeliveryId: crypto.randomUUID.bind(crypto),
+					}),
+				),
+			)
+			assert.strictEqual(outcome, "skipped")
+			const after = yield* Effect.promise(() =>
+				testDb.pglite.query<{ next_step_at: Date; step_index: number }>(
+					"select next_step_at, step_index from alert_escalation_runs where org_id = $1 and status = 'active'",
+					[orgId],
+				),
+			)
+			// The delivery key of the next step is its due time: unchanged, it still dedupes against
+			// a page the tier sent for that moment.
+			assert.strictEqual(after.rows[0]?.next_step_at.getTime(), row.nextStepAt)
+			assert.strictEqual(after.rows[0]?.step_index, row.stepIndex + 1)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
 	it.effect("reads only runs with a decision to make, so standing acks cannot crowd out a due step", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRateRows(10) }
@@ -455,6 +497,31 @@ describe("escalation chains", () => {
 				)
 				yield* ticks(alerts, 8)
 				assert.include(requests, "trigger pager")
+			}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+		},
+	)
+
+	it.effect(
+		"carries a live inherited chain on, without starting it over, when the incident turns critical",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(10) }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const { alerts, orgId } = yield* setupInherited("org_esc_inherit_live")
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				state.tracesAggregateRows = errorRateRows(30)
+				yield* ticks(alerts, 3)
+				assert.lengthOf(
+					Arr.filter(requests, (request) => request === "trigger slack"),
+					1,
+				)
+				assert.deepStrictEqual(
+					Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
+					["active"],
+				)
 			}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 		},
 	)

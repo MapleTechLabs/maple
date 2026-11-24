@@ -553,13 +553,17 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 								status: "active",
 								stepIndex: plan.next.stepIndex,
 								passIndex: plan.next.passIndex,
-								nextStepAt: movesOnNow ? nowMs : plan.next.nextStepAt,
+								// Kept, not moved to now: the next step is due at once, and keyed like the step it
+								// stands in for, so a destination the tier just notified is not paged a second time.
+								nextStepAt: movesOnNow ? row.nextStepAt : plan.next.nextStepAt,
 								...sent,
 							},
 				)
 				if (!moved) return "lost" satisfies EscalationApplyOutcome
+				// On the incident's timeline: a schedule with nobody on call, or a step that reached nobody
+				// at all (its destinations are off, its people have left).
 				const gapScheduleNames = input.gapScheduleNames ?? []
-				if (Arr.isReadonlyArrayNonEmpty(gapScheduleNames)) {
+				if (nobody || Arr.isReadonlyArrayNonEmpty(gapScheduleNames)) {
 					yield* db.run(
 						PG.insertInto(AlertIncidentEvents).values({
 							id: decodeIncidentEventId(input.makeDeliveryId()),
@@ -569,7 +573,9 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 							actorUserId: null,
 							actorName: null,
 							source: null,
-							detail: Arr.join(Arr.dedupe(gapScheduleNames), ", "),
+							detail: Arr.isReadonlyArrayNonEmpty(gapScheduleNames)
+								? Arr.join(Arr.dedupe(gapScheduleNames), ", ")
+								: null,
 							createdAt: nowMs,
 						}),
 					)
@@ -585,7 +591,8 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 							chainEnded: plan.next.kind === "exhausted",
 						}),
 					)
-					const reachedNobody: EscalationApplyOutcome = plan.next.kind === "exhausted" ? "ended" : "skipped"
+					const reachedNobody: EscalationApplyOutcome =
+						plan.next.kind === "exhausted" ? "ended" : "skipped"
 					return reachedNobody
 				}
 				const payload = {
@@ -679,7 +686,10 @@ export const applyEscalationPlan = (db: MapleDb, input: ApplyEscalationPlanInput
 									claimExpiresAt: null,
 									payloadJson: {
 										...payload,
-										recipient: input.lastResort === true ? { ...recipient, lastResort: true } : recipient,
+										recipient:
+											input.lastResort === true
+												? { ...recipient, lastResort: true }
+												: recipient,
 									},
 									dedupeKey: memberNotificationDedupeKey(
 										row.id,

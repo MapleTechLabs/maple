@@ -1,7 +1,7 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "d08011dce9de328c79268994b3243adee2950fa53af3e73ac2bc33ecbe1bb77a",
+	"id": "8cd2f550684d206677ae8b010ff57a931da5257f77f4bd9379ebeab88b2b7eb7",
 	"prevIds": [
 		"a72f6c94bb752c00425f5a6b5bb23d3857c5b081409c761b20eacbdd9ee53635"
 	],
@@ -795,19 +795,6 @@
 				"name": "mobile_devices_pkey",
 				"columns": [
 					"id"
-				]
-			}
-		},
-		{
-			"kind": "table",
-			"name": "morph_spend_readings",
-			"primaryKey": {
-				"name": "morph_spend_readings_pkey",
-				"columns": [
-					"connection_id",
-					"month",
-					"member_id",
-					"day"
 				]
 			}
 		},
@@ -2517,18 +2504,8 @@
 		{
 			"kind": "column",
 			"table": "alert_incident_events",
-			"name": "detail",
-			"position": 7,
-			"type": "text",
-			"notNull": false,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "alert_incident_events",
 			"name": "created_at",
-			"position": 8,
+			"position": 7,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -12459,106 +12436,6 @@
 			"table": "mobile_devices",
 			"name": "updated_at",
 			"position": 16,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "org_id",
-			"position": 0,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "connection_id",
-			"position": 1,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "month",
-			"position": 2,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "day",
-			"position": 3,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "member_id",
-			"position": 4,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "member_label",
-			"position": 5,
-			"type": "text",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "opening_micros",
-			"position": 6,
-			"type": "bigint",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "closing_micros",
-			"position": 7,
-			"type": "bigint",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "first_read_at",
-			"position": 8,
-			"type": "timestamp with time zone",
-			"notNull": true,
-			"default": null,
-			"identity": null
-		},
-		{
-			"kind": "column",
-			"table": "morph_spend_readings",
-			"name": "last_read_at",
-			"position": 9,
 			"type": "timestamp with time zone",
 			"notNull": true,
 			"default": null,
@@ -23728,17 +23605,6 @@
 		},
 		{
 			"kind": "index",
-			"table": "morph_spend_readings",
-			"name": "morph_spend_readings_org_idx",
-			"unique": false,
-			"method": "btree",
-			"columns": [
-				"\"org_id\""
-			],
-			"where": null
-		},
-		{
-			"kind": "index",
 			"table": "oauth_auth_states",
 			"name": "oauth_auth_states_expires_idx",
 			"unique": false,
@@ -25232,20 +25098,6 @@
 				"connector_id"
 			],
 			"foreignTable": "gcp_connectors",
-			"foreignColumns": [
-				"id"
-			],
-			"onDelete": "CASCADE",
-			"onUpdate": "NO ACTION"
-		},
-		{
-			"kind": "foreign_key",
-			"table": "morph_spend_readings",
-			"name": "morph_spend_readings_connection_id_cost_connections_id_fk",
-			"columns": [
-				"connection_id"
-			],
-			"foreignTable": "cost_connections",
 			"foreignColumns": [
 				"id"
 			],

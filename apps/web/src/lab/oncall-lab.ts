@@ -31,10 +31,12 @@ import {
 	checkoutSchedule,
 	checkoutShifts,
 	DST_NOW,
+	formerMemberId,
 	memberId,
 	mixedTargetChain,
 	overrideUuid,
 	ONCALL_NOW,
+	onCallGapEvent,
 	oncallMembers,
 	pagedEvents,
 	populatedSchedules,
@@ -46,8 +48,9 @@ import type { Resources } from "../platform/resources"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // `/lab/oncall`: on-call schedules in the hub (the On-call tab and the inbox's "On call now"
-// strip), the schedule form, the calendar with overrides and a DST week, the chain dialog with
-// people and schedules, and an incident timeline with pages. `?state=` picks one.
+// strip), the schedule form, the calendar with overrides, a DST week and a participant who left
+// the org, the chain dialog with people and schedules, and an incident timeline with pages and a
+// step that found nobody on call. `?state=` picks one.
 
 export const LabState = Schema.Literals([
 	"schedules-empty",
@@ -63,6 +66,7 @@ export const LabState = Schema.Literals([
 	"editor-error",
 	"calendar",
 	"calendar-dst",
+	"calendar-departed",
 	"override-dialog",
 	"override-delete",
 	"chain-dialog",
@@ -306,7 +310,7 @@ const scheduleFor = (state: LabState): Step<ScheduleModel.Model, ScheduleMessage
 		{ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} },
 		CONTEXT,
 	)
-	const schedule = checkoutSchedule(nowMs)
+	const schedule = checkoutSchedule(nowMs, state === "calendar-departed" ? [formerMemberId] : [])
 	const loaded = fold(
 		start,
 		[
@@ -386,7 +390,10 @@ const incidentFor = (): Step<IncidentModel.Model, IncidentMessage.Message> => {
 		[
 			IncidentMessage.Message.CompletedFetchActivity({
 				key: synced.model.activity.key ?? "",
-				result: Result.succeed(pagedEvents(INCIDENT_ID, toEpochMs(row.first_triggered_at))),
+				result: Result.succeed([
+					...pagedEvents(INCIDENT_ID, toEpochMs(row.first_triggered_at)),
+					onCallGapEvent(INCIDENT_ID, toEpochMs(row.first_triggered_at), "Weekend coverage"),
+				]),
 			}),
 			IncidentMessage.Message.CompletedFetchEscalation({
 				key: synced.model.escalation.key ?? "",

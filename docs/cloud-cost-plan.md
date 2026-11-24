@@ -576,30 +576,24 @@ newest bucket trails by about a day, inside the two open days; the key checked a
 organization with no spend, so its row shapes are still from the docs. Open: Anthropic rows from a
 real organization with spend, restated days, and how far back OpenAI serves.
 
-### Morph (billed, month-to-date readings)
+### Morph (billed, daily usage API)
 
-- Morph serves no usage history. The only spend it reports is `GET
-  /api/v1/org/members/budgets`: each member's spend on the organization's keys so far this UTC
-  month (`spent`, a decimal string in USD), refreshed about every 30 minutes, with the `month` it
-  covers. Query parameters for another month are ignored. Only an organization key owned by an
-  organization admin reads it; a personal account's key answers 403, an unknown key 401.
-- So each pull records a reading in `morph_spend_readings` (per connection, month, member and day:
-  the day's first and last reading, in millionths of a dollar), then builds the window's days from
-  the readings of its months. A member's day is its last reading less their last reading before it
-  in the month; what they had spent by the month's first reading goes on the month's first day as
-  its own usage type, unless that reading was on the first day. A drop is an `adjustment`. The
-  readings are the history: a re-pulled day comes out the same. A late write never replaces a newer
-  reading. They go with the connection, and months below the floor are pruned.
-- Morph's sync profile is due hourly (`headIntervalMs`, 55 minutes), so a day's last reading is
-  close to its end. Spend in a month's last hour after its last reading is not seen once Morph
-  reports the new month. The floor is the current month, and the previous one through day 3 for
-  its last readings: a source added mid-month shows no month of zeros before it.
-- Morph names no organization, so the account is `organization`. Best effort: a replacement key
-  missing most of the members of the newest month read is refused as another organization's.
-- Rows: `cloud_service` `morph` (no split by model), the member's newest email as the resource
-  (its user id when Morph gives none), the user id in the `morph.user_id` tag.
-- Live (2026-11-21, a real organization): the answer decoded, the parsed total matched Morph's to
-  the micro-dollar, and an unknown key read as 401.
+- `GET /api/v1/account/usage?start=YYYY-MM-DD&end=YYYY-MM-DD` (UTC days, at most 366 days per
+  request, an end past today read as today): spend, requests and tokens per day, each day split by
+  model. Spend is USD at the account's prices, net of committed-spend discounts, rounded to the
+  micro-dollar; usage the plan covers counts 0. Today refreshes about every 30 minutes.
+- Any key works: an organization key reads the organization, a personal key its owner. The answer
+  names only the kind (`account`: `organization` or `personal`), which is the account id, so a key
+  of the other kind is refused as `other_account`. A replacement of the same kind must answer the
+  saved key's last 30 closed days alike, or it is refused as another account; a saved key Morph
+  no longer takes (revoked) leaves nothing to compare, so the replacement is trusted. An unknown key
+  answers 401.
+- Same sync profile as Anthropic and OpenAI: three months back, daily heads, today `estimated`.
+- Rows: `cloud_service` `morph`, the model as the usage type, tokens (input, cached included, plus
+  output) as the consumed quantity. Models at $0 (plan-covered) are left out; a negative day is an
+  `adjustment`.
+- Replaced the month-to-date readings of `/api/v1/org/members/budgets` (2026-11-21, PR #2902),
+  which needed an admin's org key and had no history; `morph_spend_readings` is dropped.
 
 ### Railway (estimated per service, billed per workspace)
 
