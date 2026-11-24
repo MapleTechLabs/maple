@@ -6,7 +6,7 @@
 					{ "key": "service.name", "value": { "stringValue": "acme-web" } },
 					{ "key": "telemetry.sdk.name", "value": { "stringValue": "@maple-dev/browser" } },
 					{ "key": "telemetry.sdk.language", "value": { "stringValue": "webjs" } },
-					{ "key": "telemetry.sdk.version", "value": { "stringValue": "0.15.0" } },
+					{ "key": "telemetry.sdk.version", "value": { "stringValue": "__SDK_VERSION__" } },
 					{ "key": "maple.sdk.type", "value": { "stringValue": "browser" } },
 					{ "key": "service.namespace", "value": { "stringValue": "shop" } },
 					{
@@ -24,7 +24,7 @@
 			},
 			"scopeLogs": [
 				{
-					"scope": { "name": "maple-browser", "version": "0.15.0" },
+					"scope": { "name": "maple-browser", "version": "__SDK_VERSION__" },
 					"logRecords": [
 						{
 							"timeUnixNano": "1763899200250000000",
