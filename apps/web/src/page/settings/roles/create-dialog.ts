@@ -6,12 +6,10 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { failureMessage, LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { alert, alertDescription } from "@maple/views/ui/alert"
-import { radioCard } from "@maple/views/ui/control-card"
 import * as Dialog from "@maple/views/ui/dialog"
 import { fieldGroupLabel } from "@maple/views/ui/field"
 import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
-import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Select from "@maple/views/ui/select"
 import * as SelectView from "@maple/views/ui/select-view"
 import { vstack } from "@maple/views/ui/stack"
@@ -29,23 +27,18 @@ import {
 import { roleTextField } from "./view-parts"
 
 // The create-role dialog, one Submodel shared by the Roles tab and the role editor (Duplicate):
-// a name, a description, and the role it starts from. Created, the opener goes to its editor.
+// a name, a description, and the role it starts from (none, or any built-in or custom role).
+// Created, the opener goes to its editor.
 
-/** `custom` copies the role picked in `copyFrom`; a built-in role's key copies that role. */
-const EMPTY = "empty"
-const CUSTOM = "custom"
-
-/** The built-in roles offered as a start whatever was duplicated. */
-const OFFERED_BUILT_INS = ["member", "engineer"]
+/** The template value for no role: built-in keys are names and custom keys ids, so none is "". */
+const NO_TEMPLATE = ""
 
 export const Model = Schema.Struct({
 	dialog: Dialog.Model,
 	name: Schema.String,
 	description: Schema.String,
-	start: RadioGroup.Model,
-	copyFrom: Select.Model,
-	/** A duplicated built-in role not offered by default (Analyst, Admin), listed for this opening. */
-	duplicatedBuiltIn: Schema.NullOr(Schema.String),
+	/** The role whose permissions the new one starts with: a role's key, or `NO_TEMPLATE`. */
+	template: Select.Model,
 	isCreating: Schema.Boolean,
 	error: Schema.NullOr(Schema.String),
 })
@@ -55,8 +48,7 @@ export const Message = defineMessageUnion({
 	GotDialogMessage: { message: Dialog.Message },
 	ChangedName: { value: Schema.String },
 	ChangedDescription: { value: Schema.String },
-	GotStartMessage: { message: RadioGroup.Message },
-	GotCopyFromMessage: { message: Select.Message },
+	GotTemplateMessage: { message: Select.Message },
 	SubmittedCreate: {},
 	CompletedCreate: { result: Schema.Result(CustomRoleResponse, LoadFailure) },
 })
@@ -71,9 +63,7 @@ export const init = (id: string): Model => ({
 	dialog: Dialog.init(id, "dialog"),
 	name: "",
 	description: "",
-	start: RadioGroup.init(EMPTY),
-	copyFrom: Select.init(`${id}-copy-from`, { value: "", selectedIndex: null }),
-	duplicatedBuiltIn: null,
+	template: Select.init(`${id}-template`, { value: NO_TEMPLATE, selectedIndex: 0 }),
 	isCreating: false,
 	error: null,
 })
@@ -90,25 +80,21 @@ const COPY_SUFFIX = " copy"
 const copyName = (name: string): string =>
 	`${Str.trimEnd(Str.slice(0, Policy.CUSTOM_ROLE_NAME_MAX - COPY_SUFFIX.length)(name))}${COPY_SUFFIX}`
 
-const customRoles = (entries: ReadonlyArray<RoleEntry>) => Arr.filter(entries, (entry) => !entry.isBuiltIn)
-
 const liftDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, dialog: step.model },
 	commands: Command.mapMessages(step.commands ?? [], (message) => Message.GotDialogMessage({ message })),
 })
 
+/** The template list: no role first, then every role in list order. */
+const templateKeys = (entries: ReadonlyArray<RoleEntry>): ReadonlyArray<string> => [
+	NO_TEMPLATE,
+	...Arr.map(entries, (entry) => entry.key),
+]
+
 /** Opens the dialog empty, or as a copy of the role `from` names. */
 export const open = (model: Model, entries: ReadonlyArray<RoleEntry>, from: string | null): Return => {
 	const source = from === null ? Option.none() : findRole(entries, from)
-	const firstCustom = Option.getOrNull(Arr.head(customRoles(entries)))
-	const copyFrom = Option.match(source, {
-		onNone: () => firstCustom?.key ?? "",
-		onSome: (role) => (role.isBuiltIn ? (firstCustom?.key ?? "") : role.key),
-	})
-	const start = Option.match(source, {
-		onNone: () => EMPTY,
-		onSome: (role) => (role.isBuiltIn ? role.key : CUSTOM),
-	})
+	const template = Option.match(source, { onNone: () => NO_TEMPLATE, onSome: (role) => role.key })
 	const fresh: Model = {
 		...model,
 		name: Option.match(source, { onNone: () => "", onSome: (role) => copyName(role.name) }),
@@ -116,16 +102,11 @@ export const open = (model: Model, entries: ReadonlyArray<RoleEntry>, from: stri
 			onNone: () => "",
 			onSome: (role) => Str.slice(0, Policy.CUSTOM_ROLE_DESCRIPTION_MAX)(role.description),
 		}),
-		start: RadioGroup.init(start),
-		copyFrom: Select.init(model.copyFrom.id, {
-			value: copyFrom,
+		template: Select.init(model.template.id, {
+			value: template,
 			selectedIndex: Option.getOrNull(
-				Arr.findFirstIndex(customRoles(entries), (entry) => entry.key === copyFrom),
+				Arr.findFirstIndex(templateKeys(entries), (key) => key === template),
 			),
-		}),
-		duplicatedBuiltIn: Option.match(source, {
-			onNone: () => null,
-			onSome: (role) => (role.isBuiltIn && !OFFERED_BUILT_INS.includes(role.key) ? role.key : null),
 		}),
 		isCreating: false,
 		error: null,
@@ -133,26 +114,18 @@ export const open = (model: Model, entries: ReadonlyArray<RoleEntry>, from: stri
 	return liftDialog(fresh, Dialog.open(model.dialog))
 }
 
-const startValue = (model: Model): string => Option.getOrElse(model.start.maybeValue, () => EMPTY)
-
-/** The permissions the new role starts with: those the chosen role holds that a custom role may. */
+/** The permissions the new role starts with: those the template holds that a custom role may. */
 export const startingPermissions = (
 	model: Model,
 	entries: ReadonlyArray<RoleEntry>,
-): ReadonlyArray<Policy.Permission> => {
-	const start = startValue(model)
-	if (start === EMPTY) return []
-	const key = start === CUSTOM ? model.copyFrom.value : start
-	return Option.match(findRole(entries, key), {
+): ReadonlyArray<Policy.Permission> =>
+	Option.match(findRole(entries, model.template.value), {
 		onNone: () => [],
 		onSome: (role) => grantablePermissions(role.permissions),
 	})
-}
 
 const canSubmit = (model: Model): boolean =>
-	isValidRoleName(model.name) &&
-	isValidRoleDescription(model.description) &&
-	(startValue(model) !== CUSTOM || model.copyFrom.value !== "")
+	isValidRoleName(model.name) && isValidRoleDescription(model.description)
 
 export const update = (model: Model, message: Message, entries: ReadonlyArray<RoleEntry>): Return =>
 	Message.match<Return>(message, {
@@ -160,26 +133,12 @@ export const update = (model: Model, message: Message, entries: ReadonlyArray<Ro
 			model.isCreating ? { model } : liftDialog(model, Dialog.update(model.dialog, child)),
 		ChangedName: ({ value }) => ({ model: { ...model, name: value, error: null } }),
 		ChangedDescription: ({ value }) => ({ model: { ...model, description: value } }),
-		GotStartMessage: ({ message: child }) => {
-			const step = RadioGroup.update(model.start, child)
+		GotTemplateMessage: ({ message: child }) => {
+			const step = Select.update(model.template, child)
 			return {
-				model: { ...model, start: step.model },
+				model: { ...model, template: step.model },
 				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotStartMessage({ message: inner }),
-				),
-			}
-		},
-		GotCopyFromMessage: ({ message: child }) => {
-			const step = Select.update(model.copyFrom, child)
-			return {
-				// Picking a role to copy picks "Copy a custom role" too.
-				model: {
-					...model,
-					copyFrom: step.model,
-					start: step.outMessage === undefined ? model.start : RadioGroup.init(CUSTOM),
-				},
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotCopyFromMessage({ message: inner }),
+					Message.GotTemplateMessage({ message: inner }),
 				),
 			}
 		},
@@ -211,64 +170,56 @@ export const update = (model: Model, message: Message, entries: ReadonlyArray<Ro
 
 type H = HtmlBuilder<Message>
 
-type StartOption = Readonly<{ value: string; title: string; detail: string }>
-
-const permissionsLine = (role: RoleEntry): string => {
+const permissionCount = (role: RoleEntry): string => {
 	const count = grantablePermissions(role.permissions).length
-	return `${count} ${count === 1 ? "permission" : "permissions"}. ${role.description}`
+	return `${count} ${count === 1 ? "permission" : "permissions"}`
 }
 
-const startOptions = (model: Model, entries: ReadonlyArray<RoleEntry>): ReadonlyArray<StartOption> => [
-	{ value: EMPTY, title: "Empty", detail: "No permissions." },
-	...Arr.flatMap(entries, (role) =>
-		role.isBuiltIn && (OFFERED_BUILT_INS.includes(role.key) || role.key === model.duplicatedBuiltIn)
-			? [{ value: role.key, title: `Copy ${role.name}`, detail: permissionsLine(role) }]
-			: [],
-	),
-	...(customRoles(entries).length === 0
-		? []
-		: [
-				{
-					value: CUSTOM,
-					title: "Copy a custom role",
-					detail: "Start from one of this organization's roles.",
-				},
-			]),
-]
+const NO_TEMPLATE_LABEL = "No role"
 
-const radioId = (model: Model, value: string) => `${model.dialog.id}-start-${value}`
+/** What the picked template gives the new role, under the picker. */
+const templateDetail = (model: Model, entries: ReadonlyArray<RoleEntry>): string =>
+	Option.match(findRole(entries, model.template.value), {
+		onNone: () => "Starts with no permissions.",
+		onSome: (role) =>
+			role.description === ""
+				? `${permissionCount(role)}.`
+				: `${permissionCount(role)}. ${role.description}`,
+	})
 
-const startCard = (h: H, config: RadioGroup.RadioGroupViewConfig<Message>, option: StartOption) =>
-	radioCard(h, { config, value: option.value }, [
-		vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
-			typography(h, { size: "sm", weight: "medium" }, [option.title]),
-			typography(h, { size: "xs", tone: "muted" }, [option.detail]),
-		]),
-	])
+const roleOptions = (entries: ReadonlyArray<RoleEntry>) =>
+	Arr.map(entries, (role) => ({ value: role.key, label: role.name }))
 
-const copyFromSelect = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html =>
-	h.submodel({
-		slotId: model.copyFrom.id,
-		model: model.copyFrom,
+const templateSelect = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html => {
+	const builtIn = Arr.filter(entries, (entry) => entry.isBuiltIn)
+	const custom = Arr.filter(entries, (entry) => !entry.isBuiltIn)
+	return h.submodel({
+		slotId: model.template.id,
+		model: model.template,
 		view: SelectView.view,
-		toParentMessage: (message) => Message.GotCopyFromMessage({ message }),
+		toParentMessage: (message) => Message.GotTemplateMessage({ message }),
 		viewInputs: {
-			entries: Arr.map(customRoles(entries), (role) => ({
-				_tag: "Item" as const,
-				item: { value: role.key, label: role.name },
-			})),
-			ariaLabel: "Custom role to copy",
-			size: "sm",
-			className: "ml-7 w-auto min-w-48",
+			entries: [
+				{ _tag: "Item", item: { value: NO_TEMPLATE, label: NO_TEMPLATE_LABEL } },
+				{ _tag: "Separator" },
+				{ _tag: "Group", label: "Built-in roles", items: roleOptions(builtIn) },
+				...(custom.length === 0
+					? []
+					: [{ _tag: "Group" as const, label: "Custom roles", items: roleOptions(custom) }]),
+			],
+			labelledBy: `${model.template.id}-label`,
+			describedBy: `${model.template.id}-detail`,
+			className: "w-full",
 			renderValue: (value) => [
 				Option.match(findRole(entries, value), {
-					onNone: () => "Choose a role",
+					onNone: () => NO_TEMPLATE_LABEL,
 					onSome: (role) => role.name,
 				}),
 			],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 	})
+}
 
 /** The dialog; `entries` are the roles it can start from. */
 export const view = Submodel.defineView<Model, Message, Readonly<{ entries: ReadonlyArray<RoleEntry> }>>(
@@ -276,16 +227,6 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ entries: Read
 )
 
 const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html => {
-	const options = startOptions(model, entries)
-	const config: RadioGroup.RadioGroupViewConfig<Message> = {
-		model: model.start,
-		toParentMessage: (message) => Message.GotStartMessage({ message }),
-		items: Arr.map(options, (option) => ({
-			value: option.value,
-			id: radioId(model, option.value),
-			inputId: `${radioId(model, option.value)}-input`,
-		})),
-	}
 	return formDialog(h, {
 		slotId: model.dialog.id,
 		model: model.dialog,
@@ -315,13 +256,12 @@ const dialogView = (h: H, model: Model, entries: ReadonlyArray<RoleEntry>): Html
 				onInput: (value) => Message.ChangedDescription({ value }),
 			}),
 			vstack(h, { gap: "2" }, [
-				fieldGroupLabel(h, {}, "Start from"),
-				RadioGroup.radioGroup(
-					h,
-					{ label: "Start from", className: "gap-2" },
-					Arr.flatMap(options, (option) => startCard(h, config, option)),
+				fieldGroupLabel(h, { attributes: [h.Id(`${model.template.id}-label`)] }, "Start from"),
+				templateSelect(h, model, entries),
+				h.div(
+					[h.Id(`${model.template.id}-detail`)],
+					[typography(h, { size: "xs", tone: "muted" }, [templateDetail(model, entries)])],
 				),
-				...(startValue(model) === CUSTOM ? [copyFromSelect(h, model, entries)] : []),
 			]),
 			...(model.error === null
 				? []
