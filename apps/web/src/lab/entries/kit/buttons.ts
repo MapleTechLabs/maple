@@ -415,6 +415,7 @@ const actionBars = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 		...saveBar(h, {
 			isDirty: true,
 			className: "static",
+			changeCount: 2,
 			context: "Applies to 3 members on their next request.",
 			saveLabel: "Save role",
 			onDiscard: Message.ClickedRefresh(),

@@ -15,6 +15,8 @@ export const SAVE_SHORTCUT_ATTRIBUTE = "shortcut-save"
 export type SaveBarOptions<M> = Readonly<{
 	isDirty: boolean
 	isPending?: boolean
+	/** How many edits are unsaved, when the page counts them ("2 unsaved changes"). */
+	changeCount?: number
 	context?: string
 	onDiscard: M
 	onSave: M
@@ -25,6 +27,9 @@ export type SaveBarOptions<M> = Readonly<{
 
 // The pill's buttons take its corners, so the hover fill follows the curve.
 const PILL_BUTTON = "rounded-full before:rounded-full"
+
+const statusOf = (count: number | undefined): string =>
+	count === undefined ? "Unsaved changes" : `${count} unsaved ${count === 1 ? "change" : "changes"}`
 
 export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): ReadonlyArray<Html> => {
 	const isPending = options.isPending ?? false
@@ -37,7 +42,7 @@ export const saveBar = <M>(h: HtmlBuilder<M>, options: SaveBarOptions<M>): Reado
 			leading: [
 				statusDot(h, { tone: isPending ? "neutral" : "live" }),
 				typography(h, { size: "sm", tone: "foreground", className: "shrink-0 whitespace-nowrap" }, [
-					isPending ? "Saving changes" : "Unsaved changes",
+					isPending ? "Saving changes" : statusOf(options.changeCount),
 				]),
 				// The context is a hint; a phone keeps the status and both buttons on one line instead.
 				...(options.context === undefined || options.context.length === 0

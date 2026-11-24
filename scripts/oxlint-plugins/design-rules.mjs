@@ -255,6 +255,38 @@ const singleTooltipDelay = {
 	},
 }
 
+// Every page with unsaved edits shows the same pill, built in one place.
+const SAVE_BAR_HOME = "apps/web/src/page/kit/save-bar.ts"
+
+const oneSaveBar = {
+	meta: {
+		type: "problem",
+		docs: { description: "An unsaved-changes bar is the kit `saveBar`." },
+		messages: {
+			bad: "Show unsaved edits with `saveBar` (`apps/web/src/page/kit/save-bar.ts`), not an `actionBar` of your own: `changeCount`, `context` and `saveLabel` cover the variations, so every page shows the same pill.",
+		},
+	},
+	create(context) {
+		if ((context.filename ?? context.getFilename()).replaceAll("\\", "/").endsWith(SAVE_BAR_HOME))
+			return {}
+		return {
+			CallExpression(node) {
+				if (node.callee.type !== "Identifier" || node.callee.name !== "actionBar") return
+				const options = node.arguments[1]
+				if (options?.type !== "ObjectExpression") return
+				for (const property of options.properties)
+					if (
+						property.type === "Property" &&
+						property.key.name === "label" &&
+						property.value.type === "Literal" &&
+						property.value.value === "Unsaved changes"
+					)
+						context.report({ node, messageId: "bad" })
+			},
+		}
+	},
+}
+
 const noDimmedIcon = {
 	meta: {
 		type: "problem",
@@ -504,6 +536,7 @@ export const designRules = {
 	"no-dimmed-icon": noDimmedIcon,
 	"no-raw-shadow": noRawShadow,
 	"no-transition-all": noTransitionAll,
+	"one-save-bar": oneSaveBar,
 	"single-tooltip-delay": singleTooltipDelay,
 	"tone-alpha-steps": toneAlphaSteps,
 }
