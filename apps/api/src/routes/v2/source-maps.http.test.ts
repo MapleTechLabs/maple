@@ -194,6 +194,8 @@ describe("v2 source_maps over HTTP", () => {
 		})
 		expect(declared.status).toBe(413)
 		expect(declared.body.error._tag).toBe("@maple/http/sourcemaps/SourceMapTooLargeError")
+		// The size is in the answer, so a CI upload learns which map and by how much.
+		expect(declared.body.error.message).toContain(String(10 * 1024 * 1024 + 1))
 
 		const oversized = await harness.request("POST", path, key.secret, {
 			bytes: new Uint8Array(10 * 1024 * 1024 + 1),

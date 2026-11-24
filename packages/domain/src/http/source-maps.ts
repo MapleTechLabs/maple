@@ -39,7 +39,7 @@ export class SourceMapTooLargeError extends HttpTaggedError<SourceMapTooLargeErr
 		message: "Source maps are limited to 10 MiB each, the largest Maple can symbolicate with.",
 		retry: "never",
 		recovery: "fix_request",
-		exposure: "redacted",
+		exposure: "public_message",
 	},
 ) {}
 
