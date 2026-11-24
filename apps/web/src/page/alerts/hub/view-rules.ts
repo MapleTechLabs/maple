@@ -83,7 +83,7 @@ export type RulesTabInputs = Readonly<{
 	emptyState: Html
 }>
 
-export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
+const rulesTabBody = (h: H, model: Model, inputs: RulesTabInputs, rendered: Set<string>): Html => {
 	const { data, destinations, status } = inputs
 	const { rules, derivedByRuleId, incidentsByRule, timelineRange } = data
 	const now = timelineRange.max
@@ -125,6 +125,7 @@ export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
 
 	const rowOf = (rule: AlertRuleDocument, groupKey: string) => {
 		const menuId = ruleMenuId(rule.id, groupKey)
+		rendered.add(menuId)
 		const inputs = stableRowInputs(menuId, {
 			rule,
 			derived: derivedByRuleId.get(rule.id),
@@ -320,12 +321,22 @@ type RowInputs = Readonly<{
 
 // Live updates and the clock rebuild every row's inputs as new objects. A row whose inputs are
 // structurally unchanged keeps the previous object, so its keyed slot reuses the row's tree.
+// Holds only the rows of the latest render: `rulesTab` drops the rest after each pass.
 const lastRowInputs = new Map<string, RowInputs>()
 const stableRowInputs = (key: string, next: RowInputs): RowInputs => {
 	const previous = lastRowInputs.get(key)
 	if (previous !== undefined && Equal.equals(previous, next)) return previous
 	lastRowInputs.set(key, next)
 	return next
+}
+
+export const rulesTab = (h: H, model: Model, inputs: RulesTabInputs): Html => {
+	const rendered = new Set<string>()
+	const tree = rulesTabBody(h, model, inputs, rendered)
+	Arr.forEach(Arr.fromIterable(lastRowInputs.keys()), (key) => {
+		if (!rendered.has(key)) lastRowInputs.delete(key)
+	})
+	return tree
 }
 const lazyRuleRow = createKeyedLazy()
 
