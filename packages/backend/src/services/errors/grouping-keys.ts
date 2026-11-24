@@ -432,16 +432,22 @@ export const resolveGroupingSiblings = <EDb, ERead>(
 		// Hashes never keyed first (likely new issues), then stale keys after a rules change.
 		const storedHashes = new Set(Arr.map(stored, (row) => row.fingerprintHash))
 		const neverKeyed = Arr.filter(hashes, (hash) => !storedHashes.has(hash))
-		// Over the cap with source maps in play, first sightings go before hashes seen in an earlier
-		// tick (those held for a map among them), so held hashes cannot crowd out new ones. An org
-		// without maps keeps the plain order and reads nothing more.
-		const reorder = neverKeyed.length > GROUPING_KEYS_PER_TICK && mapsInPlay
-		const earlierSeen = reorder
+		// Over the cap, the order decides who waits. Hashes held past their grace window go first (they
+		// key now, whatever their map), then first sightings, then hashes still held, in an order that
+		// rotates every minute so a ready one among them is not stuck behind the same held prefix.
+		// Under the cap everything fits and nothing more is read.
+		const overCap = neverKeyed.length > GROUPING_KEYS_PER_TICK
+		const earlierSeen = overCap
 			? yield* dbRun((tx) => firstSeenOf(tx, orgId, neverKeyed))
 			: new Map<string, number>()
+		const graceOver = (hash: string) => nowMs - (earlierSeen.get(hash) ?? nowMs) >= MAP_PENDING_GRACE_MS
+		const held = Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && !graceOver(hash))
+		const turn = held.length === 0 ? 0 : Math.floor(nowMs / 60_000) % held.length
 		const unkeyed = [
+			...Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash) && graceOver(hash)),
 			...Arr.filter(neverKeyed, (hash) => !earlierSeen.has(hash)),
-			...Arr.filter(neverKeyed, (hash) => earlierSeen.has(hash)),
+			...held.slice(turn),
+			...held.slice(0, turn),
 			...Arr.filter(hashes, (hash) => storedHashes.has(hash) && !current.has(hash)),
 		].slice(0, GROUPING_KEYS_PER_TICK)
 		const samples = unkeyed.length === 0 ? [] : yield* reads.samples(unkeyed)

@@ -6,6 +6,7 @@ import { errorMessageOf, parseJson } from "./api-request"
 import {
 	existingDebugId,
 	findJsFiles,
+	isIndexMap,
 	mapDebugId,
 	mapUsers,
 	MAX_MAP_BYTES,
@@ -170,6 +171,12 @@ export const uploadDirectory = (
 								}),
 						),
 					)
+					if (isIndexMap(new TextDecoder().decode(body)))
+						return {
+							_tag: "skipped",
+							minifiedPath,
+							reason: "index source maps are not supported; emit a regular map",
+						} satisfies UploadOutcome
 					// The file's own id is what its frames report; a shared map's id belongs to no one file.
 					const debugId = Option.orElse(existingDebugId(js.code), () =>
 						shared ? Option.none() : mapDebugId(new TextDecoder().decode(body)),

@@ -2,7 +2,13 @@ import { Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 
 import type { StackFrame, SymbolicatedStack } from "../errors/js-stack"
-import { explainGrouping, groupingKey, groupingParts, type GroupingSample } from "./grouping"
+import {
+	collapseCodeWhitespace,
+	explainGrouping,
+	groupingKey,
+	groupingParts,
+	type GroupingSample,
+} from "./grouping"
 import { compileGroupingRules, GroupingConfig, groupingConfigDigest, OrgGroupingRule } from "./grouping-rules"
 
 const node = (
@@ -368,6 +374,51 @@ describe("source-mapped frames", () => {
 		const bare = site("index-Bx81", "a", 40, null)
 		expect(groupingKey(bare)).toBe(groupingKey(stripStack(bare)))
 		expect(groupingParts(bare).rule).toBe("frames")
+	})
+
+	it("collapses formatting whitespace in a source line, never inside a string literal", () => {
+		expect(collapseCodeWhitespace('\t  return   totals["tax  rate"].total ')).toBe(
+			'return totals["tax  rate"].total',
+		)
+		expect(collapseCodeWhitespace("x = 'a\\'  b'   +  `c  d`")).toBe("x = 'a\\'  b' + `c  d`")
+		const site = (text: string) =>
+			withStack(node("TypeError", "boom", ["a (https://app.example/assets/x.js:1:9)"]), [
+				{
+					...mappedFrame("at a (https://app.example/assets/x.js:1:9)", "a", "src/totals.ts"),
+					function_from_map: false,
+					context: { pre: [], line: text, post: [] },
+				},
+			])
+		expect(groupingKey(site('  totals["tax  rate"].total'))).not.toBe(
+			groupingKey(site('totals["tax rate"].total')),
+		)
+		expect(groupingKey(site('\ttotals[ "tax rate" ].total'))).toBe(
+			groupingKey(site('totals[ "tax rate" ].total')),
+		)
+		expect(groupingKey(site("totals.tax   .total"))).toBe(groupingKey(site("totals.tax .total")))
+	})
+
+	it("applies a frame rule on the generated file to the frame after its map resolves it", () => {
+		const vendor = compileGroupingRules(
+			new GroupingConfig({
+				rules: [
+					new OrgGroupingRule({ id: "vendor", kind: "library-frames", frame: "*vendor-*.js*" }),
+				],
+			}),
+		)
+		const frames = [
+			"wrap (https://app.example/assets/vendor-9f.js:1:5)",
+			"renderInvoice (https://app.example/assets/index-1.js:1:9)",
+		]
+		const sample = node("TypeError", "boom", frames)
+		const mapped = withStack(sample, [
+			mappedFrame(`at ${frames[0] ?? ""}`, "wrap", "src/wrapper.ts"),
+			mappedFrame(`at ${frames[1] ?? ""}`, "renderInvoice", "src/invoice.ts"),
+		])
+		expect(explainGrouping(stripStack(sample), vendor).skippedFrames).toHaveLength(1)
+		const why = explainGrouping(mapped, vendor)
+		expect(why.frames).toEqual(["at renderInvoice (src/invoice.ts)"])
+		expect(why.skippedFrames).toEqual(["at wrap (src/wrapper.ts)"])
 	})
 
 	it("keeps a map-supplied name that happens to equal the generated one", () => {

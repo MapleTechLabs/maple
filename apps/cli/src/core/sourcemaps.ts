@@ -143,6 +143,13 @@ export const mapDebugId = (mapText: string): Option.Option<string> =>
 		Option.filter((id) => UUID.test(id)),
 	)
 
+/** Whether the map is an index map (`sections`), which the server refuses. */
+export const isIndexMap = (mapText: string): boolean =>
+	Result.match(decodeMap(mapText), {
+		onFailure: () => false,
+		onSuccess: (map) => map["sections"] !== undefined,
+	})
+
 /** A version 3 source map as a JSON object; anything else is never rewritten. */
 const decodeV3Map = (mapText: string) =>
 	Option.filter(Result.getSuccess(decodeMap(mapText)), (map) => map["version"] === 3)
