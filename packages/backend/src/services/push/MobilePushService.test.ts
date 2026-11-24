@@ -1,5 +1,6 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { encodePublicId } from "@maple/domain/http/v2"
+import { MobileDevicePersistenceError } from "@maple/domain/http"
 import { MobileDeviceId, OrgId, UserId } from "@maple/primitives"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import {
@@ -92,7 +93,8 @@ interface LiveActivityRecorder {
 const background: Array<ApnsBackgroundPush> = []
 
 const makeLayer = (
-	devices: ReadonlyArray<MobileDevice>,
+	// `null`: the device read fails, as when the database is down.
+	devices: ReadonlyArray<MobileDevice> | null,
 	sendImpl: (push: ApnsPush) => ApnsSendResult,
 	sent: Array<ApnsPush>,
 	// Device writes as `disable:<org>:<id>:<reason>` and `pushed:<org>:<ids>`, so the org each write is scoped to is asserted.
@@ -128,7 +130,10 @@ const makeLayer = (
 					unregister: () => Effect.die("unused"),
 					find: () => Effect.die("unused"),
 					listForUser: () => Effect.die("unused"),
-					listForOrg: () => Effect.succeed(devices),
+					listForOrg: () =>
+						devices === null
+							? Effect.fail(new MobileDevicePersistenceError({ message: "database is down" }))
+							: Effect.succeed(devices),
 					disable: (orgId, id, reason) => {
 						deviceWrites.push(`disable:${orgId}:${id}:${reason}`)
 						return Effect.void
@@ -557,6 +562,21 @@ describe("MobilePushService.pageMember", () => {
 				),
 			),
 		)
+	})
+
+	it.effect("counts a device read that failed as a failed page, not as no phone", () => {
+		const sent: Array<ApnsPush> = []
+		return Effect.gen(function* () {
+			const push = yield* MobilePushService
+			// Failed, so the page is tried again once the read works; "no phone" would settle it.
+			assert.deepStrictEqual(yield* push.pageMember(page), {
+				sent: 0,
+				failed: 1,
+				unregistered: 0,
+				skipped: 0,
+			})
+			assert.lengthOf(sent, 0)
+		}).pipe(Effect.provide(makeLayer(null, () => ({ outcome: "sent", apnsId: null }), sent, [])))
 	})
 
 	it.effect("sends nothing for a member without a phone, or without APNs credentials", () => {

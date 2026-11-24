@@ -571,9 +571,20 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 				})
 				const empty: MobilePushSummary = { sent: 0, failed: 0, unregistered: 0, skipped: 0 }
 				if (!apns.isConfigured) return empty
-				const registered = yield* devices
-					.listForOrg(page.orgId)
-					.pipe(Effect.orElseSucceed((): ReadonlyArray<MobileDevice> => []))
+				// A read that failed is not "no phone": the page counts as failed, so it is tried again.
+				const registered = yield* devices.listForOrg(page.orgId).pipe(
+					Effect.map((listed): ReadonlyArray<MobileDevice> | null => listed),
+					Effect.catch((error) =>
+						Effect.logWarning("Mobile push: could not list devices for a page").pipe(
+							Effect.annotateLogs({ orgId: page.orgId, error: error.message }),
+							Effect.as(null),
+						),
+					),
+				)
+				if (registered === null) {
+					yield* Effect.annotateCurrentSpan({ "maple.push.devices_unreadable": true })
+					return { ...empty, failed: 1 }
+				}
 				const targets = Arr.filter(
 					registered,
 					(device) => device.userId === page.userId && device.enabled,
@@ -611,11 +622,20 @@ export class MobilePushService extends Context.Service<MobilePushService, Mobile
 									outcome: result.outcome,
 									reason: result.outcome === "sent" ? "" : result.reason,
 								})),
-								Effect.orElseSucceed(() => ({
-									device,
-									outcome: "failed" as const,
-									reason: "send failed",
-								})),
+								Effect.catch((error) =>
+									Effect.logWarning("Mobile push: a page could not be sent").pipe(
+										Effect.annotateLogs({
+											orgId: page.orgId,
+											deviceId: device.id,
+											error: error.message,
+										}),
+										Effect.as({
+											device,
+											outcome: "failed" as const,
+											reason: error.message,
+										}),
+									),
+								),
 							),
 					{ concurrency: SEND_CONCURRENCY },
 				)
