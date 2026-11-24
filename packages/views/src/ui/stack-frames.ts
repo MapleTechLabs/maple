@@ -89,7 +89,7 @@ const frameLabel = <M>(h: HtmlBuilder<M>, frame: StackFrame): ReadonlyArray<Html
 			mono: true,
 			tone: frame.in_app ? "foreground" : "subtle",
 			weight: frame.in_app ? "medium" : "normal",
-			className: "shrink-0",
+			className: "min-w-0 break-all",
 		},
 		[frame.function ?? "(anonymous)"],
 	),
