@@ -9,7 +9,7 @@ import {
 	type WritableObjectStore,
 } from "@maple/backend/platform/bindings"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { SourceMapFiles } from "@maple/db/tables"
+import { SourceMapFiles, type SourceMapFileRow } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SourceMapReader } from "./SourceMapReader"
@@ -80,6 +80,8 @@ interface BucketState {
 	readStarted: Deferred.Deferred<void> | undefined
 	/** Completed when a frame lookup returns. */
 	lookedUp: Deferred.Deferred<void> | undefined
+	/** Frame lookups made (each is one or more Postgres reads). */
+	lookups: number
 }
 
 /** An in-memory bucket that counts reads and can be made to fail or hold them. */
@@ -91,6 +93,7 @@ const makeHarness = () => {
 		gate: undefined,
 		readStarted: undefined,
 		lookedUp: undefined,
+		lookups: 0,
 	}
 	const signal = (deferred: Deferred.Deferred<void> | undefined) =>
 		deferred === undefined ? Effect.void : Deferred.succeed(deferred, undefined)
@@ -116,7 +119,14 @@ const makeHarness = () => {
 			Effect.map(SourceMapReader.make, (reader) => ({
 				...reader,
 				findForFrames: (lookup: Parameters<typeof reader.findForFrames>[0]) =>
-					Effect.tap(reader.findForFrames(lookup), () => signal(state.lookedUp)),
+					Effect.tap(reader.findForFrames(lookup), () =>
+						Effect.andThen(
+							Effect.sync(() => {
+								state.lookups += 1
+							}),
+							signal(state.lookedUp),
+						),
+					),
 			})),
 		),
 	).pipe(Layer.provideMerge(createTestDb(createdDbs).layer), Layer.provide(sourceMapBucketLayer(bucket)))
@@ -586,6 +596,103 @@ describe("StackSymbolicator", () => {
 			)
 			const without = yield* symbolicator.symbolicate(request({ stacktrace }))
 			assert.isFalse(without.frames[0]?.resolved ?? true)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("looks a bundle up once for a whole batch of its stacks", () => {
+		const { state, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			yield* sourceMaps.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/index-Bx81.js",
+				serviceName: "shop-web",
+				version: "2.4.0",
+			})
+			const lookupMemo = new Map<string, SourceMapFileRow>()
+			const stacks = yield* Effect.forEach(
+				Arr.makeBy(200, () =>
+					request({ serviceName: "shop-web", serviceVersion: "2.4.0", lookupMemo }),
+				),
+				(req) => symbolicator.symbolicate(req),
+				{ concurrency: 4 },
+			)
+			assert.isTrue(Arr.every(stacks, (stack) => stack.status === "resolved"))
+			assert.isAtMost(state.lookups, 4)
+			assert.strictEqual(state.reads, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("looks again when a batch's remembered map was replaced since", () => {
+		const { objects, state, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const release = {
+				serviceName: "shop-web",
+				version: "2.4.0",
+				minifiedPath: "assets/index-Bx81.js",
+			}
+			const first = yield* sourceMaps.upload(ORG, { bytes: mapBytes(), ...release })
+			const lookupMemo = new Map<string, SourceMapFileRow>()
+			const req = request({ serviceName: "shop-web", serviceVersion: "2.4.0", lookupMemo })
+			const withFirst = yield* symbolicator.symbolicateWithOutcome(req)
+			assert.strictEqual(withFirst.stack.frames[0]?.line, 7)
+			// Replaced, and the old map dropped from this isolate's parsed cache by a bigger one.
+			yield* sourceMaps.upload(ORG, { bytes: mapBytes("AAUAA"), ...release })
+			assert.isFalse(objects.has(first.objectKey))
+			const replacedAndEvicted = Arr.makeBy(9, (i) => `assets/filler-${i}.js`)
+			yield* Effect.forEach(replacedAndEvicted, (minifiedPath, i) =>
+				Effect.andThen(
+					sourceMaps.upload(ORG, {
+						bytes: mapBytes(),
+						minifiedPath,
+						debugId: `00000000-0000-4000-8000-00000000000${i}`,
+					}),
+					(row) =>
+						symbolicator.symbolicate(
+							request({
+								stacktrace: `TypeError: boom\n    at a (https://shop.example.com/${minifiedPath}:1:1)`,
+								debugIds: new Map([
+									[`https://shop.example.com/${minifiedPath}`, row.debugId ?? ""],
+								]),
+							}),
+						),
+				),
+			)
+			const stale = yield* symbolicator.symbolicateWithOutcome(req)
+			assert.deepStrictEqual([stale.stack.status, stale.lookupFailed], ["missing_map", true])
+			const lookupsBefore = state.lookups
+			const fresh = yield* symbolicator.symbolicateWithOutcome(req)
+			assert.strictEqual(fresh.stack.frames[0]?.line, 11)
+			assert.strictEqual(state.lookups, lookupsBefore + 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("parses a map over the cache budget once, keeping it as the only entry", () => {
+		const { state, layer } = makeHarness()
+		return Effect.gen(function* () {
+			const sourceMaps = yield* SourceMapService
+			const symbolicator = yield* StackSymbolicator
+			const database = yield* Database
+			const row = yield* sourceMaps.upload(ORG, {
+				bytes: mapBytes(),
+				minifiedPath: "assets/index-Bx81.js",
+				debugId: DEBUG_ID,
+			})
+			// 7 MiB estimates to 42 MiB, over the 40 MiB cache budget.
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(SourceMapFiles)
+						.set({ sizeBytes: 7 * 1024 * 1024 })
+						.where(($) => [PG.inList($.id, [row.id])]),
+				),
+			)
+			const withDebugId = request({ debugIds: new Map([[BUNDLE_URL, DEBUG_ID]]) })
+			yield* symbolicator.symbolicate(withDebugId)
+			yield* symbolicator.symbolicate(withDebugId)
+			assert.strictEqual(state.reads, 1)
 		}).pipe(Effect.provide(layer))
 	})
 })
