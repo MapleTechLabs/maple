@@ -99,7 +99,7 @@ export const AlertMemberNotifications = PG.table("alert_member_notifications", {
 		incidentId: PG.column(PG.brand(PG.text, AlertIncidentId), { name: "incident_id" }),
 		runId: PG.column(PG.brand(PG.text, AlertEscalationRunId), { name: "run_id" }),
 		userId: PG.column(PG.brand(PG.text, UserId), { name: "user_id" }),
-		/** `email`, or the chat connector a direct message goes through. */
+		/** `email`, `push` for the member's phones, or the chat connector a direct message goes through. */
 		channel: PG.text,
 		status: PG.brand(PG.text, AlertIncidentPageStatus),
 		/** Attempts started; a claim counts one before it sends. */

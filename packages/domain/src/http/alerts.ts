@@ -1088,7 +1088,7 @@ export const AlertIncidentPage = Schema.Struct({
 	userId: UserId,
 	/** The member's display name, or null when the directory could not name them. */
 	name: Schema.NullOr(Schema.String),
-	/** `email`, or the chat connector of the direct message (`slack`, `discord`). */
+	/** `email`, `push` (their phones), or the chat connector of the direct message (`slack`, `discord`). */
 	channel: Schema.String,
 	status: AlertIncidentPageStatus,
 	/** Why it was not sent, for a `failed` or `skipped` page. */

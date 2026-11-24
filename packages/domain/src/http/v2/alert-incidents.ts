@@ -285,7 +285,8 @@ export const V2AlertIncidentEvent = Schema.Struct({
 				description: "Their display name, or `null` when the member directory could not name them.",
 			}),
 			channel: Schema.String.annotate({
-				description: "`email`, or the chat platform of the direct message (`slack`, `discord`).",
+				description:
+					"`email`, `push` (the person's phones, through the Maple app), or the chat platform of the direct message (`slack`, `discord`).",
 				examples: ["email"],
 			}),
 			status: AlertIncidentPageStatus.annotate({

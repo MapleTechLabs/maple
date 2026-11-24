@@ -24,7 +24,7 @@ A chain can have up to 10 steps, each with up to 10 targets and a wait of up to 
 | Target      | Who is paged                                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | Destination | A [notification destination](/docs/alerting/notification-destinations): a channel, PagerDuty, a webhook.      |
-| Person      | One member, by email, and by direct message in a chat workspace they have linked their account in.             |
+| Person      | One member: by email, by a push to their phones if they use the Maple app, and by direct message in a chat workspace they have linked their account in. |
 | Schedule    | Whoever an [on-call schedule](/docs/alerting/on-call-schedules) says is on call when the step comes up.        |
 
 Who is on call is read when the step fires, not when the chain was saved or the incident opened.
