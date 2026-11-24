@@ -51,7 +51,7 @@ Use the [Maple CLI](/docs/reference/cli) 0.6.0 or later in your CI, after the bu
 3. Upload the maps:
 
     ```bash
-    maple sourcemaps upload dist --service web --url-prefix assets/
+    maple sourcemaps upload dist --service web
     ```
 
 4. Deploy `dist` as usual. Delete the `.map` files from it first if you do not want them served.
@@ -68,11 +68,12 @@ The command uploads one map per JS file, four at a time, and prints each one. It
 
 ## Upload with Alchemy
 
-If you deploy with [Alchemy](/docs/iac/alchemy), `@maple-dev/alchemy` 0.8.0 or later does both steps for a Vite app. The Vite plugin turns on hidden source maps, injects debug ids, and moves the maps out of the deployed output into `.maple/sourcemaps/<outDir>`, so they are never served:
+If you deploy with [Alchemy](/docs/iac/alchemy), `@maple-dev/alchemy` 0.8.0 or later does both steps for a Vite app. The Vite plugin turns on hidden source maps, injects debug ids, and moves the maps out of the deployed output into `.maple/sourcemaps/<name of the build's output folder>` beside your Vite config, so they are never served:
 
 ```ts
 // vite.config.ts
 import { mapleSourceMaps } from "@maple-dev/alchemy/vite"
+import { defineConfig } from "vite"
 
 export default defineConfig({ plugins: [mapleSourceMaps()] })
 ```
@@ -81,15 +82,16 @@ The `Maple.SourceMaps` resource uploads them after the build:
 
 ```ts
 // alchemy.run.ts
-const web = yield * Cloudflare.Website.Vite("web")
-
-yield *
-	Maple.SourceMaps("web-sourcemaps", {
+Effect.gen(function* () {
+	const web = yield* Cloudflare.Website.Vite("web")
+	yield* Maple.SourceMaps("web-sourcemaps", {
+		// This Website builds to dist/client. A plain Vite build uses .maple/sourcemaps/dist.
 		dir: ".maple/sourcemaps/client",
 		service: "web",
 		release: process.env.GITHUB_SHA,
 		after: web.hash,
 	})
+})
 ```
 
 | Prop        | What it does                                                                                                                         |
