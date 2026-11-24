@@ -1249,13 +1249,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						)
 					// A rule saved before the tiers changed still stores the old factors, which incidents show.
 					if (Option.isSome(observation) && sloRuleIsStale(rule, observation.value.targetPercent)) {
-						yield* sloAlerts
-							.resyncRule(orgId, rule.id, observation.value.targetPercent)
-							.pipe(
-								isolate("An SLO rule's stored thresholds could not be resynced", {
-									ruleId: rule.id,
-								}),
-							)
+						yield* sloAlerts.resyncRule(orgId, rule.id, observation.value.targetPercent).pipe(
+							isolate("An SLO rule's stored thresholds could not be resynced", {
+								ruleId: rule.id,
+							}),
+						)
 					}
 					return Option.match(observation, {
 						onNone: () => [],
