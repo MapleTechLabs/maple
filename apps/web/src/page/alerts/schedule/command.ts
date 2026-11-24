@@ -80,10 +80,10 @@ export const DeleteOverride = Command.define("DeleteOnCallOverride", {
 })
 
 export const CreateCalendarFeed = Command.define("CreateOnCallCalendarFeed", {
-	args: { scheduleId: OnCallScheduleId },
+	args: { scheduleId: OnCallScheduleId, replace: Schema.Boolean },
 	messages: [Message.CompletedCreateCalendarFeed],
-	execute: ({ scheduleId }) =>
-		createCalendarFeed(scheduleId).pipe(
+	execute: ({ scheduleId, replace }) =>
+		createCalendarFeed(scheduleId, replace).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreateCalendarFeed({ result })),
 		),

@@ -50,13 +50,13 @@ A chain step that pages a schedule in a gap reaches nobody. Maple writes that on
 
 A person who leaves stays in the rotation until you edit it, but can no longer be paged:
 
-- Their shifts pass to the next person in the rotation order.
+- Their shifts pass to the next person in the rotation order who is still in the organization. When nobody in the layer is, those shifts go uncovered and count as a gap.
 - Their overrides are ignored.
 - The schedule's page and the on-call list name them, so you can take them out of the layer.
 
 ## Calendar feed
 
-A schedule can hand out a private link that calendar apps subscribe to. It shows the schedule's shifts from a week back to 60 days ahead, one event per shift, named after who is on call.
+A schedule can hand out a private link that calendar apps subscribe to. It shows the schedule's shifts from a week back to 60 days ahead, named after who is on call. Every handoff starts a new event, so a rotation with one person in it still shows a shift per rotation. A long override is one event with its real start and end.
 
 1. Open the schedule and find **Calendar feed** at the bottom of the page.
 2. Select **Create calendar link** and copy the link. It is shown once.
@@ -64,8 +64,10 @@ A schedule can hand out a private link that calendar apps subscribe to. It shows
 
 The link works without signing in, so anyone who has it can read who is on call. Treat it like a password:
 
-- **Replace link** makes a new one. The old link stops working at once.
+- **Replace link** makes a new one. The old link stops working at once, for every calendar subscribed to it.
 - **Turn off** ends the feed.
+
+A schedule has one link at a time. Creating a link when one already exists changes nothing: someone has to choose **Replace link**. The API behaves the same way, and replaces only with `replace=true`.
 
 Calendar apps refresh subscriptions on their own schedule, often every few hours, so a changed shift can take a while to show up there. The schedule's page in Maple is always current.
 

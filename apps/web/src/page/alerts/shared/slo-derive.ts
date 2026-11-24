@@ -4,6 +4,7 @@ import {
 	budgetSpent,
 	errorBudgetRatio,
 	isSloBudgetIncident,
+	SLO_BUDGET_RECOVERY,
 	SLO_BURN_TIERS,
 	type SloBurnTier,
 	type SloSeverity,
@@ -118,17 +119,46 @@ export const budgetLeft = (status: Pick<SloStatus, "sli" | "budget_remaining">):
 	hasNoData(status) ? null : status.budget_remaining
 
 /** Whether the budget is spent on enough events to judge, as the evaluator reads it. */
-export const isSpent = (slo: SloTarget, status: Pick<SloStatus, "total_events" | "good_events">): boolean =>
-	budgetSpent({ total: status.total_events, good: status.good_events }, slo.target_percent)
+export const isSpent = (
+	slo: SloTarget,
+	status: Pick<SloStatus, "total_events" | "good_events" | "sample_count">,
+): boolean =>
+	budgetSpent(
+		{ total: status.total_events, good: status.good_events, samples: status.sample_count },
+		slo.target_percent,
+	)
 
 /** The budget's tone as the evaluator reads it: overspent on a handful of events is no verdict. */
 export const budgetToneOf = (
 	slo: SloTarget,
-	status: Pick<SloStatus, "budget_remaining" | "total_events" | "good_events">,
+	status: Pick<SloStatus, "budget_remaining" | "total_events" | "good_events" | "sample_count">,
 ): Tone =>
 	isBudgetSpent(status.budget_remaining) && !isSpent(slo, status)
 		? "neutral"
 		: budgetTone(status.budget_remaining)
+
+/**
+ * The spent-budget notice, in the evaluator's three states: spent, back by less than the margin
+ * its incident waits for, and back past it.
+ */
+export const budgetNotice = (
+	slo: Pick<Slo, "target_percent" | "window_days">,
+	status: Pick<SloStatus, "budget_remaining">,
+): Readonly<{ title: string; description: string }> =>
+	isBudgetSpent(status.budget_remaining)
+		? {
+				title: "Error budget spent",
+				description: `The last ${formatWindow(slo.window_days)} used every bad event ${formatTarget(slo)} allows: ${overspentText(status.budget_remaining)}. It recovers as bad hours leave the window.`,
+			}
+		: status.budget_remaining < SLO_BUDGET_RECOVERY
+			? {
+					title: "Error budget barely back",
+					description: `Less than ${formatBudget(SLO_BUDGET_RECOVERY)} of the budget is left. The incident stays open until ${formatBudget(SLO_BUDGET_RECOVERY)} is back, so it does not close and reopen around zero.`,
+				}
+			: {
+					title: "Error budget is back",
+					description: "Budget is left again. The incident resolves on the next budget check.",
+				}
 
 const domainWindows = (status: SloStatus) =>
 	Arr.map(status.burn_windows, (window) => ({

@@ -201,10 +201,12 @@ export const HttpV2OnCallSchedulesLive = HttpApiBuilder.group(MapleApiV2, "oncal
 					return deleted
 				}),
 			)
-			.handle("createCalendarFeed", ({ params }) =>
+			.handle("createCalendarFeed", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const feed = yield* schedules.createCalendarFeed(tenant.orgId, tenant.roles, params.id)
+					const feed = yield* schedules.createCalendarFeed(tenant.orgId, tenant.roles, params.id, {
+						replace: query.replace === "true",
+					})
 					// The link is a credential: the audit entry names the schedule, never the token.
 					yield* recordHttpAudit("oncall_schedule.calendar_feed_created", { resourceId: params.id })
 					const created: V2OnCallCalendarFeed = {

@@ -107,11 +107,20 @@ export const listOverrides = (id: OnCallScheduleId) =>
 		return yield* pages(undefined, [])
 	})
 
-/** Turns the schedule's calendar feed on, or replaces its link; the link comes back only here. */
-export const createCalendarFeed = (id: OnCallScheduleId) =>
+/** The code a create answers with when the feed already has a link and `replace` was not asked. */
+export const CALENDAR_FEED_EXISTS_CODE = "oncall_calendar_feed_exists"
+
+/**
+ * Turns the schedule's calendar feed on, or with `replace` swaps its link; the link comes back
+ * only here. Without `replace` a feed that already has a link is left alone and the call fails.
+ */
+export const createCalendarFeed = (id: OnCallScheduleId, replace: boolean) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
-		return yield* client.oncallSchedules.createCalendarFeed({ params: { id } })
+		return yield* client.oncallSchedules.createCalendarFeed({
+			params: { id },
+			query: { replace: replace ? "true" : "false" },
+		})
 	}).pipe(Effect.mapError(toLoadFailure))
 
 export const deleteCalendarFeed = (id: OnCallScheduleId) =>

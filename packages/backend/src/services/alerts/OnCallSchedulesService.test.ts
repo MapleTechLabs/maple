@@ -444,7 +444,7 @@ describe("OnCallSchedulesService calendar feed", () => {
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
 			assert.isNull(schedule.calendarFeedCreatedAt)
 
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			assert.strictEqual((yield* schedules.get(ORG, schedule.id)).calendarFeedCreatedAt, feed.createdAt)
 
 			const calendar = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
@@ -478,7 +478,7 @@ describe("OnCallSchedulesService calendar feed", () => {
 			yield* TestClock.setTime(at("2026-11-25T12:34:56Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			const first = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
 			yield* TestClock.adjust("5 minutes")
 			const second = eventsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
@@ -496,6 +496,57 @@ describe("OnCallSchedulesService calendar feed", () => {
 			assert.isTrue(Arr.every(first, ([uid]) => /^[0-9a-f]{32}@maple\.dev$/.test(uid)))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
+
+	it.effect(
+		"gives a rotation of one person an event per handoff, and a long override its real dates",
+		() => {
+			const testDb = createTestDb(createdDbs)
+			const startsOf = (calendar: string) =>
+				Arr.map(
+					Arr.filter(Str.split("\r\n")(calendar), (line) => Str.startsWith("DTSTART:")(line)),
+					(line) => Str.slice("DTSTART:".length)(line),
+				)
+			const solo = new OnCallScheduleCreateRequest({
+				name: "Solo",
+				timeZone: "UTC",
+				layers: [
+					{
+						name: "Primary",
+						participants: [ana],
+						rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
+						startsAt: at("2026-09-07T09:00:00Z"),
+					},
+				],
+			})
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(at("2026-10-01T12:00:00Z"))
+				const schedules = yield* OnCallSchedulesService
+				const schedule = yield* schedules.create(ORG, ana, ADMIN, solo)
+				// Ben covers eighty days from tomorrow: far longer than the feed looks back.
+				yield* schedules.createOverride(
+					ORG,
+					ana,
+					ADMIN,
+					schedule.id,
+					new OnCallOverrideCreateRequest({
+						userId: ben,
+						startsAt: at("2026-10-02T10:00:00Z"),
+						endsAt: at("2026-12-21T10:00:00Z"),
+					}),
+				)
+				const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+				const early = startsOf(Option.getOrThrow(yield* schedules.calendarFeed(feed.token)))
+				// Ana's own weeks are an event each, on the handoff, though nobody else is in the rotation.
+				assert.includeMembers(early, ["20260921T090000Z", "20260928T090000Z", "20261002T100000Z"])
+
+				// Seven weeks on the override began long before the window: it still starts when it did.
+				yield* TestClock.setTime(at("2026-11-20T12:00:00Z"))
+				const late = Option.getOrThrow(yield* schedules.calendarFeed(feed.token))
+				assert.include(startsOf(late), "20261002T100000Z")
+				assert.include(late, "DTEND:20261221T100000Z")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
 
 	it.effect("fails, and serves no feed without names, when the member directory is down", () => {
 		const testDb = createTestDb(createdDbs)
@@ -528,7 +579,7 @@ describe("OnCallSchedulesService calendar feed", () => {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			directory.isDown = true
 			// Past the directory's minute of cache.
 			yield* TestClock.adjust("2 minutes")
@@ -545,7 +596,7 @@ describe("OnCallSchedulesService calendar feed", () => {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			const stored = yield* Effect.promise(() =>
 				testDb.pglite.query<{ row: string }>(
 					"select row_to_json(s)::text as row from oncall_schedules s where id = $1",
@@ -565,8 +616,18 @@ describe("OnCallSchedulesService calendar feed", () => {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const first = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
-			const second = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const first = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
+			// Without asking to replace, a link in use is left alone.
+			assert.strictEqual(
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false }),
+					),
+				),
+				"@maple/http/errors/OnCallCalendarFeedExistsError",
+			)
+			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(first.token)))
+			const second = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: true })
 			assert.notStrictEqual(first.token, second.token)
 			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(first.token)))
 			assert.isTrue(Option.isSome(yield* schedules.calendarFeed(second.token)))
@@ -584,14 +645,22 @@ describe("OnCallSchedulesService calendar feed", () => {
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
 			assert.strictEqual(
-				errorTag(yield* Effect.exit(schedules.createCalendarFeed(ORG, MEMBER, schedule.id))),
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(ORG, MEMBER, schedule.id, { replace: false }),
+					),
+				),
 				"@maple/http/errors/AlertForbiddenError",
 			)
 			assert.strictEqual(
-				errorTag(yield* Effect.exit(schedules.createCalendarFeed(OTHER_ORG, ADMIN, schedule.id))),
+				errorTag(
+					yield* Effect.exit(
+						schedules.createCalendarFeed(OTHER_ORG, ADMIN, schedule.id, { replace: false }),
+					),
+				),
 				"@maple/http/errors/OnCallScheduleNotFoundError",
 			)
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			assert.strictEqual(
 				errorTag(yield* Effect.exit(schedules.deleteCalendarFeed(OTHER_ORG, ADMIN, schedule.id))),
 				"@maple/http/errors/OnCallScheduleNotFoundError",
@@ -606,7 +675,7 @@ describe("OnCallSchedulesService calendar feed", () => {
 			yield* TestClock.setTime(at("2026-11-10T00:00:00Z"))
 			const schedules = yield* OnCallSchedulesService
 			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
-			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id)
+			const feed = yield* schedules.createCalendarFeed(ORG, ADMIN, schedule.id, { replace: false })
 			yield* schedules.delete(ORG, ADMIN, schedule.id)
 			assert.isTrue(Option.isNone(yield* schedules.calendarFeed(feed.token)))
 		}).pipe(Effect.provide(makeLayer(testDb)))

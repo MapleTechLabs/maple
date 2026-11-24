@@ -118,6 +118,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/McpOAuthAuthorizationExpiredError",
 	"@maple/http/errors/McpOAuthAuthorizationNotFoundError",
 	"@maple/http/errors/MobileDeviceNotFoundError",
+	"@maple/http/errors/OnCallCalendarFeedExistsError",
 	"@maple/http/errors/OnCallOverrideNotFoundError",
 	"@maple/http/errors/OnCallScheduleInUseError",
 	"@maple/http/errors/OnCallScheduleNotFoundError",

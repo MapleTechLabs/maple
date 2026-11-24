@@ -355,6 +355,52 @@ describe("AlertsService SLO burn-rate rules", () => {
 			const opened = (yield* alerts.listIncidents(orgId)).incidents
 			assert.lengthOf(opened, 1)
 			assert.strictEqual(opened[0]?.severity, "warning")
+			// Judged by the one day tier, so that tier's 3x is the threshold it names.
+			assert.closeTo(opened[0]?.threshold ?? 0, 3, 1e-9)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a warning from the 6h tier names 6x, not the slower tier's 3x", () => {
+		const { layer } = harness({ badPerMille: 8 })
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			yield* createSlo(undefined)
+			yield* alerts.runSchedulerTick()
+			const opened = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(opened[0]?.severity, "warning")
+			assert.closeTo(opened[0]?.threshold ?? 0, 6, 1e-9)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("a budget spent again within the day is told again, not held as a flap", () => {
+		const spent = { total: 1_000_000, good: 998_000 }
+		const traffic: Traffic = { badPerMille: 0.5, window: spent }
+		const { layer } = harness(traffic)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(BUDGET_TICK_MS)
+			const alerts = yield* alertServices
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createSlo(destination.id)
+			yield* alerts.runSchedulerTick()
+			const triggers = Effect.map(
+				alerts.listDeliveryEvents(orgId),
+				({ events }) => Arr.filter(events, (event) => event.eventType === "trigger").length,
+			)
+			assert.strictEqual(yield* triggers, 1)
+
+			traffic.window = { total: 1_000_000, good: 999_500 }
+			yield* TestClock.adjust(Duration.minutes(5))
+			yield* alerts.runSchedulerTick()
+			assert.strictEqual((yield* alerts.listIncidents(orgId)).incidents[0]?.status, "resolved")
+
+			// Three hours on the budget is gone again. The last word was that it was back.
+			traffic.window = spent
+			yield* TestClock.adjust(Duration.hours(3))
+			yield* alerts.runSchedulerTick()
+			const incidents = (yield* alerts.listIncidents(orgId)).incidents
+			assert.lengthOf(incidents, 2)
+			assert.strictEqual(yield* triggers, 2)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -371,6 +417,8 @@ describe("AlertsService SLO burn-rate rules", () => {
 			assert.lengthOf(opened, 1)
 			assert.strictEqual(opened[0]?.severity, "warning")
 			assert.strictEqual(opened[0]?.groupKey, SLO_BUDGET_GROUP_KEY)
+			// The whole budget is the line it crossed, not a burn factor.
+			assert.strictEqual(opened[0]?.threshold, 1)
 
 			// Back to 99.5% used: inside the margin, so the warning holds rather than flapping.
 			traffic.window = { total: 1_000_000, good: 999_005 }

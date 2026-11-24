@@ -23,6 +23,7 @@ import { severityBadge } from "../shared/badges"
 import { incidentHref } from "../../kit/alert-links"
 import { editSloHref, SLO_NOT_FOUND_CODE, slosTabHref } from "../shared/slo-commands"
 import {
+	budgetNotice,
 	burnOf,
 	factorOf,
 	firingTier,
@@ -34,7 +35,6 @@ import {
 	holdReason,
 	holdingLine,
 	holdingTier,
-	isBudgetSpent,
 	isSpent,
 	openBudgetIncident,
 	openBurnIncident,
@@ -43,7 +43,6 @@ import {
 	sliLabel,
 	type Slo,
 	type SloStatus,
-	overspentText,
 } from "../shared/slo-derive"
 import { Message } from "./message"
 import { type Model } from "./model"
@@ -140,15 +139,12 @@ const burnCallout = (h: H, model: Model, slo: Slo, status: SloStatus): Option.Op
 const budgetCallout = (h: H, model: Model, slo: Slo, status: SloStatus): Option.Option<Html> => {
 	const incident = openBudgetIncident(slo, model.incidents ?? [])
 	if (Option.isNone(incident) && !isSpent(slo, status)) return Option.none()
+	const notice = budgetNotice(slo, status)
 	return Option.some(
 		alert(h, { variant: "warn" }, [
 			icon(h, "AlertWarningIcon"),
-			alertTitle(h, ["Error budget spent"]),
-			alertDescription(h, [
-				isBudgetSpent(status.budget_remaining)
-					? `The last ${formatWindow(slo.window_days)} used every bad event ${formatTarget(slo)} allows: ${overspentText(status.budget_remaining)}. It recovers as bad hours leave the window.`
-					: "Budget is left again. The incident resolves on the next check.",
-			]),
+			alertTitle(h, [notice.title]),
+			alertDescription(h, [notice.description]),
 			...incidentAction(h, incident, "Open budget incident"),
 		]),
 	)

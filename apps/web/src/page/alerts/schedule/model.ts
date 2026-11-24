@@ -51,15 +51,22 @@ export const Model = Schema.Struct({
 	deleteOverrideDialog: Dialog.Model,
 	/**
 	 * What this page did to the calendar feed since the schedule was read: the link just made
-	 * (shown once, never read back) and when, or `createdAt: null` once turned off.
+	 * (shown once, never read back) and when, or `createdAt: null` once turned off. `ended` is
+	 * when the link that change ended was made, so a read that still shows it is known to be old.
 	 */
 	calendarFeed: Schema.NullOr(
-		Schema.Struct({ url: Schema.NullOr(Schema.String), createdAt: Schema.NullOr(Schema.String) }),
+		Schema.Struct({
+			url: Schema.NullOr(Schema.String),
+			createdAt: Schema.NullOr(Schema.String),
+			ended: Schema.NullOr(Schema.String),
+		}),
 	),
 	calendarCopy: CopyButton.Model,
 	isChangingCalendarFeed: Schema.Boolean,
 	/** What the open dialog confirms: both end the link calendar apps already hold. */
 	calendarFeedAction: Schema.NullOr(Schema.Literals(["replace", "off"])),
+	/** The change in flight, kept so its answer is read as a create or a replace. */
+	calendarFeedChange: Schema.NullOr(Schema.Literals(["create", "replace", "off"])),
 	calendarFeedDialog: Dialog.Model,
 })
 export type Model = typeof Model.Type

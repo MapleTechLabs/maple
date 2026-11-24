@@ -3,6 +3,7 @@ import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import {
 	budgetLeft,
+	budgetNotice,
 	budgetToneOf,
 	burnTone,
 	holdReason,
@@ -101,5 +102,25 @@ describe("the budget's reading", () => {
 		expect([isSpent(slo, sparse), budgetToneOf(slo, sparse)]).toEqual([false, "neutral"])
 		const exhausted = sloStatus("exhausted")
 		expect([isSpent(slo, exhausted), budgetToneOf(slo, exhausted)]).toEqual([true, "crit"])
+	})
+
+	test("the notice promises a resolve only once the budget is back past the incident's margin", () => {
+		const slo = checkoutSlo()
+		const titleAt = (budget: number) => budgetNotice(slo, { budget_remaining: budget }).title
+		expect([titleAt(-0.35), titleAt(0), titleAt(0.01), titleAt(0.02), titleAt(0.4)]).toEqual([
+			"Error budget spent",
+			"Error budget spent",
+			"Error budget barely back",
+			"Error budget is back",
+			"Error budget is back",
+		])
+		expect(budgetNotice(slo, { budget_remaining: 0.01 }).description).toContain("stays open until 2%")
+	})
+
+	test("heavy sampling does not turn a few recorded spans into a spent budget", () => {
+		const slo = checkoutSlo()
+		// Weighted, the window reads as 1.24M events; only eight spans were recorded.
+		const sampled = { ...sloStatus("exhausted"), sample_count: 8 }
+		expect([isSpent(slo, sampled), budgetToneOf(slo, sampled)]).toEqual([false, "neutral"])
 	})
 })

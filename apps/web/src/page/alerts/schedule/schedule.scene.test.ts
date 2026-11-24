@@ -111,7 +111,9 @@ describe("on-call schedule page", () => {
 			{ update: pageUpdate, view },
 			given(loaded(ONCALL_NOW, ENGINEER, [memberId(0), formerMemberId])),
 			expectView(text("Ben Brook and a former member left the org")).toExist(),
-			expectView(text(/Their shifts pass to the next person in the rotation/u)).toExist(),
+			expectView(
+				text(/Their shifts pass to the next person in the rotation who is still in the org/u),
+			).toExist(),
 			expectView(role("link", { name: "Edit the schedule" })).toHaveAttr(
 				"href",
 				editScheduleHref(Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1))),
@@ -705,5 +707,62 @@ describe("on-call schedule page, calendar feed", () => {
 		expect(reread(undefined).calendarFeed?.url).toBe(feed.url)
 		// Someone replaced it a minute later: this page's link is dead and no longer shown.
 		expect(reread(msIso(ONCALL_NOW + 60_000)).calendarFeed).toBeNull()
+	})
+
+	test("a read that left before a replace does not take the new link off the page", () => {
+		const on = withFeedOn()
+		const asked = pageUpdate(on, Message.ClickedReplaceCalendarFeed())
+		const confirmed = pageUpdate(asked.model, Message.ClickedConfirmCalendarFeed())
+		const feed = checkoutCalendarFeed(ONCALL_NOW)
+		const replaced = pageUpdate(
+			confirmed.model,
+			Message.CompletedCreateCalendarFeed({ result: Result.succeed(feed) }),
+		).model
+		const read = (key: string, createdAt: string) =>
+			pageUpdate(
+				replaced,
+				Message.CompletedFetchSchedule({
+					key,
+					readAtMs: ONCALL_NOW,
+					result: Result.succeed(checkoutSchedule(ONCALL_NOW, [], createdAt)),
+				}),
+			).model
+		// Still showing the link this page just ended: an old answer, the new link stays.
+		expect(read(replaced.schedule.key ?? "", feedOnSince).calendarFeed?.url).toBe(feed.url)
+		// An answer to a request the page no longer waits for says nothing about the feed.
+		expect(read("superseded", msIso(ONCALL_NOW + 60_000)).calendarFeed?.url).toBe(feed.url)
+	})
+
+	test("a create that finds someone else's link replaces nothing and shows theirs", () => {
+		const page = loaded(ONCALL_NOW)
+		const clicked = pageUpdate(page, Message.ClickedCreateCalendarFeed())
+		// The create never asks to replace: only the confirmed question does.
+		expect(clicked.commands?.[0]).toMatchObject({ args: { replace: false } })
+		const refused = pageUpdate(
+			clicked.model,
+			Message.CompletedCreateCalendarFeed({
+				result: Result.fail({
+					_tag: "@maple/http/errors/OnCallCalendarFeedExistsError",
+					type: "conflict_error",
+					code: "oncall_calendar_feed_exists",
+					title: "Calendar feed already has a link",
+					message: "The schedule's calendar feed already has a link.",
+					retryable: false,
+					recovery: "fix_request",
+				}),
+			}),
+		)
+		expect(refused.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "This schedule already has a calendar link",
+		})
+		// The schedule is read again, so the page shows the link that exists.
+		expect(names(refused.commands)).toEqual(["FetchOnCallSchedule"])
+		expect(refused.model.isChangingCalendarFeed).toBe(false)
+
+		const on = withFeedOn()
+		const asked = pageUpdate(on, Message.ClickedReplaceCalendarFeed())
+		const confirmed = pageUpdate(asked.model, Message.ClickedConfirmCalendarFeed())
+		expect(confirmed.commands?.[0]).toMatchObject({ args: { replace: true } })
 	})
 })

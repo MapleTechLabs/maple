@@ -75,9 +75,18 @@ export const OnCallCalendarRouter = HttpRouter.use((router) =>
 						}),
 				})
 			}).pipe(
-				// The token must not reach a trace: the span carries the route, not the path.
+				Effect.tap((response) =>
+					Effect.annotateCurrentSpan("http.response.status_code", response.status),
+				),
+				Effect.tapError(() => Effect.annotateCurrentSpan("http.response.status_code", 503)),
+				// The request's only server span, since the automatic one is suppressed for this
+				// prefix. The token must not reach a trace: it carries the route, not the path.
 				Effect.withSpan("OnCallCalendar.feed", {
-					attributes: { "http.route": `${ONCALL_CALENDAR_PATH}/:file` },
+					kind: "server",
+					attributes: {
+						"http.route": `${ONCALL_CALENDAR_PATH}/:file`,
+						"http.request.method": "GET",
+					},
 				}),
 				// A calendar app keeps its last good copy on a 503, which beats a feed without names.
 				Effect.catchTags({
