@@ -22,6 +22,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple services`](#maple-services) · [`diagnose`](#maple-diagnose-service-name) · [`service-map`](#maple-service-map) · [`top-ops`](#maple-top-ops-service-name) | Services, their health, dependencies and hottest operations  |
 | [`maple traces`](#maple-traces) · [`trace`](#maple-trace-trace-id) · [`slow-traces`](#maple-slow-traces)                                                          | Search spans, inspect one trace, find the slowest            |
 | [`maple errors`](#maple-errors) · [`error`](#maple-error-fingerprint-hash)                                                                                        | Error groups by fingerprint, and one group in detail         |
+| [`maple sourcemaps inject`](#maple-sourcemaps-inject-dir) · [`upload`](#maple-sourcemaps-upload-dir)                                                              | Add debug ids to a build, upload its source maps             |
 | [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns) · [`log-diff`](#maple-log-diff)                                                               | Search logs, or cluster them into templates                  |
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
 | [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
@@ -275,6 +276,20 @@ One error group in detail: sample traces and a timeseries.
 
 - **`<fingerprint-hash>`**: the fingerprint from `maple errors`
 - Flags: `--since` / `--start` / `--end`, `--service`, `--limit`
+
+### `maple sourcemaps inject <dir>`
+
+Gives every built JS file under `<dir>` that has a source map a debug id, and writes it into the map. Run it after the build, before deploying and uploading; re-running changes nothing. Maps outside `<dir>` are never touched.
+
+- Flags: `--dry-run` reports what would change without writing
+
+### `maple sourcemaps upload <dir>`
+
+Uploads every source map under `<dir>` whose JS file is there too, so error stacks show original source. Needs a signed-in workspace (remote mode). Skips maps over 10 MiB and index maps; exits non-zero when nothing uploads or an upload fails. See [Source maps](/docs/errors/source-maps).
+
+- `--service`: the `service.name` the maps belong to
+- `--release`: the `service.version`; defaults to the directory's git commit when `--service` is set
+- `--url-prefix`: the path the files are served under, prepended to each file path, e.g. `assets/`
 
 ## Logs
 
