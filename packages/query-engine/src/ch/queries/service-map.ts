@@ -37,6 +37,7 @@ import { DateTimeUtcFromWarehouse } from "../../datetime"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
+import { classifyServiceIdentity, type ServiceIdentity } from "@maple/domain/service-identity"
 import { UPTIME_SERVICE_NAME } from "@maple/domain/uptime"
 
 // Local CH function declarations used by the live topology-join branch's
@@ -1335,19 +1336,38 @@ export function serviceExternalEdgesSQL(
 
 export interface ServicePlatformsOpts {
 	deploymentEnv?: string
+	/** False for a cluster without migration 0074: the identity inputs read as empty. */
+	identity?: boolean
 }
 
-export interface ServicePlatformsOutput {
-	readonly serviceName: string
-	readonly k8sCluster: string
-	readonly k8sPodName: string
-	readonly k8sDeploymentName: string
-	readonly cloudPlatform: string
-	readonly cloudProvider: string
-	readonly faasName: string
-	readonly mapleSdkType: string
-	readonly processRuntimeName: string
-}
+const _arraySlice = defineFn<
+	[CH.Expr<ReadonlyArray<string>>, CH.Expr<number>, CH.Expr<number>],
+	ReadonlyArray<string>
+>("arraySlice", T.array(T.string))
+/** Scope names are capped per insert, not after merges; the read caps what one service can bring. */
+const MAX_SCOPE_NAMES = 64
+
+const ServicePlatformsOutputSchema = Schema.Struct({
+	serviceName: Schema.String,
+	k8sCluster: Schema.String,
+	k8sPodName: Schema.String,
+	k8sDeploymentName: Schema.String,
+	cloudPlatform: Schema.String,
+	cloudProvider: Schema.String,
+	faasName: Schema.String,
+	mapleSdkType: Schema.String,
+	processRuntimeName: Schema.String,
+	scopeNames: Schema.Array(Schema.String),
+	telemetrySdkName: Schema.String,
+	telemetrySdkLanguage: Schema.String,
+	osName: Schema.String,
+	classifiedSpanCount: CHNumber,
+	serverSpanCount: CHNumber,
+	consumerSpanCount: CHNumber,
+	rootSpanCount: CHNumber,
+})
+
+export type ServicePlatformsOutput = typeof ServicePlatformsOutputSchema.Type
 
 export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
@@ -1368,6 +1388,32 @@ export function servicePlatformsSQL(
 			faasName: CH.max_($.FaasName),
 			mapleSdkType: CH.max_($.MapleSdkType),
 			processRuntimeName: CH.max_($.ProcessRuntimeName),
+			// Service identity inputs (see `classifyServiceIdentity`).
+			...(opts.identity === false
+				? {
+						scopeNames: CH.rawExpr("emptyArrayString()", T.array(T.string)),
+						telemetrySdkName: CH.lit(""),
+						telemetrySdkLanguage: CH.lit(""),
+						osName: CH.lit(""),
+						classifiedSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						serverSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						consumerSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+						rootSpanCount: CH.rawExpr("toUInt64(0)", T.uint64),
+					}
+				: {
+						scopeNames: _arraySlice(
+							CH.groupUniqArrayArray($.ScopeNames),
+							CH.lit(1),
+							CH.lit(MAX_SCOPE_NAMES),
+						),
+						telemetrySdkName: CH.max_($.TelemetrySdkName),
+						telemetrySdkLanguage: CH.max_($.TelemetrySdkLanguage),
+						osName: CH.max_($.OsName),
+						classifiedSpanCount: CH.sum($.ClassifiedSpanCount),
+						serverSpanCount: CH.sum($.ServerSpanCount),
+						consumerSpanCount: CH.sum($.ConsumerSpanCount),
+						rootSpanCount: CH.sum($.RootSpanCount),
+					}),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1380,12 +1426,33 @@ export function servicePlatformsSQL(
 		.limit(500)
 		.format("JSON")
 
-	return compile(query, {
-		orgId: params.orgId,
-		startTime: params.startTime,
-		endTime: params.endTime,
-	})
+	return compile(
+		query,
+		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
+		{ rowSchema: ServicePlatformsOutputSchema },
+	)
 }
+
+/**
+ * The service's kind and framework from its platforms row; shared by the API and Maple Local.
+ * Undefined when the row carries no identity signals (a cluster or window before migration 0074),
+ * so nothing claims the telemetry named no framework when it was never read.
+ */
+export const servicePlatformIdentity = (row: ServicePlatformsOutput): ServiceIdentity | undefined =>
+	row.classifiedSpanCount === 0 && row.scopeNames.length === 0
+		? undefined
+		: classifyServiceIdentity({
+				scopeNames: row.scopeNames,
+				sdkName: row.telemetrySdkName,
+				sdkLanguage: row.telemetrySdkLanguage,
+				mapleSdkType: row.mapleSdkType,
+				runtimeName: row.processRuntimeName,
+				osName: row.osName,
+				serverSpans: row.serverSpanCount,
+				consumerSpans: row.consumerSpanCount,
+				rootSpans: row.rootSpanCount,
+				classifiedSpans: row.classifiedSpanCount,
+			})
 
 // Query shapes across every service and database, not one db system's detail
 // panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,

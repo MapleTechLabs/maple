@@ -72,6 +72,7 @@ import { migration_0070_user_activity_daily } from "./0070_user_activity_daily"
 import { migration_0071_person_properties } from "./0071_person_properties"
 import { migration_0072_ai_evaluations } from "./0072_ai_evaluations"
 import { migration_0073_error_fingerprint_default_extension } from "./0073_error_fingerprint_default_extension"
+import { migration_0074_service_identity } from "./0074_service_identity"
 import { Array as Arr } from "effect"
 
 /**
@@ -177,6 +178,7 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0071_person_properties,
 	migration_0072_ai_evaluations,
 	migration_0073_error_fingerprint_default_extension,
+	migration_0074_service_identity,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied
