@@ -2,11 +2,7 @@ import { Schema } from "effect"
 import { SourceMapFileId } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
-/**
- * Largest source map one upload may carry: also the largest symbolication loads, so an upload that
- * succeeds can always be used.
- */
-export const SOURCE_MAP_MAX_BYTES = 10 * 1024 * 1024
+export { SOURCE_MAP_MAX_BYTES } from "@maple/sourcemaps/limits"
 
 /** The upload is not a usable source map, or its parameters do not identify one. */
 export class SourceMapInvalidError extends HttpTaggedError<SourceMapInvalidError>()(

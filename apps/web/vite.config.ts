@@ -6,6 +6,8 @@ import { defineConfig, loadEnv, type Plugin } from "vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
 import { clerkJsUrl } from "../../packages/domain/src/clerk-js-url.ts"
 import { versionManifest } from "./vite-plugin-version-manifest.ts"
+import { mapleSourceMaps } from "../../packages/alchemy-maple/src/Vite.ts"
+import { WEB_SOURCE_MAPS_DIR } from "./source-maps-dir.ts"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
@@ -141,6 +143,9 @@ export default defineConfig(({ mode, command }) => {
 			// `/version.json`, which open tabs poll to offer a reload after a deploy (shell/version.ts).
 			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
 			earlyBoot(),
+			// Hidden maps with debug ids, moved out of the served client into `.maple/` for the
+			// deploy to upload (`alchemy.run.ts`). Build only.
+			mapleSourceMaps({ mapsDir: path.resolve(import.meta.dirname, "..", "..", WEB_SOURCE_MAPS_DIR) }),
 			...(Str.toLowerCase(process.env.VITE_MAPLE_AUTH_MODE?.trim()) === "clerk" && clerkKey
 				? [clerkEarlyLoad(clerkKey)]
 				: []),

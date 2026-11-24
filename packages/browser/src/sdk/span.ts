@@ -15,6 +15,7 @@ import {
 	SpanStatusCode,
 	type TimeInput,
 } from "@opentelemetry/api"
+import { debugIdsOf } from "../debug-ids"
 import { addAttribute, cleanAttributes } from "./attributes"
 import { addHrTimes, hrTime, hrTimeDuration, isHrTime, isTimeInput, millisToHrTime } from "./time"
 
@@ -262,6 +263,8 @@ export class SpanImpl implements Span {
 			}
 			if (exception.stack !== undefined && exception.stack !== "") {
 				attributes["exception.stacktrace"] = exception.stack
+				const debugIds = debugIdsOf(exception.stack)
+				if (debugIds !== undefined) attributes["maple.exception.debug_ids"] = debugIds
 			}
 		}
 		if (attributes["exception.type"] !== undefined || attributes["exception.message"] !== undefined) {
