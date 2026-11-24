@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Array as Arr, Effect, Exit, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Effect, Exit, Option, Order, Result, Schema, String as Str } from "effect"
 import { VcsInstallation } from "@maple/domain/http"
 import { fakeGithubHttp, registryOverHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
@@ -185,6 +185,26 @@ describe("GithubProvider refused pushes", () => {
 			)
 			assert.strictEqual(new URL(pages[0] ?? "").searchParams.get("time_period"), "day")
 		}).pipe(Effect.provide(github({ requests, pages: [full, [suite(1, "2026-11-23T20:00:00Z")]] })))
+	})
+
+	it.effect("asks which rules failed for the newest refusals when there are more than it reads", () => {
+		const requests: Array<string> = []
+		// 25 refusals after the cursor, newest first, one second apart.
+		const suites = Arr.makeBy(25, (i) =>
+			suite(100 - i, new Date(Date.parse("2026-11-24T11:59:00Z") - i * 1000).toISOString()),
+		)
+		return Effect.gen(function* () {
+			const { events } = yield* refused()
+			assert.strictEqual(events.length, 25)
+			const detailed = Arr.filterMap(requests, (url) => {
+				const match = /\/rule-suites\/(\d+)$/u.exec(new URL(url).pathname)
+				return match === null ? Result.failVoid : Result.succeed(Number(match[1]))
+			})
+			assert.deepStrictEqual(
+				Arr.sort(detailed, Order.Number),
+				Arr.makeBy(20, (i) => 81 + i),
+			)
+		}).pipe(Effect.provide(github({ requests, pages: [suites] })))
 	})
 
 	it.effect("stops after three pages and says older refusals were left unread", () => {

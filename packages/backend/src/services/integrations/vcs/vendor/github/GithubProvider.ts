@@ -1387,11 +1387,12 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 				const suites = yield* readFrom(1, [])
 				const fresh = Arr.filter(suites, (suite) => timestampMs(suite.pushed_at) > opts.sinceMs)
-				// The rules that failed, for the first suites only; a failed read leaves the reason out.
+				// The rules that failed, for the newest suites only (the ones an alert fires on); a failed
+				// read leaves the reason out.
 				const events = yield* Effect.forEach(
 					Arr.reverse(fresh),
 					(suite, index) =>
-						(index < RULE_SUITE_DETAILS
+						(index >= fresh.length - RULE_SUITE_DETAILS
 							? client
 									.getRuleSuite(
 										installation.externalInstallationId,
