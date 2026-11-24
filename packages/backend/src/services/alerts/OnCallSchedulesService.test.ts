@@ -123,6 +123,82 @@ describe("OnCallSchedulesService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("reports the next two weeks' coverage gaps, earliest first", () => {
+		const testDb = createTestDb(createdDbs)
+		// Tuesday 2026-11-10 00:00 UTC.
+		const now = at("2026-11-10T00:00:00Z")
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(now)
+			const schedules = yield* OnCallSchedulesService
+			const covered = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.deepStrictEqual(covered.coverageGaps, [])
+
+			const weekdaysOnly = yield* schedules.create(
+				ORG,
+				ana,
+				ADMIN,
+				new OnCallScheduleCreateRequest({
+					...weekly,
+					name: "Business hours",
+					layers: [
+						{
+							name: "Primary",
+							participants: [ana],
+							rotation: { kind: "weekly", handoffWeekday: "mon", handoffTime: "09:00" },
+							startsAt: at("2026-11-09T08:00:00Z"),
+							restrictions: [
+								{
+									weekdays: ["mon", "tue", "wed", "thu", "fri"],
+									startTime: "09:00",
+									endTime: "17:00",
+								},
+							],
+						},
+					],
+				}),
+			)
+			const listed = yield* schedules.get(ORG, weekdaysOnly.id)
+			assert.isNull(listed.onCallNow)
+			// From now until Tuesday 09:00 Berlin, then every night and the weekends.
+			assert.strictEqual(listed.coverageGaps[0]?.startsAt, "2026-11-10T00:00:00.000Z")
+			assert.strictEqual(listed.coverageGaps[0]?.endsAt, "2026-11-10T08:00:00.000Z")
+			assert.strictEqual(listed.coverageGaps[1]?.startsAt, "2026-11-10T16:00:00.000Z")
+			assert.lengthOf(listed.coverageGaps, 11)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("names participants who left the org and passes their shift on", () => {
+		const testDb = createTestDb(createdDbs)
+		const directory = [
+			{ userId: ana, email: "ana@acme.test", name: "Ana Alves", imageUrl: null },
+			{ userId: ben, email: "ben@acme.test", name: "Ben Brook", imageUrl: null },
+			{ userId: chen, email: "chen@acme.test", name: null, imageUrl: null },
+		]
+		return Effect.gen(function* () {
+			// Ben's week: Monday 2026-11-16 09:00 Berlin onwards.
+			yield* TestClock.setTime(at("2026-11-17T00:00:00Z"))
+			const schedules = yield* OnCallSchedulesService
+			const schedule = yield* schedules.create(ORG, ana, ADMIN, weekly)
+			assert.deepStrictEqual(schedule.departedUserIds, [])
+			directory.splice(1, 1)
+			const read = yield* schedules.get(ORG, schedule.id)
+			assert.deepStrictEqual(read.departedUserIds, [ben])
+			assert.strictEqual(read.onCallNow?.userId, chen)
+			assert.deepStrictEqual(read.coverageGaps, [])
+		}).pipe(
+			Effect.provide(
+				Layer.effect(OnCallSchedulesService, OnCallSchedulesService.make).pipe(
+					Layer.provide(
+						Layer.merge(
+							testDb.layer,
+							Layer.succeed(OrgMembersService, stubOrgMembersService(directory)),
+						),
+					),
+				),
+			),
+		)
+	})
+
 	it.effect("renders the effective shifts with the override cut into the week", () => {
 		const testDb = createTestDb(createdDbs)
 		return Effect.gen(function* () {

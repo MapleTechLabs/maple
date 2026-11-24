@@ -5,8 +5,11 @@ import {
 	IsoDateTimeString,
 	MAX_ONCALL_FUTURE_OVERRIDES,
 	MAX_ONCALL_OVERRIDE_MS,
+	MAX_ONCALL_REPORTED_GAPS,
 	MAX_ONCALL_SCHEDULES_PER_ORG,
+	ONCALL_GAP_LOOKAHEAD_MS,
 	OnCallAtResponse,
+	OnCallGap,
 	OnCallNow,
 	OnCallOverrideDocument,
 	OnCallOverrideId as OnCallOverrideIdSchema,
@@ -37,6 +40,7 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	EscalationChains,
+	AlertEscalationRuns,
 	OnCallOverrides,
 	OnCallSchedules,
 	type OnCallOverrideRow,
@@ -46,11 +50,14 @@ import type { MapleDb } from "@maple/db/client"
 import {
 	MAX_ONCALL_RENDER_RANGE_MS,
 	ONCALL_LOOKAROUND_MS,
+	absentParticipants,
 	onCallAt as resolveOnCallAt,
 	renderOnCall,
+	uncoveredIntervals,
+	type OnCallOptions,
 	type OnCallShift,
 } from "@maple/alerting-core"
-import { Array as Arr, Context, DateTime, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Cache, Context, DateTime, Duration, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -193,13 +200,30 @@ const toOverrideDocument = (row: OnCallOverrideRow) =>
 		createdAt: iso(row.createdAt),
 	})
 
+/** The org's member ids; null when the directory is not configured or could not be read. */
+type MemberIds = ReadonlySet<string> | null
+
+/** Everyone counts as present without a directory: nobody is skipped on a guess. */
+const presenceOf = (members: MemberIds): OnCallOptions =>
+	members === null ? {} : { isPresent: (userId) => members.has(userId) }
+
 const toDocument = (
 	row: OnCallScheduleRow,
 	overrides: ReadonlyArray<OnCallOverrideRow>,
 	nowMs: number,
 	chainIds: ReadonlyArray<EscalationChainId>,
+	members: MemberIds,
 ) => {
-	const now = resolveOnCallAt(configOf(row), Arr.map(overrides, toOverride), nowMs)
+	const config = configOf(row)
+	const shiftOverrides = Arr.map(overrides, toOverride)
+	const presence = presenceOf(members)
+	const now = resolveOnCallAt(config, shiftOverrides, nowMs, presence)
+	const horizonMs = nowMs + ONCALL_GAP_LOOKAHEAD_MS
+	const gaps = uncoveredIntervals(
+		renderOnCall(config, shiftOverrides, nowMs, horizonMs, presence).final,
+		nowMs,
+		horizonMs,
+	)
 	return new OnCallScheduleDocument({
 		id: row.id,
 		name: row.name,
@@ -210,6 +234,11 @@ const toDocument = (
 			now === null
 				? null
 				: new OnCallNow({ userId: now.userId, startsAt: iso(now.startMs), endsAt: iso(now.endMs) }),
+		coverageGaps: Arr.map(
+			Arr.take(gaps, MAX_ONCALL_REPORTED_GAPS),
+			(gap) => new OnCallGap({ startsAt: iso(gap.startMs), endsAt: iso(gap.endMs) }),
+		),
+		departedUserIds: members === null ? [] : absentParticipants(config, (userId) => members.has(userId)),
 		chainIds,
 		createdAt: iso(row.createdAt),
 		updatedAt: iso(row.updatedAt),
@@ -257,6 +286,21 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const annotate = (scheduleId: OnCallScheduleId) =>
 			Effect.annotateCurrentSpan("maple.oncall.schedule_id", scheduleId)
+
+		// Every schedule read asks who is still a member; a minute of staleness spares the directory.
+		// An empty list is a directory that could not answer, not an org everyone left.
+		const memberIdsByOrg = yield* Cache.make({
+			capacity: 512,
+			timeToLive: Duration.minutes(1),
+			lookup: (orgId: OrgId) =>
+				orgMembers.listMembers(orgId).pipe(
+					Effect.map((members): MemberIds =>
+						members.length === 0 ? null : new Set(Arr.map(members, (member) => member.userId)),
+					),
+					Effect.orElseSucceed((): MemberIds => null),
+				),
+		})
+		const memberIdsOf = (orgId: OrgId) => Cache.get(memberIdsByOrg, orgId)
 
 		const findRow = (db: MapleDb, orgId: OrgId, scheduleId: OnCallScheduleId) =>
 			db
@@ -307,6 +351,7 @@ export class OnCallSchedulesService extends Context.Service<
 
 		const list = Effect.fn("OnCallSchedulesService.list")(function* (orgId: OrgId) {
 			const nowMs = yield* runtime.now
+			const members = yield* memberIdsOf(orgId)
 			const [from, to] = nowWindow(nowMs)
 			const [rows, nearby, active, chains] = yield* dbExecute((db) =>
 				Effect.all(
@@ -341,12 +386,19 @@ export class OnCallSchedulesService extends Context.Service<
 						Arr.filter(overrides, (o) => o.scheduleId === row.id),
 						nowMs,
 						chains.get(row.id) ?? [],
+						members,
 					),
 				),
 			})
 		})
 
-		const loadDocument = (db: MapleDb, orgId: OrgId, scheduleId: OnCallScheduleId, nowMs: number) => {
+		const loadDocument = (
+			db: MapleDb,
+			orgId: OrgId,
+			scheduleId: OnCallScheduleId,
+			nowMs: number,
+			members: MemberIds,
+		) => {
 			const [from, to] = nowWindow(nowMs)
 			return Effect.all([
 				findRow(db, orgId, scheduleId),
@@ -354,7 +406,7 @@ export class OnCallSchedulesService extends Context.Service<
 				chainIdsBySchedule(db, orgId),
 			]).pipe(
 				Effect.map(([row, overrides, chains]) =>
-					toDocument(row, overrides, nowMs, chains.get(row.id) ?? []),
+					toDocument(row, overrides, nowMs, chains.get(row.id) ?? [], members),
 				),
 			)
 		}
@@ -365,7 +417,8 @@ export class OnCallSchedulesService extends Context.Service<
 		) {
 			yield* annotate(scheduleId)
 			const nowMs = yield* runtime.now
-			return yield* dbExecute((db) => loadDocument(db, orgId, scheduleId, nowMs))
+			const members = yield* memberIdsOf(orgId)
+			return yield* dbExecute((db) => loadDocument(db, orgId, scheduleId, nowMs, members))
 		})
 
 		const create = Effect.fn("OnCallSchedulesService.create")(function* (
@@ -417,7 +470,8 @@ export class OnCallSchedulesService extends Context.Service<
 			if (row === undefined) {
 				return yield* new AlertPersistenceError({ message: "On-call schedule was not created" })
 			}
-			return toDocument(row, [], nowMs, [])
+			// Every participant was just checked against the directory, so none has left.
+			return toDocument(row, [], nowMs, [], null)
 		})
 
 		const update = Effect.fn("OnCallSchedulesService.update")(function* (
@@ -429,8 +483,14 @@ export class OnCallSchedulesService extends Context.Service<
 		) {
 			yield* annotate(scheduleId)
 			yield* requireManage(roles)
-			if (request.layers !== undefined) yield* requireMembers(orgId, participantsOf(request.layers))
+			if (request.layers !== undefined) {
+				yield* requireMembers(orgId, participantsOf(request.layers))
+				// The check above read the directory fresh; the answer must not come from an older read
+				// that predates someone it just accepted.
+				yield* Cache.invalidate(memberIdsByOrg, orgId)
+			}
 			const nowMs = yield* runtime.now
+			const members = yield* memberIdsOf(orgId)
 			return yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
@@ -453,7 +513,7 @@ export class OnCallSchedulesService extends Context.Service<
 								})
 								.where(($) => [$.orgId.eq(orgId), $.id.eq(scheduleId)]),
 						)
-						return yield* loadDocument(db, orgId, scheduleId, nowMs)
+						return yield* loadDocument(db, orgId, scheduleId, nowMs, members)
 					}),
 				),
 			)
@@ -492,6 +552,49 @@ export class OnCallSchedulesService extends Context.Service<
 								scheduleId,
 								chainIds: Arr.map(chains, (chain) => chain.id),
 								chainNames: Arr.map(chains, (chain) => chain.name),
+							})
+						}
+						// A running escalation pages from its own snapshot, so a chain edited since can still
+						// name the schedule until the run ends.
+						const naming = yield* db.run(
+							PG.from(AlertEscalationRuns)
+								.select(
+									"chainId",
+									"chainName",
+									"stepsJson",
+									"stepIndex",
+									"passIndex",
+									"repeatCount",
+								)
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.status.in_("active", "acknowledged"),
+									PG.sql.cond`${$.stepsJson} @> ${encodeJson([
+										{ targets: [{ type: "schedule", scheduleId }] },
+									])}::jsonb`,
+								]),
+						)
+						// Only a step the run can still reach counts: its current one, a later one, or any
+						// of them while a repeat is left.
+						const runs = Arr.filter(naming, (run) =>
+							Arr.some(
+								run.stepsJson,
+								(step, index) =>
+									(index >= run.stepIndex || run.passIndex < run.repeatCount) &&
+									Arr.some(
+										step.targets,
+										(target) =>
+											target.type === "schedule" && target.scheduleId === scheduleId,
+									),
+							),
+						)
+						if (runs.length > 0) {
+							const names = Arr.dedupe(Arr.map(runs, (run) => run.chainName))
+							return yield* new OnCallScheduleInUseError({
+								message: `On-call schedule is still paged by an escalation on an open incident: ${Arr.join(names, ", ")}`,
+								scheduleId,
+								chainIds: Arr.dedupe(Arr.map(runs, (run) => run.chainId)),
+								chainNames: names,
 							})
 						}
 						// Overrides go with it through the foreign key's cascade.
@@ -630,7 +733,13 @@ export class OnCallSchedulesService extends Context.Service<
 					overlappingOverrides(db, orgId, from, to, scheduleId),
 				]),
 			)
-			const shift = resolveOnCallAt(configOf(row), Arr.map(overrides, toOverride), atMs)
+			const members = yield* memberIdsOf(orgId)
+			const shift = resolveOnCallAt(
+				configOf(row),
+				Arr.map(overrides, toOverride),
+				atMs,
+				presenceOf(members),
+			)
 			return new OnCallAtResponse({
 				at: iso(atMs),
 				shift: shift === null ? null : toShiftDocument(shift),
@@ -652,7 +761,14 @@ export class OnCallSchedulesService extends Context.Service<
 					overlappingOverrides(db, orgId, fromMs, endMs, scheduleId),
 				]),
 			)
-			const render = renderOnCall(configOf(row), Arr.map(overrides, toOverride), fromMs, endMs)
+			const members = yield* memberIdsOf(orgId)
+			const render = renderOnCall(
+				configOf(row),
+				Arr.map(overrides, toOverride),
+				fromMs,
+				endMs,
+				presenceOf(members),
+			)
 			return new OnCallShiftsResponse({
 				from: iso(fromMs),
 				to: iso(endMs),

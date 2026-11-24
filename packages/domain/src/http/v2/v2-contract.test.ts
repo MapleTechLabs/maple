@@ -524,6 +524,8 @@ describe("V2 alerts wire format", () => {
 				starts_at: "2026-11-09T08:00:00.000Z",
 				ends_at: "2026-11-16T08:00:00.000Z",
 			},
+			coverage_gaps: [{ starts_at: "2026-11-14T16:00:00.000Z", ends_at: "2026-11-16T08:00:00.000Z" }],
+			departed_user_ids: ["user_ben"],
 			chain_ids: [],
 			created_at: "2026-11-06T00:00:00.000Z",
 			updated_at: "2026-11-06T00:00:00.000Z",

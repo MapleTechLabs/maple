@@ -111,6 +111,7 @@ const toV2Event = (doc: AlertIncidentEventDocument): V2AlertIncidentEvent => ({
 					error_message: doc.page.errorMessage,
 				},
 			}),
+	...(doc.detail === undefined ? undefined : { detail: doc.detail }),
 	created_at: doc.createdAt,
 })
 

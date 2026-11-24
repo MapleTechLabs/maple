@@ -1,12 +1,12 @@
 import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { OnCallOverrideId } from "@maple/domain/http"
+import { OnCallOverrideId, OnCallScheduleId } from "@maple/domain/http"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { msIso } from "../../kit/alert-time"
 import { memberName } from "../shared/org-members"
-import { formatShiftEdge } from "../shared/oncall-schedules"
+import { editScheduleHref, formatShiftEdge } from "../shared/oncall-schedules"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import * as Dialog from "@maple/views/ui/dialog"
 import { MountDialog } from "@maple/views/ui/dialog"
@@ -17,11 +17,13 @@ import {
 	checkoutSchedule,
 	checkoutShifts,
 	DST_NOW,
+	formerMemberId,
 	memberId,
 	ONCALL_NOW,
 	oncallMembers,
 	overrideUuid,
 	schedulePublicId,
+	scheduleUuid,
 } from "../shared/oncall-test-fixtures"
 import { ORG } from "../../kit/alert-test-rows"
 import { Message } from "./message"
@@ -43,7 +45,7 @@ const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
 const BERLIN = "Europe/Berlin"
 
-const loaded = (nowMs: number, grants = ENGINEER) => {
+const loaded = (nowMs: number, grants = ENGINEER, departed: ReadonlyArray<string> = []) => {
 	const entered = init({ _tag: "AlertsSchedule", scheduleId: schedulePublicId(1), search: {} }, context)
 	expect(names(entered.commands)).toEqual(
 		expect.arrayContaining(["FetchOnCallSchedule", "FetchOnCallOverrides", "FetchScheduleMembers"]),
@@ -55,7 +57,7 @@ const loaded = (nowMs: number, grants = ENGINEER) => {
 		Message.CompletedFetchSchedule({
 			key: entered.model.schedule.key ?? "",
 			readAtMs: nowMs,
-			result: Result.succeed(checkoutSchedule(nowMs)),
+			result: Result.succeed(checkoutSchedule(nowMs, departed)),
 		}),
 		Message.CompletedFetchOverrides({
 			key: entered.model.overrides.key ?? "",
@@ -100,6 +102,45 @@ describe("on-call schedule page", () => {
 			expectView(role("button", { name: /^Override: Ana Souza, Wed,? 11 Nov/u })).toExist(),
 			expectView(text("Upcoming overrides")).toExist(),
 			expectView(role("button", { name: /^Delete Dana Kim's override, /u })).toExist(),
+		)
+	})
+
+	test("participants who left are named, with what happens to their shifts and a link to edit the rotation", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW, ENGINEER, [memberId(0), formerMemberId])),
+			expectView(text("Ben Brook and a former member left the org")).toExist(),
+			expectView(
+				text(/Their shifts pass to the next person in the rotation who is still in the org/u),
+			).toExist(),
+			expectView(role("link", { name: "Edit the schedule" })).toHaveAttr(
+				"href",
+				editScheduleHref(Schema.decodeSync(OnCallScheduleId)(scheduleUuid(1))),
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW, ENGINEER, [formerMemberId])),
+			expectView(text("A former member left the org")).toExist(),
+		)
+	})
+
+	test("a schedule whose participants are all members says nothing about anyone leaving", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW)),
+			expectView(text(/left the org/u)).not.toExist(),
+			expectView(text(/Their shifts pass/u)).not.toExist(),
+		)
+	})
+
+	test("a member who cannot edit is told who can take the departed out of the rotation", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(ONCALL_NOW, MEMBER, [formerMemberId])),
+			expectView(text("A former member left the org")).toExist(),
+			expectView(text(/An org admin or engineer can edit the schedule/u)).toExist(),
+			expectView(role("link", { name: "Edit the schedule" })).not.toExist(),
 		)
 	})
 

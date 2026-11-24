@@ -41,10 +41,20 @@ export interface OnCallRender {
 	readonly final: ReadonlyArray<OnCallShift>
 }
 
-interface Interval {
+export interface Interval {
 	readonly startMs: number
 	readonly endMs: number
 }
+
+export interface OnCallOptions {
+	/**
+	 * False for someone who can no longer be paged (they left the org). Their rotation shifts
+	 * pass to the next participant who can, and their overrides are ignored. Default: everyone.
+	 */
+	readonly isPresent?: (userId: UserId) => boolean
+}
+
+const everyonePresent = (): boolean => true
 
 /** A shift clipped to the render range, with the unclipped bounds of the shift it came from. */
 interface Piece extends OnCallShift {
@@ -175,6 +185,7 @@ const layerShifts = (
 	layerIndex: number,
 	fromMs: number,
 	toMs: number,
+	isPresent: (userId: UserId) => boolean,
 ): Array<Piece> => {
 	const startMs = Math.max(fromMs, layer.startsAt)
 	if (startMs >= toMs) return []
@@ -182,19 +193,22 @@ const layerShifts = (
 	const first = clock.indexAt(startMs)
 	const count = Math.min(clock.indexAt(toMs - 1) - first + 1, MAX_ONCALL_SHIFTS_PER_LAYER)
 	const source: OnCallSource = { kind: "layer", layerIndex }
+	// The shift's own person, else the next in rotation order who can be paged; none leaves a gap.
+	const participantFor = (index: number): Option.Option<UserId> =>
+		Arr.findFirst(
+			Arr.makeBy(layer.participants.length, (offset) => mod(index + offset, layer.participants.length)),
+			(position) =>
+				Option.filter(Option.fromNullishOr(layer.participants[position]), (userId) =>
+					isPresent(userId),
+				),
+		)
 	const rotationShifts = Arr.flatMap(
 		Arr.makeBy(Math.max(count, 1), (i) => first + i),
 		(index) => {
 			const bounds = clock.bounds(index)
 			const full = { startMs: Math.max(bounds.startMs, layer.startsAt), endMs: bounds.endMs }
-			return clip(full, startMs, toMs).pipe(
-				Option.map((interval) => ({
-					...interval,
-					full,
-					userId:
-						layer.participants[mod(index, layer.participants.length)] ?? layer.participants[0],
-					source,
-				})),
+			return Option.all([clip(full, startMs, toMs), participantFor(index)]).pipe(
+				Option.map(([interval, userId]) => ({ ...interval, full, userId, source })),
 				Option.toArray,
 			)
 		},
@@ -267,8 +281,9 @@ export const renderOnCall = (
 	overrides: ReadonlyArray<OnCallOverride>,
 	fromMs: number,
 	toMs: number,
+	options: OnCallOptions = {},
 ): OnCallRender => {
-	const { layers, effective } = renderPieces(config, overrides, fromMs, toMs)
+	const { layers, effective } = renderPieces(config, overrides, fromMs, toMs, options)
 	const shifts = Arr.map(effective, toShift)
 	const final = Arr.reduce(shifts, Arr.empty<OnCallShift>(), (acc, shift) => {
 		const last = acc[acc.length - 1]
@@ -292,14 +307,18 @@ const renderPieces = (
 	overrides: ReadonlyArray<OnCallOverride>,
 	fromMs: number,
 	toMs: number,
+	options: OnCallOptions,
 ): { readonly layers: ReadonlyArray<ReadonlyArray<Piece>>; readonly effective: Array<Piece> } => {
 	const endMs = Math.min(toMs, fromMs + MAX_ONCALL_RENDER_RANGE_MS)
 	if (endMs <= fromMs) return { layers: Arr.map(config.layers, () => []), effective: [] }
 	const zone = resolveZone(config)
-	const layers = Arr.map(config.layers, (layer, index) => layerShifts(zone, layer, index, fromMs, endMs))
+	const isPresent = options.isPresent ?? everyonePresent
+	const layers = Arr.map(config.layers, (layer, index) =>
+		layerShifts(zone, layer, index, fromMs, endMs, isPresent),
+	)
 	const activeOverrides = Arr.filter(
 		overrides,
-		(o) => o.endsAt > o.startsAt && o.endsAt > fromMs && o.startsAt < endMs,
+		(o) => o.endsAt > o.startsAt && o.endsAt > fromMs && o.startsAt < endMs && isPresent(o.userId),
 	)
 
 	// Every boundary in play, so the winner is constant on each elementary segment.
@@ -367,11 +386,12 @@ export const onCallAt = (
 	config: OnCallScheduleConfig,
 	overrides: ReadonlyArray<OnCallOverride>,
 	atMs: number,
+	options: OnCallOptions = {},
 ): OnCallShift | null => {
 	const fromMs = atMs - ONCALL_LOOKAROUND_MS
 	const toMs = atMs + ONCALL_LOOKAROUND_MS
 	return Option.getOrNull(
-		shiftCovering(renderPieces(config, overrides, fromMs, toMs).effective, atMs).pipe(
+		shiftCovering(renderPieces(config, overrides, fromMs, toMs, options).effective, atMs).pipe(
 			Option.map((piece) =>
 				toShift({
 					...piece,
@@ -382,3 +402,31 @@ export const onCallAt = (
 		),
 	)
 }
+
+/** The stretches of [fromMs, toMs) that no shift covers. */
+export const uncoveredIntervals = (
+	shifts: ReadonlyArray<Interval>,
+	fromMs: number,
+	toMs: number,
+): ReadonlyArray<Interval> => {
+	if (toMs <= fromMs) return []
+	const { gaps, cursor } = Arr.reduce(
+		Arr.sort(shifts, byStart),
+		{ gaps: Arr.empty<Interval>(), cursor: fromMs },
+		({ gaps, cursor }, shift) => {
+			if (shift.endMs <= cursor || shift.startMs >= toMs) return { gaps, cursor }
+			const next = shift.startMs > cursor ? [...gaps, { startMs: cursor, endMs: shift.startMs }] : gaps
+			return { gaps: next, cursor: Math.max(cursor, shift.endMs) }
+		},
+	)
+	return cursor < toMs ? [...gaps, { startMs: cursor, endMs: toMs }] : gaps
+}
+
+/** Participants of any layer whom `isPresent` rejects, in layer order. */
+export const absentParticipants = (
+	config: OnCallScheduleConfig,
+	isPresent: (userId: UserId) => boolean,
+): ReadonlyArray<UserId> =>
+	Arr.dedupe(
+		Arr.flatMap(config.layers, (layer) => Arr.filter(layer.participants, (userId) => !isPresent(userId))),
+	)

@@ -94,6 +94,20 @@ function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
 				title: "Acknowledgement cleared",
 				detail: "The incident escalated, so it notified again",
 			}
+		case "on_call_gap":
+			return {
+				...base,
+				tone: "warn",
+				// With no schedule named, the step's own targets were all unreachable.
+				title:
+					event.detail === undefined
+						? "An escalation step reached nobody"
+						: `Nobody on call on ${event.detail}`,
+				detail:
+					event.detail === undefined
+						? "Its destinations are off or its people have left the organization"
+						: "The escalation step paged no one for it",
+			}
 		case "paged":
 			// Without its page the event says only that someone was paged: no channel or outcome invented.
 			return event.page === undefined

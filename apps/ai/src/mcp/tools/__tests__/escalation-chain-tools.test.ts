@@ -137,6 +137,8 @@ const layer = (seen: Seen) =>
 									},
 								],
 								onCallNow: null,
+								coverageGaps: [],
+								departedUserIds: [],
 								chainIds: [CHAIN_ID],
 								createdAt: NOW,
 								updatedAt: NOW,

@@ -40,6 +40,10 @@ export const OnCallScheduleRow = Schema.Struct({
 	onCallNow: Schema.NullOr(
 		Schema.Struct({ user: OnCallPersonRow, startsAt: Schema.String, endsAt: Schema.String }),
 	),
+	/** Stretches of the next 14 days when nobody is on call. */
+	coverageGaps: Schema.Array(Schema.Struct({ startsAt: Schema.String, endsAt: Schema.String })),
+	/** Participants who have left the org. */
+	departed: Schema.Array(OnCallPersonRow),
 	chainIds: Schema.Array(Schema.String),
 	createdAt: Schema.String,
 	updatedAt: Schema.String,

@@ -1,5 +1,6 @@
 /** Pieces the on-call schedule MCP tools share: rows, rotation text, schedule lookup and error mapping. */
 import { Array as Arr, DateTime, Effect, Option, Schema, String as Str } from "effect"
+import { MAX_ONCALL_REPORTED_GAPS, ONCALL_GAP_LOOKAHEAD_MS } from "@maple/domain/http"
 import type {
 	AlertForbiddenError,
 	AlertMemberDirectoryNotConfiguredError,
@@ -114,6 +115,8 @@ export const toScheduleRow = (schedule: OnCallScheduleDocument, names: MemberNam
 					startsAt: schedule.onCallNow.startsAt,
 					endsAt: schedule.onCallNow.endsAt,
 				},
+	coverageGaps: Arr.map(schedule.coverageGaps, (gap) => ({ startsAt: gap.startsAt, endsAt: gap.endsAt })),
+	departed: Arr.map(schedule.departedUserIds, (userId) => person(names, userId)),
 	chainIds: [...schedule.chainIds],
 	createdAt: schedule.createdAt,
 	updatedAt: schedule.updatedAt,
@@ -136,6 +139,33 @@ export const formatOnCallNow = (schedule: ScheduleRow): string =>
 	schedule.onCallNow === null
 		? "nobody on call right now"
 		: `${personLabel(schedule.onCallNow.user)} on call until ${schedule.onCallNow.endsAt}`
+
+/**
+ * What is wrong with the schedule's coverage, or null: e.g. `3 gaps in the next 14 days, next
+ * 2026-11-14T16:00:00.000Z to 2026-11-16T08:00:00.000Z; left the org: Ben Brook (user_ben)`.
+ */
+/** How far ahead the server reports gaps, in days: the text names the window it was given. */
+const GAP_LOOKAHEAD_DAYS = Math.round(ONCALL_GAP_LOOKAHEAD_MS / 86_400_000)
+
+/** "1 gap", "3 gaps", or "20 or more gaps" when the list was cut at its cap. */
+const gapCount = (count: number): string =>
+	count >= MAX_ONCALL_REPORTED_GAPS
+		? `${MAX_ONCALL_REPORTED_GAPS} or more gaps`
+		: `${count} ${count === 1 ? "gap" : "gaps"}`
+
+export const formatCoverageWarning = (schedule: ScheduleRow): string | null => {
+	const [next] = schedule.coverageGaps
+	const gaps =
+		next === undefined
+			? null
+			: `${gapCount(schedule.coverageGaps.length)} with nobody on call in the next ${GAP_LOOKAHEAD_DAYS} days, next ${next.startsAt} to ${next.endsAt}`
+	const departed =
+		schedule.departed.length === 0
+			? null
+			: `left the org (their shifts pass to the next person still in it, or go uncovered): ${Arr.join(Arr.map(schedule.departed, personLabel), ", ")}`
+	const parts = Arr.filter([gaps, departed], (part) => part !== null)
+	return parts.length === 0 ? null : Arr.join(parts, "; ")
+}
 
 /** One line per layer, e.g. `Primary: weekly, Monday 09:00 · Ana Alves, Ben Brook`. */
 export const formatLayers = (schedule: ScheduleRow): string =>
@@ -160,6 +190,7 @@ export const scheduleBlocks = (schedule: ScheduleRow) => [
 		["Description", schedule.description ?? undefined],
 		["Time zone", schedule.timeZone],
 		["On call now", formatOnCallNow(schedule)],
+		["Coverage", formatCoverageWarning(schedule) ?? undefined],
 	]),
 	doc.text(formatLayers(schedule)),
 ]

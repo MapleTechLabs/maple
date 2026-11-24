@@ -4,7 +4,7 @@ import { expect as expectView, given, Mount, scene, text, withViewInputs } from 
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { pagedEvents } from "../shared/oncall-test-fixtures"
+import { onCallGapEvent, pagedEvents } from "../shared/oncall-test-fixtures"
 import { incidentRow, INCIDENT_ID, NOW, ORG, ruleRow } from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -64,6 +64,35 @@ describe("alert incident, pages to people", () => {
 			expectView(text("Couldn't page Dana Kim by Discord DM")).toExist(),
 			expectView(text("Dana has not linked a Discord account")).toExist(),
 			expectView(text("Paging Dana Kim by email")).toExist(),
+			expectView(text(/Nobody on call/u)).not.toExist(),
+		)
+	})
+
+	test("the timeline says when a step's schedule had nobody on call, naming the schedule", () => {
+		const row = incidentRow()
+		const synced = run(init(route, context).model, [
+			Message.ReadClock({ nowMs: NOW }),
+			Message.UpdatedIncidents({ orgId: ORG, rows: [row] }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(2)] }),
+		])
+		const model = run(synced, [
+			Message.CompletedFetchActivity({
+				key: synced.activity.key ?? "",
+				result: Result.succeed([
+					onCallGapEvent(INCIDENT_ID, Date.parse(row.first_triggered_at), "Weekend coverage"),
+				]),
+			}),
+			Message.CompletedFetchDeliveries({
+				key: synced.deliveries.key ?? "",
+				result: Result.succeed([]),
+			}),
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			expectView(text("Nobody on call on Weekend coverage")).toExist(),
+			expectView(text("The escalation step paged no one for it")).toExist(),
 		)
 	})
 })

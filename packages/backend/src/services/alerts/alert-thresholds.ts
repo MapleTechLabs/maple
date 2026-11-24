@@ -31,26 +31,34 @@ const destinationsUpTo = (
 		),
 	)
 
+export interface EscalationChainTier {
+	readonly chainId: EscalationChainId
+	/** The tier that names the chain: `severity`'s own, or a lower one it falls back to. */
+	readonly severity: AlertSeverity
+}
+
 /**
- * The chain an incident at `severity` starts: its tier's, else the closest lower tier's, as a
- * critical incident also reaches the warning tier's destinations. Null when none names one.
+ * The chain an incident at `severity` runs, with the tier that names it: its own tier's, else the
+ * closest lower tier's, as a critical incident also reaches the warning tier's destinations.
  */
+export const escalationChainTierFor = (
+	thresholds: ReadonlyArray<AlertThreshold>,
+	severity: AlertSeverity,
+): EscalationChainTier | null => {
+	const candidates = Arr.flatMap(thresholds, (tier): ReadonlyArray<EscalationChainTier> => {
+		const chainId = tier.escalationChainId ?? null
+		return chainId !== null && ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity]
+			? [{ chainId, severity: tier.severity }]
+			: []
+	})
+	return Option.getOrNull(Arr.last(Arr.sort(candidates, alertSeverityOrder)))
+}
+
+/** The chain an incident at `severity` runs; null when no tier at or below it names one. */
 export const escalationChainFor = (
 	thresholds: ReadonlyArray<AlertThreshold>,
 	severity: AlertSeverity,
-): EscalationChainId | null => {
-	const candidates = Arr.filter(
-		thresholds,
-		(tier) =>
-			ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity] &&
-			tier.escalationChainId !== undefined &&
-			tier.escalationChainId !== null,
-	)
-	return Option.match(Arr.last(Arr.sort(candidates, alertSeverityOrder)), {
-		onNone: () => null,
-		onSome: (tier) => tier.escalationChainId ?? null,
-	})
-}
+): EscalationChainId | null => escalationChainTierFor(thresholds, severity)?.chainId ?? null
 
 /** Whether an incident at `severity` reaches anyone: a destination or an escalation chain. */
 export const tierRoutedUpTo = (thresholds: ReadonlyArray<AlertThreshold>, severity: AlertSeverity): boolean =>

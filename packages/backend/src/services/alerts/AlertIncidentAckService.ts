@@ -277,6 +277,7 @@ export class AlertIncidentAckService extends Context.Service<
 								actorName: row.actorName,
 								source:
 									row.source === null ? null : Option.getOrNull(decodeSource(row.source)),
+								...(row.detail === null ? undefined : { detail: row.detail }),
 								createdAt: decodeIso(new Date(row.createdAt).toISOString()),
 							}),
 					),

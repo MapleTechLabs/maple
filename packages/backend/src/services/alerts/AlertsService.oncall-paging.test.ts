@@ -9,6 +9,7 @@ import {
 	AlertRuleUpsertRequest,
 	AlertValidationError,
 	EscalationChainCreateRequest,
+	EscalationChainUpdateRequest,
 	OnCallOverrideCreateRequest,
 	OnCallScheduleCreateRequest,
 	OnCallScheduleInUseError,
@@ -17,7 +18,7 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Duration, Effect, Layer, Option, Ref, Schema, Array as Arr } from "effect"
+import { Duration, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
@@ -277,6 +278,14 @@ const pageRows = (testDb: TestDb, orgId: OrgId) =>
 		),
 	).pipe(Effect.map((result) => result.rows))
 
+const incidentEvents = (testDb: TestDb, orgId: OrgId) =>
+	Effect.promise(() =>
+		testDb.pglite.query<{ type: string; detail: string | null }>(
+			"select type, detail from alert_incident_events where org_id = $1 order by created_at, id",
+			[orgId],
+		),
+	).pipe(Effect.map((result) => result.rows))
+
 const runStatus = (testDb: TestDb, orgId: OrgId) =>
 	Effect.promise(() =>
 		testDb.pglite.query<{ status: string; steps_sent: number }>(
@@ -378,6 +387,11 @@ const setup = (
 		readonly override?: boolean
 		/** Who step 2 pages instead of the schedule. */
 		readonly secondStep?: EscalationStep["targets"]
+		/** Step 1 pages the schedule instead of the webhook. */
+		readonly firstStepPagesSchedule?: boolean
+		/** Who step 1 pages instead of the webhook or the schedule. */
+		readonly firstStep?: EscalationStep["targets"]
+		readonly repeatCount?: number
 	} = {},
 ) =>
 	Effect.gen(function* () {
@@ -399,7 +413,14 @@ const setup = (
 		const schedule = yield* apiPrimary(orgId, options)
 		yield* linkBenOnSlack(testDb, orgId)
 		const steps: [EscalationStep, ...Array<EscalationStep>] = [
-			{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 10 },
+			{
+				targets:
+					options.firstStep ??
+					(options.firstStepPagesSchedule === true
+						? [{ type: "schedule", scheduleId: schedule.id }]
+						: [{ type: "destination", destinationId: team.id }]),
+				waitMinutes: 10,
+			},
 			{
 				targets: options.secondStep ?? [{ type: "schedule", scheduleId: schedule.id }],
 				waitMinutes: 15,
@@ -409,7 +430,11 @@ const setup = (
 			orgId,
 			ana,
 			adminRoles,
-			new EscalationChainCreateRequest({ name: "API escalation", steps }),
+			new EscalationChainCreateRequest({
+				name: "API escalation",
+				steps,
+				...(options.repeatCount === undefined ? undefined : { repeatCount: options.repeatCount }),
+			}),
 		)
 		yield* alerts.createRule(
 			orgId,
@@ -441,7 +466,7 @@ const setup = (
 		// Two breaching ticks open the incident and send step 1.
 		yield* alerts.runSchedulerTick()
 		yield* tick(alerts)
-		return { alerts, chains, orgId, schedule, chain }
+		return { alerts, chains, orgId, schedule, chain, team }
 	})
 
 describe("escalation pages the on-call", () => {
@@ -591,7 +616,7 @@ describe("escalation pages the on-call", () => {
 		})
 	})
 
-	it.effect("pages nobody for a schedule with no one on call, and still moves to the next step", () => {
+	it.effect("records the gap when the schedule has no one on call, and does not count the step", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRate(10) }
 		const emails: Array<{ to: string; subject: string; html: string }> = []
@@ -604,10 +629,185 @@ describe("escalation pages the on-call", () => {
 				assert.deepStrictEqual(yield* pageRows(testDb, orgId), [])
 				assert.lengthOf(emails, 0)
 				assert.lengthOf(chat.posted, 0)
+				// Step 1 reached the webhook; step 2 reached nobody.
 				assert.deepStrictEqual(yield* runStatus(testDb, orgId), {
 					status: "exhausted",
-					steps_sent: 2,
+					steps_sent: 1,
 				})
+				assert.deepStrictEqual(yield* incidentEvents(testDb, orgId), [
+					{ type: "on_call_gap", detail: "API primary" },
+				])
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("moves straight to the next step when a step reaches nobody", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Step 1 pages a schedule in a gap and would wait 10 minutes; step 2 pages Chen.
+				const { alerts, orgId } = yield* setup("org_page_skip", testDb, {
+					gap: true,
+					override: false,
+					firstStepPagesSchedule: true,
+					secondStep: [{ type: "user", userId: chen }],
+				})
+				yield* tick(alerts)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["chen@acme.test"],
+				)
+				assert.deepStrictEqual(yield* runStatus(testDb, orgId), {
+					status: "exhausted",
+					steps_sent: 1,
+				})
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("pages the org's admins when the whole chain reaches nobody", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const directory: Array<OrgMember> = Arr.map(MEMBERS, (member) =>
+			member.userId === ana ? { ...member, role: "org:admin" } : { ...member, role: "org:engineer" },
+		)
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Both steps page a schedule that has nobody on call on a Tuesday.
+				const { alerts, orgId } = yield* setup("org_page_last_resort", testDb, {
+					gap: true,
+					override: false,
+					firstStepPagesSchedule: true,
+				})
+				yield* tick(alerts)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["ana@acme.test"],
+				)
+				assert.isTrue(Str.startsWith("Nobody on call was reached: ")(emails[0]?.subject ?? ""))
+				assert.deepStrictEqual(yield* runStatus(testDb, orgId), {
+					status: "exhausted",
+					steps_sent: 1,
+				})
+				assert.deepStrictEqual(
+					Arr.map(yield* incidentEvents(testDb, orgId), (event) => event.type),
+					["on_call_gap", "on_call_gap"],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { directory })))
+		})
+	})
+
+	it.effect("pages the admins when a repeat of the chain reaches nobody, though its first pass did", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		const directory: Array<OrgMember> = Arr.map(MEMBERS, (member) => ({
+			...member,
+			role: member.userId === ana ? "org:admin" : "org:engineer",
+		}))
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_repeat_unreached", testDb, {
+					firstStep: [{ type: "user", userId: chen }],
+					secondStep: [{ type: "user", userId: chen }],
+					repeatCount: 1,
+				})
+				// The first pass pages Chen at both steps.
+				yield* ticks(alerts, 12)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["chen@acme.test", "chen@acme.test"],
+				)
+				// Chen leaves before the repeat: it reaches nobody, so the admin hears instead.
+				const leaving = Arr.findFirstIndex(directory, (member) => member.userId === chen)
+				if (Option.isSome(leaving)) directory.splice(leaving.value, 1)
+				yield* ticks(alerts, 20)
+				assert.deepStrictEqual(
+					Arr.map(emails.slice(2), (email) => [
+						email.to,
+						Str.startsWith("Nobody on call was reached: ")(email.subject),
+					]),
+					[["ana@acme.test", true]],
+				)
+				// One timeline entry per step that missed its own people, the one admins stood in for included.
+				assert.deepStrictEqual(yield* incidentEvents(testDb, orgId), [
+					{ type: "on_call_gap", detail: null },
+					{ type: "on_call_gap", detail: null },
+				])
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat, { directory })))
+		})
+	})
+
+	it.effect("refuses to delete a schedule a running escalation still pages", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { chains, orgId, schedule, chain, team } = yield* setup("org_page_delete", testDb)
+				const schedules = yield* OnCallSchedulesService
+				// The chain stops naming the schedule, but the run on the open incident keeps its snapshot.
+				yield* chains.update(
+					orgId,
+					ana,
+					adminRoles,
+					chain.id,
+					new EscalationChainUpdateRequest({
+						steps: [
+							{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 10 },
+						],
+					}),
+				)
+				const refused = yield* Effect.flip(schedules.delete(orgId, adminRoles, schedule.id))
+				assert.strictEqual(refused._tag, "@maple/http/errors/OnCallScheduleInUseError")
+				assert.include(refused.message, "open incident")
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
+	it.effect("lets a schedule go once the running escalation is past the only step that paged it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<SentEmail> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				// Step 1 paged the schedule; the run now waits on step 2, which pages Chen, and never repeats.
+				const { chains, orgId, schedule, chain, team } = yield* setup(
+					"org_page_delete_passed",
+					testDb,
+					{
+						firstStepPagesSchedule: true,
+						secondStep: [{ type: "user", userId: chen }],
+					},
+				)
+				const schedules = yield* OnCallSchedulesService
+				yield* chains.update(
+					orgId,
+					ana,
+					adminRoles,
+					chain.id,
+					new EscalationChainUpdateRequest({
+						steps: [
+							{ targets: [{ type: "destination", destinationId: team.id }], waitMinutes: 10 },
+						],
+					}),
+				)
+				yield* schedules.delete(orgId, adminRoles, schedule.id)
+				const left = yield* schedules.list(orgId)
+				assert.deepStrictEqual(left.schedules, [])
 			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
 		})
 	})
@@ -808,7 +1008,7 @@ describe("escalation pages the on-call", () => {
 		})
 	})
 
-	it.effect("pages nobody for an on-call member who left the org, and counts it as a gap", () => {
+	it.effect("pages the next person in the rotation when the on-call member has left the org", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRate(10) }
 		const emails: Array<SentEmail> = []
@@ -818,12 +1018,17 @@ describe("escalation pages the on-call", () => {
 			yield* TestClock.setTime(NOW)
 			return yield* Effect.gen(function* () {
 				const { alerts, orgId } = yield* setup("org_page_departed", testDb)
-				// Ben covers today, then leaves before step 2.
+				// Ben covers today, then leaves before step 2: his override no longer counts, and
+				// the week is Ana's.
 				const leaving = Arr.findFirstIndex(directory, (member) => member.userId === ben)
 				if (Option.isSome(leaving)) directory.splice(leaving.value, 1)
 				yield* ticks(alerts, 10)
-				assert.deepStrictEqual(yield* pageRows(testDb, orgId), [])
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["ana@acme.test"],
+				)
 				assert.lengthOf(chat.posted, 0)
+				assert.deepStrictEqual(yield* incidentEvents(testDb, orgId), [])
 				assert.deepStrictEqual(yield* runStatus(testDb, orgId), {
 					status: "exhausted",
 					steps_sent: 2,

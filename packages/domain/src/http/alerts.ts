@@ -166,6 +166,7 @@ export const AlertIncidentEventType = Schema.Literals([
 	"unacknowledged",
 	"ack_cleared",
 	"paged",
+	"on_call_gap",
 ]).annotate({
 	identifier: "@maple/AlertIncidentEventType",
 	title: "Alert Incident Event Type",
@@ -1104,6 +1105,8 @@ export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventD
 	source: Schema.NullOr(AlertIncidentAckSource),
 	/** Set on a `paged` event. */
 	page: Schema.optionalKey(AlertIncidentPage),
+	/** Set on an `on_call_gap` event: the schedules that had nobody on call. */
+	detail: Schema.optionalKey(Schema.String),
 	createdAt: IsoDateTimeString,
 }) {}
 
