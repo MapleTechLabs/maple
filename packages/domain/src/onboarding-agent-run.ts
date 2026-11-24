@@ -59,8 +59,11 @@ export const ONBOARDING_HANDOFF_TTL_MS = 60 * 60 * 1000
 export const OnboardingHandoffArm = Schema.Literals(["handoff", "control"])
 export type OnboardingHandoffArm = typeof OnboardingHandoffArm.Type
 
-/** Share of hosted orgs in the `handoff` arm. Raise to 100 once the comparison is in. */
-export const ONBOARDING_HANDOFF_ROLLOUT_PERCENT = 50
+/**
+ * Share of orgs in the `handoff` arm. 0 until a published CLI reads `MAPLE_HANDOFF` (0.5.0, release
+ * PR #2921): `maple.dev/cli/install` installs the newest release, and 0.4.0 hangs on a device login.
+ */
+export const ONBOARDING_HANDOFF_ROLLOUT_PERCENT = 0
 
 /** 32-bit FNV-1a of the org id's UTF-8 bytes, out of 100: an org stays in one arm, and analysts can recompute it. */
 const orgBucket = (orgId: string): number =>

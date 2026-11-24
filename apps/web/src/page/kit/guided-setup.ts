@@ -460,7 +460,11 @@ export const connectInstructions = <M>(h: HtmlBuilder<M>, parts: InstructionsPar
 									size: "default",
 									keepsFillInk: true,
 									className: "w-full",
+									attributes: parts.keys.publicKey === null ? [h.Disabled(true)] : [],
 								}),
+								...(parts.keys.publicKey === null
+									? [AgentHandoffView.missingKeyNote(h)]
+									: []),
 							]
 						: [
 								AgentHandoffView.agentPrompt(h, {

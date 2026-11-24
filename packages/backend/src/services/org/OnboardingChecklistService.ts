@@ -177,7 +177,7 @@ const make = Effect.gen(function* () {
 					"send_telemetry",
 					false,
 					signals
-						.read(tenant)
+						.read(tenant, { excludeTestTrace: true })
 						.pipe(
 							Effect.map((report) =>
 								Arr.some(
