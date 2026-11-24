@@ -136,6 +136,7 @@ const domainWindows = (status: SloStatus) =>
 		burnRate: window.burn_rate,
 		total: window.total_events,
 		good: window.good_events,
+		samples: window.sample_count,
 	}))
 
 export type TierReading = Readonly<{ tier: SloTier; state: SloTierState }>

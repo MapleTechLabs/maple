@@ -154,6 +154,7 @@ export const sloStatus = (
 				burn_rate: 0,
 				total_events: 0,
 				good_events: 0,
+				sample_count: 0,
 			})),
 		})
 	if (scenario === "sparse") {
@@ -171,6 +172,7 @@ export const sloStatus = (
 					burn_rate: SPARSE.bad / total / budgetRatio,
 					total_events: total,
 					good_events: total - SPARSE.bad,
+					sample_count: total,
 				}
 			}),
 		})
@@ -192,6 +194,7 @@ export const sloStatus = (
 				burn_rate: rate,
 				total_events: total,
 				good_events: total * (1 - rate * budgetRatio),
+				sample_count: total,
 			}
 		}),
 	})
