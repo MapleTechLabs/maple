@@ -23,7 +23,8 @@
 		"./ch/format": "./src/ch/queries/format.ts",
 		"./ch/query-helpers": "./src/ch/queries/query-helpers.ts",
 		"./ch/rollup-splice": "./src/ch/queries/rollup-splice.ts",
-		"./promql": "./src/promql/index.ts"
+		"./promql": "./src/promql/index.ts",
+		"./execution/fingerprint": "./src/execution/fingerprint.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

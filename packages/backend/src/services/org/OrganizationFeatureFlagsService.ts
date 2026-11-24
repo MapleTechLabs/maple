@@ -13,19 +13,33 @@ import * as Clerk from "@distilled.cloud/clerk"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
-	type OrganizationFeatureFlags,
+	OrganizationFeatureFlags,
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Clock, Context, type Duration, Effect, Layer, Option, String as Str } from "effect"
+import { EdgeCacheService } from "@maple/cache"
+import { Clock, Context, type Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkApiFor } from "@maple/auth"
 
 /**
- * How long one organization's flags are reused within an isolate. Short enough that withdrawing a
- * flag takes effect within a minute; long enough that a burst of pushes is one Clerk call.
+ * How long one organization's flags are reused, in each of two tiers: the isolate's memo, then the
+ * colo's shared cache. The two together keep withdrawing a flag within a minute. The shared tier is
+ * what makes a cold isolate cheap: isolates live well under a minute, so a memo alone sent most
+ * `initialize` requests to Clerk (p50 88 ms, p95 237 ms in prod).
  */
-const FLAGS_TTL_MS = 60_000
+const FLAGS_TTL_MS = 30_000
+const FLAGS_EDGE_BUCKET = "org-feature-flags"
+const FLAGS_EDGE_TTL_SECONDS = 30
+
+/** Clerk could not answer. Kept out of the shared cache: one failed read must not turn rollouts off colo-wide. */
+class FeatureFlagsUnreadableError extends Schema.TaggedError<FeatureFlagsUnreadableError>()(
+	"@maple/backend/services/org/FeatureFlagsUnreadableError",
+	{ message: Schema.String },
+) {}
+
+/** What `OrganizationFeatureFlagsService.layer` needs from the app root. */
+export type OrganizationFeatureFlagsRequirements = Env | EdgeCacheService
 
 export interface OrganizationFeatureFlagsServiceApi {
 	/** Never fails: an unreadable organization is an organization with every rollout off. */
@@ -71,6 +85,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 >()("@maple/backend/services/org/OrganizationFeatureFlagsService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
+		const edgeCache = yield* EdgeCacheService
 		const clerkMode = Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk"
 		const clerk = clerkApiFor(env)
 
@@ -99,6 +114,41 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			)
 		})
 
+		// The colo's copy first; only a miss reaches Clerk, and only a successful read is shared.
+		const readShared = (orgId: OrgId) =>
+			edgeCache
+				.getOrCompute(
+					{
+						bucket: FLAGS_EDGE_BUCKET,
+						key: orgId,
+						ttlSeconds: FLAGS_EDGE_TTL_SECONDS,
+						schema: OrganizationFeatureFlags,
+					},
+					read(orgId).pipe(
+						Effect.flatMap(
+							Option.match({
+								onNone: () =>
+									Effect.fail(
+										new FeatureFlagsUnreadableError({ message: "Clerk did not answer" }),
+									),
+								onSome: Effect.succeed,
+							}),
+						),
+					),
+				)
+				.pipe(
+					Effect.tap((result) =>
+						result.hit
+							? Effect.annotateCurrentSpan("maple.feature_flags.source", "edge_cache")
+							: Effect.void,
+					),
+					Effect.map((result) => Option.some(result.value)),
+					Effect.catchTag(
+						"@maple/backend/services/org/FeatureFlagsUnreadableError",
+						() => Effect.succeedNone,
+					),
+				)
+
 		const cachedOrRead = Effect.fn("OrganizationFeatureFlagsService.flags")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			if (!clerkMode) return Option.some(ENABLED_ORGANIZATION_FEATURE_FLAGS)
@@ -108,7 +158,7 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "cache")
 				return cached.flags
 			}
-			const fresh = yield* read(orgId)
+			const fresh = yield* readShared(orgId)
 			cache.set(orgId, { flags: fresh, atMs: nowMs })
 			return fresh
 		})
