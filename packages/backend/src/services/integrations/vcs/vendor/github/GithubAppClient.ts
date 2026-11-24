@@ -1355,11 +1355,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				limit: number,
 				head?: string,
+				state?: "open" | "all",
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const params = new URLSearchParams({
-					...(head === undefined ? { state: "all" } : { state: "open", head }),
+					...(head === undefined ? { state: "all" } : { state: state ?? "open", head }),
 					sort: "updated",
 					direction: "desc",
 					per_page: String(Math.min(limit, PER_PAGE)),

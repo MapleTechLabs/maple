@@ -74,6 +74,9 @@ export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
+/** How long a force push waits on GitHub for its branch's pull requests before it is kept unattributed. */
+const FORCE_PUSH_LOOKUP_BUDGET = Duration.seconds(20)
+
 /** An audit event for an installation not stored yet waits this many times, this long each. */
 const AUDIT_INSTALLATION_WAITS = 5
 const AUDIT_INSTALLATION_WAIT_SECONDS = 60
@@ -1111,9 +1114,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
-			// A force push to a branch whose open pull request someone else opened becomes
-			// `push.forced.non_author`, naming that pull request. A failed lookup keeps `push.forced`,
-			// which every force push detection still matches, rather than losing the event.
+			// A force push to a branch whose pull request someone else opened becomes
+			// `push.forced.non_author`, naming it. A pull request merged or closed since the push still
+			// counts. A failed or slow lookup keeps `push.forced`, which every force push detection matches.
 			const attributeForcePush = Effect.fn("VcsSyncService.attributeForcePush")(function* (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
@@ -1127,8 +1130,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					.fetchPullRequests(installation, repository, {
 						limit: 10,
 						head: `${repository.owner}:${branch}`,
+						state: "all",
 					})
 					.pipe(
+						Effect.timeout(FORCE_PUSH_LOOKUP_BUDGET),
 						Effect.tapError((error) =>
 							Effect.logWarning(
 								"[VCS] Force push left unattributed: pull request lookup failed",
@@ -1139,7 +1144,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const foreign = Option.flatMap(pulls, (found) =>
 					Arr.findFirst(
 						found,
-						(pr) => pr.authorLogin !== null && Str.toLowerCase(pr.authorLogin) !== pusher,
+						(pr) =>
+							pr.authorLogin !== null &&
+							Str.toLowerCase(pr.authorLogin) !== pusher &&
+							// Open at the push: still open, or merged or last changed after it.
+							(pr.state === "open" ||
+								(pr.mergedAtMs ?? pr.updatedAtMs) >= job.event.occurredAtMs),
 					),
 				)
 				yield* Effect.annotateCurrentSpan({

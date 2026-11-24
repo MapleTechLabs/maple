@@ -1340,6 +1340,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						repo.name,
 						opts.limit,
 						opts.head,
+						opts.state,
 					)
 					.pipe(
 						Effect.mapBoth({
