@@ -21,6 +21,7 @@
 		"@maple/local-server": "workspace:*",
 		"@maple/promql": "workspace:*",
 		"@maple/query-engine": "workspace:*",
+		"@maple/sourcemaps": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

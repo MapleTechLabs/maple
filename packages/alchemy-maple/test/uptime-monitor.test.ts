@@ -63,6 +63,7 @@ const makeFake = () => {
 				calls.push({ method: "DELETE", path })
 				store.delete(path)
 			}),
+		upload: (path) => Effect.die(`unexpected upload ${path}`),
 	}
 	return { api, calls, store }
 }

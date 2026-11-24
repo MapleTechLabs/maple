@@ -12,6 +12,7 @@ export default defineConfig({
 		telemetry: "./src/Telemetry.ts",
 		local: "./src/Local.ts",
 		"local-sidecar": "./src/LocalSidecar.ts",
+		vite: "./src/Vite.ts",
 	},
 	format: "esm",
 	dts: { tsconfig: "../../tsconfig.alchemy-maple.json" },
@@ -22,8 +23,8 @@ export default defineConfig({
 	loader: { ".sql": "text" },
 	define: { __CHDB_VERSION__: JSON.stringify(libchdbVersion) },
 	deps: {
-		neverBundle: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", /^bun:/],
+		neverBundle: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", "vite", /^bun:/],
 		alwaysBundle: [/^@maple\//, /^@maple-dev\/effect-orm/],
-		onlyImport: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", /^node:/, /^bun:/],
+		onlyImport: ["effect", /^@effect\//, "alchemy", "@maple-dev/effect-sdk", "vite", /^node:/, /^bun:/],
 	},
 })
