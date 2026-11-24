@@ -163,4 +163,21 @@ describe("uploadDirectory", () => {
 		expect(server.seen).toHaveLength(0)
 		expect(Arr.map(outcomes, (o) => o._tag)).toEqual(["skipped"])
 	})
+
+	test("skips an index map, which the workspace refuses", async () => {
+		writeFileSync(join(dir, "a.js"), `a()\n//# debugId=${ID}\n`)
+		writeFileSync(join(dir, "a.js.map"), JSON.stringify({ version: 3, sections: [] }))
+		const server = fakeServer(() => Response.json({ id: "smap_5" }))
+
+		const outcomes = await upload(dir, options({ apiUrl: server.apiUrl }))
+
+		expect(server.seen).toHaveLength(0)
+		expect(outcomes).toEqual([
+			{
+				_tag: "skipped",
+				minifiedPath: "a.js",
+				reason: "index source maps are not supported; emit a regular map",
+			},
+		])
+	})
 })
