@@ -2,6 +2,7 @@
 	"name": "@maple/query-engine",
 	"private": true,
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
 		"./datetime": "./src/datetime.ts",

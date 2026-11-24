@@ -117,7 +117,7 @@ export const LabState = Schema.Literals([
 	"add-openai",
 	"openai-no-spend",
 	"add-morph",
-	"morph-not-admin",
+	"morph-refused",
 	"add-github",
 	"github-refused",
 	"github-none",
@@ -205,7 +205,7 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-openai" ||
 	state === "openai-no-spend" ||
 	state === "add-morph" ||
-	state === "morph-not-admin" ||
+	state === "morph-refused" ||
 	state === "github-none" ||
 	state === "github-reading" ||
 	state === "github-unread" ||
@@ -272,7 +272,7 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return submissionOf("openai", "sk-admin-0123456789abcdefghij0123456789")
 		case "add-morph":
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "morph" })]
-		case "morph-not-admin":
+		case "morph-refused":
 			return submissionOf("morph", "sk-0123456789abcdefghij0123456789")
 		case "add-github":
 		case "github-none":
@@ -400,10 +400,9 @@ const noSpendKey = {
 		"This OpenAI organization has no API spend in the last 180 days, so there is nothing to read yet.",
 }
 
-const notAdminKey = {
+const morphRefusedKey = {
 	...toLoadFailure("refused"),
-	message:
-		"This key cannot read the organization's spend. Use a key of a Morph organization, owned by one of its admins. Keys of personal accounts cannot read spend.",
+	message: "Morph rejected this key. Create one at morphllm.com/dashboard/api-keys.",
 }
 
 /** The days a preset spans, for the fixture's window; a custom range reads as the default. */
@@ -634,7 +633,7 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 				CostMessage.CompletedSaveCredential({
 					provider: "morph",
 					result:
-						state === "morph-not-admin" ? Result.fail(notAdminKey) : Result.succeed(undefined),
+						state === "morph-refused" ? Result.fail(morphRefusedKey) : Result.succeed(undefined),
 				}),
 			)
 		case FeatureRequest.SendFeatureRequest.name:

@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Array as Arr, Effect, Option, Schema } from "effect"
+import { Array as Arr, Effect, Option, Result, Schema } from "effect"
 import { Command, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -24,6 +24,7 @@ import { subscriptions as metricsSubscriptions } from "../page/metrics/browse/su
 import { update as metricsUpdate } from "../page/metrics/browse/update"
 import { view as metricsView } from "../page/metrics/browse/view"
 import { Message as ServicesMessage } from "../page/services/list/message"
+import { FetchCommitSummaries } from "../page/services/list/command"
 import { Model as ServicesModel } from "../page/services/list/model"
 import { subscriptions as servicesSubscriptions } from "../page/services/list/subscription"
 import { update as servicesUpdate } from "../page/services/list/update"
@@ -38,6 +39,7 @@ import {
 	dashboardsFixture,
 	investigationsFixture,
 	metricsFixture,
+	RELEASE_SUMMARIES,
 	servicesFixture,
 } from "./list-keys-fixture"
 
@@ -128,7 +130,25 @@ export const update = (model: Model, message: Message): Return => {
 	const context = contextOf(model.timeZone)
 	return Message.match<Return>(message, {
 		GotServicesMessage: ({ message: inner }) => {
-			const next = servicesUpdate(model.services, inner, context)
+			const stepped = servicesUpdate(model.services, inner, context)
+			// The commit lookup answers from the fixture, so the deploy cells and release facet resolve.
+			const asksCommits = Arr.some(
+				stepped.commands ?? [],
+				(command) => command.name === FetchCommitSummaries.name,
+			)
+			const next = asksCommits
+				? {
+						...stepped,
+						model: servicesUpdate(
+							stepped.model,
+							ServicesMessage.CompletedFetchCommitSummaries({
+								key: stepped.model.commitSummaries.key ?? "",
+								result: Result.succeed(RELEASE_SUMMARIES),
+							}),
+							context,
+						).model,
+					}
+				: stepped
 			return {
 				model: { ...model, services: next.model },
 				commands: keepLocal(next.commands, toServices),
