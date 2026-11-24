@@ -1,5 +1,20 @@
 # @maple/cli
 
+## 0.5.0
+
+### Minor Changes
+
+- 21b116c: Your coding agent can now set Maple up for you. Copy the agent prompt on the dashboard's connect step: it carries a single-use handoff code that signs the CLI in once (`MAPLE_API_URL=<api> MAPLE_HANDOFF=<code> maple auth login`, or the same variables on the install script). `maple onboarding report <stage> <status>` shows the agent's progress on the connect step, `maple onboarding keys` prints the ingest endpoint and public key, and `maple onboarding verify --service <name> --env <environment>` waits for a trace from that service and environment.
+
+### Patch Changes
+
+- 6cb8beb: Refusals that are yours to fix no longer count as CLI failures in telemetry: `maple checkpoint` while another checkpoint or restore holds the store, a `maple start` flag or environment variable it cannot use, and a login that was denied, expired, used a spent handoff code or a token the API refused. `maple get|post|...` still records a 4xx answer, but its request span no longer closes as an error. Messages and exit codes are unchanged.
+- bea666e: `maple start` under a supervisor (Docker, systemd, launchd) no longer reports the same refusal on every restart. A flag or environment variable it cannot use (a short `MAPLE_LOCAL_ACCESS_TOKEN`, a bad `--host`) now exits 78 like a dirty or stale store, so a supervisor that honours it stops retrying. A refusal is reported once a day while it repeats, even when the restarts are far apart; the backoff still applies only to tight loops.
+- Updated dependencies [a49f40c]
+- Updated dependencies [0aec646]
+- Updated dependencies [7601363]
+    - @maple-dev/effect-sdk@0.16.0
+
 ## 0.4.0
 
 ### Minor Changes

@@ -1,5 +1,14 @@
 # @maple-dev/alchemy
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies [a49f40c]
+- Updated dependencies [0aec646]
+- Updated dependencies [7601363]
+    - @maple-dev/effect-sdk@0.16.0
+
 ## 0.7.0
 
 ### Minor Changes
