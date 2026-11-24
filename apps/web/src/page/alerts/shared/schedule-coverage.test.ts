@@ -8,7 +8,6 @@ import {
 	draftCoverage,
 	durationText,
 	gapRangeText,
-	gapsOf,
 	gapSummary,
 	layerOnCallAt,
 	previewLayerOf,
@@ -54,40 +53,6 @@ const expectMatchesServer = (
 		expect(inGap).toBe(server === null)
 	})
 }
-
-describe("gapsOf", () => {
-	it("returns the whole range when nothing covers it", () => {
-		expect(gapsOf([], 0, 10)).toEqual([{ startMs: 0, endMs: 10 }])
-	})
-	it("returns no gaps when shifts cover the range end to end", () => {
-		expect(
-			gapsOf(
-				[
-					{ startMs: 5, endMs: 12 },
-					{ startMs: -2, endMs: 5 },
-				],
-				0,
-				10,
-			),
-		).toEqual([])
-	})
-	it("finds holes between, before and after shifts", () => {
-		expect(
-			gapsOf(
-				[
-					{ startMs: 2, endMs: 4 },
-					{ startMs: 6, endMs: 8 },
-				],
-				0,
-				10,
-			),
-		).toEqual([
-			{ startMs: 0, endMs: 2 },
-			{ startMs: 4, endMs: 6 },
-			{ startMs: 8, endMs: 10 },
-		])
-	})
-})
 
 describe("draftCoverage", () => {
 	const range = { startMs: at("2026-11-09T00:00:00Z"), endMs: at("2026-11-23T00:00:00Z") }

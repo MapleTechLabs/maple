@@ -25,7 +25,7 @@ import { resourceNotFound } from "../../kit/resource-not-found"
 import { sectionHeading } from "../../kit/section-heading"
 import { coveragePreview, type PreviewShift } from "../shared/coverage-preview"
 import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
-import { gapsOf } from "../shared/schedule-coverage"
+import { uncoveredIntervals } from "@maple/alerting-core/oncall"
 import { memberName, memberOf, type OrgMember } from "../shared/org-members"
 import { Message } from "./message"
 import { type Model } from "./model"
@@ -102,7 +102,7 @@ const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZ
 				emptyText: "Not active in this period",
 			})),
 			final,
-			gaps: gapsOf(final, Math.max(fromMs, nowMs), toMs),
+			gaps: uncoveredIntervals(final, Math.max(fromMs, nowMs), toMs),
 			nameOf: (userId) => memberName(model.members, userId),
 			onPrevious: Message.ClickedPreviousWeek(),
 			onNext: Message.ClickedNextWeek(),

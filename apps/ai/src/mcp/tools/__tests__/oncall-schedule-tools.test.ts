@@ -54,6 +54,8 @@ const scheduleDoc = (overrides: Partial<typeof OnCallScheduleDocument.Encoded> =
 			startsAt: "2026-11-09T08:00:00.000Z",
 			endsAt: "2026-11-16T08:00:00.000Z",
 		},
+		coverageGaps: [],
+		departedUserIds: [],
 		chainIds: [],
 		createdAt: NOW,
 		updatedAt: NOW,

@@ -139,6 +139,24 @@ export const formatOnCallNow = (schedule: ScheduleRow): string =>
 		? "nobody on call right now"
 		: `${personLabel(schedule.onCallNow.user)} on call until ${schedule.onCallNow.endsAt}`
 
+/**
+ * What is wrong with the schedule's coverage, or null: e.g. `3 gaps in the next 14 days, next
+ * 2026-11-14T16:00:00.000Z to 2026-11-16T08:00:00.000Z; left the org: Ben Brook (user_ben)`.
+ */
+export const formatCoverageWarning = (schedule: ScheduleRow): string | null => {
+	const [next] = schedule.coverageGaps
+	const gaps =
+		next === undefined
+			? null
+			: `${schedule.coverageGaps.length} ${schedule.coverageGaps.length === 1 ? "gap" : "gaps"} with nobody on call in the next 14 days, next ${next.startsAt} to ${next.endsAt}`
+	const departed =
+		schedule.departed.length === 0
+			? null
+			: `left the org (their shifts pass to the next person): ${Arr.join(Arr.map(schedule.departed, personLabel), ", ")}`
+	const parts = Arr.filter([gaps, departed], (part) => part !== null)
+	return parts.length === 0 ? null : Arr.join(parts, "; ")
+}
+
 /** One line per layer, e.g. `Primary: weekly, Monday 09:00 · Ana Alves, Ben Brook`. */
 export const formatLayers = (schedule: ScheduleRow): string =>
 	Arr.join(
@@ -162,6 +180,7 @@ export const scheduleBlocks = (schedule: ScheduleRow) => [
 		["Description", schedule.description ?? undefined],
 		["Time zone", schedule.timeZone],
 		["On call now", formatOnCallNow(schedule)],
+		["Coverage", formatCoverageWarning(schedule) ?? undefined],
 	]),
 	doc.text(formatLayers(schedule)),
 ]

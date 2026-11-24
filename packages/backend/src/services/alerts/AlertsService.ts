@@ -53,7 +53,6 @@ import {
 	type AlertRulePreviewRequest,
 	AlertSeverity as AlertSeveritySchema,
 	type AlertSeverity,
-	type EscalationChainId,
 	AlertSignalType as AlertSignalTypeSchema,
 	AlertValidationError,
 	type AlertEventType as AlertEventTypeValue,
@@ -4069,7 +4068,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								if (lifecycle.transition !== "escalated") return result
 								const inherited = escalation !== null && escalation.severity !== severity
 								const carriedOn =
-									(escalation === null || inherited) && escalatedNotification?.payload != null
+									(escalation === null || inherited) &&
+									escalatedNotification?.payload != null
 										? yield* refreshEscalationRunPayload(db, {
 												orgId: row.orgId,
 												incidentId: openIncident.id,
@@ -6306,25 +6306,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 			/**
 			 * The org's members and admins, or null to page everyone resolved: no directory on this
-			 * deployment, or one that could not be read (delivery then decides).
+			 * deployment, one that could not be read, or one that listed nobody (delivery then decides).
 			 */
 			const memberDirectory = (orgId: OrgId) =>
 				orgMembers.listMembers(orgId).pipe(
-					Effect.map(
-						(members): MemberDirectory | null => ({
-							memberIds: new Set(Arr.map(members, (member) => member.userId)),
-							adminIds: Arr.getSomes(
-								Arr.map(
-									Arr.filter(
-										members,
-										(member) =>
-											member.role !== undefined &&
-											Policy.can([member.role], "members:manage"),
+					Effect.map((members): MemberDirectory | null =>
+						members.length === 0
+							? null
+							: {
+									memberIds: new Set(Arr.map(members, (member) => member.userId)),
+									adminIds: Arr.getSomes(
+										Arr.map(
+											Arr.filter(
+												members,
+												(member) =>
+													member.role !== undefined &&
+													Policy.can([member.role], "members:manage"),
+											),
+											(member) => decodeUserIdOption(member.userId),
+										),
 									),
-									(member) => decodeUserIdOption(member.userId),
-								),
-							),
-						}),
+								},
 					),
 					Effect.catchTags({
 						"@maple/http/errors/AlertMemberDirectoryNotConfiguredError": () =>

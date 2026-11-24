@@ -6,6 +6,7 @@ import {
 	V2OnCallSchedule,
 	V2OnCallShifts,
 } from "@maple/domain/http/v2"
+import { uncoveredIntervals } from "@maple/alerting-core/oncall"
 import { UserId } from "@maple/domain/http"
 import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
 import { Array as Arr, Option, Order, Schema, String as Str } from "effect"
@@ -345,6 +346,11 @@ const scheduleOf = (spec: Spec, nowMs: number): V2OnCallSchedule => {
 				ends_at: iso(shift.endMs),
 			})),
 		),
+		coverage_gaps: Arr.map(uncoveredIntervals(final, nowMs, nowMs + WEEK_MS), (gap) => ({
+			starts_at: iso(gap.startMs),
+			ends_at: iso(gap.endMs),
+		})),
+		departed_user_ids: [],
 		chain_ids: spec.n === 1 ? [encodePublicId("esc", "0199a00e-0000-7000-8000-000000000001")] : [],
 		created_at: iso(nowMs - 30 * 86_400_000),
 		updated_at: iso(nowMs - 86_400_000),

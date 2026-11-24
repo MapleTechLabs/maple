@@ -60,13 +60,23 @@ describe("planEscalationAdvance", () => {
 		})
 	})
 
-	it("counts the wait from when a late step was actually sent", () => {
+	it("counts the wait from the step's due time when the scheduler was only a tick late", () => {
 		const plan = planEscalationAdvance(
 			run({ stepIndex: 1, nextStepAt: minutes(10) }),
 			firing,
 			minutes(11),
 		)
-		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(26) } })
+		// Due at :10, sent at :11, 15 minute wait: the next step is still due at :25.
+		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(25) } })
+	})
+
+	it("counts the wait from now when the step went out long after it was due", () => {
+		const plan = planEscalationAdvance(
+			run({ stepIndex: 1, nextStepAt: minutes(10) }),
+			firing,
+			minutes(40),
+		)
+		expect(plan).toMatchObject({ kind: "send", next: { nextStepAt: minutes(55) } })
 	})
 
 	it("walks the email example: page at 14:10, stop at the 14:12 ack, never send step 3", () => {

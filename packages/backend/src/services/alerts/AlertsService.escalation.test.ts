@@ -291,7 +291,7 @@ describe("escalation chains", () => {
 		const requests: Array<string> = []
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const { alerts } = yield* setup("org_esc_cas")
+			const { alerts, pager } = yield* setup("org_esc_cas")
 			const database = yield* Database
 			yield* alerts.runSchedulerTick()
 			yield* tick(alerts)
@@ -308,7 +308,7 @@ describe("escalation chains", () => {
 						row,
 						plan,
 						nowMs,
-						enabled: new Set(),
+						enabled: new Set([pager.id]),
 						makeDeliveryId: crypto.randomUUID.bind(crypto),
 					}),
 				),
@@ -399,6 +399,85 @@ describe("escalation chains", () => {
 			assert.sameMembers(
 				Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
 				["resolved", "exhausted"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+	})
+
+	/** Only the warning tier names a chain: slack, wait 10, then pager, wait 15. A critical incident inherits it. */
+	const setupInherited = (orgName: string) =>
+		Effect.gen(function* () {
+			const alerts = yield* alertServices
+			const chains = yield* EscalationChainsService
+			const orgId = asOrgId(orgName)
+			const userId = asUserId(`user_${orgName}`)
+			const team = yield* webhook(alerts, orgId, userId, "team")
+			const slack = yield* webhook(alerts, orgId, userId, "slack")
+			const pager = yield* webhook(alerts, orgId, userId, "pager")
+			const chain = yield* chains.create(
+				orgId,
+				userId,
+				adminRoles,
+				new EscalationChainCreateRequest({
+					name: "API escalation",
+					steps: [
+						{ targets: [{ type: "destination", destinationId: slack.id }], waitMinutes: 10 },
+						{ targets: [{ type: "destination", destinationId: pager.id }], waitMinutes: 15 },
+					],
+				}),
+			)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				ruleRequest([tier("warning", 5, [team.id], chain.id), tier("critical", 20, [team.id], null)]),
+			)
+			return { alerts, orgId }
+		})
+
+	it.effect(
+		"keeps the inherited chain running when an incident that opened critical drops to warning",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const state = { tracesAggregateRows: errorRateRows(30) }
+			const requests: Array<string> = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const { alerts, orgId } = yield* setupInherited("org_esc_inherit_drop")
+				yield* alerts.runSchedulerTick()
+				yield* tick(alerts)
+				assert.include(requests, "trigger slack")
+				state.tracesAggregateRows = errorRateRows(10)
+				yield* ticks(alerts, 4)
+				// The chain is the warning tier's own, so the warning incident keeps it.
+				assert.deepStrictEqual(
+					Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
+					["active"],
+				)
+				yield* ticks(alerts, 8)
+				assert.include(requests, "trigger pager")
+			}).pipe(Effect.provide(layerFor(testDb, state, requests)))
+		},
+	)
+
+	it.effect("runs the inherited chain again when the incident turns critical after it ran out", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRateRows(10) }
+		const requests: Array<string> = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const { alerts, orgId } = yield* setupInherited("org_esc_inherit_rerun")
+			yield* alerts.runSchedulerTick()
+			yield* ticks(alerts, 14)
+			assert.deepStrictEqual(
+				Arr.map(yield* runRows(testDb, orgId), (row) => row.status),
+				["exhausted"],
+			)
+			state.tracesAggregateRows = errorRateRows(30)
+			yield* ticks(alerts, 3)
+			// A direct open at critical would have run this chain; so does getting there later.
+			assert.lengthOf(
+				Arr.filter(requests, (request) => request === "trigger slack"),
+				2,
 			)
 		}).pipe(Effect.provide(layerFor(testDb, state, requests)))
 	})

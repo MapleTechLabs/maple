@@ -1,41 +1,22 @@
-import { onCallAt, renderOnCall, type OnCallShift } from "@maple/alerting-core/oncall"
+import {
+	onCallAt,
+	renderOnCall,
+	uncoveredIntervals,
+	type Interval,
+	type OnCallShift,
+} from "@maple/alerting-core/oncall"
 import { OnCallLayer, OnCallScheduleConfig, OnCallTimeZone } from "@maple/domain/http"
 import type { OnCallOverride } from "@maple/domain/http"
 import type { UserId } from "@maple/primitives"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import { zonedDayStart } from "@maple/views/ui/shift-timeline"
-import { Array as Arr, Option, Order, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { layerStartMs, restrictionError, type Form, type LayerDraft } from "../schedule-form/form"
 
 // Coverage preview: the draft rendered with the server's own `renderOnCall`, so the preview
 // and paging agree, plus the gaps where nobody is on call.
 
-export interface Interval {
-	readonly startMs: number
-	readonly endMs: number
-}
-
-const byStart = Order.mapInput(Order.Number, (interval: Interval) => interval.startMs)
-
-/** The stretches of [fromMs, toMs) that no shift covers. */
-export const gapsOf = (
-	shifts: ReadonlyArray<Interval>,
-	fromMs: number,
-	toMs: number,
-): ReadonlyArray<Interval> => {
-	if (toMs <= fromMs) return []
-	const sorted = Arr.sort(shifts, byStart)
-	const { gaps, cursor } = Arr.reduce(
-		sorted,
-		{ gaps: Arr.empty<Interval>(), cursor: fromMs },
-		({ gaps, cursor }, shift) => {
-			if (shift.endMs <= cursor || shift.startMs >= toMs) return { gaps, cursor }
-			const next = shift.startMs > cursor ? [...gaps, { startMs: cursor, endMs: shift.startMs }] : gaps
-			return { gaps: next, cursor: Math.max(cursor, shift.endMs) }
-		},
-	)
-	return cursor < toMs ? [...gaps, { startMs: cursor, endMs: toMs }] : gaps
-}
+export type { Interval }
 
 const isZone = Schema.is(OnCallTimeZone)
 const decodeLayer = Schema.decodeUnknownOption(OnCallLayer)
@@ -124,7 +105,7 @@ export const draftCoverage = (
 		onNone: () => ({
 			layers: Arr.map(form.layers, () => Option.none()),
 			final: [],
-			gaps: gapsOf([], gapFrom, toMs),
+			gaps: uncoveredIntervals([], gapFrom, toMs),
 		}),
 		onSome: ({ config, draftIndexes }) => {
 			const render = renderOnCall(config, overrides, fromMs, toMs)
@@ -136,7 +117,7 @@ export const draftCoverage = (
 					),
 				),
 				final: render.final,
-				gaps: gapsOf(render.final, gapFrom, toMs),
+				gaps: uncoveredIntervals(render.final, gapFrom, toMs),
 			}
 		},
 	})

@@ -238,8 +238,7 @@ const toDocument = (
 			Arr.take(gaps, MAX_ONCALL_REPORTED_GAPS),
 			(gap) => new OnCallGap({ startsAt: iso(gap.startMs), endsAt: iso(gap.endMs) }),
 		),
-		departedUserIds:
-			members === null ? [] : absentParticipants(config, (userId) => members.has(userId)),
+		departedUserIds: members === null ? [] : absentParticipants(config, (userId) => members.has(userId)),
 		chainIds,
 		createdAt: iso(row.createdAt),
 		updatedAt: iso(row.updatedAt),
@@ -289,12 +288,15 @@ export class OnCallSchedulesService extends Context.Service<
 			Effect.annotateCurrentSpan("maple.oncall.schedule_id", scheduleId)
 
 		// Every schedule read asks who is still a member; a minute of staleness spares the directory.
+		// An empty list is a directory that could not answer, not an org everyone left.
 		const memberIdsByOrg = yield* Cache.make({
 			capacity: 512,
 			timeToLive: Duration.minutes(1),
 			lookup: (orgId: OrgId) =>
 				orgMembers.listMembers(orgId).pipe(
-					Effect.map((members): MemberIds => new Set(Arr.map(members, (member) => member.userId))),
+					Effect.map((members): MemberIds =>
+						members.length === 0 ? null : new Set(Arr.map(members, (member) => member.userId)),
+					),
 					Effect.orElseSucceed((): MemberIds => null),
 				),
 		})
