@@ -261,4 +261,15 @@ describe("symbolicateStack", () => {
 			["b", true],
 		])
 	})
+
+	it("counts a blob frame with a recorded debug id as one a map could resolve", () => {
+		const blob = "blob:https://app.example.com/0f3a9c1e-6b2d-4e8f-9a7c-1d2e3f4a5b6c"
+		const stack = `Error\n    at a (${APP_URL}:1:1)\n    at w (${blob}:1:1)`
+		const ids = new Map([[blob, "6c5e2b1a-1f2e-4d3c-8b7a-0123456789ab"]])
+		const withId = symbolicateStack(stack, lookup, ids)
+		expect([withId.status, withId.missing]).toEqual(["partial", [blob]])
+		expect(symbolicateStack(stack, lookup).status).toBe("resolved")
+		const blobOnly = symbolicateStack(`Error\n    at w (${blob}:1:1)`, () => undefined, ids)
+		expect(blobOnly.status).toBe("missing_map")
+	})
 })

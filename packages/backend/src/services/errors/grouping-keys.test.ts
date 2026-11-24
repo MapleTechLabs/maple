@@ -178,6 +178,8 @@ const spanRow = (hash: string, fingerprint = ""): GroupingSpanRow => ({
 })
 
 const MESSAGE = "Cannot read properties of undefined (reading 'total')"
+const DEBUG_ID_FOR_TEST = "6c5e2b1a-1f2e-4d3c-8b7a-0123456789ab"
+const v1Sample = sampleRow("q1", "TypeError", MESSAGE, [V1.app("a")])
 
 /** Each sample keyed as the tick keys it, with or without a symbolicator. */
 const keysOf = (
@@ -361,6 +363,52 @@ describe("keys that wait for a source map", () => {
 		expect(await keyedBy([unmapped, mapped], api)).toEqual(["p2"])
 	})
 
+	it("holds a throw site an app rule claims on a dependency path, though its caller mapped", () => {
+		const ours = compileGroupingRules(
+			new GroupingConfig({
+				rules: [
+					new OrgGroupingRule({ id: "ours", kind: "app-frames", frame: "*node_modules/@acme/*" }),
+				],
+			}),
+		)
+		const claimed = sampleRow("p7", "TypeError", MESSAGE, [
+			"t (https://app.example.com/node_modules/@acme/ui/index.js:1:1)",
+			V1.app("a"),
+		])
+		const entries = computeSampleInputs([claimed], [spanRow("p7")])
+		const [entry] = Effect.runSync(
+			withSourceMappedStacks(Option.some(symbolicator().api), ORG, entries, ours),
+		)
+		expect(entry?.mapPending).toBe(true)
+		const [plain] = Effect.runSync(withSourceMappedStacks(Option.some(symbolicator().api), ORG, entries))
+		expect(plain?.mapPending).toBe(false)
+	})
+
+	it("waits for a first map only on a debug id recorded for one of the stack's own frames", () => {
+		const { api } = symbolicator()
+		const mapless: StackSymbolicatorApi = { ...api, hasSourceMaps: () => Effect.succeed(false) }
+		const withIds = (ids: Record<string, string>) =>
+			Effect.runSync(
+				withSourceMappedStacks(
+					Option.some(mapless),
+					ORG,
+					computeSampleInputs(
+						[v1Sample],
+						[
+							{
+								...spanRow("q1"),
+								eventsAttributes: JSON.stringify([
+									{ "maple.exception.debug_ids": JSON.stringify(ids) },
+								]),
+							},
+						],
+					),
+				),
+			)[0]?.mapPending
+		expect(withIds({ "https://app.example.com/assets/other.js": DEBUG_ID_FOR_TEST })).not.toBe(true)
+		expect(withIds({ [V1.url]: DEBUG_ID_FOR_TEST })).toBe(true)
+	})
+
 	it("keys a vendor chunk that mapped into dependencies at once", async () => {
 		const { api } = symbolicator()
 		expect(await keyedBy([vendor], api)).toEqual(["p3"])
@@ -384,7 +432,11 @@ describe("keys that wait for a source map", () => {
 	})
 
 	/** A stored mapped key for `p2`, under rules since changed, after one tick re-keys it from `sample`. */
-	const storedAfterRekey = (api: StackSymbolicatorApi, sample: GroupingSampleRow) =>
+	const storedAfterRekey = (
+		api: StackSymbolicatorApi,
+		sample: GroupingSampleRow,
+		storedRule: "source-mapped" | "frames" = "source-mapped",
+	) =>
 		Effect.runPromise(
 			Effect.gen(function* () {
 				const database = yield* Database
@@ -412,7 +464,7 @@ describe("keys that wait for a source map", () => {
 							groupingKey: "mapped-key",
 							keyVersion: 1,
 							configDigest: "rules-before",
-							rule: "source-mapped",
+							rule: storedRule,
 							pinned: false,
 							createdAt: 0,
 							updatedAt: 0,
@@ -450,6 +502,24 @@ describe("keys that wait for a source map", () => {
 		expect(await storedAfterRekey(api, mapped)).toEqual([
 			{ groupingKey: "mapped-key", configDigest: "rules-before" },
 		])
+	})
+
+	it("re-keys a stored raw key after a rules change, whatever its lookup gave", async () => {
+		const bare = sampleRow("p2", "TypeError", MESSAGE, [BARE.app("a")])
+		const pending = sampleRow("p2", "TypeError", MESSAGE, [
+			"a (https://app.example.com/assets/index-unknown.js:1:1)",
+		])
+		const cases = [
+			[symbolicator({ lookupFails: true }).api, mapped],
+			[symbolicator().api, pending],
+			[symbolicator().api, bare],
+		] as const
+		const after = await Effect.runPromise(
+			Effect.forEach(cases, ([api, sample]) =>
+				Effect.promise(() => storedAfterRekey(api, sample, "frames")),
+			),
+		)
+		Arr.forEach(after, (rows) => expect(Arr.map(rows, (row) => row.configDigest)).toEqual([""]))
 	})
 
 	it("keeps a stored key when the stack maps but gives nothing to key on", async () => {
