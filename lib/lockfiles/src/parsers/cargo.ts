@@ -3,6 +3,7 @@ import { pkg } from "../internal/collect.ts"
 import { decodeUnknown, parseTomlText } from "../internal/decode.ts"
 import type { LockedPackage, LockfileInput } from "../types.ts"
 import type { ParserOutput } from "./types.ts"
+import { parseSpan } from "../internal/span.ts"
 
 const CargoPackage = Schema.Struct({
 	name: Schema.String,
@@ -27,7 +28,7 @@ const parseDependency = (entry: string): { readonly name: string; readonly versi
 	return { name, version }
 }
 
-export const parseCargoLock = Effect.fn("lockfiles.parseCargoLock")(function* (input: LockfileInput) {
+export const parseCargoLock = Effect.fn(function* (input: LockfileInput) {
 	const toml = yield* parseTomlText(input.path, input.content)
 	const lock = yield* decodeUnknown(CargoLock, input.path, toml)
 	const all = lock.package ?? []
@@ -47,4 +48,4 @@ export const parseCargoLock = Effect.fn("lockfiles.parseCargoLock")(function* (i
 	const warnings = skipped > 0 ? [`skipped ${skipped} git, path or alternate-registry packages`] : []
 	const output: ParserOutput = { kind: "cargo-lock", packages, warnings }
 	return output
-})
+}, parseSpan("lockfiles.parseCargoLock"))
